@@ -3,7 +3,7 @@ import torch
 from args import parse_args
 from device import get_device
 from transformer import TransformerModel
-from arrow_io import read_arrow, write_predictions
+from arrow_io import read_arrow, write_arrow
 from trainer import Trainer
 
 
@@ -14,11 +14,8 @@ def main():
 
     # ---- Data ----
     X_cpu, Y_cpu = read_arrow(args.data)
-
-    print("\n=== DATA STATS ===")
     print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
-    print("=================\n")
-
+    
     total_feat = X_cpu.shape[1]
     if total_feat % args.seq_len != 0:
         raise ValueError("Feature dim not divisible by seq_len")
@@ -49,12 +46,12 @@ def main():
     )
 
     if args.action == "fit":
-        trainer.fit(X_cpu, Y_cpu, args.model_path)
+        trainer.fit(X_cpu, Y_cpu, args.model_name)
 
     else:  # predict
-        trainer.load(args.model_path)
+        trainer.load(args.model_name)
         preds = trainer.predict(X_cpu)
-        write_predictions(args.preds_path, preds, args.pred_col)
+        write_arrow(args.preds_path, preds, args.pred_col)
         print("Predictions saved")
 
 

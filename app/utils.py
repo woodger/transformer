@@ -1,13 +1,21 @@
+import os
 import torch
 
 
-def save_model(path, model):
-    torch.save(model.state_dict(), path)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 
 
-def load_model(path, model, device):
-    model.load_state_dict(torch.load(path, map_location=device))
+def save_model(model_name: str, model):
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    full_path = os.path.join(MODELS_DIR, model_name)
+    torch.save(model.state_dict(), full_path)
+
+def load_model(model_name: str, model, device):
+    full_path = os.path.join(MODELS_DIR, model_name)
+    model.load_state_dict(torch.load(full_path, map_location=device))
     return model
+
 
 
 def tree_stats(params):

@@ -15,7 +15,7 @@ def read_arrow(path):
     return torch.from_numpy(X), torch.from_numpy(Y)
 
 
-def write_predictions(path: str, preds: torch.Tensor, col_name: str):
+def write_arrow(path: str, preds: torch.Tensor, col_name: str):
     # preds: (N, k) → list of lists
     arr = preds.cpu().numpy()
     col = arr.tolist()

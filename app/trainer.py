@@ -53,7 +53,7 @@ class Trainer:
         else:
             return nullcontext()
 
-    def fit(self, X: torch.Tensor, Y: torch.Tensor, model_path: str):
+    def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
             dataset,
@@ -101,14 +101,14 @@ class Trainer:
             if epoch_loss < best_loss:
                 best_loss = epoch_loss
                 wait = 0
-                save_model(model_path, self.model)
+                save_model(model_name, self.model)
             else:
                 wait += 1
                 if wait >= self.patience:
                     print("Early stopping")
                     break
 
-        save_model(model_path, self.model)
+        save_model(model_name, self.model)
         print("Model saved")
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
@@ -116,5 +116,5 @@ class Trainer:
         with torch.no_grad(), self._autocast():
             return self.model(X.to(self.device))
 
-    def load(self, model_path: str):
-        load_model(model_path, self.model, self.device)
+    def load(self, model_name: str):
+        load_model(model_name, self.model, self.device)

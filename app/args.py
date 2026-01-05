@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("data")
 
     parser.add_argument("--device", choices=["cpu", "gpu"], default=DEFAULT_DEVICE)
-    parser.add_argument("--model-path", default="model_weights.pth")
+    parser.add_argument("--model-name", default="model_weights.pth")
     parser.add_argument("--preds-path", default="/tmp/preds.arrow")
     parser.add_argument("--pred-col", default="out")
 

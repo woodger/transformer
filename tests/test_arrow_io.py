@@ -2,7 +2,7 @@ import torch
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.arrow_io import read_arrow, write_predictions
+from app.arrow_io import read_arrow, write_arrow
 
 
 def test_arrow_read_write(tmp_path):
@@ -28,5 +28,5 @@ def test_arrow_read_write(tmp_path):
     preds = torch.randn(2, 1)
     out_path = tmp_path / "preds.arrow"
 
-    write_predictions(str(out_path), preds, "out")  # <--- str(out_path)
+    write_arrow(str(out_path), preds, "out")  # <--- str(out_path)
     assert out_path.exists()
