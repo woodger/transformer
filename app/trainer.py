@@ -17,7 +17,7 @@ class Trainer:
         epochs: int,
         patience: int,
         use_amp: bool = False,
-        weight_decay: float = WEIGHT_DECAY,
+        weight_decay: float = WEIGHT_DECAY
     ):
         self.model = model
         self.device = device

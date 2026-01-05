@@ -15,6 +15,10 @@ def main():
     # ---- Data ----
     X_cpu, Y_cpu = read_arrow(args.data)
 
+    print("\n=== DATA STATS ===")
+    print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
+    print("=================\n")
+
     total_feat = X_cpu.shape[1]
     if total_feat % args.seq_len != 0:
         raise ValueError("Feature dim not divisible by seq_len")
@@ -30,7 +34,7 @@ def main():
         layers=args.layers,
         dropout=args.dropout,
         out_dim=Y_cpu.shape[1],
-        nhead=args.nhead,
+        nhead=args.nhead
     ).to(device)
 
     # ---- Trainer ----
@@ -41,6 +45,7 @@ def main():
         batch_size=args.batch_size,
         epochs=args.epochs,
         patience=args.patience,
+        use_amp=args.use_amp
     )
 
     if args.action == "fit":
