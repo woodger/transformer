@@ -6,7 +6,6 @@ from config import (
     BATCH_SIZE,
     EPOCHS,
     PATIENCE,
-    SEQ_LEN,
     D_MODEL,
     NUM_LAYERS,
     DROPOUT,
@@ -30,7 +29,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--patience", type=int, default=PATIENCE)
 
-    parser.add_argument("--seq-len", type=int, default=SEQ_LEN)
+    parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--hidden", type=int, default=D_MODEL)
     parser.add_argument("--layers", type=int, default=NUM_LAYERS)
     parser.add_argument("--dropout", type=float, default=DROPOUT)

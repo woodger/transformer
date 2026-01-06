@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 from positional_encoding import PositionalEncoding
@@ -36,12 +37,33 @@ class TransformerModel(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(hidden_dim, 128),
             nn.Tanh(),
-            nn.Linear(128, out_dim),
-            nn.Tanh(),
+            nn.Linear(128, out_dim)
         )
 
+    # def forward(self, x):
+    #     x = self.input_proj(x)
+    #     x = self.pos(x)
+    #     enc = self.encoder(x)
+    #     return self.head(enc[:, -1])
+
     def forward(self, x):
+        # x: (B, S, input_dim)
+
+        # mask: True = игнорировать позицию
+        key_padding_mask = torch.isnan(x).any(dim=-1)  # (B, S)
+
+        # убрать NaN из данных
+        x = torch.nan_to_num(x, nan=0.0)
+
+        # обычный pipeline
         x = self.input_proj(x)
         x = self.pos(x)
-        enc = self.encoder(x)
+
+        # attention mask
+        enc = self.encoder(
+            x,
+            src_key_padding_mask=key_padding_mask
+        )
+
+        # prediction по последнему валидному токену
         return self.head(enc[:, -1])

@@ -25,7 +25,7 @@ class Trainer:
         self.epochs = epochs
         self.patience = patience
 
-        # AMP включаем только если GPU и юзер просил
+        # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
 
         # GradScaler для AMP
@@ -43,11 +43,6 @@ class Trainer:
         print(f"AMP enabled: {self.use_amp}")
 
     def _autocast(self):
-        """
-        Возвращает context manager для AMP:
-        - GPU + use_amp → torch.amp.autocast
-        - CPU или отключенный AMP → nullcontext
-        """
         if self.use_amp:
             return torch.amp.autocast(device_type="cuda", enabled=True)
         else:
@@ -101,7 +96,6 @@ class Trainer:
             if epoch_loss < best_loss:
                 best_loss = epoch_loss
                 wait = 0
-                save_model(model_name, self.model)
             else:
                 wait += 1
                 if wait >= self.patience:
