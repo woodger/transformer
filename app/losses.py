@@ -1,20 +1,20 @@
 import torch
+from config import WEEK
 
 EPOCHS_PER_WEEK = 5
 
-def combined_loss(preds, targets, epoch, return_ev=False):
-    week = epoch // EPOCHS_PER_WEEK + 1
+def combined_loss(preds, targets, epoch):
+    # week = epoch // EPOCHS_PER_WEEK + 1
+
+    week = WEEK
 
     # --------------------
     # base MSE (always on)
     # --------------------
     loss = torch.mean((preds - targets) ** 2)
 
-    # fallback for tests / simple models
+    # fallback for tests
     if preds.shape[1] < 6:
-        if return_ev:
-            ev = torch.tensor(0.0, device=preds.device)
-            return loss, ev
         return loss
 
     # --------------------
@@ -22,8 +22,6 @@ def combined_loss(preds, targets, epoch, return_ev=False):
     # --------------------
     meanR, sigmaR, pTP, pSL, volNext, hitTP = preds.T
     t_meanR, t_sigmaR, t_pTP, t_pSL, t_volNext, t_hitTP = targets.T
-
-    ev = torch.tensor(0.0, device=preds.device)
 
     # --------------------
     # EV loss
@@ -33,7 +31,7 @@ def combined_loss(preds, targets, epoch, return_ev=False):
         SL = 1.0
         ev = pTP * TP - pSL * SL
         loss_ev = -torch.mean(ev)
-        loss += loss_ev
+        loss += 1.0 * loss_ev
 
     # --------------------
     # probability constraints
@@ -59,17 +57,16 @@ def combined_loss(preds, targets, epoch, return_ev=False):
     # consistency + volatility
     # --------------------
     if week >= 5:
+        # meanReturn should align with TP/SL probabilities
         implied_return = pTP - pSL
         consistency = torch.mean((meanR - implied_return) ** 2)
 
+        # volatility: log-error is more stable
         vol_loss = torch.mean(
             (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
         )
 
         loss += 0.5 * consistency
         loss += 0.3 * vol_loss
-
-    if return_ev:
-        return loss, ev.mean().detach()
 
     return loss

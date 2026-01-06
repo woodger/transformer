@@ -6,7 +6,6 @@ from losses import combined_loss
 from utils import save_model, load_model, tree_stats
 from config import WEIGHT_DECAY, GRAD_CLIP_NORM
 
-EV_START_EPOCH = 5  # например, с 2-й недели (EPOCHS_PER_WEEK = 5)
 
 class Trainer:
     def __init__(
@@ -49,7 +48,6 @@ class Trainer:
         else:
             return nullcontext()
 
-
     def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
@@ -59,14 +57,12 @@ class Trainer:
             num_workers=0,
         )
 
-        best_metric = None
+        best_loss = float("inf")
         wait = 0
 
         for epoch in range(self.epochs):
             self.model.train()
             total_loss = 0.0
-            total_ev = 0.0
-            total_mse = 0.0
 
             for xb_cpu, yb_cpu in loader:
                 xb = xb_cpu.to(self.device)
@@ -76,8 +72,7 @@ class Trainer:
 
                 with self._autocast():
                     preds = self.model(xb)
-                    loss, ev = combined_loss(preds, yb, epoch, return_ev=True)
-                    mse = torch.mean((preds - yb) ** 2)
+                    loss = combined_loss(preds, yb, epoch)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.unscale_(self.optimizer)
@@ -88,41 +83,27 @@ class Trainer:
                 self.scaler.update()
 
                 total_loss += loss.item()
-                total_ev += ev.item()
-                total_mse += mse.item()
 
             epoch_loss = total_loss / len(loader)
-            epoch_ev = total_ev / len(loader)
-            epoch_mse = total_mse / len(loader)
-
             stats = tree_stats(self.model.parameters())
 
             print(
                 f"epoch {epoch + 1}, "
                 f"loss {epoch_loss:.6f}, "
-                f"mse {epoch_mse:.6f}, "
-                f"ev {epoch_ev:.4f}, "
                 f"norm {stats['norm']:.0f}"
             )
 
-            # -------------------------
-            # Early stopping logic
-            # -------------------------
-            if epoch < EV_START_EPOCH:
-                metric = -epoch_mse   # минимизируем MSE
-            else:
-                metric = epoch_ev     # максимизируем EV
-
-            if best_metric is None or metric > best_metric:
-                best_metric = metric
+            if epoch_loss < best_loss:
+                best_loss = epoch_loss
                 wait = 0
-                save_model(model_name, self.model)
-                print("Model saved")
             else:
                 wait += 1
                 if wait >= self.patience:
                     print("Early stopping")
                     break
+
+        save_model(model_name, self.model)
+        print("Model saved")
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         self.model.eval()
