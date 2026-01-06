@@ -411,3 +411,59 @@ Week 5:
 | 20+      | + risk + consistency + vol |
 
 👉 Это почти всегда даёт **ещё −10–20% loss**.
+
+
+## Staged-loss - базовая идея
+
+> **Week = номер этапа обучения**, а не календарная неделя.
+
+Самый простой и правильный вариант —
+**1 “неделя” = N эпох**.
+
+---
+
+## ✅ Самое простое решение (рекомендую)
+
+### Вариант 1: фиксированное число эпох на неделю
+
+```py
+EPOCHS_PER_WEEK = 5
+
+def combined_loss(preds, targets, epoch):
+    week = epoch // EPOCHS_PER_WEEK + 1
+    ...
+```
+
+### Как это работает
+
+| Epoch | week |
+| ----- | ---- |
+| 0–4   | 1    |
+| 5–9   | 2    |
+| 10–14 | 3    |
+| 15–19 | 4    |
+| 20–24 | 5    |
+
+👉 **Идеально ложится** на схему:
+
+* week 1 → MSE
+* week 2 → + EV
+* week 3 → + prob
+* week 4 → + risk
+* week 5+ → full loss
+
+---
+
+## ✅ Альтернатива: “неделя” как доля обучения
+
+Если ты хочешь, чтобы loss **адаптировался к общему числу эпох**:
+
+```py
+TOTAL_EPOCHS = 50
+NUM_WEEKS = 5
+
+def combined_loss(preds, targets, epoch):
+    week = int((epoch + 1) / TOTAL_EPOCHS * NUM_WEEKS) + 1
+    week = min(week, NUM_WEEKS)
+    ...
+```

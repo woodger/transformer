@@ -17,7 +17,7 @@ DROPOUT = 0.1
 # ======================
 # Training
 # ======================
-LR = 1e-3
+LR = 5e-4
 BATCH_SIZE = 512
 EPOCHS = 50
 PATIENCE = 5
