@@ -72,7 +72,7 @@ class Trainer:
 
                 with self._autocast():
                     preds = self.model(xb)
-                    loss = combined_loss(preds, yb)
+                    loss = combined_loss(preds, yb, epoch)
 
                 self.scaler.scale(loss).backward()
                 self.scaler.unscale_(self.optimizer)

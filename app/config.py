@@ -17,13 +17,12 @@ DROPOUT = 0.1
 # ======================
 # Training
 # ======================
-LR = 5e-4
+LR = 1e-3
 BATCH_SIZE = 512
 EPOCHS = 50
 PATIENCE = 5
 WEIGHT_DECAY = 1e-5
 GRAD_CLIP_NORM = 1.0
-WEEK = 1
 
 # ======================
 # Runtime

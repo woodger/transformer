@@ -1,19 +1,9 @@
 import torch
 
-from config import WEEK
+EPOCHS_PER_WEEK = 5
 
-# Week 1:
-#     loss = MSE
-# Week 2:
-#     loss = MSE + EV
-# Week 3:
-#     loss = MSE + EV + prob_penalty
-# Week 4:
-#     loss = MSE + EV + prob_penalty + risk
-# Week 5:
-#     loss = full
-
-def combined_loss(preds, targets):
+def combined_loss(preds, targets, epoch):
+    week = epoch // EPOCHS_PER_WEEK + 1
 
     # --------------------
     # base MSE (always on)
@@ -33,7 +23,7 @@ def combined_loss(preds, targets):
     # --------------------
     # EV loss
     # --------------------
-    if WEEK >= 2:
+    if week >= 2:
         TP = 1.0
         SL = 1.0
         ev = pTP * TP - pSL * SL
@@ -43,7 +33,7 @@ def combined_loss(preds, targets):
     # --------------------
     # probability constraints
     # --------------------
-    if WEEK >= 3:
+    if week >= 3:
         prob_range_penalty = (
             torch.relu(-pTP) + torch.relu(pTP - 1) +
             torch.relu(-pSL) + torch.relu(pSL - 1)
@@ -56,14 +46,14 @@ def combined_loss(preds, targets):
     # --------------------
     # risk penalty
     # --------------------
-    if WEEK >= 4:
+    if week >= 4:
         risk_pen = torch.relu(sigmaR - torch.abs(meanR)).mean()
         loss += 0.2 * risk_pen
 
     # --------------------
     # consistency + volatility
     # --------------------
-    if WEEK >= 5:
+    if week >= 5:
         # meanReturn should align with TP/SL probabilities
         implied_return = pTP - pSL
         consistency = torch.mean((meanR - implied_return) ** 2)
