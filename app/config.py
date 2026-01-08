@@ -11,19 +11,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ======================
 D_MODEL = 256
 NHEAD = 8
-NUM_LAYERS = 4
+NUM_LAYERS = 5
 DROPOUT = 0.1
 
 # ======================
 # Training
 # ======================
 LR = 5e-4
-BATCH_SIZE = 512
-EPOCHS = 50
+BATCH_SIZE = 256
+EPOCHS = 25
 PATIENCE = 5
 WEIGHT_DECAY = 1e-5
 GRAD_CLIP_NORM = 1.0
-WEEK = 1
+EPOCHS_PER_WEEK = 5
 
 # ======================
 # Runtime

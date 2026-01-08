@@ -1,7 +1,14 @@
+import warnings
 import torch
 import torch.nn as nn
 
 from positional_encoding import PositionalEncoding
+
+
+warnings.filterwarnings(
+    "ignore",
+    message="The PyTorch API of nested tensors is in prototype stage"
+)
 
 
 class TransformerModel(nn.Module):
@@ -34,17 +41,19 @@ class TransformerModel(nn.Module):
             encoder_layer, num_layers=layers
         )
 
+        # self.head = nn.Sequential(
+        #     nn.Linear(hidden_dim, 128),
+        #     nn.Tanh(),
+        #     nn.Linear(128, out_dim),
+        #     nn.Tanh(),
+        # )
+
         self.head = nn.Sequential(
             nn.Linear(hidden_dim, 128),
-            nn.Tanh(),
+            nn.GELU(),
+            nn.LayerNorm(128),
             nn.Linear(128, out_dim)
         )
-
-    # def forward(self, x):
-    #     x = self.input_proj(x)
-    #     x = self.pos(x)
-    #     enc = self.encoder(x)
-    #     return self.head(enc[:, -1])
 
     def forward(self, x):
         # x: (B, S, input_dim)

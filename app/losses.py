@@ -1,12 +1,9 @@
 import torch
-from config import WEEK
+from config import EPOCHS_PER_WEEK
 
-EPOCHS_PER_WEEK = 5
 
 def combined_loss(preds, targets, epoch):
-    # week = epoch // EPOCHS_PER_WEEK + 1
-
-    week = WEEK
+    week = epoch // EPOCHS_PER_WEEK + 1
 
     # --------------------
     # base MSE (always on)
@@ -31,7 +28,7 @@ def combined_loss(preds, targets, epoch):
         SL = 1.0
         ev = pTP * TP - pSL * SL
         loss_ev = -torch.mean(ev)
-        loss += 1.0 * loss_ev
+        loss += 0.5 * loss_ev
 
     # --------------------
     # probability constraints

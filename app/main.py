@@ -4,6 +4,7 @@ from args import parse_args
 from device import get_device
 from transformer import TransformerModel
 from arrow_io import read_arrow, write_arrow
+from utils import print_stats
 from trainer import Trainer
 
 
@@ -15,6 +16,7 @@ def main():
     # ---- Data ----
     X_cpu, Y_cpu = read_arrow(args.data)
     print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
+    # print_stats(X_cpu)
     
     total_feat = X_cpu.shape[1]
     if total_feat % args.seq_len != 0:

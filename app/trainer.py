@@ -93,14 +93,14 @@ class Trainer:
                 f"norm {stats['norm']:.0f}"
             )
 
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
-                wait = 0
-            else:
-                wait += 1
-                if wait >= self.patience:
-                    print("Early stopping")
-                    break
+            # if epoch_loss < best_loss:
+            #     best_loss = epoch_loss
+            #     wait = 0
+            # else:
+            #     wait += 1
+            #     if wait >= self.patience:
+            #         print("Early stopping")
+            #         break
 
         save_model(model_name, self.model)
         print("Model saved")
