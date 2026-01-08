@@ -7,7 +7,7 @@ def test_transformer_forward_shape():
     batch = 4
     seq_len = 10
     feat_dim = 8
-    out_dim = 3
+    out_dim = 6
 
     model = TransformerModel(
         input_dim=feat_dim,

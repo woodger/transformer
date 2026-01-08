@@ -5,7 +5,7 @@ from app.trainer import Trainer
 from app.transformer import TransformerModel
 
 
-def make_dummy_data(n=32, seq_len=5, feat_dim=4, out_dim=2):
+def make_dummy_data(n=32, seq_len=5, feat_dim=4, out_dim=6):
     X = torch.randn(n, seq_len, feat_dim)
     Y = torch.randn(n, out_dim)
     return X, Y
@@ -20,7 +20,7 @@ def test_trainer_fit_cpu(tmp_path):
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=2,
+        out_dim=6,
         nhead=4,
     )
 
@@ -49,7 +49,7 @@ def test_trainer_amp_flag_on_cpu():
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=2,
+        out_dim=6,
         nhead=4,
     )
 
