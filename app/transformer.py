@@ -15,27 +15,32 @@ class TradingHead(nn.Module):
             nn.LayerNorm(128),
         )
 
+        # regression
         self.mean_head = nn.Linear(128, 1)
         self.sigma_head = nn.Linear(128, 1)
+
+        # logits (ВАЖНО: без sigmoid!)
         self.ptp_head = nn.Linear(128, 1)
         self.psl_head = nn.Linear(128, 1)
-        self.vol_head = nn.Linear(128, 1)
         self.hit_head = nn.Linear(128, 1)
+
+        # positive regression
+        self.vol_head = nn.Linear(128, 1)
 
     def forward(self, x):
         h = self.shared(x)
 
-        meanR = torch.tanh(self.mean_head(h))            # [-1, 1]
-        sigmaR = F.softplus(self.sigma_head(h)) + 1e-6   # > 0
+        meanR = torch.tanh(self.mean_head(h))             # [-1, 1]
+        sigmaR = F.softplus(self.sigma_head(h)) + 1e-6    # > 0
 
-        pTP = torch.sigmoid(self.ptp_head(h))            # [0, 1]
-        pSL = torch.sigmoid(self.psl_head(h))            # [0, 1]
+        logitTP = self.ptp_head(h)                         # logits
+        logitSL = self.psl_head(h)                         # logits
+        logitHit = self.hit_head(h)                        # logits
 
-        volNext = F.softplus(self.vol_head(h)) + 1e-6    # > 0
-        hitTP = torch.sigmoid(self.hit_head(h))          # [0, 1]
+        volNext = F.softplus(self.vol_head(h)) + 1e-6      # > 0
 
         return torch.cat(
-            [meanR, sigmaR, pTP, pSL, volNext, hitTP],
+            [meanR, sigmaR, logitTP, logitSL, volNext, logitHit],
             dim=1
         )
 
@@ -48,7 +53,7 @@ class TransformerModel(nn.Module):
         hidden_dim,
         layers,
         dropout,
-        out_dim,
+        out_dim,   # можно оставить, но он теперь логически = 6
         nhead=8,
     ):
         super().__init__()
@@ -71,7 +76,6 @@ class TransformerModel(nn.Module):
             num_layers=layers,
         )
 
-        # заменяем flat-head на специализированный
         self.head = TradingHead(hidden_dim)
 
     def forward(self, x):
@@ -88,7 +92,7 @@ class TransformerModel(nn.Module):
             src_key_padding_mask=key_padding_mask
         )
 
-        # берем последний валидный токен
+        # последний валидный токен
         lengths = (~key_padding_mask).sum(dim=1) - 1
         lengths = lengths.clamp(min=0)
 

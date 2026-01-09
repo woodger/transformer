@@ -1,69 +1,53 @@
 import torch
-from config import EPOCHS_PER_WEEK
+import torch.nn.functional as F
 
+from config import EPOCHS_PER_WEEK
 
 def combined_loss(preds, targets, epoch):
     week = epoch // EPOCHS_PER_WEEK + 1
 
-    # --------------------
-    # base MSE (always on)
-    # --------------------
-    loss = torch.mean((preds - targets) ** 2)
+    meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
+    t_meanR, _, _, _, t_volNext, t_hitTP = targets.T
 
-    # fallback for tests
-    if preds.shape[1] < 6:
-        return loss
+    loss = 0.0
 
-    # --------------------
-    # unpack predictions
-    # --------------------
-    meanR, sigmaR, pTP, pSL, volNext, hitTP = preds.T
-    t_meanR, t_sigmaR, t_pTP, t_pSL, t_volNext, t_hitTP = targets.T
+    # -------------------------
+    # Gaussian NLL
+    # -------------------------
+    var = sigmaR ** 2 + 1e-6
+    loss_ret = torch.mean(
+        (t_meanR - meanR) ** 2 / (2 * var) + torch.log(sigmaR)
+    )
+    loss += loss_ret
 
-    # --------------------
-    # EV loss
-    # --------------------
+    # -------------------------
+    # Probabilities (AMP safe)
+    # -------------------------
     if week >= 2:
-        TP = 1.0
-        SL = 1.0
-        ev = pTP * TP - pSL * SL
-        loss_ev = -torch.mean(ev)
-        loss += 0.5 * loss_ev
+        loss_prob = (
+            F.binary_cross_entropy_with_logits(logitTP, t_hitTP) +
+            F.binary_cross_entropy_with_logits(logitSL, 1 - t_hitTP)
+        )
+        loss += 0.5 * loss_prob
 
-    # --------------------
-    # probability constraints
-    # --------------------
+    # -------------------------
+    # Bayesian EV
+    # -------------------------
     if week >= 3:
-        prob_range_penalty = (
-            torch.relu(-pTP) + torch.relu(pTP - 1) +
-            torch.relu(-pSL) + torch.relu(pSL - 1)
-        ).mean()
+        pTP = torch.sigmoid(logitTP)
+        pSL = torch.sigmoid(logitSL)
 
-        prob_sum_penalty = torch.relu(pTP + pSL - 1).mean()
+        ev = pTP - pSL
+        risk_pen = sigmaR.detach() * torch.abs(ev)
+        loss += -0.3 * torch.mean(ev - 0.1 * risk_pen)
 
-        loss += 0.1 * (prob_range_penalty + prob_sum_penalty)
-
-    # --------------------
-    # risk penalty
-    # --------------------
+    # -------------------------
+    # Volatility
+    # -------------------------
     if week >= 4:
-        risk_pen = torch.relu(sigmaR - torch.abs(meanR)).mean()
-        loss += 0.2 * risk_pen
-
-    # --------------------
-    # consistency + volatility
-    # --------------------
-    if week >= 5:
-        # meanReturn should align with TP/SL probabilities
-        implied_return = pTP - pSL
-        consistency = torch.mean((meanR - implied_return) ** 2)
-
-        # volatility: log-error is more stable
-        vol_loss = torch.mean(
+        loss_vol = torch.mean(
             (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
         )
-
-        loss += 0.5 * consistency
-        loss += 0.3 * vol_loss
+        loss += 0.2 * loss_vol
 
     return loss
