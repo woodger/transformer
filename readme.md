@@ -63,7 +63,8 @@ PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
 
 ## Потоковое обучение
 
-`fit-stream` не принимает путь к файлу данных. Он читает stdin до EOF:
+`fit-stream` не принимает путь к файлу данных. Если передать positional
+`data`, запуск завершится ошибкой. Режим читает stdin до EOF:
 
 ```bash
 PYTHONPATH=./app python ./app/main.py fit-stream \
@@ -98,7 +99,9 @@ node dist/index.js trainTransformer \
 3. Пишет Arrow payloads в stdin transformer.
 4. Закрывает stdin после последнего чанка.
 
-Transformer обучается на каждом входящем frame и сохраняет модель после EOF.
+Transformer обучается на каждом непустом входящем frame и сохраняет модель
+после EOF. Пустые frames пропускаются; если непустых frames не было, модель не
+сохраняется.
 
 ## Параметры
 

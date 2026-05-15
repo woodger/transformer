@@ -51,9 +51,15 @@ def build_trainer(args, model, device):
 def fit_stream(args, device):
     model = None
     trainer = None
-    frames = 0
+    received_frames = 0
+    trained_frames = 0
 
     for table in iter_framed_arrow(sys.stdin.buffer):
+        received_frames += 1
+        if table.num_rows == 0:
+            print(f"frame {received_frames}, skipped empty payload")
+            continue
+
         X_cpu, Y_cpu = table_to_tensors(table)
         X_cpu = reshape_source(X_cpu, args.seq_len)
 
@@ -62,15 +68,18 @@ def fit_stream(args, device):
             trainer = build_trainer(args, model, device)
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
-        loss = trainer.fit_batch(X_cpu, Y_cpu, frames)
-        frames += 1
-        print(f"frame {frames}, loss {loss:.6f}")
+        loss = trainer.fit_batch(X_cpu, Y_cpu, trained_frames)
+        trained_frames += 1
+        print(f"frame {received_frames}, loss {loss:.6f}")
 
     if trainer is None:
-        raise ValueError("No frames received on stdin")
+        raise ValueError("No non-empty frames received on stdin")
 
     trainer.save(args.model_name)
-    print(f"Model saved after {frames} frame(s)")
+    print(
+        f"Model saved after {trained_frames} trained frame(s) "
+        f"from {received_frames} received frame(s)"
+    )
 
 
 def main():
@@ -79,6 +88,8 @@ def main():
     print(f"Using device: {device}")
 
     if args.action == "fit-stream":
+        if args.data is not None:
+            raise ValueError("fit-stream reads stdin; data path is not supported")
         fit_stream(args, device)
         return
 

@@ -1,18 +1,21 @@
 # Транспортная архитектура
 
-**Node.js → Python**
+**Node.js → Python (`fit-stream`)**
 
 ```
 Node.js
-  └─ Arrow IPC Stream → stdout
+  └─ framed Arrow IPC file payloads → stdin
         │
         ▼
 Python
-  └─ pyarrow.ipc.RecordBatchStreamReader(stdin)
+  └─ 8-byte big-endian length + pyarrow.ipc.RecordBatchFileReader(payload)
 ```
 
-* Node.js **стримит Arrow IPC Stream**
-* Python **читает из stdin через `pyarrow`**
+* Node.js пишет в stdin Python-процесса последовательность frames.
+* Каждый frame: `8 bytes unsigned big-endian payload length`, затем payload.
+* Каждый payload — самостоятельный Arrow IPC file с колонками `src` и `tgt`.
+* Python читает frames через `iter_framed_arrow()` и обучается на каждом
+  непустом payload.
 * используется **`execa`**
 * никаких временных файлов
 
