@@ -66,6 +66,34 @@ def test_trainer_amp_flag_on_cpu():
     assert trainer.use_amp is False
 
 
+def test_trainer_fit_batch_cpu():
+    X, Y = make_dummy_data()
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=8,
+        epochs=1,
+        patience=1,
+        use_amp=False,
+    )
+
+    loss = trainer.fit_batch(X, Y)
+
+    assert loss > 0
+
+
 def test_autocast_cpu():
     model = nn.Linear(2, 2)
     trainer = Trainer(

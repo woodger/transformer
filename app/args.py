@@ -16,8 +16,8 @@ from config import (
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("action", choices=["fit", "predict"])
-    parser.add_argument("data")
+    parser.add_argument("action", choices=["fit", "predict", "fit-stream"])
+    parser.add_argument("data", nargs="?")
 
     parser.add_argument("--device", choices=["cpu", "gpu"], default=DEFAULT_DEVICE)
     parser.add_argument("--model-name", default="model_weights.pth")

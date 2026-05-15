@@ -48,6 +48,43 @@ class Trainer:
         else:
             return nullcontext()
 
+    def _train_loader(self, loader, epoch: int) -> float:
+        self.model.train()
+        total_loss = 0.0
+
+        for xb_cpu, yb_cpu in loader:
+            xb = xb_cpu.to(self.device)
+            yb = yb_cpu.to(self.device)
+
+            self.optimizer.zero_grad()
+
+            with self._autocast():
+                preds = self.model(xb)
+                loss = combined_loss(preds, yb, epoch)
+
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), GRAD_CLIP_NORM
+            )
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+            total_loss += loss.item()
+
+        return total_loss / len(loader)
+
+    def fit_batch(self, X: torch.Tensor, Y: torch.Tensor, epoch: int = 0) -> float:
+        dataset = TensorDataset(X, Y)
+        loader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0,
+        )
+
+        return self._train_loader(loader, epoch)
+
     def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
@@ -61,30 +98,7 @@ class Trainer:
         wait = 0
 
         for epoch in range(self.epochs):
-            self.model.train()
-            total_loss = 0.0
-
-            for xb_cpu, yb_cpu in loader:
-                xb = xb_cpu.to(self.device)
-                yb = yb_cpu.to(self.device)
-
-                self.optimizer.zero_grad()
-
-                with self._autocast():
-                    preds = self.model(xb)
-                    loss = combined_loss(preds, yb, epoch)
-
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), GRAD_CLIP_NORM
-                )
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-
-                total_loss += loss.item()
-
-            epoch_loss = total_loss / len(loader)
+            epoch_loss = self._train_loader(loader, epoch)
             stats = tree_stats(self.model.parameters())
 
             print(
@@ -112,3 +126,6 @@ class Trainer:
 
     def load(self, model_name: str):
         load_model(model_name, self.model, self.device)
+
+    def save(self, model_name: str):
+        save_model(model_name, self.model)
