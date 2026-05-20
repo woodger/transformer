@@ -33,8 +33,11 @@ def test_cli_version(capsys, monkeypatch):
     except SystemExit as exc:
         assert exc.code == 0
 
-    output = capsys.readouterr().out.strip()
-    assert output == "main.py 0.1.0"
+    output = capsys.readouterr().out
+    assert "main.py 0.1.0" in output
+    assert "python " in output
+    assert "torch " in output
+    assert "cuda " in output
 
 
 def test_cli_help(capsys, monkeypatch):
@@ -47,7 +50,10 @@ def test_cli_help(capsys, monkeypatch):
 
     output = capsys.readouterr().out
     assert "Transformer training and inference CLI." in output
+    assert "Data contract:" in output
     assert "Modes:" in output
+    assert "Streaming protocol:" in output
+    assert "Storage:" in output
     assert "Runtime:" in output
     assert "Training:" in output
     assert "Examples:" in output

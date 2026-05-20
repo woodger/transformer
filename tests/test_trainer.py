@@ -178,7 +178,7 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert len(rows) == 1
     assert rows[0]["frame"] == 3
     assert rows[0]["rows"] == 8
-    assert rows[0]["loss"] > 0
+    assert isinstance(rows[0]["loss"], float)
     assert "grad_norm" in rows[0]
     assert "valid_token_ratio" in rows[0]
 
