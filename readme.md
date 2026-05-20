@@ -140,6 +140,27 @@ Transformer обучается на каждом непустом входяще
 В `fit-stream` параметр `--epochs` сейчас не повторяет входящий поток несколько
 раз. Каждый Arrow frame обучается как один streaming batch pass.
 
+## Метрики обучения
+
+`fit` и `fit-stream` печатают компактную строку `TrainMetrics` для каждого
+epoch/frame:
+
+```text
+epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 grad=0.830 rows=256 batches=1 nan=0.0300 valid_tokens=0.8800 lr=0.0005 week=1 ms=42
+```
+
+Поля:
+
+- `loss` — итоговый loss после всех весов компонентов
+- `ret`, `prob`, `ev`, `vol` — вклад компонентов loss
+- `grad` — gradient norm до clipping
+- `rows`, `batches` — объём данных в проходе
+- `nan` — доля NaN во входном `src`
+- `valid_tokens` — доля timesteps без NaN, совпадает с текущей padding mask
+- `lr` — текущий learning rate
+- `week` — номер loss schedule week с учётом `--per-week`
+- `ms` — время обучения прохода
+
 ## Потоковое предсказание
 
 `predict-stream` не принимает путь к файлу данных. Он читает framed Arrow

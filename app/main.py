@@ -80,9 +80,9 @@ def fit_stream(args, device):
             trainer = build_trainer(args, model, device)
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
-        loss = trainer.fit_batch(X_cpu, Y_cpu, trained_frames)
+        metrics = trainer.fit_batch(X_cpu, Y_cpu, trained_frames)
         trained_frames += 1
-        print(f"frame {received_frames}, loss {loss:.6f}")
+        print(metrics.log_line(frame=received_frames))
 
     if trainer is None:
         raise ValueError("No non-empty frames received on stdin")

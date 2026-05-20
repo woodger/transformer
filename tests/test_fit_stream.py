@@ -7,6 +7,7 @@ import pytest
 import torch
 
 import app.main as main_module
+from metrics import TrainMetrics
 
 
 class FakeStdin:
@@ -64,7 +65,7 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
         def fit_batch(self, X, Y, epoch):
             self.calls.append((X.shape, Y.shape, epoch))
-            return 1.25
+            return TrainMetrics(rows=1, batches=1, loss=1.25)
 
         def save(self, model_name):
             self.saved_as = model_name
@@ -82,7 +83,7 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
-    assert "frame 2, loss 1.250000" in output
+    assert "frame=2 loss=1.250000" in output
     assert "Model saved after 1 trained frame(s) from 2 received frame(s)" in output
 
 

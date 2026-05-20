@@ -3,7 +3,14 @@ import torch.nn.functional as F
 
 from config import PER_WEEK
 
-def combined_loss(preds, targets, epoch, per_week: int = PER_WEEK):
+
+def combined_loss(
+    preds,
+    targets,
+    epoch,
+    per_week: int = PER_WEEK,
+    return_parts: bool = False,
+):
     if per_week <= 0:
         raise ValueError("per_week must be a positive integer")
 
@@ -12,7 +19,10 @@ def combined_loss(preds, targets, epoch, per_week: int = PER_WEEK):
     meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T
 
-    loss = 0.0
+    loss = preds.new_tensor(0.0)
+    loss_prob = preds.new_tensor(0.0)
+    loss_ev = preds.new_tensor(0.0)
+    loss_vol = preds.new_tensor(0.0)
 
     # -------------------------
     # Gaussian NLL
@@ -27,11 +37,12 @@ def combined_loss(preds, targets, epoch, per_week: int = PER_WEEK):
     # Probabilities (AMP safe)
     # -------------------------
     if week >= 2:
-        loss_prob = (
+        raw_loss_prob = (
             F.binary_cross_entropy_with_logits(logitTP, t_hitTP) +
             F.binary_cross_entropy_with_logits(logitSL, 1 - t_hitTP)
         )
-        loss += 0.5 * loss_prob
+        loss_prob = 0.5 * raw_loss_prob
+        loss += loss_prob
 
     # -------------------------
     # Bayesian EV
@@ -42,15 +53,27 @@ def combined_loss(preds, targets, epoch, per_week: int = PER_WEEK):
 
         ev = pTP - pSL
         risk_pen = sigmaR.detach() * torch.abs(ev)
-        loss += -0.3 * torch.mean(ev - 0.1 * risk_pen)
+        loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_pen)
+        loss += loss_ev
 
     # -------------------------
     # Volatility
     # -------------------------
     if week >= 4:
-        loss_vol = torch.mean(
+        raw_loss_vol = torch.mean(
             (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
         )
-        loss += 0.2 * loss_vol
+        loss_vol = 0.2 * raw_loss_vol
+        loss += loss_vol
 
-    return loss
+    if not return_parts:
+        return loss
+
+    return loss, {
+        "loss": float(loss.detach().cpu()),
+        "loss_ret": float(loss_ret.detach().cpu()),
+        "loss_prob": float(loss_prob.detach().cpu()),
+        "loss_ev": float(loss_ev.detach().cpu()),
+        "loss_vol": float(loss_vol.detach().cpu()),
+        "week": week,
+    }

@@ -1,6 +1,7 @@
 import torch
 
 from torch import nn
+from metrics import TrainMetrics
 from app.trainer import Trainer
 from app.transformer import TransformerModel
 
@@ -89,9 +90,16 @@ def test_trainer_fit_batch_cpu():
         use_amp=False,
     )
 
-    loss = trainer.fit_batch(X, Y)
+    metrics = trainer.fit_batch(X, Y)
 
-    assert loss > 0
+    assert isinstance(metrics, TrainMetrics)
+    assert metrics > 0
+    assert metrics.rows == X.size(0)
+    assert metrics.batches == 4
+    assert metrics.week == 1
+    assert metrics.lr == 1e-3
+    assert 0.0 <= metrics.nan_ratio <= 1.0
+    assert 0.0 <= metrics.valid_token_ratio <= 1.0
 
 
 def test_trainer_per_week_is_configurable():

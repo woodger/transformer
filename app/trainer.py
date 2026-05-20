@@ -1,8 +1,10 @@
 import torch
+import time
 from torch.utils.data import DataLoader, TensorDataset
 from contextlib import nullcontext
 
 from losses import combined_loss
+from metrics import TrainMetrics
 from utils import save_model, load_model, tree_stats
 from config import WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
 
@@ -53,11 +55,19 @@ class Trainer:
         else:
             return nullcontext()
 
-    def _train_loader(self, loader, epoch: int) -> float:
+    def _train_loader(self, loader, epoch: int) -> TrainMetrics:
         self.model.train()
-        total_loss = 0.0
+        metrics = TrainMetrics(
+            lr=self.optimizer.param_groups[0]["lr"],
+            week=epoch // self.per_week + 1,
+        )
+        started = time.perf_counter()
 
         for xb_cpu, yb_cpu in loader:
+            batch_rows = xb_cpu.size(0)
+            nan_ratio = float(torch.isnan(xb_cpu).float().mean())
+            valid_token_ratio = float((~torch.isnan(xb_cpu).any(dim=-1)).float().mean())
+
             xb = xb_cpu.to(self.device)
             yb = yb_cpu.to(self.device)
 
@@ -65,26 +75,39 @@ class Trainer:
 
             with self._autocast():
                 preds = self.model(xb)
-                loss = combined_loss(
+                loss, loss_parts = combined_loss(
                     preds,
                     yb,
                     epoch,
                     self.per_week,
+                    return_parts=True,
                 )
 
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(
+            grad_norm = torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), GRAD_CLIP_NORM
             )
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
-            total_loss += loss.item()
+            metrics.update(
+                rows=batch_rows,
+                loss_parts=loss_parts,
+                grad_norm=float(grad_norm.detach().cpu()),
+                nan_ratio=nan_ratio,
+                valid_token_ratio=valid_token_ratio,
+            )
 
-        return total_loss / len(loader)
+        metrics.elapsed_ms = (time.perf_counter() - started) * 1000
+        return metrics
 
-    def fit_batch(self, X: torch.Tensor, Y: torch.Tensor, epoch: int = 0) -> float:
+    def fit_batch(
+        self,
+        X: torch.Tensor,
+        Y: torch.Tensor,
+        epoch: int = 0,
+    ) -> TrainMetrics:
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
             dataset,
@@ -108,14 +131,10 @@ class Trainer:
         wait = 0
 
         for epoch in range(self.epochs):
-            epoch_loss = self._train_loader(loader, epoch)
+            metrics = self._train_loader(loader, epoch)
             stats = tree_stats(self.model.parameters())
 
-            print(
-                f"epoch {epoch + 1}, "
-                f"loss {epoch_loss:.6f}, "
-                f"norm {stats['norm']:.0f}"
-            )
+            print(metrics.log_line(epoch=epoch + 1, norm=f"{stats['norm']:.0f}"))
 
         save_model(model_name, self.model)
         print("Model saved")
