@@ -19,6 +19,14 @@ def load_model(model_name: str, model, device):
     return model
 
 
+def resolve_metrics_path(metrics_name: str | None):
+    if metrics_name is None:
+        return None
+
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    return os.path.join(MODELS_DIR, metrics_name)
+
+
 def tree_stats(params):
     cpu_tensors = [p.detach().cpu().flatten() for p in params]
     flat = torch.cat(cpu_tensors)

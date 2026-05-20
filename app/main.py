@@ -15,7 +15,7 @@ from arrow_io import (
     write_arrow,
     write_framed_arrow,
 )
-from utils import print_stats
+from utils import print_stats, resolve_metrics_path
 from trainer import Trainer
 from metrics import plot_metrics, reset_metrics_log
 
@@ -58,7 +58,7 @@ def build_trainer(args, model, device):
         patience=args.patience,
         per_week=args.per_week,
         use_amp=args.use_amp,
-        metrics_path=args.metrics_path,
+        metrics_path=resolve_metrics_path(args.metrics_name),
     )
 
 
@@ -149,9 +149,10 @@ def main():
     args = parse_args()
 
     if args.action == "plot-metrics":
-        metrics_path = args.data or args.metrics_path
+        metrics_name = args.data or args.metrics_name
+        metrics_path = resolve_metrics_path(metrics_name)
         if metrics_path is None:
-            raise ValueError("metrics path is required for plot-metrics")
+            raise ValueError("metrics name is required for plot-metrics")
 
         paths = plot_metrics(metrics_path, args.plots_dir)
         print(f"Saved {len(paths)} plot(s) to {args.plots_dir}")
@@ -171,7 +172,7 @@ def main():
     if args.action == "fit-stream":
         if args.data is not None:
             raise ValueError("fit-stream reads stdin; data path is not supported")
-        reset_metrics_log(args.metrics_path)
+        reset_metrics_log(resolve_metrics_path(args.metrics_name))
         fit_stream(args, device)
         return
 
@@ -192,7 +193,7 @@ def main():
     trainer = build_trainer(args, model, device)
 
     if args.action == "fit":
-        reset_metrics_log(args.metrics_path)
+        reset_metrics_log(resolve_metrics_path(args.metrics_name))
         trainer.fit(X_cpu, Y_cpu, args.model_name)
 
     else:  # predict

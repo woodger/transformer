@@ -115,7 +115,7 @@ Transformer обучается на каждом непустом входяще
 | `--model-name` | Путь к файлу весов | `model_weights.pth` |
 | `--preds-path` | Куда сохранить предсказания | `/tmp/preds.arrow` |
 | `--pred-col` | Имя колонки с предсказаниями | `out` |
-| `--metrics-path` | JSONL-файл для метрик обучения | не задан |
+| `--metrics-name` | Имя JSONL-файла с метриками в `models/` | не задан |
 | `--plots-dir` | Каталог для SVG-графиков `plot-metrics` | `metrics_plots` |
 
 ### Модель
@@ -168,7 +168,7 @@ epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000
 ```bash
 PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
   --seq-len=20 \
-  --metrics-path=./metrics/train.jsonl
+  --metrics-name=train.jsonl
 ```
 
 Для `fit-stream` используется тот же аргумент:
@@ -176,17 +176,17 @@ PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
 ```bash
 PYTHONPATH=./app python ./app/main.py fit-stream \
   --seq-len=20 \
-  --metrics-path=./metrics/train-stream.jsonl
+  --metrics-name=train-stream.jsonl
 ```
 
-Файл перезаписывается в начале нового `fit` / `fit-stream` запуска. Каждая
-строка — один JSON object с теми же числовыми полями и контекстом `epoch` или
-`frame`.
+Файл сохраняется в `models/` и перезаписывается в начале нового `fit` /
+`fit-stream` запуска. Каждая строка — один JSON object с теми же числовыми
+полями и контекстом `epoch` или `frame`.
 
 Построить SVG-графики по JSONL:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py plot-metrics ./metrics/train.jsonl \
+PYTHONPATH=./app python ./app/main.py plot-metrics train.jsonl \
   --plots-dir=./metrics/plots
 ```
 

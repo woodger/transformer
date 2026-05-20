@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument("--model-name", default="model_weights.pth")
     parser.add_argument("--preds-path", default="/tmp/preds.arrow")
     parser.add_argument("--pred-col", default="out")
-    parser.add_argument("--metrics-path", default=None)
+    parser.add_argument("--metrics-name", default=None)
     parser.add_argument("--plots-dir", default="metrics_plots")
 
     parser.add_argument("--lr", type=float, default=LR)

@@ -5,6 +5,7 @@ from torch import nn
 from metrics import TrainMetrics, plot_metrics
 from app.trainer import Trainer
 from app.transformer import TransformerModel
+from app.utils import MODELS_DIR, resolve_metrics_path
 
 
 def make_dummy_data(n=32, seq_len=5, feat_dim=4, out_dim=6):
@@ -140,9 +141,14 @@ def test_trainer_rejects_invalid_per_week():
         raise AssertionError("Trainer accepted invalid per_week")
 
 
+def test_resolve_metrics_path_uses_models_dir():
+    assert resolve_metrics_path(None) is None
+    assert resolve_metrics_path("train.jsonl") == f"{MODELS_DIR}/train.jsonl"
+
+
 def test_trainer_writes_metrics_jsonl(tmp_path):
     X, Y = make_dummy_data(n=8)
-    metrics_path = tmp_path / "metrics.jsonl"
+    metrics_path = tmp_path / "models" / "metrics.jsonl"
 
     model = TransformerModel(
         input_dim=4,
