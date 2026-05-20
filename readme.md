@@ -34,6 +34,12 @@ pip install torch numpy pyarrow pytest
 PYTHONPATH=./app python ./app/main.py <action> [data] [options]
 ```
 
+Версию можно посмотреть так:
+
+```bash
+PYTHONPATH=./app python ./app/main.py --version
+```
+
 Доступные действия:
 
 - `fit` — обучить модель на Arrow-файле
