@@ -3,6 +3,7 @@ import time
 from torch.utils.data import DataLoader, TensorDataset
 from contextlib import nullcontext
 
+from context import context_valid_token_ratio
 from losses import combined_loss
 from metrics import TrainMetrics, append_metrics_jsonl
 from utils import save_model, load_model, tree_stats
@@ -68,7 +69,7 @@ class Trainer:
         for xb_cpu, yb_cpu in loader:
             batch_rows = xb_cpu.size(0)
             nan_ratio = float(torch.isnan(xb_cpu).float().mean())
-            valid_token_ratio = float((~torch.isnan(xb_cpu).any(dim=-1)).float().mean())
+            valid_token_ratio = context_valid_token_ratio(xb_cpu)
 
             xb = xb_cpu.to(self.device)
             yb = yb_cpu.to(self.device)

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import html
 import json
+import math
 import os
 
 
@@ -131,8 +132,15 @@ def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):
     if parent:
         os.makedirs(parent, exist_ok=True)
 
+    payload = _json_safe(metrics.to_dict(**extra))
     with open(path, "a", encoding="utf-8") as f:
-        json.dump(metrics.to_dict(**extra), f, ensure_ascii=False, sort_keys=True)
+        json.dump(
+            payload,
+            f,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         f.write("\n")
 
 
@@ -172,14 +180,30 @@ def _series(rows: list[dict], metric: str) -> list[tuple[float, float]]:
         value = row.get(metric)
         if not isinstance(value, (int, float)):
             continue
+        value = float(value)
+        if not math.isfinite(value):
+            continue
 
         x = row.get("epoch", row.get("frame", index))
         if not isinstance(x, (int, float)):
             x = index
+        x = float(x)
+        if not math.isfinite(x):
+            x = float(index)
 
-        points.append((float(x), float(value)))
+        points.append((x, value))
 
     return points
+
+
+def _json_safe(value):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _write_svg(path: str, points: list[tuple[float, float]], title: str):

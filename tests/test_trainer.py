@@ -1,8 +1,9 @@
+import math
 import torch
 import json
 
 from torch import nn
-from metrics import TrainMetrics, plot_metrics
+from metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from app.trainer import Trainer
 from app.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
@@ -183,6 +184,22 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert "valid_token_ratio" in rows[0]
 
 
+def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):
+    metrics_path = tmp_path / "metrics.jsonl"
+    metrics = TrainMetrics(
+        rows=1,
+        batches=1,
+        loss=math.inf,
+        grad_norm=math.nan,
+    )
+
+    append_metrics_jsonl(str(metrics_path), metrics, frame=1)
+
+    row = json.loads(metrics_path.read_text())
+    assert row["loss"] is None
+    assert row["grad_norm"] is None
+
+
 def test_plot_metrics_writes_svg(tmp_path):
     metrics_path = tmp_path / "metrics.jsonl"
     metrics_path.write_text(
@@ -198,6 +215,22 @@ def test_plot_metrics_writes_svg(tmp_path):
     assert str(plots_dir / "loss.svg") in paths
     assert str(plots_dir / "grad_norm.svg") in paths
     assert (plots_dir / "loss.svg").read_text().startswith("<svg")
+
+
+def test_plot_metrics_skips_nonfinite_values(tmp_path):
+    metrics_path = tmp_path / "metrics.jsonl"
+    metrics_path.write_text(
+        "\n".join([
+            json.dumps({"frame": 1, "loss": None, "grad_norm": None}),
+            json.dumps({"frame": 2, "loss": 1.0, "grad_norm": 1.1}),
+        ])
+    )
+    plots_dir = tmp_path / "plots"
+
+    paths = plot_metrics(str(metrics_path), str(plots_dir))
+
+    assert str(plots_dir / "loss.svg") in paths
+    assert str(plots_dir / "grad_norm.svg") in paths
 
 
 def test_autocast_cpu():
