@@ -16,7 +16,10 @@ from config import (
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("action", choices=["fit", "predict", "fit-stream"])
+    parser.add_argument(
+        "action",
+        choices=["fit", "predict", "fit-stream", "predict-stream"],
+    )
     parser.add_argument("data", nargs="?")
 
     parser.add_argument("--device", choices=["cpu", "gpu"], default=DEFAULT_DEVICE)

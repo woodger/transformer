@@ -1,6 +1,6 @@
 # Транспортная архитектура
 
-**Node.js → Python (`fit-stream`)**
+**Node.js → Python (`fit-stream`, `predict-stream`)**
 
 ```
 Node.js
@@ -13,23 +13,27 @@ Python
 
 * Node.js пишет в stdin Python-процесса последовательность frames.
 * Каждый frame: `8 bytes unsigned big-endian payload length`, затем payload.
-* Каждый payload — самостоятельный Arrow IPC file с колонками `src` и `tgt`.
-* Python читает frames через `iter_framed_arrow()` и обучается на каждом
-  непустом payload.
+* Каждый payload — самостоятельный Arrow IPC file с колонкой `src`.
+  Для `fit-stream` также нужна колонка `tgt`.
+* Python читает frames через `iter_framed_arrow()`.
+* `fit-stream` обучается на каждом непустом payload.
+* `predict-stream` загружает модель один раз, делает predict для каждого
+  непустого payload и пишет framed Arrow predictions в stdout. Пустой input
+  frame получает пустой output frame.
 * используется **`execa`**
 * никаких временных файлов
 
-**Python → Node.js**
+**Python → Node.js (`predict-stream`)**
 
-Схема симметричная и тоже основана на **Arrow IPC Stream**:
+Схема симметричная и основана на том же framed protocol:
 
 ```
 Python
-  └─ Arrow IPC Stream → stdout
+  └─ framed Arrow IPC file payloads → stdout
         │
         ▼
 Node.js
-  └─ apache-arrow RecordBatchReader (stdin)
+  └─ 8-byte big-endian length + Arrow IPC file payload
 ```
 
 # Архитектура модели

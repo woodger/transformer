@@ -1,10 +1,20 @@
 import torch
 import sys
+from contextlib import redirect_stdout
 
 from args import parse_args
 from device import get_device
 from transformer import TransformerModel
-from arrow_io import iter_framed_arrow, read_arrow, table_to_tensors, write_arrow
+from arrow_io import (
+    empty_predictions_table,
+    iter_framed_arrow,
+    predictions_to_table,
+    read_arrow,
+    table_to_source_tensor,
+    table_to_tensors,
+    write_arrow,
+    write_framed_arrow,
+)
 from utils import print_stats
 from trainer import Trainer
 
@@ -24,6 +34,7 @@ def reshape_source(X_cpu: torch.Tensor, seq_len: int) -> torch.Tensor:
 
 def build_model(args, X_cpu: torch.Tensor, Y_cpu: torch.Tensor, device):
     feat_dim = X_cpu.shape[2]
+    out_dim = Y_cpu.shape[1] if Y_cpu is not None else 6
 
     return TransformerModel(
         input_dim=feat_dim,
@@ -31,7 +42,7 @@ def build_model(args, X_cpu: torch.Tensor, Y_cpu: torch.Tensor, device):
         hidden_dim=args.hidden,
         layers=args.layers,
         dropout=args.dropout,
-        out_dim=Y_cpu.shape[1],
+        out_dim=out_dim,
         nhead=args.nhead
     ).to(device)
 
@@ -82,9 +93,65 @@ def fit_stream(args, device):
     )
 
 
+def predict_stream(args, device):
+    model = None
+    trainer = None
+    received_frames = 0
+    predicted_frames = 0
+
+    for table in iter_framed_arrow(sys.stdin.buffer):
+        received_frames += 1
+        if table.num_rows == 0:
+            write_framed_arrow(
+                sys.stdout.buffer,
+                empty_predictions_table(args.pred_col),
+            )
+            print(
+                f"frame {received_frames}, emitted empty predictions",
+                file=sys.stderr,
+            )
+            continue
+
+        X_cpu = table_to_source_tensor(table)
+        X_cpu = reshape_source(X_cpu, args.seq_len)
+
+        if model is None:
+            model = build_model(args, X_cpu, None, device)
+            with redirect_stdout(sys.stderr):
+                trainer = build_trainer(args, model, device)
+            trainer.load(args.model_name)
+            print("X:", X_cpu.shape, file=sys.stderr)
+            print("Model loaded", file=sys.stderr)
+
+        preds = trainer.predict(X_cpu)
+        write_framed_arrow(
+            sys.stdout.buffer,
+            predictions_to_table(preds, args.pred_col),
+        )
+        predicted_frames += 1
+        print(
+            f"frame {received_frames}, predicted {preds.shape[0]} row(s)",
+            file=sys.stderr,
+        )
+
+    print(
+        f"Predicted {predicted_frames} non-empty frame(s) "
+        f"from {received_frames} received frame(s)",
+        file=sys.stderr,
+    )
+
+
 def main():
     args = parse_args()
     device = get_device(args.device)
+
+    if args.action == "predict-stream":
+        print(f"Using device: {device}", file=sys.stderr)
+        if args.data is not None:
+            raise ValueError("predict-stream reads stdin; data path is not supported")
+        predict_stream(args, device)
+        return
+
     print(f"Using device: {device}")
 
     if args.action == "fit-stream":

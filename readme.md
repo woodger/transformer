@@ -6,7 +6,8 @@ Python-проект для обучения и инференса PyTorch Transf
 Проект умеет работать в двух режимах:
 
 - читать готовый Arrow-файл с диска (`fit`, `predict`)
-- принимать поток micro-batch Arrow payloads через stdin (`fit-stream`)
+- принимать поток micro-batch Arrow payloads через stdin (`fit-stream`,
+  `predict-stream`)
 
 `fit-stream` используется командой `trainTransformer` из соседнего проекта
 `../inventory`.
@@ -38,6 +39,8 @@ PYTHONPATH=./app python ./app/main.py <action> [data] [options]
 - `fit` — обучить модель на Arrow-файле
 - `predict` — загрузить модель и сохранить предсказания в Arrow-файл
 - `fit-stream` — читать framed Arrow payloads из stdin и обучать модель batch за batch
+- `predict-stream` — читать framed Arrow payloads из stdin и писать framed
+  predictions в stdout
 
 ## Обучение из файла
 
@@ -137,6 +140,23 @@ Transformer обучается на каждом непустом входяще
 В `fit-stream` параметр `--epochs` сейчас не повторяет входящий поток несколько
 раз. Каждый Arrow frame обучается как один streaming batch pass.
 
+## Потоковое предсказание
+
+`predict-stream` не принимает путь к файлу данных. Он читает framed Arrow
+payloads из stdin, загружает модель один раз на первом непустом frame и пишет
+framed Arrow payloads с предсказаниями в stdout:
+
+```bash
+PYTHONPATH=./app python ./app/main.py predict-stream \
+  --device=cpu \
+  --model-name=model_weights.pth \
+  --seq-len=20 \
+  --pred-col=out
+```
+
+stdout в этом режиме является бинарным протоколом результата. Диагностические
+сообщения пишутся в stderr.
+
 ## Arrow-файл
 
 Для `fit` и `predict` входной файл должен быть Arrow IPC file с колонками:
@@ -155,10 +175,11 @@ tgt: list<float>  # target vector
 Если ширина `src` не делится на `--seq-len`, запуск завершится ошибкой.
 
 `predict` сохраняет Arrow IPC file с одной колонкой `--pred-col`.
+`predict-stream` пишет такую же таблицу в каждом output frame.
 
 ## Framed stdin protocol
 
-`fit-stream` читает последовательность payloads из stdin:
+`fit-stream` и `predict-stream` читают последовательность payloads из stdin:
 
 ```text
 8 bytes unsigned big-endian payload length
@@ -169,7 +190,12 @@ Arrow file payload
 EOF
 ```
 
-Каждый payload — самостоятельный Arrow IPC file с колонками `src` и `tgt`.
+Каждый payload — самостоятельный Arrow IPC file с колонкой `src`. Для
+`fit-stream` также нужна колонка `tgt`; для `predict-stream` `tgt` не
+требуется.
+
+`predict-stream` пишет в stdout тот же framed protocol. Каждый output payload —
+самостоятельный Arrow IPC file с одной колонкой `--pred-col`.
 
 ## Тестирование
 
