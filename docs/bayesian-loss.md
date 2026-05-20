@@ -114,8 +114,8 @@ def lognormal_nll(pred_vol, target_vol):
 Вот **готовая версия**, которую можно сразу использовать.
 
 ```py
-def combined_loss(preds, targets, epoch):
-    week = epoch // EPOCHS_PER_WEEK + 1
+def combined_loss(preds, targets, epoch, per_week):
+    week = epoch // per_week + 1
 
     meanR, sigmaR, pTP, pSL, volNext, hitTP = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T

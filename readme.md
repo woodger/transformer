@@ -9,8 +9,8 @@ Python-проект для обучения и инференса PyTorch Transf
 - принимать поток micro-batch Arrow payloads через stdin (`fit-stream`,
   `predict-stream`)
 
-`fit-stream` используется командой `trainTransformer` из соседнего проекта
-`../inventory`.
+`fit-stream` используется командой `trainTransformer` из проекта
+`inventory`.
 
 ## Требования
 
@@ -79,8 +79,7 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 Обычно этот режим запускается не вручную, а из `inventory`:
 
 ```bash
-cd ../inventory
-npm run build
+yarn build
 node dist/index.js trainTransformer \
   --figi=BBG0013HJJ31 \
   --context=BBG000B9XRY4,BBG004730N88 \
@@ -134,6 +133,7 @@ Transformer обучается на каждом непустом входяще
 | `--lr` | Learning rate | `0.0005` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Количество эпох для `fit` | `25` |
+| `--per-week` | Сколько epoch/frame считаются одной неделей в loss schedule | `5` |
 | `--patience` | Early stopping patience | `5` |
 | `--use-amp` | Включить AMP, если используется CUDA | выключено |
 

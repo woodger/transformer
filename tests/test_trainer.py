@@ -94,6 +94,43 @@ def test_trainer_fit_batch_cpu():
     assert loss > 0
 
 
+def test_trainer_per_week_is_configurable():
+    model = nn.Linear(2, 6)
+
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        per_week=3,
+        use_amp=False,
+    )
+
+    assert trainer.per_week == 3
+
+
+def test_trainer_rejects_invalid_per_week():
+    model = nn.Linear(2, 6)
+
+    try:
+        Trainer(
+            model=model,
+            device=torch.device("cpu"),
+            lr=1e-3,
+            batch_size=1,
+            epochs=1,
+            patience=1,
+            per_week=0,
+            use_amp=False,
+        )
+    except ValueError as exc:
+        assert "per_week must be a positive integer" in str(exc)
+    else:
+        raise AssertionError("Trainer accepted invalid per_week")
+
+
 def test_autocast_cpu():
     model = nn.Linear(2, 2)
     trainer = Trainer(

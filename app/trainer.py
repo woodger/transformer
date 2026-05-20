@@ -4,7 +4,7 @@ from contextlib import nullcontext
 
 from losses import combined_loss
 from utils import save_model, load_model, tree_stats
-from config import WEIGHT_DECAY, GRAD_CLIP_NORM
+from config import WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
 
 
 class Trainer:
@@ -17,13 +17,18 @@ class Trainer:
         epochs: int,
         patience: int,
         use_amp: bool = False,
+        per_week: int = PER_WEEK,
         weight_decay: float = WEIGHT_DECAY
     ):
+        if per_week <= 0:
+            raise ValueError("per_week must be a positive integer")
+
         self.model = model
         self.device = device
         self.batch_size = batch_size
         self.epochs = epochs
         self.patience = patience
+        self.per_week = per_week
 
         # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
@@ -60,7 +65,12 @@ class Trainer:
 
             with self._autocast():
                 preds = self.model(xb)
-                loss = combined_loss(preds, yb, epoch)
+                loss = combined_loss(
+                    preds,
+                    yb,
+                    epoch,
+                    self.per_week,
+                )
 
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optimizer)
@@ -106,15 +116,6 @@ class Trainer:
                 f"loss {epoch_loss:.6f}, "
                 f"norm {stats['norm']:.0f}"
             )
-
-            # if epoch_loss < best_loss:
-            #     best_loss = epoch_loss
-            #     wait = 0
-            # else:
-            #     wait += 1
-            #     if wait >= self.patience:
-            #         print("Early stopping")
-            #         break
 
         save_model(model_name, self.model)
         print("Model saved")

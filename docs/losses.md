@@ -427,10 +427,10 @@ Week 5:
 ### Вариант 1: фиксированное число эпох на неделю
 
 ```py
-EPOCHS_PER_WEEK = 5
+PER_WEEK = 5
 
 def combined_loss(preds, targets, epoch):
-    week = epoch // EPOCHS_PER_WEEK + 1
+    week = epoch // PER_WEEK + 1
     ...
 ```
 

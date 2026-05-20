@@ -5,6 +5,7 @@ from config import (
     LR,
     BATCH_SIZE,
     EPOCHS,
+    PER_WEEK,
     PATIENCE,
     D_MODEL,
     NUM_LAYERS,
@@ -30,6 +31,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=LR)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--epochs", type=int, default=EPOCHS)
+    parser.add_argument("--per-week", type=int, default=PER_WEEK)
     parser.add_argument("--patience", type=int, default=PATIENCE)
 
     parser.add_argument("--seq-len", type=int, default=None)

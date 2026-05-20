@@ -1,10 +1,13 @@
 import torch
 import torch.nn.functional as F
 
-from config import EPOCHS_PER_WEEK
+from config import PER_WEEK
 
-def combined_loss(preds, targets, epoch):
-    week = epoch // EPOCHS_PER_WEEK + 1
+def combined_loss(preds, targets, epoch, per_week: int = PER_WEEK):
+    if per_week <= 0:
+        raise ValueError("per_week must be a positive integer")
+
+    week = epoch // per_week + 1
 
     meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T

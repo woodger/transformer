@@ -55,6 +55,7 @@ def build_trainer(args, model, device):
         batch_size=args.batch_size,
         epochs=args.epochs,
         patience=args.patience,
+        per_week=args.per_week,
         use_amp=args.use_amp
     )
 
