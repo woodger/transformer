@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from contextlib import nullcontext
 
 from losses import combined_loss
-from metrics import TrainMetrics
+from metrics import TrainMetrics, append_metrics_jsonl
 from utils import save_model, load_model, tree_stats
 from config import WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
 
@@ -20,7 +20,8 @@ class Trainer:
         patience: int,
         use_amp: bool = False,
         per_week: int = PER_WEEK,
-        weight_decay: float = WEIGHT_DECAY
+        weight_decay: float = WEIGHT_DECAY,
+        metrics_path: str | None = None,
     ):
         if per_week <= 0:
             raise ValueError("per_week must be a positive integer")
@@ -31,6 +32,7 @@ class Trainer:
         self.epochs = epochs
         self.patience = patience
         self.per_week = per_week
+        self.metrics_path = metrics_path
 
         # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
@@ -135,6 +137,12 @@ class Trainer:
             stats = tree_stats(self.model.parameters())
 
             print(metrics.log_line(epoch=epoch + 1, norm=f"{stats['norm']:.0f}"))
+            self.record_metrics(
+                metrics,
+                mode="fit",
+                epoch=epoch + 1,
+                norm=stats["norm"],
+            )
 
         save_model(model_name, self.model)
         print("Model saved")
@@ -149,3 +157,6 @@ class Trainer:
 
     def save(self, model_name: str):
         save_model(model_name, self.model)
+
+    def record_metrics(self, metrics: TrainMetrics, **extra):
+        append_metrics_jsonl(self.metrics_path, metrics, **extra)

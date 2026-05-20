@@ -1,4 +1,24 @@
 from dataclasses import dataclass
+import html
+import json
+import os
+
+
+PLOT_METRICS = [
+    "loss",
+    "loss_ret",
+    "loss_prob",
+    "loss_ev",
+    "loss_vol",
+    "grad_norm",
+    "nan_ratio",
+    "valid_token_ratio",
+    "rows",
+    "batches",
+    "lr",
+    "week",
+    "elapsed_ms",
+]
 
 
 @dataclass
@@ -63,6 +83,24 @@ class TrainMetrics:
 
         return " ".join(f"{key}={value}" for key, value in fields.items())
 
+    def to_dict(self, **extra) -> dict:
+        return {
+            **extra,
+            "rows": self.rows,
+            "batches": self.batches,
+            "loss": self.loss,
+            "loss_ret": self.loss_ret,
+            "loss_prob": self.loss_prob,
+            "loss_ev": self.loss_ev,
+            "loss_vol": self.loss_vol,
+            "grad_norm": self.grad_norm,
+            "nan_ratio": self.nan_ratio,
+            "valid_token_ratio": self.valid_token_ratio,
+            "elapsed_ms": self.elapsed_ms,
+            "lr": self.lr,
+            "week": self.week,
+        }
+
     def __float__(self) -> float:
         return self.loss
 
@@ -71,3 +109,125 @@ class TrainMetrics:
 
     def __gt__(self, other) -> bool:
         return self.loss > float(other)
+
+
+def reset_metrics_log(path: str):
+    if path is None:
+        return
+
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8"):
+        pass
+
+
+def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):
+    if path is None:
+        return
+
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    with open(path, "a", encoding="utf-8") as f:
+        json.dump(metrics.to_dict(**extra), f, ensure_ascii=False, sort_keys=True)
+        f.write("\n")
+
+
+def load_metrics_jsonl(path: str) -> list[dict]:
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+
+    return rows
+
+
+def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
+    rows = load_metrics_jsonl(jsonl_path)
+    if not rows:
+        raise ValueError("metrics JSONL is empty")
+
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+    for metric in PLOT_METRICS:
+        points = _series(rows, metric)
+        if not points:
+            continue
+
+        path = os.path.join(output_dir, f"{metric}.svg")
+        _write_svg(path, points, metric)
+        paths.append(path)
+
+    return paths
+
+
+def _series(rows: list[dict], metric: str) -> list[tuple[float, float]]:
+    points = []
+    for index, row in enumerate(rows, start=1):
+        value = row.get(metric)
+        if not isinstance(value, (int, float)):
+            continue
+
+        x = row.get("epoch", row.get("frame", index))
+        if not isinstance(x, (int, float)):
+            x = index
+
+        points.append((float(x), float(value)))
+
+    return points
+
+
+def _write_svg(path: str, points: list[tuple[float, float]], title: str):
+    width = 960
+    height = 420
+    left = 68
+    right = 24
+    top = 36
+    bottom = 58
+
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    if min_x == max_x:
+        min_x -= 1.0
+        max_x += 1.0
+    if min_y == max_y:
+        padding = abs(min_y) * 0.1 or 1.0
+        min_y -= padding
+        max_y += padding
+
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    def scale_x(value: float) -> float:
+        return left + ((value - min_x) / (max_x - min_x)) * plot_w
+
+    def scale_y(value: float) -> float:
+        return top + plot_h - ((value - min_y) / (max_y - min_y)) * plot_h
+
+    polyline = " ".join(
+        f"{scale_x(x):.2f},{scale_y(y):.2f}" for x, y in points
+    )
+    title_text = html.escape(title)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(
+            f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="{left}" y="24" font-family="monospace" font-size="16" fill="#111111">{title_text}</text>
+  <line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" stroke="#222222" stroke-width="1"/>
+  <line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}" stroke="#222222" stroke-width="1"/>
+  <text x="{left}" y="{height - 20}" font-family="monospace" font-size="12" fill="#555555">step {min_x:g} -> {max_x:g}</text>
+  <text x="8" y="{top + 12}" font-family="monospace" font-size="12" fill="#555555">{max_y:.6g}</text>
+  <text x="8" y="{top + plot_h}" font-family="monospace" font-size="12" fill="#555555">{min_y:.6g}</text>
+  <polyline fill="none" stroke="#0f766e" stroke-width="2" points="{polyline}"/>
+</svg>
+"""
+        )

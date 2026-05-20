@@ -70,6 +70,9 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
         def save(self, model_name):
             self.saved_as = model_name
 
+        def record_metrics(self, metrics, **extra):
+            pass
+
     trainer = FakeTrainer()
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(stream))

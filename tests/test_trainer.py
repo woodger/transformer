@@ -1,7 +1,8 @@
 import torch
+import json
 
 from torch import nn
-from metrics import TrainMetrics
+from metrics import TrainMetrics, plot_metrics
 from app.trainer import Trainer
 from app.transformer import TransformerModel
 
@@ -137,6 +138,60 @@ def test_trainer_rejects_invalid_per_week():
         assert "per_week must be a positive integer" in str(exc)
     else:
         raise AssertionError("Trainer accepted invalid per_week")
+
+
+def test_trainer_writes_metrics_jsonl(tmp_path):
+    X, Y = make_dummy_data(n=8)
+    metrics_path = tmp_path / "metrics.jsonl"
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=4,
+        epochs=1,
+        patience=1,
+        use_amp=False,
+        metrics_path=str(metrics_path),
+    )
+
+    metrics = trainer.fit_batch(X, Y)
+    trainer.record_metrics(metrics, frame=3)
+
+    rows = [json.loads(line) for line in metrics_path.read_text().splitlines()]
+
+    assert len(rows) == 1
+    assert rows[0]["frame"] == 3
+    assert rows[0]["rows"] == 8
+    assert rows[0]["loss"] > 0
+    assert "grad_norm" in rows[0]
+    assert "valid_token_ratio" in rows[0]
+
+
+def test_plot_metrics_writes_svg(tmp_path):
+    metrics_path = tmp_path / "metrics.jsonl"
+    metrics_path.write_text(
+        "\n".join([
+            json.dumps({"frame": 1, "loss": 2.0, "grad_norm": 1.5}),
+            json.dumps({"frame": 2, "loss": 1.0, "grad_norm": 1.1}),
+        ])
+    )
+    plots_dir = tmp_path / "plots"
+
+    paths = plot_metrics(str(metrics_path), str(plots_dir))
+
+    assert str(plots_dir / "loss.svg") in paths
+    assert str(plots_dir / "grad_norm.svg") in paths
+    assert (plots_dir / "loss.svg").read_text().startswith("<svg")
 
 
 def test_autocast_cpu():

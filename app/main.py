@@ -17,6 +17,7 @@ from arrow_io import (
 )
 from utils import print_stats
 from trainer import Trainer
+from metrics import plot_metrics, reset_metrics_log
 
 
 def reshape_source(X_cpu: torch.Tensor, seq_len: int) -> torch.Tensor:
@@ -56,7 +57,8 @@ def build_trainer(args, model, device):
         epochs=args.epochs,
         patience=args.patience,
         per_week=args.per_week,
-        use_amp=args.use_amp
+        use_amp=args.use_amp,
+        metrics_path=args.metrics_path,
     )
 
 
@@ -83,6 +85,7 @@ def fit_stream(args, device):
         metrics = trainer.fit_batch(X_cpu, Y_cpu, trained_frames)
         trained_frames += 1
         print(metrics.log_line(frame=received_frames))
+        trainer.record_metrics(metrics, mode="fit-stream", frame=received_frames)
 
     if trainer is None:
         raise ValueError("No non-empty frames received on stdin")
@@ -144,6 +147,16 @@ def predict_stream(args, device):
 
 def main():
     args = parse_args()
+
+    if args.action == "plot-metrics":
+        metrics_path = args.data or args.metrics_path
+        if metrics_path is None:
+            raise ValueError("metrics path is required for plot-metrics")
+
+        paths = plot_metrics(metrics_path, args.plots_dir)
+        print(f"Saved {len(paths)} plot(s) to {args.plots_dir}")
+        return
+
     device = get_device(args.device)
 
     if args.action == "predict-stream":
@@ -158,6 +171,7 @@ def main():
     if args.action == "fit-stream":
         if args.data is not None:
             raise ValueError("fit-stream reads stdin; data path is not supported")
+        reset_metrics_log(args.metrics_path)
         fit_stream(args, device)
         return
 
@@ -178,6 +192,7 @@ def main():
     trainer = build_trainer(args, model, device)
 
     if args.action == "fit":
+        reset_metrics_log(args.metrics_path)
         trainer.fit(X_cpu, Y_cpu, args.model_name)
 
     else:  # predict

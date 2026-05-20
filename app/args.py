@@ -19,7 +19,7 @@ def parse_args():
 
     parser.add_argument(
         "action",
-        choices=["fit", "predict", "fit-stream", "predict-stream"],
+        choices=["fit", "predict", "fit-stream", "predict-stream", "plot-metrics"],
     )
     parser.add_argument("data", nargs="?")
 
@@ -27,6 +27,8 @@ def parse_args():
     parser.add_argument("--model-name", default="model_weights.pth")
     parser.add_argument("--preds-path", default="/tmp/preds.arrow")
     parser.add_argument("--pred-col", default="out")
+    parser.add_argument("--metrics-path", default=None)
+    parser.add_argument("--plots-dir", default="metrics_plots")
 
     parser.add_argument("--lr", type=float, default=LR)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
