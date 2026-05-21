@@ -3,7 +3,14 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import io
 
-from app.arrow_io import iter_framed_arrow, read_arrow, table_to_tensors, write_arrow
+from app.arrow_io import (
+    iter_framed_arrow,
+    read_arrow,
+    read_source_arrow,
+    table_to_source_tensor,
+    table_to_tensors,
+    write_arrow,
+)
 
 
 def test_arrow_read_write(tmp_path):
@@ -57,3 +64,27 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     assert isinstance(X_t, torch.Tensor)
     assert X_t.tolist() == [[3.0, 4.0]]
     assert Y_t.tolist() == [[1.5]]
+
+
+def test_read_source_arrow_does_not_require_target(tmp_path):
+    table = pa.table({"src": [[1.0, 2.0], [3.0, 4.0]]})
+    path = tmp_path / "predict.arrow"
+
+    with pa.OSFile(str(path), "wb") as sink:
+        with ipc.new_file(sink, table.schema) as writer:
+            writer.write_table(table)
+
+    X_t = read_source_arrow(str(path))
+
+    assert X_t.tolist() == [[1.0, 2.0], [3.0, 4.0]]
+
+
+def test_table_to_source_tensor_rejects_inconsistent_src_width():
+    table = pa.table({"src": [[1.0, 2.0], [3.0]]})
+
+    try:
+        table_to_source_tensor(table)
+    except ValueError as exc:
+        assert "inconsistent list length" in str(exc)
+    else:
+        raise AssertionError("accepted inconsistent src width")

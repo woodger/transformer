@@ -3,8 +3,10 @@ import torch
 import json
 
 from torch import nn
+from checkpoint import load_checkpoint
 from metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from losses import resolve_loss_stage
+from run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.trainer import Trainer
 from app.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
@@ -43,6 +45,68 @@ def test_trainer_fit_cpu(tmp_path):
     trainer.fit(X, Y, str(model_path))
 
     assert model_path.exists()
+
+
+def test_trainer_checkpoint_stores_run_config(tmp_path):
+    X, Y = make_dummy_data(n=8)
+    model_config = ModelConfig(seq_len=5, hidden=32, layers=1, dropout=0.0, nhead=4)
+    train_config = TrainConfig(batch_size=4, epochs=1, patience=1, use_amp=False)
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=train_config.lr,
+        batch_size=train_config.batch_size,
+        epochs=train_config.epochs,
+        patience=train_config.patience,
+        use_amp=False,
+        model_config=model_config,
+        train_config=train_config,
+    )
+
+    model_path = tmp_path / "model.pth"
+    trainer.fit(X, Y, str(model_path))
+
+    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
+    assert checkpoint["format"] == "transformer-checkpoint-v1"
+    assert checkpoint["model_config"]["seq_len"] == 5
+    assert checkpoint["model_config"]["hidden"] == 32
+    assert checkpoint["train_config"]["batch_size"] == 4
+
+
+def test_model_config_can_be_loaded_from_checkpoint_defaults():
+    class Args:
+        seq_len = None
+        hidden = None
+        layers = None
+        dropout = None
+        nhead = None
+        context_mode = None
+        out_dim = None
+
+    config = model_config_from_args(
+        Args(),
+        checkpoint_config={
+            "seq_len": 12,
+            "hidden": 512,
+            "layers": 4,
+            "context_mode": "indicators",
+        },
+    )
+
+    assert config.seq_len == 12
+    assert config.hidden == 512
+    assert config.layers == 4
+    assert config.context_mode == "indicators"
 
 
 def test_trainer_amp_flag_on_cpu():

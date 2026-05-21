@@ -13,15 +13,17 @@ from config import (
     WEIGHT_DECAY,
 )
 from context import context_token_ratios
+from early_stopping import EarlyStopping
 from losses import (
     LOSS_STAGES,
     combined_loss,
-    resolve_loss_stage,
     validate_loss_schedule,
     validate_loss_stage,
     validate_stage_size,
 )
+from loss_scheduler import LossScheduler
 from metrics import TrainMetrics, append_metrics_jsonl
+from training_state import TrainingState
 from utils import save_model, load_model, tree_stats
 
 
@@ -42,6 +44,8 @@ class Trainer:
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
         metrics_context: dict | None = None,
+        model_config=None,
+        train_config=None,
     ):
         self.model = model
         self.device = device
@@ -53,7 +57,14 @@ class Trainer:
         self.stage_size = validate_stage_size(stage_size)
         self.metrics_path = metrics_path
         self.context_mode = context_mode
-        self.train_step = 0
+        self.model_config = model_config
+        self.train_config = train_config
+        self.state = TrainingState()
+        self.loss_scheduler = LossScheduler(
+            loss_schedule=self.loss_schedule,
+            stage_size=self.stage_size,
+            max_stage=self.loss_stage,
+        )
         self.metrics_context = {
             "batch_size": self.batch_size,
             "loss_schedule": self.loss_schedule,
@@ -81,23 +92,31 @@ class Trainer:
 
         print(f"AMP enabled: {self.use_amp}")
 
+    @property
+    def train_step(self) -> int:
+        return self.state.train_step
+
+    @train_step.setter
+    def train_step(self, value: int):
+        self.state.train_step = value
+
     def _autocast(self):
         if self.use_amp:
             return torch.amp.autocast(device_type="cuda", enabled=True)
         else:
             return nullcontext()
 
-    def _train_loader(self, loader, epoch: int) -> TrainMetrics:
+    def _train_loader(self, loader) -> TrainMetrics:
         self.model.train()
         metrics = TrainMetrics(
             lr=self.optimizer.param_groups[0]["lr"],
-            step=self.train_step,
-            loss_stage=self._loss_stage_for(epoch),
+            step=self.state.train_step,
+            loss_stage=self._loss_stage_for(),
         )
         started = time.perf_counter()
 
         for xb_cpu, yb_cpu in loader:
-            loss_stage = self._loss_stage_for(epoch)
+            loss_stage = self._loss_stage_for()
             batch_rows = xb_cpu.size(0)
             nan_ratio = float(torch.isnan(xb_cpu).float().mean())
             token_ratios = context_token_ratios(xb_cpu, self.context_mode)
@@ -123,8 +142,7 @@ class Trainer:
             )
             self.scaler.step(self.optimizer)
             self.scaler.update()
-            self.train_step += 1
-            loss_parts["step"] = self.train_step
+            loss_parts["step"] = self.state.finish_step()
 
             metrics.update(
                 rows=batch_rows,
@@ -137,18 +155,8 @@ class Trainer:
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
 
-    def _loss_stage_for(self, epoch: int) -> int:
-        if self.loss_schedule == "step":
-            progress = self.train_step
-        else:
-            progress = epoch
-
-        return resolve_loss_stage(
-            progress,
-            loss_schedule=self.loss_schedule,
-            stage_size=self.stage_size,
-            max_stage=self.loss_stage,
-        )
+    def _loss_stage_for(self) -> int:
+        return self.loss_scheduler.stage_for(self.state)
 
     def fit_batch(
         self,
@@ -164,9 +172,10 @@ class Trainer:
             num_workers=0,
         )
 
-        return self._train_loader(loader, epoch)
+        self.state.begin_epoch(epoch)
+        return self._train_loader(loader)
 
-    def fit_epochs(self, X: torch.Tensor, Y: torch.Tensor, on_epoch=None):
+    def fit_epochs(self, X: torch.Tensor, Y: torch.Tensor, on_epoch=None, frame: int | None = None):
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
             dataset,
@@ -176,33 +185,23 @@ class Trainer:
         )
 
         metrics_rows = []
-        best_loss = float("inf")
-        wait = 0
-        current_loss_stage = None
+        stopper = EarlyStopping(
+            patience=self.patience,
+            min_stage=min(self.loss_stage, LOSS_STAGES),
+        )
+        self.state.begin_frame(frame)
 
         for epoch in range(self.epochs):
-            metrics = self._train_loader(loader, epoch)
+            self.state.begin_epoch(epoch)
+            metrics = self._train_loader(loader)
             metrics_rows.append(metrics)
 
             if on_epoch is not None:
                 on_epoch(epoch, metrics)
 
-            if metrics.loss_stage != current_loss_stage:
-                current_loss_stage = metrics.loss_stage
-                best_loss = float("inf")
-                wait = 0
-
-            if metrics.loss < best_loss:
-                best_loss = metrics.loss
-                wait = 0
-            else:
-                wait += 1
-
-            if (
-                self.patience > 0
-                and metrics.loss_stage >= min(self.loss_stage, LOSS_STAGES)
-                and wait >= self.patience
-            ):
+            should_stop = stopper.update(metrics.loss, metrics.loss_stage)
+            self.state.finish_epoch()
+            if should_stop:
                 break
 
         return metrics_rows
@@ -225,7 +224,12 @@ class Trainer:
 
         self.fit_epochs(X, Y, on_epoch=on_epoch)
 
-        save_model(model_name, self.model)
+        save_model(
+            model_name,
+            self.model,
+            model_config=self.model_config,
+            train_config=self.train_config,
+        )
         print("Model saved")
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
@@ -237,7 +241,12 @@ class Trainer:
         load_model(model_name, self.model, self.device)
 
     def save(self, model_name: str):
-        save_model(model_name, self.model)
+        save_model(
+            model_name,
+            self.model,
+            model_config=self.model_config,
+            train_config=self.train_config,
+        )
 
     def record_metrics(self, metrics: TrainMetrics, **extra):
         payload = {**self.metrics_context, **extra}

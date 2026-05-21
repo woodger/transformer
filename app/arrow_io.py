@@ -8,16 +8,22 @@ FRAME_HEADER_BYTES = 8
 
 
 def table_to_tensors(table):
-    X = table_to_source_tensor(table)
-    Y = np.stack(table.column("tgt").to_pylist()).astype(np.float32)
+    validate_arrow_table(table, require_target=True)
+    X = _list_column_to_tensor(table, "src")
+    Y = _list_column_to_tensor(table, "tgt")
 
-    return X, torch.from_numpy(Y)
+    return X, Y
 
 
 def table_to_source_tensor(table):
-    X = np.stack(table.column("src").to_pylist()).astype(np.float32)
+    validate_arrow_table(table, require_target=False)
+    return _list_column_to_tensor(table, "src")
 
-    return torch.from_numpy(X)
+
+def validate_arrow_table(table, require_target: bool = False):
+    _validate_list_column(table, "src")
+    if require_target:
+        _validate_list_column(table, "tgt")
 
 
 def read_arrow(path):
@@ -26,6 +32,47 @@ def read_arrow(path):
         table = reader.read_all()
 
     return table_to_tensors(table)
+
+
+def read_source_arrow(path):
+    with open(path, "rb") as f:
+        reader = ipc.RecordBatchFileReader(f)
+        table = reader.read_all()
+
+    return table_to_source_tensor(table)
+
+
+def _validate_list_column(table, name: str):
+    column_index = table.schema.get_field_index(name)
+    if column_index < 0:
+        raise ValueError(f"Arrow table must contain '{name}' column")
+
+    column_type = table.schema.field(column_index).type
+    if not (
+        pa.types.is_list(column_type)
+        or pa.types.is_large_list(column_type)
+        or pa.types.is_fixed_size_list(column_type)
+    ):
+        raise ValueError(f"Arrow column '{name}' must be a list<float> column")
+
+
+def _list_column_to_tensor(table, name: str):
+    values = table.column(name).to_pylist()
+    if not values:
+        return torch.empty((0, 0), dtype=torch.float32)
+
+    width = None
+    for row_index, row in enumerate(values, start=1):
+        if row is None:
+            raise ValueError(f"Arrow column '{name}' has null row at index {row_index}")
+        if width is None:
+            width = len(row)
+        elif len(row) != width:
+            raise ValueError(
+                f"Arrow column '{name}' has inconsistent list length at row {row_index}"
+            )
+
+    return torch.from_numpy(np.asarray(values, dtype=np.float32))
 
 
 def _read_exact(stream, size):

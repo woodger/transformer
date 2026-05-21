@@ -12,9 +12,14 @@ Python-проект для обучения и инференса PyTorch Transf
 `fit-stream` используется командой `trainTransformer` из проекта
 `inventory`.
 
+Новые checkpoint-файлы сохраняют не только веса, но и конфигурацию модели
+(`seq_len`, `hidden`, `layers`, `nhead`, `mode`). Поэтому `predict` и
+`predict-stream` могут восстановить архитектуру из checkpoint, если
+соответствующие CLI-аргументы не переданы.
+
 ## Требования
 
-- Python 3.9+
+- Python 3.10+
 - PyTorch
 - NumPy
 - PyArrow
@@ -66,11 +71,14 @@ PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
 PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
   --device=cpu \
   --model-name=model_weights.pth \
-  --seq-len=20 \
-  --mode=relaxed \
   --preds-path=/tmp/preds.arrow \
   --pred-col=out
 ```
+
+Если модель была сохранена новой версией приложения, `--seq-len`, `--hidden`,
+`--layers`, `--nhead` и `--mode` для `predict` можно не передавать: они будут
+прочитаны из checkpoint. Для legacy-файлов, где сохранён только `state_dict`,
+эти параметры всё ещё нужно передать вручную.
 
 ## Потоковое обучение
 
@@ -132,7 +140,7 @@ Transformer обучается на каждом непустом входяще
 
 | Аргумент | Описание | По умолчанию |
 | --- | --- | --- |
-| `--seq-len` | Длина последовательности | обязательный |
+| `--seq-len` | Длина последовательности | обязательный для `fit`; для `predict` может браться из checkpoint |
 | `--hidden` | Размер скрытого слоя | `256` |
 | `--layers` | Количество Transformer layers | `5` |
 | `--nhead` | Количество attention heads | `8` |
@@ -207,6 +215,11 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 epoch. В `fit-stream` строка дополнительно содержит номер входного frame.
 Loss schedule продвигается по выбранному `--loss-schedule`:
 
+- `none` — всегда используется `--loss-stage`
+- `epoch` — stage считается от epoch внутри текущего frame
+- `step` — stage считается от глобального optimizer step и не сбрасывается
+  между frames
+
 ```text
 epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
 ```
@@ -274,7 +287,6 @@ framed Arrow payloads с предсказаниями в stdout:
 PYTHONPATH=./app python ./app/main.py predict-stream \
   --device=cpu \
   --model-name=model_weights.pth \
-  --seq-len=20 \
   --pred-col=out
 ```
 
@@ -287,7 +299,7 @@ stdout в этом режиме является бинарным протоко
 
 ```text
 src: list<float>  # flattened [seq_len * feature_dim]
-tgt: list<float>  # target vector
+tgt: list<float>  # target vector, required for fit
 ```
 
 После чтения `src` преобразуется в тензор:
@@ -298,7 +310,8 @@ tgt: list<float>  # target vector
 
 Если ширина `src` не делится на `--seq-len`, запуск завершится ошибкой.
 
-`predict` сохраняет Arrow IPC file с одной колонкой `--pred-col`.
+Для `predict` колонка `tgt` не требуется. `predict` сохраняет Arrow IPC file с
+одной колонкой `--pred-col`.
 `predict-stream` пишет такую же таблицу в каждом output frame.
 
 ## Framed stdin protocol
@@ -332,7 +345,15 @@ PYTHONPATH=./app pytest -v
 ```text
 app/main.py        # CLI entrypoint
 app/args.py        # argparse contract
+app/commands/      # реализации fit/predict/stream/plot команд
 app/arrow_io.py    # Arrow file и framed stdin protocol
-app/trainer.py     # fit, fit_batch, predict
+app/checkpoint.py  # сохранение весов и конфигурации модели
+app/data.py        # reshape/shape validation
+app/factory.py     # сборка модели и trainer из typed config
+app/run_config.py  # ModelConfig и TrainConfig
+app/trainer.py     # training loop, predict
+app/loss_scheduler.py # curriculum schedule
+app/early_stopping.py # patience logic
 app/transformer.py # модель
+app/metrics_*.py   # типы метрик, JSONL и SVG-графики
 ```

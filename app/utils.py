@@ -2,20 +2,22 @@ import os
 import torch
 import numpy as np
 
-from config import PROJECT_ROOT
-
-MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+from checkpoint import MODELS_DIR, load_checkpoint, save_checkpoint
 
 
-def save_model(model_name: str, model):
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    full_path = os.path.join(MODELS_DIR, model_name)
-    torch.save(model.state_dict(), full_path)
+def save_model(model_name: str, model, model_config=None, train_config=None, extra=None):
+    save_checkpoint(
+        model_name,
+        model,
+        model_config=model_config,
+        train_config=train_config,
+        extra=extra,
+    )
 
 
 def load_model(model_name: str, model, device):
-    full_path = os.path.join(MODELS_DIR, model_name)
-    model.load_state_dict(torch.load(full_path, map_location=device))
+    checkpoint = load_checkpoint(model_name, device)
+    model.load_state_dict(checkpoint["state_dict"])
     return model
 
 

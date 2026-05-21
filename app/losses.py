@@ -1,9 +1,26 @@
+from dataclasses import dataclass
+
 import torch
 import torch.nn.functional as F
 
 from config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
 
-LOSS_STAGES = 4
+
+@dataclass(frozen=True)
+class LossStageDefinition:
+    stage: int
+    name: str
+    components: tuple[str, ...]
+
+
+LOSS_STAGE_DEFINITIONS = (
+    LossStageDefinition(1, "returns", ("ret",)),
+    LossStageDefinition(2, "probabilities", ("ret", "prob")),
+    LossStageDefinition(3, "bayesian-ev", ("ret", "prob", "ev")),
+    LossStageDefinition(4, "volatility", ("ret", "prob", "ev", "vol")),
+)
+
+LOSS_STAGES = len(LOSS_STAGE_DEFINITIONS)
 LOSS_SCHEDULES = ("none", "epoch", "step")
 
 
@@ -42,6 +59,11 @@ def resolve_loss_stage(
     return min(max_stage, progress // stage_size + 1)
 
 
+def active_loss_components(loss_stage: int) -> tuple[str, ...]:
+    loss_stage = validate_loss_stage(loss_stage)
+    return LOSS_STAGE_DEFINITIONS[loss_stage - 1].components
+
+
 def combined_loss(
     preds,
     targets,
@@ -49,6 +71,7 @@ def combined_loss(
     return_parts: bool = False,
 ):
     loss_stage = validate_loss_stage(loss_stage)
+    components = active_loss_components(loss_stage)
 
     meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T
@@ -70,7 +93,7 @@ def combined_loss(
     # -------------------------
     # Probabilities (AMP safe)
     # -------------------------
-    if loss_stage >= 2:
+    if "prob" in components:
         raw_loss_prob = (
             F.binary_cross_entropy_with_logits(logitTP, t_hitTP) +
             F.binary_cross_entropy_with_logits(logitSL, 1 - t_hitTP)
@@ -81,7 +104,7 @@ def combined_loss(
     # -------------------------
     # Bayesian EV
     # -------------------------
-    if loss_stage >= 3:
+    if "ev" in components:
         pTP = torch.sigmoid(logitTP)
         pSL = torch.sigmoid(logitSL)
 
@@ -93,7 +116,7 @@ def combined_loss(
     # -------------------------
     # Volatility
     # -------------------------
-    if loss_stage >= 4:
+    if "vol" in components:
         raw_loss_vol = torch.mean(
             (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
         )
