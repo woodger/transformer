@@ -22,6 +22,7 @@ PLOT_METRICS = [
     "empty_token_ratio",
     "rows",
     "batches",
+    "step",
     "lr",
     "week",
     "elapsed_ms",
@@ -47,6 +48,7 @@ class TrainMetrics:
     partial_token_ratio: float = 0.0
     empty_token_ratio: float = 0.0
     elapsed_ms: float = 0.0
+    step: int = 0
     lr: float = 0.0
     week: int = 0
 
@@ -84,6 +86,8 @@ class TrainMetrics:
         self.empty_token_ratio = avg(self.empty_token_ratio, empty_token_ratio)
         self.rows = total_rows
         self.batches += 1
+        self.step = int(loss_parts.get("step", self.step))
+        self.week = int(loss_parts.get("week", self.week))
 
     def log_line(self, **extra) -> str:
         fields = {
@@ -104,6 +108,7 @@ class TrainMetrics:
             "complete_tokens": f"{self.complete_token_ratio:.4f}",
             "partial_tokens": f"{self.partial_token_ratio:.4f}",
             "empty_tokens": f"{self.empty_token_ratio:.4f}",
+            "step": self.step,
             "lr": f"{self.lr:.6g}",
             "week": self.week,
             "ms": f"{self.elapsed_ms:.0f}",
@@ -131,6 +136,7 @@ class TrainMetrics:
             "partial_token_ratio": self.partial_token_ratio,
             "empty_token_ratio": self.empty_token_ratio,
             "elapsed_ms": self.elapsed_ms,
+            "step": self.step,
             "lr": self.lr,
             "week": self.week,
         }

@@ -36,6 +36,7 @@ class Trainer:
         self.per_week = per_week
         self.metrics_path = metrics_path
         self.context_mode = context_mode
+        self.train_step = 0
 
         # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
@@ -64,11 +65,13 @@ class Trainer:
         self.model.train()
         metrics = TrainMetrics(
             lr=self.optimizer.param_groups[0]["lr"],
-            week=epoch // self.per_week + 1,
+            step=self.train_step,
+            week=self.train_step // self.per_week + 1,
         )
         started = time.perf_counter()
 
         for xb_cpu, yb_cpu in loader:
+            schedule_step = self.train_step
             batch_rows = xb_cpu.size(0)
             nan_ratio = float(torch.isnan(xb_cpu).float().mean())
             token_ratios = context_token_ratios(xb_cpu, self.context_mode)
@@ -83,7 +86,7 @@ class Trainer:
                 loss, loss_parts = combined_loss(
                     preds,
                     yb,
-                    epoch,
+                    schedule_step,
                     self.per_week,
                     return_parts=True,
                 )
@@ -95,6 +98,8 @@ class Trainer:
             )
             self.scaler.step(self.optimizer)
             self.scaler.update()
+            self.train_step += 1
+            loss_parts["step"] = self.train_step
 
             metrics.update(
                 rows=batch_rows,

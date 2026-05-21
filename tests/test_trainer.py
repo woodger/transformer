@@ -99,6 +99,7 @@ def test_trainer_fit_batch_cpu():
     assert metrics > 0
     assert metrics.rows == X.size(0)
     assert metrics.batches == 4
+    assert metrics.step == 4
     assert metrics.week == 1
     assert metrics.lr == 1e-3
     assert metrics.sigma_min > 0.0
@@ -126,6 +127,41 @@ def test_trainer_per_week_is_configurable():
     )
 
     assert trainer.per_week == 3
+
+
+def test_trainer_loss_schedule_advances_by_training_batch():
+    X, Y = make_dummy_data(n=5)
+    Y[:, 4] = torch.rand(5) + 0.1
+    Y[:, 5] = torch.randint(0, 2, (5,), dtype=Y.dtype)
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        per_week=1,
+        use_amp=False,
+    )
+
+    metrics = trainer.fit_batch(X, Y)
+
+    assert metrics.batches == 5
+    assert metrics.step == 5
+    assert metrics.week == 5
+    assert metrics.loss_prob != 0.0
+    assert metrics.loss_ev != 0.0
+    assert metrics.loss_vol != 0.0
 
 
 def test_trainer_rejects_invalid_per_week():
@@ -187,6 +223,7 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert rows[0]["rows"] == 8
     assert isinstance(rows[0]["loss"], float)
     assert "grad_norm" in rows[0]
+    assert rows[0]["step"] == 2
     assert "sigma_min" in rows[0]
     assert "sigma_p05" in rows[0]
     assert "sigma_mean" in rows[0]

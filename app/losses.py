@@ -7,14 +7,14 @@ from config import PER_WEEK
 def combined_loss(
     preds,
     targets,
-    epoch,
+    step,
     per_week: int = PER_WEEK,
     return_parts: bool = False,
 ):
     if per_week <= 0:
         raise ValueError("per_week must be a positive integer")
 
-    week = epoch // per_week + 1
+    week = step // per_week + 1
 
     meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T

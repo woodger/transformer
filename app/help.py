@@ -112,7 +112,7 @@ def build_parser():
     train.add_argument("--epochs", type=int, default=EPOCHS,
                        help="Epoch count for fit mode.")
     train.add_argument("--per-week", type=int, default=PER_WEEK,
-                       help="Epoch/frame count per loss schedule week.")
+                       help="Training batch count per loss schedule week.")
     train.add_argument("--patience", type=int, default=PATIENCE,
                        help="Early stopping patience placeholder.")
 

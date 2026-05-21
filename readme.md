@@ -146,7 +146,7 @@ Transformer обучается на каждом непустом входяще
 | `--lr` | Learning rate | `0.0005` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Количество эпох для `fit` | `25` |
-| `--per-week` | Сколько epoch/frame считаются одной неделей в loss schedule | `5` |
+| `--per-week` | Сколько training batches считаются одной неделей в loss schedule | `5` |
 | `--patience` | Early stopping patience | `5` |
 | `--use-amp` | Включить AMP, если используется CUDA | выключено |
 
@@ -172,10 +172,11 @@ Transformer обучается на каждом непустом входяще
 ## Метрики обучения
 
 `fit` и `fit-stream` печатают компактную строку `TrainMetrics` для каждого
-epoch/frame:
+внешнего epoch/frame. Внутри строки может быть несколько training batches;
+loss schedule продвигается по глобальному `step`, а не по номеру frame:
 
 ```text
-epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 lr=0.0005 week=1 ms=42
+epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 week=1 ms=42
 ```
 
 Поля:
@@ -192,8 +193,9 @@ epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000
 - `complete_tokens` — доля timesteps без `NaN`
 - `partial_tokens` — доля timesteps с частью заполненных фичей и частью `NaN`
 - `empty_tokens` — доля timesteps, где все фичи `NaN`
+- `step` — глобальный номер training batch к концу строки метрик
 - `lr` — текущий learning rate
-- `week` — номер loss schedule week с учётом `--per-week`
+- `week` — номер loss schedule week на текущем `step` с учётом `--per-week`
 - `ms` — время обучения прохода
 
 Чтобы дополнительно писать каждую строку метрик в JSONL:
@@ -225,7 +227,7 @@ PYTHONPATH=./app python ./app/main.py plot-metrics train.jsonl \
 
 `plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
 `sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
-`rows`, `batches`, `lr`, `week` и `elapsed_ms`.
+`rows`, `batches`, `step`, `lr`, `week` и `elapsed_ms`.
 
 ## Потоковое предсказание
 
