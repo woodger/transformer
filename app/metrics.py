@@ -24,7 +24,7 @@ PLOT_METRICS = [
     "batches",
     "step",
     "lr",
-    "week",
+    "loss_stage",
     "elapsed_ms",
 ]
 
@@ -50,7 +50,7 @@ class TrainMetrics:
     elapsed_ms: float = 0.0
     step: int = 0
     lr: float = 0.0
-    week: int = 0
+    loss_stage: int = 0
 
     def update(
         self,
@@ -87,7 +87,7 @@ class TrainMetrics:
         self.rows = total_rows
         self.batches += 1
         self.step = int(loss_parts.get("step", self.step))
-        self.week = int(loss_parts.get("week", self.week))
+        self.loss_stage = int(loss_parts.get("loss_stage", self.loss_stage))
 
     def log_line(self, **extra) -> str:
         fields = {
@@ -110,7 +110,7 @@ class TrainMetrics:
             "empty_tokens": f"{self.empty_token_ratio:.4f}",
             "step": self.step,
             "lr": f"{self.lr:.6g}",
-            "week": self.week,
+            "loss_stage": self.loss_stage,
             "ms": f"{self.elapsed_ms:.0f}",
         }
 
@@ -138,7 +138,7 @@ class TrainMetrics:
             "elapsed_ms": self.elapsed_ms,
             "step": self.step,
             "lr": self.lr,
-            "week": self.week,
+            "loss_stage": self.loss_stage,
         }
 
     def __float__(self) -> float:
@@ -223,7 +223,7 @@ def _series(rows: list[dict], metric: str) -> list[tuple[float, float]]:
         if not math.isfinite(value):
             continue
 
-        x = row.get("epoch", row.get("frame", index))
+        x = row.get("step", row.get("epoch", row.get("frame", index)))
         if not isinstance(x, (int, float)):
             x = index
         x = float(x)

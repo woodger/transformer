@@ -5,8 +5,10 @@ from config import (
     LR,
     BATCH_SIZE,
     EPOCHS,
-    PER_WEEK,
+    LOSS_SCHEDULE,
+    LOSS_STAGE,
     PATIENCE,
+    STAGE_SIZE,
     D_MODEL,
     NUM_LAYERS,
     DROPOUT,
@@ -111,10 +113,17 @@ def build_parser():
                        help="Mini-batch size.")
     train.add_argument("--epochs", type=int, default=EPOCHS,
                        help="Epoch count for fit mode.")
-    train.add_argument("--per-week", type=int, default=PER_WEEK,
-                       help="Training batch count per loss schedule week.")
+    train.add_argument("--loss-stage", type=int, default=LOSS_STAGE,
+                       choices=[1, 2, 3, 4],
+                       help="Maximum loss stage to train with.")
+    train.add_argument("--loss-schedule", choices=["none", "epoch", "step"],
+                       default=LOSS_SCHEDULE,
+                       help="How loss stage advances: fixed, by epoch, or by optimizer step.")
+    train.add_argument("--stage-size", "--per-week", type=int, default=STAGE_SIZE,
+                       dest="stage_size",
+                       help="Epoch/step count per loss stage; --per-week is a deprecated alias.")
     train.add_argument("--patience", type=int, default=PATIENCE,
-                       help="Early stopping patience placeholder.")
+                       help="Stop after this many non-improving epochs at the active loss stage.")
 
     parser.add_argument(
         "--use-amp",

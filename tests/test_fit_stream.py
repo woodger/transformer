@@ -63,9 +63,15 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
             self.calls = []
             self.saved_as = None
 
-        def fit_batch(self, X, Y, epoch):
-            self.calls.append((X.shape, Y.shape, epoch))
-            return TrainMetrics(rows=1, batches=1, loss=1.25)
+        def fit_epochs(self, X, Y, on_epoch=None):
+            self.calls.append((X.shape, Y.shape))
+            metrics_rows = [
+                TrainMetrics(rows=1, batches=1, loss=1.25, loss_stage=1),
+                TrainMetrics(rows=1, batches=1, loss=1.10, loss_stage=2),
+            ]
+            for epoch, metrics in enumerate(metrics_rows):
+                on_epoch(epoch, metrics)
+            return metrics_rows
 
         def save(self, model_name):
             self.saved_as = model_name
@@ -81,13 +87,14 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
     main_module.fit_stream(make_args(model_name="stream.pth"), torch.device("cpu"))
 
-    assert trainer.calls == [(torch.Size([1, 2, 2]), torch.Size([1, 6]), 0)]
+    assert trainer.calls == [(torch.Size([1, 2, 2]), torch.Size([1, 6]))]
     assert trainer.saved_as == "stream.pth"
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
-    assert "frame=2 loss=1.250000" in output
-    assert "Model saved after 1 trained frame(s) from 2 received frame(s)" in output
+    assert "frame=2 epoch=1 loss=1.250000" in output
+    assert "frame=2 epoch=2 loss=1.100000" in output
+    assert "Model saved after 1 trained frame(s), 2 epoch(s) from 2 received frame(s)" in output
 
 
 def test_fit_stream_rejects_all_empty_frames(monkeypatch):

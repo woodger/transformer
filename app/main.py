@@ -3,7 +3,7 @@ import sys
 from contextlib import redirect_stdout
 
 from args import parse_args
-from config import CONTEXT_MODE
+from config import CONTEXT_MODE, LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
 from device import get_device
 from transformer import TransformerModel
 from arrow_io import (
@@ -58,7 +58,9 @@ def build_trainer(args, model, device):
         batch_size=args.batch_size,
         epochs=args.epochs,
         patience=args.patience,
-        per_week=args.per_week,
+        loss_stage=getattr(args, "loss_stage", LOSS_STAGE),
+        loss_schedule=getattr(args, "loss_schedule", LOSS_SCHEDULE),
+        stage_size=getattr(args, "stage_size", STAGE_SIZE),
         use_amp=args.use_amp,
         metrics_path=resolve_metrics_path(args.metrics_name),
         context_mode=getattr(args, "context_mode", CONTEXT_MODE),
@@ -70,6 +72,7 @@ def fit_stream(args, device):
     trainer = None
     received_frames = 0
     trained_frames = 0
+    trained_epochs = 0
 
     for table in iter_framed_arrow(sys.stdin.buffer):
         received_frames += 1
@@ -85,17 +88,27 @@ def fit_stream(args, device):
             trainer = build_trainer(args, model, device)
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
-        metrics = trainer.fit_batch(X_cpu, Y_cpu, trained_frames)
+        def on_epoch(epoch, metrics):
+            nonlocal trained_epochs
+            trained_epochs += 1
+            print(metrics.log_line(frame=received_frames, epoch=epoch + 1))
+            trainer.record_metrics(
+                metrics,
+                mode="fit-stream",
+                frame=received_frames,
+                epoch=epoch + 1,
+            )
+
+        trainer.fit_epochs(X_cpu, Y_cpu, on_epoch=on_epoch)
         trained_frames += 1
-        print(metrics.log_line(frame=received_frames))
-        trainer.record_metrics(metrics, mode="fit-stream", frame=received_frames)
 
     if trainer is None:
         raise ValueError("No non-empty frames received on stdin")
 
     trainer.save(args.model_name)
     print(
-        f"Model saved after {trained_frames} trained frame(s) "
+        f"Model saved after {trained_frames} trained frame(s), "
+        f"{trained_epochs} epoch(s) "
         f"from {received_frames} received frame(s)"
     )
 

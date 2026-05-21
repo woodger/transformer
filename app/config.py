@@ -24,7 +24,9 @@ EPOCHS = 25
 PATIENCE = 5
 WEIGHT_DECAY = 1e-5
 GRAD_CLIP_NORM = 1.0
-PER_WEEK = 5
+LOSS_STAGE = 4
+LOSS_SCHEDULE = "epoch"
+STAGE_SIZE = 5
 
 # ======================
 # Runtime

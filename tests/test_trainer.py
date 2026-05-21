@@ -4,6 +4,7 @@ import json
 
 from torch import nn
 from metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
+from losses import resolve_loss_stage
 from app.trainer import Trainer
 from app.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
@@ -100,7 +101,7 @@ def test_trainer_fit_batch_cpu():
     assert metrics.rows == X.size(0)
     assert metrics.batches == 4
     assert metrics.step == 4
-    assert metrics.week == 1
+    assert metrics.loss_stage == 1
     assert metrics.lr == 1e-3
     assert metrics.sigma_min > 0.0
     assert metrics.sigma_p05 > 0.0
@@ -112,7 +113,24 @@ def test_trainer_fit_batch_cpu():
     assert 0.0 <= metrics.empty_token_ratio <= 1.0
 
 
-def test_trainer_per_week_is_configurable():
+def test_trainer_stage_size_is_configurable():
+    model = nn.Linear(2, 6)
+
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        stage_size=3,
+        use_amp=False,
+    )
+
+    assert trainer.stage_size == 3
+
+
+def test_trainer_per_week_alias_sets_stage_size():
     model = nn.Linear(2, 6)
 
     trainer = Trainer(
@@ -126,10 +144,11 @@ def test_trainer_per_week_is_configurable():
         use_amp=False,
     )
 
+    assert trainer.stage_size == 3
     assert trainer.per_week == 3
 
 
-def test_trainer_loss_schedule_advances_by_training_batch():
+def test_trainer_loss_schedule_advances_by_epoch():
     X, Y = make_dummy_data(n=5)
     Y[:, 4] = torch.rand(5) + 0.1
     Y[:, 5] = torch.randint(0, 2, (5,), dtype=Y.dtype)
@@ -150,7 +169,44 @@ def test_trainer_loss_schedule_advances_by_training_batch():
         batch_size=1,
         epochs=1,
         patience=1,
-        per_week=1,
+        loss_schedule="epoch",
+        stage_size=1,
+        use_amp=False,
+    )
+
+    metrics = trainer.fit_batch(X, Y, epoch=3)
+
+    assert metrics.batches == 5
+    assert metrics.step == 5
+    assert metrics.loss_stage == 4
+    assert metrics.loss_prob != 0.0
+    assert metrics.loss_ev != 0.0
+    assert metrics.loss_vol != 0.0
+
+
+def test_trainer_loss_schedule_advances_by_optimizer_step():
+    X, Y = make_dummy_data(n=5)
+    Y[:, 4] = torch.rand(5) + 0.1
+    Y[:, 5] = torch.randint(0, 2, (5,), dtype=Y.dtype)
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        loss_schedule="step",
+        stage_size=1,
         use_amp=False,
     )
 
@@ -158,10 +214,85 @@ def test_trainer_loss_schedule_advances_by_training_batch():
 
     assert metrics.batches == 5
     assert metrics.step == 5
-    assert metrics.week == 5
+    assert metrics.loss_stage == 4
     assert metrics.loss_prob != 0.0
     assert metrics.loss_ev != 0.0
     assert metrics.loss_vol != 0.0
+
+
+def test_trainer_loss_schedule_none_uses_fixed_stage():
+    X, Y = make_dummy_data(n=4)
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=2,
+        epochs=1,
+        patience=1,
+        loss_stage=1,
+        loss_schedule="none",
+        stage_size=1,
+        use_amp=False,
+    )
+
+    metrics = trainer.fit_batch(X, Y, epoch=10)
+
+    assert metrics.loss_stage == 1
+    assert metrics.loss_prob == 0.0
+    assert metrics.loss_ev == 0.0
+    assert metrics.loss_vol == 0.0
+
+
+def test_resolve_loss_stage_caps_at_configured_max_stage():
+    assert resolve_loss_stage(99, "epoch", stage_size=1, max_stage=3) == 3
+
+
+def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
+    X, Y = make_dummy_data(n=4)
+    Y[:, 4] = torch.rand(4) + 0.1
+    Y[:, 5] = torch.randint(0, 2, (4,), dtype=Y.dtype)
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=0.0,
+        batch_size=4,
+        epochs=8,
+        patience=1,
+        loss_schedule="epoch",
+        stage_size=2,
+        use_amp=False,
+    )
+
+    seen = []
+    metrics_rows = trainer.fit_epochs(
+        X,
+        Y,
+        on_epoch=lambda epoch, metrics: seen.append((epoch + 1, metrics.loss_stage)),
+    )
+
+    assert len(metrics_rows) >= 7
+    assert seen[:6] == [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (6, 3)]
+    assert seen[-1][1] == 4
 
 
 def test_trainer_rejects_invalid_per_week():
@@ -179,7 +310,7 @@ def test_trainer_rejects_invalid_per_week():
             use_amp=False,
         )
     except ValueError as exc:
-        assert "per_week must be a positive integer" in str(exc)
+        assert "stage_size must be a positive integer" in str(exc)
     else:
         raise AssertionError("Trainer accepted invalid per_week")
 
@@ -224,6 +355,7 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert isinstance(rows[0]["loss"], float)
     assert "grad_norm" in rows[0]
     assert rows[0]["step"] == 2
+    assert "loss_stage" in rows[0]
     assert "sigma_min" in rows[0]
     assert "sigma_p05" in rows[0]
     assert "sigma_mean" in rows[0]

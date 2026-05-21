@@ -1,20 +1,54 @@
 import torch
 import torch.nn.functional as F
 
-from config import PER_WEEK
+from config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
+
+LOSS_STAGES = 4
+LOSS_SCHEDULES = ("none", "epoch", "step")
+
+
+def validate_loss_stage(loss_stage: int) -> int:
+    if loss_stage < 1 or loss_stage > LOSS_STAGES:
+        raise ValueError(f"loss_stage must be between 1 and {LOSS_STAGES}")
+    return loss_stage
+
+
+def validate_stage_size(stage_size: int) -> int:
+    if stage_size <= 0:
+        raise ValueError("stage_size must be a positive integer")
+    return stage_size
+
+
+def validate_loss_schedule(loss_schedule: str) -> str:
+    if loss_schedule not in LOSS_SCHEDULES:
+        choices = ", ".join(LOSS_SCHEDULES)
+        raise ValueError(f"loss_schedule must be one of: {choices}")
+    return loss_schedule
+
+
+def resolve_loss_stage(
+    progress: int,
+    loss_schedule: str = LOSS_SCHEDULE,
+    stage_size: int = STAGE_SIZE,
+    max_stage: int = LOSS_STAGE,
+) -> int:
+    max_stage = validate_loss_stage(max_stage)
+    loss_schedule = validate_loss_schedule(loss_schedule)
+
+    if loss_schedule == "none":
+        return max_stage
+
+    stage_size = validate_stage_size(stage_size)
+    return min(max_stage, progress // stage_size + 1)
 
 
 def combined_loss(
     preds,
     targets,
-    step,
-    per_week: int = PER_WEEK,
+    loss_stage: int = LOSS_STAGE,
     return_parts: bool = False,
 ):
-    if per_week <= 0:
-        raise ValueError("per_week must be a positive integer")
-
-    week = step // per_week + 1
+    loss_stage = validate_loss_stage(loss_stage)
 
     meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
     t_meanR, _, _, _, t_volNext, t_hitTP = targets.T
@@ -36,7 +70,7 @@ def combined_loss(
     # -------------------------
     # Probabilities (AMP safe)
     # -------------------------
-    if week >= 2:
+    if loss_stage >= 2:
         raw_loss_prob = (
             F.binary_cross_entropy_with_logits(logitTP, t_hitTP) +
             F.binary_cross_entropy_with_logits(logitSL, 1 - t_hitTP)
@@ -47,7 +81,7 @@ def combined_loss(
     # -------------------------
     # Bayesian EV
     # -------------------------
-    if week >= 3:
+    if loss_stage >= 3:
         pTP = torch.sigmoid(logitTP)
         pSL = torch.sigmoid(logitSL)
 
@@ -59,7 +93,7 @@ def combined_loss(
     # -------------------------
     # Volatility
     # -------------------------
-    if week >= 4:
+    if loss_stage >= 4:
         raw_loss_vol = torch.mean(
             (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
         )
@@ -80,5 +114,5 @@ def combined_loss(
         "sigma_min": float(torch.min(sigma_values).cpu()),
         "sigma_p05": float(torch.quantile(sigma_values, 0.05).cpu()),
         "sigma_mean": float(torch.mean(sigma_values).cpu()),
-        "week": week,
+        "loss_stage": loss_stage,
     }

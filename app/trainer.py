@@ -1,11 +1,26 @@
-import torch
-import time
-from torch.utils.data import DataLoader, TensorDataset
 from contextlib import nullcontext
+import time
 
-from config import CONTEXT_MODE, WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+from config import (
+    CONTEXT_MODE,
+    GRAD_CLIP_NORM,
+    LOSS_SCHEDULE,
+    LOSS_STAGE,
+    STAGE_SIZE,
+    WEIGHT_DECAY,
+)
 from context import context_token_ratios
-from losses import combined_loss
+from losses import (
+    LOSS_STAGES,
+    combined_loss,
+    resolve_loss_stage,
+    validate_loss_schedule,
+    validate_loss_stage,
+    validate_stage_size,
+)
 from metrics import TrainMetrics, append_metrics_jsonl
 from utils import save_model, load_model, tree_stats
 
@@ -20,20 +35,26 @@ class Trainer:
         epochs: int,
         patience: int,
         use_amp: bool = False,
-        per_week: int = PER_WEEK,
+        loss_stage: int = LOSS_STAGE,
+        loss_schedule: str = LOSS_SCHEDULE,
+        stage_size: int = STAGE_SIZE,
+        per_week: int | None = None,
         weight_decay: float = WEIGHT_DECAY,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
     ):
-        if per_week <= 0:
-            raise ValueError("per_week must be a positive integer")
+        if per_week is not None:
+            stage_size = per_week
 
         self.model = model
         self.device = device
         self.batch_size = batch_size
         self.epochs = epochs
         self.patience = patience
-        self.per_week = per_week
+        self.loss_stage = validate_loss_stage(loss_stage)
+        self.loss_schedule = validate_loss_schedule(loss_schedule)
+        self.stage_size = validate_stage_size(stage_size)
+        self.per_week = self.stage_size
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.train_step = 0
@@ -66,12 +87,12 @@ class Trainer:
         metrics = TrainMetrics(
             lr=self.optimizer.param_groups[0]["lr"],
             step=self.train_step,
-            week=self.train_step // self.per_week + 1,
+            loss_stage=self._loss_stage_for(epoch),
         )
         started = time.perf_counter()
 
         for xb_cpu, yb_cpu in loader:
-            schedule_step = self.train_step
+            loss_stage = self._loss_stage_for(epoch)
             batch_rows = xb_cpu.size(0)
             nan_ratio = float(torch.isnan(xb_cpu).float().mean())
             token_ratios = context_token_ratios(xb_cpu, self.context_mode)
@@ -86,8 +107,7 @@ class Trainer:
                 loss, loss_parts = combined_loss(
                     preds,
                     yb,
-                    schedule_step,
-                    self.per_week,
+                    loss_stage,
                     return_parts=True,
                 )
 
@@ -112,6 +132,19 @@ class Trainer:
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
 
+    def _loss_stage_for(self, epoch: int) -> int:
+        if self.loss_schedule == "step":
+            progress = self.train_step
+        else:
+            progress = epoch
+
+        return resolve_loss_stage(
+            progress,
+            loss_schedule=self.loss_schedule,
+            stage_size=self.stage_size,
+            max_stage=self.loss_stage,
+        )
+
     def fit_batch(
         self,
         X: torch.Tensor,
@@ -128,7 +161,7 @@ class Trainer:
 
         return self._train_loader(loader, epoch)
 
-    def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
+    def fit_epochs(self, X: torch.Tensor, Y: torch.Tensor, on_epoch=None):
         dataset = TensorDataset(X, Y)
         loader = DataLoader(
             dataset,
@@ -137,11 +170,40 @@ class Trainer:
             num_workers=0,
         )
 
+        metrics_rows = []
         best_loss = float("inf")
         wait = 0
+        current_loss_stage = None
 
         for epoch in range(self.epochs):
             metrics = self._train_loader(loader, epoch)
+            metrics_rows.append(metrics)
+
+            if on_epoch is not None:
+                on_epoch(epoch, metrics)
+
+            if metrics.loss_stage != current_loss_stage:
+                current_loss_stage = metrics.loss_stage
+                best_loss = float("inf")
+                wait = 0
+
+            if metrics.loss < best_loss:
+                best_loss = metrics.loss
+                wait = 0
+            else:
+                wait += 1
+
+            if (
+                self.patience > 0
+                and metrics.loss_stage >= min(self.loss_stage, LOSS_STAGES)
+                and wait >= self.patience
+            ):
+                break
+
+        return metrics_rows
+
+    def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
+        def on_epoch(epoch: int, metrics: TrainMetrics):
             stats = tree_stats(self.model.parameters())
 
             print(metrics.log_line(epoch=epoch + 1, norm=f"{stats['norm']:.0f}"))
@@ -151,6 +213,8 @@ class Trainer:
                 epoch=epoch + 1,
                 norm=stats["norm"],
             )
+
+        self.fit_epochs(X, Y, on_epoch=on_epoch)
 
         save_model(model_name, self.model)
         print("Model saved")

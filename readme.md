@@ -146,12 +146,45 @@ Transformer обучается на каждом непустом входяще
 | `--lr` | Learning rate | `0.0005` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Количество эпох для `fit` | `25` |
-| `--per-week` | Сколько training batches считаются одной неделей в loss schedule | `5` |
+| `--loss-stage` | Максимальный этап loss: `1..4` | `4` |
+| `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
+| `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
+| `--per-week` | Deprecated alias для `--stage-size` | `5` |
 | `--patience` | Early stopping patience | `5` |
 | `--use-amp` | Включить AMP, если используется CUDA | выключено |
 
-В `fit-stream` параметр `--epochs` сейчас не повторяет входящий поток несколько
-раз. Каждый Arrow frame обучается как один streaming batch pass.
+В `fit-stream` каждый непустой Arrow frame обучается отдельным циклом
+`epoch=1..--epochs` до срабатывания `--patience`. Веса модели при этом не
+сбрасываются между frames.
+
+Loss schedule можно зафиксировать вручную:
+
+```bash
+PYTHONPATH=./app python ./app/main.py fit-stream \
+  --seq-len=20 \
+  --loss-schedule=none \
+  --loss-stage=1
+```
+
+Или включить автоматический curriculum по эпохам:
+
+```bash
+PYTHONPATH=./app python ./app/main.py fit-stream \
+  --seq-len=20 \
+  --loss-stage=4 \
+  --loss-schedule=epoch \
+  --stage-size=4
+```
+
+Для schedule по optimizer steps:
+
+```bash
+PYTHONPATH=./app python ./app/main.py fit-stream \
+  --seq-len=20 \
+  --loss-stage=4 \
+  --loss-schedule=step \
+  --stage-size=100
+```
 
 ## Контекстные пропуски
 
@@ -172,11 +205,11 @@ Transformer обучается на каждом непустом входяще
 ## Метрики обучения
 
 `fit` и `fit-stream` печатают компактную строку `TrainMetrics` для каждого
-внешнего epoch/frame. Внутри строки может быть несколько training batches;
-loss schedule продвигается по глобальному `step`, а не по номеру frame:
+epoch. В `fit-stream` строка дополнительно содержит номер входного frame.
+Loss schedule продвигается по выбранному `--loss-schedule`:
 
 ```text
-epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 week=1 ms=42
+epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
 ```
 
 Поля:
@@ -193,9 +226,9 @@ epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000
 - `complete_tokens` — доля timesteps без `NaN`
 - `partial_tokens` — доля timesteps с частью заполненных фичей и частью `NaN`
 - `empty_tokens` — доля timesteps, где все фичи `NaN`
-- `step` — глобальный номер training batch к концу строки метрик
+- `step` — глобальный номер optimizer step к концу строки метрик
 - `lr` — текущий learning rate
-- `week` — номер loss schedule week на текущем `step` с учётом `--per-week`
+- `loss_stage` — активный этап функции потерь
 - `ms` — время обучения прохода
 
 Чтобы дополнительно писать каждую строку метрик в JSONL:
@@ -227,7 +260,7 @@ PYTHONPATH=./app python ./app/main.py plot-metrics train.jsonl \
 
 `plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
 `sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
-`rows`, `batches`, `step`, `lr`, `week` и `elapsed_ms`.
+`rows`, `batches`, `step`, `lr`, `loss_stage` и `elapsed_ms`.
 
 ## Потоковое предсказание
 
