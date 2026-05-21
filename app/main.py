@@ -64,6 +64,11 @@ def build_trainer(args, model, device):
         use_amp=args.use_amp,
         metrics_path=resolve_metrics_path(args.metrics_name),
         context_mode=getattr(args, "context_mode", CONTEXT_MODE),
+        metrics_context={
+            "hidden": args.hidden,
+            "layers": args.layers,
+            "seq_len": args.seq_len,
+        },
     )
 
 
@@ -91,7 +96,11 @@ def fit_stream(args, device):
         def on_epoch(epoch, metrics):
             nonlocal trained_epochs
             trained_epochs += 1
-            print(metrics.log_line(frame=received_frames, epoch=epoch + 1))
+            print(metrics.log_line(
+                frame=received_frames,
+                epoch=epoch + 1,
+                **getattr(trainer, "metrics_context", {}),
+            ))
             trainer.record_metrics(
                 metrics,
                 mode="fit-stream",

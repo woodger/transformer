@@ -208,12 +208,15 @@ epoch. В `fit-stream` строка дополнительно содержит 
 Loss schedule продвигается по выбранному `--loss-schedule`:
 
 ```text
-epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
+epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
 ```
 
 Поля:
 
 - `loss` — итоговый loss после всех весов компонентов
+- `batch_size`, `loss_schedule`, `stage_size`, `max_loss_stage`, `hidden`,
+  `layers`, `seq_len`, `device` — параметры запуска, записываются в каждую
+  строку JSONL
 - `ret`, `prob`, `ev`, `vol` — вклад компонентов loss
 - `sigma_min`, `sigma_p05`, `sigma_mean` — статистика предсказанного `sigmaR`
   для диагностики Gaussian NLL

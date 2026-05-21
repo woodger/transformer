@@ -324,6 +324,11 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
         patience=1,
         use_amp=False,
         metrics_path=str(metrics_path),
+        metrics_context={
+            "hidden": 32,
+            "layers": 1,
+            "seq_len": 5,
+        },
     )
 
     metrics = trainer.fit_batch(X, Y)
@@ -346,6 +351,53 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert "partial_token_ratio" in rows[0]
     assert "empty_token_ratio" in rows[0]
     assert rows[0]["context_mode"] == "relaxed"
+    assert rows[0]["batch_size"] == 4
+    assert rows[0]["loss_schedule"] == "epoch"
+    assert rows[0]["stage_size"] == 5
+    assert rows[0]["max_loss_stage"] == 4
+    assert rows[0]["hidden"] == 32
+    assert rows[0]["layers"] == 1
+    assert rows[0]["seq_len"] == 5
+    assert rows[0]["device"] == "cpu"
+
+
+def test_trainer_log_line_includes_run_config():
+    X, Y = make_dummy_data(n=4)
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=4,
+        epochs=1,
+        patience=1,
+        use_amp=False,
+        metrics_context={
+            "hidden": 32,
+            "layers": 1,
+            "seq_len": 5,
+        },
+    )
+
+    metrics = trainer.fit_batch(X, Y)
+    output = metrics.log_line(epoch=1, **trainer.metrics_context)
+
+    assert "batch_size=4" in output
+    assert "loss_schedule=epoch" in output
+    assert "stage_size=5" in output
+    assert "max_loss_stage=4" in output
+    assert "hidden=32" in output
+    assert "layers=1" in output
+    assert "seq_len=5" in output
+    assert "device=cpu" in output
 
 
 def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):

@@ -41,6 +41,7 @@ class Trainer:
         weight_decay: float = WEIGHT_DECAY,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
+        metrics_context: dict | None = None,
     ):
         self.model = model
         self.device = device
@@ -53,6 +54,15 @@ class Trainer:
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.train_step = 0
+        self.metrics_context = {
+            "batch_size": self.batch_size,
+            "loss_schedule": self.loss_schedule,
+            "stage_size": self.stage_size,
+            "max_loss_stage": self.loss_stage,
+            "device": str(self.device),
+        }
+        if metrics_context:
+            self.metrics_context.update(metrics_context)
 
         # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
@@ -201,7 +211,11 @@ class Trainer:
         def on_epoch(epoch: int, metrics: TrainMetrics):
             stats = tree_stats(self.model.parameters())
 
-            print(metrics.log_line(epoch=epoch + 1, norm=f"{stats['norm']:.0f}"))
+            print(metrics.log_line(
+                epoch=epoch + 1,
+                norm=f"{stats['norm']:.0f}",
+                **self.metrics_context,
+            ))
             self.record_metrics(
                 metrics,
                 mode="fit",
@@ -226,5 +240,6 @@ class Trainer:
         save_model(model_name, self.model)
 
     def record_metrics(self, metrics: TrainMetrics, **extra):
-        extra.setdefault("context_mode", self.context_mode)
-        append_metrics_jsonl(self.metrics_path, metrics, **extra)
+        payload = {**self.metrics_context, **extra}
+        payload.setdefault("context_mode", self.context_mode)
+        append_metrics_jsonl(self.metrics_path, metrics, **payload)
