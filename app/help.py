@@ -11,6 +11,7 @@ from config import (
     NUM_LAYERS,
     DROPOUT,
     NHEAD,
+    CONTEXT_MODE,
 )
 from version import version_text
 
@@ -21,6 +22,11 @@ Data contract:
   src              Arrow list<float>, flattened [seq_len * feature_dim].
   tgt              Arrow list<float>, required for fit and fit-stream.
   predictions      Arrow list<float>, written to --pred-col.
+
+Context modes:
+  strict           Mask a timestep when any feature is NaN.
+  relaxed          Mask only fully-NaN timesteps; partial NaNs become 0.
+  indicators       Like relaxed, plus append missing-indicator features.
 
 Modes:
   fit              Train from an Arrow file on disk.
@@ -94,6 +100,10 @@ def build_parser():
                        help="Dropout probability.")
     model.add_argument("--nhead", type=int, default=NHEAD,
                        help="Number of attention heads.")
+    model.add_argument("--mode", choices=["strict", "relaxed", "indicators"],
+                       default=CONTEXT_MODE,
+                       dest="context_mode",
+                       help="How NaNs in context timesteps are handled.")
 
     train.add_argument("--lr", type=float, default=LR,
                        help="Learning rate.")
@@ -108,6 +118,7 @@ def build_parser():
 
     parser.add_argument(
         "--use-amp",
+        dest="use_amp",
         action="store_true",
         help="Use mixed precision (AMP) if GPU available.",
     )

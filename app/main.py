@@ -3,6 +3,7 @@ import sys
 from contextlib import redirect_stdout
 
 from args import parse_args
+from config import CONTEXT_MODE
 from device import get_device
 from transformer import TransformerModel
 from arrow_io import (
@@ -44,7 +45,8 @@ def build_model(args, X_cpu: torch.Tensor, Y_cpu: torch.Tensor, device):
         layers=args.layers,
         dropout=args.dropout,
         out_dim=out_dim,
-        nhead=args.nhead
+        nhead=args.nhead,
+        context_mode=getattr(args, "context_mode", CONTEXT_MODE),
     ).to(device)
 
 
@@ -59,6 +61,7 @@ def build_trainer(args, model, device):
         per_week=args.per_week,
         use_amp=args.use_amp,
         metrics_path=resolve_metrics_path(args.metrics_name),
+        context_mode=getattr(args, "context_mode", CONTEXT_MODE),
     )
 
 

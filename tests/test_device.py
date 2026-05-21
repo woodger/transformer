@@ -54,10 +54,23 @@ def test_cli_help(capsys, monkeypatch):
     assert "Modes:" in output
     assert "Streaming protocol:" in output
     assert "Storage:" in output
+    assert "Context modes:" in output
     assert "Runtime:" in output
     assert "Training:" in output
     assert "Examples:" in output
     assert "--metrics-name" in output
+    assert "--mode" in output
+    assert "--context-mode" not in output
+    assert "--use-amp" in output
+    assert "--amp" not in output
+
+
+def test_cli_use_amp(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "fit-stream", "--seq-len=12", "--use-amp"])
+
+    args = parse_args()
+
+    assert args.use_amp is True
 
 
 def test_parser_is_buildable():

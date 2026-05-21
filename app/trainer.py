@@ -3,11 +3,11 @@ import time
 from torch.utils.data import DataLoader, TensorDataset
 from contextlib import nullcontext
 
-from context import context_valid_token_ratio
+from config import CONTEXT_MODE, WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
+from context import context_token_ratios
 from losses import combined_loss
 from metrics import TrainMetrics, append_metrics_jsonl
 from utils import save_model, load_model, tree_stats
-from config import WEIGHT_DECAY, GRAD_CLIP_NORM, PER_WEEK
 
 
 class Trainer:
@@ -23,6 +23,7 @@ class Trainer:
         per_week: int = PER_WEEK,
         weight_decay: float = WEIGHT_DECAY,
         metrics_path: str | None = None,
+        context_mode: str = CONTEXT_MODE,
     ):
         if per_week <= 0:
             raise ValueError("per_week must be a positive integer")
@@ -34,6 +35,7 @@ class Trainer:
         self.patience = patience
         self.per_week = per_week
         self.metrics_path = metrics_path
+        self.context_mode = context_mode
 
         # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
@@ -69,7 +71,7 @@ class Trainer:
         for xb_cpu, yb_cpu in loader:
             batch_rows = xb_cpu.size(0)
             nan_ratio = float(torch.isnan(xb_cpu).float().mean())
-            valid_token_ratio = context_valid_token_ratio(xb_cpu)
+            token_ratios = context_token_ratios(xb_cpu, self.context_mode)
 
             xb = xb_cpu.to(self.device)
             yb = yb_cpu.to(self.device)
@@ -99,7 +101,7 @@ class Trainer:
                 loss_parts=loss_parts,
                 grad_norm=float(grad_norm.detach().cpu()),
                 nan_ratio=nan_ratio,
-                valid_token_ratio=valid_token_ratio,
+                **token_ratios,
             )
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
@@ -160,4 +162,5 @@ class Trainer:
         save_model(model_name, self.model)
 
     def record_metrics(self, metrics: TrainMetrics, **extra):
+        extra.setdefault("context_mode", self.context_mode)
         append_metrics_jsonl(self.metrics_path, metrics, **extra)

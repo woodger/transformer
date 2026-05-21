@@ -69,11 +69,16 @@ def combined_loss(
     if not return_parts:
         return loss
 
+    sigma_values = sigmaR.detach().float().reshape(-1)
+
     return loss, {
         "loss": float(loss.detach().cpu()),
         "loss_ret": float(loss_ret.detach().cpu()),
         "loss_prob": float(loss_prob.detach().cpu()),
         "loss_ev": float(loss_ev.detach().cpu()),
         "loss_vol": float(loss_vol.detach().cpu()),
+        "sigma_min": float(torch.min(sigma_values).cpu()),
+        "sigma_p05": float(torch.quantile(sigma_values, 0.05).cpu()),
+        "sigma_mean": float(torch.mean(sigma_values).cpu()),
         "week": week,
     }

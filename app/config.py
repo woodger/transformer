@@ -13,6 +13,7 @@ D_MODEL = 256
 NHEAD = 8
 NUM_LAYERS = 5
 DROPOUT = 0.1
+CONTEXT_MODE = "relaxed"
 
 # ======================
 # Training

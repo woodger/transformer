@@ -55,6 +55,7 @@ PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
   --device=cpu \
   --model-name=model_weights.pth \
   --seq-len=20 \
+  --mode=relaxed \
   --epochs=25 \
   --batch-size=256
 ```
@@ -66,6 +67,7 @@ PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
   --device=cpu \
   --model-name=model_weights.pth \
   --seq-len=20 \
+  --mode=relaxed \
   --preds-path=/tmp/preds.arrow \
   --pred-col=out
 ```
@@ -79,7 +81,8 @@ PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
 PYTHONPATH=./app python ./app/main.py fit-stream \
   --device=cpu \
   --model-name=model_weights.pth \
-  --seq-len=20
+  --seq-len=20 \
+  --mode=relaxed
 ```
 
 Обычно этот режим запускается не вручную, а из `inventory`:
@@ -96,6 +99,7 @@ node dist/index.js trainTransformer \
   --lookback=10 \
   --horizon=5 \
   --seq-len=20 \
+  --mode=relaxed \
   --device=cpu \
   --model-name=model_weights.pth
 ```
@@ -133,6 +137,7 @@ Transformer обучается на каждом непустом входяще
 | `--layers` | Количество Transformer layers | `5` |
 | `--nhead` | Количество attention heads | `8` |
 | `--dropout` | Dropout | `0.1` |
+| `--mode` | Как обрабатывать `NaN` в context timesteps: `strict`, `relaxed`, `indicators` | `relaxed` |
 
 ### Обучение
 
@@ -148,23 +153,45 @@ Transformer обучается на каждом непустом входяще
 В `fit-stream` параметр `--epochs` сейчас не повторяет входящий поток несколько
 раз. Каждый Arrow frame обучается как один streaming batch pass.
 
+## Контекстные пропуски
+
+`src` может содержать `NaN` в отдельных фичах контекстного timestep. Режим
+`--mode` задаёт, как такие timesteps попадают в Transformer:
+
+- `strict` — старая схема: timestep маскируется, если хотя бы одна фича `NaN`.
+- `relaxed` — timestep маскируется только если все фичи `NaN`; частичные
+  пропуски заменяются на `0.0`.
+- `indicators` — как `relaxed`, но к входу дополнительно добавляются бинарные
+  missing-indicator фичи; это меняет размер `input_proj`, поэтому модель нужно
+  обучать и использовать для prediction с тем же `--mode=indicators`.
+
+Текущий default — `relaxed`. Он нужен как контрольный эксперимент: проверить,
+помогает ли сама идея не выкидывать частично заполненные timesteps, без
+дополнительного шума от missing-indicator фичей.
+
 ## Метрики обучения
 
 `fit` и `fit-stream` печатают компактную строку `TrainMetrics` для каждого
 epoch/frame:
 
 ```text
-epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 grad=0.830 rows=256 batches=1 nan=0.0300 valid_tokens=0.8800 lr=0.0005 week=1 ms=42
+epoch=1 norm=183 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 lr=0.0005 week=1 ms=42
 ```
 
 Поля:
 
 - `loss` — итоговый loss после всех весов компонентов
 - `ret`, `prob`, `ev`, `vol` — вклад компонентов loss
+- `sigma_min`, `sigma_p05`, `sigma_mean` — статистика предсказанного `sigmaR`
+  для диагностики Gaussian NLL
 - `grad` — gradient norm до clipping
 - `rows`, `batches` — объём данных в проходе
 - `nan` — доля NaN во входном `src`
-- `valid_tokens` — доля timesteps без NaN, совпадает с текущей padding mask
+- `masked_tokens` — доля timesteps, которые скрыты от attention текущим
+  `--mode`
+- `complete_tokens` — доля timesteps без `NaN`
+- `partial_tokens` — доля timesteps с частью заполненных фичей и частью `NaN`
+- `empty_tokens` — доля timesteps, где все фичи `NaN`
 - `lr` — текущий learning rate
 - `week` — номер loss schedule week с учётом `--per-week`
 - `ms` — время обучения прохода
@@ -197,8 +224,8 @@ PYTHONPATH=./app python ./app/main.py plot-metrics train.jsonl \
 ```
 
 `plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
-`grad_norm`, `nan_ratio`, `valid_token_ratio`, `rows`, `batches`, `lr`, `week`
-и `elapsed_ms`.
+`sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
+`rows`, `batches`, `lr`, `week` и `elapsed_ms`.
 
 ## Потоковое предсказание
 

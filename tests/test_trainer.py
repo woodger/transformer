@@ -101,8 +101,14 @@ def test_trainer_fit_batch_cpu():
     assert metrics.batches == 4
     assert metrics.week == 1
     assert metrics.lr == 1e-3
+    assert metrics.sigma_min > 0.0
+    assert metrics.sigma_p05 > 0.0
+    assert metrics.sigma_mean > 0.0
     assert 0.0 <= metrics.nan_ratio <= 1.0
-    assert 0.0 <= metrics.valid_token_ratio <= 1.0
+    assert 0.0 <= metrics.masked_token_ratio <= 1.0
+    assert 0.0 <= metrics.complete_token_ratio <= 1.0
+    assert 0.0 <= metrics.partial_token_ratio <= 1.0
+    assert 0.0 <= metrics.empty_token_ratio <= 1.0
 
 
 def test_trainer_per_week_is_configurable():
@@ -181,7 +187,14 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert rows[0]["rows"] == 8
     assert isinstance(rows[0]["loss"], float)
     assert "grad_norm" in rows[0]
-    assert "valid_token_ratio" in rows[0]
+    assert "sigma_min" in rows[0]
+    assert "sigma_p05" in rows[0]
+    assert "sigma_mean" in rows[0]
+    assert "masked_token_ratio" in rows[0]
+    assert "complete_token_ratio" in rows[0]
+    assert "partial_token_ratio" in rows[0]
+    assert "empty_token_ratio" in rows[0]
+    assert rows[0]["context_mode"] == "relaxed"
 
 
 def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):

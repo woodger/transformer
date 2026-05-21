@@ -1,6 +1,11 @@
 import torch
+import pytest
 
-from app.context import context_key_padding_mask, context_valid_token_ratio
+from app.context import (
+    context_input_dim,
+    context_key_padding_mask,
+    context_token_ratios,
+)
 from app.transformer import TransformerModel
 
 
@@ -26,7 +31,17 @@ def test_transformer_forward_shape():
     assert y.shape == (batch, out_dim)
 
 
-def test_transformer_appends_missing_indicators():
+def test_transformer_input_dim_matches_context_mode():
+    relaxed = TransformerModel(
+        input_dim=8,
+        seq_len=10,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+        context_mode="relaxed",
+    )
     model = TransformerModel(
         input_dim=8,
         seq_len=10,
@@ -35,12 +50,15 @@ def test_transformer_appends_missing_indicators():
         dropout=0.0,
         out_dim=6,
         nhead=4,
+        context_mode="indicators",
     )
 
+    assert context_input_dim(8, "relaxed") == 8
+    assert relaxed.input_proj.in_features == 8
     assert model.input_proj.in_features == 16
 
 
-def test_context_mask_keeps_partial_nan_tokens_valid():
+def test_context_mask_depends_on_context_mode():
     x = torch.tensor([
         [
             [1.0, float("nan"), 3.0],
@@ -48,10 +66,40 @@ def test_context_mask_keeps_partial_nan_tokens_valid():
         ],
     ])
 
-    mask = context_key_padding_mask(x)
+    assert context_key_padding_mask(x, "strict").tolist() == [[True, True]]
+    assert context_key_padding_mask(x, "relaxed").tolist() == [[False, True]]
+    assert context_key_padding_mask(x, "indicators").tolist() == [[False, True]]
 
-    assert mask.tolist() == [[False, True]]
-    assert context_valid_token_ratio(x) == 0.5
+
+def test_context_token_ratios_split_complete_partial_and_empty_tokens():
+    x = torch.tensor([
+        [
+            [1.0, 2.0, 3.0],
+            [1.0, float("nan"), 3.0],
+            [float("nan"), float("nan"), float("nan")],
+            [4.0, 5.0, 6.0],
+        ],
+    ])
+
+    ratios = context_token_ratios(x)
+
+    assert ratios["masked_token_ratio"] == 0.25
+    assert ratios["complete_token_ratio"] == 0.5
+    assert ratios["partial_token_ratio"] == 0.25
+    assert ratios["empty_token_ratio"] == 0.25
+
+
+def test_context_token_ratios_use_selected_masking_mode():
+    x = torch.tensor([
+        [
+            [1.0, 2.0, 3.0],
+            [1.0, float("nan"), 3.0],
+            [float("nan"), float("nan"), float("nan")],
+        ],
+    ])
+
+    assert context_token_ratios(x, "strict")["masked_token_ratio"] == pytest.approx(2 / 3)
+    assert context_token_ratios(x, "relaxed")["masked_token_ratio"] == pytest.approx(1 / 3)
 
 
 def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
@@ -63,6 +111,7 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
         dropout=0.0,
         out_dim=6,
         nhead=4,
+        context_mode="indicators",
     )
 
     x = torch.randn(2, 3, 3)

@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from context import prepare_context_input
+from config import CONTEXT_MODE
+from context import context_input_dim, prepare_context_input, validate_context_mode
 from positional_encoding import PositionalEncoding
 
 
@@ -56,13 +57,18 @@ class TransformerModel(nn.Module):
         dropout,
         out_dim,   # можно оставить, но он теперь логически = 6
         nhead=8,
+        context_mode=CONTEXT_MODE,
     ):
         super().__init__()
 
         assert hidden_dim % nhead == 0
 
         self.input_dim = input_dim
-        self.input_proj = nn.Linear(input_dim * 2, hidden_dim)
+        self.context_mode = validate_context_mode(context_mode)
+        self.input_proj = nn.Linear(
+            context_input_dim(input_dim, self.context_mode),
+            hidden_dim,
+        )
         self.pos = PositionalEncoding(hidden_dim)
 
         encoder_layer = nn.TransformerEncoderLayer(
@@ -81,8 +87,7 @@ class TransformerModel(nn.Module):
         self.head = TradingHead(hidden_dim)
 
     def forward(self, x):
-        # x: (B, S, input_dim). Missing indicators are appended as features.
-        x, key_padding_mask = prepare_context_input(x)
+        x, key_padding_mask = prepare_context_input(x, self.context_mode)
 
         x = self.input_proj(x)
         x = self.pos(x)
