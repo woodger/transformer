@@ -149,7 +149,6 @@ Transformer обучается на каждом непустом входяще
 | `--loss-stage` | Максимальный этап loss: `1..4` | `4` |
 | `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
 | `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
-| `--per-week` | Deprecated alias для `--stage-size` | `5` |
 | `--patience` | Early stopping patience | `5` |
 | `--use-amp` | Включить AMP, если используется CUDA | выключено |
 

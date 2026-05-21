@@ -130,24 +130,6 @@ def test_trainer_stage_size_is_configurable():
     assert trainer.stage_size == 3
 
 
-def test_trainer_per_week_alias_sets_stage_size():
-    model = nn.Linear(2, 6)
-
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        per_week=3,
-        use_amp=False,
-    )
-
-    assert trainer.stage_size == 3
-    assert trainer.per_week == 3
-
-
 def test_trainer_loss_schedule_advances_by_epoch():
     X, Y = make_dummy_data(n=5)
     Y[:, 4] = torch.rand(5) + 0.1
@@ -295,7 +277,7 @@ def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
     assert seen[-1][1] == 4
 
 
-def test_trainer_rejects_invalid_per_week():
+def test_trainer_rejects_invalid_stage_size():
     model = nn.Linear(2, 6)
 
     try:
@@ -306,13 +288,13 @@ def test_trainer_rejects_invalid_per_week():
             batch_size=1,
             epochs=1,
             patience=1,
-            per_week=0,
+            stage_size=0,
             use_amp=False,
         )
     except ValueError as exc:
         assert "stage_size must be a positive integer" in str(exc)
     else:
-        raise AssertionError("Trainer accepted invalid per_week")
+        raise AssertionError("Trainer accepted invalid stage_size")
 
 
 def test_resolve_metrics_path_uses_models_dir():

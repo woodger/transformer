@@ -63,6 +63,7 @@ def test_cli_help(capsys, monkeypatch):
     assert "--loss-stage" in output
     assert "--loss-schedule" in output
     assert "--stage-size" in output
+    assert "--per-week" not in output
     assert "--context-mode" not in output
     assert "--use-amp" in output
     assert "--amp" not in output
@@ -91,14 +92,6 @@ def test_cli_loss_schedule_args(monkeypatch):
     assert args.loss_stage == 3
     assert args.loss_schedule == "step"
     assert args.stage_size == 100
-
-
-def test_cli_per_week_alias_sets_stage_size(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["main.py", "fit-stream", "--seq-len=12", "--per-week=4"])
-
-    args = parse_args()
-
-    assert args.stage_size == 4
 
 
 def test_parser_is_buildable():

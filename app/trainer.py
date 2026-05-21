@@ -38,14 +38,10 @@ class Trainer:
         loss_stage: int = LOSS_STAGE,
         loss_schedule: str = LOSS_SCHEDULE,
         stage_size: int = STAGE_SIZE,
-        per_week: int | None = None,
         weight_decay: float = WEIGHT_DECAY,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
     ):
-        if per_week is not None:
-            stage_size = per_week
-
         self.model = model
         self.device = device
         self.batch_size = batch_size
@@ -54,7 +50,6 @@ class Trainer:
         self.loss_stage = validate_loss_stage(loss_stage)
         self.loss_schedule = validate_loss_schedule(loss_schedule)
         self.stage_size = validate_stage_size(stage_size)
-        self.per_week = self.stage_size
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.train_step = 0

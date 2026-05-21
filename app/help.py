@@ -119,9 +119,8 @@ def build_parser():
     train.add_argument("--loss-schedule", choices=["none", "epoch", "step"],
                        default=LOSS_SCHEDULE,
                        help="How loss stage advances: fixed, by epoch, or by optimizer step.")
-    train.add_argument("--stage-size", "--per-week", type=int, default=STAGE_SIZE,
-                       dest="stage_size",
-                       help="Epoch/step count per loss stage; --per-week is a deprecated alias.")
+    train.add_argument("--stage-size", type=int, default=STAGE_SIZE,
+                       help="Epoch/step count per loss stage.")
     train.add_argument("--patience", type=int, default=PATIENCE,
                        help="Stop after this many non-improving epochs at the active loss stage.")
 
