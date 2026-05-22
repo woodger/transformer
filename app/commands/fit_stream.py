@@ -32,22 +32,24 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
             trainer = build_trainer_fn(args, model, device, model_config)
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
-        def on_epoch(epoch, metrics):
+        def on_epoch(epoch, metrics, monitor_payload):
             nonlocal trained_epochs
             trained_epochs += 1
             print(metrics.log_line(
                 frame=received_frames,
                 epoch=epoch + 1,
                 **getattr(trainer, "metrics_context", {}),
+                **monitor_payload,
             ))
             trainer.record_metrics(
                 metrics,
                 mode="fit-stream",
                 frame=received_frames,
                 epoch=epoch + 1,
+                **monitor_payload,
             )
 
-        trainer.fit_epochs(X_cpu, Y_cpu, on_epoch=on_epoch)
+        trainer.fit_epochs(X_cpu, Y_cpu, on_epoch=on_epoch, frame=received_frames)
         trained_frames += 1
 
     if trainer is None:

@@ -17,6 +17,8 @@ class TrainMetrics:
     ret_mae: float = 0.0
     ret_rmse: float = 0.0
     ret_mae_baseline: float = 0.0
+    ret_mae_skill: float = 0.0
+    ret_mae_improvement: float = 0.0
     grad_norm: float = 0.0
     nan_ratio: float = 0.0
     masked_token_ratio: float = 0.0
@@ -64,6 +66,12 @@ class TrainMetrics:
             self.ret_mae_baseline,
             loss_parts.get("ret_mae_baseline", 0.0),
         )
+        if self.ret_mae_baseline > 0:
+            self.ret_mae_skill = self.ret_mae / self.ret_mae_baseline
+            self.ret_mae_improvement = 1.0 - self.ret_mae_skill
+        else:
+            self.ret_mae_skill = math.inf
+            self.ret_mae_improvement = -math.inf
         self.grad_norm = avg(self.grad_norm, grad_norm)
         self.nan_ratio = avg(self.nan_ratio, nan_ratio)
         self.masked_token_ratio = avg(self.masked_token_ratio, masked_token_ratio)
@@ -89,6 +97,8 @@ class TrainMetrics:
             "ret_mae": f"{self.ret_mae:.6g}",
             "ret_rmse": f"{self.ret_rmse:.6g}",
             "ret_mae_baseline": f"{self.ret_mae_baseline:.6g}",
+            "ret_mae_skill": f"{self.ret_mae_skill:.6g}",
+            "ret_mae_improvement": f"{self.ret_mae_improvement:.6g}",
             "grad": f"{self.grad_norm:.3f}",
             "rows": self.rows,
             "batches": self.batches,
@@ -121,6 +131,8 @@ class TrainMetrics:
             "ret_mae": self.ret_mae,
             "ret_rmse": self.ret_rmse,
             "ret_mae_baseline": self.ret_mae_baseline,
+            "ret_mae_skill": self.ret_mae_skill,
+            "ret_mae_improvement": self.ret_mae_improvement,
             "grad_norm": self.grad_norm,
             "nan_ratio": self.nan_ratio,
             "masked_token_ratio": self.masked_token_ratio,

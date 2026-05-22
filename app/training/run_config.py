@@ -13,6 +13,9 @@ from app.config import (
     NUM_LAYERS,
     PATIENCE,
     STAGE_SIZE,
+    SAVE_BEST_CHECKPOINT,
+    TRAIN_MONITOR,
+    TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
 from app.training.losses import (
@@ -61,6 +64,9 @@ class TrainConfig:
     stage_size: int = STAGE_SIZE
     use_amp: bool = False
     weight_decay: float = WEIGHT_DECAY
+    monitor: str = TRAIN_MONITOR
+    monitor_min_improvement: float = TRAIN_MONITOR_MIN_IMPROVEMENT
+    save_best_checkpoint: bool = SAVE_BEST_CHECKPOINT
 
     def __post_init__(self):
         validate_loss_stage(self.loss_stage)
@@ -146,6 +152,17 @@ def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = 
         weight_decay=_pick(
             getattr(args, "weight_decay", None),
             _attr(checkpoint_config, "weight_decay", WEIGHT_DECAY),
+        ),
+        monitor=_attr(checkpoint_config, "monitor", TRAIN_MONITOR),
+        monitor_min_improvement=_attr(
+            checkpoint_config,
+            "monitor_min_improvement",
+            TRAIN_MONITOR_MIN_IMPROVEMENT,
+        ),
+        save_best_checkpoint=_attr(
+            checkpoint_config,
+            "save_best_checkpoint",
+            SAVE_BEST_CHECKPOINT,
         ),
     )
 

@@ -81,6 +81,7 @@ def test_trainer_checkpoint_stores_run_config(tmp_path):
     assert checkpoint["model_config"]["seq_len"] == 5
     assert checkpoint["model_config"]["hidden"] == 32
     assert checkpoint["train_config"]["batch_size"] == 4
+    assert checkpoint["train_config"]["monitor"] == "ret_mae_skill"
 
 
 def test_model_config_can_be_loaded_from_checkpoint_defaults():
@@ -329,6 +330,7 @@ def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
         patience=1,
         loss_schedule="epoch",
         stage_size=2,
+        monitor="loss",
         use_amp=False,
     )
 
@@ -336,7 +338,7 @@ def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
     metrics_rows = trainer.fit_epochs(
         X,
         Y,
-        on_epoch=lambda epoch, metrics: seen.append((epoch + 1, metrics.loss_stage)),
+        on_epoch=lambda epoch, metrics, monitor: seen.append((epoch + 1, metrics.loss_stage)),
     )
 
     assert len(metrics_rows) >= 7
@@ -416,6 +418,8 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert "ret_mae" in rows[0]
     assert "ret_rmse" in rows[0]
     assert "ret_mae_baseline" in rows[0]
+    assert "ret_mae_skill" in rows[0]
+    assert "ret_mae_improvement" in rows[0]
     assert "masked_token_ratio" in rows[0]
     assert "complete_token_ratio" in rows[0]
     assert "partial_token_ratio" in rows[0]
@@ -429,6 +433,8 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert rows[0]["layers"] == 1
     assert rows[0]["seq_len"] == 5
     assert rows[0]["device"] == "cpu"
+    assert rows[0]["monitor"] == "ret_mae_skill"
+    assert rows[0]["monitor_min_improvement"] == 0.0
 
 
 def test_trainer_log_line_includes_run_config():
@@ -471,6 +477,8 @@ def test_trainer_log_line_includes_run_config():
     assert "ret_mae=" in output
     assert "ret_rmse=" in output
     assert "ret_mae_baseline=" in output
+    assert "ret_mae_skill=" in output
+    assert "ret_mae_improvement=" in output
 
 
 def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):
@@ -526,6 +534,62 @@ def test_train_metrics_aggregates_return_errors():
     assert metrics.ret_mae == 2.5
     assert metrics.ret_rmse == math.sqrt(7.0)
     assert metrics.ret_mae_baseline == 3.5
+    assert metrics.ret_mae_skill == 2.5 / 3.5
+    assert metrics.ret_mae_improvement == 1.0 - (2.5 / 3.5)
+
+
+def test_trainer_monitor_requires_baseline_improvement():
+    trainer = Trainer(
+        model=nn.Linear(1, 6),
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        monitor="ret_mae_skill",
+        monitor_min_improvement=0.01,
+        use_amp=False,
+    )
+
+    worse = TrainMetrics(ret_mae=1.0, ret_mae_baseline=1.0, ret_mae_skill=1.0)
+    better = TrainMetrics(ret_mae=0.98, ret_mae_baseline=1.0, ret_mae_skill=0.98)
+
+    assert trainer._baseline_passed(worse) is False
+    assert trainer._baseline_passed(better) is True
+
+
+def test_trainer_save_restores_best_monitored_checkpoint(tmp_path):
+    model = nn.Linear(1, 6)
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=1,
+        monitor="ret_mae_skill",
+        use_amp=False,
+    )
+
+    with torch.no_grad():
+        model.weight.fill_(1.0)
+        model.bias.fill_(1.0)
+
+    best = TrainMetrics(ret_mae=0.5, ret_mae_baseline=1.0, ret_mae_skill=0.5)
+    payload = trainer._observe_metrics(best, frame=1, epoch=1)
+    assert payload["checkpoint_best"] is True
+
+    with torch.no_grad():
+        model.weight.fill_(2.0)
+        model.bias.fill_(2.0)
+
+    model_path = tmp_path / "best.pth"
+    trainer.save(str(model_path))
+
+    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
+    assert checkpoint["extra"]["checkpoint_selection"]["source"] == "best_monitor"
+    assert torch.all(checkpoint["state_dict"]["weight"] == 1.0)
+    assert torch.all(checkpoint["state_dict"]["bias"] == 1.0)
 
 
 def test_plot_metrics_writes_svg(tmp_path):

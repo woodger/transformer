@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+import math
 import time
 
 import torch
@@ -9,7 +10,10 @@ from app.config import (
     GRAD_CLIP_NORM,
     LOSS_SCHEDULE,
     LOSS_STAGE,
+    SAVE_BEST_CHECKPOINT,
     STAGE_SIZE,
+    TRAIN_MONITOR,
+    TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
 from app.model.context import context_token_ratios
@@ -41,6 +45,9 @@ class Trainer:
         loss_schedule: str = LOSS_SCHEDULE,
         stage_size: int = STAGE_SIZE,
         weight_decay: float = WEIGHT_DECAY,
+        monitor: str = TRAIN_MONITOR,
+        monitor_min_improvement: float = TRAIN_MONITOR_MIN_IMPROVEMENT,
+        save_best_checkpoint: bool = SAVE_BEST_CHECKPOINT,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
         metrics_context: dict | None = None,
@@ -55,10 +62,18 @@ class Trainer:
         self.loss_stage = validate_loss_stage(loss_stage)
         self.loss_schedule = validate_loss_schedule(loss_schedule)
         self.stage_size = validate_stage_size(stage_size)
+        self.monitor = self._validate_monitor(monitor)
+        self.monitor_min_improvement = float(monitor_min_improvement)
+        self.save_best_checkpoint = bool(save_best_checkpoint)
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.model_config = model_config
         self.train_config = train_config
+        self.best_monitor = float("inf")
+        self.best_state_dict = None
+        self.best_metrics = None
+        self.best_frame = None
+        self.best_epoch = None
         self.state = TrainingState()
         self.loss_scheduler = LossScheduler(
             loss_schedule=self.loss_schedule,
@@ -71,6 +86,8 @@ class Trainer:
             "stage_size": self.stage_size,
             "max_loss_stage": self.loss_stage,
             "device": str(self.device),
+            "monitor": self.monitor,
+            "monitor_min_improvement": self.monitor_min_improvement,
         }
         if metrics_context:
             self.metrics_context.update(metrics_context)
@@ -91,6 +108,12 @@ class Trainer:
             print("AMP requested but CUDA not available — disabled")
 
         print(f"AMP enabled: {self.use_amp}")
+
+    def _validate_monitor(self, monitor: str) -> str:
+        choices = ("loss", "ret_mae", "ret_mae_skill")
+        if monitor not in choices:
+            raise ValueError(f"monitor must be one of: {', '.join(choices)}")
+        return monitor
 
     @property
     def train_step(self) -> int:
@@ -155,6 +178,73 @@ class Trainer:
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
 
+    def _monitor_value(self, metrics: TrainMetrics) -> float:
+        if self.monitor == "loss":
+            return metrics.loss
+        if self.monitor == "ret_mae":
+            return metrics.ret_mae
+        return metrics.ret_mae_skill
+
+    def _baseline_passed(self, metrics: TrainMetrics) -> bool:
+        if self.monitor == "loss":
+            return True
+        if metrics.ret_mae_baseline <= 0.0:
+            return False
+
+        threshold = metrics.ret_mae_baseline * (1.0 - self.monitor_min_improvement)
+        return metrics.ret_mae < threshold
+
+    def _observe_metrics(
+        self,
+        metrics: TrainMetrics,
+        frame: int | None = None,
+        epoch: int | None = None,
+    ) -> dict:
+        monitor_value = self._monitor_value(metrics)
+        baseline_passed = self._baseline_passed(metrics)
+        checkpoint_best = False
+
+        if (
+            self.save_best_checkpoint
+            and baseline_passed
+            and math.isfinite(monitor_value)
+            and monitor_value < self.best_monitor
+        ):
+            self.best_monitor = monitor_value
+            self.best_state_dict = self._snapshot_state_dict()
+            self.best_metrics = metrics.to_dict()
+            self.best_frame = frame
+            self.best_epoch = epoch
+            checkpoint_best = True
+
+        payload = {
+            "monitor_value": monitor_value,
+            "baseline_passed": baseline_passed,
+            "checkpoint_best": checkpoint_best,
+        }
+        if math.isfinite(self.best_monitor):
+            payload["best_monitor"] = self.best_monitor
+        else:
+            payload["best_monitor"] = None
+
+        return payload
+
+    def _snapshot_state_dict(self) -> dict:
+        return {
+            key: value.detach().cpu().clone()
+            for key, value in self.model.state_dict().items()
+        }
+
+    def _restore_best_state_dict(self):
+        if self.best_state_dict is None:
+            return
+
+        state_dict = {
+            key: value.to(self.device)
+            for key, value in self.best_state_dict.items()
+        }
+        self.model.load_state_dict(state_dict)
+
     def _loss_stage_for(self) -> int:
         return self.loss_scheduler.stage_for(self.state)
 
@@ -195,11 +285,20 @@ class Trainer:
             self.state.begin_epoch(epoch)
             metrics = self._train_loader(loader)
             metrics_rows.append(metrics)
+            monitor_payload = self._observe_metrics(
+                metrics,
+                frame=frame,
+                epoch=epoch + 1,
+            )
 
             if on_epoch is not None:
-                on_epoch(epoch, metrics)
+                on_epoch(epoch, metrics, monitor_payload)
 
-            should_stop = stopper.update(metrics.loss, metrics.loss_stage)
+            should_stop = stopper.update(
+                monitor_payload["monitor_value"],
+                metrics.loss_stage,
+                can_improve=monitor_payload["baseline_passed"],
+            )
             self.state.finish_epoch()
             if should_stop:
                 break
@@ -207,29 +306,26 @@ class Trainer:
         return metrics_rows
 
     def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
-        def on_epoch(epoch: int, metrics: TrainMetrics):
+        def on_epoch(epoch: int, metrics: TrainMetrics, monitor_payload: dict):
             stats = tree_stats(self.model.parameters())
 
             print(metrics.log_line(
                 epoch=epoch + 1,
                 norm=f"{stats['norm']:.0f}",
                 **self.metrics_context,
+                **monitor_payload,
             ))
             self.record_metrics(
                 metrics,
                 mode="fit",
                 epoch=epoch + 1,
                 norm=stats["norm"],
+                **monitor_payload,
             )
 
         self.fit_epochs(X, Y, on_epoch=on_epoch)
 
-        save_model(
-            model_name,
-            self.model,
-            model_config=self.model_config,
-            train_config=self.train_config,
-        )
+        self.save(model_name)
         print("Model saved")
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
@@ -241,11 +337,31 @@ class Trainer:
         load_model(model_name, self.model, self.device)
 
     def save(self, model_name: str):
+        if self.save_best_checkpoint and self.best_state_dict is not None:
+            self._restore_best_state_dict()
+
         save_model(
             model_name,
             self.model,
             model_config=self.model_config,
             train_config=self.train_config,
+            extra={
+                "checkpoint_selection": {
+                    "monitor": self.monitor,
+                    "monitor_min_improvement": self.monitor_min_improvement,
+                    "best_monitor": (
+                        self.best_monitor if math.isfinite(self.best_monitor) else None
+                    ),
+                    "best_frame": self.best_frame,
+                    "best_epoch": self.best_epoch,
+                    "baseline_passed": self.best_state_dict is not None,
+                    "source": (
+                        "best_monitor"
+                        if self.best_state_dict is not None
+                        else "current"
+                    ),
+                },
+            },
         )
 
     def record_metrics(self, metrics: TrainMetrics, **extra):

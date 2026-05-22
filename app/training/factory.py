@@ -49,6 +49,9 @@ def build_trainer(args_or_config, model, device, model_config: ModelConfig | Non
         stage_size=train_config.stage_size,
         use_amp=train_config.use_amp,
         weight_decay=train_config.weight_decay,
+        monitor=train_config.monitor,
+        monitor_min_improvement=train_config.monitor_min_improvement,
+        save_best_checkpoint=train_config.save_best_checkpoint,
         metrics_path=metrics_path,
         context_mode=model_config.context_mode if model_config else CONTEXT_MODE,
         metrics_context={

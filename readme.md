@@ -160,6 +160,24 @@ Transformer обучается на каждом непустом входяще
 | `--patience` | Early stopping patience | `5` |
 | `--use-amp` | Включить AMP, если используется CUDA | выключено |
 
+Критерий early stopping и выбора checkpoint задаётся в `app/config.py`, а не
+через CLI:
+
+```python
+TRAIN_MONITOR = "ret_mae_skill"          # loss | ret_mae | ret_mae_skill
+TRAIN_MONITOR_MIN_IMPROVEMENT = 0.0      # 0.01 означает лучше baseline на 1%
+SAVE_BEST_CHECKPOINT = True
+```
+
+Для `ret_mae_skill` формула такая:
+
+```text
+ret_mae_skill = ret_mae / ret_mae_baseline
+```
+
+Значение `< 1.0` означает, что модель лучше нулевого прогноза `meanR=0`.
+Checkpoint обновляется только если baseline пройден и monitor улучшился.
+
 В `fit-stream` каждый непустой Arrow frame обучается отдельным циклом
 `epoch=1..--epochs` до срабатывания `--patience`. Веса модели при этом не
 сбрасываются между frames.
@@ -220,7 +238,7 @@ Loss schedule продвигается по выбранному `--loss-schedul
   между frames
 
 ```text
-epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 ret_mae=0.018 ret_rmse=0.024 ret_mae_baseline=0.031 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
+epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 monitor=ret_mae_skill monitor_min_improvement=0.0 monitor_value=0.58 baseline_passed=True checkpoint_best=True best_monitor=0.58 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 ret_mae=0.018 ret_rmse=0.024 ret_mae_baseline=0.031 ret_mae_skill=0.58 ret_mae_improvement=0.42 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
 ```
 
 Поля:
@@ -235,6 +253,11 @@ epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=
 - `ret_mae`, `ret_rmse` — ошибка прогноза `meanR` против target `meanR`
 - `ret_mae_baseline` — MAE нулевого прогноза `meanR=0`; полезно сравнивать с
   `ret_mae`, чтобы видеть, лучше ли модель простой нулевой гипотезы
+- `ret_mae_skill` — отношение `ret_mae / ret_mae_baseline`; меньше `1.0`
+  означает лучше baseline
+- `ret_mae_improvement` — `1 - ret_mae_skill`
+- `monitor_value`, `best_monitor`, `baseline_passed`, `checkpoint_best` —
+  состояние критерия early stopping и выбора checkpoint
 - `grad` — gradient norm до clipping
 - `rows`, `batches` — объём данных в проходе
 - `nan` — доля NaN во входном `src`

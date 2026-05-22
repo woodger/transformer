@@ -27,6 +27,9 @@ GRAD_CLIP_NORM = 1.0
 LOSS_STAGE = 4
 LOSS_SCHEDULE = "epoch"
 STAGE_SIZE = 5
+TRAIN_MONITOR = "ret_mae_skill"
+TRAIN_MONITOR_MIN_IMPROVEMENT = 0.0
+SAVE_BEST_CHECKPOINT = True
 
 # ======================
 # Runtime

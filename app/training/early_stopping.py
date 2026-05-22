@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -6,18 +7,18 @@ class EarlyStopping:
     patience: int
     min_stage: int
 
-    best_loss: float = float("inf")
+    best_score: float = float("inf")
     wait: int = 0
     current_stage: int | None = None
 
-    def update(self, loss: float, stage: int) -> bool:
+    def update(self, score: float, stage: int, can_improve: bool = True) -> bool:
         if stage != self.current_stage:
             self.current_stage = stage
-            self.best_loss = float("inf")
+            self.best_score = float("inf")
             self.wait = 0
 
-        if loss < self.best_loss:
-            self.best_loss = loss
+        if can_improve and math.isfinite(score) and score < self.best_score:
+            self.best_score = score
             self.wait = 0
         else:
             self.wait += 1
