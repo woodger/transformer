@@ -4,7 +4,7 @@ import time
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from config import (
+from app.config import (
     CONTEXT_MODE,
     GRAD_CLIP_NORM,
     LOSS_SCHEDULE,
@@ -12,19 +12,19 @@ from config import (
     STAGE_SIZE,
     WEIGHT_DECAY,
 )
-from context import context_token_ratios
-from early_stopping import EarlyStopping
-from losses import (
+from app.model.context import context_token_ratios
+from app.training.early_stopping import EarlyStopping
+from app.training.losses import (
     LOSS_STAGES,
     combined_loss,
     validate_loss_schedule,
     validate_loss_stage,
     validate_stage_size,
 )
-from loss_scheduler import LossScheduler
-from metrics import TrainMetrics, append_metrics_jsonl
-from training_state import TrainingState
-from utils import save_model, load_model, tree_stats
+from app.training.loss_scheduler import LossScheduler
+from app.metrics import TrainMetrics, append_metrics_jsonl
+from app.training.training_state import TrainingState
+from app.utils import save_model, load_model, tree_stats
 
 
 class Trainer:

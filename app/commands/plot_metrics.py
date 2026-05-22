@@ -1,5 +1,5 @@
-from metrics import plot_metrics
-from utils import resolve_metrics_path
+from app.metrics import plot_metrics
+from app.utils import resolve_metrics_path
 
 
 def run(args):

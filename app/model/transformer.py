@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import CONTEXT_MODE
-from context import context_input_dim, prepare_context_input, validate_context_mode
-from positional_encoding import PositionalEncoding
+from app.config import CONTEXT_MODE
+from app.model.context import context_input_dim, prepare_context_input, validate_context_mode
+from app.model.positional_encoding import PositionalEncoding
 
 
 class TradingHead(nn.Module):

@@ -36,13 +36,13 @@ pip install torch numpy pyarrow pytest
 Запуск выполняется из корня проекта:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py <action> [data] [options]
+python ./app/main.py <action> [data] [options]
 ```
 
 Версию можно посмотреть так:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py --version
+python ./app/main.py --version
 ```
 
 Доступные действия:
@@ -56,7 +56,7 @@ PYTHONPATH=./app python ./app/main.py --version
 ## Обучение из файла
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
+python ./app/main.py fit ./data/train.arrow \
   --device=cpu \
   --model-name=model_weights.pth \
   --seq-len=20 \
@@ -68,7 +68,7 @@ PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
 ## Предсказание из файла
 
 ```bash
-PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
+python ./app/main.py predict ./data/test.arrow \
   --device=cpu \
   --model-name=model_weights.pth \
   --preds-path=/tmp/preds.arrow \
@@ -86,7 +86,7 @@ PYTHONPATH=./app python ./app/main.py predict ./data/test.arrow \
 `data`, запуск завершится ошибкой. Режим читает stdin до EOF:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit-stream \
+python ./app/main.py fit-stream \
   --device=cpu \
   --model-name=model_weights.pth \
   --seq-len=20 \
@@ -145,7 +145,7 @@ Transformer обучается на каждом непустом входяще
 | `--layers` | Количество Transformer layers | `5` |
 | `--nhead` | Количество attention heads | `8` |
 | `--dropout` | Dropout | `0.1` |
-| `--mode` | Как обрабатывать `NaN` в context timesteps: `strict`, `relaxed`, `indicators` | `relaxed` |
+| `--mode` | Как обрабатывать `NaN` в context timesteps: `strict`, `relaxed` | `relaxed` |
 
 ### Обучение
 
@@ -167,7 +167,7 @@ Transformer обучается на каждом непустом входяще
 Loss schedule можно зафиксировать вручную:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit-stream \
+python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-schedule=none \
   --loss-stage=1
@@ -176,7 +176,7 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 Или включить автоматический curriculum по эпохам:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit-stream \
+python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-stage=4 \
   --loss-schedule=epoch \
@@ -186,7 +186,7 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 Для schedule по optimizer steps:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit-stream \
+python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-stage=4 \
   --loss-schedule=step \
@@ -199,15 +199,14 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 `--mode` задаёт, как такие timesteps попадают в Transformer:
 
 - `strict` — старая схема: timestep маскируется, если хотя бы одна фича `NaN`.
-- `relaxed` — timestep маскируется только если все фичи `NaN`; частичные
-  пропуски заменяются на `0.0`.
-- `indicators` — как `relaxed`, но к входу дополнительно добавляются бинарные
-  missing-indicator фичи; это меняет размер `input_proj`, поэтому модель нужно
-  обучать и использовать для prediction с тем же `--mode=indicators`.
+- `relaxed` — timestep маскируется только если все фичи `NaN`; после этого
+  `NaN` заменяются на `0.0`, а к входу добавляются бинарные missing-флаги.
+  Поэтому `0` остаётся только численным placeholder, а информация о пропуске
+  не теряется.
 
-Текущий default — `relaxed`. Он нужен как контрольный эксперимент: проверить,
-помогает ли сама идея не выкидывать частично заполненные timesteps, без
-дополнительного шума от missing-indicator фичей.
+Текущий default — `relaxed`. При таком контракте `inventory` должен передавать
+`NaN` для отсутствующих context candles; Transformer строит masks и missing-флаги
+из исходных `NaN` до любых tensor ops, и только затем заменяет `NaN -> 0`.
 
 ## Метрики обучения
 
@@ -221,7 +220,7 @@ Loss schedule продвигается по выбранному `--loss-schedul
   между frames
 
 ```text
-epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
+epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 ret_mae=0.018 ret_rmse=0.024 ret_mae_baseline=0.031 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
 ```
 
 Поля:
@@ -233,6 +232,9 @@ epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=
 - `ret`, `prob`, `ev`, `vol` — вклад компонентов loss
 - `sigma_min`, `sigma_p05`, `sigma_mean` — статистика предсказанного `sigmaR`
   для диагностики Gaussian NLL
+- `ret_mae`, `ret_rmse` — ошибка прогноза `meanR` против target `meanR`
+- `ret_mae_baseline` — MAE нулевого прогноза `meanR=0`; полезно сравнивать с
+  `ret_mae`, чтобы видеть, лучше ли модель простой нулевой гипотезы
 - `grad` — gradient norm до clipping
 - `rows`, `batches` — объём данных в проходе
 - `nan` — доля NaN во входном `src`
@@ -249,7 +251,7 @@ epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=
 Чтобы дополнительно писать каждую строку метрик в JSONL:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
+python ./app/main.py fit ./data/train.arrow \
   --seq-len=20 \
   --metrics-name=train.jsonl
 ```
@@ -257,7 +259,7 @@ PYTHONPATH=./app python ./app/main.py fit ./data/train.arrow \
 Для `fit-stream` используется тот же аргумент:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py fit-stream \
+python ./app/main.py fit-stream \
   --seq-len=20 \
   --metrics-name=train-stream.jsonl
 ```
@@ -269,7 +271,7 @@ PYTHONPATH=./app python ./app/main.py fit-stream \
 Построить SVG-графики по JSONL:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py plot-metrics train.jsonl \
+python ./app/main.py plot-metrics train.jsonl \
   --plots-dir=./metrics/plots
 ```
 
@@ -284,7 +286,7 @@ payloads из stdin, загружает модель один раз на пер
 framed Arrow payloads с предсказаниями в stdout:
 
 ```bash
-PYTHONPATH=./app python ./app/main.py predict-stream \
+python ./app/main.py predict-stream \
   --device=cpu \
   --model-name=model_weights.pth \
   --pred-col=out
@@ -337,23 +339,22 @@ EOF
 ## Тестирование
 
 ```bash
-PYTHONPATH=./app pytest -v
+. .venv/bin/activate
+pytest -v
 ```
 
 ## Основные файлы
 
 ```text
-app/main.py        # CLI entrypoint
-app/args.py        # argparse contract
-app/commands/      # реализации fit/predict/stream/plot команд
-app/arrow_io.py    # Arrow file и framed stdin protocol
-app/checkpoint.py  # сохранение весов и конфигурации модели
-app/data.py        # reshape/shape validation
-app/factory.py     # сборка модели и trainer из typed config
-app/run_config.py  # ModelConfig и TrainConfig
-app/trainer.py     # training loop, predict
-app/loss_scheduler.py # curriculum schedule
-app/early_stopping.py # patience logic
-app/transformer.py # модель
-app/metrics_*.py   # типы метрик, JSONL и SVG-графики
+app/main.py          # тонкий CLI entrypoint
+app/cli/             # argparse и форматированный --help/--version
+app/commands/        # реализации fit/predict/stream/plot команд
+app/data/            # Arrow file/framed protocol, reshape и shape validation
+app/model/           # Transformer, positional encoding, context masking
+app/training/        # Trainer, configs, loss stages, scheduler, early stopping
+app/metrics/         # TrainMetrics, JSONL writer/reader, SVG-графики
+app/storage/         # checkpoint с весами и конфигурацией модели
+app/runtime/         # device selection и версия приложения
+app/config.py        # project defaults
+app/utils.py         # небольшие совместные runtime helpers
 ```

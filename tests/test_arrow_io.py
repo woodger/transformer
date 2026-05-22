@@ -3,7 +3,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import io
 
-from app.arrow_io import (
+from app.data.arrow import (
     iter_framed_arrow,
     read_arrow,
     read_source_arrow,

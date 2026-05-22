@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
+from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
 
 
 @dataclass(frozen=True)
@@ -127,6 +127,10 @@ def combined_loss(
         return loss
 
     sigma_values = sigmaR.detach().float().reshape(-1)
+    ret_error = (meanR.detach().float() - t_meanR.detach().float()).reshape(-1)
+    ret_abs_error = torch.abs(ret_error)
+    ret_squared_error = ret_error ** 2
+    ret_baseline_abs_error = torch.abs(t_meanR.detach().float()).reshape(-1)
 
     return loss, {
         "loss": float(loss.detach().cpu()),
@@ -137,5 +141,8 @@ def combined_loss(
         "sigma_min": float(torch.min(sigma_values).cpu()),
         "sigma_p05": float(torch.quantile(sigma_values, 0.05).cpu()),
         "sigma_mean": float(torch.mean(sigma_values).cpu()),
+        "ret_mae": float(torch.mean(ret_abs_error).cpu()),
+        "ret_mse": float(torch.mean(ret_squared_error).cpu()),
+        "ret_mae_baseline": float(torch.mean(ret_baseline_abs_error).cpu()),
         "loss_stage": loss_stage,
     }

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -13,6 +14,9 @@ class TrainMetrics:
     sigma_min: float = 0.0
     sigma_p05: float = 0.0
     sigma_mean: float = 0.0
+    ret_mae: float = 0.0
+    ret_rmse: float = 0.0
+    ret_mae_baseline: float = 0.0
     grad_norm: float = 0.0
     nan_ratio: float = 0.0
     masked_token_ratio: float = 0.0
@@ -50,6 +54,16 @@ class TrainMetrics:
         self.sigma_min = avg(self.sigma_min, loss_parts.get("sigma_min", 0.0))
         self.sigma_p05 = avg(self.sigma_p05, loss_parts.get("sigma_p05", 0.0))
         self.sigma_mean = avg(self.sigma_mean, loss_parts.get("sigma_mean", 0.0))
+        self.ret_mae = avg(self.ret_mae, loss_parts.get("ret_mae", 0.0))
+        ret_mse = (
+            (self.ret_rmse ** 2) * self.rows
+            + loss_parts.get("ret_mse", 0.0) * rows
+        ) / total_rows
+        self.ret_rmse = math.sqrt(ret_mse)
+        self.ret_mae_baseline = avg(
+            self.ret_mae_baseline,
+            loss_parts.get("ret_mae_baseline", 0.0),
+        )
         self.grad_norm = avg(self.grad_norm, grad_norm)
         self.nan_ratio = avg(self.nan_ratio, nan_ratio)
         self.masked_token_ratio = avg(self.masked_token_ratio, masked_token_ratio)
@@ -72,6 +86,9 @@ class TrainMetrics:
             "sigma_min": f"{self.sigma_min:.6g}",
             "sigma_p05": f"{self.sigma_p05:.6g}",
             "sigma_mean": f"{self.sigma_mean:.6g}",
+            "ret_mae": f"{self.ret_mae:.6g}",
+            "ret_rmse": f"{self.ret_rmse:.6g}",
+            "ret_mae_baseline": f"{self.ret_mae_baseline:.6g}",
             "grad": f"{self.grad_norm:.3f}",
             "rows": self.rows,
             "batches": self.batches,
@@ -101,6 +118,9 @@ class TrainMetrics:
             "sigma_min": self.sigma_min,
             "sigma_p05": self.sigma_p05,
             "sigma_mean": self.sigma_mean,
+            "ret_mae": self.ret_mae,
+            "ret_rmse": self.ret_rmse,
+            "ret_mae_baseline": self.ret_mae_baseline,
             "grad_norm": self.grad_norm,
             "nan_ratio": self.nan_ratio,
             "masked_token_ratio": self.masked_token_ratio,

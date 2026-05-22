@@ -1,6 +1,6 @@
 import argparse
 
-from config import (
+from app.config import (
     DEFAULT_DEVICE,
     LR,
     BATCH_SIZE,
@@ -15,7 +15,7 @@ from config import (
     NHEAD,
     CONTEXT_MODE,
 )
-from version import version_text
+from app.runtime.version import version_text
 
 
 APP_DESCRIPTION = """Transformer training and inference CLI.
@@ -27,8 +27,7 @@ Data contract:
 
 Context modes:
   strict           Mask a timestep when any feature is NaN.
-  relaxed          Mask only fully-NaN timesteps; partial NaNs become 0.
-  indicators       Like relaxed, plus append missing-indicator features.
+  relaxed          Mask only fully-NaN timesteps and append missing flags.
 
 Modes:
   fit              Train from an Arrow file on disk.
@@ -103,7 +102,7 @@ def build_parser():
                        help=f"Dropout probability. Default for fit: {DROPOUT}.")
     model.add_argument("--nhead", type=int, default=None,
                        help=f"Number of attention heads. Default for fit: {NHEAD}.")
-    model.add_argument("--mode", choices=["strict", "relaxed", "indicators"],
+    model.add_argument("--mode", choices=["strict", "relaxed"],
                        default=None,
                        dest="context_mode",
                        help=f"How NaNs in context timesteps are handled. Default for fit: {CONTEXT_MODE}.")

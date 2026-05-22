@@ -1,7 +1,7 @@
 import torch
 
 
-CONTEXT_MODES = ("strict", "relaxed", "indicators")
+CONTEXT_MODES = ("strict", "relaxed")
 
 
 def validate_context_mode(context_mode: str) -> str:
@@ -13,7 +13,7 @@ def validate_context_mode(context_mode: str) -> str:
 
 def context_input_dim(input_dim: int, context_mode: str) -> int:
     context_mode = validate_context_mode(context_mode)
-    if context_mode == "indicators":
+    if context_mode == "relaxed":
         return input_dim * 2
     return input_dim
 
@@ -63,7 +63,7 @@ def prepare_context_input(
         key_padding_mask[all_missing_rows, 0] = False
 
     values = torch.nan_to_num(x, nan=0.0)
-    if context_mode == "indicators":
+    if context_mode == "relaxed":
         values = torch.cat([values, missing.to(dtype=values.dtype)], dim=-1)
 
     return values, key_padding_mask

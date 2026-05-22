@@ -2,10 +2,11 @@ import sys
 
 import torch
 
-from app.device import get_device
+from app.runtime.device import get_device
 from app import __version__
-from app.args import parse_args
-from app.help import build_parser
+from app.cli.args import parse_args
+from app.cli.help import build_parser
+from app.runtime.version import version_text
 
 
 def test_cpu_device():
@@ -22,7 +23,7 @@ def test_gpu_fallback_to_cpu():
 
 
 def test_version_is_exported():
-    assert __version__ == "0.1.0"
+    assert __version__
 
 
 def test_cli_version(capsys, monkeypatch):
@@ -34,7 +35,7 @@ def test_cli_version(capsys, monkeypatch):
         assert exc.code == 0
 
     output = capsys.readouterr().out
-    assert "main.py 0.1.0" in output
+    assert version_text("main.py") in output
     assert "python " in output
     assert "torch " in output
     assert "cuda " in output

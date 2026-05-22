@@ -1,17 +1,17 @@
 import sys
 from contextlib import redirect_stdout
 
-from arrow_io import (
+from app.data.arrow import (
     empty_predictions_table,
     iter_framed_arrow,
     predictions_to_table,
     table_to_source_tensor,
     write_framed_arrow,
 )
-from checkpoint import load_checkpoint_metadata
-from data import reshape_source, validate_feature_dim
-from factory import build_model, build_trainer
-from run_config import model_config_from_args
+from app.storage.checkpoint import load_checkpoint_metadata
+from app.data.tensors import reshape_source, validate_feature_dim
+from app.training.factory import build_model, build_trainer
+from app.training.run_config import model_config_from_args
 
 
 def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer):

@@ -1,11 +1,15 @@
 import torch
 
-from config import CONTEXT_MODE, LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
-from data import reshape_source
-from run_config import ModelConfig, TrainConfig, model_config_from_args, train_config_from_args
-from transformer import TransformerModel
-from trainer import Trainer
-from utils import resolve_metrics_path
+from app.config import CONTEXT_MODE
+from app.training.run_config import (
+    ModelConfig,
+    TrainConfig,
+    model_config_from_args,
+    train_config_from_args,
+)
+from app.model.transformer import TransformerModel
+from app.training.trainer import Trainer
+from app.utils import resolve_metrics_path
 
 
 def build_model(args_or_config, X_cpu: torch.Tensor, Y_cpu: torch.Tensor | None, device):

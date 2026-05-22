@@ -3,12 +3,12 @@ import torch
 import json
 
 from torch import nn
-from checkpoint import load_checkpoint
-from metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
-from losses import resolve_loss_stage
-from run_config import ModelConfig, TrainConfig, model_config_from_args
-from app.trainer import Trainer
-from app.transformer import TransformerModel
+from app.storage.checkpoint import load_checkpoint
+from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
+from app.training.losses import resolve_loss_stage
+from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
+from app.training.trainer import Trainer
+from app.model.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
 
 
@@ -99,14 +99,14 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
             "seq_len": 12,
             "hidden": 512,
             "layers": 4,
-            "context_mode": "indicators",
+            "context_mode": "relaxed",
         },
     )
 
     assert config.seq_len == 12
     assert config.hidden == 512
     assert config.layers == 4
-    assert config.context_mode == "indicators"
+    assert config.context_mode == "relaxed"
 
 
 def test_trainer_amp_flag_on_cpu():
@@ -170,6 +170,9 @@ def test_trainer_fit_batch_cpu():
     assert metrics.sigma_min > 0.0
     assert metrics.sigma_p05 > 0.0
     assert metrics.sigma_mean > 0.0
+    assert metrics.ret_mae >= 0.0
+    assert metrics.ret_rmse >= 0.0
+    assert metrics.ret_mae_baseline >= 0.0
     assert 0.0 <= metrics.nan_ratio <= 1.0
     assert 0.0 <= metrics.masked_token_ratio <= 1.0
     assert 0.0 <= metrics.complete_token_ratio <= 1.0
@@ -410,6 +413,9 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert "sigma_min" in rows[0]
     assert "sigma_p05" in rows[0]
     assert "sigma_mean" in rows[0]
+    assert "ret_mae" in rows[0]
+    assert "ret_rmse" in rows[0]
+    assert "ret_mae_baseline" in rows[0]
     assert "masked_token_ratio" in rows[0]
     assert "complete_token_ratio" in rows[0]
     assert "partial_token_ratio" in rows[0]
@@ -462,6 +468,9 @@ def test_trainer_log_line_includes_run_config():
     assert "layers=1" in output
     assert "seq_len=5" in output
     assert "device=cpu" in output
+    assert "ret_mae=" in output
+    assert "ret_rmse=" in output
+    assert "ret_mae_baseline=" in output
 
 
 def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):
@@ -478,6 +487,45 @@ def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):
     row = json.loads(metrics_path.read_text())
     assert row["loss"] is None
     assert row["grad_norm"] is None
+
+
+def test_train_metrics_aggregates_return_errors():
+    metrics = TrainMetrics()
+
+    metrics.update(
+        rows=1,
+        loss_parts={
+            "loss": 0.0,
+            "loss_ret": 0.0,
+            "loss_prob": 0.0,
+            "loss_ev": 0.0,
+            "loss_vol": 0.0,
+            "ret_mae": 1.0,
+            "ret_mse": 1.0,
+            "ret_mae_baseline": 2.0,
+        },
+        grad_norm=0.0,
+        nan_ratio=0.0,
+    )
+    metrics.update(
+        rows=3,
+        loss_parts={
+            "loss": 0.0,
+            "loss_ret": 0.0,
+            "loss_prob": 0.0,
+            "loss_ev": 0.0,
+            "loss_vol": 0.0,
+            "ret_mae": 3.0,
+            "ret_mse": 9.0,
+            "ret_mae_baseline": 4.0,
+        },
+        grad_norm=0.0,
+        nan_ratio=0.0,
+    )
+
+    assert metrics.ret_mae == 2.5
+    assert metrics.ret_rmse == math.sqrt(7.0)
+    assert metrics.ret_mae_baseline == 3.5
 
 
 def test_plot_metrics_writes_svg(tmp_path):

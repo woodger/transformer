@@ -2,7 +2,7 @@ import html
 import math
 import os
 
-from metrics_io import load_metrics_jsonl
+from app.metrics.io import load_metrics_jsonl
 
 
 PLOT_METRICS = [
@@ -14,6 +14,9 @@ PLOT_METRICS = [
     "sigma_min",
     "sigma_p05",
     "sigma_mean",
+    "ret_mae",
+    "ret_rmse",
+    "ret_mae_baseline",
     "grad_norm",
     "nan_ratio",
     "masked_token_ratio",

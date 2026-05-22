@@ -7,7 +7,7 @@ import pytest
 import torch
 
 import app.main as main_module
-from metrics import TrainMetrics
+from app.metrics import TrainMetrics
 
 
 class FakeStdin:

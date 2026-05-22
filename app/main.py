@@ -1,16 +1,19 @@
 import sys
+from pathlib import Path
 
-from args import parse_args
-from commands.fit import run as run_fit
-from commands.fit_stream import run as run_fit_stream
-from commands.plot_metrics import run as run_plot_metrics
-from commands.predict import run as run_predict
-from commands.predict_stream import run as run_predict_stream
-from data import reshape_source
-from device import get_device
-from factory import build_model, build_trainer
-from metrics import reset_metrics_log
-from utils import resolve_metrics_path
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.cli.args import parse_args
+from app.commands.fit import run as run_fit
+from app.commands.fit_stream import run as run_fit_stream
+from app.commands.plot_metrics import run as run_plot_metrics
+from app.commands.predict import run as run_predict
+from app.commands.predict_stream import run as run_predict_stream
+from app.runtime.device import get_device
+from app.training.factory import build_model, build_trainer
+from app.metrics import reset_metrics_log
+from app.utils import resolve_metrics_path
 
 
 def fit_stream(args, device):

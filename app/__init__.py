@@ -1,1 +1,1 @@
-from .version import __version__
+from app.runtime.version import __version__

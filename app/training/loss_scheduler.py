@@ -1,8 +1,13 @@
 from dataclasses import dataclass
 
-from config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
-from losses import resolve_loss_stage, validate_loss_schedule, validate_loss_stage, validate_stage_size
-from training_state import TrainingState
+from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
+from app.training.losses import (
+    resolve_loss_stage,
+    validate_loss_schedule,
+    validate_loss_stage,
+    validate_stage_size,
+)
+from app.training.training_state import TrainingState
 
 
 @dataclass(frozen=True)

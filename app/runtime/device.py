@@ -1,5 +1,5 @@
 import torch
-from config import DEFAULT_DEVICE
+from app.config import DEFAULT_DEVICE
 
 
 def get_device(device_arg: str | None = None) -> torch.device:

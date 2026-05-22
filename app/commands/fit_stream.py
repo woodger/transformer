@@ -1,9 +1,9 @@
 import sys
 
-from arrow_io import iter_framed_arrow, table_to_tensors
-from data import reshape_source, validate_feature_dim, validate_target_dim
-from factory import build_model, build_trainer
-from run_config import model_config_from_args
+from app.data.arrow import iter_framed_arrow, table_to_tensors
+from app.data.tensors import reshape_source, validate_feature_dim, validate_target_dim
+from app.training.factory import build_model, build_trainer
+from app.training.run_config import model_config_from_args
 
 
 def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer):

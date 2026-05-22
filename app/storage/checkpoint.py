@@ -3,8 +3,8 @@ import os
 
 import torch
 
-from config import PROJECT_ROOT
-from version import __version__
+from app.config import PROJECT_ROOT
+from app.runtime.version import __version__
 
 
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")

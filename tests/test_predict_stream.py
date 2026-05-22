@@ -7,7 +7,7 @@ import pytest
 import torch
 
 import app.main as main_module
-from app.arrow_io import iter_framed_arrow
+from app.data.arrow import iter_framed_arrow
 
 
 class FakeStdin:

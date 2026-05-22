@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 
-from config import (
+from app.config import (
     BATCH_SIZE,
     CONTEXT_MODE,
     D_MODEL,
@@ -15,7 +15,11 @@ from config import (
     STAGE_SIZE,
     WEIGHT_DECAY,
 )
-from losses import validate_loss_schedule, validate_loss_stage, validate_stage_size
+from app.training.losses import (
+    validate_loss_schedule,
+    validate_loss_stage,
+    validate_stage_size,
+)
 
 
 @dataclass(frozen=True)

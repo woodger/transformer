@@ -1,12 +1,13 @@
 import torch
 import pytest
 
-from app.context import (
+from app.model.context import (
     context_input_dim,
     context_key_padding_mask,
     context_token_ratios,
+    prepare_context_input,
 )
-from app.transformer import TransformerModel
+from app.model.transformer import TransformerModel
 
 
 def test_transformer_forward_shape():
@@ -42,7 +43,7 @@ def test_transformer_input_dim_matches_context_mode():
         nhead=4,
         context_mode="relaxed",
     )
-    model = TransformerModel(
+    strict = TransformerModel(
         input_dim=8,
         seq_len=10,
         hidden_dim=32,
@@ -50,12 +51,12 @@ def test_transformer_input_dim_matches_context_mode():
         dropout=0.0,
         out_dim=6,
         nhead=4,
-        context_mode="indicators",
+        context_mode="strict",
     )
 
-    assert context_input_dim(8, "relaxed") == 8
-    assert relaxed.input_proj.in_features == 8
-    assert model.input_proj.in_features == 16
+    assert context_input_dim(8, "relaxed") == 16
+    assert relaxed.input_proj.in_features == 16
+    assert strict.input_proj.in_features == 8
 
 
 def test_context_mask_depends_on_context_mode():
@@ -68,7 +69,6 @@ def test_context_mask_depends_on_context_mode():
 
     assert context_key_padding_mask(x, "strict").tolist() == [[True, True]]
     assert context_key_padding_mask(x, "relaxed").tolist() == [[False, True]]
-    assert context_key_padding_mask(x, "indicators").tolist() == [[False, True]]
 
 
 def test_context_token_ratios_split_complete_partial_and_empty_tokens():
@@ -102,6 +102,25 @@ def test_context_token_ratios_use_selected_masking_mode():
     assert context_token_ratios(x, "relaxed")["masked_token_ratio"] == pytest.approx(1 / 3)
 
 
+def test_relaxed_keeps_missing_flags_after_nan_to_num():
+    x = torch.tensor([
+        [
+            [1.0, float("nan"), 3.0],
+            [float("nan"), float("nan"), float("nan")],
+        ],
+    ])
+
+    values, mask = prepare_context_input(x, "relaxed")
+
+    assert mask.tolist() == [[False, True]]
+    assert values.tolist() == [
+        [
+            [1.0, 0.0, 3.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        ],
+    ]
+
+
 def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
     model = TransformerModel(
         input_dim=3,
@@ -111,7 +130,7 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
         dropout=0.0,
         out_dim=6,
         nhead=4,
-        context_mode="indicators",
+        context_mode="relaxed",
     )
 
     x = torch.randn(2, 3, 3)

@@ -1,4 +1,4 @@
-from help import build_parser
+from app.cli.help import build_parser
 
 
 def parse_args():

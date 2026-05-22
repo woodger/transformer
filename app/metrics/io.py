@@ -2,7 +2,7 @@ import json
 import math
 import os
 
-from metrics_types import TrainMetrics
+from app.metrics.types import TrainMetrics
 
 
 def reset_metrics_log(path: str):
