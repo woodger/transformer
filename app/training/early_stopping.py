@@ -11,13 +11,13 @@ class EarlyStopping:
     wait: int = 0
     current_stage: int | None = None
 
-    def update(self, score: float, stage: int, can_improve: bool = True) -> bool:
+    def update(self, score: float, stage: int) -> bool:
         if stage != self.current_stage:
             self.current_stage = stage
             self.best_score = float("inf")
             self.wait = 0
 
-        if can_improve and math.isfinite(score) and score < self.best_score:
+        if math.isfinite(score) and score < self.best_score:
             self.best_score = score
             self.wait = 0
         else:

@@ -297,7 +297,6 @@ class Trainer:
             should_stop = stopper.update(
                 monitor_payload["monitor_value"],
                 metrics.loss_stage,
-                can_improve=monitor_payload["baseline_passed"],
             )
             self.state.finish_epoch()
             if should_stop:

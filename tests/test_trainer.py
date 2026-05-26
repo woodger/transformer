@@ -5,6 +5,7 @@ import json
 from torch import nn
 from app.storage.checkpoint import load_checkpoint
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
+from app.training.early_stopping import EarlyStopping
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
@@ -556,6 +557,18 @@ def test_trainer_monitor_requires_baseline_improvement():
 
     assert trainer._baseline_passed(worse) is False
     assert trainer._baseline_passed(better) is True
+
+
+def test_early_stopping_tracks_monitor_before_baseline_passes():
+    stopper = EarlyStopping(patience=2, min_stage=1)
+
+    assert stopper.update(1.50, stage=1) is False
+    assert stopper.update(1.40, stage=1) is False
+    assert stopper.update(1.30, stage=1) is False
+    assert stopper.wait == 0
+
+    assert stopper.update(1.31, stage=1) is False
+    assert stopper.update(1.32, stage=1) is True
 
 
 def test_trainer_save_restores_best_monitored_checkpoint(tmp_path):
