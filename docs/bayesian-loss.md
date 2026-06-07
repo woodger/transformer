@@ -20,7 +20,6 @@ volNext   — будущая волатильность
 * NLL **наказывает за самоуверенность**
 * модель *учится говорить «я не уверен»*
 
----
 
 ### Код
 
@@ -32,7 +31,6 @@ def gaussian_nll(pred_mean, pred_sigma, target):
     )
 ```
 
----
 
 # Байесовский EV (через Bernoulli)
 
@@ -51,7 +49,6 @@ EV = p_{TP} \cdot TP - p_{SL} \cdot SL
 * а максимизируем его *апостериорное ожидание*
 * * штрафуем за неопределённость
 
----
 
 ### Bayesian EV loss
 
@@ -68,7 +65,6 @@ def bayesian_ev_loss(pTP, pSL, sigmaR, tp=1.0, sl=1.0):
 🔑 `detach()` — важно:
 мы **не даём sigma "читерить"**, снижая EV.
 
----
 
 # Вероятности как распределения (очень важно)
 
@@ -89,11 +85,9 @@ loss_prob = (
 )
 ```
 
----
 
 # Волатильность = LogNormal
 
-Ты уже почти правильно это сделал 👍
 Формально:
 
 [
@@ -107,7 +101,6 @@ def lognormal_nll(pred_vol, target_vol):
     )
 ```
 
----
 
 # Финальный Bayesian combined_loss
 
@@ -122,40 +115,32 @@ def combined_loss(preds, targets, epoch, per_week):
 
     loss = 0.0
 
-    # -------------------------
-    # 1. Gaussian NLL (return)
-    # -------------------------
-    loss_ret = gaussian_nll(meanR, sigmaR, t_meanR)
+    # ----------------------    # 1. Gaussian NLL (return)
+    # ----------------------    loss_ret = gaussian_nll(meanR, sigmaR, t_meanR)
     loss += loss_ret
 
-    # -------------------------
-    # 2. Probability likelihood
-    # -------------------------
-    if week >= 2:
+    # ----------------------    # 2. Probability likelihood
+    # ----------------------    if week >= 2:
         loss_prob = (
             torch.nn.functional.binary_cross_entropy(pTP, t_hitTP) +
             torch.nn.functional.binary_cross_entropy(pSL, 1 - t_hitTP)
         )
         loss += 0.5 * loss_prob
 
-    # -------------------------
-    # 3. Bayesian EV
-    # -------------------------
-    if week >= 3:
+    # ----------------------    # 3. Bayesian EV
+    # ----------------------    if week >= 3:
         loss_ev = bayesian_ev_loss(pTP, pSL, sigmaR)
         loss += 0.3 * loss_ev
 
-    # -------------------------
-    # 4. Volatility (log-normal)
-    # -------------------------
-    if week >= 4:
+    # ----------------------    # 4. Volatility (log-normal)
+    # ----------------------    if week >= 4:
         loss_vol = lognormal_nll(volNext, t_volNext)
         loss += 0.2 * loss_vol
 
     return loss
 ```
 
-# 🧠 Концептуально что можно сделать дальше (если хочешь)
+# Концептуально что можно сделать дальше
 
 1. **Kelly loss**
 2. **Posterior Sharpe**

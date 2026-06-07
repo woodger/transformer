@@ -20,7 +20,7 @@
 
 💡 Это критично для реального PnL.
 
-## 🧠 Концепция
+## Концепция
 
 Мы добавляем:
 
@@ -31,9 +31,8 @@
 
 > Модель учится **когда не стоит торговать**, а не просто «слабый сигнал»
 
----
 
-## 🧱 Архитектура (схема)
+## Архитектура (схема)
 
 ```
 Transformer encoder
@@ -51,9 +50,8 @@ Transformer encoder
  final = trading * p_trade
 ```
 
----
 
-## ✅ 1️⃣ No-trade head
+## No-trade head
 
 ```py
 class NoTradeHead(nn.Module):
@@ -69,15 +67,13 @@ class NoTradeHead(nn.Module):
         return torch.sigmoid(self.net(x))  # p_trade ∈ (0,1)
 ```
 
----
 
-## ✅ 2️⃣ Regime-aware head (без изменений логики)
+## Regime-aware head (без изменений логики)
 
 (оставляем твой `RegimeAwareHead` как есть)
 
----
 
-## ✅ 3️⃣ Объединённая торговая голова
+## Объединённая торговая голова
 
 ```py
 class TradingDecisionHead(nn.Module):
@@ -106,9 +102,8 @@ class TradingDecisionHead(nn.Module):
         return preds_scaled, p_trade
 ```
 
----
 
-## ✅ 4️⃣ Правка TransformerModel
+## Правка TransformerModel
 
 ```py
 self.head = TradingDecisionHead(hidden_dim, n_regimes=3)
@@ -121,9 +116,8 @@ preds, p_trade = self.head(last_valid)
 return preds, p_trade
 ```
 
----
 
-## 🔧 5️⃣ Правка loss (кратко)
+## 🔧 Правка loss (кратко)
 
 Добавь:
 
@@ -139,9 +133,8 @@ def combined_loss(preds, targets, epoch, p_trade=None):
 
 👉 Это **ключевая строка** — без неё модель будет всегда торговать.
 
----
 
-## 🧠 Что теперь умеет модель
+## Что теперь умеет модель
 
 ✅ Осознанно не торговать
 ✅ Снижать риск в шуме
@@ -149,9 +142,8 @@ def combined_loss(preds, targets, epoch, p_trade=None):
 ✅ Не «выдумывать» EV
 ✅ Быть ближе к реальной стратегии
 
----
 
-## 📌 Важно (очень)
+## Важно (очень)
 
 * **No-trade ≠ zero signals**
 * Это **отдельное решение**, обучаемое
@@ -161,13 +153,11 @@ def combined_loss(preds, targets, epoch, p_trade=None):
   * HFT
   * institutional models
 
----
 
 Ниже — **ОДИН файл**, **минимальный**, **рабочий**, без лишней магии.
 
----
 
-## 📄 `transformer.py`
+## `transformer.py`
 
 ```py
 import torch
@@ -175,10 +165,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# -----------------------------
-# Positional Encoding (simple)
-# -----------------------------
-class PositionalEncoding(nn.Module):
+# --------------------------# Positional Encoding (simple)
+# --------------------------class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=10000):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
@@ -194,10 +182,8 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, : x.size(1)]
 
 
-# -----------------------------
-# Trading head (signals only)
-# -----------------------------
-class TradingHead(nn.Module):
+# --------------------------# Trading head (signals only)
+# --------------------------class TradingHead(nn.Module):
     """
     Outputs RAW logits where needed (for AMP safety)
     Order:
@@ -238,10 +224,8 @@ class TradingHead(nn.Module):
         )
 
 
-# -----------------------------
-# No-trade head
-# -----------------------------
-class NoTradeHead(nn.Module):
+# --------------------------# No-trade head
+# --------------------------class NoTradeHead(nn.Module):
     """
     Outputs trade_logit
     sigmoid(trade_logit) = probability to trade
@@ -259,10 +243,8 @@ class NoTradeHead(nn.Module):
         return self.net(x)  # LOGIT (not sigmoid)
 
 
-# -----------------------------
-# Transformer Model
-# -----------------------------
-class TransformerModel(nn.Module):
+# --------------------------# Transformer Model
+# --------------------------class TransformerModel(nn.Module):
     def __init__(
         self,
         input_dim,
@@ -319,9 +301,8 @@ class TransformerModel(nn.Module):
         return preds, trade_logit
 ```
 
----
 
-## 🧪 Как использовать в training loop
+## Как использовать в training loop
 
 ```py
 preds, trade_logit = model(x)
@@ -333,9 +314,8 @@ p_trade = torch.sigmoid(trade_logit)
 preds = preds * p_trade
 ```
 
----
 
-## 🚨 В чём проблема сейчас
+## В чём проблема сейчас
 
 Но, ведь модель может просто выдавать TP=0, SL=0?
 
@@ -347,9 +327,8 @@ preds = preds * p_trade
 
 👉 Ты абсолютно прав: **это скрытый no-trade**, замаскированный под нулевые вероятности.
 
----
 
-## 🧠 Ключевая идея (важно)
+## Ключевая идея (важно)
 
 > **No-trade — это решение, а не отсутствие сигнала**
 
@@ -368,11 +347,10 @@ preds = preds * p_trade
 👉 Значит:
 **нужно запретить “прятаться” через `pTP = pSL = 0`**
 
----
 
-## ✅ Правильная архитектура (без таргета!)
+## Правильная архитектура (без таргета!)
 
-### 1️⃣ Trade gate = переключатель режима
+### Trade gate = переключатель режима
 
 ```text
 p_trade → {0, 1}
@@ -381,9 +359,8 @@ p_trade → {0, 1}
 * `p_trade ≈ 0` → рынок плохой → no-trade
 * `p_trade ≈ 1` → рынок торгуемый → trade
 
----
 
-### 2️⃣ Жёсткое правило: если trade → probabilities обязаны жить
+### Жёсткое правило: если trade → probabilities обязаны жить
 
 **Лосс-constraint:**
 
@@ -392,32 +369,29 @@ min_activity = torch.relu(0.2 - (pTP + pSL))
 loss += λ * p_trade * min_activity
 ```
 
-➡️ Если модель решила торговать (`p_trade ≈ 1`)
-➡️ она **не может** поставить `pTP = pSL = 0`
+Если модель решила торговать (`p_trade ≈ 1`)
+она **не может** поставить `pTP = pSL = 0`
 
----
 
-### 3️⃣ EV считается ТОЛЬКО если trade
+### EV считается ТОЛЬКО если trade
 
 ```py
 ev = p_trade * (pTP - pSL)
 loss += -mean(ev)
 ```
 
-➡️ no-trade **честно обнуляет EV**
-➡️ но **не даёт халтурить**
+* no-trade **честно обнуляет EV**
+* но **не даёт халтурить**
 
----
 
-### 4️⃣ Risk penalty тоже gated
+### Risk penalty тоже gated
 
 ```py
 risk_pen = p_trade * relu(sigmaR - abs(meanR))
 ```
 
----
 
-## 🔒 Почему no-trade таргет не нужен
+## Почему no-trade таргет не нужен
 
 | Подход                | Проблема    |
 | --------------------- | ----------- |
@@ -433,9 +407,8 @@ risk_pen = p_trade * relu(sigmaR - abs(meanR))
 
 👉 и **выключает торговлю**
 
----
 
-## 🧩 Итоговая логика (коротко)
+## Итоговая логика
 
 > **Торговать — дорого**
 > **Не торговать — бесплатно**

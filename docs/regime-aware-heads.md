@@ -1,7 +1,5 @@
-
 ## Regime-aware heads
 
-**Что это:**
 Разные “режимы рынка” → **разные головы модели**.
 
 Примеры режимов:
@@ -12,7 +10,7 @@
 
 Архитектурно:
 
-```text
+```
 encoder
    ↓
 shared features
@@ -42,15 +40,14 @@ shared features
    * решает, **какой режим сейчас**
    * либо **смешивает головы**
 
----
 
-## 🟦 Вариант 1 (рекомендуемый): Soft-gating (смесь голов)
+## Вариант 1 (рекомендуемый): Soft-gating (смесь голов)
 
 > Самый стабильный вариант для начала.
 
 ### Архитектура
 
-```text
+```
 Transformer Encoder
         ↓
    shared features
@@ -64,11 +61,10 @@ Transformer Encoder
       └── weighted sum ──→ final prediction
 ```
 
----
 
-## 🔧 Код: Regime-aware Trading Head
+## Код: Regime-aware Trading Head
 
-### 1️⃣ Regime head (одна голова = твоя текущая TradingHead)
+### Regime head (одна голова = твоя текущая TradingHead)
 
 ```py
 class RegimeHead(nn.Module):
@@ -106,9 +102,8 @@ class RegimeHead(nn.Module):
         )
 ```
 
----
 
-### 2️⃣ Gating network (определяет режим)
+### Gating network (определяет режим)
 
 ```py
 class RegimeGate(nn.Module):
@@ -125,9 +120,8 @@ class RegimeGate(nn.Module):
         return torch.softmax(self.net(x), dim=-1)
 ```
 
----
 
-### 3️⃣ Regime-aware head (объединение)
+### Regime-aware head (объединение)
 
 ```py
 class RegimeAwareHead(nn.Module):
@@ -155,9 +149,8 @@ class RegimeAwareHead(nn.Module):
         return torch.sum(preds * weights, dim=1)
 ```
 
----
 
-## 🔁 Встраивание в твой Transformer
+## Встраивание в твой Transformer
 
 ```py
 self.head = RegimeAwareHead(hidden_dim, n_regimes=3)
@@ -165,9 +158,8 @@ self.head = RegimeAwareHead(hidden_dim, n_regimes=3)
 
 Больше ничего менять **не нужно**.
 
----
 
-## 📌 Какие режимы выбрать сначала
+## Какие режимы выбрать сначала
 
 Для старта **3 режима — идеально**:
 
@@ -177,9 +169,8 @@ self.head = RegimeAwareHead(hidden_dim, n_regimes=3)
 
 Модель **сама научится**, что есть что — без разметки.
 
----
 
-## 🧯 Почему это стабильно
+## Почему это стабильно
 
 * нет hard-switch (не дергается)
 * нет if/else в forward
@@ -187,9 +178,8 @@ self.head = RegimeAwareHead(hidden_dim, n_regimes=3)
 * backprop идёт через все головы
 * gating обучается end-to-end
 
----
 
-## 🚀 Что можно добавить позже (по желанию)
+## Что можно добавить позже (по желанию)
 
 * entropy regularization (чтобы режимы не схлопывались)
 * hard routing после прогрева
