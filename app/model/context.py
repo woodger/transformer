@@ -56,7 +56,8 @@ def prepare_context_input(
     key_padding_mask = context_key_padding_mask(x, context_mode)
 
     # PyTorch attention can produce non-finite outputs when every token in a
-    # sequence is masked. Keep one zero-valued placeholder token attendable.
+    # sequence is masked. Keep one placeholder token attendable; NaN values
+    # are filled below and relaxed mode still retains its missing flags.
     all_missing_rows = key_padding_mask.all(dim=1)
     if bool(all_missing_rows.any()):
         key_padding_mask = key_padding_mask.clone()

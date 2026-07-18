@@ -3,6 +3,7 @@ import math
 import os
 
 from app.metrics.types import TrainMetrics
+from app.storage.atomic import atomic_output_path
 
 
 def reset_metrics_log(path: str):
@@ -13,8 +14,9 @@ def reset_metrics_log(path: str):
     if parent:
         os.makedirs(parent, exist_ok=True)
 
-    with open(path, "w", encoding="utf-8"):
-        pass
+    with atomic_output_path(path) as temporary_path:
+        with open(temporary_path, "w", encoding="utf-8"):
+            pass
 
 
 def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):

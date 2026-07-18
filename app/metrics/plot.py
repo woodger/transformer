@@ -3,6 +3,7 @@ import math
 import os
 
 from app.metrics.io import load_metrics_jsonl
+from app.storage.atomic import atomic_output_path
 
 
 PLOT_METRICS = [
@@ -112,9 +113,10 @@ def _write_svg(path: str, points: list[tuple[float, float]], title: str):
     )
     title_text = html.escape(title)
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(
-            f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+    with atomic_output_path(path) as temporary_path:
+        with open(temporary_path, "w", encoding="utf-8") as f:
+            f.write(
+                f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <rect width="100%" height="100%" fill="#ffffff"/>
   <text x="{left}" y="24" font-family="monospace" font-size="16" fill="#111111">{title_text}</text>
   <line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" stroke="#222222" stroke-width="1"/>
@@ -125,4 +127,4 @@ def _write_svg(path: str, points: list[tuple[float, float]], title: str):
   <polyline fill="none" stroke="#0f766e" stroke-width="2" points="{polyline}"/>
 </svg>
 """
-        )
+            )

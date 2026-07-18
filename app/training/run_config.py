@@ -1,8 +1,10 @@
 from dataclasses import asdict, dataclass
+import math
 
 from app.config import (
     BATCH_SIZE,
     CONTEXT_MODE,
+    DETERMINISTIC,
     D_MODEL,
     DROPOUT,
     EPOCHS,
@@ -14,6 +16,7 @@ from app.config import (
     PATIENCE,
     STAGE_SIZE,
     SAVE_BEST_CHECKPOINT,
+    SEED,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
@@ -34,6 +37,29 @@ class ModelConfig:
     nhead: int = NHEAD
     context_mode: str = CONTEXT_MODE
     out_dim: int = 6
+    feature_dim: int | None = None
+
+    def __post_init__(self):
+        if self.seq_len <= 0:
+            raise ValueError("seq_len must be a positive integer")
+        if self.hidden <= 0:
+            raise ValueError("hidden must be a positive integer")
+        if self.layers <= 0:
+            raise ValueError("layers must be a positive integer")
+        if self.nhead <= 0:
+            raise ValueError("nhead must be a positive integer")
+        if self.hidden % self.nhead != 0:
+            raise ValueError(
+                f"hidden ({self.hidden}) must be divisible by nhead ({self.nhead})"
+            )
+        if not math.isfinite(self.dropout) or not 0 <= self.dropout < 1:
+            raise ValueError("dropout must be in the range [0, 1)")
+        if self.context_mode not in ("strict", "relaxed"):
+            raise ValueError("context_mode must be one of: strict, relaxed")
+        if self.out_dim != 6:
+            raise ValueError("out_dim must be 6")
+        if self.feature_dim is not None and self.feature_dim <= 0:
+            raise ValueError("feature_dim must be a positive integer")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -67,11 +93,32 @@ class TrainConfig:
     monitor: str = TRAIN_MONITOR
     monitor_min_improvement: float = TRAIN_MONITOR_MIN_IMPROVEMENT
     save_best_checkpoint: bool = SAVE_BEST_CHECKPOINT
+    seed: int = SEED
+    deterministic: bool = DETERMINISTIC
 
     def __post_init__(self):
+        if not math.isfinite(self.lr) or self.lr <= 0:
+            raise ValueError("lr must be a positive number")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be a positive integer")
+        if self.epochs <= 0:
+            raise ValueError("epochs must be a positive integer")
+        if self.patience < 0:
+            raise ValueError("patience must be a non-negative integer")
         validate_loss_stage(self.loss_stage)
         validate_loss_schedule(self.loss_schedule)
         validate_stage_size(self.stage_size)
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be a non-negative number")
+        if self.monitor not in ("loss", "ret_mae", "ret_mae_skill"):
+            raise ValueError("monitor must be one of: loss, ret_mae, ret_mae_skill")
+        if (
+            not math.isfinite(self.monitor_min_improvement)
+            or not 0 <= self.monitor_min_improvement < 1
+        ):
+            raise ValueError("monitor_min_improvement must be in the range [0, 1)")
+        if self.seed < 0 or self.seed > 2**32 - 1:
+            raise ValueError("seed must be between 0 and 4294967295")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -95,6 +142,8 @@ def model_config_from_args(
     require_seq_len: bool = True,
 ) -> ModelConfig:
     checkpoint_config = _coerce_model_config(checkpoint_config)
+    if checkpoint_config is not None:
+        _validate_checkpoint_model_overrides(args, checkpoint_config)
 
     seq_len = _pick(getattr(args, "seq_len", None), _attr(checkpoint_config, "seq_len", None))
     if seq_len is None:
@@ -113,6 +162,7 @@ def model_config_from_args(
             _attr(checkpoint_config, "context_mode", CONTEXT_MODE),
         ),
         out_dim=_pick(getattr(args, "out_dim", None), _attr(checkpoint_config, "out_dim", 6)),
+        feature_dim=_attr(checkpoint_config, "feature_dim", None),
     )
 
     if config.seq_len <= 0:
@@ -153,18 +203,52 @@ def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = 
             getattr(args, "weight_decay", None),
             _attr(checkpoint_config, "weight_decay", WEIGHT_DECAY),
         ),
-        monitor=_attr(checkpoint_config, "monitor", TRAIN_MONITOR),
-        monitor_min_improvement=_attr(
-            checkpoint_config,
-            "monitor_min_improvement",
-            TRAIN_MONITOR_MIN_IMPROVEMENT,
+        monitor=_pick(
+            getattr(args, "monitor", None),
+            _attr(checkpoint_config, "monitor", TRAIN_MONITOR),
+        ),
+        monitor_min_improvement=_pick(
+            getattr(args, "monitor_min_improvement", None),
+            _attr(
+                checkpoint_config,
+                "monitor_min_improvement",
+                TRAIN_MONITOR_MIN_IMPROVEMENT,
+            ),
         ),
         save_best_checkpoint=_attr(
             checkpoint_config,
             "save_best_checkpoint",
             SAVE_BEST_CHECKPOINT,
         ),
+        seed=_pick(getattr(args, "seed", None), _attr(checkpoint_config, "seed", SEED)),
+        deterministic=bool(
+            _pick(
+                getattr(args, "deterministic", None),
+                _attr(checkpoint_config, "deterministic", DETERMINISTIC),
+            )
+        ),
     )
+
+
+def _validate_checkpoint_model_overrides(args, checkpoint_config: ModelConfig):
+    options = (
+        ("seq_len", "seq-len"),
+        ("hidden", "hidden"),
+        ("layers", "layers"),
+        ("dropout", "dropout"),
+        ("nhead", "nhead"),
+        ("context_mode", "mode"),
+    )
+    for attribute, option in options:
+        cli_value = getattr(args, attribute, None)
+        if cli_value is None:
+            continue
+        checkpoint_value = getattr(checkpoint_config, attribute)
+        if cli_value != checkpoint_value:
+            raise ValueError(
+                f"--{option}={cli_value} conflicts with checkpoint value "
+                f"{checkpoint_value}"
+            )
 
 
 def _attr(obj, name: str, default):

@@ -5,7 +5,20 @@ from app.config import DEFAULT_DEVICE
 def get_device(device_arg: str | None = None) -> torch.device:
     dev = device_arg or DEFAULT_DEVICE
 
-    if dev == "gpu" and torch.cuda.is_available():
+    if dev == "cpu":
+        return torch.device("cpu")
+
+    if dev == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if dev == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested but is not available")
         return torch.device("cuda")
 
-    return torch.device("cpu")
+    # Keep the former programmatic spelling working; the CLI exposes the
+    # unambiguous auto/cpu/cuda choices above.
+    if dev == "gpu":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    raise ValueError(f"Unsupported device: {dev}")

@@ -1,8 +1,8 @@
-import os
 import torch
 import numpy as np
 
 from app.storage.checkpoint import MODELS_DIR, load_checkpoint, save_checkpoint
+from app.storage.atomic import resolve_artifact_path
 
 
 def save_model(model_name: str, model, model_config=None, train_config=None, extra=None):
@@ -25,8 +25,11 @@ def resolve_metrics_path(metrics_name: str | None):
     if metrics_name is None:
         return None
 
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    return os.path.join(MODELS_DIR, metrics_name)
+    return resolve_artifact_path(
+        metrics_name,
+        MODELS_DIR,
+        label="metrics path",
+    )
 
 
 def tree_stats(params):

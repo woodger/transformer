@@ -3,7 +3,7 @@ import torch
 import json
 
 from torch import nn
-from app.storage.checkpoint import load_checkpoint
+from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from app.training.early_stopping import EarlyStopping
 from app.training.losses import resolve_loss_stage
@@ -78,7 +78,7 @@ def test_trainer_checkpoint_stores_run_config(tmp_path):
     trainer.fit(X, Y, str(model_path))
 
     checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
-    assert checkpoint["format"] == "transformer-checkpoint-v1"
+    assert checkpoint["format"] == CHECKPOINT_FORMAT
     assert checkpoint["model_config"]["seq_len"] == 5
     assert checkpoint["model_config"]["hidden"] == 32
     assert checkpoint["train_config"]["batch_size"] == 4

@@ -38,6 +38,8 @@ def make_args(**overrides):
         "layers": 1,
         "dropout": 0.0,
         "nhead": 4,
+        "seed": 42,
+        "deterministic": False,
     }
     args.update(overrides)
     return SimpleNamespace(**args)
@@ -118,6 +120,17 @@ def test_fit_stream_rejects_all_empty_frames(monkeypatch):
 
     with pytest.raises(ValueError, match="No non-empty frames received"):
         main_module.fit_stream(make_args(), torch.device("cpu"))
+
+
+def test_fit_stream_applies_max_frame_bytes(monkeypatch):
+    input_stream = io.BytesIO((11).to_bytes(8, byteorder="big") + b"payload")
+    monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
+
+    with pytest.raises(ValueError, match="exceeds maximum 10 bytes"):
+        main_module.fit_stream(
+            make_args(max_frame_bytes=10),
+            torch.device("cpu"),
+        )
 
 
 def test_main_rejects_data_path_for_fit_stream(monkeypatch):

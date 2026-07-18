@@ -49,7 +49,7 @@ def make_args(**overrides):
     return SimpleNamespace(**args)
 
 
-def test_predict_stream_writes_framed_predictions(monkeypatch):
+def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
     empty = pa.table({
         "src": pa.array([], type=pa.list_(pa.float32())),
     })
@@ -70,18 +70,27 @@ def test_predict_stream_writes_framed_predictions(monkeypatch):
             self.calls = []
 
         def load(self, model_name):
+            print("accidental load stdout")
             self.loaded.append(model_name)
 
         def predict(self, X):
+            print("accidental predict stdout")
             self.calls.append(X.shape)
             value = float(len(self.calls))
-            return torch.tensor([[value, value + 1.0]], dtype=torch.float32)
+            return torch.tensor(
+                [[value, value + 1.0, 0.0, 0.0, 1.0, 0.5]],
+                dtype=torch.float32,
+            )
 
     trainer = FakeTrainer()
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
     monkeypatch.setattr(main_module.sys, "stdout", FakeStdout(output_stream))
-    monkeypatch.setattr(main_module, "build_model", lambda *args: object())
+    def build_model(*args):
+        print("accidental build stdout")
+        return object()
+
+    monkeypatch.setattr(main_module, "build_model", build_model)
     monkeypatch.setattr(main_module, "build_trainer", lambda *args: trainer)
 
     main_module.predict_stream(make_args(), torch.device("cpu"))
@@ -94,8 +103,27 @@ def test_predict_stream_writes_framed_predictions(monkeypatch):
 
     assert len(frames) == 3
     assert frames[0].column("out").to_pylist() == []
-    assert frames[1].column("out").to_pylist() == [[1.0, 2.0]]
-    assert frames[2].column("out").to_pylist() == [[2.0, 3.0]]
+    assert frames[1].column("out").to_pylist() == [[1.0, 2.0, 0.0, 0.0, 1.0, 0.5]]
+    assert frames[2].column("out").to_pylist() == [[2.0, 3.0, 0.0, 0.0, 1.0, 0.5]]
+    diagnostics = capsys.readouterr().err
+    assert "accidental build stdout" in diagnostics
+    assert "accidental load stdout" in diagnostics
+    assert "accidental predict stdout" in diagnostics
+
+
+def test_predict_stream_applies_max_frame_bytes_without_writing_stdout(monkeypatch):
+    input_stream = io.BytesIO((11).to_bytes(8, byteorder="big") + b"payload")
+    output_stream = io.BytesIO()
+    monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
+    monkeypatch.setattr(main_module.sys, "stdout", FakeStdout(output_stream))
+
+    with pytest.raises(ValueError, match="exceeds maximum 10 bytes"):
+        main_module.predict_stream(
+            make_args(max_frame_bytes=10),
+            torch.device("cpu"),
+        )
+
+    assert output_stream.getvalue() == b""
 
 
 def test_main_rejects_data_path_for_predict_stream(monkeypatch):

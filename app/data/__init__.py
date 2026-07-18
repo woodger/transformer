@@ -9,7 +9,12 @@ from app.data.arrow import (
     write_arrow,
     write_framed_arrow,
 )
-from app.data.tensors import reshape_source, validate_feature_dim, validate_target_dim
+from app.data.tensors import (
+    reshape_source,
+    validate_checkpoint_feature_dim,
+    validate_feature_dim,
+    validate_target_dim,
+)
 
 __all__ = [
     "empty_predictions_table",
@@ -20,6 +25,7 @@ __all__ = [
     "reshape_source",
     "table_to_source_tensor",
     "table_to_tensors",
+    "validate_checkpoint_feature_dim",
     "validate_feature_dim",
     "validate_target_dim",
     "write_arrow",

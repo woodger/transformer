@@ -11,6 +11,7 @@ from app.commands.plot_metrics import run as run_plot_metrics
 from app.commands.predict import run as run_predict
 from app.commands.predict_stream import run as run_predict_stream
 from app.runtime.device import get_device
+from app.runtime.reproducibility import configure_reproducibility
 from app.training.factory import build_model, build_trainer
 from app.metrics import reset_metrics_log
 from app.utils import resolve_metrics_path
@@ -30,6 +31,9 @@ def main():
     if args.action == "plot-metrics":
         run_plot_metrics(args)
         return
+
+    if args.action in ("fit", "fit-stream"):
+        configure_reproducibility(args.seed, args.deterministic)
 
     device = get_device(args.device)
 

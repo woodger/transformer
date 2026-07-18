@@ -7,6 +7,14 @@ from app.model.context import context_input_dim, prepare_context_input, validate
 from app.model.positional_encoding import PositionalEncoding
 
 
+def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
+    positions = torch.arange(
+        key_padding_mask.size(1),
+        device=key_padding_mask.device,
+    ).expand_as(key_padding_mask)
+    return positions.masked_fill(key_padding_mask, -1).max(dim=1).values.clamp(min=0)
+
+
 class TradingHead(nn.Module):
     def __init__(self, hidden_dim):
         super().__init__()
@@ -98,10 +106,9 @@ class TransformerModel(nn.Module):
         )
 
         # последний валидный токен
-        lengths = (~key_padding_mask).sum(dim=1) - 1
-        lengths = lengths.clamp(min=0)
+        last_unmasked_indices = _last_unmasked_indices(key_padding_mask)
 
         batch_idx = torch.arange(x.size(0), device=x.device)
-        last_valid = enc[batch_idx, lengths]
+        last_valid = enc[batch_idx, last_unmasked_indices]
 
         return self.head(last_valid)

@@ -56,17 +56,13 @@ def test_cli_help(capsys, monkeypatch):
     assert "Streaming protocol:" in output
     assert "Storage:" in output
     assert "Context modes:" in output
-    assert "Runtime:" in output
-    assert "Training:" in output
+    assert 'Run "main.py COMMAND --help"' in output
+    assert "fit-stream" in output
+    assert "predict-stream" in output
+    assert "plot-metrics" in output
     assert "Examples:" in output
-    assert "--metrics-name" in output
-    assert "--mode" in output
-    assert "--loss-stage" in output
-    assert "--loss-schedule" in output
-    assert "--stage-size" in output
     assert "--per-week" not in output
     assert "--context-mode" not in output
-    assert "--use-amp" in output
     assert "--amp" not in output
 
 

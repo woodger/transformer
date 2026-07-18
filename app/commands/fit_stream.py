@@ -1,6 +1,11 @@
 import sys
+from dataclasses import replace
 
-from app.data.arrow import iter_framed_arrow, table_to_tensors
+from app.data.arrow import (
+    DEFAULT_MAX_FRAME_BYTES,
+    iter_framed_arrow,
+    table_to_tensors,
+)
 from app.data.tensors import reshape_source, validate_feature_dim, validate_target_dim
 from app.training.factory import build_model, build_trainer
 from app.training.run_config import model_config_from_args
@@ -16,7 +21,14 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
     trained_frames = 0
     trained_epochs = 0
 
-    for table in iter_framed_arrow(sys.stdin.buffer):
+    for table in iter_framed_arrow(
+        sys.stdin.buffer,
+        max_frame_bytes=getattr(
+            args,
+            "max_frame_bytes",
+            DEFAULT_MAX_FRAME_BYTES,
+        ),
+    ):
         received_frames += 1
         if table.num_rows == 0:
             print(f"frame {received_frames}, skipped empty payload")
@@ -28,6 +40,7 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
         expected_target_dim = validate_target_dim(Y_cpu, expected_target_dim)
 
         if model is None:
+            model_config = replace(model_config, feature_dim=expected_feat_dim)
             model = build_model_fn(model_config, X_cpu, Y_cpu, device)
             trainer = build_trainer_fn(args, model, device, model_config)
             config_line = getattr(trainer, "config_line", None)

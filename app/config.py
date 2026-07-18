@@ -30,8 +30,10 @@ STAGE_SIZE = 5
 TRAIN_MONITOR = "ret_mae_skill"
 TRAIN_MONITOR_MIN_IMPROVEMENT = 0.0
 SAVE_BEST_CHECKPOINT = True
+SEED = 42
+DETERMINISTIC = False
 
 # ======================
 # Runtime
 # ======================
-DEFAULT_DEVICE = "cpu"   # "cpu" | "gpu"
+DEFAULT_DEVICE = "cpu"   # "auto" | "cpu" | "cuda"

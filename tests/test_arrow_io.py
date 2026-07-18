@@ -16,7 +16,10 @@ from app.data.arrow import (
 def test_arrow_read_write(tmp_path):
     # ---- create fake arrow file ----
     X = [[1.0, 2.0], [3.0, 4.0]]
-    Y = [[0.5], [1.5]]
+    Y = [
+        [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
+        [1.5, 0.0, 0.0, 0.0, 1.0, 0.0],
+    ]
 
     table = pa.table({"src": X, "tgt": Y})
     path = tmp_path / "data.arrow"
@@ -30,10 +33,10 @@ def test_arrow_read_write(tmp_path):
     assert isinstance(X_t, torch.Tensor)
     assert isinstance(Y_t, torch.Tensor)
     assert X_t.shape == (2, 2)
-    assert Y_t.shape == (2, 1)
+    assert Y_t.shape == (2, 6)
 
     # ---- write predictions ----
-    preds = torch.randn(2, 1)
+    preds = torch.randn(2, 6)
     out_path = tmp_path / "preds.arrow"
 
     write_arrow(str(out_path), preds, "out")  # <--- str(out_path)
@@ -42,8 +45,14 @@ def test_arrow_read_write(tmp_path):
 
 def test_iter_framed_arrow_reads_multiple_payloads():
     tables = [
-        pa.table({"src": [[1.0, 2.0]], "tgt": [[0.5]]}),
-        pa.table({"src": [[3.0, 4.0]], "tgt": [[1.5]]}),
+        pa.table({
+            "src": [[1.0, 2.0]],
+            "tgt": [[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]],
+        }),
+        pa.table({
+            "src": [[3.0, 4.0]],
+            "tgt": [[1.5, 0.0, 0.0, 0.0, 1.0, 0.0]],
+        }),
     ]
 
     stream = io.BytesIO()
@@ -63,7 +72,7 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     X_t, Y_t = table_to_tensors(result[1])
     assert isinstance(X_t, torch.Tensor)
     assert X_t.tolist() == [[3.0, 4.0]]
-    assert Y_t.tolist() == [[1.5]]
+    assert Y_t.tolist() == [[1.5, 0.0, 0.0, 0.0, 1.0, 0.0]]
 
 
 def test_read_source_arrow_does_not_require_target(tmp_path):
