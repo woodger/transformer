@@ -228,9 +228,10 @@ python ./app/main.py fit-stream \
 
 ## Метрики обучения
 
-`fit` и `fit-stream` печатают компактную строку `TrainMetrics` для каждого
-epoch. В `fit-stream` строка дополнительно содержит номер входного frame.
-Loss schedule продвигается по выбранному `--loss-schedule`:
+`fit` и `fit-stream` один раз печатают конфигурацию запуска, а затем компактную
+summary-строку для каждого epoch. В `fit-stream` summary дополнительно содержит
+номер входного frame. Loss schedule продвигается по выбранному
+`--loss-schedule`:
 
 - `none` — всегда используется `--loss-stage`
 - `epoch` — stage считается от epoch внутри текущего frame
@@ -238,10 +239,15 @@ Loss schedule продвигается по выбранному `--loss-schedul
   между frames
 
 ```text
-epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=4 device=cpu hidden=256 layers=5 seq_len=20 monitor=ret_mae_skill monitor_min_improvement=0.0 monitor_value=0.58 baseline_passed=True checkpoint_best=True best_monitor=0.58 loss=0.384000 ret=0.184000 prob=0.092000 ev=-0.011000 vol=0.000000 sigma_min=0.0800 sigma_p05=0.1200 sigma_mean=0.4200 ret_mae=0.018 ret_rmse=0.024 ret_mae_baseline=0.031 ret_mae_skill=0.58 ret_mae_improvement=0.42 grad=0.830 rows=256 batches=1 nan=0.0300 masked_tokens=0.1200 complete_tokens=0.7600 partial_tokens=0.1200 empty_tokens=0.1200 step=1 lr=0.0005 loss_stage=1 ms=42
+frame=1 epoch=2 monitor_value=3.82703 loss=-3.149016 mae=0.0225603 baseline=0.00589499 skill=3.82703x status=WORSE sigma=0.0231593 grad=476.013 rows=67249 batches=263 time=181.7s stage=1/4
 ```
 
-Поля:
+Summary показывает основной результат эпохи, сравнение с baseline, среднюю
+`sigmaR`, gradient norm до clipping, объём данных, время и активный loss stage.
+`status=BETTER` означает `skill < 1.0`, `status=WORSE` — что baseline пока
+лучше модели.
+
+Полный набор метрик доступен в JSONL:
 
 - `loss` — итоговый loss после всех весов компонентов
 - `batch_size`, `loss_schedule`, `stage_size`, `max_loss_stage`, `hidden`,
@@ -271,7 +277,7 @@ epoch=1 norm=183 batch_size=256 loss_schedule=epoch stage_size=5 max_loss_stage=
 - `loss_stage` — активный этап функции потерь
 - `ms` — время обучения прохода
 
-Чтобы дополнительно писать каждую строку метрик в JSONL:
+Чтобы сохранять полный набор метрик для каждой эпохи в JSONL:
 
 ```bash
 python ./app/main.py fit ./data/train.arrow \
@@ -288,8 +294,8 @@ python ./app/main.py fit-stream \
 ```
 
 Файл сохраняется в `models/` и перезаписывается в начале нового `fit` /
-`fit-stream` запуска. Каждая строка — один JSON object с теми же числовыми
-полями и контекстом `epoch` или `frame`.
+`fit-stream` запуска. Каждая строка — один JSON object с полным набором
+числовых полей, параметрами запуска и контекстом `epoch` или `frame`.
 
 Построить SVG-графики по JSONL:
 

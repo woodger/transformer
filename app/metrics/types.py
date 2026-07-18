@@ -115,6 +115,43 @@ class TrainMetrics:
 
         return " ".join(f"{key}={value}" for key, value in fields.items())
 
+    def console_line(self, **extra) -> str:
+        fields = []
+        for key in ("frame", "epoch"):
+            if key in extra and extra[key] is not None:
+                fields.append(f"{key}={extra[key]}")
+
+        monitor_value = extra.get("monitor_value")
+        if isinstance(monitor_value, (int, float)) and math.isfinite(monitor_value):
+            monitor = f"{monitor_value:.6g}"
+        else:
+            monitor = "n/a"
+
+        if self.ret_mae_baseline > 0.0 and math.isfinite(self.ret_mae_skill):
+            skill = f"{self.ret_mae_skill:.6g}x"
+            status = "BETTER" if self.ret_mae_skill < 1.0 else "WORSE"
+        else:
+            skill = "n/a"
+            status = "N/A"
+
+        max_loss_stage = extra.get("max_loss_stage", self.loss_stage)
+        fields.extend([
+            f"monitor_value={monitor}",
+            f"loss={self.loss:.6f}",
+            f"mae={self.ret_mae:.6g}",
+            f"baseline={self.ret_mae_baseline:.6g}",
+            f"skill={skill}",
+            f"status={status}",
+            f"sigma={self.sigma_mean:.6g}",
+            f"grad={self.grad_norm:.3f}",
+            f"rows={self.rows}",
+            f"batches={self.batches}",
+            f"time={self.elapsed_ms / 1000.0:.1f}s",
+            f"stage={self.loss_stage}/{max_loss_stage}",
+        ])
+
+        return " ".join(fields)
+
     def to_dict(self, **extra) -> dict:
         return {
             **extra,

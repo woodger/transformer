@@ -84,9 +84,9 @@ def combined_loss(
     # -------------------------
     # Gaussian NLL
     # -------------------------
-    var = sigmaR ** 2 + 1e-6
+    var = sigmaR.square() + 1e-6
     loss_ret = torch.mean(
-        (t_meanR - meanR) ** 2 / (2 * var) + torch.log(sigmaR)
+        0.5 * ((t_meanR - meanR).square() / var + torch.log(var))
     )
     loss += loss_ret
 

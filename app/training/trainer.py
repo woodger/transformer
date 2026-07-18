@@ -107,8 +107,6 @@ class Trainer:
         if use_amp and device.type != "cuda":
             print("AMP requested but CUDA not available — disabled")
 
-        print(f"AMP enabled: {self.use_amp}")
-
     def _validate_monitor(self, monitor: str) -> str:
         choices = ("loss", "ret_mae", "ret_mae_skill")
         if monitor not in choices:
@@ -308,7 +306,7 @@ class Trainer:
         def on_epoch(epoch: int, metrics: TrainMetrics, monitor_payload: dict):
             stats = tree_stats(self.model.parameters())
 
-            print(metrics.log_line(
+            print(metrics.console_line(
                 epoch=epoch + 1,
                 norm=f"{stats['norm']:.0f}",
                 **self.metrics_context,
@@ -322,6 +320,7 @@ class Trainer:
                 **monitor_payload,
             )
 
+        print(self.config_line())
         self.fit_epochs(X, Y, on_epoch=on_epoch)
 
         self.save(model_name)
@@ -361,6 +360,29 @@ class Trainer:
                     ),
                 },
             },
+        )
+
+    def config_line(self) -> str:
+        context = self.metrics_context
+        fields = {
+            "device": context["device"],
+            "batch_size": context["batch_size"],
+            "lr": f"{self.optimizer.param_groups[0]['lr']:.6g}",
+        }
+        for key in ("hidden", "layers", "seq_len"):
+            if key in context:
+                fields[key] = context[key]
+        fields.update({
+            "loss_schedule": context["loss_schedule"],
+            "stage_size": context["stage_size"],
+            "max_loss_stage": context["max_loss_stage"],
+            "monitor": context["monitor"],
+            "monitor_min_improvement": f"{context['monitor_min_improvement']:.6g}",
+            "context_mode": self.context_mode,
+            "amp": self.use_amp,
+        })
+        return "config " + " ".join(
+            f"{key}={value}" for key, value in fields.items()
         )
 
     def record_metrics(self, metrics: TrainMetrics, **extra):

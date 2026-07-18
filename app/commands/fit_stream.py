@@ -30,12 +30,15 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
         if model is None:
             model = build_model_fn(model_config, X_cpu, Y_cpu, device)
             trainer = build_trainer_fn(args, model, device, model_config)
+            config_line = getattr(trainer, "config_line", None)
+            if config_line is not None:
+                print(config_line())
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
         def on_epoch(epoch, metrics, monitor_payload):
             nonlocal trained_epochs
             trained_epochs += 1
-            print(metrics.log_line(
+            print(metrics.console_line(
                 frame=received_frames,
                 epoch=epoch + 1,
                 **getattr(trainer, "metrics_context", {}),
