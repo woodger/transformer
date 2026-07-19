@@ -334,6 +334,9 @@ class Trainer:
     def load(self, model_name: str):
         load_model(model_name, self.model, self.device)
 
+    def load_payload(self, checkpoint: dict):
+        self.model.load_state_dict(checkpoint["state_dict"])
+
     def save(self, model_name: str):
         if self.save_best_checkpoint and self.best_state_dict is not None:
             self._restore_best_state_dict()

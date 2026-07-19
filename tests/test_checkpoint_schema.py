@@ -279,8 +279,11 @@ def test_stream_predict_rejects_checkpoint_feature_dim_mismatch(monkeypatch):
     )
     monkeypatch.setattr(
         predict_stream_module,
-        "load_checkpoint_metadata",
-        lambda *args: {"model_config": checkpoint_model_config(feature_dim=2)},
+        "load_checkpoint",
+        lambda *args: {
+            "model_config": checkpoint_model_config(feature_dim=2),
+            "state_dict": {},
+        },
     )
     monkeypatch.setattr(
         predict_stream_module,
@@ -321,8 +324,11 @@ def test_stream_predict_keeps_cross_frame_check_for_legacy_checkpoint(monkeypatc
     )
     monkeypatch.setattr(
         predict_stream_module,
-        "load_checkpoint_metadata",
-        lambda *args: {"model_config": checkpoint_model_config(feature_dim=None)},
+        "load_checkpoint",
+        lambda *args: {
+            "model_config": checkpoint_model_config(feature_dim=None),
+            "state_dict": {},
+        },
     )
     monkeypatch.setattr(
         predict_stream_module,
@@ -332,7 +338,7 @@ def test_stream_predict_keeps_cross_frame_check_for_legacy_checkpoint(monkeypatc
     monkeypatch.setattr(predict_stream_module, "write_framed_arrow", lambda *args: None)
 
     class Trainer:
-        def load(self, *args):
+        def load_payload(self, *args):
             pass
 
         def predict(self, X):

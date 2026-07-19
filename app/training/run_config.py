@@ -215,10 +215,11 @@ def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = 
                 TRAIN_MONITOR_MIN_IMPROVEMENT,
             ),
         ),
-        save_best_checkpoint=_attr(
-            checkpoint_config,
-            "save_best_checkpoint",
-            SAVE_BEST_CHECKPOINT,
+        save_best_checkpoint=bool(
+            _pick(
+                getattr(args, "save_best_checkpoint", None),
+                _attr(checkpoint_config, "save_best_checkpoint", SAVE_BEST_CHECKPOINT),
+            )
         ),
         seed=_pick(getattr(args, "seed", None), _attr(checkpoint_config, "seed", SEED)),
         deterministic=bool(

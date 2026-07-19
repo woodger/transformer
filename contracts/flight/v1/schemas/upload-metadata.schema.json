@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v1/upload-metadata.schema.json",
+  "title": "Transformer Flight v1 DoPut application metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "jobId", "payloadId", "ordinal", "schemaId", "rows"],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 1},
+    "jobId": {"type": "string", "format": "uuid"},
+    "payloadId": {"type": "string", "format": "uuid"},
+    "ordinal": {"type": "integer", "minimum": 0, "maximum": 399},
+    "schemaId": {"enum": ["inventory.sequence.fit.v1", "inventory.sequence.predict.v1"]},
+    "rows": {"type": "integer", "minimum": 0}
+  }
+}

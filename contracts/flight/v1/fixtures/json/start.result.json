@@ -1,0 +1,12 @@
+{
+  "contract": "transformer-flight",
+  "version": 1,
+  "requestId": "99999999-9999-4999-8999-999999999999",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "state": "QUEUED",
+  "revision": 3,
+  "device": {
+    "requested": "cpu",
+    "selected": "cpu"
+  }
+}

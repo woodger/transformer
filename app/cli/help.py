@@ -16,9 +16,11 @@ from app.config import (
     NUM_LAYERS,
     PATIENCE,
     SEED,
+    SAVE_BEST_CHECKPOINT,
     STAGE_SIZE,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
+    WEIGHT_DECAY,
 )
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.version import version_text
@@ -118,6 +120,16 @@ def _positive_float(value: str) -> float:
         raise argparse.ArgumentTypeError("must be a positive number") from exc
     if not math.isfinite(parsed) or parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive number")
+    return parsed
+
+
+def _nonnegative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a non-negative number") from exc
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative number")
     return parsed
 
 
@@ -228,6 +240,12 @@ def _add_training_arguments(parser):
     train = parser.add_argument_group("Training")
     train.add_argument("--lr", type=_positive_float, default=LR, help="Learning rate.")
     train.add_argument(
+        "--weight-decay",
+        type=_nonnegative_float,
+        default=WEIGHT_DECAY,
+        help="Adam weight decay.",
+    )
+    train.add_argument(
         "--batch-size",
         type=_positive_int,
         default=BATCH_SIZE,
@@ -302,6 +320,12 @@ def _add_training_arguments(parser):
         action="store_true",
         default=DETERMINISTIC,
         help="Request deterministic PyTorch algorithms (unsupported ops may fail).",
+    )
+    train.add_argument(
+        "--save-best-checkpoint",
+        action=argparse.BooleanOptionalAction,
+        default=SAVE_BEST_CHECKPOINT,
+        help="Publish the best monitored checkpoint instead of the final weights.",
     )
 
 
@@ -410,6 +434,47 @@ def build_parser():
     _add_predict_parser(subparsers, "predict", stream=False)
     _add_fit_parser(subparsers, "fit-stream", stream=True)
     _add_predict_parser(subparsers, "predict-stream", stream=True)
+
+    service = subparsers.add_parser(
+        "serve-flight",
+        help="Run the durable Arrow Flight job service.",
+        formatter_class=_HelpFormatter,
+    )
+    service.add_argument(
+        "--config",
+        default=None,
+        help="JSON service configuration file; environment and CLI override it.",
+    )
+    service.add_argument("--state-dir", default=None, help="Persistent service state directory.")
+    service.add_argument("--bind-host", default=None, help="Flight bind host.")
+    service.add_argument("--port", type=_nonnegative_int, default=None, help="Flight port.")
+    service.add_argument(
+        "--profile",
+        choices=["production", "development", "lan"],
+        default=None,
+        help="Security profile.",
+    )
+    service.add_argument(
+        "--allow-plaintext",
+        action="store_true",
+        default=None,
+        help="Explicitly allow plaintext in development/LAN profile.",
+    )
+    service.add_argument("--tls-cert-file", default=None, help="TLS certificate PEM file.")
+    service.add_argument("--tls-key-file", default=None, help="TLS private key PEM file.")
+    service.add_argument("--tls-ca-file", default=None, help="mTLS client CA PEM file.")
+    service.add_argument(
+        "--tls-require-client-cert",
+        action="store_true",
+        default=None,
+        help="Require and verify client certificates.",
+    )
+    service.add_argument(
+        "--bearer-tokens-file",
+        default=None,
+        help="Secret JSON token-to-subject mapping file.",
+    )
+    service.set_defaults(data=None, metrics_name=None)
 
     plot = subparsers.add_parser(
         "plot-metrics",

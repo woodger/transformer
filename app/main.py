@@ -28,6 +28,12 @@ def predict_stream(args, device):
 def main():
     args = parse_args()
 
+    if args.action == "serve-flight":
+        from app.flight.application import run_from_args
+
+        run_from_args(args)
+        return
+
     if args.action == "plot-metrics":
         run_plot_metrics(args)
         return

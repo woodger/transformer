@@ -18,17 +18,38 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 
 ## Требования
 
-- Python 3.10+
+- Python 3.11 на Linux
 - PyTorch
 - NumPy
 - PyArrow
 - CUDA опционально
 
-Установка зависимостей:
+Прямые production-зависимости зафиксированы в `requirements.txt`. Конкретный
+CPU/CUDA wheel PyTorch 2.12.0 выбирается настроенным package index окружения:
 
 ```bash
-pip install torch numpy pyarrow pytest
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
+
+## Remote Arrow Flight service
+
+Для разнесения Inventory и Transformer по физическим серверам проект содержит
+single-instance Arrow Flight v1 job service поверх существующих
+`fit-stream`/`predict-stream`. Нормативный wire contract находится в
+[`contracts/flight/v1`](contracts/flight/v1/README.md), инструкция для
+Inventory — в [`docs/inventory-flight-handoff.md`](docs/inventory-flight-handoff.md),
+а конфигурация, TLS/mTLS, запуск, recovery и retention — в
+[`docs/flight-operations.md`](docs/flight-operations.md).
+
+```bash
+.venv/bin/python ./app/main.py serve-flight --config=/etc/transformer/flight.json
+```
+
+Production требует TLS и bearer authentication. Plaintext разрешается только
+явно для временного `development`/`lan` profile. Один DoPut остаётся одним
+semantic stream frame, checkpoint принадлежит Transformer, а клиент получает
+только непрозрачный `modelRef`. DoExchange и PollFlightInfo в v1 не входят.
 
 ## CLI
 
@@ -186,6 +207,7 @@ parser; `hidden` должен делиться на `nhead`.
 | Аргумент | Описание | По умолчанию |
 | --- | --- | --- |
 | `--lr` | Learning rate | `0.0005` |
+| `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Эпохи для file fit / максимум на каждый stream frame | `25` |
 | `--loss-stage` | Максимальный этап loss: `1..4` | `4` |
@@ -196,6 +218,7 @@ parser; `hidden` должен делиться на `nhead`.
 | `--monitor-min-improvement` | Доля улучшения `[0, 1)` относительно zero-return baseline | `0.0` |
 | `--seed` | Seed `0..4294967295` для Python, NumPy, PyTorch и CUDA | `42` |
 | `--deterministic` | Включить deterministic PyTorch algorithms | выключено |
+| `--[no-]save-best-checkpoint` | Сохранить лучший checkpoint по monitor вместо последних весов | включено |
 
 Training options доступны только у `fit` и `fit-stream`. `--use-amp` на CPU
 явно отключается и для training, и для prediction; `--device=cuda` завершается
@@ -557,6 +580,8 @@ app/training/        # Trainer, configs, loss stages, scheduler, early stopping
 app/metrics/         # TrainMetrics, JSONL writer/reader, SVG-графики
 app/storage/         # checkpoint с весами и конфигурацией модели
 app/runtime/         # device selection и версия приложения
+app/flight/          # durable Arrow Flight service, ledger, spool и worker
+contracts/flight/v1/ # нормативные JSON Schemas и golden fixtures
 app/config.py        # project defaults
 app/utils.py         # небольшие совместные runtime helpers
 ```

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v1/start-result.schema.json",
+  "title": "transformer.v1.job.start result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "requestId",
+    "jobId",
+    "state",
+    "revision",
+    "device"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 1},
+    "requestId": {"type": "string", "format": "uuid"},
+    "jobId": {"type": "string", "format": "uuid"},
+    "state": {"const": "QUEUED"},
+    "revision": {"type": "integer", "minimum": 3},
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "selected"],
+      "properties": {
+        "requested": {"enum": ["cpu", "cuda", "auto"]},
+        "selected": {"enum": ["cpu", "cuda"]}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "device": {
+            "properties": {"requested": {"const": "cpu"}},
+            "required": ["requested"]
+          }
+        },
+        "required": ["device"]
+      },
+      "then": {
+        "properties": {
+          "device": {"properties": {"selected": {"const": "cpu"}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "device": {
+            "properties": {"requested": {"const": "cuda"}},
+            "required": ["requested"]
+          }
+        },
+        "required": ["device"]
+      },
+      "then": {
+        "properties": {
+          "device": {"properties": {"selected": {"const": "cuda"}}}
+        }
+      }
+    }
+  ]
+}

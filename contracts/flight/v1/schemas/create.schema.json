@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v1/create.schema.json",
+  "title": "transformer.v1.job.create request",
+  "allOf": [{"$ref": "common.schema.json"}],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "idempotencyKey", "operation", "device"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 1},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "operation": {"enum": ["fit", "predict"]},
+    "device": {"enum": ["cpu", "cuda", "auto"]},
+    "modelLabel": {"$ref": "#/$defs/label"},
+    "modelRef": {"$ref": "#/$defs/label"},
+    "modelAlias": {"$ref": "#/$defs/label"},
+    "predictionColumn": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,63}$"
+    },
+    "modelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seqLen"],
+      "properties": {
+        "seqLen": {"type": "integer", "minimum": 1},
+        "hidden": {"type": "integer", "minimum": 1},
+        "layers": {"type": "integer", "minimum": 1},
+        "dropout": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+        "nhead": {"type": "integer", "minimum": 1},
+        "mode": {"enum": ["strict", "relaxed"]}
+      }
+    },
+    "trainingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lr": {"type": "number", "exclusiveMinimum": 0},
+        "batchSize": {"type": "integer", "minimum": 1},
+        "epochs": {"type": "integer", "minimum": 1},
+        "patience": {"type": "integer", "minimum": 0},
+        "lossStage": {"enum": [1, 2, 3, 4]},
+        "lossSchedule": {"enum": ["none", "epoch", "step"]},
+        "stageSize": {"type": "integer", "minimum": 1},
+        "useAmp": {"type": "boolean"},
+        "weightDecay": {"type": "number", "minimum": 0},
+        "monitor": {"enum": ["loss", "ret_mae", "ret_mae_skill"]},
+        "monitorMinImprovement": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+        "saveBestCheckpoint": {"type": "boolean"},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "deterministic": {"type": "boolean"}
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {"operation": {"const": "fit"}},
+      "required": ["modelLabel", "modelConfig"],
+      "not": {"anyOf": [{"required": ["modelRef"]}, {"required": ["modelAlias"]}]}
+    },
+    {
+      "properties": {"operation": {"const": "predict"}},
+      "oneOf": [{"required": ["modelRef"]}, {"required": ["modelAlias"]}],
+      "not": {"anyOf": [
+        {"required": ["modelLabel"]},
+        {"required": ["modelConfig"]},
+        {"required": ["trainingConfig"]}
+      ]}
+    }
+  ],
+  "$defs": {
+    "label": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    }
+  }
+}

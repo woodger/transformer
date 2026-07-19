@@ -1,0 +1,23 @@
+{
+  "contract": "transformer-flight",
+  "version": 1,
+  "requestId": "77777777-7777-4777-8777-777777777777",
+  "live": true,
+  "ready": true,
+  "draining": false,
+  "ledger": {"available": true},
+  "cuda": {"available": false},
+  "disk": {
+    "freeBytes": 17179869184,
+    "watermarkBytes": 1073741824,
+    "watermarkExceeded": false
+  },
+  "metrics": {
+    "rpc": {},
+    "counters": {},
+    "gauges": {
+      "cudaAvailable": false,
+      "ready": true
+    }
+  }
+}

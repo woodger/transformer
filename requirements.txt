@@ -1,0 +1,6 @@
+# Direct production dependencies. The Torch wheel (CPU or CUDA) is selected
+# by the deployment's configured PyTorch package index; its public version is
+# fixed here so accelerator builds cannot silently change the runtime API.
+numpy==2.4.5
+pyarrow==24.0.0
+torch==2.12.0

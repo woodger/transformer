@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.help import build_parser
-from app.config import DETERMINISTIC, SEED
+from app.config import DETERMINISTIC, SAVE_BEST_CHECKPOINT, SEED, WEIGHT_DECAY
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.device import get_device
 from app.training.run_config import (
@@ -28,6 +28,8 @@ def test_fit_namespace_has_only_fit_options():
     assert args.metrics_name is None
     assert args.seed == SEED
     assert args.deterministic is DETERMINISTIC
+    assert args.weight_decay == WEIGHT_DECAY
+    assert args.save_best_checkpoint is SAVE_BEST_CHECKPOINT
     assert not hasattr(args, "preds_path")
     assert not hasattr(args, "pred_col")
     assert not hasattr(args, "plots_dir")
@@ -104,10 +106,12 @@ def test_stream_namespaces_have_no_positional_input():
     assert fit_args.data is None
     assert fit_args.seq_len == 12
     assert fit_args.max_frame_bytes == DEFAULT_MAX_FRAME_BYTES
+    assert fit_args.weight_decay == WEIGHT_DECAY
     assert predict_args.action == "predict-stream"
     assert predict_args.data is None
     assert predict_args.seq_len is None
     assert predict_args.max_frame_bytes == DEFAULT_MAX_FRAME_BYTES
+    assert not hasattr(predict_args, "weight_decay")
 
     with pytest.raises(SystemExit):
         parse("fit-stream", "train.arrow", "--seq-len", "12")
@@ -193,6 +197,7 @@ def test_command_help_contains_only_applicable_options(capsys):
 
     fit_stream_help = capsys.readouterr().out
     assert "--epochs" in fit_stream_help
+    assert "--weight-decay" in fit_stream_help
     assert "--seed" in fit_stream_help
     assert "--deterministic" in fit_stream_help
     assert "--preds-path" not in fit_stream_help
@@ -233,6 +238,9 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("--nhead", "0"),
         ("--lr", "0"),
         ("--lr", "inf"),
+        ("--weight-decay", "-1"),
+        ("--weight-decay", "inf"),
+        ("--weight-decay", "nan"),
         ("--batch-size", "0"),
         ("--epochs", "0"),
         ("--stage-size", "0"),
@@ -245,7 +253,7 @@ def test_training_numeric_options_are_validated_by_argparse(options):
         parse("fit", "train.arrow", "--seq-len", "10", *options)
 
 
-def test_zero_is_valid_for_dropout_patience_and_seed():
+def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
     args = parse(
         "fit",
         "train.arrow",
@@ -257,11 +265,14 @@ def test_zero_is_valid_for_dropout_patience_and_seed():
         "0",
         "--seed",
         "0",
+        "--weight-decay",
+        "0",
     )
 
     assert args.dropout == 0
     assert args.patience == 0
     assert args.seed == 0
+    assert args.weight_decay == 0
 
 
 def test_model_config_rejects_hidden_not_divisible_by_nhead():
@@ -318,6 +329,37 @@ def test_training_monitor_options_are_plumbed_into_train_config():
 
     assert config.monitor == "ret_mae"
     assert config.monitor_min_improvement == 0.05
+
+
+@pytest.mark.parametrize("action", ("fit", "fit-stream"))
+def test_training_weight_decay_is_plumbed_into_train_config(action):
+    positional = ("train.arrow",) if action == "fit" else ()
+    args = parse(
+        action,
+        *positional,
+        "--seq-len",
+        "10",
+        "--weight-decay",
+        "0.0025",
+    )
+
+    config = train_config_from_args(args)
+
+    assert config.weight_decay == 0.0025
+
+
+@pytest.mark.parametrize("action", ("fit", "fit-stream"))
+def test_checkpoint_selection_policy_is_plumbed_into_train_config(action):
+    positional = ("train.arrow",) if action == "fit" else ()
+    args = parse(
+        action,
+        *positional,
+        "--seq-len",
+        "10",
+        "--no-save-best-checkpoint",
+    )
+
+    assert train_config_from_args(args).save_best_checkpoint is False
 
 
 @pytest.mark.parametrize(

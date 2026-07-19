@@ -1,3 +1,4 @@
+import importlib
 import io
 from types import SimpleNamespace
 
@@ -7,7 +8,11 @@ import pytest
 import torch
 
 import app.main as main_module
+import app.storage.checkpoint as checkpoint_module
 from app.data.arrow import iter_framed_arrow
+
+
+predict_stream_module = importlib.import_module("app.commands.predict_stream")
 
 
 class FakeStdin:
@@ -69,9 +74,9 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
             self.loaded = []
             self.calls = []
 
-        def load(self, model_name):
+        def load_payload(self, checkpoint):
             print("accidental load stdout")
-            self.loaded.append(model_name)
+            self.loaded.append(checkpoint)
 
         def predict(self, X):
             print("accidental predict stdout")
@@ -83,9 +88,21 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
             )
 
     trainer = FakeTrainer()
+    checkpoint = {"model_config": None, "state_dict": {}}
+    checkpoint_loads = []
+
+    def load_checkpoint_once(*args):
+        checkpoint_loads.append(args)
+        return checkpoint
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
     monkeypatch.setattr(main_module.sys, "stdout", FakeStdout(output_stream))
+    monkeypatch.setattr(
+        predict_stream_module,
+        "load_checkpoint",
+        load_checkpoint_once,
+    )
+
     def build_model(*args):
         print("accidental build stdout")
         return object()
@@ -95,7 +112,8 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
 
     main_module.predict_stream(make_args(), torch.device("cpu"))
 
-    assert trainer.loaded == ["model.pth"]
+    assert trainer.loaded == [checkpoint]
+    assert len(checkpoint_loads) == 1
     assert trainer.calls == [torch.Size([1, 2, 2]), torch.Size([1, 2, 2])]
 
     output_stream.seek(0)
@@ -116,6 +134,11 @@ def test_predict_stream_applies_max_frame_bytes_without_writing_stdout(monkeypat
     output_stream = io.BytesIO()
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
     monkeypatch.setattr(main_module.sys, "stdout", FakeStdout(output_stream))
+    monkeypatch.setattr(
+        predict_stream_module,
+        "load_checkpoint",
+        lambda *args: {"model_config": None, "state_dict": {}},
+    )
 
     with pytest.raises(ValueError, match="exceeds maximum 10 bytes"):
         main_module.predict_stream(
@@ -124,6 +147,59 @@ def test_predict_stream_applies_max_frame_bytes_without_writing_stdout(monkeypat
         )
 
     assert output_stream.getvalue() == b""
+
+
+def test_predict_stream_loads_checkpoint_once_for_all_empty_input(
+    monkeypatch,
+    tmp_path,
+):
+    checkpoint_path = tmp_path / "model.pth"
+    torch.save(
+        {
+            "format": "transformer-checkpoint-v2",
+            "model_config": None,
+            "state_dict": {},
+        },
+        checkpoint_path,
+    )
+    empty = pa.table({
+        "src": pa.array([], type=pa.list_(pa.float32())),
+    })
+    input_stream = io.BytesIO()
+    write_framed_table(input_stream, empty)
+    input_stream.seek(0)
+    output_stream = io.BytesIO()
+    original_torch_load = checkpoint_module.torch.load
+    calls = []
+
+    def counting_torch_load(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original_torch_load(*args, **kwargs)
+
+    monkeypatch.setattr(checkpoint_module.torch, "load", counting_torch_load)
+    monkeypatch.setattr(
+        predict_stream_module.sys,
+        "stdin",
+        FakeStdin(input_stream),
+    )
+    monkeypatch.setattr(
+        predict_stream_module.sys,
+        "stdout",
+        FakeStdout(output_stream),
+    )
+
+    predict_stream_module.run(
+        make_args(model_name=str(checkpoint_path)),
+        torch.device("cpu"),
+        build_model_fn=lambda *args: pytest.fail("model should not be built"),
+    )
+
+    assert len(calls) == 1
+    output_stream.seek(0)
+    frames = list(iter_framed_arrow(output_stream))
+    assert len(frames) == 1
+    assert frames[0].schema.field("out").type == pa.list_(pa.float32())
+    assert frames[0].num_rows == 0
 
 
 def test_main_rejects_data_path_for_predict_stream(monkeypatch):

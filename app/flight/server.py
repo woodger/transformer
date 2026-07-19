@@ -1,0 +1,155 @@
+import time
+
+import pyarrow.flight as flight
+
+from app.flight.auth import (
+    MIDDLEWARE_KEY,
+    BearerAuthMiddlewareFactory,
+    authenticated_subject,
+)
+from app.flight.config import FlightServiceConfig, tls_server_options
+from app.flight.constants import ACTIONS
+from app.flight.contract import parse_action_body, validate_action_request
+from app.flight.errors import ServiceError, invalid, to_flight_exception
+from app.flight.observability import JsonLogger, OperationalMetrics
+
+
+ACTION_DESCRIPTIONS = {
+    "transformer.v1.capabilities": "Return Flight v1 capabilities and limits.",
+    "transformer.v1.health": "Return liveness, readiness and device health.",
+    "transformer.v1.job.create": "Create an upload job.",
+    "transformer.v1.job.seal": "Seal an ordered input manifest.",
+    "transformer.v1.job.start": "Queue a sealed job.",
+    "transformer.v1.job.status": "Read durable job status.",
+    "transformer.v1.job.cancel": "Cancel a job.",
+}
+
+
+class TransformerFlightServer(flight.FlightServerBase):
+    """Thin Flight adapter; Torch execution belongs to the worker subprocess."""
+
+    def __init__(
+        self,
+        config: FlightServiceConfig,
+        coordinator,
+        bearer_tokens: dict[str, str],
+        *,
+        upload_handler=None,
+        output_handler=None,
+        metrics: OperationalMetrics | None = None,
+        logger: JsonLogger | None = None,
+    ):
+        self.config = config.validate()
+        self.coordinator = coordinator
+        self.upload_handler = upload_handler
+        self.output_handler = output_handler
+        self.metrics = metrics or OperationalMetrics()
+        self.logger = logger or JsonLogger()
+        middleware = {
+            MIDDLEWARE_KEY: BearerAuthMiddlewareFactory(
+                bearer_tokens,
+                self.metrics,
+                self.logger,
+            )
+        }
+        super().__init__(
+            (self.config.bind_host, self.config.port),
+            middleware=middleware,
+            **tls_server_options(self.config),
+        )
+
+    def list_actions(self, context):
+        authenticated_subject(context)
+        return [
+            flight.ActionType(name, ACTION_DESCRIPTIONS[name])
+            for name in ACTIONS
+        ]
+
+    def do_action(self, context, action):
+        started = time.monotonic()
+        request = None
+        try:
+            owner = authenticated_subject(context)
+            if action.type not in ACTIONS:
+                raise invalid(f"unsupported action: {action.type}")
+            document = parse_action_body(action.body)
+            request = validate_action_request(action.type, document)
+            response = self.coordinator.dispatch(
+                action.type,
+                owner,
+                request,
+                document,
+            )
+            self._log_action(action.type, request, "OK", started)
+            return iter([response])
+        except ServiceError as exc:
+            self._log_action(action.type, request, exc.code.value, started)
+            raise to_flight_exception(exc) from None
+        except flight.FlightError:
+            self._log_action(action.type, request, "FLIGHT_ERROR", started)
+            raise
+        except Exception as exc:
+            self._log_action(action.type, request, "INTERNAL", started)
+            self._raise_internal("DoAction", exc)
+
+    def do_put(self, context, descriptor, reader, writer):
+        try:
+            owner = authenticated_subject(context)
+            if self.upload_handler is None:
+                raise invalid("uploads are not configured")
+            self.upload_handler.handle(owner, descriptor, reader, writer)
+        except ServiceError as exc:
+            raise to_flight_exception(exc) from None
+        except flight.FlightError:
+            raise
+        except Exception as exc:
+            self._raise_internal("DoPut", exc)
+
+    def get_flight_info(self, context, descriptor):
+        try:
+            owner = authenticated_subject(context)
+            if self.output_handler is None:
+                raise invalid("outputs are not configured")
+            return self.output_handler.get_flight_info(owner, descriptor)
+        except ServiceError as exc:
+            raise to_flight_exception(exc) from None
+        except flight.FlightError:
+            raise
+        except Exception as exc:
+            self._raise_internal("GetFlightInfo", exc)
+
+    def do_get(self, context, ticket):
+        try:
+            owner = authenticated_subject(context)
+            if self.output_handler is None:
+                raise invalid("outputs are not configured")
+            return self.output_handler.do_get(context, owner, ticket)
+        except ServiceError as exc:
+            raise to_flight_exception(exc) from None
+        except flight.FlightError:
+            raise
+        except Exception as exc:
+            self._raise_internal("DoGet", exc)
+
+    def _raise_internal(self, method: str, error: Exception):
+        self.logger.event(
+            "flight.rpc.internal_error",
+            method=method,
+            errorType=type(error).__name__,
+        )
+        raise flight.FlightInternalError(
+            "INTERNAL: internal service error"
+        ) from None
+
+    def _log_action(self, action: str, request, status: str, started: float) -> None:
+        fields = {
+            "action": action,
+            "status": status,
+            "latencyMs": round((time.monotonic() - started) * 1000.0, 3),
+        }
+        if isinstance(request, dict):
+            if request.get("request_id") is not None:
+                fields["requestId"] = request["request_id"]
+            if request.get("job_id") is not None:
+                fields["jobId"] = request["job_id"]
+        self.logger.event("flight.action.completed", **fields)
