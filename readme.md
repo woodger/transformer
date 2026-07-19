@@ -9,120 +9,43 @@ Python-проект для обучения и инференса PyTorch Transf
 - принимать поток micro-batch Arrow payloads через stdin (`fit-stream`,
   `predict-stream`)
 
-`fit-stream` используется командой `trainTransformer` из проекта
-`inventory`.
-
 Checkpoint v2 сохраняет веса, model/train config и размер входной фичи
 `feature_dim`. Поэтому `predict` и `predict-stream` восстанавливают архитектуру
 и проверяют вход по metadata checkpoint.
 
 ## Требования
 
-- Python 3.11 на Linux
+- Python 3.11+
 - PyTorch
 - NumPy
 - PyArrow
 - CUDA опционально
 
-Проект не требует окружение с именем `.venv`: ниже `python` означает выбранный
-Python 3.11 из system environment, уже активированного venv/conda environment
-или контейнера. Поддерживаемые версии прямых runtime-зависимостей указаны в
-командах установки.
-
-### Установка для CPU
+Установка зависимостей:
 
 ```bash
-python -m pip install torch==2.12.0 \
-  --index-url https://download.pytorch.org/whl/cpu
-python -m pip install numpy==2.4.5 pyarrow==24.0.0
+pip install torch numpy pyarrow pytest
 ```
 
-### Установка для NVIDIA CUDA
+Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
+NVIDIA driver отдельно устанавливать CUDA Toolkit, cuDNN или NCCL через
+system package manager не нужно.
 
-Сначала проверь, что NVIDIA driver установлен и GPU виден на хосте:
+Проверка CUDA:
 
 ```bash
-nvidia-smi
+python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")'
 ```
 
-Для PyTorch 2.12 официально опубликованы такие wheels:
-
-| Wheel index | Когда использовать |
-| --- | --- |
-| `cu126` | CUDA 12.6 build для существующего парка GPU и более старых архитектур |
-| `cu130` | Основной CUDA 13.0 build; на Linux требуется NVIDIA driver `580.65.06` или новее |
-| `cu132` | Экспериментальный CUDA 13.2 build; только после отдельной проверки на целевом хосте |
-
-PyTorch 2.12 не публикует `cu128`. Выбери один index согласно GPU и версии
-драйвера. Например, для production CUDA 13.0:
-
-```bash
-PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
-
-python -m pip install torch==2.12.0 \
-  --index-url "$PYTORCH_INDEX_URL"
-python -m pip install numpy==2.4.5 pyarrow==24.0.0
-python -m pip check
-```
-
-Для CUDA 12.6 замени только значение переменной:
-
-```bash
-PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
-```
-
-Torch устанавливается из выбранного index отдельно, чтобы package manager не
-подобрал wheel с другим CUDA runtime. `torchvision` и `torchaudio` проекту не
-нужны. Готовый PyTorch wheel уже содержит CUDA runtime; системный CUDA Toolkit
-и `nvcc` нужны только для сборки собственных CUDA extensions. Совместимый
-NVIDIA driver на хосте обязателен.
-
-После установки выполни реальную аллокацию на GPU:
-
-```bash
-python - <<'PY'
-import torch
-
-print("torch:", torch.__version__)
-print("wheel CUDA runtime:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-if not torch.cuda.is_available():
-    raise SystemExit("CUDA недоступна: проверь wheel и NVIDIA driver")
-
-device = torch.device("cuda:0")
-value = torch.ones(1, device=device) * 2
-torch.cuda.synchronize(device)
-print("GPU:", torch.cuda.get_device_name(device))
-print("smoke result:", value.item())
-PY
-```
-
-Ожидается CUDA-tag в `torch.__version__`, непустой `torch.version.cuda`,
-`CUDA available: True` и `smoke result: 2.0`. Затем проверь policy приложения:
-
-```bash
-python ./app/main.py --version
-python ./app/main.py fit --help
-```
-
-Для GPU job используй `--device=cuda` (или `"device":"cuda"` во Flight
-create). Этот режим завершится ошибкой до загрузки данных, если CUDA
-недоступна. `auto` разрешает fallback на CPU, поэтому для production-задач,
-которые не должны незаметно уйти на CPU, указывай `cuda` явно.
-
-Официальная матрица команд:
-[Previous PyTorch Versions](https://pytorch.org/get-started/previous-versions/).
-Изменения CUDA-матрицы 2.12:
-[PyTorch 2.12 release](https://pytorch.org/blog/pytorch-2-12-release-blog/).
+Подробная production-настройка Flight service находится в
+[`docs/flight-operations.md`](docs/flight-operations.md).
 
 ## Remote Arrow Flight service
 
-Для разнесения Inventory и Transformer по физическим серверам проект содержит
-single-instance Arrow Flight v1 job service поверх существующих
+Проект содержит single-instance Arrow Flight v1 job service поверх существующих
 `fit-stream`/`predict-stream`. Нормативный wire contract находится в
-[`contracts/flight/v1`](contracts/flight/v1/README.md), инструкция для
-Inventory — в [`docs/inventory-flight-handoff.md`](docs/inventory-flight-handoff.md),
-а конфигурация, TLS/mTLS, запуск, recovery и retention — в
+[`contracts/flight/v1`](contracts/flight/v1/README.md), а конфигурация, TLS/mTLS,
+запуск, recovery и retention — в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
@@ -215,32 +138,6 @@ python ./app/main.py fit-stream \
   --seq-len=20 \
   --mode=relaxed
 ```
-
-Обычно этот режим запускается не вручную, а из `inventory`:
-
-```bash
-yarn build
-node dist/index.js trainTransformer \
-  --figi=BBG0013HJJ31 \
-  --context=BBG000B9XRY4,BBG004730N88 \
-  --from=2020-09-09T21:00:00.000Z \
-  --to=2021-08-27T21:00:00.000Z \
-  --interval=1day \
-  --chunk-days=30 \
-  --lookback=10 \
-  --horizon=5 \
-  --seq-len=20 \
-  --mode=relaxed \
-  --device=cpu \
-  --model-name=model_weights.pth
-```
-
-В этом сценарии `inventory`:
-
-1. Загружает `getFrame()` чанками.
-2. Собирает temporal windows.
-3. Пишет Arrow payloads в stdin transformer.
-4. Закрывает stdin после последнего чанка.
 
 Transformer обучается на каждом непустом входящем frame и сохраняет модель
 после terminator или EOF. Пустые frames пропускаются; если непустых frames не
@@ -431,7 +328,7 @@ python ./app/main.py fit-stream \
   Поэтому `0` остаётся численным placeholder, а информация о частичном
   пропуске не теряется.
 
-Текущий default — `relaxed`. При таком контракте `inventory` должен передавать
+Текущий default — `relaxed`. При таком контракте producer должен передавать
 `NaN` для отсутствующих context candles; Transformer строит mask и, в relaxed
 mode, missing-флаги из исходных `NaN` до любых tensor ops, и только затем
 заменяет `NaN -> 0`.

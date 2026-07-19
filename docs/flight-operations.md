@@ -234,31 +234,44 @@ the certificate SAN matches the address Inventory uses.
 
 ## Install and start
 
-Use a selected Python 3.11 interpreter from the host environment, an activated
-venv/conda environment, or the service container. The project does not require
-an environment named `.venv`. Install the selected Torch build and the direct
-runtime dependencies explicitly. For example, for the production CUDA 13.0
-wheel:
+On a Fedora Transformer host, use the system `/usr/bin/python3.11`. Install the
+Python packages into the user site of the same unprivileged Unix account that
+runs the service; do not run pip through sudo. The system administrator first
+installs the interpreter and the pip bootstrap wheel:
 
 ```bash
-PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
+sudo dnf install python3.11 python-pip-wheel
+```
 
-python -m pip install torch==2.12.0 \
-  --index-url "$PYTORCH_INDEX_URL"
-python -m pip install numpy==2.4.5 pyarrow==24.0.0
-python -m pip check
+The RPM dependencies provide `python3.11-libs` and CA certificates. Do not
+install `python3-pip`, which targets Fedora's default `python3`; `ensurepip`
+below bootstraps pip for Python 3.11 specifically.
+
+Then, as the service account, install the production CUDA 13.0 wheel and the
+direct runtime dependencies:
+
+```bash
+python3.11 -m ensurepip --user
+python3.11 -m pip install --user torch==2.12.0 \
+  --index-url https://download.pytorch.org/whl/cu130
+python3.11 -m pip install --user numpy==2.4.5 pyarrow==24.0.0
+python3.11 -m pip check
 ```
 
 Use the `cu126` index for the CUDA 12.6 build or the `cpu` index for a CPU-only
-deployment. The exact wheel matrix, driver prerequisites, and a real GPU
-allocation smoke test are documented in the project
-[`README`](../readme.md#установка-для-nvidia-cuda). Do not use the removed
-`cu128` index with PyTorch 2.12.
+deployment. PyTorch 2.12 also publishes an experimental `cu132` wheel. The
+`CUDA Version` shown by `nvidia-smi` is the maximum supported by the driver,
+not a requirement to install the wheel with the same suffix. CUDA Toolkit,
+cuDNN/NCCL RPMs, a compiler, and Python development headers are unnecessary
+unless the deployment builds custom CUDA extensions. The ordinary installation
+and CUDA smoke check are documented in the project
+[`README`](../readme.md#требования). Do not use the removed `cu128` index
+with PyTorch 2.12.
 
 Then run the single service entrypoint from the project root:
 
 ```bash
-python ./app/main.py serve-flight \
+python3.11 ./app/main.py serve-flight \
   --config=/etc/transformer/flight.json
 ```
 
