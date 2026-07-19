@@ -350,6 +350,30 @@ def test_failed_attempt_updates_job_and_attempt_in_one_transaction(ledger):
     assert attempt["exit_code"] == 2
 
 
+def test_cancelled_attempt_cannot_persist_error_metadata(ledger):
+    job = create_job(ledger)
+    seal_and_queue(ledger, job["job_id"])
+    running = ledger.claim_next_job("cpu")
+    ledger.transition_job(job["job_id"], JobState.CANCELLING)
+
+    with pytest.raises(ValueError, match="must not carry an error"):
+        ledger.finish_attempt(
+            job["job_id"],
+            running["attempt"],
+            JobState.CANCELLED,
+            error_code=ErrorCode.CANCELLED,
+            error_message="job was cancelled",
+        )
+
+    cancelled = ledger.finish_attempt(
+        job["job_id"],
+        running["attempt"],
+        JobState.CANCELLED,
+    )
+    assert cancelled["error_code"] is None
+    assert cancelled["error_message"] is None
+
+
 def test_ticket_is_opaque_owner_bound_and_expires(ledger):
     job = create_job(ledger, operation="predict", owner="inventory-a")
     seal_and_queue(ledger, job["job_id"])
