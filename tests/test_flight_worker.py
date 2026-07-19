@@ -14,6 +14,7 @@ import time
 import uuid
 
 import pyarrow as pa
+import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 
 from app.flight.arrow import schema_fingerprint
@@ -24,11 +25,13 @@ from app.flight.constants import (
     FIT_SCHEMA_ID,
     JobState,
     PREDICT_SCHEMA_ID,
+    STATUS_ACTION,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.ledger import Ledger
 from app.flight.observability import OperationalMetrics
+from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.worker import WorkerPool
 from app.training.run_config import ModelConfig, TrainConfig
@@ -259,12 +262,12 @@ def seal_and_queue(ledger, job, manifest, *, device="cpu"):
     ledger.queue_job(job["job_id"], selected_device=device)
 
 
-def create_fit_job(ledger):
+def create_fit_job(ledger, *, requested_device="cpu"):
     return ledger.create_job(
         job_id=str(uuid.uuid4()),
         owner_subject="inventory",
         operation="fit",
-        requested_device="cpu",
+        requested_device=requested_device,
         prediction_column="out",
         config_hash="a" * 64,
         model_label="returns.daily",
@@ -941,7 +944,7 @@ def test_inherited_pipes_after_leader_exit_remain_under_worker_timeout(tmp_path)
         assert state_path.read_text().split()[2] == "Z"
 
 
-def test_cancel_action_terminates_running_process_group(tmp_path):
+def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
     script = (
         "import subprocess,sys,time; "
         "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
@@ -958,45 +961,84 @@ def test_cancel_action_terminates_running_process_group(tmp_path):
         spool,
         cancel_notifier=pool.notify_cancel,
     )
-    job = create_predict_job(ledger, spool)
-    seal_and_queue(ledger, job, [])
-    runner = threading.Thread(target=pool.run_once, args=("cpu",))
-    runner.start()
-
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        current = ledger.get_job(job["job_id"])
-        stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
-        if current["state"] == JobState.RUNNING.value and os.path.exists(stderr_path):
-            text = Path(stderr_path).read_text(errors="replace")
-            if "grandchild=" in text:
-                break
-        time.sleep(0.02)
-    else:
-        raise AssertionError("worker subprocess did not start")
-
-    grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
-    cancel = {
-        "contract": CONTRACT_NAME,
-        "version": 1,
-        "requestId": str(uuid.uuid4()),
-        "idempotencyKey": "cancel-running-worker",
-        "jobId": job["job_id"],
-    }
-    response = coordinator.cancel(
-        "inventory",
-        validate_action_request(CANCEL_ACTION, cancel),
-        cancel,
+    server = TransformerFlightServer(
+        config,
+        coordinator,
+        {"secret": "inventory"},
     )
-    runner.join(5)
+    client = flight.FlightClient(("localhost", server.port))
 
-    assert response["state"] == JobState.CANCELLING.value
-    assert not runner.is_alive()
-    assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
-    state_path = Path(f"/proc/{grandchild}/stat")
-    if state_path.exists():
-        # A short-lived zombie is already terminated and cannot consume CPU/GPU.
-        assert state_path.read_text().split()[2] == "Z"
+    def action(name, **fields):
+        document = {
+            "contract": CONTRACT_NAME,
+            "version": 1,
+            "requestId": str(uuid.uuid4()),
+            **fields,
+        }
+        options = flight.FlightCallOptions(
+            headers=[(b"authorization", b"Bearer secret")]
+        )
+        results = list(client.do_action(
+            flight.Action(name, json.dumps(document).encode()),
+            options=options,
+        ))
+        assert len(results) == 1
+        return json.loads(results[0].body.to_pybytes())
+
+    job = create_fit_job(ledger, requested_device="cuda")
+    seal_and_queue(ledger, job, [], device="cuda")
+    runner = threading.Thread(target=pool.run_once, args=("cuda",))
+    runner.start()
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            status = action(STATUS_ACTION, jobId=job["job_id"])
+            stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
+            if (
+                status["state"] == JobState.RUNNING.value
+                and os.path.exists(stderr_path)
+            ):
+                text = Path(stderr_path).read_text(errors="replace")
+                if "grandchild=" in text:
+                    break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("worker subprocess did not start")
+
+        grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
+        response = action(
+            CANCEL_ACTION,
+            idempotencyKey="cancel-running-worker",
+            jobId=job["job_id"],
+        )
+        runner.join(5)
+
+        assert response["state"] == JobState.CANCELLING.value
+        assert not runner.is_alive()
+        status = action(STATUS_ACTION, jobId=job["job_id"])
+        assert status["state"] == JobState.CANCELLED.value
+        assert status["error"] is None
+        assert status["pollAfterMs"] == 0
+        finished = ledger.get_job(job["job_id"])
+        assert finished["error_code"] is None
+        assert finished["error_message"] is None
+        with ledger.connection() as connection:
+            attempt = connection.execute(
+                "SELECT * FROM job_attempts WHERE job_id=? AND attempt=1",
+                (job["job_id"],),
+            ).fetchone()
+        assert attempt["status"] == JobState.CANCELLED.value
+        assert attempt["error_code"] is None
+        assert attempt["error_message"] is None
+        state_path = Path(f"/proc/{grandchild}/stat")
+        if state_path.exists():
+            # A short-lived zombie is already terminated and cannot consume CPU/GPU.
+            assert state_path.read_text().split()[2] == "Z"
+    finally:
+        if runner.is_alive():
+            pool.notify_cancel(job["job_id"])
+            runner.join(5)
+        server.shutdown()
 
 
 def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):

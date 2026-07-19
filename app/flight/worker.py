@@ -1125,8 +1125,6 @@ class WorkerPool:
             job["job_id"],
             job["attempt"],
             JobState.CANCELLED,
-            error_code=ErrorCode.CANCELLED,
-            error_message="job was cancelled",
             exit_code=exit_code,
         )
         self._record_transition(

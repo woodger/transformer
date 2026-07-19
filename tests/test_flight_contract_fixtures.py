@@ -531,6 +531,18 @@ def test_result_schemas_enforce_device_state_and_result_conditionals():
     with pytest.raises(AssertionError, match=r"expected type \['object'\]"):
         _validate_schema_subset(failed_without_error, status_schema)
 
+    cancelled = deepcopy(nonterminal)
+    cancelled.update({"state": "CANCELLED", "pollAfterMs": 0})
+    _validate_schema_subset(cancelled, status_schema)
+
+    cancelled_with_error = deepcopy(cancelled)
+    cancelled_with_error["error"] = {
+        "code": "CANCELLED",
+        "message": "job was cancelled",
+    }
+    with pytest.raises(AssertionError, match="expected const None"):
+        _validate_schema_subset(cancelled_with_error, status_schema)
+
     wrong_missing_flags = deepcopy(_read_json("status.result.json"))
     wrong_missing_flags["results"]["checkpoint"]["dataSchema"]["missing"][
         "flags"

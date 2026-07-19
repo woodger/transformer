@@ -12,6 +12,7 @@ from app.flight.constants import (
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
@@ -81,6 +82,71 @@ def test_create_and_status_are_durable_and_idempotent(coordinator):
     assert status["state"] == "UPLOADING"
     assert status["revision"] == 1
     assert status["committedInputs"] == []
+
+
+def test_status_hides_legacy_cancel_error_after_ledger_reopen(tmp_path):
+    config = FlightServiceConfig(
+        state_dir=str(tmp_path),
+        port=0,
+        profile="development",
+        allow_plaintext=True,
+        disk_min_free_bytes=1,
+    ).validate()
+    spool = Spool(config.state_dir).initialize()
+    ledger = Ledger(config.database_path).initialize()
+    job_id = "b257793b-100f-4322-b28a-8c47072b7fec"
+    ledger.create_job(
+        job_id=job_id,
+        owner_subject="inventory",
+        operation="fit",
+        requested_device="cuda",
+        prediction_column="out",
+        config_hash="a" * 64,
+        model_label="legacy-cancelled",
+        now=1.0,
+    )
+    ledger.seal_job(
+        job_id,
+        manifest_hash="b" * 64,
+        manifest=[],
+        now=2.0,
+    )
+    ledger.queue_job(job_id, selected_device="cuda", now=3.0)
+    running = ledger.claim_next_job("cuda", now=4.0)
+    ledger.transition_job(job_id, JobState.CANCELLING, now=5.0)
+    ledger.finish_attempt(
+        job_id,
+        running["attempt"],
+        JobState.CANCELLED,
+        now=6.0,
+    )
+    with ledger.connection() as connection:
+        connection.execute(
+            "UPDATE jobs SET error_code='CANCELLED', error_message=? WHERE job_id=?",
+            ("job was cancelled", job_id),
+        )
+        connection.execute(
+            "UPDATE job_attempts SET error_code='CANCELLED', error_message=? "
+            "WHERE job_id=? AND attempt=1",
+            ("job was cancelled", job_id),
+        )
+        connection.commit()
+
+    reopened = Ledger(config.database_path).initialize()
+    service = JobCoordinator(
+        config,
+        reopened,
+        spool,
+        cuda_available=lambda: False,
+    )
+    status = service.status("inventory", job_id, str(uuid.uuid4()))
+
+    assert status["state"] == JobState.CANCELLED.value
+    assert status["error"] is None
+    assert status["pollAfterMs"] == 0
+    # Compatibility is a wire concern: immutable terminal storage is not
+    # rewritten and its revision/timestamps remain untouched on startup.
+    assert reopened.get_job(job_id)["error_code"] == "CANCELLED"
 
 
 def test_same_idempotency_key_with_different_request_conflicts(coordinator):

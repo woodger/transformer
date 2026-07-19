@@ -9,41 +9,47 @@ Python-проект для обучения и инференса PyTorch Transf
 - принимать поток micro-batch Arrow payloads через stdin (`fit-stream`,
   `predict-stream`)
 
-`fit-stream` используется командой `trainTransformer` из проекта
-`inventory`.
-
 Checkpoint v2 сохраняет веса, model/train config и размер входной фичи
 `feature_dim`. Поэтому `predict` и `predict-stream` восстанавливают архитектуру
 и проверяют вход по metadata checkpoint.
 
 ## Требования
 
-- Python 3.11 на Linux
+- Python 3.11+
 - PyTorch
 - NumPy
 - PyArrow
 - CUDA опционально
 
-Прямые production-зависимости зафиксированы в `requirements.txt`. Конкретный
-CPU/CUDA wheel PyTorch 2.12.0 выбирается настроенным package index окружения:
+Установка зависимостей:
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+pip install torch numpy pyarrow pytest
 ```
+
+Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
+NVIDIA driver отдельно устанавливать CUDA Toolkit, cuDNN или NCCL через
+system package manager не нужно.
+
+Проверка CUDA:
+
+```bash
+python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")'
+```
+
+Подробная production-настройка Flight service находится в
+[`docs/flight-operations.md`](docs/flight-operations.md).
 
 ## Remote Arrow Flight service
 
-Для разнесения Inventory и Transformer по физическим серверам проект содержит
-single-instance Arrow Flight v1 job service поверх существующих
+Проект содержит single-instance Arrow Flight v1 job service поверх существующих
 `fit-stream`/`predict-stream`. Нормативный wire contract находится в
-[`contracts/flight/v1`](contracts/flight/v1/README.md), инструкция для
-Inventory — в [`docs/inventory-flight-handoff.md`](docs/inventory-flight-handoff.md),
-а конфигурация, TLS/mTLS, запуск, recovery и retention — в
+[`contracts/flight/v1`](contracts/flight/v1/README.md), а конфигурация, TLS/mTLS,
+запуск, recovery и retention — в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
-.venv/bin/python ./app/main.py serve-flight --config=/etc/transformer/flight.json
+python ./app/main.py serve-flight --config=/etc/transformer/flight.json
 ```
 
 Production требует TLS и bearer authentication. Plaintext разрешается только
@@ -132,32 +138,6 @@ python ./app/main.py fit-stream \
   --seq-len=20 \
   --mode=relaxed
 ```
-
-Обычно этот режим запускается не вручную, а из `inventory`:
-
-```bash
-yarn build
-node dist/index.js trainTransformer \
-  --figi=BBG0013HJJ31 \
-  --context=BBG000B9XRY4,BBG004730N88 \
-  --from=2020-09-09T21:00:00.000Z \
-  --to=2021-08-27T21:00:00.000Z \
-  --interval=1day \
-  --chunk-days=30 \
-  --lookback=10 \
-  --horizon=5 \
-  --seq-len=20 \
-  --mode=relaxed \
-  --device=cpu \
-  --model-name=model_weights.pth
-```
-
-В этом сценарии `inventory`:
-
-1. Загружает `getFrame()` чанками.
-2. Собирает temporal windows.
-3. Пишет Arrow payloads в stdin transformer.
-4. Закрывает stdin после последнего чанка.
 
 Transformer обучается на каждом непустом входящем frame и сохраняет модель
 после terminator или EOF. Пустые frames пропускаются; если непустых frames не
@@ -348,7 +328,7 @@ python ./app/main.py fit-stream \
   Поэтому `0` остаётся численным placeholder, а информация о частичном
   пропуске не теряется.
 
-Текущий default — `relaxed`. При таком контракте `inventory` должен передавать
+Текущий default — `relaxed`. При таком контракте producer должен передавать
 `NaN` для отсутствующих context candles; Transformer строит mask и, в relaxed
 mode, missing-флаги из исходных `NaN` до любых tensor ops, и только затем
 заменяет `NaN -> 0`.
@@ -564,8 +544,8 @@ stdout, поскольку его stdout не является output data proto
 ## Тестирование
 
 ```bash
-. .venv/bin/activate
-pytest -v
+python -m pip install pytest
+python -m pytest -v
 ```
 
 ## Основные файлы

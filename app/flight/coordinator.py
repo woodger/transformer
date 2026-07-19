@@ -513,6 +513,15 @@ class JobCoordinator:
             raise not_found("job not found")
         terminal = JobState(job["state"]) in TERMINAL_STATES
         result = job.get("result") or {}
+        # The v1 wire contract exposes an error only for FAILED.  Older
+        # releases persisted a CANCELLED marker as an error; state-gating here
+        # keeps those immutable durable jobs wire-valid without rewriting them.
+        error = None
+        if job["state"] == JobState.FAILED.value:
+            error = {
+                "code": job["error_code"],
+                "message": job["error_message"],
+            }
         return response_document(
             request_id,
             jobId=job_id,
@@ -527,11 +536,7 @@ class JobCoordinator:
             committedInputs=[_safe_input(item) for item in inputs],
             progress=job.get("progress") or {},
             attempt=job["attempt"],
-            error=(
-                None
-                if not job.get("error_code")
-                else {"code": job["error_code"], "message": job["error_message"]}
-            ),
+            error=error,
             results={
                 "outputs": [
                     {

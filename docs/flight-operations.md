@@ -10,8 +10,8 @@ the architectural boundary is recorded in
 ## Runtime and host requirements
 
 - Python 3.11 on Linux.
-- Direct dependencies from [`requirements.txt`](../requirements.txt):
-  `numpy==2.4.5`, `pyarrow==24.0.0`, and `torch==2.12.0`.
+- Direct runtime dependencies: `numpy==2.4.5`, `pyarrow==24.0.0`, and
+  `torch==2.12.0` with a deployment-selected CPU/CUDA build.
 - A durable local filesystem for the complete state directory. SQLite, input
   spool and model files must remain on the same Transformer host.
 - A visible Linux `/proc` in the service PID namespace, including
@@ -234,18 +234,44 @@ the certificate SAN matches the address Inventory uses.
 
 ## Install and start
 
-Create a Python 3.11 environment and install the pinned direct runtime
-dependencies through the deployment's selected PyTorch package index:
+On a Fedora Transformer host, use the system `/usr/bin/python3.11`. Install the
+Python packages into the user site of the same unprivileged Unix account that
+runs the service; do not run pip through sudo. The system administrator first
+installs the interpreter and the pip bootstrap wheel:
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+sudo dnf install python3.11 python-pip-wheel
 ```
+
+The RPM dependencies provide `python3.11-libs` and CA certificates. Do not
+install `python3-pip`, which targets Fedora's default `python3`; `ensurepip`
+below bootstraps pip for Python 3.11 specifically.
+
+Then, as the service account, install the production CUDA 13.0 wheel and the
+direct runtime dependencies:
+
+```bash
+python3.11 -m ensurepip --user
+python3.11 -m pip install --user torch==2.12.0 \
+  --index-url https://download.pytorch.org/whl/cu130
+python3.11 -m pip install --user numpy==2.4.5 pyarrow==24.0.0
+python3.11 -m pip check
+```
+
+Use the `cu126` index for the CUDA 12.6 build or the `cpu` index for a CPU-only
+deployment. PyTorch 2.12 also publishes an experimental `cu132` wheel. The
+`CUDA Version` shown by `nvidia-smi` is the maximum supported by the driver,
+not a requirement to install the wheel with the same suffix. CUDA Toolkit,
+cuDNN/NCCL RPMs, a compiler, and Python development headers are unnecessary
+unless the deployment builds custom CUDA extensions. The ordinary installation
+and CUDA smoke check are documented in the project
+[`README`](../readme.md#требования). Do not use the removed `cu128` index
+with PyTorch 2.12.
 
 Then run the single service entrypoint from the project root:
 
 ```bash
-.venv/bin/python ./app/main.py serve-flight \
+python3.11 ./app/main.py serve-flight \
   --config=/etc/transformer/flight.json
 ```
 
@@ -276,7 +302,7 @@ umask 077
 printf '%s\n' '{"dev-token":"inventory-local"}' \
   > /tmp/transformer-flight-bearers.json
 
-.venv/bin/python ./app/main.py serve-flight \
+python ./app/main.py serve-flight \
   --state-dir=/tmp/transformer-flight-state \
   --bind-host=127.0.0.1 \
   --port=8815 \
@@ -288,7 +314,7 @@ printf '%s\n' '{"dev-token":"inventory-local"}' \
 In another terminal, list actions and call capabilities/health:
 
 ```bash
-.venv/bin/python - <<'PY'
+python - <<'PY'
 import json
 import uuid
 
@@ -326,7 +352,7 @@ project integration tests rather than constructing server filesystem state by
 hand:
 
 ```bash
-.venv/bin/python -m pytest -q \
+python -m pytest -q \
   tests/test_flight_fit_integration.py \
   tests/test_flight_prediction_integration.py
 ```
@@ -518,7 +544,8 @@ No private Cython/grpc shim is used.
 - Output tickets are short-lived, opaque and not model references.
 - Plaintext exists only for explicit development/LAN operation and is not a
   production security profile.
-- Direct dependencies are version-pinned, but the environment must select and
-  record the intended CPU/CUDA Torch wheel and its transitive resolution.
+- Direct dependency versions are fixed in the documented installation command,
+  but the environment must select and record the intended CPU/CUDA Torch wheel
+  and its transitive resolution.
 - Node-to-PyArrow interoperability and physical CUDA behavior require separate
   target-environment validation; Python tests do not prove either gate.

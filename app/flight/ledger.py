@@ -1034,6 +1034,10 @@ class Ledger:
         target_state = JobState(target_state)
         if target_state not in (JobState.FAILED, JobState.CANCELLED):
             raise ValueError("worker attempt can finish only as FAILED or CANCELLED")
+        if target_state == JobState.CANCELLED and (
+            error_code is not None or error_message is not None
+        ):
+            raise ValueError("cancelled attempt must not carry an error")
         timestamp = _now(now)
         with self.transaction() as connection:
             job = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
