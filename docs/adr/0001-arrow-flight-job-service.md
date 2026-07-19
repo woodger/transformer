@@ -20,8 +20,10 @@ separate process group.
 
 One successful DoPut is one logical Inventory payload and is persisted as one
 Arrow IPC file. RecordBatch boundaries within that DoPut are transport
-chunking. The worker wraps each persisted file in exactly one legacy 8-byte
-length-prefixed frame, ordered by `ordinal`.
+chunking. For prediction, the worker wraps each persisted file in exactly one
+legacy 8-byte length-prefixed frame, ordered by `ordinal`. For fit, the worker
+passes the durable input directory to the CLI so it can reopen each ordinal in
+every job-wide epoch.
 
 Job state is authoritative in SQLite. Files become visible only after durable
 filesystem publication followed by a ledger commit. Interrupted `RUNNING` jobs
@@ -43,6 +45,9 @@ shared storage. It does not use DoExchange or PollFlightInfo.
 - Upload/start retries are safe through canonical idempotency records.
 - A lost response can be replayed without replaying Torch execution.
 - Prediction uses one subprocess and one model load for all sealed inputs.
+- Fit uses the durable spool as an epoch-replayable dataset: each job epoch
+  visits every non-empty input by ordinal under one optimizer, loss schedule,
+  checkpoint selector and early-stopping instance.
 - CUDA jobs use a FIFO lane of capacity one; CPU capacity is configurable.
 - SQLite and the spool must be on durable local storage and protected by a
   process-level state directory lock.

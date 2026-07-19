@@ -189,7 +189,7 @@ parser; `hidden` должен делиться на `nhead`.
 | `--lr` | Learning rate | `0.0005` |
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
-| `--epochs` | Эпохи для file fit / максимум на каждый stream frame | `25` |
+| `--epochs` | Эпохи для file fit / максимум на stdin frame / эпохи всего Flight job | `25` |
 | `--loss-stage` | Максимальный этап loss: `1..4` | `4` |
 | `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
 | `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
@@ -266,10 +266,13 @@ Monitor вычисляется по тому же training pass, на котор
 обновляется только если baseline пройден, monitor конечен и улучшился; если
 baseline ни разу не пройден, сохраняются текущие веса последней эпохи.
 
-В `fit-stream` каждый непустой Arrow frame обучается отдельным циклом
-`epoch=1..--epochs` до срабатывания `--patience`. Веса модели при этом не
-сбрасываются между frames; optimizer step также остаётся глобальным, а
-per-frame early stopping начинается заново.
+В standalone `fit-stream`, читающем stdin, каждый непустой Arrow frame
+обучается отдельным циклом `epoch=1..--epochs` до срабатывания `--patience`.
+Веса модели при этом не сбрасываются между frames; optimizer step также
+остаётся глобальным, а per-frame early stopping начинается заново. Flight fit
+использует другой внутренний режим этой команды: каждая job-wide эпоха читает
+все sealed payloads из durable spool по ordinal, с едиными loss schedule,
+optimizer, checkpoint selection и early stopping на весь job.
 
 Loss stage соответствует следующим компонентам (точные формулы находятся в
 `docs/losses.md`):
@@ -343,12 +346,13 @@ attention создать non-finite значения.
 ## Метрики обучения
 
 `fit` и `fit-stream` один раз печатают конфигурацию запуска, а затем компактную
-summary-строку для каждого epoch. В `fit-stream` summary дополнительно содержит
-номер входного frame. Loss schedule продвигается по выбранному
-`--loss-schedule`:
+summary-строку для каждого epoch. Standalone `fit-stream` дополнительно пишет
+номер входного frame; Flight fit пишет одну агрегированную строку на job-wide
+эпоху без `frame`. Loss schedule продвигается по выбранному `--loss-schedule`:
 
 - `none` — всегда используется `--loss-stage`
-- `epoch` — stage считается от epoch внутри текущего frame
+- `epoch` — stage считается от epoch внутри текущего standalone frame или
+  всего Flight job
 - `step` — stage считается от глобального optimizer step и не сбрасывается
   между frames
 
@@ -408,8 +412,8 @@ python ./app/main.py fit-stream \
 ```
 
 Каждая строка — один JSON object с полным набором числовых полей, параметрами
-запуска и контекстом `epoch` или `frame`. Non-finite значения сериализуются как
-JSON `null`.
+запуска и контекстом `epoch`; standalone stream также добавляет `frame`.
+Non-finite значения сериализуются как JSON `null`.
 
 Построить SVG-графики по JSONL:
 
@@ -528,12 +532,14 @@ Declared size проверяется до чтения payload. Default limit �
 (`536870912` bytes); положительный `--max-frame-bytes` меняет его только для
 `fit-stream` и `predict-stream`.
 
-В `fit-stream` каждый непустой frame получает собственный цикл до `--epochs`
-с per-frame early stopping; пустая Arrow table пропускается. В
-`predict-stream` пустому input frame соответствует пустой output frame типа
-`list<float32>`. Zero terminator не порождает output frame. При clean EOF или
-terminator `predict-stream` завершает stdout обычным EOF и не добавляет свой
-zero terminator.
+В standalone `fit-stream` каждый непустой stdin frame получает собственный
+цикл до `--epochs` с per-frame early stopping; пустая Arrow table пропускается.
+Flight worker не применяет эту per-frame семантику к training job: `--epochs`
+охватывает весь sealed набор, а payloads обходятся по ordinal внутри каждой
+эпохи. В `predict-stream` пустому input frame соответствует пустой output frame
+типа `list<float32>`. Zero terminator не порождает output frame. При clean EOF
+или terminator `predict-stream` завершает stdout обычным EOF и не добавляет
+свой zero terminator.
 
 `predict-stream` пишет в stdout тот же framed protocol. Каждый output payload —
 самостоятельный Arrow IPC file с одной колонкой `--pred-col`; writer flushes

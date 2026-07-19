@@ -358,6 +358,17 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
     )
     if stream:
         _add_max_frame_bytes_argument(runtime)
+        runtime.add_argument(
+            "--input-spool-dir",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--input-frame-count",
+            type=_nonnegative_int,
+            default=None,
+            help=argparse.SUPPRESS,
+        )
     _add_model_arguments(parser, required_seq_len=True, training=True)
     _add_training_arguments(parser)
 

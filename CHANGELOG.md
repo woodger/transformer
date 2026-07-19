@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Flight fit теперь выполняет настроенное число эпох над всем sealed input job:
+  внутри каждой эпохи durable payloads читаются по ordinal, а loss schedule,
+  optimizer, checkpoint selection и early stopping больше не перезапускаются
+  на границах транспортных payloads.
+
 ## [0.1.2] - 2026-07-19
 
 ### Changed

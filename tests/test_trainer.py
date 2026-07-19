@@ -347,6 +347,92 @@ def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
     assert seen[-1][1] == 4
 
 
+def test_trainer_fit_payloads_runs_global_epochs_over_all_payloads():
+    first = make_dummy_data(n=3)
+    second = make_dummy_data(n=2)
+    for _, targets in (first, second):
+        targets[:, 4] = torch.rand(targets.size(0)) + 0.1
+        targets[:, 5] = torch.randint(
+            0,
+            2,
+            (targets.size(0),),
+            dtype=targets.dtype,
+        )
+
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=2,
+        epochs=3,
+        patience=0,
+        loss_schedule="epoch",
+        stage_size=1,
+        monitor="loss",
+        use_amp=False,
+    )
+    payload_passes = 0
+
+    def payloads():
+        nonlocal payload_passes
+        payload_passes += 1
+        return iter((first, second))
+
+    metrics_rows = trainer.fit_payloads(payloads)
+
+    assert payload_passes == 3
+    assert [metrics.rows for metrics in metrics_rows] == [5, 5, 5]
+    assert [metrics.batches for metrics in metrics_rows] == [3, 3, 3]
+    assert [metrics.step for metrics in metrics_rows] == [3, 6, 9]
+    assert [metrics.loss_stage for metrics in metrics_rows] == [1, 2, 3]
+    assert trainer.best_frame is None
+
+
+def test_trainer_fit_payloads_uses_one_early_stopper_for_the_job():
+    X = torch.zeros(2, 5, 4)
+    Y = torch.tensor([
+        [0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+        [0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    ])
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=0.0,
+        batch_size=1,
+        epochs=5,
+        patience=1,
+        loss_schedule="none",
+        monitor="loss",
+        use_amp=False,
+    )
+
+    metrics_rows = trainer.fit_payloads(
+        lambda: iter(((X[:1], Y[:1]), (X[1:], Y[1:])))
+    )
+
+    assert len(metrics_rows) == 2
+    assert [metrics.rows for metrics in metrics_rows] == [2, 2]
+    assert [metrics.step for metrics in metrics_rows] == [2, 4]
+
+
 def test_trainer_rejects_invalid_stage_size():
     model = nn.Linear(2, 6)
 

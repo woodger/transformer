@@ -1,4 +1,3 @@
-from io import BytesIO
 import json
 from pathlib import Path
 import subprocess
@@ -121,15 +120,6 @@ def _ipc_payload(batches):
     return sink.getvalue().to_pybytes()
 
 
-def _framed_payloads(payloads):
-    stream = BytesIO()
-    for payload in payloads:
-        stream.write(len(payload).to_bytes(8, "big"))
-        stream.write(payload)
-    stream.write((0).to_bytes(8, "big"))
-    return stream.getvalue()
-
-
 def _put(client, job_id, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
@@ -162,6 +152,10 @@ def _put(client, job_id, payload_id, ordinal, batches):
 def _direct_fit(tmp_path, payloads):
     checkpoint = tmp_path / "direct-checkpoint.pth"
     metrics = tmp_path / "direct-metrics.jsonl"
+    inputs = tmp_path / "direct-inputs"
+    inputs.mkdir()
+    for ordinal, payload in enumerate(payloads):
+        (inputs / f"{ordinal}.arrow").write_bytes(payload)
     command = [
         sys.executable,
         str(Path(PROJECT_ROOT) / "app" / "main.py"),
@@ -169,6 +163,8 @@ def _direct_fit(tmp_path, payloads):
         "--device", "cpu",
         "--checkpoint-out", str(checkpoint),
         "--metrics-out", str(metrics),
+        "--input-spool-dir", str(inputs),
+        "--input-frame-count", str(len(payloads)),
         "--seq-len", str(MODEL_CONFIG["seqLen"]),
         "--hidden", str(MODEL_CONFIG["hidden"]),
         "--layers", str(MODEL_CONFIG["layers"]),
@@ -193,7 +189,7 @@ def _direct_fit(tmp_path, payloads):
     process = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
-        input=_framed_payloads(payloads),
+        input=b"",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -222,7 +218,7 @@ def _load_payload(path):
     return torch.load(path, map_location="cpu", weights_only=False)
 
 
-def test_real_cpu_flight_fit_preserves_legacy_frame_semantics(tmp_path):
+def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(tmp_path):
     first_batches = [
         _batch(
             [[0.10, 0.20, 0.30, 0.40]],
@@ -247,7 +243,7 @@ def test_real_cpu_flight_fit_preserves_legacy_frame_semantics(tmp_path):
         tmp_path,
         payloads,
     )
-    assert "2 trained frame(s), 2 epoch(s) from 2 received frame(s)" in direct_stdout
+    assert "2 trained frame(s), 1 epoch(s) from 2 received frame(s)" in direct_stdout
 
     config = _service_config(tmp_path)
     application = FlightApplication.build(
@@ -408,17 +404,18 @@ def test_real_cpu_flight_fit_preserves_legacy_frame_semantics(tmp_path):
         )
         direct_metrics = _jsonl(direct_metrics_path)
         service_metrics = _jsonl(service_metrics_path)
-        assert [row["frame"] for row in service_metrics] == [1, 2]
-        assert [row["rows"] for row in service_metrics] == [2, 1]
-        assert [row["batches"] for row in service_metrics] == [1, 1]
-        assert [row["step"] for row in service_metrics] == [1, 2]
+        assert [row.get("frame") for row in service_metrics] == [None]
+        assert [row["epoch"] for row in service_metrics] == [1]
+        assert [row["rows"] for row in service_metrics] == [3]
+        assert [row["batches"] for row in service_metrics] == [2]
+        assert [row["step"] for row in service_metrics] == [2]
         assert _without_elapsed(service_metrics) == _without_elapsed(direct_metrics)
 
         service_stdout = Path(application.spool.attempt_stdout_path(
             job_id,
             status["attempt"],
         )).read_text(errors="replace")
-        assert "2 trained frame(s), 2 epoch(s) from 2 received frame(s)" in service_stdout
+        assert "2 trained frame(s), 1 epoch(s) from 2 received frame(s)" in service_stdout
     finally:
         client.close()
         application.shutdown()

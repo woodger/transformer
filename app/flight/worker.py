@@ -32,6 +32,7 @@ _FRAME_HEADER_BYTES = 8
 _COPY_CHUNK_BYTES = 1024 * 1024
 _MAX_LOG_BYTES = 16 * 1024 * 1024
 _STDERR_TAIL_BYTES = 128 * 1024
+_FIT_SPOOL_OPTION = "--input-spool-dir"
 _DISK_FULL_ERRNOS = {
     value
     for value in (errno.ENOSPC, getattr(errno, "EDQUOT", None))
@@ -357,12 +358,15 @@ class WorkerPool:
             "--",
             *argv,
         ]
+        uses_spooled_fit = (
+            job["operation"] == "fit" and _FIT_SPOOL_OPTION in argv
+        )
         try:
             process = self._popen(
                 supervised_argv,
                 cwd=PROJECT_ROOT,
                 env=environment,
-                stdin=subprocess.PIPE,
+                stdin=subprocess.DEVNULL if uses_spooled_fit else subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
@@ -409,12 +413,6 @@ class WorkerPool:
             )
             threads = [
                 threading.Thread(
-                    target=self._feed_frames,
-                    args=(process.stdin, inputs, errors),
-                    name=f"flight-stdin-{job_id}",
-                    daemon=True,
-                ),
-                threading.Thread(
                     target=self._drain_log,
                     args=(process.stderr, stderr_path, errors),
                     kwargs={"tail": stderr_tail},
@@ -422,6 +420,16 @@ class WorkerPool:
                     daemon=True,
                 ),
             ]
+            if not uses_spooled_fit:
+                threads.insert(
+                    0,
+                    threading.Thread(
+                        target=self._feed_frames,
+                        args=(process.stdin, inputs, errors),
+                        name=f"flight-stdin-{job_id}",
+                        daemon=True,
+                    ),
+                )
             if job["operation"] == "predict":
                 # Keep a deterministic empty text log; binary stdout is staged as Arrow.
                 Path(stdout_path).touch()
@@ -882,6 +890,8 @@ class WorkerPool:
             "--checkpoint-out", self.spool.attempt_checkpoint_path(job["job_id"], attempt),
             "--metrics-out", self.spool.attempt_metrics_path(job["job_id"], attempt),
             "--max-frame-bytes", str(self.config.max_payload_bytes),
+            _FIT_SPOOL_OPTION, self.spool.input_directory(job["job_id"]),
+            "--input-frame-count", str(len(job.get("seal_manifest") or [])),
             "--seq-len", str(model.seq_len),
             "--hidden", str(model.hidden),
             "--layers", str(model.layers),
