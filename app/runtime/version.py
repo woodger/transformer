@@ -3,7 +3,7 @@ import platform
 import torch
 
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 def version_text(prog: str = "main.py") -> str:
