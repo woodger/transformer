@@ -127,7 +127,7 @@ class Trainer:
         else:
             return nullcontext()
 
-    def _train_loader(self, loader) -> TrainMetrics:
+    def _train_loaders(self, loaders) -> TrainMetrics:
         self.model.train()
         metrics = TrainMetrics(
             lr=self.optimizer.param_groups[0]["lr"],
@@ -136,45 +136,50 @@ class Trainer:
         )
         started = time.perf_counter()
 
-        for xb_cpu, yb_cpu in loader:
-            loss_stage = self._loss_stage_for()
-            batch_rows = xb_cpu.size(0)
-            nan_ratio = float(torch.isnan(xb_cpu).float().mean())
-            token_ratios = context_token_ratios(xb_cpu, self.context_mode)
+        for loader in loaders:
+            for xb_cpu, yb_cpu in loader:
+                loss_stage = self._loss_stage_for()
+                batch_rows = xb_cpu.size(0)
+                nan_ratio = float(torch.isnan(xb_cpu).float().mean())
+                token_ratios = context_token_ratios(xb_cpu, self.context_mode)
 
-            xb = xb_cpu.to(self.device)
-            yb = yb_cpu.to(self.device)
+                xb = xb_cpu.to(self.device)
+                yb = yb_cpu.to(self.device)
 
-            self.optimizer.zero_grad()
+                self.optimizer.zero_grad()
 
-            with self._autocast():
-                preds = self.model(xb)
-                loss, loss_parts = combined_loss(
-                    preds,
-                    yb,
-                    loss_stage,
-                    return_parts=True,
+                with self._autocast():
+                    preds = self.model(xb)
+                    loss, loss_parts = combined_loss(
+                        preds,
+                        yb,
+                        loss_stage,
+                        return_parts=True,
+                    )
+
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), GRAD_CLIP_NORM
                 )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                loss_parts["step"] = self.state.finish_step()
 
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), GRAD_CLIP_NORM
-            )
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            loss_parts["step"] = self.state.finish_step()
-
-            metrics.update(
-                rows=batch_rows,
-                loss_parts=loss_parts,
-                grad_norm=float(grad_norm.detach().cpu()),
-                nan_ratio=nan_ratio,
-                **token_ratios,
-            )
+                metrics.update(
+                    rows=batch_rows,
+                    loss_parts=loss_parts,
+                    grad_norm=float(grad_norm.detach().cpu()),
+                    nan_ratio=nan_ratio,
+                    **token_ratios,
+                )
+            del loader
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
+
+    def _train_loader(self, loader) -> TrainMetrics:
+        return self._train_loaders((loader,))
 
     def _monitor_value(self, metrics: TrainMetrics) -> float:
         if self.monitor == "loss":
@@ -252,26 +257,43 @@ class Trainer:
         Y: torch.Tensor,
         epoch: int = 0,
     ) -> TrainMetrics:
-        dataset = TensorDataset(X, Y)
-        loader = DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=0,
-        )
+        loader = self._data_loader(X, Y)
 
         self.state.begin_epoch(epoch)
         return self._train_loader(loader)
 
     def fit_epochs(self, X: torch.Tensor, Y: torch.Tensor, on_epoch=None, frame: int | None = None):
+        loader = self._data_loader(X, Y)
+        return self._fit_loader_epochs(
+            lambda: (loader,),
+            on_epoch=on_epoch,
+            frame=frame,
+        )
+
+    def fit_payloads(self, payloads, on_epoch=None):
+        """Train each epoch over payload tensors produced in ordinal order.
+
+        ``payloads`` is a callable so durable inputs can be reopened for every
+        epoch while retaining at most one payload's tensors in memory.
+        """
+
+        def loaders():
+            for X, Y in payloads():
+                yield self._data_loader(X, Y)
+                del X, Y
+
+        return self._fit_loader_epochs(loaders, on_epoch=on_epoch)
+
+    def _data_loader(self, X: torch.Tensor, Y: torch.Tensor):
         dataset = TensorDataset(X, Y)
-        loader = DataLoader(
+        return DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=0,
         )
 
+    def _fit_loader_epochs(self, loaders, on_epoch=None, frame: int | None = None):
         metrics_rows = []
         stopper = EarlyStopping(
             patience=self.patience,
@@ -281,7 +303,7 @@ class Trainer:
 
         for epoch in range(self.epochs):
             self.state.begin_epoch(epoch)
-            metrics = self._train_loader(loader)
+            metrics = self._train_loaders(loaders())
             metrics_rows.append(metrics)
             monitor_payload = self._observe_metrics(
                 metrics,

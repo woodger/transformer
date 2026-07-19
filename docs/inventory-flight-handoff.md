@@ -257,11 +257,18 @@ order, but the sealed manifest is ordered.
 
 After start, the worker reads the sealed IPC files strictly by ordinal and
 wraps each complete file in exactly one existing 8-byte big-endian
-length-prefixed subprocess frame. Multiple RecordBatches in the file never
-become multiple `fit_epochs` or prediction calls. A fit job uses one
-`fit-stream` subprocess across all frames, preserving model, optimizer, loss
-schedule and early-stopping semantics. A predict job similarly uses one
+length-prefixed subprocess frame for prediction. Multiple RecordBatches in the
+file never become multiple prediction calls. A predict job uses one
 `predict-stream` subprocess and loads its resolved checkpoint once.
+
+A fit worker instead gives its single `fit-stream` subprocess the already
+validated durable input directory to read. Training order is
+`epoch -> ordinal -> optimizer batches`: `epochs` is the job-wide epoch count,
+and model, optimizer, loss scheduler, checkpoint selection and early stopping
+all have one lifetime per job. Only one payload is materialized as tensors at a
+time, and it is reopened on each epoch, so the complete dataset is never loaded
+into memory. Changing Inventory's payload-size limit therefore does not grant
+later ordinals their own epoch budget or reset epoch-based training state.
 
 The server writes all batches to one IPC file, validates each batch, computes
 the digest, fsyncs the file, atomically publishes it, fsyncs the directory and

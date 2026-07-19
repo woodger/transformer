@@ -346,6 +346,10 @@ def test_fit_argv_contains_exact_immutable_config_and_server_paths(tmp_path):
     assert argv[argv.index("--metrics-out") + 1] == spool.attempt_metrics_path(
         job["job_id"], 1
     )
+    assert argv[argv.index("--input-spool-dir") + 1] == spool.input_directory(
+        job["job_id"]
+    )
+    assert argv[argv.index("--input-frame-count") + 1] == "0"
     assert "--no-save-best-checkpoint" in argv
     assert "--deterministic" in argv
     assert "returns.daily" not in argv

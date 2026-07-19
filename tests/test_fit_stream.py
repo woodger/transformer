@@ -25,6 +25,12 @@ def write_framed_table(stream, table):
     stream.write(payload)
 
 
+def write_arrow_table(path, table):
+    with pa.OSFile(str(path), "wb") as sink:
+        with ipc.new_file(sink, table.schema) as writer:
+            writer.write_table(table)
+
+
 def make_args(**overrides):
     args = {
         "seq_len": 2,
@@ -120,6 +126,88 @@ def test_fit_stream_rejects_all_empty_frames(monkeypatch):
 
     with pytest.raises(ValueError, match="No non-empty frames received"):
         main_module.fit_stream(make_args(), torch.device("cpu"))
+
+
+def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, capsys):
+    empty = pa.table({
+        "src": pa.array([], type=pa.list_(pa.float32())),
+        "tgt": pa.array([], type=pa.list_(pa.float32())),
+    })
+    first = pa.table({
+        "src": [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+        "tgt": [
+            [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
+            [0.4, 0.0, 0.0, 0.0, 1.0, 0.0],
+        ],
+    })
+    second = pa.table({
+        "src": [[9.0, 10.0, 11.0, 12.0]],
+        "tgt": [[0.3, 0.0, 0.0, 0.0, 1.0, 1.0]],
+    })
+    spool = tmp_path / "inputs"
+    spool.mkdir()
+    for ordinal, table in enumerate((empty, first, second)):
+        write_arrow_table(spool / f"{ordinal}.arrow", table)
+
+    class FakeTrainer:
+        def __init__(self):
+            self.payload_passes = []
+            self.metrics_rows = []
+            self.saved_as = None
+
+        def fit_payloads(self, payloads, on_epoch=None):
+            for epoch in range(2):
+                loaded = list(payloads())
+                self.payload_passes.append([
+                    (X.shape, Y.shape)
+                    for X, Y in loaded
+                ])
+                metrics = TrainMetrics(
+                    rows=sum(X.size(0) for X, _ in loaded),
+                    batches=len(loaded),
+                    loss=1.0 - epoch * 0.1,
+                    loss_stage=epoch + 1,
+                )
+                on_epoch(epoch, metrics, {
+                    "monitor_value": metrics.loss,
+                    "baseline_passed": True,
+                    "checkpoint_best": True,
+                    "best_monitor": metrics.loss,
+                })
+
+        def save(self, model_name):
+            self.saved_as = model_name
+
+        def record_metrics(self, metrics, **extra):
+            self.metrics_rows.append((metrics, extra))
+
+    trainer = FakeTrainer()
+    monkeypatch.setattr(main_module, "build_model", lambda *args: object())
+    monkeypatch.setattr(main_module, "build_trainer", lambda *args: trainer)
+
+    main_module.fit_stream(
+        make_args(
+            model_name="spooled.pth",
+            input_spool_dir=str(spool),
+            input_frame_count=3,
+        ),
+        torch.device("cpu"),
+    )
+
+    expected_pass = [
+        (torch.Size([2, 2, 2]), torch.Size([2, 6])),
+        (torch.Size([1, 2, 2]), torch.Size([1, 6])),
+    ]
+    assert trainer.payload_passes == [expected_pass, expected_pass]
+    assert trainer.saved_as == "spooled.pth"
+    assert [extra["epoch"] for _, extra in trainer.metrics_rows] == [1, 2]
+    assert all("frame" not in extra for _, extra in trainer.metrics_rows)
+
+    output = capsys.readouterr().out
+    assert "frame 1, skipped empty payload" in output
+    assert "epoch=1 monitor_value=1" in output
+    assert "frame=" not in output.split("epoch=1", 1)[1]
+    assert "2 trained frame(s), 2 epoch(s) from 3 received frame(s)" in output
 
 
 def test_fit_stream_applies_max_frame_bytes(monkeypatch):

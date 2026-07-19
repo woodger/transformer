@@ -16,7 +16,9 @@ Python
 * Каждый payload — самостоятельный Arrow IPC file с колонкой `src`.
   Для `fit-stream` также нужна колонка `tgt`.
 * Python читает frames через `iter_framed_arrow()`.
-* `fit-stream` обучается на каждом непустом payload.
+* Standalone `fit-stream` обучается на каждом непустом stdin payload. Flight
+  fit переиспользует durable sealed payloads в порядке ordinal внутри каждой
+  общей для job эпохи.
 * `predict-stream` загружает модель один раз, делает predict для каждого
   непустого payload и пишет framed Arrow predictions в stdout. Пустой input
   frame получает пустой output frame.
@@ -162,4 +164,3 @@ LSTM / GRU → видит динамику во времени
 | TCN           | ✅          | ✅              | ✅              | Быстрая   | Средний  |
 | Conv1D + LSTM | ✅          | ✅              | ✅              | Средняя   | Средний  |
 | Transformer   | ⚠️         | ✅              | ✅✅             | Медленная | Большой  |
-
