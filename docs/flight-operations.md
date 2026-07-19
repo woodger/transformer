@@ -10,8 +10,8 @@ the architectural boundary is recorded in
 ## Runtime and host requirements
 
 - Python 3.11 on Linux.
-- Direct dependencies from [`requirements.txt`](../requirements.txt):
-  `numpy==2.4.5`, `pyarrow==24.0.0`, and `torch==2.12.0`.
+- Direct runtime dependencies: `numpy==2.4.5`, `pyarrow==24.0.0`, and
+  `torch==2.12.0` with a deployment-selected CPU/CUDA build.
 - A durable local filesystem for the complete state directory. SQLite, input
   spool and model files must remain on the same Transformer host.
 - A visible Linux `/proc` in the service PID namespace, including
@@ -236,15 +236,16 @@ the certificate SAN matches the address Inventory uses.
 
 Use a selected Python 3.11 interpreter from the host environment, an activated
 venv/conda environment, or the service container. The project does not require
-an environment named `.venv`. Install the selected Torch build first, then the
-pinned requirements. For example, for the production CUDA 13.0 wheel:
+an environment named `.venv`. Install the selected Torch build and the direct
+runtime dependencies explicitly. For example, for the production CUDA 13.0
+wheel:
 
 ```bash
 PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 
 python -m pip install torch==2.12.0 \
   --index-url "$PYTORCH_INDEX_URL"
-python -m pip install -r requirements.txt
+python -m pip install numpy==2.4.5 pyarrow==24.0.0
 python -m pip check
 ```
 
@@ -530,7 +531,8 @@ No private Cython/grpc shim is used.
 - Output tickets are short-lived, opaque and not model references.
 - Plaintext exists only for explicit development/LAN operation and is not a
   production security profile.
-- Direct dependencies are version-pinned, but the environment must select and
-  record the intended CPU/CUDA Torch wheel and its transitive resolution.
+- Direct dependency versions are fixed in the documented installation command,
+  but the environment must select and record the intended CPU/CUDA Torch wheel
+  and its transitive resolution.
 - Node-to-PyArrow interoperability and physical CUDA behavior require separate
   target-environment validation; Python tests do not prove either gate.

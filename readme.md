@@ -24,17 +24,17 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 - PyArrow
 - CUDA опционально
 
-Прямые production-зависимости зафиксированы в `requirements.txt`. Проект не
-требует окружение с именем `.venv`: ниже `python` означает выбранный Python
-3.11 из system environment, уже активированного venv/conda environment или
-контейнера.
+Проект не требует окружение с именем `.venv`: ниже `python` означает выбранный
+Python 3.11 из system environment, уже активированного venv/conda environment
+или контейнера. Поддерживаемые версии прямых runtime-зависимостей указаны в
+командах установки.
 
 ### Установка для CPU
 
 ```bash
 python -m pip install torch==2.12.0 \
   --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -r requirements.txt
+python -m pip install numpy==2.4.5 pyarrow==24.0.0
 ```
 
 ### Установка для NVIDIA CUDA
@@ -61,7 +61,7 @@ PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 
 python -m pip install torch==2.12.0 \
   --index-url "$PYTORCH_INDEX_URL"
-python -m pip install -r requirements.txt
+python -m pip install numpy==2.4.5 pyarrow==24.0.0
 python -m pip check
 ```
 
@@ -71,11 +71,10 @@ python -m pip check
 PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 ```
 
-Torch устанавливается первым, чтобы `requirements.txt` не выбрал wheel с
-другим CUDA runtime. Версия вида `2.12.0+cu130` удовлетворяет закреплённому
-требованию `torch==2.12.0`. `torchvision` и `torchaudio` проекту не нужны.
-Готовый PyTorch wheel уже содержит CUDA runtime; системный CUDA Toolkit и
-`nvcc` нужны только для сборки собственных CUDA extensions. Совместимый
+Torch устанавливается из выбранного index отдельно, чтобы package manager не
+подобрал wheel с другим CUDA runtime. `torchvision` и `torchaudio` проекту не
+нужны. Готовый PyTorch wheel уже содержит CUDA runtime; системный CUDA Toolkit
+и `nvcc` нужны только для сборки собственных CUDA extensions. Совместимый
 NVIDIA driver на хосте обязателен.
 
 После установки выполни реальную аллокацию на GPU:
@@ -648,6 +647,7 @@ stdout, поскольку его stdout не является output data proto
 ## Тестирование
 
 ```bash
+python -m pip install pytest
 python -m pytest -v
 ```
 
