@@ -234,18 +234,30 @@ the certificate SAN matches the address Inventory uses.
 
 ## Install and start
 
-Create a Python 3.11 environment and install the pinned direct runtime
-dependencies through the deployment's selected PyTorch package index:
+Use a selected Python 3.11 interpreter from the host environment, an activated
+venv/conda environment, or the service container. The project does not require
+an environment named `.venv`. Install the selected Torch build first, then the
+pinned requirements. For example, for the production CUDA 13.0 wheel:
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
+
+python -m pip install torch==2.12.0 \
+  --index-url "$PYTORCH_INDEX_URL"
+python -m pip install -r requirements.txt
+python -m pip check
 ```
+
+Use the `cu126` index for the CUDA 12.6 build or the `cpu` index for a CPU-only
+deployment. The exact wheel matrix, driver prerequisites, and a real GPU
+allocation smoke test are documented in the project
+[`README`](../readme.md#установка-для-nvidia-cuda). Do not use the removed
+`cu128` index with PyTorch 2.12.
 
 Then run the single service entrypoint from the project root:
 
 ```bash
-.venv/bin/python ./app/main.py serve-flight \
+python ./app/main.py serve-flight \
   --config=/etc/transformer/flight.json
 ```
 
@@ -276,7 +288,7 @@ umask 077
 printf '%s\n' '{"dev-token":"inventory-local"}' \
   > /tmp/transformer-flight-bearers.json
 
-.venv/bin/python ./app/main.py serve-flight \
+python ./app/main.py serve-flight \
   --state-dir=/tmp/transformer-flight-state \
   --bind-host=127.0.0.1 \
   --port=8815 \
@@ -288,7 +300,7 @@ printf '%s\n' '{"dev-token":"inventory-local"}' \
 In another terminal, list actions and call capabilities/health:
 
 ```bash
-.venv/bin/python - <<'PY'
+python - <<'PY'
 import json
 import uuid
 
@@ -326,7 +338,7 @@ project integration tests rather than constructing server filesystem state by
 hand:
 
 ```bash
-.venv/bin/python -m pytest -q \
+python -m pytest -q \
   tests/test_flight_fit_integration.py \
   tests/test_flight_prediction_integration.py
 ```

@@ -24,13 +24,97 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 - PyArrow
 - CUDA опционально
 
-Прямые production-зависимости зафиксированы в `requirements.txt`. Конкретный
-CPU/CUDA wheel PyTorch 2.12.0 выбирается настроенным package index окружения:
+Прямые production-зависимости зафиксированы в `requirements.txt`. Проект не
+требует окружение с именем `.venv`: ниже `python` означает выбранный Python
+3.11 из system environment, уже активированного venv/conda environment или
+контейнера.
+
+### Установка для CPU
 
 ```bash
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+python -m pip install torch==2.12.0 \
+  --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -r requirements.txt
 ```
+
+### Установка для NVIDIA CUDA
+
+Сначала проверь, что NVIDIA driver установлен и GPU виден на хосте:
+
+```bash
+nvidia-smi
+```
+
+Для PyTorch 2.12 официально опубликованы такие wheels:
+
+| Wheel index | Когда использовать |
+| --- | --- |
+| `cu126` | CUDA 12.6 build для существующего парка GPU и более старых архитектур |
+| `cu130` | Основной CUDA 13.0 build; на Linux требуется NVIDIA driver `580.65.06` или новее |
+| `cu132` | Экспериментальный CUDA 13.2 build; только после отдельной проверки на целевом хосте |
+
+PyTorch 2.12 не публикует `cu128`. Выбери один index согласно GPU и версии
+драйвера. Например, для production CUDA 13.0:
+
+```bash
+PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
+
+python -m pip install torch==2.12.0 \
+  --index-url "$PYTORCH_INDEX_URL"
+python -m pip install -r requirements.txt
+python -m pip check
+```
+
+Для CUDA 12.6 замени только значение переменной:
+
+```bash
+PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+```
+
+Torch устанавливается первым, чтобы `requirements.txt` не выбрал wheel с
+другим CUDA runtime. Версия вида `2.12.0+cu130` удовлетворяет закреплённому
+требованию `torch==2.12.0`. `torchvision` и `torchaudio` проекту не нужны.
+Готовый PyTorch wheel уже содержит CUDA runtime; системный CUDA Toolkit и
+`nvcc` нужны только для сборки собственных CUDA extensions. Совместимый
+NVIDIA driver на хосте обязателен.
+
+После установки выполни реальную аллокацию на GPU:
+
+```bash
+python - <<'PY'
+import torch
+
+print("torch:", torch.__version__)
+print("wheel CUDA runtime:", torch.version.cuda)
+print("CUDA available:", torch.cuda.is_available())
+if not torch.cuda.is_available():
+    raise SystemExit("CUDA недоступна: проверь wheel и NVIDIA driver")
+
+device = torch.device("cuda:0")
+value = torch.ones(1, device=device) * 2
+torch.cuda.synchronize(device)
+print("GPU:", torch.cuda.get_device_name(device))
+print("smoke result:", value.item())
+PY
+```
+
+Ожидается CUDA-tag в `torch.__version__`, непустой `torch.version.cuda`,
+`CUDA available: True` и `smoke result: 2.0`. Затем проверь policy приложения:
+
+```bash
+python ./app/main.py --version
+python ./app/main.py fit --help
+```
+
+Для GPU job используй `--device=cuda` (или `"device":"cuda"` во Flight
+create). Этот режим завершится ошибкой до загрузки данных, если CUDA
+недоступна. `auto` разрешает fallback на CPU, поэтому для production-задач,
+которые не должны незаметно уйти на CPU, указывай `cuda` явно.
+
+Официальная матрица команд:
+[Previous PyTorch Versions](https://pytorch.org/get-started/previous-versions/).
+Изменения CUDA-матрицы 2.12:
+[PyTorch 2.12 release](https://pytorch.org/blog/pytorch-2-12-release-blog/).
 
 ## Remote Arrow Flight service
 
@@ -43,7 +127,7 @@ Inventory — в [`docs/inventory-flight-handoff.md`](docs/inventory-flight-hand
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
-.venv/bin/python ./app/main.py serve-flight --config=/etc/transformer/flight.json
+python ./app/main.py serve-flight --config=/etc/transformer/flight.json
 ```
 
 Production требует TLS и bearer authentication. Plaintext разрешается только
@@ -564,8 +648,7 @@ stdout, поскольку его stdout не является output data proto
 ## Тестирование
 
 ```bash
-. .venv/bin/activate
-pytest -v
+python -m pytest -v
 ```
 
 ## Основные файлы
