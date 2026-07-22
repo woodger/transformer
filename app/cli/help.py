@@ -26,15 +26,30 @@ from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.version import __version__, version_text
 
 
-_COMMANDS = (
-    ("fit", "Train from an Arrow file."),
-    ("predict", "Predict from an Arrow file."),
-    ("fit-stream", "Train from framed stdin."),
-    ("predict-stream", "Predict from framed stdin."),
-    ("serve-flight", "Run the durable Arrow Flight job service."),
-    ("plot-metrics", "Render SVG charts from metrics JSONL."),
+_COMMAND_GROUPS = (
+    (
+        "Server",
+        (("serve-flight", "Run the durable Arrow Flight job service."),),
+    ),
+    (
+        "Training and inference",
+        (
+            ("fit", "Train from an Arrow file."),
+            ("predict", "Predict from an Arrow file."),
+            ("fit-stream", "Train from framed stdin."),
+            ("predict-stream", "Predict from framed stdin."),
+        ),
+    ),
+    (
+        "Metrics",
+        (("plot-metrics", "Render SVG charts from metrics JSONL."),),
+    ),
 )
-_COMMAND_HELP = dict(_COMMANDS)
+_COMMAND_HELP = {
+    name: description
+    for _, commands in _COMMAND_GROUPS
+    for name, description in commands
+}
 _COMMAND_EXAMPLES = {
     "fit": """Examples:
   transformer fit ./data/train.arrow --seq-len=20
@@ -49,8 +64,12 @@ _COMMAND_EXAMPLES = {
 
 
 def _format_root_help() -> str:
-    commands = "\n".join(
-        f"  {name:<16}{description}" for name, description in _COMMANDS
+    command_groups = "\n\n".join(
+        f"{group}:\n"
+        + "\n".join(
+            f"  {name:<16}{description}" for name, description in commands
+        )
+        for group, commands in _COMMAND_GROUPS
     )
     return (
         f"transformer {__version__}\n\n"
@@ -62,8 +81,8 @@ def _format_root_help() -> str:
         "Global options:\n"
         "  --help, -h       Show help and exit\n"
         "  --version, -v    Show package and runtime version info\n\n"
-        "Commands:\n"
-        f"{commands}\n\n"
+        "Commands:\n\n"
+        f"{command_groups}\n\n"
         "Command details:\n"
         "  transformer <command> --help\n"
     )

@@ -63,11 +63,17 @@ Global options:
   --version, -v    Show package and runtime version info
 
 Commands:
+
+Server:
+  serve-flight    Run the durable Arrow Flight job service.
+
+Training and inference:
   fit             Train from an Arrow file.
   predict         Predict from an Arrow file.
   fit-stream      Train from framed stdin.
   predict-stream  Predict from framed stdin.
-  serve-flight    Run the durable Arrow Flight job service.
+
+Metrics:
   plot-metrics    Render SVG charts from metrics JSONL.
 
 Command details:
