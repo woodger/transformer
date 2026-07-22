@@ -61,7 +61,6 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
         FlightServiceConfig(
             state_dir=str(tmp_path),
             port=0,
-            profile="development",
             allow_plaintext=True,
         ),
         CapabilityCoordinator(),
@@ -171,7 +170,6 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
             "flight",
             "serve",
             "--port", "0",
-            "--profile", "development",
             "--allow-plaintext",
             "--bearer-tokens-file", str(tokens),
         ],

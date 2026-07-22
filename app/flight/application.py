@@ -150,7 +150,6 @@ class FlightApplication:
                 host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
-                profile=config.profile,
                 recoveredInterruptedJobs=len(recovery["interrupted_jobs"]),
                 recoveredProcessGroups=sum(
                     result.outcome in ("terminated", "killed")
@@ -290,7 +289,6 @@ def run_from_args(args):
     overrides = {
         "host": args.host,
         "port": args.port,
-        "profile": args.profile,
         "allow_plaintext": args.allow_plaintext,
         "tls_cert_file": args.tls_cert_file,
         "tls_key_file": args.tls_key_file,

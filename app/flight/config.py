@@ -1,5 +1,4 @@
 from dataclasses import dataclass, fields, replace
-import ipaddress
 import json
 import math
 import os
@@ -23,7 +22,6 @@ class FlightServiceConfig:
     state_dir: str = _default_state_dir()
     host: str = "127.0.0.1"
     port: int = 8815
-    profile: str = "production"
     allow_plaintext: bool = False
 
     tls_cert_file: str | None = None
@@ -85,10 +83,6 @@ class FlightServiceConfig:
             or self.port > 65535
         ):
             raise ValueError("port must be between 0 and 65535")
-        if not isinstance(self.profile, str) or self.profile not in (
-            "production", "development", "lan"
-        ):
-            raise ValueError("profile must be one of: production, development, lan")
         for name in ("allow_plaintext", "tls_require_client_cert"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"{name} must be a boolean")
@@ -107,15 +101,7 @@ class FlightServiceConfig:
             if not self.allow_plaintext:
                 raise ValueError(
                     "plaintext Flight is disabled; configure TLS or explicitly "
-                    "enable a development/LAN plaintext profile"
-                )
-            if self.profile not in ("development", "lan"):
-                raise ValueError(
-                    "plaintext is allowed only in development or lan profile"
-                )
-            if not _is_loopback(self.host) and self.profile != "lan":
-                raise ValueError(
-                    "non-loopback plaintext requires the explicit lan profile"
+                    "enable plaintext"
                 )
 
         positive_integers = (
@@ -272,12 +258,3 @@ def _parse_environment_value(value: str, annotation, key: str):
         except ValueError as exc:
             raise ValueError(f"{key} must be a number") from exc
     return value
-
-
-def _is_loopback(host: str) -> bool:
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False

@@ -29,7 +29,6 @@ def service_config(tmp_path, **overrides):
     base = FlightServiceConfig(
         state_dir=str(tmp_path / "state"),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
         retention_seconds=50,

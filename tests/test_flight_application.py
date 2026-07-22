@@ -29,7 +29,6 @@ def config(tmp_path):
     return FlightServiceConfig(
         state_dir=str(tmp_path),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
@@ -404,7 +403,6 @@ def test_flight_serve_cli_contains_only_service_configuration():
         "serve",
         "--host", "127.0.0.1",
         "--port", "8815",
-        "--profile", "development",
         "--allow-plaintext",
         "--bearer-tokens-file", "/run/secrets/flight-tokens.json",
     ])

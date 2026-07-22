@@ -85,7 +85,6 @@ def data_plane(tmp_path):
     config = FlightServiceConfig(
         state_dir=str(tmp_path),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()

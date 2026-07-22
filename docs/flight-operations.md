@@ -93,7 +93,6 @@ limits fail at startup.
 | `TRANSFORMER_STATE_DIR` | `<project-root>/state` | Persistent state root |
 | `TRANSFORMER_HOST` | `127.0.0.1` | Private-safe loopback default |
 | `TRANSFORMER_PORT` | `8815` | `0` is accepted for tests/dynamic binding |
-| `TRANSFORMER_PROFILE` | `production` | `production`, `development`, or `lan` |
 | `TRANSFORMER_ALLOW_PLAINTEXT` | `false` | Must be explicit when TLS is absent |
 | `TRANSFORMER_TLS_CERT_FILE` | unset | PEM server certificate; configure with key |
 | `TRANSFORMER_TLS_KEY_FILE` | unset | PEM private key; configure with certificate |
@@ -143,7 +142,6 @@ The CLI exposes endpoint/security overrides only:
 ```text
 --host
 --port
---profile
 --allow-plaintext
 --tls-cert-file
 --tls-key-file
@@ -155,7 +153,7 @@ The CLI exposes endpoint/security overrides only:
 Use environment configuration for the state directory, quotas and worker
 policy.
 
-## Authentication and transport profiles
+## Authentication and transport security
 
 Bearer authentication is mandatory even with mTLS. The token file is a secret
 JSON object in either form:
@@ -186,18 +184,16 @@ including `ListActions`, every action, DoPut, GetFlightInfo and DoGet. Missing
 or invalid authentication is rejected by middleware before application code.
 The subject owns its jobs, model aliases/generations, outputs and tickets.
 
-| Profile | Required server settings | Binding policy | Security use |
+| Transport | Required server settings | Binding policy | Security use |
 | --- | --- | --- | --- |
-| Production TLS | `profile=production`, certificate, key, bearer file | Loopback or non-loopback | Production |
-| Production mTLS | Production TLS + CA + `tlsRequireClientCert=true` | Loopback or non-loopback | Production with client certificates |
-| Development plaintext | `profile=development`, `allowPlaintext=true` | Loopback only | Local development |
-| LAN plaintext | `profile=lan`, `allowPlaintext=true` | Non-loopback allowed | Temporary trusted LAN only |
+| TLS | Certificate, key, bearer file | Any configured host | Encrypted transport |
+| mTLS | TLS + CA + `--tls-require-client-cert` | Any configured host | TLS with client certificates |
+| Plaintext | `--allow-plaintext`, bearer file | Any configured host | Unencrypted transport |
 
-Production without TLS fails configuration validation. Non-loopback plaintext
-requires the explicit `lan` profile. Plaintext is a temporary development/LAN
-profile, not a production security profile. Certificates, private keys, client
-CA and bearer credentials are read from external files and are never stored in
-the repository. Restart to rotate TLS material.
+Without TLS, `--allow-plaintext` or `TRANSFORMER_ALLOW_PLAINTEXT=true` is
+required. It applies equally to loopback and non-loopback hosts. Certificates,
+private keys, client CA and bearer credentials are read from external files and
+are never stored in the repository. Restart to rotate TLS material.
 
 TLS/mTLS configuration and job device selection are independent. Enabling,
 disabling or changing TLS never changes `cpu`/`cuda`/`auto` behavior. Explicit
@@ -211,7 +207,6 @@ Configure the service environment in the deployment supervisor:
 TRANSFORMER_STATE_DIR=/var/lib/transformer-flight
 TRANSFORMER_HOST=10.20.30.40
 TRANSFORMER_PORT=8815
-TRANSFORMER_PROFILE=production
 TRANSFORMER_TLS_CERT_FILE=/run/secrets/transformer/tls.crt
 TRANSFORMER_TLS_KEY_FILE=/run/secrets/transformer/tls.key
 TRANSFORMER_TLS_CA_FILE=/run/secrets/transformer/client-ca.crt
@@ -301,7 +296,6 @@ TRANSFORMER_STATE_DIR=/tmp/transformer-flight-state \
 python ./app/main.py flight serve \
   --host=127.0.0.1 \
   --port=8815 \
-  --profile=development \
   --allow-plaintext \
   --bearer-tokens-file=/tmp/transformer-flight-bearers.json
 ```
@@ -537,8 +531,7 @@ No private Cython/grpc shim is used.
 - Running fit is never automatically retried after interruption.
 - Transformer owns checkpoints; clients receive only opaque `modelRef`.
 - Output tickets are short-lived, opaque and not model references.
-- Plaintext exists only for explicit development/LAN operation and is not a
-  production security profile.
+- Plaintext requires an explicit `--allow-plaintext` setting.
 - Direct dependency versions are fixed in the documented installation command,
   but the environment must select and record the intended CPU/CUDA Torch wheel
   and its transitive resolution.

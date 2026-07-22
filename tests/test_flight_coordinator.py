@@ -48,7 +48,6 @@ def coordinator(tmp_path):
     config = FlightServiceConfig(
         state_dir=str(tmp_path),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
@@ -88,7 +87,6 @@ def test_status_hides_legacy_cancel_error_after_ledger_reopen(tmp_path):
     config = FlightServiceConfig(
         state_dir=str(tmp_path),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()

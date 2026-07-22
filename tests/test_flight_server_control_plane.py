@@ -50,7 +50,6 @@ def control_server(tmp_path):
         FlightServiceConfig(
             state_dir=str(tmp_path),
             port=0,
-            profile="development",
             allow_plaintext=True,
         ),
         coordinator,

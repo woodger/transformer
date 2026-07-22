@@ -105,7 +105,6 @@ def protected_server(tmp_path):
         FlightServiceConfig(
             state_dir=str(tmp_path),
             port=0,
-            profile="development",
             allow_plaintext=True,
         ),
         coordinator,
@@ -212,7 +211,6 @@ def test_token_file_is_validated_before_server_start(tmp_path):
     )
     config = FlightServiceConfig(
         state_dir=str(tmp_path / "state"),
-        profile="development",
         allow_plaintext=True,
         bearer_tokens_file=str(token_file),
     ).validate()
@@ -221,14 +219,13 @@ def test_token_file_is_validated_before_server_start(tmp_path):
         load_bearer_tokens(config)
 
 
-def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_profile(tmp_path):
+def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_path):
     certificate_authority = tmp_path / "ca.pem"
     certificate_authority.write_text("test CA", encoding="utf-8")
 
     with pytest.raises(ValueError, match="required with tls_ca_file"):
         FlightServiceConfig(
             state_dir=str(tmp_path / "state"),
-            profile="development",
             allow_plaintext=True,
             tls_ca_file=str(certificate_authority),
             tls_require_client_cert=True,
@@ -237,7 +234,6 @@ def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_profile(tmp_path)
     with pytest.raises(ValueError, match="TLS must be enabled"):
         FlightServiceConfig(
             state_dir=str(tmp_path / "other-state"),
-            profile="development",
             allow_plaintext=True,
             tls_require_client_cert=True,
         ).validate()
@@ -313,7 +309,6 @@ def published_output_server(tmp_path):
     config = FlightServiceConfig(
         state_dir=str(tmp_path),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
@@ -600,12 +595,11 @@ def test_real_mtls_server_rejects_missing_client_certificate(tmp_path):
         server.shutdown()
 
 
-def test_tls_and_plaintext_profiles_do_not_change_explicit_cuda_policy(tmp_path):
+def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(tmp_path):
     certificate, private_key = _generate_tls_certificate(tmp_path)
     configs = (
         FlightServiceConfig(
             state_dir=str(tmp_path / "plain-state"),
-            profile="development",
             allow_plaintext=True,
             disk_min_free_bytes=1,
         ).validate(),

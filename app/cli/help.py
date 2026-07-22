@@ -568,25 +568,10 @@ def build_parser():
     )
 
     service.add_argument(
-        "--profile",
-        choices=["production", "development", "lan"],
-        default=None,
-        help=(
-            "Plaintext policy:\n"
-            "  production   plaintext forbidden; TLS required.\n"
-            "  development  explicit loopback plaintext may be enabled.\n"
-            "  lan          explicit non-loopback plaintext may be enabled.\n"
-            "(default: production)"
-        ),
-    )
-    service.add_argument(
         "--allow-plaintext",
         action="store_true",
         default=None,
-        help=(
-            "Enable plaintext for development or lan.\n"
-            "Invalid with production."
-        ),
+        help="Allow serving without TLS.",
     )
 
     service.add_argument(

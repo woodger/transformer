@@ -34,8 +34,8 @@ opaque `modelRef` and optionally advances an owner-scoped logical alias.
 Network requests never contain filesystem paths or arbitrary CLI arguments.
 
 TLS and job device selection are independent. Explicit `cuda` is checked at
-create and start and never falls back to CPU. Plaintext is permitted only by an
-explicit development/LAN configuration profile.
+create and start and never falls back to CPU. Plaintext must be enabled
+explicitly.
 
 V1 is deliberately single-instance: it has no multi-replica scheduler or
 shared storage. It does not use DoExchange or PollFlightInfo.

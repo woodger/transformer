@@ -26,6 +26,9 @@
 - `flight serve` больше не принимает `--config` и `--state-dir`. Загрузка
   service configuration из JSON-файла удалена; persistent state directory
   при необходимости задаётся через `TRANSFORMER_STATE_DIR`.
+- Удалены `--profile`, `TRANSFORMER_PROFILE` и поле `profile` service config.
+  Plaintext transport теперь включается только через `--allow-plaintext` или
+  `TRANSFORMER_ALLOW_PLAINTEXT=true` без дополнительных host restrictions.
 
 ## [0.1.3] - 2026-07-22
 

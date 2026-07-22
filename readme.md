@@ -56,10 +56,10 @@ python ./app/main.py flight serve \
   --bearer-tokens-file=/run/secrets/transformer/bearers.json
 ```
 
-Production требует TLS и bearer authentication. Plaintext разрешается только
-явно для временного `development`/`lan` profile. Один DoPut остаётся одним
-semantic stream frame, checkpoint принадлежит Transformer, а клиент получает
-только непрозрачный `modelRef`. DoExchange и PollFlightInfo в v1 не входят.
+Bearer authentication требуется при любом transport. Без TLS сервер запускается
+только с явным `--allow-plaintext`. Один DoPut остаётся одним semantic stream
+frame, checkpoint принадлежит Transformer, а клиент получает только непрозрачный
+`modelRef`. DoExchange и PollFlightInfo в v1 не входят.
 
 ## CLI
 

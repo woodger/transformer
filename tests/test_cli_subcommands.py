@@ -274,7 +274,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     option_labels = (
         "--host HOST",
         "--port PORT",
-        "--profile {production,development,lan}",
         "--allow-plaintext",
         "--tls-cert-file FILE",
         "--tls-key-file FILE",
@@ -287,14 +286,9 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
 
     assert "Listen host. (default: 127.0.0.1)" in output
     assert "Listen port. (default: 8815)" in output
-    assert "(default: production)" in output
     assert "built-in default" not in output
     assert "(default: None)" not in output
     expected_multiline_entries = (
-        "production   plaintext forbidden; TLS required.",
-        "development  explicit loopback plaintext may be enabled.",
-        "lan          explicit non-loopback plaintext may be enabled.",
-        "Invalid with production.",
         "Requires --tls-key-file.",
         "Requires --tls-cert-file.",
         "Requires server TLS.",
@@ -302,8 +296,9 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     )
     stripped_lines = {line.strip() for line in output.splitlines()}
     assert set(expected_multiline_entries) <= stripped_lines
-    assert "Enable plaintext for development or lan." in normalized_output
+    assert "Allow serving without TLS." in normalized_output
     assert "Required bearer token-to-subject JSON file." in normalized_output
+    assert "--profile" not in output
     assert "--config" not in output
     assert "--state-dir" not in output
     assert "Examples:" not in output

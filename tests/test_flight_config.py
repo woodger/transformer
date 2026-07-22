@@ -6,39 +6,23 @@ import pytest
 from app.flight.config import FlightServiceConfig, load_bearer_tokens, load_config
 
 
-def test_plaintext_requires_explicit_development_or_lan_profile(tmp_path):
+def test_plaintext_requires_explicit_opt_in(tmp_path):
     state = tmp_path / "state"
     with pytest.raises(ValueError, match="plaintext Flight is disabled"):
         FlightServiceConfig(state_dir=str(state)).validate()
-    with pytest.raises(ValueError, match="development or lan"):
-        FlightServiceConfig(
-            state_dir=str(state),
-            allow_plaintext=True,
-            profile="production",
-        ).validate()
 
     config = FlightServiceConfig(
         state_dir=str(state),
         allow_plaintext=True,
-        profile="development",
     ).validate()
     assert config.host == "127.0.0.1"
 
 
-def test_non_loopback_plaintext_requires_lan_profile(tmp_path):
-    with pytest.raises(ValueError, match="explicit lan"):
-        FlightServiceConfig(
-            state_dir=str(tmp_path),
-            host="0.0.0.0",
-            allow_plaintext=True,
-            profile="development",
-        ).validate()
-
+def test_explicit_plaintext_allows_non_loopback_host(tmp_path):
     FlightServiceConfig(
         state_dir=str(tmp_path),
         host="0.0.0.0",
         allow_plaintext=True,
-        profile="lan",
     ).validate()
 
 
@@ -70,7 +54,6 @@ def test_environment_and_cli_precedence_and_secret_token_file(tmp_path):
             "TRANSFORMER_STATE_DIR": str(tmp_path / "state"),
             "TRANSFORMER_CPU_CAPACITY": "4",
             "TRANSFORMER_HOST": "127.0.0.3",
-            "TRANSFORMER_PROFILE": "development",
             "TRANSFORMER_ALLOW_PLAINTEXT": "true",
             "TRANSFORMER_BEARER_TOKENS_FILE": str(token_path),
         },
@@ -119,7 +102,6 @@ def test_config_rejects_boolean_fractional_and_nonfinite_quotas(
 ):
     values = {
         "state_dir": str(tmp_path),
-        "profile": "development",
         "allow_plaintext": True,
         field: value,
     }
@@ -131,7 +113,6 @@ def test_config_rejects_payload_count_that_cannot_fit_seal_document(tmp_path):
     with pytest.raises(ValueError, match="seal manifest"):
         FlightServiceConfig(
             state_dir=str(tmp_path),
-            profile="development",
             allow_plaintext=True,
             max_payloads_per_job=401,
         ).validate()
