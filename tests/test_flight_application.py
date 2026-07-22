@@ -392,19 +392,32 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
             orphan.wait()
 
 
-def test_serve_flight_cli_contains_only_service_configuration():
+def test_flight_serve_cli_contains_only_service_configuration():
     args = build_parser().parse_args([
-        "serve-flight",
+        "flight",
+        "serve",
         "--state-dir", "/var/lib/transformer",
-        "--bind-host", "127.0.0.1",
+        "--host", "127.0.0.1",
         "--port", "8815",
         "--profile", "development",
         "--allow-plaintext",
         "--bearer-tokens-file", "/run/secrets/flight-tokens.json",
     ])
 
-    assert args.action == "serve-flight"
+    assert args.action == "flight"
+    assert args.flight_action == "serve"
     assert args.state_dir == "/var/lib/transformer"
+    assert args.host == "127.0.0.1"
     assert args.port == 8815
     assert not hasattr(args, "epochs")
     assert not hasattr(args, "device")
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([
+            "flight",
+            "serve",
+            "--bind-host",
+            "127.0.0.1",
+        ])
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["serve-flight"])

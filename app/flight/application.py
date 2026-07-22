@@ -147,7 +147,7 @@ class FlightApplication:
             usage = spool.disk_usage()
             logger.event(
                 "flight.service.started",
-                bindHost=config.bind_host,
+                host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
                 profile=config.profile,
@@ -218,7 +218,7 @@ class FlightApplication:
             server_thread.start()
             self.logger.event(
                 "flight.service.serving",
-                bindHost=self.config.bind_host,
+                host=self.config.host,
                 port=self.server.port,
                 tls=self.config.tls_enabled,
             )
@@ -289,7 +289,7 @@ class FlightApplication:
 def run_from_args(args):
     overrides = {
         "state_dir": args.state_dir,
-        "bind_host": args.bind_host,
+        "host": args.host,
         "port": args.port,
         "profile": args.profile,
         "allow_plaintext": args.allow_plaintext,

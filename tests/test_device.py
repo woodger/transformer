@@ -1,5 +1,6 @@
 import sys
 
+import pytest
 import torch
 
 from app.runtime.device import get_device
@@ -26,44 +27,58 @@ def test_version_is_exported():
     assert __version__
 
 
-def test_cli_version(capsys, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["main.py", "--version"])
+@pytest.mark.parametrize("option", ("--version", "-v"))
+def test_cli_version(capsys, monkeypatch, option):
+    monkeypatch.setattr(sys, "argv", ["transformer", option])
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         parse_args()
-    except SystemExit as exc:
-        assert exc.code == 0
+    assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    assert version_text("main.py") in output
+    assert version_text("transformer") in output
     assert "python " in output
     assert "torch " in output
     assert "cuda " in output
 
 
 def test_cli_help(capsys, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["main.py", "--help"])
+    monkeypatch.setattr(sys, "argv", ["transformer", "--help"])
 
-    try:
+    with pytest.raises(SystemExit) as exc:
         parse_args()
-    except SystemExit as exc:
-        assert exc.code == 0
+    assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    assert "Transformer training and inference CLI." in output
-    assert "Data contract:" in output
-    assert "Modes:" in output
-    assert "Streaming protocol:" in output
-    assert "Storage:" in output
-    assert "Context modes:" in output
-    assert 'Run "main.py COMMAND --help"' in output
-    assert "fit-stream" in output
-    assert "predict-stream" in output
-    assert "plot-metrics" in output
-    assert "Examples:" in output
-    assert "--per-week" not in output
-    assert "--context-mode" not in output
-    assert "--amp" not in output
+    assert output == f"""transformer {__version__}
+
+Usage:
+  transformer <command> [args] [options]
+  transformer <command> --help
+  transformer --help
+  transformer --version
+
+Global options:
+  --help, -h       Show help and exit
+  --version, -v    Show package and runtime version info
+
+Commands:
+
+Flight:
+  flight serve    Run the durable Arrow Flight job service.
+
+Training and inference:
+  fit             Train from an Arrow file.
+  predict         Predict from an Arrow file.
+  fit-stream      Train from framed stdin.
+  predict-stream  Predict from framed stdin.
+
+Metrics:
+  plot-metrics    Render SVG charts from metrics JSONL.
+
+Command details:
+  transformer <command> --help
+"""
 
 
 def test_cli_use_amp(monkeypatch):
@@ -93,4 +108,4 @@ def test_cli_loss_schedule_args(monkeypatch):
 
 def test_parser_is_buildable():
     parser = build_parser()
-    assert parser.prog == "main.py"
+    assert parser.prog == "transformer"

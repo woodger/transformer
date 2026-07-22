@@ -20,7 +20,7 @@ def _default_state_dir() -> str:
 @dataclass(frozen=True)
 class FlightServiceConfig:
     state_dir: str = _default_state_dir()
-    bind_host: str = "127.0.0.1"
+    host: str = "127.0.0.1"
     port: int = 8815
     profile: str = "production"
     allow_plaintext: bool = False
@@ -75,8 +75,8 @@ class FlightServiceConfig:
     def validate(self) -> "FlightServiceConfig":
         if not isinstance(self.state_dir, str) or not self.state_dir:
             raise ValueError("state_dir must not be empty")
-        if not isinstance(self.bind_host, str) or not self.bind_host:
-            raise ValueError("bind_host must be a non-empty string")
+        if not isinstance(self.host, str) or not self.host:
+            raise ValueError("host must be a non-empty string")
         if (
             isinstance(self.port, bool)
             or not isinstance(self.port, int)
@@ -112,7 +112,7 @@ class FlightServiceConfig:
                 raise ValueError(
                     "plaintext is allowed only in development or lan profile"
                 )
-            if not _is_loopback(self.bind_host) and self.profile != "lan":
+            if not _is_loopback(self.host) and self.profile != "lan":
                 raise ValueError(
                     "non-loopback plaintext requires the explicit lan profile"
                 )
@@ -194,6 +194,12 @@ def load_config(
         values.update(_normalize_mapping(document))
 
     env = os.environ if environ is None else environ
+    legacy_host_key = ENV_PREFIX + "BIND_HOST"
+    if legacy_host_key in env:
+        raise ValueError(
+            f"unknown Flight environment variable: {legacy_host_key}; "
+            f"use {ENV_PREFIX}HOST"
+        )
     for field in fields(FlightServiceConfig):
         key = ENV_PREFIX + field.name.upper()
         if key not in env:
@@ -248,7 +254,6 @@ def with_bound_port(config: FlightServiceConfig, port: int) -> FlightServiceConf
 def _normalize_mapping(document: dict) -> dict:
     aliases = {
         "stateDir": "state_dir",
-        "bindHost": "bind_host",
         "allowPlaintext": "allow_plaintext",
         "tlsCertFile": "tls_cert_file",
         "tlsKeyFile": "tls_key_file",

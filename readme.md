@@ -49,7 +49,7 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
-python ./app/main.py serve-flight --config=/etc/transformer/flight.json
+python ./app/main.py flight serve --config=/etc/transformer/flight.json
 ```
 
 Production требует TLS и bearer authentication. Plaintext разрешается только
@@ -67,19 +67,22 @@ python ./app/main.py fit INPUT [options]
 python ./app/main.py predict INPUT [options]
 python ./app/main.py fit-stream [options]
 python ./app/main.py predict-stream [options]
+python ./app/main.py flight serve [options]
 python ./app/main.py plot-metrics METRICS_FILE [options]
 ```
 
-Общий help показывает список команд, command-specific help — только применимые
-к выбранной команде аргументы и их defaults:
+Общий help показывает только global options и список команд. Command-specific
+help содержит применимые к выбранной команде аргументы, их defaults и, где это
+полезно, отдельный блок с примерами:
 
 ```bash
 python ./app/main.py --help
 python ./app/main.py fit --help
 python ./app/main.py predict-stream --help
+python ./app/main.py flight serve --help
 ```
 
-Версию можно посмотреть так:
+Версию можно посмотреть через `--version` или его короткую форму `-v`:
 
 ```bash
 python ./app/main.py --version
@@ -92,6 +95,7 @@ python ./app/main.py --version
 - `fit-stream` — читать framed Arrow payloads из stdin и обучать модель batch за batch
 - `predict-stream` — читать framed Arrow payloads из stdin и писать framed
   predictions в stdout
+- `flight serve` — запустить durable Arrow Flight job service
 - `plot-metrics` — построить SVG-графики из metrics JSONL
 
 ## Обучение из файла

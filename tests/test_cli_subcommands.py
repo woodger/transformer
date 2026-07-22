@@ -170,6 +170,7 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
         ("fit", "train.arrow"),
         ("predict",),
         ("fit-stream",),
+        ("flight",),
         ("plot-metrics",),
     ),
 )
@@ -185,6 +186,11 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert exc.value.code == 0
 
     predict_help = capsys.readouterr().out
+    assert "Examples:" in predict_help
+    assert (
+        "transformer predict ./data/test.arrow --checkpoint=model.pth "
+        "--output=/tmp/preds.arrow"
+    ) in predict_help
     assert "--preds-path" in predict_help
     assert "--seq-len" in predict_help
     assert "--epochs" not in predict_help
@@ -196,6 +202,7 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert exc.value.code == 0
 
     fit_stream_help = capsys.readouterr().out
+    assert "Examples:" not in fit_stream_help
     assert "--epochs" in fit_stream_help
     assert "--weight-decay" in fit_stream_help
     assert "--seed" in fit_stream_help
@@ -209,11 +216,33 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert exc.value.code == 0
 
     plot_help = capsys.readouterr().out
+    assert "Examples:" not in plot_help
     assert "METRICS_FILE" in plot_help
     assert "--plots-dir" in plot_help
     assert "--device" not in plot_help
     assert "--model-name" not in plot_help
     assert "--seq-len" not in plot_help
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["flight", "--help"])
+    assert exc.value.code == 0
+
+    flight_help = capsys.readouterr().out
+    assert "serve" in flight_help
+    assert "--host" not in flight_help
+    assert "Examples:" not in flight_help
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["flight", "serve", "--help"])
+    assert exc.value.code == 0
+
+    serve_help = capsys.readouterr().out
+    assert "Examples:" in serve_help
+    assert (
+        "transformer flight serve --config=/etc/transformer/flight.json"
+    ) in serve_help
+    assert "--host" in serve_help
+    assert "--port" in serve_help
 
 
 def test_defaults_are_shown_in_command_help(capsys):
@@ -221,6 +250,8 @@ def test_defaults_are_shown_in_command_help(capsys):
         build_parser().parse_args(["fit", "--help"])
 
     output = capsys.readouterr().out
+    assert "Examples:" in output
+    assert "transformer fit ./data/train.arrow --seq-len=20" in output
     assert "(default: cpu)" in output
     assert f"(default: {SEED})" in output
     assert "(default: 0.0005)" in output
