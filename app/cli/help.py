@@ -62,7 +62,7 @@ def _format_root_help() -> str:
         "Global options:\n"
         "  --help, -h       Show help and exit\n"
         "  --version, -v    Show package and runtime version info\n\n"
-        "commands:\n"
+        "Commands:\n"
         f"{commands}\n\n"
         "Command details:\n"
         "  transformer <command> --help\n"

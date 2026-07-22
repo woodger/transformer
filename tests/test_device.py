@@ -62,7 +62,7 @@ Global options:
   --help, -h       Show help and exit
   --version, -v    Show package and runtime version info
 
-commands:
+Commands:
   fit             Train from an Arrow file.
   predict         Predict from an Arrow file.
   fit-stream      Train from framed stdin.
