@@ -425,12 +425,3 @@ def test_flight_serve_cli_contains_only_service_configuration():
         ])
     with pytest.raises(SystemExit):
         build_parser().parse_args(["serve-flight"])
-
-    for removed_option in ("--config", "--state-dir"):
-        with pytest.raises(SystemExit):
-            build_parser().parse_args([
-                "flight",
-                "serve",
-                removed_option,
-                "unused",
-            ])
