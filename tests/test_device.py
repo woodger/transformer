@@ -64,8 +64,8 @@ Global options:
 
 Commands:
 
-Server:
-  serve-flight    Run the durable Arrow Flight job service.
+Flight:
+  flight serve    Run the durable Arrow Flight job service.
 
 Training and inference:
   fit             Train from an Arrow file.

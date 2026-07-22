@@ -272,7 +272,7 @@ with PyTorch 2.12.
 Then run the single service entrypoint from the project root:
 
 ```bash
-python3.11 ./app/main.py serve-flight \
+python3.11 ./app/main.py flight serve \
   --config=/etc/transformer/flight.json
 ```
 
@@ -303,7 +303,7 @@ umask 077
 printf '%s\n' '{"dev-token":"inventory-local"}' \
   > /tmp/transformer-flight-bearers.json
 
-python ./app/main.py serve-flight \
+python ./app/main.py flight serve \
   --state-dir=/tmp/transformer-flight-state \
   --host=127.0.0.1 \
   --port=8815 \

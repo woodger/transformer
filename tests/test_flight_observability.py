@@ -167,7 +167,8 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
         [
             sys.executable,
             str(Path(PROJECT_ROOT) / "app" / "main.py"),
-            "serve-flight",
+            "flight",
+            "serve",
             "--state-dir", str(state_dir),
             "--port", "0",
             "--profile", "development",

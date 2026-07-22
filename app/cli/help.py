@@ -28,8 +28,8 @@ from app.runtime.version import __version__, version_text
 
 _COMMAND_GROUPS = (
     (
-        "Server",
-        (("serve-flight", "Run the durable Arrow Flight job service."),),
+        "Flight",
+        (("flight serve", "Run the durable Arrow Flight job service."),),
     ),
     (
         "Training and inference",
@@ -57,8 +57,8 @@ _COMMAND_EXAMPLES = {
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
 """,
-    "serve-flight": """Examples:
-  transformer serve-flight --config=/etc/transformer/flight.json
+    "flight serve": """Examples:
+  transformer flight serve --config=/etc/transformer/flight.json
 """,
 }
 
@@ -474,10 +474,22 @@ def build_parser():
     _add_fit_parser(subparsers, "fit-stream", stream=True)
     _add_predict_parser(subparsers, "predict-stream", stream=True)
 
-    service = subparsers.add_parser(
-        "serve-flight",
-        help=_COMMAND_HELP["serve-flight"],
-        epilog=_COMMAND_EXAMPLES["serve-flight"],
+    flight = subparsers.add_parser(
+        "flight",
+        help="Arrow Flight service commands.",
+        formatter_class=_HelpFormatter,
+    )
+    flight_commands = flight.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="flight_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    service = flight_commands.add_parser(
+        "serve",
+        help=_COMMAND_HELP["flight serve"],
+        epilog=_COMMAND_EXAMPLES["flight serve"],
         formatter_class=_HelpFormatter,
     )
     service.add_argument(

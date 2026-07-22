@@ -28,7 +28,7 @@ def predict_stream(args, device):
 def main():
     args = parse_args()
 
-    if args.action == "serve-flight":
+    if args.action == "flight" and args.flight_action == "serve":
         from app.flight.application import run_from_args
 
         run_from_args(args)

@@ -170,6 +170,7 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
         ("fit", "train.arrow"),
         ("predict",),
         ("fit-stream",),
+        ("flight",),
         ("plot-metrics",),
     ),
 )
@@ -223,16 +224,25 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--seq-len" not in plot_help
 
     with pytest.raises(SystemExit) as exc:
-        parser.parse_args(["serve-flight", "--help"])
+        parser.parse_args(["flight", "--help"])
     assert exc.value.code == 0
 
-    service_help = capsys.readouterr().out
-    assert "Examples:" in service_help
+    flight_help = capsys.readouterr().out
+    assert "serve" in flight_help
+    assert "--host" not in flight_help
+    assert "Examples:" not in flight_help
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["flight", "serve", "--help"])
+    assert exc.value.code == 0
+
+    serve_help = capsys.readouterr().out
+    assert "Examples:" in serve_help
     assert (
-        "transformer serve-flight --config=/etc/transformer/flight.json"
-    ) in service_help
-    assert "--host" in service_help
-    assert "--port" in service_help
+        "transformer flight serve --config=/etc/transformer/flight.json"
+    ) in serve_help
+    assert "--host" in serve_help
+    assert "--port" in serve_help
 
 
 def test_defaults_are_shown_in_command_help(capsys):

@@ -17,6 +17,8 @@
 - Глобальный CLI help сокращён до global options и списка команд; примеры
   перенесены в применимые command-specific help, а для `--version` добавлена
   короткая форма `-v`.
+- Команда запуска Flight service переименована из `serve-flight` в составную
+  `flight serve`; прежнее имя больше не поддерживается.
 
 ### Fixed
 
