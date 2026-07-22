@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- CLI-параметр адреса Flight service переименован из `--bind-host` в `--host`,
+  а JSON-поле — из `bindHost` в `host`; прежние имена больше не
+  поддерживаются.
+
 ### Fixed
 
 - Flight fit теперь выполняет настроенное число эпох над всем sealed input job:

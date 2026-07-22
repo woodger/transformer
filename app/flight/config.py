@@ -191,6 +191,12 @@ def load_config(
             document = json.load(source)
         if not isinstance(document, dict):
             raise ValueError("Flight configuration must be a JSON object")
+        legacy_host_fields = sorted(set(document) & {"bindHost", "bind_host"})
+        if legacy_host_fields:
+            raise ValueError(
+                "unknown Flight configuration field(s): "
+                + ", ".join(legacy_host_fields)
+            )
         values.update(_normalize_mapping(document))
 
     env = os.environ if environ is None else environ
@@ -248,7 +254,7 @@ def with_bound_port(config: FlightServiceConfig, port: int) -> FlightServiceConf
 def _normalize_mapping(document: dict) -> dict:
     aliases = {
         "stateDir": "state_dir",
-        "bindHost": "bind_host",
+        "host": "bind_host",
         "allowPlaintext": "allow_plaintext",
         "tlsCertFile": "tls_cert_file",
         "tlsKeyFile": "tls_key_file",

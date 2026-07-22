@@ -457,7 +457,13 @@ def build_parser():
         help="JSON service configuration file; environment and CLI override it.",
     )
     service.add_argument("--state-dir", default=None, help="Persistent service state directory.")
-    service.add_argument("--bind-host", default=None, help="Flight bind host.")
+    service.add_argument(
+        "--host",
+        dest="bind_host",
+        metavar="HOST",
+        default=None,
+        help="Flight listen host.",
+    )
     service.add_argument("--port", type=_nonnegative_int, default=None, help="Flight port.")
     service.add_argument(
         "--profile",

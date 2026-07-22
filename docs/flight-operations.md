@@ -82,17 +82,18 @@ Configuration precedence, from lowest to highest, is:
 3. `TRANSFORMER_FLIGHT_*` environment variables;
 4. explicitly supplied service CLI options.
 
-JSON accepts the camelCase names below and their snake_case Python forms.
-Environment names use uppercase snake case. Unknown fields, invalid numeric
-types (including booleans used as integers) and inconsistent limits fail at
-startup.
+JSON accepts the field names below and their snake_case Python forms. The
+address field is the exception: it accepts only `host`; legacy `bindHost` and
+`bind_host` are rejected. Environment names use uppercase snake case. Unknown
+fields, invalid numeric types (including booleans used as integers) and
+inconsistent limits fail at startup.
 
 ### Endpoint and security
 
 | JSON field | Environment variable | Default | Notes |
 | --- | --- | --- | --- |
 | `stateDir` | `TRANSFORMER_FLIGHT_STATE_DIR` | `<project-root>/state` | Persistent state root |
-| `bindHost` | `TRANSFORMER_FLIGHT_BIND_HOST` | `127.0.0.1` | Private-safe loopback default |
+| `host` | `TRANSFORMER_FLIGHT_BIND_HOST` | `127.0.0.1` | Private-safe loopback default |
 | `port` | `TRANSFORMER_FLIGHT_PORT` | `8815` | `0` is accepted for tests/dynamic binding |
 | `profile` | `TRANSFORMER_FLIGHT_PROFILE` | `production` | `production`, `development`, or `lan` |
 | `allowPlaintext` | `TRANSFORMER_FLIGHT_ALLOW_PLAINTEXT` | `false` | Must be explicit when TLS is absent |
@@ -144,7 +145,7 @@ The CLI exposes endpoint/security overrides only:
 ```text
 --config
 --state-dir
---bind-host
+--host
 --port
 --profile
 --allow-plaintext
@@ -213,7 +214,7 @@ Store this outside the repository, for example as
 ```json
 {
   "stateDir": "/var/lib/transformer-flight",
-  "bindHost": "10.20.30.40",
+  "host": "10.20.30.40",
   "port": 8815,
   "profile": "production",
   "tlsCertFile": "/run/secrets/transformer/tls.crt",
@@ -304,7 +305,7 @@ printf '%s\n' '{"dev-token":"inventory-local"}' \
 
 python ./app/main.py serve-flight \
   --state-dir=/tmp/transformer-flight-state \
-  --bind-host=127.0.0.1 \
+  --host=127.0.0.1 \
   --port=8815 \
   --profile=development \
   --allow-plaintext \

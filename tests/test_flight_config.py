@@ -67,6 +67,7 @@ def test_config_precedence_and_secret_token_file(tmp_path):
     token_path.write_text(json.dumps({"tokens": {"secret": "inventory-prod"}}))
     config_path.write_text(json.dumps({
         "stateDir": str(tmp_path / "from-file"),
+        "host": "127.0.0.2",
         "profile": "development",
         "allowPlaintext": True,
         "bearerTokensFile": str(token_path),
@@ -80,13 +81,15 @@ def test_config_precedence_and_secret_token_file(tmp_path):
     )
 
     assert config.cpu_capacity == 4
+    assert config.bind_host == "127.0.0.2"
     assert config.port == 0
     assert load_bearer_tokens(config) == {"secret": "inventory-prod"}
 
 
-def test_config_rejects_unknown_field(tmp_path):
+@pytest.mark.parametrize("field", ("unknown", "bindHost", "bind_host"))
+def test_config_rejects_unknown_field(tmp_path, field):
     path = tmp_path / "invalid.json"
-    path.write_text(json.dumps({"unknown": True}))
+    path.write_text(json.dumps({field: True}))
     with pytest.raises(ValueError, match="unknown Flight configuration"):
         load_config(str(path), environ={})
 
