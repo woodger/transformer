@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-22
+
 ### Changed
 
 - CLI-параметр адреса Flight service переименован из `--bind-host` в `--host`,
@@ -111,7 +113,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/woodger/transformer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/woodger/transformer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/woodger/transformer/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/woodger/transformer/releases/tag/v0.1.0
