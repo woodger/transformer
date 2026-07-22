@@ -83,17 +83,17 @@ Configuration precedence, from lowest to highest, is:
 4. explicitly supplied service CLI options.
 
 JSON accepts the field names below and their snake_case Python forms. The
-address field is the exception: it accepts only `host`; legacy `bindHost` and
-`bind_host` are rejected. Environment names use uppercase snake case. Unknown
-fields, invalid numeric types (including booleans used as integers) and
-inconsistent limits fail at startup.
+address field is `host`; legacy JSON names `bindHost`/`bind_host` and the
+environment variable `TRANSFORMER_FLIGHT_BIND_HOST` are rejected. Environment
+names use uppercase snake case. Unknown fields, invalid numeric types
+(including booleans used as integers) and inconsistent limits fail at startup.
 
 ### Endpoint and security
 
 | JSON field | Environment variable | Default | Notes |
 | --- | --- | --- | --- |
 | `stateDir` | `TRANSFORMER_FLIGHT_STATE_DIR` | `<project-root>/state` | Persistent state root |
-| `host` | `TRANSFORMER_FLIGHT_BIND_HOST` | `127.0.0.1` | Private-safe loopback default |
+| `host` | `TRANSFORMER_FLIGHT_HOST` | `127.0.0.1` | Private-safe loopback default |
 | `port` | `TRANSFORMER_FLIGHT_PORT` | `8815` | `0` is accepted for tests/dynamic binding |
 | `profile` | `TRANSFORMER_FLIGHT_PROFILE` | `production` | `production`, `development`, or `lan` |
 | `allowPlaintext` | `TRANSFORMER_FLIGHT_ALLOW_PLAINTEXT` | `false` | Must be explicit when TLS is absent |

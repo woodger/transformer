@@ -22,21 +22,21 @@ def test_plaintext_requires_explicit_development_or_lan_profile(tmp_path):
         allow_plaintext=True,
         profile="development",
     ).validate()
-    assert config.bind_host == "127.0.0.1"
+    assert config.host == "127.0.0.1"
 
 
 def test_non_loopback_plaintext_requires_lan_profile(tmp_path):
     with pytest.raises(ValueError, match="explicit lan"):
         FlightServiceConfig(
             state_dir=str(tmp_path),
-            bind_host="0.0.0.0",
+            host="0.0.0.0",
             allow_plaintext=True,
             profile="development",
         ).validate()
 
     FlightServiceConfig(
         state_dir=str(tmp_path),
-        bind_host="0.0.0.0",
+        host="0.0.0.0",
         allow_plaintext=True,
         profile="lan",
     ).validate()
@@ -76,12 +76,15 @@ def test_config_precedence_and_secret_token_file(tmp_path):
 
     config = load_config(
         str(config_path),
-        environ={"TRANSFORMER_FLIGHT_CPU_CAPACITY": "4"},
+        environ={
+            "TRANSFORMER_FLIGHT_CPU_CAPACITY": "4",
+            "TRANSFORMER_FLIGHT_HOST": "127.0.0.3",
+        },
         overrides={"port": 0},
     )
 
     assert config.cpu_capacity == 4
-    assert config.bind_host == "127.0.0.2"
+    assert config.host == "127.0.0.3"
     assert config.port == 0
     assert load_bearer_tokens(config) == {"secret": "inventory-prod"}
 
@@ -92,6 +95,13 @@ def test_config_rejects_unknown_field(tmp_path, field):
     path.write_text(json.dumps({field: True}))
     with pytest.raises(ValueError, match="unknown Flight configuration"):
         load_config(str(path), environ={})
+
+
+def test_config_rejects_legacy_host_environment_variable():
+    with pytest.raises(ValueError, match="TRANSFORMER_FLIGHT_BIND_HOST"):
+        load_config(
+            environ={"TRANSFORMER_FLIGHT_BIND_HOST": "127.0.0.1"},
+        )
 
 
 @pytest.mark.parametrize(

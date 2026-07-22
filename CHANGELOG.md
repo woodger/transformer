@@ -10,8 +10,10 @@
 ### Changed
 
 - CLI-параметр адреса Flight service переименован из `--bind-host` в `--host`,
-  а JSON-поле — из `bindHost` в `host`; прежние имена больше не
-  поддерживаются.
+  JSON-поле — из `bindHost` в `host`, а environment variable — из
+  `TRANSFORMER_FLIGHT_BIND_HOST` в `TRANSFORMER_FLIGHT_HOST`; прежние имена
+  больше не поддерживаются. Внутренняя конфигурация также использует единую
+  пару `host` / `port`.
 
 ### Fixed
 

@@ -405,7 +405,7 @@ def test_serve_flight_cli_contains_only_service_configuration():
 
     assert args.action == "serve-flight"
     assert args.state_dir == "/var/lib/transformer"
-    assert args.bind_host == "127.0.0.1"
+    assert args.host == "127.0.0.1"
     assert args.port == 8815
     assert not hasattr(args, "epochs")
     assert not hasattr(args, "device")

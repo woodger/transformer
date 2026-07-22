@@ -459,7 +459,6 @@ def build_parser():
     service.add_argument("--state-dir", default=None, help="Persistent service state directory.")
     service.add_argument(
         "--host",
-        dest="bind_host",
         metavar="HOST",
         default=None,
         help="Flight listen host.",

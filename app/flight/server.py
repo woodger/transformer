@@ -53,7 +53,7 @@ class TransformerFlightServer(flight.FlightServerBase):
             )
         }
         super().__init__(
-            (self.config.bind_host, self.config.port),
+            (self.config.host, self.config.port),
             middleware=middleware,
             **tls_server_options(self.config),
         )
