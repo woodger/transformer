@@ -92,12 +92,8 @@ class _HelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
     argparse.RawDescriptionHelpFormatter,
 ):
-    pass
-
-
-class _FlightServiceHelpFormatter(_HelpFormatter):
     def _get_help_string(self, action):
-        if action.dest in ("host", "port"):
+        if action.default is None:
             return action.help
         return super()._get_help_string(action)
 
@@ -219,53 +215,88 @@ def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
             "--seq-len",
             type=_positive_int,
             default=None,
-            help="Legacy override; otherwise read from the checkpoint.",
+            help=(
+                "Sequence length; read from the checkpoint, but required for "
+                "legacy checkpoints."
+            ),
         )
 
-    defaults = {
-        "hidden": D_MODEL,
-        "layers": NUM_LAYERS,
-        "dropout": DROPOUT,
-        "nhead": NHEAD,
-        "context_mode": CONTEXT_MODE,
-    } if training else {
-        "hidden": None,
-        "layers": None,
-        "dropout": None,
-        "nhead": None,
-        "context_mode": None,
-    }
+    if training:
+        defaults = {
+            "hidden": D_MODEL,
+            "layers": NUM_LAYERS,
+            "dropout": DROPOUT,
+            "nhead": NHEAD,
+            "context_mode": CONTEXT_MODE,
+        }
+        argument_help = {
+            "hidden": "Transformer hidden dimension.",
+            "layers": "Number of Transformer encoder layers.",
+            "dropout": "Dropout probability.",
+            "nhead": "Number of attention heads.",
+            "context_mode": "How NaNs in context timesteps are handled.",
+        }
+    else:
+        defaults = {
+            "hidden": None,
+            "layers": None,
+            "dropout": None,
+            "nhead": None,
+            "context_mode": None,
+        }
+        argument_help = {
+            "hidden": (
+                "Transformer hidden dimension; read from the checkpoint, "
+                f"or {D_MODEL} for legacy checkpoints."
+            ),
+            "layers": (
+                "Number of Transformer encoder layers; read from the checkpoint, "
+                f"or {NUM_LAYERS} for legacy checkpoints."
+            ),
+            "dropout": (
+                "Dropout probability; read from the checkpoint, "
+                f"or {DROPOUT} for legacy checkpoints."
+            ),
+            "nhead": (
+                "Number of attention heads; read from the checkpoint, "
+                f"or {NHEAD} for legacy checkpoints."
+            ),
+            "context_mode": (
+                "NaN handling mode; read from the checkpoint, "
+                f"or {CONTEXT_MODE} for legacy checkpoints."
+            ),
+        }
 
     model.add_argument(
         "--hidden",
         type=_positive_int,
         default=defaults["hidden"],
-        help="Transformer hidden dimension; prediction may read it from checkpoint.",
+        help=argument_help["hidden"],
     )
     model.add_argument(
         "--layers",
         type=_positive_int,
         default=defaults["layers"],
-        help="Number of Transformer encoder layers; prediction may read it from checkpoint.",
+        help=argument_help["layers"],
     )
     model.add_argument(
         "--dropout",
         type=_dropout,
         default=defaults["dropout"],
-        help="Dropout probability; prediction may read it from checkpoint.",
+        help=argument_help["dropout"],
     )
     model.add_argument(
         "--nhead",
         type=_positive_int,
         default=defaults["nhead"],
-        help="Number of attention heads; prediction may read it from checkpoint.",
+        help=argument_help["nhead"],
     )
     model.add_argument(
         "--mode",
         choices=["strict", "relaxed"],
         default=defaults["context_mode"],
         dest="context_mode",
-        help="How NaNs in context timesteps are handled.",
+        help=argument_help["context_mode"],
     )
 
 
@@ -388,7 +419,10 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
         "--metrics-name",
         dest="metrics_name",
         default=None,
-        help="Metrics JSONL output path; relative paths are resolved inside models/.",
+        help=(
+            "Metrics JSONL output path; omit to disable metrics logging. "
+            "Relative paths are resolved inside models/."
+        ),
     )
     if stream:
         _add_max_frame_bytes_argument(runtime)
@@ -497,14 +531,18 @@ def build_parser():
         "serve",
         help=_COMMAND_HELP["flight serve"],
         epilog=_COMMAND_EXAMPLES["flight serve"],
-        formatter_class=_FlightServiceHelpFormatter,
+        formatter_class=_HelpFormatter,
     )
     service.add_argument(
         "--config",
         default=None,
-        help="JSON service configuration file; environment and CLI override it.",
+        help="Optional JSON service configuration file; environment and CLI override it.",
     )
-    service.add_argument("--state-dir", default=None, help="Persistent service state directory.")
+    service.add_argument(
+        "--state-dir",
+        default=None,
+        help="Persistent service state directory (built-in default: <project>/state).",
+    )
     service.add_argument(
         "--host",
         metavar="HOST",
@@ -521,27 +559,45 @@ def build_parser():
         "--profile",
         choices=["production", "development", "lan"],
         default=None,
-        help="Security profile.",
+        help="Security profile (built-in default: production).",
     )
     service.add_argument(
         "--allow-plaintext",
         action="store_true",
         default=None,
-        help="Explicitly allow plaintext in development/LAN profile.",
+        help=(
+            "Explicitly allow plaintext in development/LAN profile; "
+            "disabled by default."
+        ),
     )
-    service.add_argument("--tls-cert-file", default=None, help="TLS certificate PEM file.")
-    service.add_argument("--tls-key-file", default=None, help="TLS private key PEM file.")
-    service.add_argument("--tls-ca-file", default=None, help="mTLS client CA PEM file.")
+    service.add_argument(
+        "--tls-cert-file",
+        default=None,
+        help="TLS certificate PEM file; not configured by default.",
+    )
+    service.add_argument(
+        "--tls-key-file",
+        default=None,
+        help="TLS private key PEM file; not configured by default.",
+    )
+    service.add_argument(
+        "--tls-ca-file",
+        default=None,
+        help="mTLS client CA PEM file; not configured by default.",
+    )
     service.add_argument(
         "--tls-require-client-cert",
         action="store_true",
         default=None,
-        help="Require and verify client certificates.",
+        help="Require and verify client certificates; disabled by default.",
     )
     service.add_argument(
         "--bearer-tokens-file",
         default=None,
-        help="Secret JSON token-to-subject mapping file.",
+        help=(
+            "Secret JSON token-to-subject mapping file; required via CLI, "
+            "environment, or JSON."
+        ),
     )
     service.set_defaults(data=None, metrics_name=None)
 

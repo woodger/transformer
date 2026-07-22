@@ -9,8 +9,10 @@
 
 ### Changed
 
-- `flight serve --help` теперь показывает встроенные значения `127.0.0.1` и
-  `8815` для `--host` и `--port` вместо технического CLI default `None`.
+- Command-specific help больше не показывает технический CLI default `None`:
+  optional outputs, checkpoint-derived model parameters и Flight overrides
+  описывают реальное fallback-поведение, а `--host` и `--port` показывают
+  встроенные значения `127.0.0.1` и `8815`.
 
 ## [0.1.3] - 2026-07-22
 

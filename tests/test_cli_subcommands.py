@@ -186,6 +186,7 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert exc.value.code == 0
 
     predict_help = capsys.readouterr().out
+    normalized_predict_help = " ".join(predict_help.split())
     assert "Examples:" in predict_help
     assert (
         "transformer predict ./data/test.arrow --checkpoint=model.pth "
@@ -196,6 +197,8 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--epochs" not in predict_help
     assert "--metrics-name" not in predict_help
     assert "--plots-dir" not in predict_help
+    assert "required for legacy checkpoints" in normalized_predict_help
+    assert "or 256 for legacy checkpoints" in normalized_predict_help
 
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["fit-stream", "--help"])
@@ -245,8 +248,7 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--port" in serve_help
     assert "Flight listen host (built-in default: 127.0.0.1)." in serve_help
     assert "Flight listen port (built-in default: 8815)." in serve_help
-    assert "127.0.0.1). (default: None)" not in serve_help
-    assert "8815). (default: None)" not in serve_help
+    assert "(default: None)" not in serve_help
 
 
 def test_defaults_are_shown_in_command_help(capsys):
@@ -254,11 +256,34 @@ def test_defaults_are_shown_in_command_help(capsys):
         build_parser().parse_args(["fit", "--help"])
 
     output = capsys.readouterr().out
+    normalized_output = " ".join(output.split())
     assert "Examples:" in output
     assert "transformer fit ./data/train.arrow --seq-len=20" in output
+    assert "omit to disable metrics logging" in normalized_output
     assert "(default: cpu)" in output
     assert f"(default: {SEED})" in output
     assert "(default: 0.0005)" in output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ("--help",),
+        ("fit", "--help"),
+        ("predict", "--help"),
+        ("fit-stream", "--help"),
+        ("predict-stream", "--help"),
+        ("flight", "--help"),
+        ("flight", "serve", "--help"),
+        ("plot-metrics", "--help"),
+    ),
+)
+def test_help_does_not_render_internal_none_defaults(capsys, argv):
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(list(argv))
+    assert exc.value.code == 0
+
+    assert "(default: None)" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
