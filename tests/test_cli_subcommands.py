@@ -243,6 +243,10 @@ def test_command_help_contains_only_applicable_options(capsys):
     ) in serve_help
     assert "--host" in serve_help
     assert "--port" in serve_help
+    assert "Flight listen host (built-in default: 127.0.0.1)." in serve_help
+    assert "Flight listen port (built-in default: 8815)." in serve_help
+    assert "127.0.0.1). (default: None)" not in serve_help
+    assert "8815). (default: None)" not in serve_help
 
 
 def test_defaults_are_shown_in_command_help(capsys):

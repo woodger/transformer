@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `flight serve --help` теперь показывает встроенные значения `127.0.0.1` и
+  `8815` для `--host` и `--port` вместо технического CLI default `None`.
+
 ## [0.1.3] - 2026-07-22
 
 ### Changed

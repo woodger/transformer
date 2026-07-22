@@ -393,6 +393,10 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
 
 
 def test_flight_serve_cli_contains_only_service_configuration():
+    omitted = build_parser().parse_args(["flight", "serve"])
+    assert omitted.host is None
+    assert omitted.port is None
+
     args = build_parser().parse_args([
         "flight",
         "serve",

@@ -95,6 +95,13 @@ class _HelpFormatter(
     pass
 
 
+class _FlightServiceHelpFormatter(_HelpFormatter):
+    def _get_help_string(self, action):
+        if action.dest in ("host", "port"):
+            return action.help
+        return super()._get_help_string(action)
+
+
 class _ArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         parsed = super().parse_args(args, namespace)
@@ -490,7 +497,7 @@ def build_parser():
         "serve",
         help=_COMMAND_HELP["flight serve"],
         epilog=_COMMAND_EXAMPLES["flight serve"],
-        formatter_class=_HelpFormatter,
+        formatter_class=_FlightServiceHelpFormatter,
     )
     service.add_argument(
         "--config",
@@ -502,9 +509,14 @@ def build_parser():
         "--host",
         metavar="HOST",
         default=None,
-        help="Flight listen host.",
+        help="Flight listen host (built-in default: 127.0.0.1).",
     )
-    service.add_argument("--port", type=_nonnegative_int, default=None, help="Flight port.")
+    service.add_argument(
+        "--port",
+        type=_nonnegative_int,
+        default=None,
+        help="Flight listen port (built-in default: 8815).",
+    )
     service.add_argument(
         "--profile",
         choices=["production", "development", "lan"],
