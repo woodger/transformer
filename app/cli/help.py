@@ -57,10 +57,11 @@ _COMMAND_EXAMPLES = {
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
 """,
-    "flight serve": """Examples:
-  transformer flight serve --config=/etc/transformer/flight.json
-""",
 }
+
+_FLIGHT_SERVE_DESCRIPTION = (
+    "Run the durable Arrow Flight service for fit and predict jobs."
+)
 
 
 def _format_root_help() -> str:
@@ -98,6 +99,10 @@ class _HelpFormatter(
         return super()._get_help_string(action)
 
 
+class _FlightServiceHelpFormatter(argparse.RawTextHelpFormatter):
+    pass
+
+
 class _ArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         parsed = super().parse_args(args, namespace)
@@ -113,6 +118,15 @@ class _ArgumentParser(argparse.ArgumentParser):
 class _RootArgumentParser(_ArgumentParser):
     def format_help(self):
         return _format_root_help()
+
+
+def _add_hidden_help_argument(parser):
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help=argparse.SUPPRESS,
+    )
 
 
 def _positive_int(value: str) -> int:
@@ -396,10 +410,12 @@ def _add_training_arguments(parser):
 def _add_fit_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
+        add_help=False,
         help=_COMMAND_HELP[name],
         epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(parser)
     if stream:
         parser.set_defaults(data=None)
     else:
@@ -444,10 +460,12 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
 def _add_predict_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
+        add_help=False,
         help=_COMMAND_HELP[name],
         epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(parser)
     if stream:
         parser.set_defaults(data=None)
     else:
@@ -529,83 +547,92 @@ def build_parser():
     )
     service = flight_commands.add_parser(
         "serve",
+        add_help=False,
         help=_COMMAND_HELP["flight serve"],
-        epilog=_COMMAND_EXAMPLES["flight serve"],
-        formatter_class=_HelpFormatter,
+        description=_FLIGHT_SERVE_DESCRIPTION,
+        formatter_class=_FlightServiceHelpFormatter,
+        usage="%(prog)s [options]",
     )
-    service.add_argument(
-        "--config",
-        default=None,
-        help="Optional JSON service configuration file; environment and CLI override it.",
-    )
-    service.add_argument(
-        "--state-dir",
-        default=None,
-        help="Persistent service state directory (built-in default: <project>/state).",
-    )
+    _add_hidden_help_argument(service)
     service.add_argument(
         "--host",
         metavar="HOST",
         default=None,
-        help="Flight listen host (built-in default: 127.0.0.1).",
+        help="Listen host. (default: 127.0.0.1)",
     )
     service.add_argument(
         "--port",
         type=_nonnegative_int,
         default=None,
-        help="Flight listen port (built-in default: 8815).",
+        help="Listen port. (default: 8815)",
     )
+
     service.add_argument(
         "--profile",
         choices=["production", "development", "lan"],
         default=None,
-        help="Security profile (built-in default: production).",
+        help=(
+            "Plaintext policy:\n"
+            "  production   plaintext forbidden; TLS required.\n"
+            "  development  explicit loopback plaintext may be enabled.\n"
+            "  lan          explicit non-loopback plaintext may be enabled.\n"
+            "(default: production)"
+        ),
     )
     service.add_argument(
         "--allow-plaintext",
         action="store_true",
         default=None,
         help=(
-            "Explicitly allow plaintext in development/LAN profile; "
-            "disabled by default."
+            "Enable plaintext for development or lan.\n"
+            "Invalid with production."
         ),
     )
+
     service.add_argument(
         "--tls-cert-file",
         default=None,
-        help="TLS certificate PEM file; not configured by default.",
+        metavar="FILE",
+        help="Server certificate PEM.\nRequires --tls-key-file.",
     )
     service.add_argument(
         "--tls-key-file",
         default=None,
-        help="TLS private key PEM file; not configured by default.",
+        metavar="FILE",
+        help="Server private key PEM.\nRequires --tls-cert-file.",
     )
+
     service.add_argument(
         "--tls-ca-file",
         default=None,
-        help="mTLS client CA PEM file; not configured by default.",
+        metavar="FILE",
+        help="Client CA PEM.\nRequires server TLS.",
     )
     service.add_argument(
         "--tls-require-client-cert",
         action="store_true",
         default=None,
-        help="Require and verify client certificates; disabled by default.",
+        help=(
+            "Require client certificates.\n"
+            "Requires --tls-ca-file and server TLS."
+        ),
     )
+
     service.add_argument(
         "--bearer-tokens-file",
         default=None,
-        help=(
-            "Secret JSON token-to-subject mapping file; required via CLI, "
-            "environment, or JSON."
-        ),
+        metavar="FILE",
+        help="Required bearer token-to-subject JSON file.",
     )
     service.set_defaults(data=None, metrics_name=None)
 
     plot = subparsers.add_parser(
         "plot-metrics",
+        add_help=False,
         help=_COMMAND_HELP["plot-metrics"],
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(plot)
     plot.add_argument("data", metavar="METRICS_FILE", help="Metrics JSONL file.")
     plot.add_argument(
         "--plots-dir",

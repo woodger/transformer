@@ -37,7 +37,7 @@ installation assumption.
 ## Service topology and persistent state
 
 Run exactly one service process for one state directory. A non-blocking file
-lock at `<stateDir>/service.lock` rejects a second owner. V1 has no
+lock at `<state-directory>/service.lock` rejects a second owner. V1 has no
 multi-replica scheduler, shared storage or failover protocol.
 
 Default layout:
@@ -78,44 +78,42 @@ atomicity.
 Configuration precedence, from lowest to highest, is:
 
 1. dataclass defaults;
-2. JSON file passed with `--config`;
-3. `TRANSFORMER_FLIGHT_*` environment variables;
-4. explicitly supplied service CLI options.
+2. `TRANSFORMER_*` environment variables;
+3. explicitly supplied service CLI options.
 
-JSON accepts the field names below and their snake_case Python forms. The
-address field is `host`; legacy JSON names `bindHost`/`bind_host` and the
-environment variable `TRANSFORMER_FLIGHT_BIND_HOST` are rejected. Environment
-names use uppercase snake case. Unknown fields, invalid numeric types
-(including booleans used as integers) and inconsistent limits fail at startup.
+Environment names use uppercase snake case. The legacy
+`TRANSFORMER_FLIGHT_*` namespace and `TRANSFORMER_BIND_HOST` are rejected.
+Invalid numeric types (including booleans used as integers) and inconsistent
+limits fail at startup.
 
 ### Endpoint and security
 
-| JSON field | Environment variable | Default | Notes |
-| --- | --- | --- | --- |
-| `stateDir` | `TRANSFORMER_FLIGHT_STATE_DIR` | `<project-root>/state` | Persistent state root |
-| `host` | `TRANSFORMER_FLIGHT_HOST` | `127.0.0.1` | Private-safe loopback default |
-| `port` | `TRANSFORMER_FLIGHT_PORT` | `8815` | `0` is accepted for tests/dynamic binding |
-| `profile` | `TRANSFORMER_FLIGHT_PROFILE` | `production` | `production`, `development`, or `lan` |
-| `allowPlaintext` | `TRANSFORMER_FLIGHT_ALLOW_PLAINTEXT` | `false` | Must be explicit when TLS is absent |
-| `tlsCertFile` | `TRANSFORMER_FLIGHT_TLS_CERT_FILE` | unset | PEM server certificate; configure with key |
-| `tlsKeyFile` | `TRANSFORMER_FLIGHT_TLS_KEY_FILE` | unset | PEM private key; configure with certificate |
-| `tlsCaFile` | `TRANSFORMER_FLIGHT_TLS_CA_FILE` | unset | Client CA for mTLS |
-| `tlsRequireClientCert` | `TRANSFORMER_FLIGHT_TLS_REQUIRE_CLIENT_CERT` | `false` | Requires TLS and `tlsCaFile` |
-| `bearerTokensFile` | `TRANSFORMER_FLIGHT_BEARER_TOKENS_FILE` | unset | Required secret token-to-subject JSON |
+| Environment variable | Default | Notes |
+| --- | --- | --- |
+| `TRANSFORMER_STATE_DIR` | `<project-root>/state` | Persistent state root |
+| `TRANSFORMER_HOST` | `127.0.0.1` | Private-safe loopback default |
+| `TRANSFORMER_PORT` | `8815` | `0` is accepted for tests/dynamic binding |
+| `TRANSFORMER_PROFILE` | `production` | `production`, `development`, or `lan` |
+| `TRANSFORMER_ALLOW_PLAINTEXT` | `false` | Must be explicit when TLS is absent |
+| `TRANSFORMER_TLS_CERT_FILE` | unset | PEM server certificate; configure with key |
+| `TRANSFORMER_TLS_KEY_FILE` | unset | PEM private key; configure with certificate |
+| `TRANSFORMER_TLS_CA_FILE` | unset | Client CA for mTLS |
+| `TRANSFORMER_TLS_REQUIRE_CLIENT_CERT` | `false` | Requires TLS and client CA |
+| `TRANSFORMER_BEARER_TOKENS_FILE` | unset | Required secret token-to-subject JSON |
 
 ### Quotas and interoperability targets
 
-| JSON field | Environment variable | Default | Notes |
-| --- | --- | --- | --- |
-| `maxMessageBytes` | `TRANSFORMER_FLIGHT_MAX_MESSAGE_BYTES` | `16777216` | Client interoperability target; see known limitation below |
-| `targetBatchBytes` | `TRANSFORMER_FLIGHT_TARGET_BATCH_BYTES` | `8388608` | Recommended producer RecordBatch size |
-| `maxBatchBytes` | `TRANSFORMER_FLIGHT_MAX_BATCH_BYTES` | `16777216` | Application `RecordBatch.nbytes` limit |
-| `maxPayloadBytes` | `TRANSFORMER_FLIGHT_MAX_PAYLOAD_BYTES` | `536870912` | Logical DoPut and persisted IPC file limit |
-| `maxRowsPerPayload` | `TRANSFORMER_FLIGHT_MAX_ROWS_PER_PAYLOAD` | `2000000` | Total rows in one DoPut |
-| `maxPayloadsPerJob` | `TRANSFORMER_FLIGHT_MAX_PAYLOADS_PER_JOB` | `400` | Cannot exceed 400; seal must fit 64 KiB |
-| `maxJobBytes` | `TRANSFORMER_FLIGHT_MAX_JOB_BYTES` | `68719476736` | Total committed input bytes per job |
-| `maxActiveJobsPerSubject` | `TRANSFORMER_FLIGHT_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Non-terminal jobs per bearer subject |
-| `diskMinFreeBytes` | `TRANSFORMER_FLIGHT_DISK_MIN_FREE_BYTES` | `1073741824` | Admission/readiness free-space watermark |
+| Environment variable | Default | Notes |
+| --- | --- | --- |
+| `TRANSFORMER_MAX_MESSAGE_BYTES` | `16777216` | Client interoperability target; see known limitation below |
+| `TRANSFORMER_TARGET_BATCH_BYTES` | `8388608` | Recommended producer RecordBatch size |
+| `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Application `RecordBatch.nbytes` limit |
+| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Logical DoPut and persisted IPC file limit |
+| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Total rows in one DoPut |
+| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `400` | Cannot exceed 400; seal must fit 64 KiB |
+| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Total committed input bytes per job |
+| `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Non-terminal jobs per bearer subject |
+| `TRANSFORMER_DISK_MIN_FREE_BYTES` | `1073741824` | Admission/readiness free-space watermark |
 
 The validated ordering is
 `targetBatchBytes <= maxBatchBytes <= maxMessageBytes <= maxPayloadBytes`.
@@ -124,17 +122,17 @@ than copying defaults.
 
 ### Worker, timeout and retention policy
 
-| JSON field | Environment variable | Default | Notes |
-| --- | --- | --- | --- |
-| `cpuCapacity` | `TRANSFORMER_FLIGHT_CPU_CAPACITY` | `2` | Concurrent CPU worker lanes |
-| `cudaCapacity` | `TRANSFORMER_FLIGHT_CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
-| `queuePollMs` | `TRANSFORMER_FLIGHT_QUEUE_POLL_MS` | `100` | Durable queue polling interval |
-| `ticketTtlSeconds` | `TRANSFORMER_FLIGHT_TICKET_TTL_SECONDS` | `600` | Opaque DoGet ticket lifetime |
-| `cancelGraceSeconds` | `TRANSFORMER_FLIGHT_CANCEL_GRACE_SECONDS` | `10.0` | SIGTERM grace before SIGKILL |
-| `shutdownDrainSeconds` | `TRANSFORMER_FLIGHT_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Worker drain before forced cancellation |
-| `subprocessTimeoutSeconds` | `TRANSFORMER_FLIGHT_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Hard legacy CLI execution deadline |
-| `retentionSeconds` | `TRANSFORMER_FLIGHT_RETENTION_SECONDS` | `604800` | Terminal job retention, default seven days |
-| `maintenanceIntervalSeconds` | `TRANSFORMER_FLIGHT_MAINTENANCE_INTERVAL_SECONDS` | `60` | Ticket/retention maintenance period |
+| Environment variable | Default | Notes |
+| --- | --- | --- |
+| `TRANSFORMER_CPU_CAPACITY` | `2` | Concurrent CPU worker lanes |
+| `TRANSFORMER_CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
+| `TRANSFORMER_QUEUE_POLL_MS` | `100` | Durable queue polling interval |
+| `TRANSFORMER_TICKET_TTL_SECONDS` | `600` | Opaque DoGet ticket lifetime |
+| `TRANSFORMER_CANCEL_GRACE_SECONDS` | `10.0` | SIGTERM grace before SIGKILL |
+| `TRANSFORMER_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Worker drain before forced cancellation |
+| `TRANSFORMER_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Hard legacy CLI execution deadline |
+| `TRANSFORMER_RETENTION_SECONDS` | `604800` | Terminal job retention, default seven days |
+| `TRANSFORMER_MAINTENANCE_INTERVAL_SECONDS` | `60` | Ticket/retention maintenance period |
 
 Every numeric quota/capacity/interval must be positive, except the service port
 may be zero. Cancellation, drain and subprocess deadlines must be positive
@@ -143,8 +141,6 @@ finite values.
 The CLI exposes endpoint/security overrides only:
 
 ```text
---config
---state-dir
 --host
 --port
 --profile
@@ -156,7 +152,8 @@ The CLI exposes endpoint/security overrides only:
 --bearer-tokens-file
 ```
 
-Use JSON or environment configuration for quotas and worker policy.
+Use environment configuration for the state directory, quotas and worker
+policy.
 
 ## Authentication and transport profiles
 
@@ -208,30 +205,28 @@ disabling or changing TLS never changes `cpu`/`cuda`/`auto` behavior. Explicit
 
 ## Production configuration example
 
-Store this outside the repository, for example as
-`/etc/transformer/flight.json`:
+Configure the service environment in the deployment supervisor:
 
-```json
-{
-  "stateDir": "/var/lib/transformer-flight",
-  "host": "10.20.30.40",
-  "port": 8815,
-  "profile": "production",
-  "tlsCertFile": "/run/secrets/transformer/tls.crt",
-  "tlsKeyFile": "/run/secrets/transformer/tls.key",
-  "tlsCaFile": "/run/secrets/transformer/client-ca.crt",
-  "tlsRequireClientCert": true,
-  "bearerTokensFile": "/run/secrets/transformer/bearers.json",
-  "cpuCapacity": 2,
-  "cudaCapacity": 1,
-  "diskMinFreeBytes": 10737418240,
-  "retentionSeconds": 604800
-}
+```text
+TRANSFORMER_STATE_DIR=/var/lib/transformer-flight
+TRANSFORMER_HOST=10.20.30.40
+TRANSFORMER_PORT=8815
+TRANSFORMER_PROFILE=production
+TRANSFORMER_TLS_CERT_FILE=/run/secrets/transformer/tls.crt
+TRANSFORMER_TLS_KEY_FILE=/run/secrets/transformer/tls.key
+TRANSFORMER_TLS_CA_FILE=/run/secrets/transformer/client-ca.crt
+TRANSFORMER_TLS_REQUIRE_CLIENT_CERT=true
+TRANSFORMER_BEARER_TOKENS_FILE=/run/secrets/transformer/bearers.json
+TRANSFORMER_CPU_CAPACITY=2
+TRANSFORMER_CUDA_CAPACITY=1
+TRANSFORMER_DISK_MIN_FREE_BYTES=10737418240
+TRANSFORMER_RETENTION_SECONDS=604800
 ```
 
-If mTLS is not required, omit `tlsCaFile` and leave
-`tlsRequireClientCert=false`; bearer authentication remains required. Ensure
-the certificate SAN matches the address Inventory uses.
+If mTLS is not required, omit `TRANSFORMER_TLS_CA_FILE` and leave
+`TRANSFORMER_TLS_REQUIRE_CLIENT_CERT=false`; bearer authentication
+remains required. Ensure the certificate SAN matches the address Inventory
+uses.
 
 ## Install and start
 
@@ -272,8 +267,7 @@ with PyTorch 2.12.
 Then run the single service entrypoint from the project root:
 
 ```bash
-python3.11 ./app/main.py flight serve \
-  --config=/etc/transformer/flight.json
+python3.11 ./app/main.py flight serve
 ```
 
 The process writes structured JSON logs to stderr and serves Flight on the
@@ -303,8 +297,8 @@ umask 077
 printf '%s\n' '{"dev-token":"inventory-local"}' \
   > /tmp/transformer-flight-bearers.json
 
+TRANSFORMER_STATE_DIR=/tmp/transformer-flight-state \
 python ./app/main.py flight serve \
-  --state-dir=/tmp/transformer-flight-state \
   --host=127.0.0.1 \
   --port=8815 \
   --profile=development \

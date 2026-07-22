@@ -49,7 +49,11 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
-python ./app/main.py flight serve --config=/etc/transformer/flight.json
+python ./app/main.py flight serve \
+  --host=0.0.0.0 \
+  --tls-cert-file=/run/secrets/transformer/tls.crt \
+  --tls-key-file=/run/secrets/transformer/tls.key \
+  --bearer-tokens-file=/run/secrets/transformer/bearers.json
 ```
 
 Production требует TLS и bearer authentication. Plaintext разрешается только

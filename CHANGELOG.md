@@ -13,6 +13,19 @@
   optional outputs, checkpoint-derived model parameters и Flight overrides
   описывают реальное fallback-поведение, а `--host` и `--port` показывают
   встроенные значения `127.0.0.1` и `8815`.
+- `flight serve --help` теперь описывает назначение команды и явно фиксирует
+  зависимости transport, TLS, mTLS и authentication parameters.
+- Leaf command help больше не повторяет строку `-h, --help`; сам help-флаг
+  остаётся доступным и документируется в глобальном `Usage`.
+- Environment namespace конфигурации сервиса сокращён с
+  `TRANSFORMER_FLIGHT_*` до `TRANSFORMER_*`; прежний namespace больше не
+  поддерживается.
+
+### Removed
+
+- `flight serve` больше не принимает `--config` и `--state-dir`. Загрузка
+  service configuration из JSON-файла удалена; persistent state directory
+  при необходимости задаётся через `TRANSFORMER_STATE_DIR`.
 
 ## [0.1.3] - 2026-07-22
 

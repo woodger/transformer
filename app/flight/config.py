@@ -10,7 +10,8 @@ from app.flight.auth import validate_bearer_credentials
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
 
-ENV_PREFIX = "TRANSFORMER_FLIGHT_"
+ENV_PREFIX = "TRANSFORMER_"
+LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 
 
 def _default_state_dir() -> str:
@@ -180,20 +181,20 @@ class FlightServiceConfig:
 
 
 def load_config(
-    path: str | None = None,
     *,
     environ: dict[str, str] | None = None,
     overrides: dict | None = None,
 ) -> FlightServiceConfig:
     values = {}
-    if path:
-        with open(path, "r", encoding="utf-8") as source:
-            document = json.load(source)
-        if not isinstance(document, dict):
-            raise ValueError("Flight configuration must be a JSON object")
-        values.update(_normalize_mapping(document))
-
     env = os.environ if environ is None else environ
+    legacy_keys = sorted(
+        key for key in env if key.startswith(LEGACY_ENV_PREFIX)
+    )
+    if legacy_keys:
+        raise ValueError(
+            "unsupported legacy Transformer environment variable(s): "
+            f"{', '.join(legacy_keys)}; remove FLIGHT from the prefix"
+        )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
@@ -249,37 +250,6 @@ def tls_server_options(config: FlightServiceConfig) -> dict:
 
 def with_bound_port(config: FlightServiceConfig, port: int) -> FlightServiceConfig:
     return replace(config, port=port)
-
-
-def _normalize_mapping(document: dict) -> dict:
-    aliases = {
-        "stateDir": "state_dir",
-        "allowPlaintext": "allow_plaintext",
-        "tlsCertFile": "tls_cert_file",
-        "tlsKeyFile": "tls_key_file",
-        "tlsCaFile": "tls_ca_file",
-        "tlsRequireClientCert": "tls_require_client_cert",
-        "bearerTokensFile": "bearer_tokens_file",
-        "maxMessageBytes": "max_message_bytes",
-        "targetBatchBytes": "target_batch_bytes",
-        "maxBatchBytes": "max_batch_bytes",
-        "maxPayloadBytes": "max_payload_bytes",
-        "maxRowsPerPayload": "max_rows_per_payload",
-        "maxPayloadsPerJob": "max_payloads_per_job",
-        "maxJobBytes": "max_job_bytes",
-        "maxActiveJobsPerSubject": "max_active_jobs_per_subject",
-        "cpuCapacity": "cpu_capacity",
-        "cudaCapacity": "cuda_capacity",
-        "queuePollMs": "queue_poll_ms",
-        "ticketTtlSeconds": "ticket_ttl_seconds",
-        "cancelGraceSeconds": "cancel_grace_seconds",
-        "shutdownDrainSeconds": "shutdown_drain_seconds",
-        "diskMinFreeBytes": "disk_min_free_bytes",
-        "retentionSeconds": "retention_seconds",
-        "maintenanceIntervalSeconds": "maintenance_interval_seconds",
-        "subprocessTimeoutSeconds": "subprocess_timeout_seconds",
-    }
-    return {aliases.get(key, key): value for key, value in document.items()}
 
 
 def _parse_environment_value(value: str, annotation, key: str):

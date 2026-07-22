@@ -232,6 +232,7 @@ def test_command_help_contains_only_applicable_options(capsys):
 
     flight_help = capsys.readouterr().out
     assert "serve" in flight_help
+    assert "-h, --help" in flight_help
     assert "--host" not in flight_help
     assert "Examples:" not in flight_help
 
@@ -240,15 +241,72 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert exc.value.code == 0
 
     serve_help = capsys.readouterr().out
-    assert "Examples:" in serve_help
-    assert (
-        "transformer flight serve --config=/etc/transformer/flight.json"
-    ) in serve_help
+    assert "Examples:" not in serve_help
+    assert "--config" not in serve_help
+    assert "--state-dir" not in serve_help
     assert "--host" in serve_help
     assert "--port" in serve_help
-    assert "Flight listen host (built-in default: 127.0.0.1)." in serve_help
-    assert "Flight listen port (built-in default: 8815)." in serve_help
     assert "(default: None)" not in serve_help
+
+
+def test_flight_serve_help_documents_configuration_contract(capsys):
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(["flight", "serve", "--help"])
+    assert exc.value.code == 0
+
+    output = capsys.readouterr().out
+    normalized_output = " ".join(output.split())
+
+    assert "usage: transformer flight serve [options]" in output
+    assert "Run the durable Arrow Flight service for fit and predict jobs." in output
+
+    assert "\noptions:\n" in output
+    for removed_heading in (
+        "Configuration:",
+        "Network:",
+        "Transport policy:",
+        "TLS:",
+        "mTLS:",
+        "Authentication:",
+    ):
+        assert removed_heading not in output
+
+    option_labels = (
+        "--host HOST",
+        "--port PORT",
+        "--profile {production,development,lan}",
+        "--allow-plaintext",
+        "--tls-cert-file FILE",
+        "--tls-key-file FILE",
+        "--tls-ca-file FILE",
+        "--tls-require-client-cert",
+        "--bearer-tokens-file FILE",
+    )
+    positions = [output.index(label) for label in option_labels]
+    assert positions == sorted(positions)
+
+    assert "Listen host. (default: 127.0.0.1)" in output
+    assert "Listen port. (default: 8815)" in output
+    assert "(default: production)" in output
+    assert "built-in default" not in output
+    assert "(default: None)" not in output
+    expected_multiline_entries = (
+        "production   plaintext forbidden; TLS required.",
+        "development  explicit loopback plaintext may be enabled.",
+        "lan          explicit non-loopback plaintext may be enabled.",
+        "Invalid with production.",
+        "Requires --tls-key-file.",
+        "Requires --tls-cert-file.",
+        "Requires server TLS.",
+        "Requires --tls-ca-file and server TLS.",
+    )
+    stripped_lines = {line.strip() for line in output.splitlines()}
+    assert set(expected_multiline_entries) <= stripped_lines
+    assert "Enable plaintext for development or lan." in normalized_output
+    assert "Required bearer token-to-subject JSON file." in normalized_output
+    assert "--config" not in output
+    assert "--state-dir" not in output
+    assert "Examples:" not in output
 
 
 def test_defaults_are_shown_in_command_help(capsys):
@@ -284,6 +342,27 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
     assert exc.value.code == 0
 
     assert "(default: None)" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ("fit", "--help"),
+        ("predict", "--help"),
+        ("fit-stream", "--help"),
+        ("predict-stream", "--help"),
+        ("flight", "serve", "--help"),
+        ("plot-metrics", "--help"),
+    ),
+)
+def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(list(argv))
+    assert exc.value.code == 0
+
+    output = capsys.readouterr().out
+    assert "-h, --help" not in output
+    assert "show this help message and exit" not in output
 
 
 @pytest.mark.parametrize(

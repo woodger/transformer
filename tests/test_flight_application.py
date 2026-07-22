@@ -396,11 +396,12 @@ def test_flight_serve_cli_contains_only_service_configuration():
     omitted = build_parser().parse_args(["flight", "serve"])
     assert omitted.host is None
     assert omitted.port is None
+    assert not hasattr(omitted, "config")
+    assert not hasattr(omitted, "state_dir")
 
     args = build_parser().parse_args([
         "flight",
         "serve",
-        "--state-dir", "/var/lib/transformer",
         "--host", "127.0.0.1",
         "--port", "8815",
         "--profile", "development",
@@ -410,7 +411,6 @@ def test_flight_serve_cli_contains_only_service_configuration():
 
     assert args.action == "flight"
     assert args.flight_action == "serve"
-    assert args.state_dir == "/var/lib/transformer"
     assert args.host == "127.0.0.1"
     assert args.port == 8815
     assert not hasattr(args, "epochs")
@@ -425,3 +425,12 @@ def test_flight_serve_cli_contains_only_service_configuration():
         ])
     with pytest.raises(SystemExit):
         build_parser().parse_args(["serve-flight"])
+
+    for removed_option in ("--config", "--state-dir"):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args([
+                "flight",
+                "serve",
+                removed_option,
+                "unused",
+            ])

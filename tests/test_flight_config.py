@@ -61,46 +61,44 @@ def test_tls_and_device_capacity_are_independent(tmp_path):
     assert not hasattr(config, "device")
 
 
-def test_config_precedence_and_secret_token_file(tmp_path):
-    config_path = tmp_path / "flight.json"
+def test_environment_and_cli_precedence_and_secret_token_file(tmp_path):
     token_path = tmp_path / "tokens.json"
     token_path.write_text(json.dumps({"tokens": {"secret": "inventory-prod"}}))
-    config_path.write_text(json.dumps({
-        "stateDir": str(tmp_path / "from-file"),
-        "host": "127.0.0.2",
-        "profile": "development",
-        "allowPlaintext": True,
-        "bearerTokensFile": str(token_path),
-        "cpuCapacity": 1,
-    }))
 
     config = load_config(
-        str(config_path),
         environ={
-            "TRANSFORMER_FLIGHT_CPU_CAPACITY": "4",
-            "TRANSFORMER_FLIGHT_HOST": "127.0.0.3",
+            "TRANSFORMER_STATE_DIR": str(tmp_path / "state"),
+            "TRANSFORMER_CPU_CAPACITY": "4",
+            "TRANSFORMER_HOST": "127.0.0.3",
+            "TRANSFORMER_PROFILE": "development",
+            "TRANSFORMER_ALLOW_PLAINTEXT": "true",
+            "TRANSFORMER_BEARER_TOKENS_FILE": str(token_path),
         },
-        overrides={"port": 0},
+        overrides={"host": "127.0.0.4", "port": 0},
     )
 
     assert config.cpu_capacity == 4
-    assert config.host == "127.0.0.3"
+    assert config.host == "127.0.0.4"
     assert config.port == 0
     assert load_bearer_tokens(config) == {"secret": "inventory-prod"}
 
 
-@pytest.mark.parametrize("field", ("unknown", "bindHost", "bind_host"))
-def test_config_rejects_unknown_field(tmp_path, field):
-    path = tmp_path / "invalid.json"
-    path.write_text(json.dumps({field: True}))
+def test_config_rejects_unknown_override():
     with pytest.raises(ValueError, match="unknown Flight configuration"):
-        load_config(str(path), environ={})
+        load_config(environ={}, overrides={"unknown": True})
 
 
-def test_config_rejects_legacy_host_environment_variable():
-    with pytest.raises(ValueError, match="TRANSFORMER_FLIGHT_BIND_HOST"):
+def test_config_rejects_legacy_environment_namespace():
+    with pytest.raises(ValueError, match="TRANSFORMER_FLIGHT_HOST"):
         load_config(
-            environ={"TRANSFORMER_FLIGHT_BIND_HOST": "127.0.0.1"},
+            environ={"TRANSFORMER_FLIGHT_HOST": "127.0.0.1"},
+        )
+
+
+def test_config_rejects_legacy_bind_host_environment_variable():
+    with pytest.raises(ValueError, match="TRANSFORMER_BIND_HOST"):
+        load_config(
+            environ={"TRANSFORMER_BIND_HOST": "127.0.0.1"},
         )
 
 

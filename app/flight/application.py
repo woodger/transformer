@@ -288,7 +288,6 @@ class FlightApplication:
 
 def run_from_args(args):
     overrides = {
-        "state_dir": args.state_dir,
         "host": args.host,
         "port": args.port,
         "profile": args.profile,
@@ -299,7 +298,7 @@ def run_from_args(args):
         "tls_require_client_cert": args.tls_require_client_cert,
         "bearer_tokens_file": args.bearer_tokens_file,
     }
-    config = load_config(args.config, overrides=overrides)
+    config = load_config(overrides=overrides)
     FlightApplication.build(config).serve()
 
 

@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import queue
 import signal
@@ -169,7 +170,6 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
             str(Path(PROJECT_ROOT) / "app" / "main.py"),
             "flight",
             "serve",
-            "--state-dir", str(state_dir),
             "--port", "0",
             "--profile", "development",
             "--allow-plaintext",
@@ -181,6 +181,10 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
+        env={
+            **os.environ,
+            "TRANSFORMER_STATE_DIR": str(state_dir),
+        },
     )
     lines = queue.Queue()
 
