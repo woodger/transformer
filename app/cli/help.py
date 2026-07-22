@@ -23,49 +23,50 @@ from app.config import (
     WEIGHT_DECAY,
 )
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
-from app.runtime.version import version_text
+from app.runtime.version import __version__, version_text
 
 
-APP_DESCRIPTION = """Transformer training and inference CLI.
+_COMMANDS = (
+    ("fit", "Train from an Arrow file."),
+    ("predict", "Predict from an Arrow file."),
+    ("fit-stream", "Train from framed stdin."),
+    ("predict-stream", "Predict from framed stdin."),
+    ("serve-flight", "Run the durable Arrow Flight job service."),
+    ("plot-metrics", "Render SVG charts from metrics JSONL."),
+)
+_COMMAND_HELP = dict(_COMMANDS)
+_COMMAND_EXAMPLES = {
+    "fit": """Examples:
+  transformer fit ./data/train.arrow --seq-len=20
+""",
+    "predict": """Examples:
+  transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
+""",
+    "serve-flight": """Examples:
+  transformer serve-flight --config=/etc/transformer/flight.json
+""",
+}
 
-Data contract:
-  src              Arrow list<float32|float64>, flattened [seq_len * feature_dim].
-  tgt              Arrow list<float32|float64>[6], required for training.
-  predictions      Arrow list<float32>[6], written to --pred-col.
 
-Context modes:
-  strict           Mask a timestep when any feature is NaN.
-  relaxed          Mask only fully-NaN timesteps and append missing flags.
-
-Modes:
-  fit              Train from an Arrow file on disk.
-  predict          Load a model and write predictions to an Arrow file.
-  fit-stream       Train from framed Arrow payloads on stdin.
-  predict-stream   Predict from framed Arrow payloads on stdin.
-  plot-metrics     Render SVG charts from a metrics JSONL file in models/.
-
-Streaming protocol:
-  8-byte unsigned big-endian payload length, followed by an Arrow IPC file.
-  A zero length terminates the stream; other frames are size-limited.
-  predict-stream writes the same framed protocol to stdout.
-
-Storage:
-  Models and metrics JSONL files are resolved relative to models/.
-  New checkpoints store model config together with weights; predict can reuse it.
-
-Run "main.py COMMAND --help" for command-specific arguments and defaults.
-"""
-
-APP_EPILOG = """Examples:
-  python ./app/main.py fit ./data/train.arrow --seq-len=20
-  python ./app/main.py predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
-  python ./app/main.py fit ./data/train.arrow --seq-len=20 --metrics-out=train.jsonl
-  python ./app/main.py fit-stream --seq-len=20 --checkpoint-out=model.pth --metrics-out=train-stream.jsonl
-  python ./app/main.py predict-stream --checkpoint=model.pth > preds.framed 2> predict.log
-  python ./app/main.py serve-flight --config=/etc/transformer/flight.json
-  python ./app/main.py plot-metrics train.jsonl --plots-dir=metrics_plots
-  python ./app/main.py --version
-"""
+def _format_root_help() -> str:
+    commands = "\n".join(
+        f"  {name:<16}{description}" for name, description in _COMMANDS
+    )
+    return (
+        f"transformer {__version__}\n\n"
+        "Usage:\n"
+        "  transformer <command> [args] [options]\n"
+        "  transformer <command> --help\n"
+        "  transformer --help\n"
+        "  transformer --version\n\n"
+        "Global options:\n"
+        "  --help, -h       Show help and exit\n"
+        "  --version, -v    Show package and runtime version info\n\n"
+        "commands:\n"
+        f"{commands}\n\n"
+        "Command details:\n"
+        "  transformer <command> --help\n"
+    )
 
 
 class _HelpFormatter(
@@ -85,6 +86,11 @@ class _ArgumentParser(argparse.ArgumentParser):
                 f"--hidden={hidden} must be divisible by --nhead={nhead}"
             )
         return parsed
+
+
+class _RootArgumentParser(_ArgumentParser):
+    def format_help(self):
+        return _format_root_help()
 
 
 def _positive_int(value: str) -> int:
@@ -333,7 +339,8 @@ def _add_training_arguments(parser):
 def _add_fit_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
-        help="Train from framed stdin." if stream else "Train from an Arrow file.",
+        help=_COMMAND_HELP[name],
+        epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
     if stream:
@@ -377,7 +384,8 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
 def _add_predict_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
-        help="Predict from framed stdin." if stream else "Predict from an Arrow file.",
+        help=_COMMAND_HELP[name],
+        epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
     if stream:
@@ -424,19 +432,19 @@ def _add_predict_parser(subparsers, name: str, *, stream: bool):
 
 
 def build_parser():
-    parser = _ArgumentParser(
-        prog="main.py",
-        description=APP_DESCRIPTION,
-        epilog=APP_EPILOG,
+    parser = _RootArgumentParser(
+        prog="transformer",
         formatter_class=_HelpFormatter,
     )
     parser.add_argument(
         "--version",
+        "-v",
         action="version",
         version=version_text("%(prog)s"),
     )
 
     subparsers = parser.add_subparsers(
+        parser_class=_ArgumentParser,
         dest="action",
         required=True,
         title="commands",
@@ -449,7 +457,8 @@ def build_parser():
 
     service = subparsers.add_parser(
         "serve-flight",
-        help="Run the durable Arrow Flight job service.",
+        help=_COMMAND_HELP["serve-flight"],
+        epilog=_COMMAND_EXAMPLES["serve-flight"],
         formatter_class=_HelpFormatter,
     )
     service.add_argument(
@@ -495,7 +504,7 @@ def build_parser():
 
     plot = subparsers.add_parser(
         "plot-metrics",
-        help="Render SVG charts from metrics JSONL.",
+        help=_COMMAND_HELP["plot-metrics"],
         formatter_class=_HelpFormatter,
     )
     plot.add_argument("data", metavar="METRICS_FILE", help="Metrics JSONL file.")

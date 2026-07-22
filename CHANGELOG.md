@@ -14,6 +14,9 @@
   `TRANSFORMER_FLIGHT_BIND_HOST` в `TRANSFORMER_FLIGHT_HOST`; прежние имена
   больше не поддерживаются. Внутренняя конфигурация также использует единую
   пару `host` / `port`.
+- Глобальный CLI help сокращён до global options и списка команд; примеры
+  перенесены в применимые command-specific help, а для `--version` добавлена
+  короткая форма `-v`.
 
 ### Fixed
 

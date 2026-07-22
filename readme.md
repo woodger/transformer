@@ -70,8 +70,9 @@ python ./app/main.py predict-stream [options]
 python ./app/main.py plot-metrics METRICS_FILE [options]
 ```
 
-Общий help показывает список команд, command-specific help — только применимые
-к выбранной команде аргументы и их defaults:
+Общий help показывает только global options и список команд. Command-specific
+help содержит применимые к выбранной команде аргументы, их defaults и, где это
+полезно, отдельный блок с примерами:
 
 ```bash
 python ./app/main.py --help
@@ -79,7 +80,7 @@ python ./app/main.py fit --help
 python ./app/main.py predict-stream --help
 ```
 
-Версию можно посмотреть так:
+Версию можно посмотреть через `--version` или его короткую форму `-v`:
 
 ```bash
 python ./app/main.py --version
