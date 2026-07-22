@@ -61,6 +61,10 @@ def test_cli_help(capsys, monkeypatch):
     assert "predict-stream" in output
     assert "plot-metrics" in output
     assert "Examples:" in output
+    assert (
+        "python ./app/main.py serve-flight "
+        "--config=/etc/transformer/flight.json"
+    ) in output
     assert "--per-week" not in output
     assert "--context-mode" not in output
     assert "--amp" not in output

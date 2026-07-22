@@ -62,6 +62,7 @@ APP_EPILOG = """Examples:
   python ./app/main.py fit ./data/train.arrow --seq-len=20 --metrics-out=train.jsonl
   python ./app/main.py fit-stream --seq-len=20 --checkpoint-out=model.pth --metrics-out=train-stream.jsonl
   python ./app/main.py predict-stream --checkpoint=model.pth > preds.framed 2> predict.log
+  python ./app/main.py serve-flight --config=/etc/transformer/flight.json
   python ./app/main.py plot-metrics train.jsonl --plots-dir=metrics_plots
   python ./app/main.py --version
 """
