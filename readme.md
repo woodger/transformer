@@ -582,7 +582,7 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 тестов намеренно отвергается.
 
 ```bash
-python -m pip install pytest ruff
+python -m pip install jsonschema pytest ruff
 python3.11 -m ruff check .
 POSTGRES_DB=transformer_test python3.11 -m pytest -q
 ```

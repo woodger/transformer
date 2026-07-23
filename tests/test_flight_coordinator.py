@@ -5,7 +5,7 @@ import pyarrow.flight as flight
 import pytest
 from flight_contract_schema import (
     read_contract_schema,
-    validate_schema_subset,
+    validate_contract_document,
 )
 
 from app.database.models import Job, JobAttempt
@@ -121,7 +121,7 @@ def test_action_facade_preserves_lifecycle_over_real_flight_loopback(
         ))
         assert len(results) == 1
         response = json.loads(results[0].body.to_pybytes())
-        validate_schema_subset(
+        validate_contract_document(
             response,
             read_contract_schema(ACTION_RESULT_SCHEMAS[action_name]),
         )

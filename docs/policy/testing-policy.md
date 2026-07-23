@@ -53,6 +53,9 @@ config parsing, state transitions, serialization helpers.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
+JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
+`$ref` разрешаются только из `contracts/flight/v1/schemas/`.
+
 ## Структура и именование
 
 Используется pytest:

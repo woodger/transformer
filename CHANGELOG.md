@@ -10,6 +10,8 @@
 ### Added
 
 - Добавлен Ruff с единым минимальным baseline для Python lint checks.
+- Добавлен `jsonschema` для полноценной Draft 2020-12 проверки нормативных
+  Flight JSON Schemas и golden fixtures в contract tests.
 
 ### Changed
 
