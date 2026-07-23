@@ -4,6 +4,7 @@ __pycache__/
 .env
 .venv/
 venv/
+.ruff_cache/
 *.pth
 metrics_plots
 models

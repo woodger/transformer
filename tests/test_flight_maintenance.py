@@ -13,7 +13,6 @@ from sqlalchemy import func, select
 from app.database.models import OutputTicket
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import JobState
-from app.flight.ledger import Ledger
 from app.flight.maintenance import MaintenanceService
 from app.flight.spool import Spool
 

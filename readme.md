@@ -1,6 +1,6 @@
-# Transformer
+# Transformer Arrow Flight service
 
-Python-проект для обучения и инференса PyTorch Transformer на датасетах в
+Python-сервис для обучения и инференса PyTorch Transformer на датасетах в
 формате Apache Arrow.
 
 Проект умеет работать в двух режимах:
@@ -29,7 +29,7 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 Установка зависимостей:
 
 ```bash
-pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv pytest
+pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv
 ```
 
 Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
@@ -582,7 +582,8 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 тестов намеренно отвергается.
 
 ```bash
-python -m pip install pytest
+python -m pip install pytest ruff
+python3.11 -m ruff check .
 POSTGRES_DB=transformer_test python3.11 -m pytest -q
 ```
 

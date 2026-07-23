@@ -27,7 +27,6 @@ from app.flight.constants import (
 from app.flight.contract import encode_document, response_document, validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError, to_flight_exception
-from app.flight.ledger import Ledger
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.output import OutputHandler, _stream_batches
 from app.flight.server import TransformerFlightServer

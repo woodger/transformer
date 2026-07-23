@@ -1,4 +1,4 @@
-# Transformer Arrow Flight v1 service runbook
+# Transformer Arrow Flight service: runbook v1
 
 This runbook covers the single-instance Transformer Flight service. Consumer
 wire details are in the

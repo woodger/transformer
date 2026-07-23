@@ -26,7 +26,6 @@ from app.flight.constants import (
     START_ACTION,
     STATUS_ACTION,
 )
-from app.flight.ledger import Ledger
 from app.flight.spool import Spool
 from app.model.transformer import TransformerModel
 from app.runtime.version import __version__

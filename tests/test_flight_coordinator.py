@@ -10,7 +10,6 @@ from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
-    HEALTH_ACTION,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
@@ -19,7 +18,6 @@ from app.flight.constants import (
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
-from app.flight.ledger import Ledger
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from flight_contract_schema import (

@@ -18,7 +18,6 @@ from app.database.models import InputUpload
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import CONTRACT_NAME, ErrorCode, FIT_SCHEMA_ID, JobState
 from app.flight.coordinator import JobCoordinator
-from app.flight.ledger import Ledger
 from app.flight.output import OutputHandler
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool

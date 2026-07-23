@@ -15,7 +15,6 @@ from app.database.tokens import AccessTokenStore
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, ErrorCode, JobState
-from app.flight.ledger import Ledger
 from app.flight.process import capture_worker_process
 from app.flight.spool import Spool, RuntimeDirectoryLocked
 

@@ -56,6 +56,7 @@
 Базовый полный запуск:
 
 ```bash
+python3.11 -m ruff check .
 python3.11 -m pytest -q
 git diff --check
 ```

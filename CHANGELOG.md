@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлен Ruff с единым минимальным baseline для Python lint checks.
+
+### Changed
+
+- Публичное название проекта изменено на `Transformer Arrow Flight service`;
+  технические идентификаторы CLI, Flight contract и environment не менялись.
+
 ## [0.1.6] - 2026-07-23
 
 ### Added
