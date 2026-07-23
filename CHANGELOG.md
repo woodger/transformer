@@ -9,10 +9,9 @@
 
 ### Added
 
-- Добавлен production deployment bundle для Fedora/systemd 259: unit для
-  `/home/nerv/transformer`, tmpfiles policy для `/tmp/transformer`, environment
-  template и runbook установки, migrations, CUDA validation, restart и
-  recovery semantics.
+- Добавлено руководство по production-развёртыванию на Fedora/systemd 259:
+  готовые unit и tmpfiles configuration, environment setup, migrations, CUDA
+  validation, restart и recovery semantics.
 
 ## [0.1.4] - 2026-07-23
 

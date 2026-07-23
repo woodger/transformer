@@ -6,20 +6,31 @@ from app.flight.config import FlightServiceConfig, load_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SYSTEMD_DIR = PROJECT_ROOT / "deploy" / "systemd"
+SYSTEMD_DOCUMENT = PROJECT_ROOT / "docs" / "deployment" / "systemd.md"
+ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
+
+
+def _configuration_block(heading: str, language: str) -> str:
+    document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
+    section = document.split(f"## {heading}\n", 1)[1].split("\n## ", 1)[0]
+    return section.split(f"```{language}\n", 1)[1].split("\n```", 1)[0]
 
 
 def _load_unit() -> ConfigParser:
     parser = ConfigParser(interpolation=None, strict=True)
     parser.optionxform = str
-    with (SYSTEMD_DIR / "transformer.service").open(encoding="utf-8") as stream:
-        parser.read_file(stream)
+    parser.read_string(_configuration_block("Systemd unit", "ini"))
     return parser
 
 
 def test_service_uses_target_runtime_identity_and_entrypoint():
-    service = _load_unit()["Service"]
+    unit = _load_unit()
+    service = unit["Service"]
 
+    assert (
+        unit["Unit"]["Documentation"]
+        == "file:/home/nerv/transformer/docs/deployment/systemd.md"
+    )
     assert service["Type"] == "exec"
     assert service["User"] == "nerv"
     assert service["Group"] == "nerv"
@@ -65,9 +76,10 @@ def test_service_does_not_apply_database_migrations_on_start():
 def test_tmpfiles_policy_creates_runtime_directory_without_age_cleanup():
     lines = [
         line.split()
-        for line in (
-            SYSTEMD_DIR / "transformer.tmpfiles.conf"
-        ).read_text(encoding="utf-8").splitlines()
+        for line in _configuration_block(
+            "Tmpfiles policy",
+            "text",
+        ).splitlines()
         if line and not line.startswith("#")
     ]
 
@@ -77,9 +89,7 @@ def test_tmpfiles_policy_creates_runtime_directory_without_age_cleanup():
 
 
 def test_environment_example_uses_current_configuration_contract():
-    lines = (
-        SYSTEMD_DIR / "transformer.env.example"
-    ).read_text(encoding="utf-8").splitlines()
+    lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
     environment = dict(
         line.split("=", 1)
         for line in lines
@@ -108,7 +118,7 @@ def test_environment_example_uses_current_configuration_contract():
 
     database = load_database_config(
         environ=environment,
-        env_file=SYSTEMD_DIR / "transformer.env.example",
+        env_file=ENV_EXAMPLE,
     )
     flight = load_config(environ=environment)
     assert database.port == 5432

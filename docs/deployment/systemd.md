@@ -14,6 +14,11 @@
 Systemd управляет только жизненным циклом процесса. PostgreSQL migrations и API
 access tokens остаются явными операторскими командами.
 
+Развёртывание выполняется вручную. Репозиторий не содержит install-скриптов и
+не изменяет `/etc`, не применяет migrations и не перезапускает сервис
+автоматически. Оператор переносит приведённые ниже конфигурации на целевой хост
+и проверяет каждый этап.
+
 ## Предварительная проверка
 
 Все runtime dependencies должны быть установлены для Python 3.11 пользователя
@@ -49,8 +54,8 @@ sudo install -d -o nerv -g nerv -m 0700 \
 ## Environment file
 
 Unit читает `/home/nerv/transformer/.env`. Существующий файл с PostgreSQL
-credentials не нужно заменять: дополните его service settings из
-[`transformer.env.example`](../deploy/systemd/transformer.env.example).
+credentials не нужно заменять: дополните его service settings из корневого
+файла [`.env.example`](../../.env.example).
 
 Минимальный plaintext-вариант для loopback:
 
@@ -75,21 +80,64 @@ sudo chmod 0600 /home/nerv/transformer/.env
 Токены в `.env` не записываются: они выпускаются и отзываются через PostgreSQL
 командами `auth tokens`.
 
-## Установка unit и runtime directory policy
+## Systemd unit
 
-Установите unit и tmpfiles configuration из checkout:
+Создайте `/etc/systemd/system/transformer.service` со следующим содержимым:
+
+```ini
+[Unit]
+Description=Transformer Arrow Flight service
+Documentation=file:/home/nerv/transformer/docs/deployment/systemd.md
+Wants=network-online.target
+After=network-online.target systemd-tmpfiles-setup.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=nerv
+Group=nerv
+WorkingDirectory=/home/nerv/transformer
+EnvironmentFile=/home/nerv/transformer/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3.11 /home/nerv/transformer/app/main.py flight serve
+
+Restart=on-failure
+RestartSec=5s
+
+KillSignal=SIGTERM
+KillMode=mixed
+SendSIGKILL=yes
+TimeoutStopSec=60s
+
+UMask=0077
+PrivateTmp=no
+PrivateDevices=no
+ProtectSystem=full
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=transformer
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Tmpfiles policy
+
+Создайте `/etc/tmpfiles.d/transformer.conf` со следующим содержимым:
+
+```text
+d /tmp/transformer 0700 nerv nerv -
+```
+
+Отсутствие возраста очистки сохраняет runtime payloads при обычной
+периодической очистке `/tmp`. Сам каталог остаётся эфемерным и теряется вместе
+со смонтированным в RAM `/tmp`.
+
+Примените конфигурацию и проверьте unit:
 
 ```bash
-cd /home/nerv/transformer
-
-sudo install -m 0644 \
-  deploy/systemd/transformer.service \
-  /etc/systemd/system/transformer.service
-
-sudo install -m 0644 \
-  deploy/systemd/transformer.tmpfiles.conf \
-  /etc/tmpfiles.d/transformer.conf
-
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/transformer.conf
 sudo systemd-analyze verify /etc/systemd/system/transformer.service
 sudo systemctl daemon-reload
@@ -190,7 +238,7 @@ draining и самостоятельно завершает worker process group
 2. обновите checkout и Python dependencies;
 3. выполните `db migrations status`, затем при необходимости
    `db migrations apply`;
-4. повторно установите unit и tmpfiles configuration;
+4. сверьте установленные unit и tmpfiles configuration с этим документом;
 5. выполните `systemd-analyze verify`, `daemon-reload` и restart;
 6. проверьте journal и authenticated Flight health.
 

@@ -45,7 +45,7 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 Подробная production-настройка Flight service находится в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 Установка и управление процессом на Fedora через systemd описаны в
-[`docs/systemd-deployment.md`](docs/systemd-deployment.md).
+[`docs/deployment/systemd.md`](docs/deployment/systemd.md).
 
 ## Remote Arrow Flight service
 
