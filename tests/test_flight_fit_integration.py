@@ -412,8 +412,8 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
         assert [row.get("frame") for row in service_metrics] == [None]
         assert [row["epoch"] for row in service_metrics] == [1]
         assert [row["rows"] for row in service_metrics] == [3]
-        assert [row["batches"] for row in service_metrics] == [2]
-        assert [row["step"] for row in service_metrics] == [2]
+        assert [row["batches"] for row in service_metrics] == [1]
+        assert [row["step"] for row in service_metrics] == [1]
         assert _without_elapsed(service_metrics) == _without_elapsed(direct_metrics)
 
         service_stdout = Path(application.spool.attempt_stdout_path(

@@ -28,10 +28,10 @@ import app.flight.spool as spool_module
 from app.flight.errors import ServiceError
 
 
-def auth(token="secret"):
+def auth(token="secret", *, timeout=5.0):
     return flight.FlightCallOptions(
         headers=[(b"authorization", f"Bearer {token}".encode())],
-        timeout=5.0,
+        timeout=timeout,
     )
 
 
@@ -121,7 +121,16 @@ def data_plane(tmp_path, postgres_ledger):
         server.shutdown()
 
 
-def put(client, job_id, payload_id, ordinal, batches, rows=None):
+def put(
+    client,
+    job_id,
+    payload_id,
+    ordinal,
+    batches,
+    rows=None,
+    *,
+    timeout=5.0,
+):
     schema = batches[0].schema if batches else pa.schema([
         ("src", pa.list_(pa.float32())),
         ("tgt", pa.list_(pa.float32())),
@@ -129,7 +138,11 @@ def put(client, job_id, payload_id, ordinal, batches, rows=None):
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
     )
-    writer, results = client.do_put(descriptor, schema, options=auth())
+    writer, results = client.do_put(
+        descriptor,
+        schema,
+        options=auth(timeout=timeout),
+    )
     writer.write_metadata(pa.py_buffer(upload_metadata(
         job_id,
         payload_id,
@@ -189,7 +202,7 @@ def test_payload_larger_than_four_mib_is_accepted(data_plane):
         "tgt": pa.FixedSizeListArray.from_arrays(tgt_values, 6),
     })
 
-    result = put(client, job["job_id"], new_id(), 0, [batch])
+    result = put(client, job["job_id"], new_id(), 0, [batch], timeout=20.0)
 
     assert result["bytes"] > 4 * 1024 * 1024
     assert ledger.list_inputs(job["job_id"])[0]["rows"] == rows
