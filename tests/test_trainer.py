@@ -7,6 +7,7 @@ from torch import nn
 from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from app.training.early_stopping import EarlyStopping
+from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
@@ -423,6 +424,76 @@ def test_trainer_fit_payloads_runs_global_epochs_over_all_payloads():
     assert [metrics.step for metrics in metrics_rows] == [3, 6, 9]
     assert [metrics.loss_stage for metrics in metrics_rows] == [1, 2, 3]
     assert trainer.best_frame is None
+
+
+def test_trainer_fit_payloads_is_independent_of_payload_boundaries():
+    X, Y = make_dummy_data(n=10)
+    initial_model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    initial_state = {
+        name: value.detach().clone()
+        for name, value in initial_model.state_dict().items()
+    }
+
+    def train(payloads):
+        model = TransformerModel(
+            input_dim=4,
+            seq_len=5,
+            hidden_dim=32,
+            layers=1,
+            dropout=0.0,
+            out_dim=6,
+            nhead=4,
+        )
+        model.load_state_dict(initial_state)
+        trainer = build_trainer(
+            TrainConfig(
+                lr=1e-3,
+                batch_size=4,
+                epochs=2,
+                patience=0,
+                loss_schedule="none",
+                monitor="loss",
+                save_best_checkpoint=False,
+                use_amp=False,
+                seed=91,
+            ),
+            model,
+            torch.device("cpu"),
+            ModelConfig(
+                seq_len=5,
+                hidden=32,
+                layers=1,
+                dropout=0.0,
+                nhead=4,
+                feature_dim=4,
+            ),
+        )
+        metrics_rows = trainer.fit_payloads(lambda: iter(payloads))
+        return model.state_dict(), metrics_rows
+
+    single_state, single_metrics = train(((X, Y),))
+    split_state, split_metrics = train((
+        (X[:3], Y[:3]),
+        (X[3:5], Y[3:5]),
+        (X[5:], Y[5:]),
+    ))
+
+    assert [metrics.batches for metrics in single_metrics] == [3, 3]
+    assert [metrics.step for metrics in single_metrics] == [3, 6]
+    assert [metrics.batches for metrics in split_metrics] == [3, 3]
+    assert [metrics.step for metrics in split_metrics] == [3, 6]
+    assert all(
+        torch.equal(single_state[name], split_state[name])
+        for name in single_state
+    )
 
 
 def test_trainer_fit_payloads_uses_one_early_stopper_for_the_job():

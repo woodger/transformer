@@ -297,7 +297,9 @@ baseline ни разу не пройден, сохраняются текущи�
 остаётся глобальным, а per-frame early stopping начинается заново. Flight fit
 использует другой внутренний режим этой команды: каждая job-wide эпоха читает
 все sealed payloads из durable spool по ordinal, с едиными loss schedule,
-optimizer, checkpoint selection и early stopping на весь job.
+optimizer, checkpoint selection и early stopping на весь job. Строки проходят
+через ограниченное job-wide окно перемешивания; его границы и optimizer batches
+могут пересекать payload и не зависят от транспортного разбиения.
 
 Loss stage соответствует следующим компонентам (точные формулы находятся в
 `docs/losses.md`):

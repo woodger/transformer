@@ -61,6 +61,7 @@ def build_trainer(args_or_config, model, device, model_config: ModelConfig | Non
         } if model_config else None,
         model_config=model_config,
         train_config=train_config,
+        seed=train_config.seed,
     )
 
 

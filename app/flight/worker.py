@@ -1318,7 +1318,7 @@ class WorkerPool:
         if isinstance(exc, ServiceError):
             return _Failure(exc.code, exc.message)
         if isinstance(exc, OSError) and exc.errno in _DISK_FULL_ERRNOS:
-            return _Failure(ErrorCode.DISK_FULL, "state directory is full")
+            return _Failure(ErrorCode.DISK_FULL, "runtime directory is full")
         return _Failure(ErrorCode.INTERNAL, "worker execution failed internally")
 
 

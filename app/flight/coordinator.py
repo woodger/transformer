@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import os
 import time
 import uuid
 
@@ -28,9 +27,7 @@ from app.flight.contract import (
     canonical_manifest_hash,
     canonical_request_hash,
     encode_document,
-    model_config_to_api,
     response_document,
-    train_config_to_api,
 )
 from app.flight.errors import ServiceError, conflict, failed_precondition, not_found
 from app.flight.observability import JsonLogger, OperationalMetrics
