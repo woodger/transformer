@@ -18,6 +18,7 @@ from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
 from app.flight.process import ProcessRecoveryError, capture_worker_process
+from app.flight.records import ExecutionJobRecord
 from app.flight.worker_artifacts import (
     StagedPredictionOutput,
     WorkerArtifactError,
@@ -81,14 +82,14 @@ class WorkerSubprocessRunner:
 
     def run(
         self,
-        job: dict,
+        job: ExecutionJobRecord,
         plan: ExecutionPlan,
         *,
         cancel: threading.Event,
         force_stop: threading.Event,
     ) -> WorkerSubprocessResult:
-        job_id = job["job_id"]
-        attempt = job["attempt"]
+        job_id = job.job_id
+        attempt = job.attempt
         inputs = plan.inputs
         argv = plan.argv
         stdout_path = self.spool.attempt_stdout_path(job_id, attempt)
@@ -159,7 +160,7 @@ class WorkerSubprocessRunner:
                 "flight.worker.started",
                 jobId=job_id,
                 attempt=attempt,
-                device=job["selected_device"],
+                device=job.selected_device,
                 workerPid=process.pid,
                 inputs=len(inputs),
             )
@@ -182,7 +183,7 @@ class WorkerSubprocessRunner:
                         daemon=True,
                     ),
                 )
-            if job["operation"] == "predict":
+            if job.operation == "predict":
                 # Keep a deterministic empty text log; binary stdout is staged
                 # as Arrow.
                 Path(stdout_path).touch()
@@ -389,7 +390,7 @@ class WorkerSubprocessRunner:
     def _read_prediction_frames(
         self,
         stream,
-        job: dict,
+        job: ExecutionJobRecord,
         inputs: tuple[ExecutionInput, ...],
         outputs: list[StagedPredictionOutput],
         errors,
@@ -443,12 +444,12 @@ class WorkerSubprocessRunner:
 
     def _tail_metrics(
         self,
-        job: dict,
+        job: ExecutionJobRecord,
         inputs: tuple[ExecutionInput, ...],
         finished,
         errors,
     ) -> None:
-        path = self.spool.attempt_metrics_path(job["job_id"], job["attempt"])
+        path = self.spool.attempt_metrics_path(job.job_id, job.attempt)
         offset = 0
         inode = None
         partial = b""
@@ -501,7 +502,7 @@ class WorkerSubprocessRunner:
                     frame = progress.get("frame")
                     if isinstance(frame, int) and 1 <= frame <= len(inputs):
                         progress["ordinal"] = inputs[frame - 1].ordinal
-                    self.ledger.update_progress(job["job_id"], progress)
+                    self.ledger.update_progress(job.job_id, progress)
                     records += 1
                 if finished_at_iteration_start:
                     if partial.strip():

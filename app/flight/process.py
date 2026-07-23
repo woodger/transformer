@@ -5,7 +5,12 @@ import os
 import signal
 import time
 import uuid
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
+
+from app.flight.records import (
+    RecoverableAttemptRecord,
+    recoverable_attempt_from_mapping,
+)
 
 
 _BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
@@ -96,7 +101,7 @@ def capture_worker_process(pid: int) -> ProcessIdentity:
 
 
 def recover_process_groups(
-    attempts: Iterable[dict],
+    attempts: Iterable[RecoverableAttemptRecord | Mapping],
     *,
     grace_seconds: float,
     logger=None,
@@ -137,7 +142,7 @@ def recover_process_groups(
 
 
 def _recover_process_group(
-    attempt: dict,
+    attempt: RecoverableAttemptRecord | Mapping,
     *,
     current_boot_id: str,
     grace_seconds: float,
@@ -146,12 +151,14 @@ def _recover_process_group(
     wait,
     proc_root: str,
 ) -> ProcessRecoveryResult:
-    job_id = attempt["job_id"]
-    attempt_number = attempt["attempt"]
-    pid = attempt.get("pid")
-    pgid = attempt.get("pgid")
-    recorded_boot_id = attempt.get("boot_id")
-    recorded_start_ticks = attempt.get("process_start_ticks")
+    if not isinstance(attempt, RecoverableAttemptRecord):
+        attempt = recoverable_attempt_from_mapping(attempt)
+    job_id = attempt.job_id
+    attempt_number = attempt.attempt
+    pid = attempt.pid
+    pgid = attempt.pgid
+    recorded_boot_id = attempt.boot_id
+    recorded_start_ticks = attempt.process_start_ticks
     if pid is None and pgid is None:
         return ProcessRecoveryResult(job_id, attempt_number, None, "not_spawned")
     if (

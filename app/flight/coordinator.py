@@ -14,7 +14,6 @@ from app.flight.constants import (
     ErrorCode,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    IMMEDIATE_CANCEL_STATES,
     JobState,
     PREDICTION_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
@@ -32,6 +31,7 @@ from app.flight.contract import (
 from app.flight.errors import ServiceError, conflict, failed_precondition, not_found
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.spool import Spool
+from app.flight.state import decide_cancel
 from app.runtime.version import __version__
 from app.training.run_config import ModelConfig
 
@@ -454,25 +454,26 @@ class JobCoordinator:
                 for_update=True,
             )
             current = JobState(current_row["state"])
-            if current in TERMINAL_STATES or current == JobState.CANCELLING:
+            decision = decide_cancel(current)
+            if decision.target is None:
                 changed = dict(current_row)
-            elif current in IMMEDIATE_CANCEL_STATES:
+            elif decision.target == JobState.CANCELLED:
                 changed = self.ledger.transition_job(
                     job["job_id"],
-                    JobState.CANCELLED,
+                    decision.target,
                     updates={"finished_at": time.time(), "cancel_requested_at": time.time()},
                     connection=connection,
                 )
-                transition = (current.value, JobState.CANCELLED.value)
-            elif current == JobState.RUNNING:
+                transition = (current.value, decision.target.value)
+            elif decision.target == JobState.CANCELLING:
                 changed = self.ledger.transition_job(
                     job["job_id"],
-                    JobState.CANCELLING,
+                    decision.target,
                     updates={"cancel_requested_at": time.time()},
                     connection=connection,
                 )
-                notify = True
-                transition = (JobState.RUNNING.value, JobState.CANCELLING.value)
+                notify = decision.notify_worker
+                transition = (current.value, decision.target.value)
             else:
                 raise failed_precondition("job cannot be cancelled")
             response = response_document(

@@ -494,16 +494,23 @@ def test_worker_plan_rejects_untrusted_committed_input(
         )
     ]
     seal_and_queue(ledger, job, manifest)
-    record = dict(ledger.list_inputs(job["job_id"])[0])
+    record = ledger.list_committed_inputs(job["job_id"])[0]
     if corruption == "ordinal":
-        record["ordinal"] = 1
+        record = replace(record, ordinal=1)
     elif corruption == "path":
-        record["relative_path"] = spool.relative_path(
-            spool.input_path(str(uuid.uuid4()), 0)
+        record = replace(
+            record,
+            relative_path=spool.relative_path(
+                spool.input_path(str(uuid.uuid4()), 0)
+            ),
         )
     else:
-        record["sha256"] = "0" * 64
-    monkeypatch.setattr(ledger, "list_inputs", lambda _: [record])
+        record = replace(record, sha256="0" * 64)
+    monkeypatch.setattr(
+        ledger,
+        "list_committed_inputs",
+        lambda _: [record],
+    )
 
     assert pool.run_once("cpu") is True
 
@@ -541,17 +548,24 @@ def test_worker_plan_rejects_untrusted_model_generation(
 ):
     _, spool, ledger, pool = components(tmp_path)
     job = create_predict_job(ledger, spool)
-    model = ledger.get_model(
+    model = ledger.get_model_artifact(
         job["input_model_ref"],
         owner_subject=job["owner_subject"],
     )
     if corruption == "path":
-        model["checkpoint_path"] = (
-            f"{model['model_ref']}/unexpected-checkpoint.pth"
+        model = replace(
+            model,
+            checkpoint_path=(
+                f"{model.model_ref}/unexpected-checkpoint.pth"
+            ),
         )
     else:
-        model["sha256"] = "0" * 64
-    monkeypatch.setattr(ledger, "get_model", lambda *_, **__: model)
+        model = replace(model, sha256="0" * 64)
+    monkeypatch.setattr(
+        ledger,
+        "get_model_artifact",
+        lambda *_, **__: model,
+    )
 
     with pytest.raises(Exception, match=message) as error:
         pool.build_argv(
@@ -1052,7 +1066,8 @@ def test_successful_fit_contract_requires_at_least_one_metrics_record(tmp_path):
     _, _, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
-    running = ledger.claim_next_job("cpu")
+    ledger.claim_next_job("cpu")
+    running = ledger.get_execution_job(job["job_id"])
     finished = threading.Event()
     finished.set()
     errors = queue.Queue()
@@ -1076,7 +1091,8 @@ def test_metrics_tailer_performs_final_read_when_process_exits_during_stat(
     _, spool, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
-    running = ledger.claim_next_job("cpu")
+    ledger.claim_next_job("cpu")
+    running = ledger.get_execution_job(job["job_id"])
     metrics_path = Path(spool.attempt_metrics_path(job["job_id"], 1))
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_bytes(b'{"frame":1')
@@ -1582,7 +1598,7 @@ def test_pending_cancel_before_attempt_registration_does_not_spawn(
     )
     job = create_predict_job(ledger, spool)
     seal_and_queue(ledger, job, [])
-    claimed = ledger.claim_job(
+    claimed = ledger.claim_execution_job(
         job["job_id"],
         "cpu",
         worker_id="pending-cancel-race",
@@ -1615,7 +1631,7 @@ def test_force_stop_before_attempt_registration_does_not_spawn(
     )
     job = create_predict_job(ledger, spool)
     seal_and_queue(ledger, job, [])
-    claimed = ledger.claim_job(
+    claimed = ledger.claim_execution_job(
         job["job_id"],
         "cpu",
         worker_id="force-stop-race",

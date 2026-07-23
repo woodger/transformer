@@ -12,6 +12,7 @@ from app.flight.arrow import validate_prediction_file
 from app.flight.constants import ErrorCode, JobState
 from app.flight.contract import model_config_to_api, train_config_to_api
 from app.flight.errors import ServiceError
+from app.flight.records import ExecutionJobRecord
 from app.flight.worker_plan import ExecutionInput
 from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint_metadata
 from app.training.run_config import ModelConfig, TrainConfig
@@ -68,13 +69,13 @@ class WorkerArtifactPublisher:
     def stage_prediction(
         self,
         stream,
-        job: dict,
+        job: ExecutionJobRecord,
         item: ExecutionInput,
         size: int,
     ) -> StagedPredictionOutput:
         destination = self.spool.attempt_output_path(
-            job["job_id"],
-            job["attempt"],
+            job.job_id,
+            job.attempt,
             item.ordinal,
         )
         try:
@@ -82,7 +83,7 @@ class WorkerArtifactPublisher:
                 stream,
                 destination,
                 size,
-                job["prediction_column"],
+                job.prediction_column,
                 item.rows,
                 item.ordinal,
             )
@@ -104,7 +105,7 @@ class WorkerArtifactPublisher:
 
     def publish_outputs(
         self,
-        job: dict,
+        job: ExecutionJobRecord,
         inputs: tuple[ExecutionInput, ...],
         outputs: tuple[StagedPredictionOutput, ...],
     ) -> None:
@@ -121,8 +122,8 @@ class WorkerArtifactPublisher:
             ]
         }
         self.ledger.publish_outputs(
-            job["job_id"],
-            job["attempt"],
+            job.job_id,
+            job.attempt,
             records,
             result=result,
         )
@@ -132,16 +133,16 @@ class WorkerArtifactPublisher:
             self.metrics.add("predictionOutputBatches", item.batches)
             self.logger.event(
                 "flight.output.published",
-                jobId=job["job_id"],
+                jobId=job.job_id,
                 ordinal=item.ordinal,
                 rows=item.rows,
                 batches=item.batches,
                 bytes=item.byte_count,
             )
 
-    def publish_model(self, job: dict) -> None:
+    def publish_model(self, job: ExecutionJobRecord) -> None:
         attempt_path = self.spool.attempt_checkpoint_path(
-            job["job_id"], job["attempt"]
+            job.job_id, job.attempt
         )
         if not os.path.isfile(attempt_path):
             raise WorkerArtifactError(
@@ -157,15 +158,20 @@ class WorkerArtifactPublisher:
                 ErrorCode.SUBPROCESS_FAILED,
                 "fit subprocess created an invalid checkpoint",
             ) from exc
-        expected_model = ModelConfig.from_dict(job["model_config"])
-        expected_train = TrainConfig.from_dict(job["training_config"])
+        expected_model = job.model_config
+        expected_train = job.training_config
+        if expected_model is None or expected_train is None:
+            raise WorkerArtifactError(
+                ErrorCode.SUBPROCESS_FAILED,
+                "fit job configuration is unavailable",
+            )
         if checkpoint.get("format") != CHECKPOINT_FORMAT or actual_model is None:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
                 "fit subprocess created an unsupported checkpoint",
             )
         expected_values = expected_model.to_dict()
-        expected_values["feature_dim"] = job.get("feature_dim")
+        expected_values["feature_dim"] = job.feature_dim
         if actual_model.to_dict() != expected_values or actual_train != expected_train:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
@@ -211,7 +217,7 @@ class WorkerArtifactPublisher:
             )
         metadata = {
             "modelRef": model_ref,
-            "label": job["model_label"],
+            "label": job.model_label,
             # Internal snake_case copies let predict create resolve a generation
             # without depending on the public status document representation.
             "model_config": actual_model.to_dict(),
@@ -224,10 +230,10 @@ class WorkerArtifactPublisher:
                     shutil.copyfileobj(source, target, _COPY_CHUNK_BYTES)
             self.spool.atomic_write_json(metadata_path, metadata)
             self.ledger.publish_model(
-                job["job_id"],
-                job["attempt"],
+                job.job_id,
+                job.attempt,
                 model_ref=model_ref,
-                label=job["model_label"],
+                label=job.model_label,
                 generation=None,
                 checkpoint_path=self.spool.model_relative_path(checkpoint_path),
                 metadata_path=self.spool.model_relative_path(metadata_path),
@@ -238,37 +244,37 @@ class WorkerArtifactPublisher:
             self.metrics.add("checkpointBytes", byte_count)
             self.logger.event(
                 "flight.model.published",
-                jobId=job["job_id"],
+                jobId=job.job_id,
                 modelRef=model_ref,
                 bytes=byte_count,
                 sha256=digest,
             )
         except BaseException:
-            current = self.ledger.get_job(job["job_id"])
-            if current is None or current["state"] != JobState.SUCCEEDED.value:
+            current = self.ledger.get_execution_job(job.job_id)
+            if current is None or current.state != JobState.SUCCEEDED:
                 self.spool.remove(model_directory)
             raise
 
-    def cleanup_unpublished(self, job: dict) -> None:
+    def cleanup_unpublished(self, job: ExecutionJobRecord) -> None:
         try:
-            inputs = self.ledger.list_inputs(job["job_id"])
+            inputs = self.ledger.list_committed_inputs(job.job_id)
         except Exception as exc:
             self.logger.event(
                 "flight.worker.cleanup_failed",
-                jobId=job["job_id"],
-                attempt=job["attempt"],
+                jobId=job.job_id,
+                attempt=job.attempt,
                 artifact="attempt",
                 errorType=type(exc).__name__,
             )
             return
         paths = [
             self.spool.attempt_output_path(
-                job["job_id"], job["attempt"], item["ordinal"]
+                job.job_id, job.attempt, item.ordinal
             )
             for item in inputs
         ]
         paths.append(
-            self.spool.attempt_checkpoint_path(job["job_id"], job["attempt"])
+            self.spool.attempt_checkpoint_path(job.job_id, job.attempt)
         )
         for path in paths:
             if not os.path.exists(path):
@@ -280,8 +286,8 @@ class WorkerArtifactPublisher:
                 # leaves only an invisible orphan for startup reconciliation.
                 self.logger.event(
                     "flight.worker.cleanup_failed",
-                    jobId=job["job_id"],
-                    attempt=job["attempt"],
+                    jobId=job.job_id,
+                    attempt=job.attempt,
                     artifact="attempt",
                     errorType=type(exc).__name__,
                 )

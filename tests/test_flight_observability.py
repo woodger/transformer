@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -15,9 +16,14 @@ import pytest
 
 from app.config import PROJECT_ROOT
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
+from app.flight.constants import (
+    CAPABILITIES_ACTION,
+    CONTRACT_NAME,
+    JobState,
+)
 from app.flight.contract import encode_document, response_document
 from app.flight.observability import OperationalMetrics
+from app.flight.records import ExecutionJobRecord
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.worker import WorkerPool
@@ -109,19 +115,41 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
 
 def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     job_id = str(uuid.uuid4())
-    claimed = {
-        "job_id": job_id,
-        "attempt": 1,
-        "selected_device": "cpu",
-        "queued_at": 10.0,
-        "started_at": 15.25,
-    }
+    claimed = ExecutionJobRecord(
+        job_id=job_id,
+        owner_subject="inventory",
+        operation="fit",
+        state=JobState.RUNNING,
+        selected_device="cpu",
+        model_label="model",
+        input_model_ref=None,
+        prediction_column="predictions",
+        model_config=None,
+        training_config=None,
+        feature_dim=None,
+        input_frame_count=0,
+        attempt=1,
+        queued_at=10.0,
+        started_at=15.25,
+    )
+    queued = replace(
+        claimed,
+        state=JobState.QUEUED,
+        attempt=0,
+        started_at=None,
+    )
 
     class LedgerDouble:
-        def queued_jobs(self):
-            return [{**claimed, "state": "QUEUED"}]
+        def queued_execution_jobs(self):
+            return [queued]
 
-        def claim_job(self, requested_job_id, selected_device, *, worker_id):
+        def claim_execution_job(
+            self,
+            requested_job_id,
+            selected_device,
+            *,
+            worker_id,
+        ):
             assert requested_job_id == job_id
             assert selected_device == "cpu"
             assert worker_id == "worker-1"

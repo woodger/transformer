@@ -8,6 +8,7 @@ from typing import Callable, Sequence
 
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
+from app.flight.records import ExecutionJobRecord
 from app.flight.worker_artifacts import (
     WorkerArtifactError,
     WorkerArtifactPublisher,
@@ -93,9 +94,9 @@ class WorkerAttemptExecutor:
             for active in self._active.values():
                 active.cancel.set()
 
-    def execute(self, job: dict) -> None:
-        job_id = job["job_id"]
-        attempt = job["attempt"]
+    def execute(self, job: ExecutionJobRecord) -> None:
+        job_id = job.job_id
+        attempt = job.attempt
         active = _ActiveAttempt(job_id, attempt)
         with self._active_lock:
             self._active[job_id] = active
@@ -108,13 +109,13 @@ class WorkerAttemptExecutor:
         started = self._monotonic()
         succeeded = False
         try:
-            current = self.ledger.get_job(job_id)
+            current = self.ledger.get_execution_job(job_id)
             if current is None:
                 raise WorkerAttemptError(
                     ErrorCode.INTERNAL,
                     "claimed job disappeared",
                 )
-            if current["state"] == JobState.CANCELLING.value:
+            if current.state == JobState.CANCELLING:
                 active.cancel.set()
                 raise WorkerAttemptError(
                     ErrorCode.CANCELLED,
@@ -149,7 +150,7 @@ class WorkerAttemptExecutor:
                     exc.exit_code,
                 ) from exc
             try:
-                if job["operation"] == "predict":
+                if job.operation == "predict":
                     self.artifact_publisher.publish_outputs(
                         job,
                         plan.inputs,
@@ -167,8 +168,8 @@ class WorkerAttemptExecutor:
             succeeded = True
             self.metrics.add("jobsSucceeded")
         except BaseException as exc:
-            current = self.ledger.get_job(job_id)
-            if current is not None and current["state"] == JobState.SUCCEEDED.value:
+            current = self.ledger.get_execution_job(job_id)
+            if current is not None and current.state == JobState.SUCCEEDED:
                 succeeded = True
             else:
                 self.artifact_publisher.cleanup_unpublished(job)
@@ -179,17 +180,17 @@ class WorkerAttemptExecutor:
                         "flight.cuda.oom",
                         jobId=job_id,
                         attempt=attempt,
-                        device=job["selected_device"],
+                        device=job.selected_device,
                     )
                 elif failure.code == ErrorCode.DEVICE_UNAVAILABLE:
                     self.metrics.add("cudaUnavailableDuringExecution")
                 # Cleanup can race with a committed cancel action. Refresh
                 # state before choosing the terminal outcome so cancel wins
                 # whenever it was registered before final artifact commit.
-                current = self.ledger.get_job(job_id)
+                current = self.ledger.get_execution_job(job_id)
                 if (
                     current is not None
-                    and current["state"] == JobState.CANCELLING.value
+                    and current.state == JobState.CANCELLING
                 ) or failure.code == ErrorCode.CANCELLED:
                     self._finish_cancelled(job, failure.exit_code)
                     self.metrics.add("jobsCancelled")
@@ -213,29 +214,33 @@ class WorkerAttemptExecutor:
                 "flight.worker.finished",
                 jobId=job_id,
                 attempt=attempt,
-                device=job["selected_device"],
+                device=job.selected_device,
                 succeeded=succeeded,
                 runSeconds=elapsed,
             )
 
-    def _finish_cancelled(self, job: dict, exit_code: int | None) -> None:
-        current = self.ledger.get_job(job["job_id"])
-        if current is None or current["state"] in (
-            JobState.CANCELLED.value,
-            JobState.SUCCEEDED.value,
-            JobState.FAILED.value,
+    def _finish_cancelled(
+        self,
+        job: ExecutionJobRecord,
+        exit_code: int | None,
+    ) -> None:
+        current = self.ledger.get_execution_job(job.job_id)
+        if current is None or current.state in (
+            JobState.CANCELLED,
+            JobState.SUCCEEDED,
+            JobState.FAILED,
         ):
             return
-        if current["state"] == JobState.RUNNING.value:
-            self.ledger.transition_job(job["job_id"], JobState.CANCELLING)
+        if current.state == JobState.RUNNING:
+            self.ledger.transition_job(job.job_id, JobState.CANCELLING)
             self._record_transition(
                 job,
                 JobState.RUNNING.value,
                 JobState.CANCELLING.value,
             )
         self.ledger.finish_attempt(
-            job["job_id"],
-            job["attempt"],
+            job.job_id,
+            job.attempt,
             JobState.CANCELLED,
             exit_code=exit_code,
         )
@@ -247,23 +252,23 @@ class WorkerAttemptExecutor:
 
     def _finish_failed(
         self,
-        job: dict,
+        job: ExecutionJobRecord,
         failure: WorkerAttemptError,
     ) -> None:
-        current = self.ledger.get_job(job["job_id"])
-        if current is None or current["state"] in (
-            JobState.SUCCEEDED.value,
-            JobState.FAILED.value,
-            JobState.CANCELLED.value,
+        current = self.ledger.get_execution_job(job.job_id)
+        if current is None or current.state in (
+            JobState.SUCCEEDED,
+            JobState.FAILED,
+            JobState.CANCELLED,
         ):
             return
-        if current["state"] == JobState.CANCELLING.value:
+        if current.state == JobState.CANCELLING:
             self._finish_cancelled(job, failure.exit_code)
             return
         try:
             self.ledger.finish_attempt(
-                job["job_id"],
-                job["attempt"],
+                job.job_id,
+                job.attempt,
                 JobState.FAILED,
                 error_code=failure.code,
                 error_message=failure.message,
@@ -279,21 +284,21 @@ class WorkerAttemptExecutor:
             # If cancel committed its PostgreSQL transition first, the attempted
             # RUNNING -> FAILED transition observes CANCELLING. Re-read and
             # complete cancellation; otherwise preserve the original error.
-            latest = self.ledger.get_job(job["job_id"])
-            if latest is not None and latest["state"] == JobState.CANCELLING.value:
+            latest = self.ledger.get_execution_job(job.job_id)
+            if latest is not None and latest.state == JobState.CANCELLING:
                 self._finish_cancelled(job, failure.exit_code)
                 return
-            if latest is not None and latest["state"] in (
-                JobState.SUCCEEDED.value,
-                JobState.FAILED.value,
-                JobState.CANCELLED.value,
+            if latest is not None and latest.state in (
+                JobState.SUCCEEDED,
+                JobState.FAILED,
+                JobState.CANCELLED,
             ):
                 return
             raise
 
     def _record_transition(
         self,
-        job: dict,
+        job: ExecutionJobRecord,
         from_state: str,
         to_state: str,
         *,
@@ -301,9 +306,9 @@ class WorkerAttemptExecutor:
     ) -> None:
         self.metrics.record_transition(from_state, to_state)
         fields = {
-            "jobId": job["job_id"],
-            "attempt": job["attempt"],
-            "device": job["selected_device"],
+            "jobId": job.job_id,
+            "attempt": job.attempt,
+            "device": job.selected_device,
             "fromState": from_state,
             "toState": to_state,
         }

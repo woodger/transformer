@@ -11,6 +11,10 @@ from typing import Callable, Sequence
 from app.config import PROJECT_ROOT
 from app.flight.constants import JobState
 from app.flight.observability import JsonLogger, OperationalMetrics
+from app.flight.records import (
+    ExecutionJobRecord,
+    execution_job_from_mapping,
+)
 from app.flight.worker_artifacts import WorkerArtifactPublisher
 from app.flight.worker_attempt import (
     WorkerAttemptError,
@@ -119,7 +123,7 @@ class WorkerPool:
             if self._started:
                 return self
             self._started = True
-            for job in self.ledger.queued_jobs():
+            for job in self.ledger.queued_execution_jobs():
                 self._enqueue(job)
             for device, count in self.lane_counts.items():
                 for index in range(count):
@@ -137,10 +141,10 @@ class WorkerPool:
     def notify_queued(self, job_id: str | None = None) -> None:
         """Enqueue a job after the coordinator commits QUEUED."""
         if job_id is None:
-            for job in self.ledger.queued_jobs():
+            for job in self.ledger.queued_execution_jobs():
                 self._enqueue(job)
             return
-        job = self.ledger.get_job(job_id)
+        job = self.ledger.get_execution_job(job_id)
         if job is not None:
             self._enqueue(job)
 
@@ -189,7 +193,7 @@ class WorkerPool:
             return False
         job_id = self._dequeue(device)
         if job_id is None:
-            for job in self.ledger.queued_jobs():
+            for job in self.ledger.queued_execution_jobs():
                 self._enqueue(job)
             job_id = self._dequeue(device)
         if job_id is None:
@@ -204,7 +208,7 @@ class WorkerPool:
         with self._claim_lock:
             if self._stop_claiming.is_set():
                 return False
-            claimed = self.ledger.claim_job(
+            claimed = self.ledger.claim_execution_job(
                 job_id,
                 device,
                 worker_id=worker_id,
@@ -213,7 +217,7 @@ class WorkerPool:
             return False
         queue_wait = max(
             0.0,
-            float(claimed["started_at"]) - float(claimed["queued_at"]),
+            float(claimed.started_at) - float(claimed.queued_at),
         )
         self.metrics.add("jobsStarted")
         self.metrics.add("workerQueueWaitSeconds", queue_wait)
@@ -223,8 +227,8 @@ class WorkerPool:
         )
         self.logger.event(
             "flight.job.transition",
-            jobId=claimed["job_id"],
-            attempt=claimed["attempt"],
+            jobId=claimed.job_id,
+            attempt=claimed.attempt,
             device=device,
             fromState=JobState.QUEUED.value,
             toState=JobState.RUNNING.value,
@@ -236,11 +240,13 @@ class WorkerPool:
     def build_argv(self, job: dict, attempt: int | None = None) -> list[str]:
         """Render the trusted CLI invocation; exposed for contract-level tests."""
         attempt = job["attempt"] if attempt is None else attempt
+        record = execution_job_from_mapping(job)
         try:
             return list(self._plan_builder.build_argv(
-                job,
+                record,
                 attempt,
                 argv_hook=self._argv_hook,
+                legacy_job=job,
             ))
         except WorkerPlanError as exc:
             raise WorkerAttemptError(exc.code, exc.message) from exc
@@ -267,13 +273,13 @@ class WorkerPool:
                     errorType=type(exc).__name__,
                 )
 
-    def _enqueue(self, job: dict) -> None:
-        if job.get("state") != JobState.QUEUED.value:
+    def _enqueue(self, job: ExecutionJobRecord) -> None:
+        if job.state != JobState.QUEUED:
             return
-        device = job.get("selected_device")
+        device = job.selected_device
         if device not in self._queues:
             return
-        job_id = job["job_id"]
+        job_id = job.job_id
         with self._queue_lock:
             if job_id in self._enqueued or self._stop_claiming.is_set():
                 return

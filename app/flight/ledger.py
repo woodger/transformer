@@ -40,7 +40,14 @@ from app.flight.constants import (
     SUPPORTED_OPERATIONS,
 )
 from app.flight.errors import ServiceError, conflict, failed_precondition, not_found
-from app.flight.state import validate_transition
+from app.flight.records import (
+    CommittedInputRecord,
+    ExecutionJobRecord,
+    ModelArtifactRecord,
+    RecoverableAttemptRecord,
+)
+from app.flight.state import decide_interrupted_attempt, validate_transition
+from app.training.run_config import ModelConfig, TrainConfig
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -168,6 +175,23 @@ class Ledger:
             statement = statement.with_for_update()
         with self._read(connection) as session:
             return _decode(session.scalar(statement))
+
+    def get_execution_job(
+        self,
+        job_id: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+        for_update: bool = False,
+    ) -> ExecutionJobRecord | None:
+        """Return the immutable projection consumed by worker execution."""
+        statement = select(Job).where(Job.job_id == job_id)
+        if owner_subject is not None:
+            statement = statement.where(Job.owner_subject == owner_subject)
+        if for_update:
+            statement = statement.with_for_update()
+        with self._read(connection) as session:
+            return _execution_job_record(session.scalar(statement))
 
     def active_job_count(self, owner_subject: str, *, connection: Session | None = None) -> int:
         with self._read(connection) as session:
@@ -503,6 +527,21 @@ class Ledger:
             )
             return [_decode(row) for row in rows]
 
+    def list_committed_inputs(
+        self,
+        job_id: str,
+        *,
+        connection: Session | None = None,
+    ) -> list[CommittedInputRecord]:
+        """Return trusted-input projections ordered by semantic ordinal."""
+        with self._read(connection) as session:
+            rows = session.scalars(
+                select(JobInput)
+                .where(JobInput.job_id == job_id)
+                .order_by(JobInput.ordinal)
+            )
+            return [_committed_input_record(row) for row in rows]
+
     def seal_job(
         self,
         job_id: str,
@@ -592,7 +631,34 @@ class Ledger:
             )
             if job is None or job.state != JobState.QUEUED.value or job.selected_device != selected_device:
                 return None
-            return self._claim(session, job, worker_id, _now(now))
+            return _decode(self._claim(session, job, worker_id, _now(now)))
+
+    def claim_execution_job(
+        self,
+        job_id: str,
+        selected_device: str,
+        *,
+        worker_id: str | None = None,
+        now: float | None = None,
+    ) -> ExecutionJobRecord | None:
+        """Atomically claim a job and return the worker-only projection."""
+        if selected_device not in ("cpu", "cuda"):
+            raise ValueError("selected_device must be cpu or cuda")
+        with self.database.transaction() as session:
+            job = session.scalar(
+                select(Job)
+                .where(Job.job_id == job_id)
+                .with_for_update(skip_locked=True)
+            )
+            if (
+                job is None
+                or job.state != JobState.QUEUED.value
+                or job.selected_device != selected_device
+            ):
+                return None
+            return _execution_job_record(
+                self._claim(session, job, worker_id, _now(now))
+            )
 
     def claim_next_job(
         self,
@@ -613,9 +679,15 @@ class Ledger:
             )
             if job is None:
                 return None
-            return self._claim(session, job, worker_id, _now(now))
+            return _decode(self._claim(session, job, worker_id, _now(now)))
 
-    def _claim(self, session: Session, job: Job, worker_id: str | None, timestamp: datetime) -> dict:
+    def _claim(
+        self,
+        session: Session,
+        job: Job,
+        worker_id: str | None,
+        timestamp: datetime,
+    ) -> Job:
         job.state = JobState.RUNNING.value
         job.revision += 1
         job.attempt += 1
@@ -631,7 +703,7 @@ class Ledger:
             started_at=timestamp,
         ))
         session.flush()
-        return _decode(job)
+        return job
 
     def set_attempt_process(
         self,
@@ -669,6 +741,24 @@ class Ledger:
                 .order_by(JobAttempt.job_id, JobAttempt.attempt)
             )
             return [_decode(row) for row in rows]
+
+    def list_recoverable_attempts(self) -> list[RecoverableAttemptRecord]:
+        """Return active process identities without exposing ORM dictionaries."""
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(JobAttempt)
+                .join(Job, Job.job_id == JobAttempt.job_id)
+                .where(
+                    Job.state.in_((
+                        JobState.RUNNING.value,
+                        JobState.CANCELLING.value,
+                    )),
+                    JobAttempt.status == JobState.RUNNING.value,
+                    JobAttempt.attempt == Job.attempt,
+                )
+                .order_by(JobAttempt.job_id, JobAttempt.attempt)
+            )
+            return [_recoverable_attempt_record(row) for row in rows]
 
     def finish_attempt(
         self,
@@ -839,6 +929,24 @@ class Ledger:
         with self._read(connection) as session:
             return _decode(session.scalar(statement))
 
+    def get_model_artifact(
+        self,
+        model_ref: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+    ) -> ModelArtifactRecord | None:
+        """Return the server-owned checkpoint projection used by prediction."""
+        statement = select(PublishedModel).where(
+            PublishedModel.model_ref == model_ref
+        )
+        if owner_subject is not None:
+            statement = statement.where(
+                PublishedModel.owner_subject == owner_subject
+            )
+        with self._read(connection) as session:
+            return _model_artifact_record(session.scalar(statement))
+
     def resolve_model_alias(
         self,
         owner_subject: str,
@@ -967,19 +1075,20 @@ class Ledger:
                 select(Job).where(Job.state.in_((JobState.RUNNING.value, JobState.CANCELLING.value))).with_for_update()
             ):
                 attempt = session.get(JobAttempt, (job.job_id, job.attempt), with_for_update=True)
-                if job.state == JobState.RUNNING.value:
-                    job.state = JobState.FAILED.value
-                    job.error_code = ErrorCode.EXECUTION_INTERRUPTED.value
-                    job.error_message = "worker execution was interrupted by service restart"
+                decision = decide_interrupted_attempt(job.state)
+                job.state = decision.target.value
+                if decision.error_code is not None:
+                    job.error_code = decision.error_code.value
+                    job.error_message = decision.error_message
+                if decision.target == JobState.FAILED:
                     if attempt is not None and attempt.status == JobState.RUNNING.value:
-                        attempt.status = JobState.FAILED.value
+                        attempt.status = decision.target.value
                         attempt.error_code = job.error_code
                         attempt.error_message = job.error_message
                         attempt.finished_at = timestamp
                 else:
-                    job.state = JobState.CANCELLED.value
                     if attempt is not None and attempt.status == JobState.RUNNING.value:
-                        attempt.status = JobState.CANCELLED.value
+                        attempt.status = decision.target.value
                         attempt.finished_at = timestamp
                 job.revision += 1
                 job.finished_at = timestamp
@@ -1061,6 +1170,16 @@ class Ledger:
             )
             return [_decode(row) for row in rows]
 
+    def queued_execution_jobs(self) -> list[ExecutionJobRecord]:
+        """Return FIFO worker projections for durable queued jobs."""
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(Job)
+                .where(Job.state == JobState.QUEUED.value)
+                .order_by(Job.queue_sequence)
+            )
+            return [_execution_job_record(row) for row in rows]
+
 
 def _output_record(job_id: str, output: dict, timestamp: datetime) -> JobOutput:
     relative_path = output["relative_path"]
@@ -1107,6 +1226,69 @@ def _transition_updates(updates: dict) -> dict:
             value = _at(value)
         encoded[target] = value
     return encoded
+
+
+def _execution_job_record(record: Job | None) -> ExecutionJobRecord | None:
+    if record is None:
+        return None
+    return ExecutionJobRecord(
+        job_id=record.job_id,
+        owner_subject=record.owner_subject,
+        operation=record.operation,
+        state=JobState(record.state),
+        selected_device=record.selected_device,
+        model_label=record.model_label,
+        input_model_ref=record.input_model_ref,
+        prediction_column=record.prediction_column,
+        model_config=ModelConfig.from_dict(record.model_config),
+        training_config=TrainConfig.from_dict(record.training_config),
+        feature_dim=record.feature_dim,
+        input_frame_count=len(record.seal_manifest or ()),
+        attempt=record.attempt,
+        queued_at=_timestamp(record.queued_at),
+        started_at=_timestamp(record.started_at),
+    )
+
+
+def _committed_input_record(record: JobInput) -> CommittedInputRecord:
+    return CommittedInputRecord(
+        job_id=record.job_id,
+        ordinal=record.ordinal,
+        rows=record.rows,
+        byte_count=record.bytes,
+        sha256=record.sha256,
+        relative_path=record.relative_path,
+    )
+
+
+def _model_artifact_record(
+    record: PublishedModel | None,
+) -> ModelArtifactRecord | None:
+    if record is None:
+        return None
+    return ModelArtifactRecord(
+        model_ref=record.model_ref,
+        owner_subject=record.owner_subject,
+        checkpoint_path=record.checkpoint_path,
+        sha256=record.sha256,
+    )
+
+
+def _recoverable_attempt_record(
+    record: JobAttempt,
+) -> RecoverableAttemptRecord:
+    return RecoverableAttemptRecord(
+        job_id=record.job_id,
+        attempt=record.attempt,
+        pid=record.pid,
+        pgid=record.pgid,
+        boot_id=record.boot_id,
+        process_start_ticks=record.process_start_ticks,
+    )
+
+
+def _timestamp(value: datetime | None) -> float | None:
+    return None if value is None else value.timestamp()
 
 
 def _decode(record) -> dict | None:
