@@ -56,6 +56,15 @@ while True:
         break
     payload = sys.stdin.buffer.read(size)
     table = ipc.RecordBatchFileReader(pa.BufferReader(payload)).read_all()
+    if mode == "partial-header":
+        sys.stdout.buffer.write(b"\x00\x00\x00\x01")
+        sys.stdout.buffer.flush()
+        raise SystemExit(0)
+    if mode == "truncated-body":
+        sys.stdout.buffer.write((128).to_bytes(8, "big"))
+        sys.stdout.buffer.write(b"truncated")
+        sys.stdout.buffer.flush()
+        raise SystemExit(0)
     if mode == "bad-second" and index == 1:
         output = b"not-arrow"
     else:
@@ -69,6 +78,10 @@ while True:
     sys.stdout.buffer.write(output)
     sys.stdout.buffer.flush()
     index += 1
+if mode == "extra-frame":
+    sys.stdout.buffer.write(len(output).to_bytes(8, "big"))
+    sys.stdout.buffer.write(output)
+    sys.stdout.buffer.flush()
 print(f"frames={index}", file=sys.stderr, flush=True)
 """
 
@@ -598,6 +611,43 @@ def test_malformed_second_prediction_publishes_no_partial_outputs(tmp_path):
     assert not os.path.exists(spool.attempt_output_path(job["job_id"], 1, 0))
 
 
+@pytest.mark.parametrize(
+    "mode",
+    ["partial-header", "truncated-body", "extra-frame"],
+)
+def test_malformed_prediction_transport_publishes_no_outputs(tmp_path, mode):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            PREDICT_HELPER,
+            mode,
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [predict_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.MALFORMED_OUTPUT.value
+    assert ledger.list_outputs(job["job_id"]) == []
+    assert not os.path.exists(
+        spool.attempt_output_path(job["job_id"], 1, 0)
+    )
+
+
 def test_prediction_output_disk_exhaustion_has_stable_error_code(
     tmp_path,
     monkeypatch,
@@ -654,7 +704,11 @@ def test_log_disk_quota_exhaustion_is_classified_as_disk_full(
 
     monkeypatch.setattr("builtins.open", quota_exhausted)
     errors = queue.Queue()
-    pool._drain_log(io.BytesIO(b"diagnostic"), path, errors)
+    pool._subprocess_runner._drain_log(
+        io.BytesIO(b"diagnostic"),
+        path,
+        errors,
+    )
 
     failure = errors.get_nowait()
     assert failure.code.value == "DISK_FULL"
@@ -858,7 +912,12 @@ def test_successful_fit_contract_requires_at_least_one_metrics_record(tmp_path):
     finished.set()
     errors = queue.Queue()
 
-    pool._tail_metrics(running, [], finished, errors)
+    pool._subprocess_runner._tail_metrics(
+        running,
+        (),
+        finished,
+        errors,
+    )
 
     failure = errors.get_nowait()
     assert failure.code.value == "MALFORMED_OUTPUT"
@@ -896,7 +955,12 @@ def test_metrics_tailer_performs_final_read_when_process_exits_during_stat(
 
     monkeypatch.setattr(os, "stat", exit_during_first_stat)
 
-    pool._tail_metrics(running, [], finished, errors)
+    pool._subprocess_runner._tail_metrics(
+        running,
+        (),
+        finished,
+        errors,
+    )
 
     assert calls >= 2
     assert errors.empty()
@@ -958,6 +1022,65 @@ checkpoint_path.write_bytes(b"")
     assert failed["state"] == JobState.FAILED.value
     assert failed["error_code"] == "SUBPROCESS_FAILED"
     assert failed["error_message"] == "fit subprocess created an invalid checkpoint"
+
+
+def test_generic_nonzero_exit_persists_stderr_and_attempt_exit_code(tmp_path):
+    diagnostic = "private subprocess diagnostic"
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.stdin.buffer.read(); "
+                f"print({diagnostic!r}, file=sys.stderr, flush=True); "
+                "raise SystemExit(7)"
+            ),
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.SUBPROCESS_FAILED.value
+    assert failed["error_message"] == "worker subprocess exited with status 7"
+    assert diagnostic not in failed["error_message"]
+    assert Path(
+        spool.attempt_stderr_path(job["job_id"], 1)
+    ).read_text() == f"{diagnostic}\n"
+    with ledger.connection() as connection:
+        attempt = connection.get(JobAttempt, (job["job_id"], 1))
+    assert attempt.exit_code == 7
+
+
+def test_subprocess_start_failure_has_stable_safe_error(tmp_path):
+    def fail_start(*args, **kwargs):
+        raise OSError(errno.ENOENT, "injected executable lookup failure")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=fail_start,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.SUBPROCESS_FAILED.value
+    assert (
+        failed["error_message"]
+        == "worker subprocess could not be started"
+    )
+    assert "injected" not in failed["error_message"]
+    with ledger.connection() as connection:
+        attempt = connection.get(JobAttempt, (job["job_id"], 1))
+    assert attempt.exit_code is None
 
 
 def test_nonzero_cuda_oom_has_stable_error_code(tmp_path):
