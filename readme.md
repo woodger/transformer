@@ -579,6 +579,9 @@ python -m pip install pytest
 python -m pytest -v
 ```
 
+Правила разработки и review собраны в
+[`docs/policy/index.md`](docs/policy/index.md).
+
 ## Основные файлы
 
 ```text
