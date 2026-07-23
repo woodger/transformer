@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-23
+
 ### Added
 
 - Добавлены PostgreSQL control plane на SQLAlchemy 2, Alembic migrations и
@@ -156,7 +158,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/woodger/transformer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/woodger/transformer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/woodger/transformer/compare/v0.1.0...v0.1.1
