@@ -24,6 +24,7 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
+    ErrorCode,
     FIT_SCHEMA_ID,
     JobState,
     PREDICT_SCHEMA_ID,
@@ -404,6 +405,100 @@ def test_fit_argv_contains_exact_immutable_config_and_server_paths(tmp_path):
         "--no-save-best-checkpoint",
         "--deterministic",
     ]
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("ordinal", "sealed input ordinals are inconsistent"),
+        ("path", "committed input path is invalid"),
+        ("digest", "committed input digest is invalid"),
+    ],
+)
+def test_worker_plan_rejects_untrusted_committed_input(
+    tmp_path,
+    monkeypatch,
+    corruption,
+    message,
+):
+    _, spool, ledger, pool = components(tmp_path)
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    record = dict(ledger.list_inputs(job["job_id"])[0])
+    if corruption == "ordinal":
+        record["ordinal"] = 1
+    elif corruption == "path":
+        record["relative_path"] = spool.relative_path(
+            spool.input_path(str(uuid.uuid4()), 0)
+        )
+    else:
+        record["sha256"] = "0" * 64
+    monkeypatch.setattr(ledger, "list_inputs", lambda _: [record])
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.INTERNAL.value
+    assert failed["error_message"] == message
+
+
+def test_worker_plan_rejects_noncanonical_selected_device(tmp_path):
+    _, _, ledger, pool = components(tmp_path)
+    job = create_fit_job(ledger)
+
+    with pytest.raises(Exception, match="queued job has no selected device") as error:
+        pool.build_argv(
+            {**job, "attempt": 1, "selected_device": "auto"},
+            1,
+        )
+
+    assert error.value.code == ErrorCode.INTERNAL
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("path", "resolved model checkpoint is unavailable"),
+        ("digest", "resolved model checkpoint digest is invalid"),
+    ],
+)
+def test_worker_plan_rejects_untrusted_model_generation(
+    tmp_path,
+    monkeypatch,
+    corruption,
+    message,
+):
+    _, spool, ledger, pool = components(tmp_path)
+    job = create_predict_job(ledger, spool)
+    model = ledger.get_model(
+        job["input_model_ref"],
+        owner_subject=job["owner_subject"],
+    )
+    if corruption == "path":
+        model["checkpoint_path"] = (
+            f"{model['model_ref']}/unexpected-checkpoint.pth"
+        )
+    else:
+        model["sha256"] = "0" * 64
+    monkeypatch.setattr(ledger, "get_model", lambda *_, **__: model)
+
+    with pytest.raises(Exception, match=message) as error:
+        pool.build_argv(
+            {**job, "attempt": 1, "selected_device": "cpu"},
+            1,
+        )
+
+    assert error.value.code == ErrorCode.INTERNAL
 
 
 def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path):

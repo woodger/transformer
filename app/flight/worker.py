@@ -24,6 +24,12 @@ from app.flight.contract import model_config_to_api, train_config_to_api
 from app.flight.errors import ServiceError
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.process import ProcessRecoveryError, capture_worker_process
+from app.flight.worker_plan import (
+    ExecutionInput,
+    ExecutionPlan,
+    WorkerPlanBuilder,
+    WorkerPlanError,
+)
 from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint_metadata
 from app.training.run_config import ModelConfig, TrainConfig
 
@@ -32,7 +38,6 @@ _FRAME_HEADER_BYTES = 8
 _COPY_CHUNK_BYTES = 1024 * 1024
 _MAX_LOG_BYTES = 16 * 1024 * 1024
 _STDERR_TAIL_BYTES = 128 * 1024
-_FIT_SPOOL_OPTION = "--input-spool-dir"
 _DISK_FULL_ERRNOS = {
     value
     for value in (errno.ENOSPC, getattr(errno, "EDQUOT", None))
@@ -103,6 +108,13 @@ class WorkerPool:
         self._python = python_executable or sys.executable
         self._cli_path = cli_path or os.path.join(PROJECT_ROOT, "app", "main.py")
         self._monotonic = monotonic
+        self._plan_builder = WorkerPlanBuilder(
+            config,
+            ledger,
+            spool,
+            python_executable=self._python,
+            cli_path=self._cli_path,
+        )
 
         self._lifecycle_lock = threading.Lock()
         self._claim_lock = threading.Lock()
@@ -254,14 +266,14 @@ class WorkerPool:
     def build_argv(self, job: dict, attempt: int | None = None) -> list[str]:
         """Render the trusted CLI invocation; exposed for contract-level tests."""
         attempt = job["attempt"] if attempt is None else attempt
-        if not isinstance(attempt, int) or attempt <= 0:
-            raise ValueError("attempt must be a positive integer")
-        argv = self._default_argv(job, attempt)
-        if self._argv_hook is not None:
-            argv = list(self._argv_hook(job, tuple(argv)))
-        if not argv or any(not isinstance(value, str) or "\x00" in value for value in argv):
-            raise ValueError("worker argv hook returned invalid argv")
-        return argv
+        try:
+            return list(self._plan_builder.build_argv(
+                job,
+                attempt,
+                argv_hook=self._argv_hook,
+            ))
+        except WorkerPlanError as exc:
+            raise _Failure(exc.code, exc.message) from exc
 
     def _lane(self, device: str, worker_id: str) -> None:
         while True:
@@ -330,11 +342,17 @@ class WorkerPool:
                 raise _Failure(ErrorCode.CANCELLED, "job cancellation was requested")
 
             self.spool.ensure_free_space(self.config.disk_min_free_bytes)
-            inputs = self._validated_inputs(job)
-            argv = self.build_argv(job, attempt)
-            result = self._run_process(job, inputs, argv, active)
+            try:
+                plan = self._plan_builder.build(
+                    job,
+                    attempt,
+                    argv_hook=self._argv_hook,
+                )
+            except WorkerPlanError as exc:
+                raise _Failure(exc.code, exc.message) from exc
+            result = self._run_process(job, plan, active)
             if job["operation"] == "predict":
-                self._publish_outputs(job, inputs, result.outputs)
+                self._publish_outputs(job, plan.inputs, result.outputs)
             else:
                 self._publish_model(job)
             succeeded = True
@@ -394,12 +412,13 @@ class WorkerPool:
     def _run_process(
         self,
         job: dict,
-        inputs: list[dict],
-        argv: list[str],
+        plan: ExecutionPlan,
         active: _ActiveAttempt,
     ) -> _ProcessResult:
         job_id = job["job_id"]
         attempt = job["attempt"]
+        inputs = plan.inputs
+        argv = plan.argv
         stdout_path = self.spool.attempt_stdout_path(job_id, attempt)
         stderr_path = self.spool.attempt_stderr_path(job_id, attempt)
         self.spool.ensure_parent(stdout_path)
@@ -414,9 +433,7 @@ class WorkerPool:
             "--",
             *argv,
         ]
-        uses_spooled_fit = (
-            job["operation"] == "fit" and _FIT_SPOOL_OPTION in argv
-        )
+        uses_spooled_fit = plan.uses_spooled_fit
         try:
             process = self._popen(
                 supervised_argv,
@@ -634,12 +651,17 @@ class WorkerPool:
             raise classified_exit
         return _ProcessResult(exit_code, tail, tuple(outputs))
 
-    def _feed_frames(self, stream, inputs: list[dict], errors) -> None:
+    def _feed_frames(
+        self,
+        stream,
+        inputs: tuple[ExecutionInput, ...],
+        errors,
+    ) -> None:
         try:
             for item in inputs:
-                size = item["bytes"]
+                size = item.byte_count
                 stream.write(size.to_bytes(_FRAME_HEADER_BYTES, "big", signed=False))
-                with open(item["absolute_path"], "rb") as source:
+                with open(item.absolute_path, "rb") as source:
                     shutil.copyfileobj(source, stream, _COPY_CHUNK_BYTES)
                 stream.flush()
             stream.write((0).to_bytes(_FRAME_HEADER_BYTES, "big", signed=False))
@@ -697,7 +719,7 @@ class WorkerPool:
         self,
         stream,
         job: dict,
-        inputs: list[dict],
+        inputs: tuple[ExecutionInput, ...],
         outputs: list[dict],
         errors,
     ) -> None:
@@ -718,15 +740,15 @@ class WorkerPool:
                 destination = self.spool.attempt_output_path(
                     job["job_id"],
                     job["attempt"],
-                    item["ordinal"],
+                    item.ordinal,
                 )
                 output = self._stage_prediction(
                     stream,
                     destination,
                     size,
                     job["prediction_column"],
-                    item["rows"],
-                    item["ordinal"],
+                    item.rows,
+                    item.ordinal,
                 )
                 outputs.append(output)
             if stream.read(1) != b"":
@@ -801,7 +823,13 @@ class WorkerPool:
                 except FileNotFoundError:
                     pass
 
-    def _tail_metrics(self, job: dict, inputs: list[dict], finished, errors) -> None:
+    def _tail_metrics(
+        self,
+        job: dict,
+        inputs: tuple[ExecutionInput, ...],
+        finished,
+        errors,
+    ) -> None:
         path = self.spool.attempt_metrics_path(job["job_id"], job["attempt"])
         offset = 0
         inode = None
@@ -854,7 +882,7 @@ class WorkerPool:
                         )
                     frame = progress.get("frame")
                     if isinstance(frame, int) and 1 <= frame <= len(inputs):
-                        progress["ordinal"] = inputs[frame - 1]["ordinal"]
+                        progress["ordinal"] = inputs[frame - 1].ordinal
                     self.ledger.update_progress(job["job_id"], progress)
                     records += 1
                 if finished_at_iteration_start:
@@ -888,99 +916,10 @@ class WorkerPool:
                 "fit progress processing failed internally",
             ))
 
-    def _validated_inputs(self, job: dict) -> list[dict]:
-        inputs = self.ledger.list_inputs(job["job_id"])
-        if [item["ordinal"] for item in inputs] != list(range(len(inputs))):
-            raise _Failure(ErrorCode.INTERNAL, "sealed input ordinals are inconsistent")
-        prepared = []
-        for item in inputs:
-            expected = self.spool.input_path(job["job_id"], item["ordinal"])
-            actual = self.spool.absolute_path(item["relative_path"])
-            if actual != expected:
-                raise _Failure(ErrorCode.INTERNAL, "committed input path is invalid")
-            try:
-                size = os.path.getsize(actual)
-            except OSError as exc:
-                raise _Failure(ErrorCode.INTERNAL, "committed input is unavailable") from exc
-            if size != item["bytes"] or size > self.config.max_payload_bytes:
-                raise _Failure(ErrorCode.INTERNAL, "committed input size is invalid")
-            if _sha256_file(actual) != item["sha256"]:
-                raise _Failure(ErrorCode.INTERNAL, "committed input digest is invalid")
-            prepared.append({**item, "absolute_path": actual})
-        return prepared
-
-    def _default_argv(self, job: dict, attempt: int) -> list[str]:
-        device = job["selected_device"]
-        if device not in ("cpu", "cuda"):
-            raise _Failure(ErrorCode.INTERNAL, "queued job has no selected device")
-        base = [self._python, self._cli_path]
-        if job["operation"] == "predict":
-            model = self.ledger.get_model(
-                job["input_model_ref"],
-                owner_subject=job["owner_subject"],
-            )
-            if model is None:
-                raise _Failure(ErrorCode.INTERNAL, "resolved model generation is unavailable")
-            checkpoint = self.spool.model_absolute_path(model["checkpoint_path"])
-            expected = self.spool.model_checkpoint_path(model["model_ref"])
-            if checkpoint != expected or not os.path.isfile(checkpoint):
-                raise _Failure(ErrorCode.INTERNAL, "resolved model checkpoint is unavailable")
-            if _sha256_file(checkpoint) != model["sha256"]:
-                raise _Failure(ErrorCode.INTERNAL, "resolved model checkpoint digest is invalid")
-            argv = [
-                *base,
-                "predict-stream",
-                "--device", device,
-                "--checkpoint", checkpoint,
-                "--pred-col", job["prediction_column"],
-                "--max-frame-bytes", str(self.config.max_payload_bytes),
-            ]
-            return argv
-
-        model = ModelConfig.from_dict(job["model_config"])
-        train = TrainConfig.from_dict(job["training_config"])
-        argv = [
-            *base,
-            "fit-stream",
-            "--device", device,
-            "--checkpoint-out", self.spool.attempt_checkpoint_path(job["job_id"], attempt),
-            "--metrics-out", self.spool.attempt_metrics_path(job["job_id"], attempt),
-            "--max-frame-bytes", str(self.config.max_payload_bytes),
-            _FIT_SPOOL_OPTION, self.spool.input_directory(job["job_id"]),
-            "--input-frame-count", str(len(job.get("seal_manifest") or [])),
-            "--seq-len", str(model.seq_len),
-            "--hidden", str(model.hidden),
-            "--layers", str(model.layers),
-            "--dropout", str(model.dropout),
-            "--nhead", str(model.nhead),
-            "--mode", model.context_mode,
-            "--lr", str(train.lr),
-            "--weight-decay", str(train.weight_decay),
-            "--batch-size", str(train.batch_size),
-            "--epochs", str(train.epochs),
-            "--loss-stage", str(train.loss_stage),
-            "--loss-schedule", train.loss_schedule,
-            "--stage-size", str(train.stage_size),
-            "--patience", str(train.patience),
-            "--monitor", train.monitor,
-            "--monitor-min-improvement", str(train.monitor_min_improvement),
-            "--seed", str(train.seed),
-            (
-                "--save-best-checkpoint"
-                if train.save_best_checkpoint
-                else "--no-save-best-checkpoint"
-            ),
-        ]
-        if train.use_amp:
-            argv.append("--use-amp")
-        if train.deterministic:
-            argv.append("--deterministic")
-        return argv
-
     def _publish_outputs(
         self,
         job: dict,
-        inputs: list[dict],
+        inputs: tuple[ExecutionInput, ...],
         outputs: tuple[dict, ...],
     ) -> None:
         if len(outputs) != len(inputs):
