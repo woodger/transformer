@@ -19,7 +19,7 @@ def _configuration_block(heading: str, language: str) -> str:
 def _load_unit() -> ConfigParser:
     parser = ConfigParser(interpolation=None, strict=True)
     parser.optionxform = str
-    parser.read_string(_configuration_block("Systemd unit", "ini"))
+    parser.read_string(_configuration_block("Создать unit-файл", "ini"))
     return parser
 
 
@@ -77,7 +77,7 @@ def test_tmpfiles_policy_creates_runtime_directory_without_age_cleanup():
     lines = [
         line.split()
         for line in _configuration_block(
-            "Tmpfiles policy",
+            "Подготовить runtime-директорию",
             "text",
         ).splitlines()
         if line and not line.startswith("#")

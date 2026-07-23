@@ -101,7 +101,7 @@ def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch):
     monkeypatch.setattr(
         fit_module,
         "read_arrow",
-        lambda _: (torch.randn(2, 6), torch.randn(2, 6)),
+        lambda _: (torch.zeros((2, 6)), torch.zeros((2, 6))),
     )
 
     def build_model(config, *args):
@@ -153,7 +153,7 @@ def test_stream_fit_freezes_first_frame_feature_dim_before_building(monkeypatch)
     monkeypatch.setattr(
         fit_stream_module,
         "table_to_tensors",
-        lambda _: (torch.randn(1, 4), torch.randn(1, 6)),
+        lambda _: (torch.zeros((1, 4)), torch.zeros((1, 6))),
     )
 
     def build_model(config, *args):
@@ -202,7 +202,7 @@ def test_file_predict_rejects_feature_dim_conflicting_with_checkpoint(monkeypatc
     monkeypatch.setattr(
         predict_module,
         "read_source_arrow",
-        lambda _: torch.randn(1, 6),
+        lambda _: torch.zeros((1, 6)),
     )
 
     with pytest.raises(
@@ -288,7 +288,7 @@ def test_stream_predict_rejects_checkpoint_feature_dim_mismatch(monkeypatch):
     monkeypatch.setattr(
         predict_stream_module,
         "table_to_source_tensor",
-        lambda _: torch.randn(1, 6),
+        lambda _: torch.zeros((1, 6)),
     )
 
     with pytest.raises(
@@ -333,7 +333,7 @@ def test_stream_predict_keeps_cross_frame_check_for_legacy_checkpoint(monkeypatc
     monkeypatch.setattr(
         predict_stream_module,
         "table_to_source_tensor",
-        lambda table: torch.randn(1, 4 if table.frame == 1 else 6),
+        lambda table: torch.zeros((1, 4 if table.frame == 1 else 6)),
     )
     monkeypatch.setattr(predict_stream_module, "write_framed_arrow", lambda *args: None)
 

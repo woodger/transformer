@@ -55,7 +55,8 @@ def _service_config(tmp_path):
 
 def _auth():
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {TOKEN}".encode())]
+        headers=[(b"authorization", f"Bearer {TOKEN}".encode())],
+        timeout=5.0,
     )
 
 
@@ -162,17 +163,18 @@ def _seed_model(config, ledger, models_dir):
         seed=17,
         deterministic=True,
     )
-    torch.manual_seed(17)
-    model = TransformerModel(
-        input_dim=model_config.feature_dim,
-        seq_len=model_config.seq_len,
-        hidden_dim=model_config.hidden,
-        layers=model_config.layers,
-        dropout=model_config.dropout,
-        out_dim=model_config.out_dim,
-        nhead=model_config.nhead,
-        context_mode=model_config.context_mode,
-    )
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(17)
+        model = TransformerModel(
+            input_dim=model_config.feature_dim,
+            seq_len=model_config.seq_len,
+            hidden_dim=model_config.hidden,
+            layers=model_config.layers,
+            dropout=model_config.dropout,
+            out_dim=model_config.out_dim,
+            nhead=model_config.nhead,
+            context_mode=model_config.context_mode,
+        )
     checkpoint = {
         "format": CHECKPOINT_FORMAT,
         "version": __version__,

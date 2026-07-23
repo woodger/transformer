@@ -265,10 +265,13 @@ A fit worker instead gives its single `fit-stream` subprocess the already
 validated durable input directory to read. Training order is
 `epoch -> ordinal -> optimizer batches`: `epochs` is the job-wide epoch count,
 and model, optimizer, loss scheduler, checkpoint selection and early stopping
-all have one lifetime per job. Only one payload is materialized as tensors at a
-time, and it is reopened on each epoch, so the complete dataset is never loaded
-into memory. Changing Inventory's payload-size limit therefore does not grant
-later ordinals their own epoch budget or reset epoch-based training state.
+all have one lifetime per job. Rows enter a bounded job-wide shuffle window in
+ordinal order; shuffle windows and optimizer batches may cross payload
+boundaries and therefore do not depend on transport partitioning. Only one
+payload and the bounded window are materialized as tensors at a time, and each
+payload is reopened on every epoch, so the complete dataset is never loaded
+into memory. Changing Inventory's payload-size limit therefore does not change
+batching, shuffle order or epoch-based training state.
 
 The server writes all batches to one IPC file, validates each batch, computes
 the digest, fsyncs the file, atomically publishes it, fsyncs the directory and

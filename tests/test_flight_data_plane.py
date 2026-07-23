@@ -23,14 +23,15 @@ from app.flight.output import OutputHandler
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
-import app.flight.upload as upload_module
+import app.flight.upload_session as upload_session_module
 import app.flight.spool as spool_module
 from app.flight.errors import ServiceError
 
 
-def auth(token="secret"):
+def auth(token="secret", *, timeout=5.0):
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {token}".encode())]
+        headers=[(b"authorization", f"Bearer {token}".encode())],
+        timeout=timeout,
     )
 
 
@@ -116,10 +117,20 @@ def data_plane(tmp_path, postgres_ledger):
     try:
         yield config, spool, ledger, upload, server, client
     finally:
+        client.close()
         server.shutdown()
 
 
-def put(client, job_id, payload_id, ordinal, batches, rows=None):
+def put(
+    client,
+    job_id,
+    payload_id,
+    ordinal,
+    batches,
+    rows=None,
+    *,
+    timeout=5.0,
+):
     schema = batches[0].schema if batches else pa.schema([
         ("src", pa.list_(pa.float32())),
         ("tgt", pa.list_(pa.float32())),
@@ -127,7 +138,11 @@ def put(client, job_id, payload_id, ordinal, batches, rows=None):
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
     )
-    writer, results = client.do_put(descriptor, schema, options=auth())
+    writer, results = client.do_put(
+        descriptor,
+        schema,
+        options=auth(timeout=timeout),
+    )
     writer.write_metadata(pa.py_buffer(upload_metadata(
         job_id,
         payload_id,
@@ -187,7 +202,7 @@ def test_payload_larger_than_four_mib_is_accepted(data_plane):
         "tgt": pa.FixedSizeListArray.from_arrays(tgt_values, 6),
     })
 
-    result = put(client, job["job_id"], new_id(), 0, [batch])
+    result = put(client, job["job_id"], new_id(), 0, [batch], timeout=20.0)
 
     assert result["bytes"] > 4 * 1024 * 1024
     assert ledger.list_inputs(job["job_id"])[0]["rows"] == rows
@@ -621,7 +636,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
     )
-    original_new_file = upload_module.ipc.new_file
+    original_new_file = upload_session_module.ipc.new_file
 
     class FailingCloseWriter:
         def __init__(self, wrapped):
@@ -635,7 +650,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
             raise OSError(errno.ENOSPC, "injected IPC close failure")
 
     monkeypatch.setattr(
-        upload_module.ipc,
+        upload_session_module.ipc,
         "new_file",
         lambda *args, **kwargs: FailingCloseWriter(
             original_new_file(*args, **kwargs)

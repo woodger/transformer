@@ -24,6 +24,7 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
+    ErrorCode,
     FIT_SCHEMA_ID,
     JobState,
     PREDICT_SCHEMA_ID,
@@ -55,6 +56,15 @@ while True:
         break
     payload = sys.stdin.buffer.read(size)
     table = ipc.RecordBatchFileReader(pa.BufferReader(payload)).read_all()
+    if mode == "partial-header":
+        sys.stdout.buffer.write(b"\x00\x00\x00\x01")
+        sys.stdout.buffer.flush()
+        raise SystemExit(0)
+    if mode == "truncated-body":
+        sys.stdout.buffer.write((128).to_bytes(8, "big"))
+        sys.stdout.buffer.write(b"truncated")
+        sys.stdout.buffer.flush()
+        raise SystemExit(0)
     if mode == "bad-second" and index == 1:
         output = b"not-arrow"
     else:
@@ -68,6 +78,10 @@ while True:
     sys.stdout.buffer.write(output)
     sys.stdout.buffer.flush()
     index += 1
+if mode == "extra-frame":
+    sys.stdout.buffer.write(len(output).to_bytes(8, "big"))
+    sys.stdout.buffer.write(output)
+    sys.stdout.buffer.flush()
 print(f"frames={index}", file=sys.stderr, flush=True)
 """
 
@@ -127,6 +141,14 @@ print(f"frames={frames}", flush=True)
 
 
 _POSTGRES_LEDGER = None
+
+
+class RecordingLogger:
+    def __init__(self):
+        self.events = []
+
+    def event(self, event, **fields):
+        self.events.append((event, fields))
 
 
 @pytest.fixture(autouse=True)
@@ -192,6 +214,46 @@ def train_config(**overrides):
     }
     values.update(overrides)
     return TrainConfig(**values)
+
+
+def fit_helper_hook(expected_frames):
+    def hook(job, argv):
+        checkpoint = argv[argv.index("--checkpoint-out") + 1]
+        metrics = argv[argv.index("--metrics-out") + 1]
+        actual_model = model_config(feature_dim=2).to_dict()
+        actual_train = train_config().to_dict()
+        data_schema = {
+            "schema_version": 1,
+            "tensor_dtype": "float32",
+            "src": {
+                "column": "src",
+                "accepted_element_types": ["float32", "float64"],
+                "width": 4,
+            },
+            "tgt": {
+                "column": "tgt",
+                "accepted_element_types": ["float32", "float64"],
+                "width": 6,
+            },
+            "feature_dim": 2,
+            "model_input_feature_dim": 4,
+            "context_mode": "relaxed",
+            "normalization": None,
+            "missing": {"nan_fill": 0.0, "flags": "per-feature"},
+        }
+        return [
+            sys.executable,
+            "-c",
+            FIT_HELPER,
+            checkpoint,
+            metrics,
+            json.dumps(actual_model),
+            json.dumps(actual_train),
+            json.dumps(data_schema),
+            str(expected_frames),
+        ]
+
+    return hook
 
 
 def predict_schema():
@@ -345,28 +407,173 @@ def create_predict_job(ledger, spool):
 
 
 def test_fit_argv_contains_exact_immutable_config_and_server_paths(tmp_path):
-    _, spool, ledger, pool = components(tmp_path)
+    config, spool, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
     queued = ledger.get_job(job["job_id"])
     argv = pool.build_argv({**queued, "attempt": 1}, 1)
 
-    assert argv[:3] == [sys.executable, pool._cli_path, "fit-stream"]
-    assert argv[argv.index("--device") + 1] == "cpu"
-    assert argv[argv.index("--weight-decay") + 1] == "0.0025"
-    assert argv[argv.index("--checkpoint-out") + 1] == spool.attempt_checkpoint_path(
-        job["job_id"], 1
+    assert argv == [
+        sys.executable,
+        pool._cli_path,
+        "fit-stream",
+        "--device",
+        "cpu",
+        "--checkpoint-out",
+        spool.attempt_checkpoint_path(job["job_id"], 1),
+        "--metrics-out",
+        spool.attempt_metrics_path(job["job_id"], 1),
+        "--max-frame-bytes",
+        str(config.max_payload_bytes),
+        "--input-spool-dir",
+        spool.input_directory(job["job_id"]),
+        "--input-frame-count",
+        "0",
+        "--seq-len",
+        "2",
+        "--hidden",
+        "8",
+        "--layers",
+        "1",
+        "--dropout",
+        "0.0",
+        "--nhead",
+        "2",
+        "--mode",
+        "relaxed",
+        "--lr",
+        "0.001",
+        "--weight-decay",
+        "0.0025",
+        "--batch-size",
+        "2",
+        "--epochs",
+        "1",
+        "--loss-stage",
+        "1",
+        "--loss-schedule",
+        "none",
+        "--stage-size",
+        "1",
+        "--patience",
+        "0",
+        "--monitor",
+        "loss",
+        "--monitor-min-improvement",
+        "0.0",
+        "--seed",
+        "7",
+        "--no-save-best-checkpoint",
+        "--deterministic",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("ordinal", "sealed input ordinals are inconsistent"),
+        ("path", "committed input path is invalid"),
+        ("digest", "committed input digest is invalid"),
+    ],
+)
+def test_worker_plan_rejects_untrusted_committed_input(
+    tmp_path,
+    monkeypatch,
+    corruption,
+    message,
+):
+    _, spool, ledger, pool = components(tmp_path)
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    record = ledger.list_committed_inputs(job["job_id"])[0]
+    if corruption == "ordinal":
+        record = replace(record, ordinal=1)
+    elif corruption == "path":
+        record = replace(
+            record,
+            relative_path=spool.relative_path(
+                spool.input_path(str(uuid.uuid4()), 0)
+            ),
+        )
+    else:
+        record = replace(record, sha256="0" * 64)
+    monkeypatch.setattr(
+        ledger,
+        "list_committed_inputs",
+        lambda _: [record],
     )
-    assert argv[argv.index("--metrics-out") + 1] == spool.attempt_metrics_path(
-        job["job_id"], 1
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.INTERNAL.value
+    assert failed["error_message"] == message
+
+
+def test_worker_plan_rejects_noncanonical_selected_device(tmp_path):
+    _, _, ledger, pool = components(tmp_path)
+    job = create_fit_job(ledger)
+
+    with pytest.raises(Exception, match="queued job has no selected device") as error:
+        pool.build_argv(
+            {**job, "attempt": 1, "selected_device": "auto"},
+            1,
+        )
+
+    assert error.value.code == ErrorCode.INTERNAL
+
+
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("path", "resolved model checkpoint is unavailable"),
+        ("digest", "resolved model checkpoint digest is invalid"),
+    ],
+)
+def test_worker_plan_rejects_untrusted_model_generation(
+    tmp_path,
+    monkeypatch,
+    corruption,
+    message,
+):
+    _, spool, ledger, pool = components(tmp_path)
+    job = create_predict_job(ledger, spool)
+    model = ledger.get_model_artifact(
+        job["input_model_ref"],
+        owner_subject=job["owner_subject"],
     )
-    assert argv[argv.index("--input-spool-dir") + 1] == spool.input_directory(
-        job["job_id"]
+    if corruption == "path":
+        model = replace(
+            model,
+            checkpoint_path=(
+                f"{model.model_ref}/unexpected-checkpoint.pth"
+            ),
+        )
+    else:
+        model = replace(model, sha256="0" * 64)
+    monkeypatch.setattr(
+        ledger,
+        "get_model_artifact",
+        lambda *_, **__: model,
     )
-    assert argv[argv.index("--input-frame-count") + 1] == "0"
-    assert "--no-save-best-checkpoint" in argv
-    assert "--deterministic" in argv
-    assert "returns.daily" not in argv
+
+    with pytest.raises(Exception, match=message) as error:
+        pool.build_argv(
+            {**job, "attempt": 1, "selected_device": "cpu"},
+            1,
+        )
+
+    assert error.value.code == ErrorCode.INTERNAL
 
 
 def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path):
@@ -381,7 +588,7 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
         defaults.append(argv)
         return [sys.executable, "-c", PREDICT_HELPER, "ok"]
 
-    _, spool, ledger, pool = components(
+    config, spool, ledger, pool = components(
         tmp_path,
         popen_factory=popen,
         argv_hook=hook,
@@ -421,10 +628,65 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
     )
     assert launch_argv[2:4] == [str(os.getpid()), "--"]
     assert launch_argv[4:] == [sys.executable, "-c", PREDICT_HELPER, "ok"]
-    assert defaults[0][2] == "predict-stream"
-    assert defaults[0][defaults[0].index("--checkpoint") + 1].startswith(
-        spool.models_dir
+    model = ledger.get_model(
+        job["input_model_ref"],
+        owner_subject=job["owner_subject"],
     )
+    assert defaults == [(
+        sys.executable,
+        pool._cli_path,
+        "predict-stream",
+        "--device",
+        "cpu",
+        "--checkpoint",
+        spool.model_absolute_path(model["checkpoint_path"]),
+        "--pred-col",
+        "out",
+        "--max-frame-bytes",
+        str(config.max_payload_bytes),
+    )]
+
+
+def test_predict_publish_response_loss_preserves_committed_output(
+    tmp_path,
+    monkeypatch,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            PREDICT_HELPER,
+            "ok",
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [predict_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    publish_outputs = ledger.publish_outputs
+
+    def commit_then_lose_response(*args, **kwargs):
+        publish_outputs(*args, **kwargs)
+        raise RuntimeError("injected lost publish response")
+
+    monkeypatch.setattr(ledger, "publish_outputs", commit_then_lose_response)
+
+    assert pool.run_once("cpu") is True
+
+    finished = ledger.get_job(job["job_id"])
+    outputs = ledger.list_outputs(job["job_id"])
+    assert finished["state"] == JobState.SUCCEEDED.value
+    assert finished["result"] == {"outputs": [{"ordinal": 0, "rows": 1}]}
+    assert len(outputs) == 1
+    assert os.path.isfile(spool.absolute_path(outputs[0]["relative_path"]))
 
 
 def test_malformed_second_prediction_publishes_no_partial_outputs(tmp_path):
@@ -451,6 +713,43 @@ def test_malformed_second_prediction_publishes_no_partial_outputs(tmp_path):
     assert failed["error_code"] == "MALFORMED_OUTPUT"
     assert ledger.list_outputs(job["job_id"]) == []
     assert not os.path.exists(spool.attempt_output_path(job["job_id"], 1, 0))
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["partial-header", "truncated-body", "extra-frame"],
+)
+def test_malformed_prediction_transport_publishes_no_outputs(tmp_path, mode):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            PREDICT_HELPER,
+            mode,
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [predict_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.MALFORMED_OUTPUT.value
+    assert ledger.list_outputs(job["job_id"]) == []
+    assert not os.path.exists(
+        spool.attempt_output_path(job["job_id"], 1, 0)
+    )
 
 
 def test_prediction_output_disk_exhaustion_has_stable_error_code(
@@ -509,7 +808,11 @@ def test_log_disk_quota_exhaustion_is_classified_as_disk_full(
 
     monkeypatch.setattr("builtins.open", quota_exhausted)
     errors = queue.Queue()
-    pool._drain_log(io.BytesIO(b"diagnostic"), path, errors)
+    pool._subprocess_runner._drain_log(
+        io.BytesIO(b"diagnostic"),
+        path,
+        errors,
+    )
 
     failure = errors.get_nowait()
     assert failure.code.value == "DISK_FULL"
@@ -595,43 +898,10 @@ def test_cancel_registered_during_failure_cleanup_wins_terminal_race(
 
 
 def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
-    def hook(job, argv):
-        checkpoint = argv[argv.index("--checkpoint-out") + 1]
-        metrics = argv[argv.index("--metrics-out") + 1]
-        actual_model = model_config(feature_dim=2).to_dict()
-        actual_train = train_config().to_dict()
-        data_schema = {
-            "schema_version": 1,
-            "tensor_dtype": "float32",
-            "src": {
-                "column": "src",
-                "accepted_element_types": ["float32", "float64"],
-                "width": 4,
-            },
-            "tgt": {
-                "column": "tgt",
-                "accepted_element_types": ["float32", "float64"],
-                "width": 6,
-            },
-            "feature_dim": 2,
-            "model_input_feature_dim": 4,
-            "context_mode": "relaxed",
-            "normalization": None,
-            "missing": {"nan_fill": 0.0, "flags": "per-feature"},
-        }
-        return [
-            sys.executable,
-            "-c",
-            FIT_HELPER,
-            checkpoint,
-            metrics,
-            json.dumps(actual_model),
-            json.dumps(actual_train),
-            json.dumps(data_schema),
-            "2",
-        ]
-
-    config, spool, ledger, pool = components(tmp_path, argv_hook=hook)
+    config, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(2),
+    )
     job = create_fit_job(ledger)
     manifest = [
         commit_input(
@@ -704,16 +974,110 @@ def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
     }
 
 
+def test_fit_model_publish_failure_removes_uncommitted_artifacts_and_telemetry(
+    tmp_path,
+    monkeypatch,
+):
+    metrics = OperationalMetrics()
+    logger = RecordingLogger()
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(1),
+        metrics=metrics,
+        logger=logger,
+    )
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+
+    def reject_model_publication(*args, **kwargs):
+        raise RuntimeError("injected pre-commit publication failure")
+
+    monkeypatch.setattr(ledger, "publish_model", reject_model_publication)
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    counters = metrics.snapshot()["counters"]
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.INTERNAL.value
+    assert list(Path(spool.models_dir).iterdir()) == []
+    assert not os.path.exists(
+        spool.attempt_checkpoint_path(job["job_id"], 1)
+    )
+    assert "checkpointBytes" not in counters
+    assert all(
+        event != "flight.model.published"
+        for event, _ in logger.events
+    )
+
+
+def test_fit_model_publish_response_loss_preserves_committed_generation(
+    tmp_path,
+    monkeypatch,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(1),
+    )
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    publish_model = ledger.publish_model
+
+    def commit_then_lose_response(*args, **kwargs):
+        publish_model(*args, **kwargs)
+        raise RuntimeError("injected lost publish response")
+
+    monkeypatch.setattr(ledger, "publish_model", commit_then_lose_response)
+
+    assert pool.run_once("cpu") is True
+
+    finished = ledger.get_job(job["job_id"])
+    model_ref = finished["result"]["modelRef"]
+    model = ledger.get_model(model_ref)
+    assert finished["state"] == JobState.SUCCEEDED.value
+    assert model["producing_job_id"] == job["job_id"]
+    assert os.path.isfile(
+        spool.model_absolute_path(model["checkpoint_path"])
+    )
+    assert os.path.isfile(
+        spool.model_absolute_path(model["metadata_path"])
+    )
+
+
 def test_successful_fit_contract_requires_at_least_one_metrics_record(tmp_path):
     _, _, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
-    running = ledger.claim_next_job("cpu")
+    ledger.claim_next_job("cpu")
+    running = ledger.get_execution_job(job["job_id"])
     finished = threading.Event()
     finished.set()
     errors = queue.Queue()
 
-    pool._tail_metrics(running, [], finished, errors)
+    pool._subprocess_runner._tail_metrics(
+        running,
+        (),
+        finished,
+        errors,
+    )
 
     failure = errors.get_nowait()
     assert failure.code.value == "MALFORMED_OUTPUT"
@@ -727,7 +1091,8 @@ def test_metrics_tailer_performs_final_read_when_process_exits_during_stat(
     _, spool, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
-    running = ledger.claim_next_job("cpu")
+    ledger.claim_next_job("cpu")
+    running = ledger.get_execution_job(job["job_id"])
     metrics_path = Path(spool.attempt_metrics_path(job["job_id"], 1))
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_bytes(b'{"frame":1')
@@ -751,7 +1116,12 @@ def test_metrics_tailer_performs_final_read_when_process_exits_during_stat(
 
     monkeypatch.setattr(os, "stat", exit_during_first_stat)
 
-    pool._tail_metrics(running, [], finished, errors)
+    pool._subprocess_runner._tail_metrics(
+        running,
+        (),
+        finished,
+        errors,
+    )
 
     assert calls >= 2
     assert errors.empty()
@@ -813,6 +1183,65 @@ checkpoint_path.write_bytes(b"")
     assert failed["state"] == JobState.FAILED.value
     assert failed["error_code"] == "SUBPROCESS_FAILED"
     assert failed["error_message"] == "fit subprocess created an invalid checkpoint"
+
+
+def test_generic_nonzero_exit_persists_stderr_and_attempt_exit_code(tmp_path):
+    diagnostic = "private subprocess diagnostic"
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.stdin.buffer.read(); "
+                f"print({diagnostic!r}, file=sys.stderr, flush=True); "
+                "raise SystemExit(7)"
+            ),
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.SUBPROCESS_FAILED.value
+    assert failed["error_message"] == "worker subprocess exited with status 7"
+    assert diagnostic not in failed["error_message"]
+    assert Path(
+        spool.attempt_stderr_path(job["job_id"], 1)
+    ).read_text() == f"{diagnostic}\n"
+    with ledger.connection() as connection:
+        attempt = connection.get(JobAttempt, (job["job_id"], 1))
+    assert attempt.exit_code == 7
+
+
+def test_subprocess_start_failure_has_stable_safe_error(tmp_path):
+    def fail_start(*args, **kwargs):
+        raise OSError(errno.ENOENT, "injected executable lookup failure")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=fail_start,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.SUBPROCESS_FAILED.value
+    assert (
+        failed["error_message"]
+        == "worker subprocess could not be started"
+    )
+    assert "injected" not in failed["error_message"]
+    with ledger.connection() as connection:
+        attempt = connection.get(JobAttempt, (job["job_id"], 1))
+    assert attempt.exit_code is None
 
 
 def test_nonzero_cuda_oom_has_stable_error_code(tmp_path):
@@ -994,7 +1423,8 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
             **fields,
         }
         options = flight.FlightCallOptions(
-            headers=[(b"authorization", b"Bearer secret")]
+            headers=[(b"authorization", b"Bearer secret")],
+            timeout=5.0,
         )
         results = list(client.do_action(
             flight.Action(name, json.dumps(document).encode()),
@@ -1053,6 +1483,8 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
         if runner.is_alive():
             pool.notify_cancel(job["job_id"])
             runner.join(5)
+        assert not runner.is_alive()
+        client.close()
         server.shutdown()
 
 
@@ -1095,39 +1527,44 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
     seal_and_queue(ledger, job, [])
     runner = threading.Thread(target=pool.run_once, args=("cpu",))
     runner.start()
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
+            if os.path.exists(stderr_path):
+                text = Path(stderr_path).read_text(errors="replace")
+                if "grandchild=" in text:
+                    break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("term-resistant subprocess group did not start")
 
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
-        if os.path.exists(stderr_path):
-            text = Path(stderr_path).read_text(errors="replace")
-            if "grandchild=" in text:
-                break
-        time.sleep(0.02)
-    else:
-        raise AssertionError("term-resistant subprocess group did not start")
+        grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
+        cancel = {
+            "contract": CONTRACT_NAME,
+            "version": 1,
+            "requestId": str(uuid.uuid4()),
+            "idempotencyKey": "cancel-term-resistant-worker",
+            "jobId": job["job_id"],
+        }
+        coordinator.cancel(
+            "inventory",
+            validate_action_request(CANCEL_ACTION, cancel),
+            cancel,
+        )
+        runner.join(5)
 
-    grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
-    cancel = {
-        "contract": CONTRACT_NAME,
-        "version": 1,
-        "requestId": str(uuid.uuid4()),
-        "idempotencyKey": "cancel-term-resistant-worker",
-        "jobId": job["job_id"],
-    }
-    coordinator.cancel(
-        "inventory",
-        validate_action_request(CANCEL_ACTION, cancel),
-        cancel,
-    )
-    runner.join(5)
-
-    assert not runner.is_alive()
-    assert sent_signals[:2] == [signal.SIGTERM, signal.SIGKILL]
-    assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
-    state_path = Path(f"/proc/{grandchild}/stat")
-    if state_path.exists():
-        assert state_path.read_text().split()[2] == "Z"
+        assert not runner.is_alive()
+        assert sent_signals[:2] == [signal.SIGTERM, signal.SIGKILL]
+        assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
+        state_path = Path(f"/proc/{grandchild}/stat")
+        if state_path.exists():
+            assert state_path.read_text().split()[2] == "Z"
+    finally:
+        if runner.is_alive():
+            pool.notify_cancel(job["job_id"])
+            runner.join(5)
+        assert not runner.is_alive()
 
 
 def test_pool_exposes_configured_cpu_lanes_and_exactly_one_cuda_lane(tmp_path):
@@ -1144,6 +1581,74 @@ def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):
 
     assert pool.run_once("cpu", worker_id="shutdown-race") is False
     assert ledger.get_job(job["job_id"])["state"] == JobState.QUEUED.value
+
+
+def test_pending_cancel_before_attempt_registration_does_not_spawn(
+    tmp_path,
+):
+    popen_calls = []
+
+    def unexpected_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        raise AssertionError("cancelled attempt must not spawn")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=unexpected_popen,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+    claimed = ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        worker_id="pending-cancel-race",
+    )
+    ledger.transition_job(job["job_id"], JobState.CANCELLING)
+    pool.notify_cancel(job["job_id"])
+
+    pool._attempt_executor.execute(claimed)
+
+    finished = ledger.get_job(job["job_id"])
+    assert popen_calls == []
+    assert finished["state"] == JobState.CANCELLED.value
+    assert finished["error_code"] is None
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
+
+
+def test_force_stop_before_attempt_registration_does_not_spawn(
+    tmp_path,
+):
+    popen_calls = []
+
+    def unexpected_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        raise AssertionError("interrupted attempt must not spawn")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=unexpected_popen,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+    claimed = ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        worker_id="force-stop-race",
+    )
+    pool._attempt_executor.interrupt_for_shutdown()
+
+    pool._attempt_executor.execute(claimed)
+
+    failed = ledger.get_job(job["job_id"])
+    assert popen_calls == []
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert failed["error_message"] == (
+        "worker execution was interrupted by service shutdown"
+    )
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
 
 
 def test_unexpected_attempt_error_does_not_permanently_kill_lane(
@@ -1172,6 +1677,55 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     assert len(calls) == 2
 
 
+def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
+    tmp_path,
+    monkeypatch,
+):
+    metrics = OperationalMetrics()
+    _, _, ledger, pool = components(tmp_path, metrics=metrics)
+    job = create_fit_job(ledger)
+    seal_and_queue(ledger, job, [])
+
+    monkeypatch.setattr(
+        pool.spool,
+        "ensure_free_space",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            OSError(errno.EIO, "injected preflight failure")
+        ),
+    )
+    monkeypatch.setattr(
+        ledger,
+        "finish_attempt",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("injected terminal persistence failure")
+        ),
+    )
+    pool._queues["cpu"].put(job["job_id"])
+    pool._queues["cpu"].put(None)
+    lane = threading.Thread(
+        target=pool._lane,
+        args=("cpu", "terminal-persistence-worker"),
+    )
+
+    lane.start()
+    lane.join(2)
+
+    assert not lane.is_alive()
+    assert ledger.get_job(job["job_id"])["state"] == JobState.RUNNING.value
+    assert ledger.queued_jobs() == []
+    assert metrics.snapshot()["counters"]["workerLaneErrors"] == 1
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
+
+    recovery = ledger.reconcile_interrupted_jobs()
+
+    failed = ledger.get_job(job["job_id"])
+    assert recovery["interrupted_jobs"] == [job["job_id"]]
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert ledger.queued_jobs() == []
+
+
 def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):
     execution_log = tmp_path / "cuda-execution.log"
     script = (
@@ -1191,25 +1745,26 @@ def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):
             job["job_id"],
         ]
 
-    config, spool, ledger, pool = components(tmp_path, argv_hook=hook)
+    _, spool, ledger, pool = components(tmp_path, argv_hook=hook)
     first = create_predict_job(ledger, spool)
     second = create_predict_job(ledger, spool)
     seal_and_queue(ledger, first, [], device="cuda")
-    time.sleep(0.01)
     seal_and_queue(ledger, second, [], device="cuda")
 
     pool.start()
-    pool.notify_queued()
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        states = [
-            ledger.get_job(first["job_id"])["state"],
-            ledger.get_job(second["job_id"])["state"],
-        ]
-        if states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]:
-            break
-        time.sleep(0.02)
-    pool.shutdown(timeout=1)
+    try:
+        pool.notify_queued()
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            states = [
+                ledger.get_job(first["job_id"])["state"],
+                ledger.get_job(second["job_id"])["state"],
+            ]
+            if states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]:
+                break
+            time.sleep(0.02)
+    finally:
+        pool.shutdown(timeout=1)
 
     assert states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]
     assert execution_log.read_text().splitlines() == [
@@ -1218,5 +1773,3 @@ def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):
         f"start {second['job_id']}",
         f"end {second['job_id']}",
     ]
-    assert len([thread for thread in pool._threads if "-cuda-" in thread.name]) == 1
-    assert len([thread for thread in pool._threads if "-cpu-" in thread.name]) == config.cpu_capacity

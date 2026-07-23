@@ -73,7 +73,7 @@ class FlightApplication:
             ledger = Ledger(Database(database_config)).initialize()
             epoch_result = ledger.synchronize_runtime_epoch(spool.storage_epoch())
             process_recovery = recover_process_groups(
-                ledger.list_active_attempts(),
+                ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
                 logger=logger,
             )

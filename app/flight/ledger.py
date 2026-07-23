@@ -1,49 +1,51 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
-import hashlib
-import json
-import os
-from pathlib import PurePosixPath
-import re
-import secrets
-import uuid
+from datetime import datetime
 from typing import Callable, Iterator, Sequence
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.migrations import require_current_schema
 from app.database.models import (
     IdempotencyRecord,
-    InputUpload,
     Job,
-    JobAttempt,
     JobInput,
     JobOutput,
-    ModelAlias,
-    OutputTicket,
-    PublishedModel,
-    QUEUE_SEQUENCE,
-    RuntimeState,
 )
 from app.database.session import Database
 from app.flight.constants import (
     ErrorCode,
-    FIT_SCHEMA_ID,
     JobState,
-    PREDICT_SCHEMA_ID,
     SUPPORTED_DEVICES,
     SUPPORTED_OPERATIONS,
 )
-from app.flight.errors import ServiceError, conflict, failed_precondition, not_found
+from app.flight.errors import conflict, failed_precondition, not_found
+from app.flight.ledger_artifacts import ArtifactLedgerSlice
+from app.flight.ledger_execution import ExecutionLedgerSlice
+from app.flight.ledger_inputs import InputLedgerSlice
+from app.flight.ledger_maintenance import MaintenanceLedgerSlice
+from app.flight.ledger_support import (
+    LedgerSessions,
+    advisory_lock as _advisory_lock,
+    at as _at,
+    canonical_uuid as _canonical_uuid,
+    decode as _decode,
+    digest as _digest,
+    json_value as _json_value,
+    now as _now,
+)
+from app.flight.records import (
+    CommittedInputRecord,
+    ExecutionJobRecord,
+    ModelArtifactRecord,
+    RecoverableAttemptRecord,
+)
 from app.flight.state import validate_transition
 
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _TERMINAL_STATES = (
     JobState.SUCCEEDED.value,
     JobState.FAILED.value,
@@ -58,6 +60,11 @@ class Ledger:
         if not isinstance(database, Database):
             raise TypeError("Ledger requires a PostgreSQL Database")
         self.database = database
+        self._sessions = LedgerSessions(database)
+        self._inputs = InputLedgerSlice(self._sessions)
+        self._execution = ExecutionLedgerSlice(self._sessions)
+        self._artifacts = ArtifactLedgerSlice(self._sessions)
+        self._maintenance = MaintenanceLedgerSlice(self._sessions)
 
     def initialize(self) -> "Ledger":
         require_current_schema(self.database.config)
@@ -84,18 +91,12 @@ class Ledger:
 
     @contextmanager
     def _read(self, connection: Session | None):
-        if connection is not None:
-            yield connection
-            return
-        with self.database.session() as session:
+        with self._sessions.read(connection) as session:
             yield session
 
     @contextmanager
     def _write(self, connection: Session | None):
-        if connection is not None:
-            yield connection
-            return
-        with self.database.transaction() as session:
+        with self._sessions.write(connection) as session:
             yield session
 
     def create_job(
@@ -169,6 +170,21 @@ class Ledger:
         with self._read(connection) as session:
             return _decode(session.scalar(statement))
 
+    def get_execution_job(
+        self,
+        job_id: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+        for_update: bool = False,
+    ) -> ExecutionJobRecord | None:
+        return self._execution.get_execution_job(
+            job_id,
+            owner_subject=owner_subject,
+            connection=connection,
+            for_update=for_update,
+        )
+
     def active_job_count(self, owner_subject: str, *, connection: Session | None = None) -> int:
         with self._read(connection) as session:
             return int(session.scalar(
@@ -236,18 +252,11 @@ class Ledger:
             return _decode(job)
 
     def update_progress(self, job_id: str, progress: dict, *, now: float | None = None) -> dict:
-        with self.database.transaction() as session:
-            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-            if job is None or job.state not in (
-                JobState.RUNNING.value,
-                JobState.CANCELLING.value,
-            ):
-                raise failed_precondition("job is not running")
-            job.progress = _json_value(progress)
-            job.revision += 1
-            job.updated_at = _now(now)
-            session.flush()
-            return _decode(job)
+        return self._execution.update_progress(
+            job_id,
+            progress,
+            now=now,
+        )
 
     def lookup_idempotency(
         self,
@@ -338,15 +347,12 @@ class Ledger:
         payload_id: str | None = None,
         connection: Session | None = None,
     ):
-        if ordinal is None and payload_id is None:
-            raise ValueError("ordinal or payload_id is required")
-        statement = select(JobInput).where(JobInput.job_id == job_id)
-        if ordinal is not None:
-            statement = statement.where(JobInput.ordinal == ordinal)
-        if payload_id is not None:
-            statement = statement.where(JobInput.payload_id == payload_id)
-        with self._read(connection) as session:
-            return _decode(session.scalar(statement))
+        return self._inputs.find_input(
+            job_id,
+            ordinal=ordinal,
+            payload_id=payload_id,
+            connection=connection,
+        )
 
     def reserve_input(
         self,
@@ -358,44 +364,17 @@ class Ledger:
         temporary_path: str,
         now: float | None = None,
     ) -> dict:
-        _nonnegative(ordinal, "ordinal")
-        payload_id = _canonical_uuid(payload_id, "payload_id")
-        _validate_relative_path(temporary_path)
-        reservation = InputUpload(
-            upload_token=upload_token,
+        return self._inputs.reserve_input(
             job_id=job_id,
             payload_id=payload_id,
             ordinal=ordinal,
+            upload_token=upload_token,
             temporary_path=temporary_path,
-            created_at=_now(now),
+            now=now,
         )
-        try:
-            with self.database.transaction() as session:
-                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-                if job is None:
-                    raise not_found(f"job not found: {job_id}")
-                if job.state != JobState.UPLOADING.value:
-                    raise failed_precondition("job no longer accepts inputs")
-                committed = session.scalar(select(JobInput.job_id).where(
-                    JobInput.job_id == job_id,
-                    or_(JobInput.ordinal == ordinal, JobInput.payload_id == payload_id),
-                ))
-                if committed is not None:
-                    raise conflict("input ordinal or payloadId is already committed")
-                session.add(reservation)
-                session.flush()
-        except IntegrityError as exc:
-            raise conflict("input ordinal or payloadId is being uploaded") from exc
-        return _decode(reservation)
 
     def abort_input(self, upload_token: str) -> str | None:
-        with self.database.transaction() as session:
-            upload = session.get(InputUpload, upload_token, with_for_update=True)
-            if upload is None:
-                return None
-            path = upload.temporary_path
-            session.delete(upload)
-            return path
+        return self._inputs.abort_input(upload_token)
 
     def commit_input(
         self,
@@ -414,82 +393,21 @@ class Ledger:
         max_job_bytes: int,
         now: float | None = None,
     ) -> dict:
-        _validate_relative_path(relative_path)
-        for value, name in ((rows, "rows"), (batches, "batches"), (byte_count, "bytes")):
-            _nonnegative(value, name)
-        _digest(sha256, "sha256")
-        _digest(schema_fingerprint, "schema_fingerprint")
-        timestamp = _now(now)
-        try:
-            with self.database.transaction() as session:
-                upload = session.get(InputUpload, upload_token, with_for_update=True)
-                if upload is None:
-                    raise not_found("input upload reservation not found")
-                job = session.scalar(
-                    select(Job).where(Job.job_id == upload.job_id).with_for_update()
-                )
-                if job.state != JobState.UPLOADING.value:
-                    raise failed_precondition("job no longer accepts inputs")
-                expected_schema_id = FIT_SCHEMA_ID if job.operation == "fit" else PREDICT_SCHEMA_ID
-                if schema_id != expected_schema_id:
-                    raise failed_precondition(
-                        f"schemaId {schema_id!r} does not match job operation"
-                    )
-                payload_count, total_bytes = session.execute(
-                    select(func.count(), func.coalesce(func.sum(JobInput.bytes), 0)).where(
-                        JobInput.job_id == upload.job_id
-                    )
-                ).one()
-                if payload_count + 1 > max_payloads:
-                    raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job payload quota exceeded")
-                if total_bytes + byte_count > max_job_bytes:
-                    raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job byte quota exceeded")
-                existing_contract = session.scalar(
-                    select(JobInput)
-                    .where(JobInput.job_id == upload.job_id)
-                    .order_by(JobInput.ordinal)
-                    .limit(1)
-                )
-                if existing_contract is not None and (
-                    existing_contract.schema_id != schema_id
-                    or existing_contract.schema_fingerprint != schema_fingerprint
-                ):
-                    raise failed_precondition("input schema is inconsistent with committed inputs")
-                known_dimensions = session.execute(
-                    select(JobInput.source_width, JobInput.feature_dim)
-                    .where(JobInput.job_id == upload.job_id, JobInput.source_width.is_not(None))
-                    .distinct()
-                ).all()
-                if source_width is not None and any(
-                    known_width != source_width or known_dim != feature_dim
-                    for known_width, known_dim in known_dimensions
-                ):
-                    raise failed_precondition("input dimensions are inconsistent with committed inputs")
-                record = JobInput(
-                    job_id=upload.job_id,
-                    ordinal=upload.ordinal,
-                    payload_id=upload.payload_id,
-                    schema_id=schema_id,
-                    rows=rows,
-                    batches=batches,
-                    bytes=byte_count,
-                    sha256=sha256,
-                    schema_fingerprint=schema_fingerprint,
-                    relative_path=relative_path,
-                    source_width=source_width,
-                    feature_dim=feature_dim,
-                    committed_at=timestamp,
-                )
-                session.add(record)
-                session.delete(upload)
-                job.revision += 1
-                job.updated_at = timestamp
-                session.flush()
-                result = _decode(record)
-                result["revision"] = job.revision
-                return result
-        except IntegrityError as exc:
-            raise conflict("input ordinal or payloadId is already committed") from exc
+        return self._inputs.commit_input(
+            upload_token=upload_token,
+            relative_path=relative_path,
+            schema_id=schema_id,
+            rows=rows,
+            batches=batches,
+            byte_count=byte_count,
+            sha256=sha256,
+            schema_fingerprint=schema_fingerprint,
+            source_width=source_width,
+            feature_dim=feature_dim,
+            max_payloads=max_payloads,
+            max_job_bytes=max_job_bytes,
+            now=now,
+        )
 
     def list_inputs(
         self,
@@ -497,11 +415,18 @@ class Ledger:
         *,
         connection: Session | None = None,
     ) -> list[dict]:
-        with self._read(connection) as session:
-            rows = session.scalars(
-                select(JobInput).where(JobInput.job_id == job_id).order_by(JobInput.ordinal)
-            )
-            return [_decode(row) for row in rows]
+        return self._inputs.list_inputs(job_id, connection=connection)
+
+    def list_committed_inputs(
+        self,
+        job_id: str,
+        *,
+        connection: Session | None = None,
+    ) -> list[CommittedInputRecord]:
+        return self._inputs.list_committed_inputs(
+            job_id,
+            connection=connection,
+        )
 
     def seal_job(
         self,
@@ -515,34 +440,16 @@ class Ledger:
         now: float | None = None,
         connection: Session | None = None,
     ) -> tuple[dict, bool]:
-        _digest(manifest_hash, "manifest_hash")
-        timestamp = _now(now)
-        with self._write(connection) as session:
-            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if job.seal_hash is not None:
-                if job.seal_hash != manifest_hash:
-                    raise conflict("job was sealed with a different manifest")
-                return _decode(job), True
-            if job.state != JobState.UPLOADING.value:
-                raise failed_precondition("job cannot be sealed from its current state")
-            active = session.scalar(
-                select(InputUpload.upload_token).where(InputUpload.job_id == job_id).limit(1)
-            )
-            if active is not None:
-                raise failed_precondition("job has an upload in progress")
-            job.state = JobState.SEALED.value
-            job.revision += 1
-            job.updated_at = timestamp
-            job.sealed_at = timestamp
-            job.seal_hash = manifest_hash
-            job.seal_manifest = _json_value(manifest)
-            job.seal_result = _json_value(result)
-            job.source_width = source_width
-            job.feature_dim = feature_dim
-            session.flush()
-            return _decode(job), False
+        return self._inputs.seal_job(
+            job_id,
+            manifest_hash=manifest_hash,
+            manifest=manifest,
+            source_width=source_width,
+            feature_dim=feature_dim,
+            result=result,
+            now=now,
+            connection=connection,
+        )
 
     def queue_job(
         self,
@@ -553,28 +460,13 @@ class Ledger:
         now: float | None = None,
         connection: Session | None = None,
     ) -> tuple[dict, bool]:
-        if selected_device not in ("cpu", "cuda"):
-            raise ValueError("selected_device must be cpu or cuda")
-        timestamp = _now(now)
-        with self._write(connection) as session:
-            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if job.queued_at is not None:
-                if job.selected_device != selected_device:
-                    raise conflict("job was started with a different device")
-                return _decode(job), True
-            if job.state != JobState.SEALED.value:
-                raise failed_precondition("job must be SEALED before start")
-            job.state = JobState.QUEUED.value
-            job.revision += 1
-            job.selected_device = selected_device
-            job.start_result = _json_value(result)
-            job.queued_at = timestamp
-            job.updated_at = timestamp
-            job.queue_sequence = session.scalar(select(QUEUE_SEQUENCE.next_value()))
-            session.flush()
-            return _decode(job), False
+        return self._execution.queue_job(
+            job_id,
+            selected_device=selected_device,
+            result=result,
+            now=now,
+            connection=connection,
+        )
 
     def claim_job(
         self,
@@ -584,15 +476,27 @@ class Ledger:
         worker_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
-        if selected_device not in ("cpu", "cuda"):
-            raise ValueError("selected_device must be cpu or cuda")
-        with self.database.transaction() as session:
-            job = session.scalar(
-                select(Job).where(Job.job_id == job_id).with_for_update(skip_locked=True)
-            )
-            if job is None or job.state != JobState.QUEUED.value or job.selected_device != selected_device:
-                return None
-            return self._claim(session, job, worker_id, _now(now))
+        return self._execution.claim_job(
+            job_id,
+            selected_device,
+            worker_id=worker_id,
+            now=now,
+        )
+
+    def claim_execution_job(
+        self,
+        job_id: str,
+        selected_device: str,
+        *,
+        worker_id: str | None = None,
+        now: float | None = None,
+    ) -> ExecutionJobRecord | None:
+        return self._execution.claim_execution_job(
+            job_id,
+            selected_device,
+            worker_id=worker_id,
+            now=now,
+        )
 
     def claim_next_job(
         self,
@@ -601,37 +505,11 @@ class Ledger:
         worker_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
-        if selected_device not in ("cpu", "cuda"):
-            raise ValueError("selected_device must be cpu or cuda")
-        with self.database.transaction() as session:
-            job = session.scalar(
-                select(Job)
-                .where(Job.state == JobState.QUEUED.value, Job.selected_device == selected_device)
-                .order_by(Job.queue_sequence)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            if job is None:
-                return None
-            return self._claim(session, job, worker_id, _now(now))
-
-    def _claim(self, session: Session, job: Job, worker_id: str | None, timestamp: datetime) -> dict:
-        job.state = JobState.RUNNING.value
-        job.revision += 1
-        job.attempt += 1
-        job.started_at = timestamp
-        job.updated_at = timestamp
-        session.add(JobAttempt(
-            job_id=job.job_id,
-            attempt=job.attempt,
-            selected_device=job.selected_device,
-            status=JobState.RUNNING.value,
+        return self._execution.claim_next_job(
+            selected_device,
             worker_id=worker_id,
-            claimed_at=timestamp,
-            started_at=timestamp,
-        ))
-        session.flush()
-        return _decode(job)
+            now=now,
+        )
 
     def set_attempt_process(
         self,
@@ -643,32 +521,20 @@ class Ledger:
         boot_id: str,
         process_start_ticks: int,
     ) -> None:
-        _positive(pid, "pid")
-        _positive(pgid, "pgid")
-        _positive(process_start_ticks, "process_start_ticks")
-        boot_id = _canonical_uuid(boot_id, "boot_id")
-        with self.database.transaction() as session:
-            record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
-            if record is None or record.status != JobState.RUNNING.value:
-                raise failed_precondition("job attempt is not running")
-            record.pid = pid
-            record.pgid = pgid
-            record.boot_id = boot_id
-            record.process_start_ticks = process_start_ticks
+        self._execution.set_attempt_process(
+            job_id,
+            attempt,
+            pid=pid,
+            pgid=pgid,
+            boot_id=boot_id,
+            process_start_ticks=process_start_ticks,
+        )
 
     def list_active_attempts(self) -> list[dict]:
-        with self.database.session() as session:
-            rows = session.scalars(
-                select(JobAttempt)
-                .join(Job, Job.job_id == JobAttempt.job_id)
-                .where(
-                    Job.state.in_((JobState.RUNNING.value, JobState.CANCELLING.value)),
-                    JobAttempt.status == JobState.RUNNING.value,
-                    JobAttempt.attempt == Job.attempt,
-                )
-                .order_by(JobAttempt.job_id, JobAttempt.attempt)
-            )
-            return [_decode(row) for row in rows]
+        return self._execution.list_active_attempts()
+
+    def list_recoverable_attempts(self) -> list[RecoverableAttemptRecord]:
+        return self._execution.list_recoverable_attempts()
 
     def finish_attempt(
         self,
@@ -681,36 +547,15 @@ class Ledger:
         exit_code: int | None = None,
         now: float | None = None,
     ) -> dict:
-        target_state = JobState(target_state)
-        if target_state not in (JobState.FAILED, JobState.CANCELLED):
-            raise ValueError("worker attempt can finish only as FAILED or CANCELLED")
-        if target_state == JobState.CANCELLED and (error_code is not None or error_message is not None):
-            raise ValueError("cancelled attempt must not carry an error")
-        timestamp = _now(now)
-        with self.database.transaction() as session:
-            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if job.attempt != attempt:
-                raise failed_precondition("job attempt is no longer active")
-            validate_transition(job.state, target_state)
-            record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
-            if record is None or record.status != JobState.RUNNING.value:
-                raise failed_precondition("job attempt is no longer active")
-            code = error_code.value if isinstance(error_code, ErrorCode) else error_code
-            record.status = target_state.value
-            record.finished_at = timestamp
-            record.exit_code = exit_code
-            record.error_code = code
-            record.error_message = error_message
-            job.state = target_state.value
-            job.revision += 1
-            job.error_code = code
-            job.error_message = error_message
-            job.finished_at = timestamp
-            job.updated_at = timestamp
-            session.flush()
-            return _decode(job)
+        return self._execution.finish_attempt(
+            job_id,
+            attempt,
+            target_state,
+            error_code=error_code,
+            error_message=error_message,
+            exit_code=exit_code,
+            now=now,
+        )
 
     def publish_outputs(
         self,
@@ -721,31 +566,13 @@ class Ledger:
         result: dict,
         now: float | None = None,
     ) -> dict:
-        timestamp = _now(now)
-        try:
-            with self.database.transaction() as session:
-                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-                if job is None:
-                    raise not_found(f"job not found: {job_id}")
-                if job.operation != "predict" or job.state != JobState.RUNNING.value or job.attempt != attempt:
-                    raise failed_precondition("job is not the active running attempt")
-                for output in outputs:
-                    session.add(_output_record(job_id, output, timestamp))
-                session.flush()
-                record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
-                record.status = JobState.SUCCEEDED.value
-                record.finished_at = timestamp
-                job.state = JobState.SUCCEEDED.value
-                job.revision += 1
-                job.result = _json_value(result)
-                job.error_code = None
-                job.error_message = None
-                job.finished_at = timestamp
-                job.updated_at = timestamp
-                session.flush()
-                return _decode(job)
-        except IntegrityError as exc:
-            raise conflict("job output ordinal is already published") from exc
+        return self._artifacts.publish_outputs(
+            job_id,
+            attempt,
+            outputs,
+            result=result,
+            now=now,
+        )
 
     def publish_model(
         self,
@@ -762,69 +589,19 @@ class Ledger:
         result: dict,
         now: float | None = None,
     ) -> dict:
-        _validate_relative_path(checkpoint_path)
-        _validate_relative_path(metadata_path)
-        _digest(sha256, "sha256")
-        timestamp = _now(now)
-        try:
-            with self.database.transaction() as session:
-                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
-                if job is None:
-                    raise not_found(f"job not found: {job_id}")
-                if job.operation != "fit" or job.state != JobState.RUNNING.value or job.attempt != attempt:
-                    raise failed_precondition("job is not the active fit attempt")
-                if label != job.model_label:
-                    raise failed_precondition("model label does not match the fit job")
-                _advisory_lock(session, "model-generation", job.owner_subject, label)
-                next_generation = int(session.scalar(
-                    select(func.coalesce(func.max(PublishedModel.generation), 0) + 1).where(
-                        PublishedModel.owner_subject == job.owner_subject,
-                        PublishedModel.label == label,
-                    )
-                ))
-                if generation is None:
-                    generation = next_generation
-                elif generation != next_generation:
-                    raise failed_precondition(
-                        f"next model generation is {next_generation}, got {generation}"
-                    )
-                session.add(PublishedModel(
-                    model_ref=model_ref,
-                    owner_subject=job.owner_subject,
-                    label=label,
-                    generation=generation,
-                    checkpoint_path=checkpoint_path,
-                    metadata_path=metadata_path,
-                    sha256=sha256,
-                    metadata_json=_json_value(metadata),
-                    producing_job_id=job_id,
-                    created_at=timestamp,
-                ))
-                alias = session.get(ModelAlias, (job.owner_subject, label), with_for_update=True)
-                if alias is None:
-                    session.add(ModelAlias(
-                        owner_subject=job.owner_subject,
-                        label=label,
-                        model_ref=model_ref,
-                        updated_at=timestamp,
-                    ))
-                else:
-                    alias.model_ref = model_ref
-                    alias.updated_at = timestamp
-                record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
-                record.status = JobState.SUCCEEDED.value
-                record.finished_at = timestamp
-                job.state = JobState.SUCCEEDED.value
-                job.revision += 1
-                job.result = _json_value(result)
-                job.error_code = None
-                job.error_message = None
-                job.finished_at = timestamp
-                job.updated_at = timestamp
-                session.flush()
-                return _decode(job)
-        except IntegrityError as exc:
-            raise conflict("model generation already exists") from exc
+        return self._artifacts.publish_model(
+            job_id,
+            attempt,
+            model_ref=model_ref,
+            label=label,
+            generation=generation,
+            checkpoint_path=checkpoint_path,
+            metadata_path=metadata_path,
+            sha256=sha256,
+            metadata=metadata,
+            result=result,
+            now=now,
+        )
 
     def get_model(
         self,
@@ -833,11 +610,24 @@ class Ledger:
         owner_subject: str | None = None,
         connection: Session | None = None,
     ) -> dict | None:
-        statement = select(PublishedModel).where(PublishedModel.model_ref == model_ref)
-        if owner_subject is not None:
-            statement = statement.where(PublishedModel.owner_subject == owner_subject)
-        with self._read(connection) as session:
-            return _decode(session.scalar(statement))
+        return self._artifacts.get_model(
+            model_ref,
+            owner_subject=owner_subject,
+            connection=connection,
+        )
+
+    def get_model_artifact(
+        self,
+        model_ref: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+    ) -> ModelArtifactRecord | None:
+        return self._artifacts.get_model_artifact(
+            model_ref,
+            owner_subject=owner_subject,
+            connection=connection,
+        )
 
     def resolve_model_alias(
         self,
@@ -846,31 +636,20 @@ class Ledger:
         *,
         connection: Session | None = None,
     ) -> dict | None:
-        with self._read(connection) as session:
-            model = session.scalar(
-                select(PublishedModel)
-                .join(ModelAlias, ModelAlias.model_ref == PublishedModel.model_ref)
-                .where(ModelAlias.owner_subject == owner_subject, ModelAlias.label == label)
-            )
-            return _decode(model)
+        return self._artifacts.resolve_model_alias(
+            owner_subject,
+            label,
+            connection=connection,
+        )
 
     def list_models(self) -> list[dict]:
-        with self.database.session() as session:
-            rows = session.scalars(
-                select(PublishedModel).order_by(
-                    PublishedModel.owner_subject,
-                    PublishedModel.label,
-                    PublishedModel.generation,
-                )
-            )
-            return [_decode(row) for row in rows]
+        return self._artifacts.list_models()
 
     def list_outputs(self, job_id: str, *, connection: Session | None = None) -> list[dict]:
-        with self._read(connection) as session:
-            rows = session.scalars(
-                select(JobOutput).where(JobOutput.job_id == job_id).order_by(JobOutput.ordinal)
-            )
-            return [_decode(row) for row in rows]
+        return self._artifacts.list_outputs(
+            job_id,
+            connection=connection,
+        )
 
     def issue_ticket(
         self,
@@ -881,34 +660,13 @@ class Ledger:
         ttl_seconds: float,
         now: float | None = None,
     ) -> tuple[bytes, float]:
-        if ttl_seconds <= 0:
-            raise ValueError("ttl_seconds must be greater than zero")
-        timestamp = _now(now)
-        expires_at = datetime.fromtimestamp(timestamp.timestamp() + ttl_seconds, timezone.utc)
-        token = secrets.token_urlsafe(32).encode("ascii")
-        ticket_hash = hashlib.sha256(token).hexdigest()
-        with self.database.transaction() as session:
-            output = session.scalar(
-                select(JobOutput)
-                .join(Job, Job.job_id == JobOutput.job_id)
-                .where(
-                    JobOutput.job_id == job_id,
-                    JobOutput.ordinal == ordinal,
-                    Job.owner_subject == owner_subject,
-                    Job.state == JobState.SUCCEEDED.value,
-                )
-            )
-            if output is None:
-                raise not_found("published job output not found")
-            session.add(OutputTicket(
-                ticket_hash=ticket_hash,
-                job_id=job_id,
-                ordinal=ordinal,
-                owner_subject=owner_subject,
-                expires_at=expires_at,
-                created_at=timestamp,
-            ))
-        return token, expires_at.timestamp()
+        return self._artifacts.issue_ticket(
+            job_id=job_id,
+            ordinal=ordinal,
+            owner_subject=owner_subject,
+            ttl_seconds=ttl_seconds,
+            now=now,
+        )
 
     def resolve_ticket(
         self,
@@ -917,169 +675,35 @@ class Ledger:
         owner_subject: str,
         now: float | None = None,
     ) -> dict:
-        ticket_hash = hashlib.sha256(bytes(ticket)).hexdigest()
-        with self.database.session() as session:
-            row = session.execute(
-                select(OutputTicket, JobOutput, Job.state)
-                .join(
-                    JobOutput,
-                    and_(
-                        JobOutput.job_id == OutputTicket.job_id,
-                        JobOutput.ordinal == OutputTicket.ordinal,
-                    ),
-                )
-                .join(Job, Job.job_id == OutputTicket.job_id)
-                .where(OutputTicket.ticket_hash == ticket_hash)
-            ).one_or_none()
-        if row is None:
-            raise not_found("output ticket not found")
-        record, output, state = row
-        if record.owner_subject != owner_subject:
-            raise ServiceError(ErrorCode.PERMISSION_DENIED, "output ticket belongs to another subject")
-        if record.expires_at <= _now(now):
-            raise failed_precondition("output ticket has expired")
-        if state != JobState.SUCCEEDED.value:
-            raise failed_precondition("job output is not available")
-        result = _decode(output)
-        result.update({
-            "ticket_owner": record.owner_subject,
-            "expires_at": record.expires_at.timestamp(),
-            "state": state,
-        })
-        return result
+        return self._artifacts.resolve_ticket(
+            ticket,
+            owner_subject=owner_subject,
+            now=now,
+        )
 
     def delete_expired_tickets(self, *, now: float | None = None) -> int:
-        with self.database.transaction() as session:
-            result = session.execute(delete(OutputTicket).where(OutputTicket.expires_at <= _now(now)))
-            return result.rowcount
+        return self._maintenance.delete_expired_tickets(now=now)
 
     def reconcile_interrupted_jobs(self, *, now: float | None = None) -> dict:
-        timestamp = _now(now)
-        with self.database.transaction() as session:
-            uploads = list(session.scalars(select(InputUpload.temporary_path)))
-            interrupted = list(session.scalars(
-                select(Job.job_id).where(Job.state == JobState.RUNNING.value).order_by(Job.job_id)
-            ))
-            cancelling = list(session.scalars(
-                select(Job.job_id).where(Job.state == JobState.CANCELLING.value).order_by(Job.job_id)
-            ))
-            for job in session.scalars(
-                select(Job).where(Job.state.in_((JobState.RUNNING.value, JobState.CANCELLING.value))).with_for_update()
-            ):
-                attempt = session.get(JobAttempt, (job.job_id, job.attempt), with_for_update=True)
-                if job.state == JobState.RUNNING.value:
-                    job.state = JobState.FAILED.value
-                    job.error_code = ErrorCode.EXECUTION_INTERRUPTED.value
-                    job.error_message = "worker execution was interrupted by service restart"
-                    if attempt is not None and attempt.status == JobState.RUNNING.value:
-                        attempt.status = JobState.FAILED.value
-                        attempt.error_code = job.error_code
-                        attempt.error_message = job.error_message
-                        attempt.finished_at = timestamp
-                else:
-                    job.state = JobState.CANCELLED.value
-                    if attempt is not None and attempt.status == JobState.RUNNING.value:
-                        attempt.status = JobState.CANCELLED.value
-                        attempt.finished_at = timestamp
-                job.revision += 1
-                job.finished_at = timestamp
-                job.updated_at = timestamp
-            session.execute(delete(InputUpload))
-        return {
-            "interrupted_jobs": interrupted,
-            "cancelled_jobs": cancelling,
-            "temporary_paths": uploads,
-        }
+        return self._maintenance.reconcile_interrupted_jobs(now=now)
 
     def referenced_paths(self) -> set[str]:
-        with self.database.session() as session:
-            paths = set(session.scalars(select(JobInput.relative_path)))
-            paths.update(session.scalars(select(JobOutput.relative_path)))
-            return paths
+        return self._maintenance.referenced_paths()
 
     def delete_terminal_jobs_before(self, cutoff: float) -> list[str]:
-        cutoff_at = _at(cutoff)
-        with self.database.transaction() as session:
-            candidates = session.scalars(
-                select(Job)
-                .where(
-                    Job.state.in_(_TERMINAL_STATES),
-                    Job.finished_at.is_not(None),
-                    Job.finished_at < cutoff_at,
-                    ~select(PublishedModel.model_ref)
-                    .where(PublishedModel.producing_job_id == Job.job_id)
-                    .exists(),
-                    ~select(OutputTicket.ticket_hash)
-                    .where(OutputTicket.job_id == Job.job_id)
-                    .exists(),
-                    ~select(IdempotencyRecord.idempotency_key)
-                    .where(
-                        IdempotencyRecord.job_id == Job.job_id,
-                        IdempotencyRecord.created_at >= cutoff_at,
-                    )
-                    .exists(),
-                )
-                .order_by(Job.job_id)
-                .with_for_update()
-            ).all()
-            job_ids = [job.job_id for job in candidates]
-            if job_ids:
-                session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.job_id.in_(job_ids)))
-                session.execute(delete(Job).where(Job.job_id.in_(job_ids)))
-            session.execute(delete(IdempotencyRecord).where(
-                IdempotencyRecord.job_id.is_(None),
-                IdempotencyRecord.created_at < cutoff_at,
-            ))
-            return job_ids
+        return self._maintenance.delete_terminal_jobs_before(cutoff)
 
     def synchronize_runtime_epoch(self, epoch: str, *, now: float | None = None) -> dict:
-        epoch = _canonical_uuid(epoch, "runtime storage epoch")
-        timestamp = _now(now)
-        with self.database.transaction() as session:
-            state = session.get(RuntimeState, "storage_epoch", with_for_update=True)
-            if state is not None and state.value == epoch:
-                return {"reset": False, "discarded_jobs": []}
-            discarded_jobs = list(session.scalars(select(Job.job_id).order_by(Job.job_id)))
-            reset = state is not None or bool(discarded_jobs)
-            session.execute(delete(OutputTicket))
-            session.execute(delete(IdempotencyRecord))
-            session.execute(delete(InputUpload))
-            session.execute(delete(Job))
-            if state is None:
-                session.add(RuntimeState(key="storage_epoch", value=epoch, updated_at=timestamp))
-            else:
-                state.value = epoch
-                state.updated_at = timestamp
-            return {"reset": reset, "discarded_jobs": discarded_jobs}
+        return self._maintenance.synchronize_runtime_epoch(
+            epoch,
+            now=now,
+        )
 
     def queued_jobs(self) -> list[dict]:
-        with self.database.session() as session:
-            rows = session.scalars(
-                select(Job)
-                .where(Job.state == JobState.QUEUED.value)
-                .order_by(Job.queue_sequence)
-            )
-            return [_decode(row) for row in rows]
+        return self._execution.queued_jobs()
 
-
-def _output_record(job_id: str, output: dict, timestamp: datetime) -> JobOutput:
-    relative_path = output["relative_path"]
-    _validate_relative_path(relative_path)
-    for name in ("ordinal", "rows", "batches", "bytes"):
-        _nonnegative(output[name], name)
-    _digest(output["sha256"], "sha256")
-    _digest(output["schema_fingerprint"], "schema_fingerprint")
-    return JobOutput(
-        job_id=job_id,
-        ordinal=output["ordinal"],
-        rows=output["rows"],
-        batches=output["batches"],
-        bytes=output["bytes"],
-        sha256=output["sha256"],
-        schema_fingerprint=output["schema_fingerprint"],
-        relative_path=relative_path,
-        published_at=timestamp,
-    )
+    def queued_execution_jobs(self) -> list[ExecutionJobRecord]:
+        return self._execution.queued_execution_jobs()
 
 
 def _transition_updates(updates: dict) -> dict:
@@ -1097,88 +721,19 @@ def _transition_updates(updates: dict) -> dict:
     }
     unknown = set(updates) - set(mapping)
     if unknown:
-        raise ValueError(f"unsupported job update field(s): {', '.join(sorted(unknown))}")
+        raise ValueError(
+            f"unsupported job update field(s): {', '.join(sorted(unknown))}"
+        )
     encoded = {}
     for key, value in updates.items():
         target = mapping[key]
         if key in ("result_json", "progress_json") and value is not None:
             value = _json_value(value)
-        elif key.endswith("_at") and value is not None and not isinstance(value, datetime):
+        elif (
+            key.endswith("_at")
+            and value is not None
+            and not isinstance(value, datetime)
+        ):
             value = _at(value)
         encoded[target] = value
     return encoded
-
-
-def _decode(record) -> dict | None:
-    if record is None:
-        return None
-    result = {}
-    for attribute in record.__mapper__.column_attrs:
-        column = attribute.columns[0]
-        value = getattr(record, attribute.key)
-        if isinstance(value, datetime):
-            value = value.timestamp()
-        result[column.name] = value
-    return result
-
-
-def _json_value(value):
-    if value is None:
-        return None
-    if is_dataclass(value):
-        value = asdict(value)
-    return json.loads(json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ))
-
-
-def _canonical_uuid(value: str, label: str) -> str:
-    try:
-        parsed = uuid.UUID(value)
-    except (AttributeError, ValueError) as exc:
-        raise ValueError(f"{label} must be a canonical UUID") from exc
-    if str(parsed) != value.lower():
-        raise ValueError(f"{label} must be a canonical UUID")
-    return str(parsed)
-
-
-def _validate_relative_path(value: str) -> None:
-    if not isinstance(value, str) or not value or os.path.isabs(value):
-        raise ValueError("artifact path must be a non-empty relative path")
-    normalized = value.replace("\\", "/")
-    path = PurePosixPath(normalized)
-    if ".." in path.parts or path == PurePosixPath("."):
-        raise ValueError("artifact path must not contain path traversal")
-
-
-def _nonnegative(value: int, label: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{label} must be a non-negative integer")
-
-
-def _positive(value: int, label: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"{label} must be a positive integer")
-
-
-def _digest(value: str, label: str) -> None:
-    if not isinstance(value, str) or not _SHA256.fullmatch(value):
-        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
-
-
-def _now(value: float | None) -> datetime:
-    return datetime.now(timezone.utc) if value is None else _at(value)
-
-
-def _at(value: float) -> datetime:
-    return datetime.fromtimestamp(float(value), timezone.utc)
-
-
-def _advisory_lock(session: Session, *parts: str) -> None:
-    digest = hashlib.sha256("\0".join(parts).encode("utf-8")).digest()
-    key = int.from_bytes(digest[:8], "big", signed=True)
-    session.scalar(select(func.pg_advisory_xact_lock(key)))

@@ -10,6 +10,13 @@ from app.model.context import (
 from app.model.transformer import TransformerModel
 
 
+@pytest.fixture(autouse=True)
+def torch_rng():
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(1729)
+        yield
+
+
 def test_transformer_forward_shape():
     batch = 4
     seq_len = 10

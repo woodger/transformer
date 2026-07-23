@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-23
+
+### Added
+
+- Добавлены адаптированные для Python/Transformer политики разработки:
+  архитектурные границы, тестирование, документация, зависимости, именование,
+  lifecycle кода и runtime entrypoints.
+- Добавлены ADR внутренних границ Flight control plane, AST-проверки import
+  graph и immutable records для execution/persistence boundaries.
+
+### Changed
+
+- Flight control plane разделён на durable upload session, trusted execution
+  plan, subprocess runner, artifact publisher, attempt executor и
+  Coordinator/Ledger use-case slices. Публичные фасады, Flight v1 contract,
+  PostgreSQL schema и spool layout сохранены.
+- Тесты приведены к проверке наблюдаемого поведения; PostgreSQL integration
+  tests теперь требуют отдельную базу с именем `transformer_test*`.
+- Руководство по systemd сокращено до последовательного ручного
+  production-развёртывания без deployment automation.
+
+### Fixed
+
+- Flight fit формирует job-wide shuffle windows и optimizer batches независимо
+  от границ transport payload, поэтому изменение размера упаковки больше не
+  меняет training trajectory.
+
 ## [0.1.5] - 2026-07-23
 
 ### Added
@@ -168,7 +195,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/woodger/transformer/compare/v0.1.2...v0.1.3

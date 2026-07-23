@@ -25,32 +25,37 @@ class TradingHead(nn.Module):
             nn.LayerNorm(128),
         )
 
-        # regression
         self.mean_head = nn.Linear(128, 1)
         self.sigma_head = nn.Linear(128, 1)
 
-        # logits (ВАЖНО: без sigmoid!)
+        # combined_loss applies BCEWithLogitsLoss to these raw outputs.
         self.ptp_head = nn.Linear(128, 1)
         self.psl_head = nn.Linear(128, 1)
         self.hit_head = nn.Linear(128, 1)
 
-        # positive regression
         self.vol_head = nn.Linear(128, 1)
 
     def forward(self, x):
         h = self.shared(x)
 
-        meanR = torch.tanh(self.mean_head(h))             # [-1, 1]
-        sigmaR = F.softplus(self.sigma_head(h)) + 1e-6    # > 0
+        mean_return = torch.tanh(self.mean_head(h))
+        return_scale = F.softplus(self.sigma_head(h)) + 1e-6
 
-        logitTP = self.ptp_head(h)                         # logits
-        logitSL = self.psl_head(h)                         # logits
-        logitHit = self.hit_head(h)                        # logits
+        take_profit_logit = self.ptp_head(h)
+        stop_loss_logit = self.psl_head(h)
+        hit_logit = self.hit_head(h)
 
-        volNext = F.softplus(self.vol_head(h)) + 1e-6      # > 0
+        next_volatility = F.softplus(self.vol_head(h)) + 1e-6
 
         return torch.cat(
-            [meanR, sigmaR, logitTP, logitSL, volNext, logitHit],
+            [
+                mean_return,
+                return_scale,
+                take_profit_logit,
+                stop_loss_logit,
+                next_volatility,
+                hit_logit,
+            ],
             dim=1
         )
 
@@ -63,7 +68,7 @@ class TransformerModel(nn.Module):
         hidden_dim,
         layers,
         dropout,
-        out_dim,   # можно оставить, но он теперь логически = 6
+        out_dim,
         nhead=8,
         context_mode=CONTEXT_MODE,
     ):
@@ -105,7 +110,6 @@ class TransformerModel(nn.Module):
             src_key_padding_mask=key_padding_mask
         )
 
-        # последний валидный токен
         last_unmasked_indices = _last_unmasked_indices(key_padding_mask)
 
         batch_idx = torch.arange(x.size(0), device=x.device)

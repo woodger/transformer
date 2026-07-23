@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import select
 import signal
 import subprocess
 import sys
@@ -38,6 +39,16 @@ def _wait_terminated(*pids: int, timeout: float = 5.0) -> None:
     raise AssertionError(f"processes did not terminate: {pids}")
 
 
+def _readline(stream, *, timeout: float = 5.0):
+    readable, _, _ = select.select([stream], [], [], timeout)
+    if not readable:
+        raise AssertionError("subprocess did not produce a line before timeout")
+    line = stream.readline()
+    if not line:
+        raise AssertionError("subprocess closed output before producing a line")
+    return line
+
+
 def test_recovery_kills_leader_dead_process_group_descendants():
     child_code = (
         "import signal,time; "
@@ -60,9 +71,9 @@ def test_recovery_kills_leader_dead_process_group_descendants():
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    child_pid = int(leader.stdout.readline())
-    identity = capture_worker_process(leader.pid)
     try:
+        child_pid = int(_readline(leader.stdout))
+        identity = capture_worker_process(leader.pid)
         leader.stdin.write(b"x")
         leader.stdin.flush()
         leader.stdin.close()
@@ -77,12 +88,12 @@ def test_recovery_kills_leader_dead_process_group_descendants():
         _wait_terminated(child_pid)
     finally:
         try:
-            os.killpg(identity.pgrp, signal.SIGKILL)
+            os.killpg(leader.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         if leader.poll() is None:
             leader.kill()
-            leader.wait()
+        leader.wait(timeout=5)
 
 
 def test_recovery_never_signals_reused_pid_identity():
@@ -107,8 +118,11 @@ def test_recovery_never_signals_reused_pid_identity():
         assert signals == []
         assert process.poll() is None
     finally:
-        os.killpg(identity.pgrp, signal.SIGKILL)
-        process.wait()
+        try:
+            os.killpg(identity.pgrp, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
 
 
 def test_process_supervisor_kills_cli_group_when_worker_parent_dies(tmp_path):
@@ -176,13 +190,18 @@ print(supervisor.pid, flush=True)
         stderr=subprocess.PIPE,
         text=True,
     )
-    supervisor_pid = int(parent.stdout.readline())
-    cli_pid = int(pid_file.read_text())
+    supervisor_pid = None
     try:
+        supervisor_pid = int(_readline(parent.stdout))
+        cli_pid = int(pid_file.read_text())
         assert parent.wait(timeout=5) == 0
         _wait_terminated(supervisor_pid, cli_pid)
     finally:
-        try:
-            os.killpg(supervisor_pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        if parent.poll() is None:
+            parent.kill()
+        parent.wait(timeout=5)
+        if supervisor_pid is not None:
+            try:
+                os.killpg(supervisor_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass

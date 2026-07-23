@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 
 from app.storage.checkpoint import MODELS_DIR, load_checkpoint, save_checkpoint
 from app.storage.atomic import resolve_artifact_path
@@ -40,11 +39,3 @@ def tree_stats(params):
         "std": float(flat.std()),
         "norm": float(torch.norm(flat)),
     }
-
-
-def print_stats(arr):
-    print(f"Min: {np.nanmin(arr):.3f}")
-    print(f"Max: {np.nanmax(arr):.3f}")
-    print(f"Mean: {np.nanmean(arr):.3f}")
-    print(f"Std: {np.nanstd(arr):.3f}")
-    print(f"NaN: {np.isnan(arr).sum()}")

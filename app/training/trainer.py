@@ -11,6 +11,7 @@ from app.config import (
     LOSS_SCHEDULE,
     LOSS_STAGE,
     SAVE_BEST_CHECKPOINT,
+    SEED,
     STAGE_SIZE,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
@@ -29,6 +30,10 @@ from app.training.loss_scheduler import LossScheduler
 from app.metrics import TrainMetrics, append_metrics_jsonl
 from app.training.training_state import TrainingState
 from app.utils import save_model, load_model, tree_stats
+
+
+_MAX_SHUFFLE_WINDOW_BATCHES = 32
+_MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024
 
 
 class Trainer:
@@ -53,6 +58,7 @@ class Trainer:
         metrics_context: dict | None = None,
         model_config=None,
         train_config=None,
+        seed: int = SEED,
     ):
         self.model = model
         self.device = device
@@ -69,6 +75,7 @@ class Trainer:
         self.context_mode = context_mode
         self.model_config = model_config
         self.train_config = train_config
+        self.seed = seed
         self.best_monitor = float("inf")
         self.best_state_dict = None
         self.best_metrics = None
@@ -92,10 +99,7 @@ class Trainer:
         if metrics_context:
             self.metrics_context.update(metrics_context)
 
-        # AMP включаем только если GPU и user просил
         self.use_amp = bool(use_amp and device.type == "cuda")
-
-        # GradScaler для AMP
         self.scaler = torch.amp.GradScaler(enabled=self.use_amp)
 
         self.optimizer = torch.optim.Adam(
@@ -271,18 +275,103 @@ class Trainer:
         )
 
     def fit_payloads(self, payloads, on_epoch=None):
-        """Train each epoch over payload tensors produced in ordinal order.
+        """Train global epochs over a payload-independent row stream.
 
         ``payloads`` is a callable so durable inputs can be reopened for every
-        epoch while retaining at most one payload's tensors in memory.
+        epoch. Optimizer batches and bounded shuffle windows may cross payload
+        boundaries, so transport partitioning cannot change the trajectory.
         """
+        shuffle_generator = torch.Generator()
+        shuffle_generator.manual_seed(self.seed)
 
         def loaders():
-            for X, Y in payloads():
-                yield self._data_loader(X, Y)
-                del X, Y
+            yield self._payload_batches(payloads(), shuffle_generator)
 
         return self._fit_loader_epochs(loaders, on_epoch=on_epoch)
+
+    def _payload_batches(self, payloads, generator):
+        window_rows = None
+        source_buffer = None
+        target_buffer = None
+        buffered_rows = 0
+
+        for source, targets in payloads:
+            payload_rows = source.size(0)
+            if targets.size(0) != payload_rows:
+                raise ValueError("source and target row counts must match")
+            if payload_rows == 0:
+                continue
+
+            if source_buffer is None:
+                row_bytes = (
+                    source[0].numel() * source.element_size()
+                    + targets[0].numel() * targets.element_size()
+                )
+                batch_bytes = self.batch_size * row_bytes
+                window_batches = min(
+                    _MAX_SHUFFLE_WINDOW_BATCHES,
+                    max(1, _MAX_SHUFFLE_WINDOW_BYTES // batch_bytes),
+                )
+                window_rows = self.batch_size * window_batches
+                source_buffer = torch.empty(
+                    (window_rows, *source.shape[1:]),
+                    dtype=source.dtype,
+                    device=source.device,
+                )
+                target_buffer = torch.empty(
+                    (window_rows, *targets.shape[1:]),
+                    dtype=targets.dtype,
+                    device=targets.device,
+                )
+
+            offset = 0
+            while offset < payload_rows:
+                copied_rows = min(
+                    window_rows - buffered_rows,
+                    payload_rows - offset,
+                )
+                buffer_end = buffered_rows + copied_rows
+                payload_end = offset + copied_rows
+                source_buffer[buffered_rows:buffer_end].copy_(
+                    source[offset:payload_end]
+                )
+                target_buffer[buffered_rows:buffer_end].copy_(
+                    targets[offset:payload_end]
+                )
+                buffered_rows = buffer_end
+                offset = payload_end
+
+                if buffered_rows == window_rows:
+                    yield from self._shuffled_batches(
+                        source_buffer,
+                        target_buffer,
+                        buffered_rows,
+                        generator,
+                    )
+                    buffered_rows = 0
+
+            del source, targets
+
+        if buffered_rows:
+            yield from self._shuffled_batches(
+                source_buffer,
+                target_buffer,
+                buffered_rows,
+                generator,
+            )
+
+    def _shuffled_batches(self, source, targets, rows: int, generator):
+        order = torch.randperm(
+            rows,
+            generator=generator,
+            device=source.device,
+        )
+        for offset in range(0, rows, self.batch_size):
+            indices = order[offset:offset + self.batch_size]
+            yield (
+                source.index_select(0, indices),
+                targets.index_select(0, indices),
+            )
 
     def _data_loader(self, X: torch.Tensor, Y: torch.Tensor):
         dataset = TensorDataset(X, Y)

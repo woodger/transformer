@@ -1,7 +1,45 @@
 import pytest
 
-from app.flight.constants import JobState
-from app.flight.state import is_terminal, validate_transition
+from app.flight.constants import ErrorCode, JobState
+from app.flight.state import (
+    CancelDecision,
+    RecoveryDecision,
+    decide_cancel,
+    decide_interrupted_attempt,
+    is_terminal,
+    validate_transition,
+)
+
+
+ALLOWED_TRANSITIONS = {
+    (JobState.UPLOADING, JobState.SEALED),
+    (JobState.UPLOADING, JobState.CANCELLED),
+    (JobState.SEALED, JobState.QUEUED),
+    (JobState.SEALED, JobState.CANCELLED),
+    (JobState.QUEUED, JobState.RUNNING),
+    (JobState.QUEUED, JobState.CANCELLED),
+    (JobState.RUNNING, JobState.SUCCEEDED),
+    (JobState.RUNNING, JobState.FAILED),
+    (JobState.RUNNING, JobState.CANCELLING),
+    (JobState.CANCELLING, JobState.CANCELLED),
+}
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        (current, target)
+        for current in JobState
+        for target in JobState
+    ],
+)
+def test_state_machine_transition_matrix_is_explicit(current, target):
+    if (current, target) in ALLOWED_TRANSITIONS:
+        validate_transition(current, target)
+        return
+
+    with pytest.raises(ValueError, match="invalid job state transition"):
+        validate_transition(current, target)
 
 
 def test_state_machine_accepts_normative_flow_and_immediate_cancel():
@@ -24,3 +62,90 @@ def test_terminal_states_are_immutable():
 def test_cancelling_can_only_finish_as_cancelled():
     with pytest.raises(ValueError, match="invalid job state transition"):
         validate_transition(JobState.CANCELLING, JobState.FAILED)
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        (
+            JobState.UPLOADING,
+            CancelDecision(JobState.CANCELLED, False),
+        ),
+        (
+            JobState.SEALED,
+            CancelDecision(JobState.CANCELLED, False),
+        ),
+        (
+            JobState.QUEUED,
+            CancelDecision(JobState.CANCELLED, False),
+        ),
+        (
+            JobState.RUNNING,
+            CancelDecision(JobState.CANCELLING, True),
+        ),
+        (
+            JobState.CANCELLING,
+            CancelDecision(None, False),
+        ),
+        (
+            JobState.SUCCEEDED,
+            CancelDecision(None, False),
+        ),
+        (
+            JobState.FAILED,
+            CancelDecision(None, False),
+        ),
+        (
+            JobState.CANCELLED,
+            CancelDecision(None, False),
+        ),
+    ],
+)
+def test_cancel_decision_is_explicit_for_every_state(state, expected):
+    assert decide_cancel(state) == expected
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        (
+            JobState.RUNNING,
+            RecoveryDecision(
+                target=JobState.FAILED,
+                error_code=ErrorCode.EXECUTION_INTERRUPTED,
+                error_message=(
+                    "worker execution was interrupted by service restart"
+                ),
+            ),
+        ),
+        (
+            JobState.CANCELLING,
+            RecoveryDecision(
+                target=JobState.CANCELLED,
+                error_code=None,
+                error_message=None,
+            ),
+        ),
+    ],
+)
+def test_interrupted_attempt_decision_is_explicit(state, expected):
+    assert decide_interrupted_attempt(state) == expected
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        JobState.UPLOADING,
+        JobState.SEALED,
+        JobState.QUEUED,
+        JobState.SUCCEEDED,
+        JobState.FAILED,
+        JobState.CANCELLED,
+    ],
+)
+def test_only_active_attempt_states_can_be_reconciled(state):
+    with pytest.raises(
+        ValueError,
+        match="job state cannot be reconciled as interrupted",
+    ):
+        decide_interrupted_attempt(state)

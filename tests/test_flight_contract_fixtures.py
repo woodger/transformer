@@ -1,12 +1,9 @@
 from copy import deepcopy
-from datetime import datetime
 import json
 import hashlib
 from pathlib import Path
-import re
 import subprocess
 import sys
-import uuid
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
@@ -35,6 +32,10 @@ from app.flight.contract import (
     validate_upload_metadata,
 )
 from app.flight.arrow import schema_fingerprint
+from flight_contract_schema import (
+    read_contract_schema,
+    validate_schema_subset,
+)
 
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v1" / "fixtures"
@@ -103,141 +104,10 @@ def _open_fixture(name: str):
     return ipc.open_file(ARROW_ROOT / name)
 
 
-def _read_schema(name: str) -> dict:
-    return json.loads((SCHEMA_ROOT / name).read_text())
-
-
 def _schema_property(schema: dict, *path: str) -> dict:
     for name in path:
         schema = schema["properties"][name]
     return schema
-
-
-def _json_equal(left, right) -> bool:
-    if isinstance(left, bool) or isinstance(right, bool):
-        return type(left) is type(right) and left == right
-    return left == right
-
-
-def _matches_type(value, expected: str) -> bool:
-    if expected == "null":
-        return value is None
-    if expected == "boolean":
-        return isinstance(value, bool)
-    if expected == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if expected == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if expected == "string":
-        return isinstance(value, str)
-    if expected == "array":
-        return isinstance(value, list)
-    if expected == "object":
-        return isinstance(value, dict)
-    raise AssertionError(f"unsupported JSON Schema type in contract test: {expected}")
-
-
-def _validate_schema_subset(value, schema: dict, path: str = "$") -> None:
-    """Validate the contract's deliberately small Draft 2020-12 subset.
-
-    This keeps golden-contract verification dependency-free while exercising the
-    required, closed-object and conditional semantics used by result schemas.
-    It is not intended to be a general JSON Schema implementation.
-    """
-
-    assert "$ref" not in schema, f"{path}: direct result schemas must be self-contained"
-
-    expected_types = schema.get("type")
-    if expected_types is not None:
-        if isinstance(expected_types, str):
-            expected_types = [expected_types]
-        assert any(_matches_type(value, expected) for expected in expected_types), (
-            f"{path}: expected type {expected_types}, got {type(value).__name__}"
-        )
-
-    if "const" in schema:
-        assert _json_equal(value, schema["const"]), (
-            f"{path}: expected const {schema['const']!r}, got {value!r}"
-        )
-    if "enum" in schema:
-        assert any(_json_equal(value, candidate) for candidate in schema["enum"]), (
-            f"{path}: {value!r} is not in {schema['enum']!r}"
-        )
-
-    if isinstance(value, dict):
-        required = set(schema.get("required", ()))
-        missing = required - value.keys()
-        assert not missing, f"{path}: missing required fields {sorted(missing)!r}"
-
-        properties = schema.get("properties", {})
-        unknown = value.keys() - properties.keys()
-        additional = schema.get("additionalProperties", True)
-        if additional is False:
-            assert not unknown, f"{path}: unexpected fields {sorted(unknown)!r}"
-        elif isinstance(additional, dict):
-            for key in unknown:
-                _validate_schema_subset(value[key], additional, f"{path}.{key}")
-
-        for key, property_schema in properties.items():
-            if key in value:
-                _validate_schema_subset(value[key], property_schema, f"{path}.{key}")
-
-    if isinstance(value, list):
-        if "minItems" in schema:
-            assert len(value) >= schema["minItems"], f"{path}: too few items"
-        if "maxItems" in schema:
-            assert len(value) <= schema["maxItems"], f"{path}: too many items"
-        if schema.get("uniqueItems"):
-            canonical = [json.dumps(item, sort_keys=True) for item in value]
-            assert len(canonical) == len(set(canonical)), f"{path}: duplicate items"
-
-        prefix = schema.get("prefixItems", [])
-        for index, item_schema in enumerate(prefix[:len(value)]):
-            _validate_schema_subset(value[index], item_schema, f"{path}[{index}]")
-        items = schema.get("items")
-        if items is False:
-            assert len(value) <= len(prefix), f"{path}: items beyond prefix are forbidden"
-        elif isinstance(items, dict):
-            start = len(prefix) if prefix else 0
-            for index, item in enumerate(value[start:], start=start):
-                _validate_schema_subset(item, items, f"{path}[{index}]")
-
-    if isinstance(value, str):
-        if "minLength" in schema:
-            assert len(value) >= schema["minLength"], f"{path}: string is too short"
-        if "maxLength" in schema:
-            assert len(value) <= schema["maxLength"], f"{path}: string is too long"
-        if "pattern" in schema:
-            assert re.search(schema["pattern"], value), f"{path}: pattern mismatch"
-        if schema.get("format") == "uuid":
-            assert str(uuid.UUID(value)) == value.lower(), f"{path}: invalid UUID"
-        elif schema.get("format") == "date-time":
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            assert parsed.tzinfo is not None, f"{path}: date-time must include timezone"
-
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if "minimum" in schema:
-            assert value >= schema["minimum"], f"{path}: below minimum"
-        if "maximum" in schema:
-            assert value <= schema["maximum"], f"{path}: above maximum"
-        if "exclusiveMinimum" in schema:
-            assert value > schema["exclusiveMinimum"], f"{path}: below exclusiveMinimum"
-        if "exclusiveMaximum" in schema:
-            assert value < schema["exclusiveMaximum"], f"{path}: above exclusiveMaximum"
-
-    for branch in schema.get("allOf", ()):
-        condition = branch.get("if")
-        if condition is None:
-            _validate_schema_subset(value, branch, path)
-            continue
-        try:
-            _validate_schema_subset(value, condition, path)
-        except AssertionError:
-            selected = branch.get("else")
-        else:
-            selected = branch.get("then")
-        if selected is not None:
-            _validate_schema_subset(value, selected, path)
 
 
 def test_json_golden_fixtures_match_runtime_contract():
@@ -441,30 +311,33 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
 
 def test_result_golden_fixtures_match_specific_language_neutral_schemas():
     for fixture_name, schema_name in RESULT_FIXTURES.items():
-        _validate_schema_subset(_read_json(fixture_name), _read_schema(schema_name))
+        validate_schema_subset(
+            _read_json(fixture_name),
+            read_contract_schema(schema_name),
+        )
 
 
 def test_result_schemas_enforce_required_and_closed_object_semantics():
     for fixture_name, schema_name in RESULT_FIXTURES.items():
         fixture = _read_json(fixture_name)
-        schema = _read_schema(schema_name)
+        schema = read_contract_schema(schema_name)
 
         missing_required = deepcopy(fixture)
         missing_required.pop(schema["required"][-1])
         with pytest.raises(AssertionError, match="missing required"):
-            _validate_schema_subset(missing_required, schema)
+            validate_schema_subset(missing_required, schema)
 
         extra_top_level = {**fixture, "checkpointPath": "/srv/models/model.pth"}
         with pytest.raises(AssertionError, match="unexpected fields"):
-            _validate_schema_subset(extra_top_level, schema)
+            validate_schema_subset(extra_top_level, schema)
 
     status = _read_json("status.result.json")
     missing_checkpoint_metadata = deepcopy(status)
     missing_checkpoint_metadata["results"]["checkpoint"].pop("dataSchema")
     with pytest.raises(AssertionError, match="missing required"):
-        _validate_schema_subset(
+        validate_schema_subset(
             missing_checkpoint_metadata,
-            _read_schema("status-result.schema.json"),
+            read_contract_schema("status-result.schema.json"),
         )
 
     leaked_checkpoint_path = deepcopy(status)
@@ -472,42 +345,44 @@ def test_result_schemas_enforce_required_and_closed_object_semantics():
         "/srv/transformer/state/models/checkpoint.pth"
     )
     with pytest.raises(AssertionError, match="unexpected fields"):
-        _validate_schema_subset(
+        validate_schema_subset(
             leaked_checkpoint_path,
-            _read_schema("status-result.schema.json"),
+            read_contract_schema("status-result.schema.json"),
         )
 
 
 def test_result_schemas_enforce_device_state_and_result_conditionals():
-    health_schema = _read_schema("health-result.schema.json")
+    health_schema = read_contract_schema("health-result.schema.json")
     unhealthy_ready = deepcopy(_read_json("health.result.json"))
     unhealthy_ready["draining"] = True
     with pytest.raises(AssertionError, match="expected const False"):
-        _validate_schema_subset(unhealthy_ready, health_schema)
+        validate_schema_subset(unhealthy_ready, health_schema)
 
-    capabilities_schema = _read_schema("capabilities-result.schema.json")
+    capabilities_schema = read_contract_schema(
+        "capabilities-result.schema.json"
+    )
     impossible_cuda = deepcopy(_read_json("capabilities.result.json"))
     impossible_cuda["devices"]["cuda"]["deviceCount"] = 1
     with pytest.raises(AssertionError, match="expected const 0"):
-        _validate_schema_subset(impossible_cuda, capabilities_schema)
+        validate_schema_subset(impossible_cuda, capabilities_schema)
 
-    create_schema = _read_schema("create-result.schema.json")
+    create_schema = read_contract_schema("create-result.schema.json")
     fit_with_resolved_model = deepcopy(_read_json("create-fit.result.json"))
     fit_with_resolved_model["resolvedModelRef"] = "mdl_should_not_exist_for_fit"
     with pytest.raises(AssertionError, match="expected const None"):
-        _validate_schema_subset(fit_with_resolved_model, create_schema)
+        validate_schema_subset(fit_with_resolved_model, create_schema)
 
-    start_schema = _read_schema("start-result.schema.json")
+    start_schema = read_contract_schema("start-result.schema.json")
     cuda_fell_back_to_cpu = deepcopy(_read_json("start.result.json"))
     cuda_fell_back_to_cpu["device"] = {"requested": "cuda", "selected": "cpu"}
     with pytest.raises(AssertionError, match="expected const 'cuda'"):
-        _validate_schema_subset(cuda_fell_back_to_cpu, start_schema)
+        validate_schema_subset(cuda_fell_back_to_cpu, start_schema)
 
-    status_schema = _read_schema("status-result.schema.json")
+    status_schema = read_contract_schema("status-result.schema.json")
     successful_fit_without_model = deepcopy(_read_json("status.result.json"))
     successful_fit_without_model["results"]["modelRef"] = None
     with pytest.raises(AssertionError, match=r"expected type \['string'\]"):
-        _validate_schema_subset(successful_fit_without_model, status_schema)
+        validate_schema_subset(successful_fit_without_model, status_schema)
 
     nonterminal = deepcopy(_read_json("status.result.json"))
     nonterminal.update({"state": "RUNNING", "pollAfterMs": 100, "error": None})
@@ -516,24 +391,24 @@ def test_result_schemas_enforce_device_state_and_result_conditionals():
         "modelRef": None,
         "checkpoint": None,
     }
-    _validate_schema_subset(nonterminal, status_schema)
+    validate_schema_subset(nonterminal, status_schema)
 
     queued = deepcopy(nonterminal)
     queued.update({"state": "QUEUED", "attempt": 0, "pollAfterMs": 100})
-    _validate_schema_subset(queued, status_schema)
+    validate_schema_subset(queued, status_schema)
 
     nonterminal["pollAfterMs"] = 0
     with pytest.raises(AssertionError, match="below minimum"):
-        _validate_schema_subset(nonterminal, status_schema)
+        validate_schema_subset(nonterminal, status_schema)
 
     failed_without_error = deepcopy(nonterminal)
     failed_without_error.update({"state": "FAILED", "pollAfterMs": 0})
     with pytest.raises(AssertionError, match=r"expected type \['object'\]"):
-        _validate_schema_subset(failed_without_error, status_schema)
+        validate_schema_subset(failed_without_error, status_schema)
 
     cancelled = deepcopy(nonterminal)
     cancelled.update({"state": "CANCELLED", "pollAfterMs": 0})
-    _validate_schema_subset(cancelled, status_schema)
+    validate_schema_subset(cancelled, status_schema)
 
     cancelled_with_error = deepcopy(cancelled)
     cancelled_with_error["error"] = {
@@ -541,14 +416,14 @@ def test_result_schemas_enforce_device_state_and_result_conditionals():
         "message": "job was cancelled",
     }
     with pytest.raises(AssertionError, match="expected const None"):
-        _validate_schema_subset(cancelled_with_error, status_schema)
+        validate_schema_subset(cancelled_with_error, status_schema)
 
     wrong_missing_flags = deepcopy(_read_json("status.result.json"))
     wrong_missing_flags["results"]["checkpoint"]["dataSchema"]["missing"][
         "flags"
     ] = "none"
     with pytest.raises(AssertionError, match="expected const 'per-feature'"):
-        _validate_schema_subset(wrong_missing_flags, status_schema)
+        validate_schema_subset(wrong_missing_flags, status_schema)
 
 
 def test_arrow_golden_fixtures_have_expected_batch_and_row_boundaries():
@@ -609,6 +484,7 @@ def test_arrow_golden_fixtures_are_reproducible(tmp_path):
     subprocess.run(
         [sys.executable, str(GENERATOR), "--output-dir", str(tmp_path)],
         check=True,
+        timeout=30,
     )
 
     for name in ARROW_FIXTURES:

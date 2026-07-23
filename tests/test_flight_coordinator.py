@@ -1,6 +1,7 @@
 import json
 import uuid
 
+import pyarrow.flight as flight
 import pytest
 
 from app.database.models import Job, JobAttempt
@@ -19,7 +20,21 @@ from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
 from app.flight.ledger import Ledger
+from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
+from flight_contract_schema import (
+    read_contract_schema,
+    validate_schema_subset,
+)
+
+
+ACTION_RESULT_SCHEMAS = {
+    CREATE_ACTION: "create-result.schema.json",
+    SEAL_ACTION: "seal-result.schema.json",
+    START_ACTION: "start-result.schema.json",
+    CANCEL_ACTION: "cancel-result.schema.json",
+    STATUS_ACTION: "status-result.schema.json",
+}
 
 
 def common():
@@ -82,6 +97,116 @@ def test_create_and_status_are_durable_and_idempotent(coordinator):
     assert status["state"] == "UPLOADING"
     assert status["revision"] == 1
     assert status["committedInputs"] == []
+
+
+def test_action_facade_preserves_lifecycle_over_real_flight_loopback(
+    coordinator,
+):
+    service, _ = coordinator
+    server = TransformerFlightServer(
+        service.config,
+        service,
+        {"secret": "inventory"},
+    )
+    client = flight.FlightClient(("localhost", server.port))
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", b"Bearer secret")],
+        timeout=5.0,
+    )
+
+    def action(action_name, document):
+        results = list(client.do_action(
+            flight.Action(
+                action_name,
+                json.dumps(document).encode("utf-8"),
+            ),
+            options=options,
+        ))
+        assert len(results) == 1
+        response = json.loads(results[0].body.to_pybytes())
+        validate_schema_subset(
+            response,
+            read_contract_schema(ACTION_RESULT_SCHEMAS[action_name]),
+        )
+        return response
+
+    try:
+        create = {
+            **common(),
+            "idempotencyKey": "loopback-create",
+            "operation": "fit",
+            "device": "cpu",
+            "modelLabel": "loopback",
+            "modelConfig": {
+                "seqLen": 2,
+                "hidden": 8,
+                "nhead": 2,
+            },
+            "trainingConfig": {"epochs": 1},
+        }
+        created = action(CREATE_ACTION, create)
+        assert created["requestId"] == create["requestId"]
+        assert action(
+            CREATE_ACTION,
+            {**create, "requestId": str(uuid.uuid4())},
+        ) == created
+        job_id = created["jobId"]
+        uploading_status = {**common(), "jobId": job_id}
+        uploading = action(STATUS_ACTION, uploading_status)
+        assert uploading["requestId"] == uploading_status["requestId"]
+        assert uploading["state"] == "UPLOADING"
+
+        seal = {
+            **common(),
+            "idempotencyKey": "loopback-seal",
+            "jobId": job_id,
+            "manifest": [],
+        }
+        sealed = action(SEAL_ACTION, seal)
+        assert sealed["requestId"] == seal["requestId"]
+        assert sealed["state"] == "SEALED"
+        assert action(
+            SEAL_ACTION,
+            {**seal, "requestId": str(uuid.uuid4())},
+        ) == sealed
+
+        start = {
+            **common(),
+            "idempotencyKey": "loopback-start",
+            "jobId": job_id,
+        }
+        started = action(START_ACTION, start)
+        assert started["requestId"] == start["requestId"]
+        assert started["state"] == "QUEUED"
+        assert action(
+            START_ACTION,
+            {**start, "requestId": str(uuid.uuid4())},
+        ) == started
+        queued_status = {**common(), "jobId": job_id}
+        queued = action(STATUS_ACTION, queued_status)
+        assert queued["requestId"] == queued_status["requestId"]
+        assert queued["state"] == "QUEUED"
+
+        cancel = {
+            **common(),
+            "idempotencyKey": "loopback-cancel",
+            "jobId": job_id,
+        }
+        cancelled = action(CANCEL_ACTION, cancel)
+        assert cancelled["requestId"] == cancel["requestId"]
+        assert cancelled["state"] == "CANCELLED"
+        assert action(
+            CANCEL_ACTION,
+            {**cancel, "requestId": str(uuid.uuid4())},
+        ) == cancelled
+        terminal_status = {**common(), "jobId": job_id}
+        terminal = action(STATUS_ACTION, terminal_status)
+        assert terminal["requestId"] == terminal_status["requestId"]
+        assert terminal["state"] == "CANCELLED"
+        assert terminal["error"] is None
+    finally:
+        client.close()
+        server.shutdown()
 
 
 def test_status_hides_legacy_cancel_error(tmp_path, postgres_ledger):
@@ -307,6 +432,197 @@ def test_seal_rejects_missing_or_out_of_order_ordinal(coordinator):
             seal,
         )
     assert ledger.get_job(created["jobId"])["state"] == "UPLOADING"
+
+
+@pytest.mark.parametrize(
+    (
+        "operation",
+        "action_name",
+        "ledger_method",
+        "initial_state",
+        "expected_state",
+    ),
+    [
+        (
+            "seal",
+            SEAL_ACTION,
+            "seal_job",
+            "UPLOADING",
+            "SEALED",
+        ),
+        (
+            "start",
+            START_ACTION,
+            "queue_job",
+            "SEALED",
+            "QUEUED",
+        ),
+    ],
+)
+def test_lifecycle_slice_and_idempotency_record_roll_back_together(
+    coordinator,
+    monkeypatch,
+    operation,
+    action_name,
+    ledger_method,
+    initial_state,
+    expected_state,
+):
+    service, ledger = coordinator
+    job = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="fit",
+        requested_device="cpu",
+        prediction_column="out",
+        config_hash="a" * 64,
+        model_label=f"{operation}-rollback",
+        model_config={"seq_len": 2},
+    )
+    if operation == "start":
+        ledger.seal_job(
+            job["job_id"],
+            manifest_hash="b" * 64,
+            manifest=[],
+        )
+    document = {
+        **common(),
+        "idempotencyKey": f"{operation}-rollback",
+        "jobId": job["job_id"],
+    }
+    if operation == "seal":
+        document["manifest"] = []
+    request = validate_action_request(action_name, document)
+    original = getattr(ledger, ledger_method)
+
+    def mutate_then_fail(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("injected post-mutation failure")
+
+    monkeypatch.setattr(ledger, ledger_method, mutate_then_fail)
+    with pytest.raises(
+        RuntimeError,
+        match="injected post-mutation failure",
+    ):
+        getattr(service, operation)("inventory", request, document)
+
+    assert ledger.get_job(job["job_id"])["state"] == initial_state
+    assert ledger.lookup_idempotency(
+        "inventory",
+        action_name,
+        document["idempotencyKey"],
+    ) is None
+
+    monkeypatch.setattr(ledger, ledger_method, original)
+    result = getattr(service, operation)("inventory", request, document)
+
+    assert result["state"] == expected_state
+    assert ledger.get_job(job["job_id"])["state"] == expected_state
+
+
+def test_create_slice_and_idempotency_record_roll_back_together(
+    coordinator,
+    monkeypatch,
+):
+    service, ledger = coordinator
+    document = create_document(
+        idempotencyKey="create-rollback",
+        modelLabel="create-rollback",
+    )
+    request = validate_action_request(CREATE_ACTION, document)
+    original = ledger.create_job
+
+    def mutate_then_fail(**kwargs):
+        original(**kwargs)
+        raise RuntimeError("injected post-mutation failure")
+
+    monkeypatch.setattr(ledger, "create_job", mutate_then_fail)
+    with pytest.raises(
+        RuntimeError,
+        match="injected post-mutation failure",
+    ):
+        service.create("inventory", request, document)
+
+    assert ledger.list_jobs() == []
+    assert ledger.lookup_idempotency(
+        "inventory",
+        CREATE_ACTION,
+        document["idempotencyKey"],
+    ) is None
+
+    monkeypatch.setattr(ledger, "create_job", original)
+    result = service.create("inventory", request, document)
+
+    assert result["state"] == "UPLOADING"
+    assert ledger.get_job(result["jobId"])["state"] == "UPLOADING"
+
+
+def test_running_cancel_rolls_back_with_idempotency_and_notifier(
+    coordinator,
+    monkeypatch,
+):
+    service, ledger = coordinator
+    job = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="fit",
+        requested_device="cpu",
+        prediction_column="out",
+        config_hash="d" * 64,
+        model_label="cancel-rollback",
+    )
+    ledger.seal_job(
+        job["job_id"],
+        manifest_hash="e" * 64,
+        manifest=[],
+    )
+    ledger.queue_job(job["job_id"], selected_device="cpu")
+    assert ledger.claim_next_job("cpu")["state"] == "RUNNING"
+    notifications = []
+    service.cancel_notifier = notifications.append
+    document = {
+        **common(),
+        "idempotencyKey": "cancel-running-rollback",
+        "jobId": job["job_id"],
+    }
+    request = validate_action_request(CANCEL_ACTION, document)
+    original = ledger.transition_job
+
+    def mutate_then_fail(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("injected post-mutation failure")
+
+    monkeypatch.setattr(ledger, "transition_job", mutate_then_fail)
+    with pytest.raises(
+        RuntimeError,
+        match="injected post-mutation failure",
+    ):
+        service.cancel("inventory", request, document)
+
+    assert ledger.get_job(job["job_id"])["state"] == "RUNNING"
+    assert ledger.lookup_idempotency(
+        "inventory",
+        CANCEL_ACTION,
+        document["idempotencyKey"],
+    ) is None
+    assert notifications == []
+
+    monkeypatch.setattr(ledger, "transition_job", original)
+    result = service.cancel("inventory", request, document)
+
+    assert result["state"] == "CANCELLING"
+    assert ledger.get_job(job["job_id"])["state"] == "CANCELLING"
+    assert notifications == [job["job_id"]]
+    retry = {
+        **document,
+        "requestId": str(uuid.uuid4()),
+    }
+    assert service.cancel(
+        "inventory",
+        validate_action_request(CANCEL_ACTION, retry),
+        retry,
+    ) == result
+    assert notifications == [job["job_id"]]
 
 
 def test_start_rechecks_explicit_cuda_and_preserves_sealed_state(coordinator):

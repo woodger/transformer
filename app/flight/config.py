@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, fields
 import math
 import os
 from pathlib import Path
@@ -209,10 +209,6 @@ def tls_server_options(config: FlightServiceConfig) -> dict:
             "root_certificates": Path(config.tls_ca_file).read_bytes(),
         })
     return options
-
-
-def with_bound_port(config: FlightServiceConfig, port: int) -> FlightServiceConfig:
-    return replace(config, port=port)
 
 
 def _parse_environment_value(value: str, annotation, key: str):

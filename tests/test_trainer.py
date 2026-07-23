@@ -2,10 +2,12 @@ import math
 import torch
 import json
 
+import pytest
 from torch import nn
 from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from app.training.early_stopping import EarlyStopping
+from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
@@ -13,9 +15,19 @@ from app.model.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
 
 
+@pytest.fixture(autouse=True)
+def torch_rng():
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(1729)
+        yield
+
+
 def make_dummy_data(n=32, seq_len=5, feat_dim=4, out_dim=6):
     X = torch.randn(n, seq_len, feat_dim)
     Y = torch.randn(n, out_dim)
+    if out_dim >= 6:
+        Y[:, 4] = torch.rand(n) + 0.1
+        Y[:, 5] = torch.randint(0, 2, (n,), dtype=Y.dtype)
     return X, Y
 
 
@@ -45,7 +57,13 @@ def test_trainer_fit_cpu(tmp_path):
     model_path = tmp_path / "model.pth"
     trainer.fit(X, Y, str(model_path))
 
-    assert model_path.exists()
+    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
+    assert checkpoint["format"] == CHECKPOINT_FORMAT
+    assert set(checkpoint["state_dict"]) == set(model.state_dict())
+    assert all(
+        torch.isfinite(value).all()
+        for value in checkpoint["state_dict"].values()
+    )
 
 
 def test_trainer_checkpoint_stores_run_config(tmp_path):
@@ -111,8 +129,8 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
     assert config.context_mode == "relaxed"
 
 
-def test_trainer_amp_flag_on_cpu():
-    X, Y = make_dummy_data()
+def test_cpu_training_disables_amp_and_updates_parameters():
+    X, Y = make_dummy_data(n=4)
 
     model = TransformerModel(
         input_dim=4,
@@ -133,8 +151,19 @@ def test_trainer_amp_flag_on_cpu():
         patience=1,
         use_amp=True,  # просим AMP, но CPU
     )
+    before = {
+        name: value.detach().clone()
+        for name, value in model.state_dict().items()
+    }
 
+    metrics = trainer.fit_batch(X, Y)
+
+    assert metrics.rows == 4
     assert trainer.use_amp is False
+    assert any(
+        not torch.equal(before[name], value)
+        for name, value in model.state_dict().items()
+    )
 
 
 def test_trainer_fit_batch_cpu():
@@ -395,6 +424,76 @@ def test_trainer_fit_payloads_runs_global_epochs_over_all_payloads():
     assert [metrics.step for metrics in metrics_rows] == [3, 6, 9]
     assert [metrics.loss_stage for metrics in metrics_rows] == [1, 2, 3]
     assert trainer.best_frame is None
+
+
+def test_trainer_fit_payloads_is_independent_of_payload_boundaries():
+    X, Y = make_dummy_data(n=10)
+    initial_model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    initial_state = {
+        name: value.detach().clone()
+        for name, value in initial_model.state_dict().items()
+    }
+
+    def train(payloads):
+        model = TransformerModel(
+            input_dim=4,
+            seq_len=5,
+            hidden_dim=32,
+            layers=1,
+            dropout=0.0,
+            out_dim=6,
+            nhead=4,
+        )
+        model.load_state_dict(initial_state)
+        trainer = build_trainer(
+            TrainConfig(
+                lr=1e-3,
+                batch_size=4,
+                epochs=2,
+                patience=0,
+                loss_schedule="none",
+                monitor="loss",
+                save_best_checkpoint=False,
+                use_amp=False,
+                seed=91,
+            ),
+            model,
+            torch.device("cpu"),
+            ModelConfig(
+                seq_len=5,
+                hidden=32,
+                layers=1,
+                dropout=0.0,
+                nhead=4,
+                feature_dim=4,
+            ),
+        )
+        metrics_rows = trainer.fit_payloads(lambda: iter(payloads))
+        return model.state_dict(), metrics_rows
+
+    single_state, single_metrics = train(((X, Y),))
+    split_state, split_metrics = train((
+        (X[:3], Y[:3]),
+        (X[3:5], Y[3:5]),
+        (X[5:], Y[5:]),
+    ))
+
+    assert [metrics.batches for metrics in single_metrics] == [3, 3]
+    assert [metrics.step for metrics in single_metrics] == [3, 6]
+    assert [metrics.batches for metrics in split_metrics] == [3, 3]
+    assert [metrics.step for metrics in split_metrics] == [3, 6]
+    assert all(
+        torch.equal(single_state[name], split_state[name])
+        for name in single_state
+    )
 
 
 def test_trainer_fit_payloads_uses_one_early_stopper_for_the_job():
@@ -724,122 +823,41 @@ def test_plot_metrics_skips_nonfinite_values(tmp_path):
     assert str(plots_dir / "grad_norm.svg") in paths
 
 
-def test_autocast_cpu():
-    model = nn.Linear(2, 2)
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        use_amp=True,  # юзер просит AMP, но CPU
-    )
-
-    # Должен вернуть nullcontext, т.к. CPU
-    ctx = trainer._autocast()
-    assert ctx.__class__.__name__ == "nullcontext"
-
-
-def test_autocast_cuda_or_cpu():
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model = nn.Linear(2, 2)
-    trainer = Trainer(
-        model=model,
-        device=device,
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        use_amp=True,
-    )
-
-    ctx = trainer._autocast()
-    if device.type == "cuda":
-        # Должен быть torch.amp.autocast
-        assert ctx.__class__.__name__ == "autocast"
-    else:
-        # CPU → nullcontext
-        assert ctx.__class__.__name__ == "nullcontext"
-
-
-def test_autocast_forward_pass_cpu():
-    """Проверяем, что с CPU forward можно обернуть _autocast и получить выход"""
-    device = torch.device("cpu")
-    model = nn.Linear(3, 1)
-    trainer = Trainer(model, device, lr=1e-3, batch_size=1, epochs=1, patience=1)
-    
-    x = torch.randn(5, 3)
-    with trainer._autocast():
-        y = model(x)
-    assert y.shape == (5, 1)
-
-
-def test_gradscaler_cpu():
-    """Проверяем, что GradScaler работает на CPU (по сути не делает масштабирование)"""
-    device = torch.device("cpu")
-    model = nn.Linear(2, 1)
-    trainer = Trainer(
-        model=model,
-        device=device,
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        use_amp=True,  # пользователь просит AMP, но CPU
-    )
-
-    x = torch.randn(3, 2)
-    y = torch.randn(3, 1)
-    
-    optimizer = trainer.optimizer
-    scaler = trainer.scaler
-
-    optimizer.zero_grad()
-    with trainer._autocast():  # на CPU → nullcontext
-        preds = model(x)
-        loss = ((preds - y)**2).mean()
-    
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
-
-    # Проверяем, что параметры обновились
-    for p in model.parameters():
-        assert p.grad is not None
-
-def test_gradscaler_cuda():
-    """Проверяем GradScaler на GPU (если есть CUDA)"""
-    if not torch.cuda.is_available():
-        return  # пропускаем тест на системе без CUDA
-
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="CUDA device is required for AMP training integration",
+)
+def test_cuda_amp_training_updates_parameters():
     device = torch.device("cuda")
-    model = nn.Linear(2, 1).to(device)
+    X, Y = make_dummy_data(n=4)
+    model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    ).to(device)
     trainer = Trainer(
         model=model,
         device=device,
         lr=1e-3,
-        batch_size=1,
+        batch_size=4,
         epochs=1,
         patience=1,
         use_amp=True,
     )
+    before = {
+        name: value.detach().clone()
+        for name, value in model.state_dict().items()
+    }
 
-    x = torch.randn(3, 2, device=device)
-    y = torch.randn(3, 1, device=device)
-    
-    optimizer = trainer.optimizer
-    scaler = trainer.scaler
+    metrics = trainer.fit_batch(X, Y)
 
-    optimizer.zero_grad()
-    with trainer._autocast():  # на CUDA → torch.amp.autocast
-        preds = model(x)
-        loss = ((preds - y)**2).mean()
-    
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
-
-    # Проверяем, что параметры обновились
-    for p in model.parameters():
-        assert p.grad is not None
+    assert metrics.rows == 4
+    assert trainer.use_amp is True
+    assert any(
+        not torch.equal(before[name], value)
+        for name, value in model.state_dict().items()
+    )

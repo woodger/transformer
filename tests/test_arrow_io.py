@@ -13,8 +13,7 @@ from app.data.arrow import (
 )
 
 
-def test_arrow_read_write(tmp_path):
-    # ---- create fake arrow file ----
+def test_arrow_file_io_preserves_tensor_values(tmp_path):
     X = [[1.0, 2.0], [3.0, 4.0]]
     Y = [
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
@@ -24,23 +23,28 @@ def test_arrow_read_write(tmp_path):
     table = pa.table({"src": X, "tgt": Y})
     path = tmp_path / "data.arrow"
 
-    with pa.OSFile(str(path), "wb") as sink:  # <--- str(path)
+    with pa.OSFile(str(path), "wb") as sink:
         with ipc.new_file(sink, table.schema) as writer:
             writer.write_table(table)
 
-    X_t, Y_t = read_arrow(str(path))  # read_arrow тоже должен принимать str
+    X_t, Y_t = read_arrow(str(path))
 
     assert isinstance(X_t, torch.Tensor)
     assert isinstance(Y_t, torch.Tensor)
-    assert X_t.shape == (2, 2)
-    assert Y_t.shape == (2, 6)
+    assert X_t.tolist() == X
+    assert Y_t.tolist() == Y
 
-    # ---- write predictions ----
-    preds = torch.randn(2, 6)
+    preds = torch.tensor([
+        [1.0, 2.0, 3.0, 4.0, 5.0, 0.5],
+        [6.0, 5.0, 4.0, 3.0, 2.0, 0.25],
+    ])
     out_path = tmp_path / "preds.arrow"
 
-    write_arrow(str(out_path), preds, "out")  # <--- str(out_path)
-    assert out_path.exists()
+    write_arrow(str(out_path), preds, "out")
+
+    with pa.memory_map(str(out_path), "r") as source:
+        written = ipc.RecordBatchFileReader(source).read_all()
+    assert written.column("out").to_pylist() == preds.tolist()
 
 
 def test_iter_framed_arrow_reads_multiple_payloads():

@@ -1,0 +1,43 @@
+# Нефункциональные требования
+
+> Type: Policy. Этот документ фиксирует свойства Transformer, которые нельзя
+> нарушать рабочей правкой.
+
+## Корректность и воспроизводимость
+
+- заданные seed и deterministic mode сохраняют заявленную семантику;
+- изменение размера transport payload не меняет training trajectory;
+- optimizer, scheduler, early stopping и best checkpoint принадлежат всему
+  training job, а не отдельному Flight payload;
+- явный `cuda` не подменяется CPU;
+- shape, dtype, NaN/Infinity и masking semantics валидируются до вычисления.
+
+## Контракты данных
+
+- Arrow schema и границы logical payload сохраняются;
+- binary stdout не смешивается с diagnostics;
+- checkpoint metadata достаточно для совместимого prediction;
+- опубликованные модели неизменяемы и появляются только после успешного fit;
+- Flight idempotency не приводит к повторному запуску Torch execution.
+
+## Надёжность и хранение
+
+- PostgreSQL остаётся единственным durable control-plane source of truth;
+- runtime payload и незавершённые artifacts остаются в `/tmp/transformer`;
+- успешно опубликованные checkpoints остаются в project `models/`;
+- потеря runtime storage инвалидирует jobs, а не запускает неполное recovery;
+- файловая публикация и database transitions остаются атомарными;
+- один runtime directory принадлежит одному процессу сервиса.
+
+## Безопасность и эксплуатация
+
+- bearer authentication действует для каждого Flight transport;
+- plaintext разрешается только явно;
+- paths и subprocess arguments не принимаются из network request произвольно;
+- service не опрашивает PostgreSQL на каждом RPC или в idle worker loop;
+- SIGTERM, cancellation и process-group cleanup не оставляют активных workers;
+- CLI, environment names, логирование и exit behavior меняются только
+  намеренно как публичный контракт.
+
+Изменение, которое выдаёт правильный happy-path результат, но нарушает одно из
+этих свойств, не считается корректным.

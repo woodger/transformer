@@ -368,10 +368,15 @@ def test_shutdown_never_returns_while_maintenance_can_still_mutate():
         logger=RecordingLogger(),
     ).start()
     assert entered.wait(1.0)
-    threading.Timer(0.05, release.set).start()
+    release_timer = threading.Timer(0.05, release.set)
+    release_timer.start()
 
-    started = time.monotonic()
-    maintenance.shutdown(timeout=0.001)
+    try:
+        started = time.monotonic()
+        maintenance.shutdown(timeout=0.001)
+    finally:
+        release_timer.join(timeout=1.0)
 
+    assert not release_timer.is_alive()
     assert time.monotonic() - started >= 0.02
     assert maintenance.running is False

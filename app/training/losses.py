@@ -73,8 +73,15 @@ def combined_loss(
     loss_stage = validate_loss_stage(loss_stage)
     components = active_loss_components(loss_stage)
 
-    meanR, sigmaR, logitTP, logitSL, volNext, logitHit = preds.T
-    t_meanR, _, _, _, t_volNext, t_hitTP = targets.T
+    (
+        mean_return,
+        return_scale,
+        take_profit_logit,
+        stop_loss_logit,
+        next_volatility,
+        _hit_logit,
+    ) = preds.T
+    target_mean_return, _, _, _, target_next_volatility, target_hit = targets.T
 
     loss = preds.new_tensor(0.0)
     loss_prob = preds.new_tensor(0.0)
@@ -84,9 +91,13 @@ def combined_loss(
     # -------------------------
     # Gaussian NLL
     # -------------------------
-    var = sigmaR.square() + 1e-6
+    var = return_scale.square() + 1e-6
     loss_ret = torch.mean(
-        0.5 * ((t_meanR - meanR).square() / var + torch.log(var))
+        0.5
+        * (
+            (target_mean_return - mean_return).square() / var
+            + torch.log(var)
+        )
     )
     loss += loss_ret
 
@@ -95,8 +106,11 @@ def combined_loss(
     # -------------------------
     if "prob" in components:
         raw_loss_prob = (
-            F.binary_cross_entropy_with_logits(logitTP, t_hitTP) +
-            F.binary_cross_entropy_with_logits(logitSL, 1 - t_hitTP)
+            F.binary_cross_entropy_with_logits(take_profit_logit, target_hit)
+            + F.binary_cross_entropy_with_logits(
+                stop_loss_logit,
+                1 - target_hit,
+            )
         )
         loss_prob = 0.5 * raw_loss_prob
         loss += loss_prob
@@ -105,11 +119,11 @@ def combined_loss(
     # Bayesian EV
     # -------------------------
     if "ev" in components:
-        pTP = torch.sigmoid(logitTP)
-        pSL = torch.sigmoid(logitSL)
+        take_profit_probability = torch.sigmoid(take_profit_logit)
+        stop_loss_probability = torch.sigmoid(stop_loss_logit)
 
-        ev = pTP - pSL
-        risk_pen = sigmaR.detach() * torch.abs(ev)
+        ev = take_profit_probability - stop_loss_probability
+        risk_pen = return_scale.detach() * torch.abs(ev)
         loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_pen)
         loss += loss_ev
 
@@ -118,7 +132,11 @@ def combined_loss(
     # -------------------------
     if "vol" in components:
         raw_loss_vol = torch.mean(
-            (torch.log(volNext + 1e-6) - torch.log(t_volNext + 1e-6)) ** 2
+            (
+                torch.log(next_volatility + 1e-6)
+                - torch.log(target_next_volatility + 1e-6)
+            )
+            ** 2
         )
         loss_vol = 0.2 * raw_loss_vol
         loss += loss_vol
@@ -126,11 +144,16 @@ def combined_loss(
     if not return_parts:
         return loss
 
-    sigma_values = sigmaR.detach().float().reshape(-1)
-    ret_error = (meanR.detach().float() - t_meanR.detach().float()).reshape(-1)
+    sigma_values = return_scale.detach().float().reshape(-1)
+    ret_error = (
+        mean_return.detach().float()
+        - target_mean_return.detach().float()
+    ).reshape(-1)
     ret_abs_error = torch.abs(ret_error)
     ret_squared_error = ret_error ** 2
-    ret_baseline_abs_error = torch.abs(t_meanR.detach().float()).reshape(-1)
+    ret_baseline_abs_error = torch.abs(
+        target_mean_return.detach().float()
+    ).reshape(-1)
 
     return loss, {
         "loss": float(loss.detach().cpu()),

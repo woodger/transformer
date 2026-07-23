@@ -297,7 +297,9 @@ baseline ни разу не пройден, сохраняются текущи�
 остаётся глобальным, а per-frame early stopping начинается заново. Flight fit
 использует другой внутренний режим этой команды: каждая job-wide эпоха читает
 все sealed payloads из durable spool по ordinal, с едиными loss schedule,
-optimizer, checkpoint selection и early stopping на весь job.
+optimizer, checkpoint selection и early stopping на весь job. Строки проходят
+через ограниченное job-wide окно перемешивания; его границы и optimizer batches
+могут пересекать payload и не зависят от транспортного разбиения.
 
 Loss stage соответствует следующим компонентам (точные формулы находятся в
 `docs/losses.md`):
@@ -574,10 +576,18 @@ stdout, поскольку его stdout не является output data proto
 
 ## Тестирование
 
+PostgreSQL integration tests требуют отдельную базу, имя которой начинается с
+`transformer_test`. Внутри неё pytest создаёт миграциями одноразовую schema
+`transformer_test_<uuid>` и удаляет её после test session. Production-база для
+тестов намеренно отвергается.
+
 ```bash
 python -m pip install pytest
-python -m pytest -v
+POSTGRES_DB=transformer_test python3.11 -m pytest -q
 ```
+
+Правила разработки и review собраны в
+[`docs/policy/index.md`](docs/policy/index.md).
 
 ## Основные файлы
 

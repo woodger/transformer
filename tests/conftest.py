@@ -19,6 +19,13 @@ def postgres_config():
     from app.database.migrations import apply_migrations
 
     base = load_database_config()
+    if not base.database.lower().startswith("transformer_test"):
+        pytest.exit(
+            "PostgreSQL integration is blocked: tests require a dedicated "
+            "database whose name starts with 'transformer_test'; override "
+            "POSTGRES_DB for the test run",
+            returncode=4,
+        )
     schema = f"transformer_test_{uuid.uuid4().hex}"
     config = type(base)(
         base.host,
@@ -28,7 +35,7 @@ def postgres_config():
         base.port,
         schema,
     )
-    cleanup_engine = create_engine(base.url)
+    cleanup_engine = create_engine(config.url)
     try:
         apply_migrations(config)
         yield config

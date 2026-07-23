@@ -119,6 +119,39 @@ def test_idempotent_mutation_is_atomic_and_conflicting_key_is_rejected(ledger):
     assert error.value.code == ErrorCode.ALREADY_EXISTS
 
 
+def test_idempotent_mutation_and_replay_record_roll_back_together(ledger):
+    job_id = str(uuid.uuid4())
+
+    def failing_mutation(connection):
+        ledger.create_job(
+            job_id=job_id,
+            owner_subject="inventory",
+            operation="fit",
+            requested_device="cpu",
+            prediction_column="out",
+            config_hash=DIGEST_A,
+            model_label="daily-model",
+            connection=connection,
+        )
+        raise RuntimeError("injected mutation failure")
+
+    with pytest.raises(RuntimeError, match="injected mutation failure"):
+        ledger.run_idempotent(
+            owner_subject="inventory",
+            action_name="transformer.v1.job.create",
+            idempotency_key="create-rollback",
+            request_hash=DIGEST_A,
+            mutation=failing_mutation,
+        )
+
+    assert ledger.get_job(job_id) is None
+    assert ledger.lookup_idempotency(
+        owner_subject="inventory",
+        action_name="transformer.v1.job.create",
+        idempotency_key="create-rollback",
+    ) is None
+
+
 def test_committed_input_is_durable_unique_and_increments_job_revision(
     ledger,
     postgres_config,
@@ -208,18 +241,26 @@ def test_claim_is_atomic_across_worker_threads(ledger):
     seal_and_queue(ledger, second["job_id"], now=4.0)
     barrier = threading.Barrier(3)
     claimed = []
+    errors = []
 
     def claim(worker_id):
-        barrier.wait()
-        claimed.append(ledger.claim_next_job("cpu", worker_id=worker_id))
+        try:
+            barrier.wait(timeout=5)
+            claimed.append(ledger.claim_next_job("cpu", worker_id=worker_id))
+        except BaseException as exc:
+            errors.append(exc)
 
     threads = [threading.Thread(target=claim, args=(f"worker-{index}",)) for index in range(2)]
     for thread in threads:
         thread.start()
-    barrier.wait()
-    for thread in threads:
-        thread.join()
+    try:
+        barrier.wait(timeout=5)
+    finally:
+        for thread in threads:
+            thread.join(timeout=5)
 
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
     assert {job["job_id"] for job in claimed} == {first["job_id"], second["job_id"]}
     assert all(job["state"] == JobState.RUNNING.value for job in claimed)
     assert all(job["attempt"] == 1 for job in claimed)
