@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import errno
-import hashlib
 import json
 import math
 import os
@@ -16,10 +15,13 @@ import time
 from typing import Callable
 
 from app.config import PROJECT_ROOT
-from app.flight.arrow import validate_prediction_file
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
 from app.flight.process import ProcessRecoveryError, capture_worker_process
+from app.flight.worker_artifacts import (
+    StagedPredictionOutput,
+    WorkerArtifactError,
+)
 from app.flight.worker_plan import ExecutionInput, ExecutionPlan
 
 
@@ -48,7 +50,7 @@ class WorkerSubprocessError(Exception):
 class WorkerSubprocessResult:
     exit_code: int
     stderr_tail: bytes
-    outputs: tuple[dict, ...] = ()
+    outputs: tuple[StagedPredictionOutput, ...] = ()
 
 
 class WorkerSubprocessRunner:
@@ -64,6 +66,7 @@ class WorkerSubprocessRunner:
         popen_factory: Callable = subprocess.Popen,
         signal_group: Callable[[int, int], None] = os.killpg,
         python_executable: str,
+        stage_prediction: Callable,
         monotonic: Callable[[], float] = time.monotonic,
     ):
         self.config = config
@@ -73,6 +76,7 @@ class WorkerSubprocessRunner:
         self._popen = popen_factory
         self._signal_group = signal_group
         self._python = python_executable
+        self._stage_prediction = stage_prediction
         self._monotonic = monotonic
 
     def run(
@@ -132,7 +136,7 @@ class WorkerSubprocessRunner:
         errors: queue.Queue[WorkerSubprocessError] = queue.Queue()
         finished = threading.Event()
         stderr_tail: list[bytes] = []
-        outputs: list[dict] = []
+        outputs: list[StagedPredictionOutput] = []
         threads: list[threading.Thread] = []
         started_threads: list[threading.Thread] = []
         try:
@@ -387,7 +391,7 @@ class WorkerSubprocessRunner:
         stream,
         job: dict,
         inputs: tuple[ExecutionInput, ...],
-        outputs: list[dict],
+        outputs: list[StagedPredictionOutput],
         errors,
     ) -> None:
         try:
@@ -404,18 +408,11 @@ class WorkerSubprocessRunner:
                         ErrorCode.MALFORMED_OUTPUT,
                         "prediction subprocess output exceeded the payload limit",
                     )
-                destination = self.spool.attempt_output_path(
-                    job["job_id"],
-                    job["attempt"],
-                    item.ordinal,
-                )
                 output = self._stage_prediction(
                     stream,
-                    destination,
+                    job,
+                    item,
                     size,
-                    job["prediction_column"],
-                    item.rows,
-                    item.ordinal,
                 )
                 outputs.append(output)
             if stream.read(1) != b"":
@@ -425,6 +422,8 @@ class WorkerSubprocessRunner:
                 )
         except WorkerSubprocessError as exc:
             errors.put(exc)
+        except WorkerArtifactError as exc:
+            errors.put(WorkerSubprocessError(exc.code, exc.message))
         except OSError as exc:
             if exc.errno in _DISK_FULL_ERRNOS:
                 errors.put(WorkerSubprocessError(
@@ -441,54 +440,6 @@ class WorkerSubprocessRunner:
                 ErrorCode.MALFORMED_OUTPUT,
                 "prediction subprocess emitted malformed Arrow output",
             ))
-
-    def _stage_prediction(
-        self,
-        stream,
-        destination: str,
-        size: int,
-        prediction_column: str,
-        expected_rows: int,
-        ordinal: int,
-    ) -> dict:
-        target, temporary = self.spool.create_temporary(destination)
-        digest = hashlib.sha256()
-        try:
-            remaining = size
-            while remaining:
-                chunk = stream.read(min(remaining, _COPY_CHUNK_BYTES))
-                if not chunk:
-                    raise EOFError("incomplete prediction frame")
-                target.write(chunk)
-                digest.update(chunk)
-                remaining -= len(chunk)
-            target.flush()
-            os.fsync(target.fileno())
-            target.close()
-            stats = validate_prediction_file(
-                temporary,
-                prediction_column,
-                expected_rows,
-            )
-            self.spool.durable_replace(temporary, destination)
-            temporary = None
-            return {
-                "ordinal": ordinal,
-                "rows": stats.rows,
-                "batches": stats.batches,
-                "bytes": size,
-                "sha256": digest.hexdigest(),
-                "schema_fingerprint": stats.schema_fingerprint,
-                "relative_path": self.spool.relative_path(destination),
-            }
-        finally:
-            if not target.closed:
-                target.close()
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
 
     def _tail_metrics(
         self,

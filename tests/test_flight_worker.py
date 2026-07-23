@@ -143,6 +143,14 @@ print(f"frames={frames}", flush=True)
 _POSTGRES_LEDGER = None
 
 
+class RecordingLogger:
+    def __init__(self):
+        self.events = []
+
+    def event(self, event, **fields):
+        self.events.append((event, fields))
+
+
 @pytest.fixture(autouse=True)
 def _use_postgres_ledger(postgres_ledger):
     global _POSTGRES_LEDGER
@@ -206,6 +214,46 @@ def train_config(**overrides):
     }
     values.update(overrides)
     return TrainConfig(**values)
+
+
+def fit_helper_hook(expected_frames):
+    def hook(job, argv):
+        checkpoint = argv[argv.index("--checkpoint-out") + 1]
+        metrics = argv[argv.index("--metrics-out") + 1]
+        actual_model = model_config(feature_dim=2).to_dict()
+        actual_train = train_config().to_dict()
+        data_schema = {
+            "schema_version": 1,
+            "tensor_dtype": "float32",
+            "src": {
+                "column": "src",
+                "accepted_element_types": ["float32", "float64"],
+                "width": 4,
+            },
+            "tgt": {
+                "column": "tgt",
+                "accepted_element_types": ["float32", "float64"],
+                "width": 6,
+            },
+            "feature_dim": 2,
+            "model_input_feature_dim": 4,
+            "context_mode": "relaxed",
+            "normalization": None,
+            "missing": {"nan_fill": 0.0, "flags": "per-feature"},
+        }
+        return [
+            sys.executable,
+            "-c",
+            FIT_HELPER,
+            checkpoint,
+            metrics,
+            json.dumps(actual_model),
+            json.dumps(actual_train),
+            json.dumps(data_schema),
+            str(expected_frames),
+        ]
+
+    return hook
 
 
 def predict_schema():
@@ -585,6 +633,48 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
     )]
 
 
+def test_predict_publish_response_loss_preserves_committed_output(
+    tmp_path,
+    monkeypatch,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            PREDICT_HELPER,
+            "ok",
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [predict_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    publish_outputs = ledger.publish_outputs
+
+    def commit_then_lose_response(*args, **kwargs):
+        publish_outputs(*args, **kwargs)
+        raise RuntimeError("injected lost publish response")
+
+    monkeypatch.setattr(ledger, "publish_outputs", commit_then_lose_response)
+
+    assert pool.run_once("cpu") is True
+
+    finished = ledger.get_job(job["job_id"])
+    outputs = ledger.list_outputs(job["job_id"])
+    assert finished["state"] == JobState.SUCCEEDED.value
+    assert finished["result"] == {"outputs": [{"ordinal": 0, "rows": 1}]}
+    assert len(outputs) == 1
+    assert os.path.isfile(spool.absolute_path(outputs[0]["relative_path"]))
+
+
 def test_malformed_second_prediction_publishes_no_partial_outputs(tmp_path):
     _, spool, ledger, pool = components(
         tmp_path,
@@ -794,43 +884,10 @@ def test_cancel_registered_during_failure_cleanup_wins_terminal_race(
 
 
 def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
-    def hook(job, argv):
-        checkpoint = argv[argv.index("--checkpoint-out") + 1]
-        metrics = argv[argv.index("--metrics-out") + 1]
-        actual_model = model_config(feature_dim=2).to_dict()
-        actual_train = train_config().to_dict()
-        data_schema = {
-            "schema_version": 1,
-            "tensor_dtype": "float32",
-            "src": {
-                "column": "src",
-                "accepted_element_types": ["float32", "float64"],
-                "width": 4,
-            },
-            "tgt": {
-                "column": "tgt",
-                "accepted_element_types": ["float32", "float64"],
-                "width": 6,
-            },
-            "feature_dim": 2,
-            "model_input_feature_dim": 4,
-            "context_mode": "relaxed",
-            "normalization": None,
-            "missing": {"nan_fill": 0.0, "flags": "per-feature"},
-        }
-        return [
-            sys.executable,
-            "-c",
-            FIT_HELPER,
-            checkpoint,
-            metrics,
-            json.dumps(actual_model),
-            json.dumps(actual_train),
-            json.dumps(data_schema),
-            "2",
-        ]
-
-    config, spool, ledger, pool = components(tmp_path, argv_hook=hook)
+    config, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(2),
+    )
     job = create_fit_job(ledger)
     manifest = [
         commit_input(
@@ -901,6 +958,94 @@ def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
         "modelRef": finished["result"]["modelRef"],
         "checkpoint": checkpoint,
     }
+
+
+def test_fit_model_publish_failure_removes_uncommitted_artifacts_and_telemetry(
+    tmp_path,
+    monkeypatch,
+):
+    metrics = OperationalMetrics()
+    logger = RecordingLogger()
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(1),
+        metrics=metrics,
+        logger=logger,
+    )
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+
+    def reject_model_publication(*args, **kwargs):
+        raise RuntimeError("injected pre-commit publication failure")
+
+    monkeypatch.setattr(ledger, "publish_model", reject_model_publication)
+
+    assert pool.run_once("cpu") is True
+
+    failed = ledger.get_job(job["job_id"])
+    counters = metrics.snapshot()["counters"]
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.INTERNAL.value
+    assert list(Path(spool.models_dir).iterdir()) == []
+    assert not os.path.exists(
+        spool.attempt_checkpoint_path(job["job_id"], 1)
+    )
+    assert "checkpointBytes" not in counters
+    assert all(
+        event != "flight.model.published"
+        for event, _ in logger.events
+    )
+
+
+def test_fit_model_publish_response_loss_preserves_committed_generation(
+    tmp_path,
+    monkeypatch,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=fit_helper_hook(1),
+    )
+    job = create_fit_job(ledger)
+    manifest = [
+        commit_input(
+            ledger,
+            spool,
+            job,
+            0,
+            [fit_batch([[1.0, 2.0, 3.0, 4.0]])],
+        )
+    ]
+    seal_and_queue(ledger, job, manifest)
+    publish_model = ledger.publish_model
+
+    def commit_then_lose_response(*args, **kwargs):
+        publish_model(*args, **kwargs)
+        raise RuntimeError("injected lost publish response")
+
+    monkeypatch.setattr(ledger, "publish_model", commit_then_lose_response)
+
+    assert pool.run_once("cpu") is True
+
+    finished = ledger.get_job(job["job_id"])
+    model_ref = finished["result"]["modelRef"]
+    model = ledger.get_model(model_ref)
+    assert finished["state"] == JobState.SUCCEEDED.value
+    assert model["producing_job_id"] == job["job_id"]
+    assert os.path.isfile(
+        spool.model_absolute_path(model["checkpoint_path"])
+    )
+    assert os.path.isfile(
+        spool.model_absolute_path(model["metadata_path"])
+    )
 
 
 def test_successful_fit_contract_requires_at_least_one_metrics_record(tmp_path):
