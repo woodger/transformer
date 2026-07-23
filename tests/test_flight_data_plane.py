@@ -23,7 +23,7 @@ from app.flight.output import OutputHandler
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
-import app.flight.upload as upload_module
+import app.flight.upload_session as upload_session_module
 import app.flight.spool as spool_module
 from app.flight.errors import ServiceError
 
@@ -636,7 +636,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
     )
-    original_new_file = upload_module.ipc.new_file
+    original_new_file = upload_session_module.ipc.new_file
 
     class FailingCloseWriter:
         def __init__(self, wrapped):
@@ -650,7 +650,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
             raise OSError(errno.ENOSPC, "injected IPC close failure")
 
     monkeypatch.setattr(
-        upload_module.ipc,
+        upload_session_module.ipc,
         "new_file",
         lambda *args, **kwargs: FailingCloseWriter(
             original_new_file(*args, **kwargs)
