@@ -1,11 +1,9 @@
 from dataclasses import dataclass, fields, replace
-import json
 import math
 import os
 from pathlib import Path
 
 from app.config import PROJECT_ROOT
-from app.flight.auth import validate_bearer_credentials
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
 
@@ -13,13 +11,13 @@ ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 
 
-def _default_state_dir() -> str:
-    return os.path.join(PROJECT_ROOT, "state")
+def _default_runtime_dir() -> str:
+    return os.path.join(os.sep, "tmp", "transformer")
 
 
 @dataclass(frozen=True)
 class FlightServiceConfig:
-    state_dir: str = _default_state_dir()
+    runtime_dir: str = _default_runtime_dir()
     host: str = "127.0.0.1"
     port: int = 8815
     allow_plaintext: bool = False
@@ -28,7 +26,6 @@ class FlightServiceConfig:
     tls_key_file: str | None = None
     tls_ca_file: str | None = None
     tls_require_client_cert: bool = False
-    bearer_tokens_file: str | None = None
 
     max_message_bytes: int = 16 * 1024 * 1024
     target_batch_bytes: int = 8 * 1024 * 1024
@@ -41,7 +38,6 @@ class FlightServiceConfig:
 
     cpu_capacity: int = 2
     cuda_capacity: int = 1
-    queue_poll_ms: int = 100
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
@@ -56,24 +52,20 @@ class FlightServiceConfig:
         return bool(self.tls_cert_file or self.tls_key_file)
 
     @property
-    def database_path(self) -> str:
-        return os.path.join(self.state_dir, "jobs.sqlite3")
-
-    @property
     def spool_dir(self) -> str:
-        return os.path.join(self.state_dir, "spool")
+        return os.path.join(self.runtime_dir, "spool")
 
     @property
     def models_dir(self) -> str:
-        return os.path.join(self.state_dir, "models")
+        return os.path.join(PROJECT_ROOT, "models")
 
     @property
     def lock_path(self) -> str:
-        return os.path.join(self.state_dir, "service.lock")
+        return os.path.join(self.runtime_dir, "service.lock")
 
     def validate(self) -> "FlightServiceConfig":
-        if not isinstance(self.state_dir, str) or not self.state_dir:
-            raise ValueError("state_dir must not be empty")
+        if not isinstance(self.runtime_dir, str) or not self.runtime_dir:
+            raise ValueError("runtime_dir must not be empty")
         if not isinstance(self.host, str) or not self.host:
             raise ValueError("host must be a non-empty string")
         if (
@@ -115,7 +107,6 @@ class FlightServiceConfig:
             "max_active_jobs_per_subject",
             "cpu_capacity",
             "cuda_capacity",
-            "queue_poll_ms",
             "ticket_ttl_seconds",
             "disk_min_free_bytes",
             "retention_seconds",
@@ -156,7 +147,6 @@ class FlightServiceConfig:
             "tls_cert_file",
             "tls_key_file",
             "tls_ca_file",
-            "bearer_tokens_file",
         ):
             path = getattr(self, path_name)
             if path is not None and not isinstance(path, str):
@@ -205,19 +195,6 @@ def load_config(
     if unknown:
         raise ValueError(f"unknown Flight configuration field(s): {', '.join(unknown)}")
     return FlightServiceConfig(**values).validate()
-
-
-def load_bearer_tokens(config: FlightServiceConfig) -> dict[str, str]:
-    if not config.bearer_tokens_file:
-        raise ValueError("bearer_tokens_file is required")
-    with open(config.bearer_tokens_file, "r", encoding="utf-8") as source:
-        document = json.load(source)
-    if isinstance(document, dict) and "tokens" in document:
-        document = document["tokens"]
-    if not isinstance(document, dict) or not document:
-        raise ValueError("bearer token file must contain a non-empty token-to-subject object")
-
-    return validate_bearer_credentials(document)
 
 
 def tls_server_options(config: FlightServiceConfig) -> dict:

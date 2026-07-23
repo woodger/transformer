@@ -100,9 +100,9 @@ class MaintenanceService:
                     "flight.maintenance.drain_exceeded",
                     timeoutSeconds=timeout,
                 )
-                # The state-directory lock must remain exclusively owned until
+                # The runtime-directory lock must remain exclusively owned until
                 # all maintenance mutation has stopped.  Python threads cannot
-                # be safely killed, so a slow local filesystem/SQLite pass is
+                # be safely killed, so a slow local filesystem/PostgreSQL pass is
                 # allowed to finish before application shutdown can release
                 # that lock.
                 thread.join()

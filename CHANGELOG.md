@@ -7,8 +7,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлены PostgreSQL control plane на SQLAlchemy 2, Alembic migrations и
+  команды `db migrations status|apply|rollback`. Параметры подключения читаются
+  из `.env`/окружения через `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`,
+  `POSTGRES_USER` и `POSTGRES_PASSWORD`.
+- Добавлены команды `auth tokens issue|list|revoke`. API tokens формата
+  `a.<base64url>` хранятся в PostgreSQL, а Flight middleware проверяет их digest
+  по in-memory cache, обновляемому через `LISTEN/NOTIFY`.
+
 ### Changed
 
+- PostgreSQL стал единственным durable source of truth для jobs, attempts,
+  idempotency, output tickets, model metadata и access tokens. Worker lanes
+  получают задачи через in-memory FIFO и не опрашивают базу данных в idle loop.
+- Незавершённые Arrow payloads и attempt artifacts перенесены в
+  `/tmp/transformer`. Storage epoch не позволяет продолжить job после потери
+  runtime filesystem: все связанные jobs отклоняются и удаляются, включая
+  ранее завершённые runtime outputs.
+- Только успешно обученные модели атомарно публикуются в persistent `models/`;
+  их `modelRef` и access tokens переживают потерю `/tmp`.
 - Command-specific help больше не показывает технический CLI default `None`:
   optional outputs, checkpoint-derived model parameters и Flight overrides
   описывают реальное fallback-поведение, а `--host` и `--port` показывают
@@ -23,12 +42,13 @@
 
 ### Removed
 
-- `flight serve` больше не принимает `--config` и `--state-dir`. Загрузка
-  service configuration из JSON-файла удалена; persistent state directory
-  при необходимости задаётся через `TRANSFORMER_STATE_DIR`.
+- `flight serve` больше не принимает `--config` и `--state-dir`; загрузка
+  service configuration из JSON-файла удалена.
 - Удалены `--profile`, `TRANSFORMER_PROFILE` и поле `profile` service config.
   Plaintext transport теперь включается только через `--allow-plaintext` или
   `TRANSFORMER_ALLOW_PLAINTEXT=true` без дополнительных host restrictions.
+- Удалены token JSON file и его CLI/environment configuration. Access tokens
+  управляются только через PostgreSQL-backed команды `auth tokens`.
 
 ## [0.1.3] - 2026-07-22
 
@@ -77,8 +97,8 @@
 ### Added
 
 - Добавлен single-instance Arrow Flight v1 job service для remote fit и predict:
-  durable SQLite/WAL ledger, filesystem spool, очереди, subprocess workers, cancellation,
-  recovery, retention и operational observability.
+  durable database ledger, filesystem spool, очереди, subprocess workers,
+  cancellation, recovery, retention и operational observability.
 - Добавлен нормативный Flight contract v1 с JSON Schemas, golden JSON/Arrow fixtures,
   ADR и production runbook.
 - CLI переведён на настоящие mode-specific subcommands `fit`, `predict`,

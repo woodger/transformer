@@ -59,7 +59,7 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
     metrics = OperationalMetrics()
     server = TransformerFlightServer(
         FlightServiceConfig(
-            state_dir=str(tmp_path),
+            runtime_dir=str(tmp_path / "runtime"),
             port=0,
             allow_plaintext=True,
         ),
@@ -116,7 +116,11 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     }
 
     class LedgerDouble:
-        def claim_next_job(self, selected_device, *, worker_id):
+        def queued_jobs(self):
+            return [{**claimed, "state": "QUEUED"}]
+
+        def claim_job(self, requested_job_id, selected_device, *, worker_id):
+            assert requested_job_id == job_id
             assert selected_device == "cpu"
             assert worker_id == "worker-1"
             return claimed
@@ -159,19 +163,42 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     }
 
 
-def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_path):
-    state_dir = tmp_path / "state"
-    tokens = tmp_path / "tokens.json"
-    tokens.write_text(json.dumps({"secret": "inventory"}), encoding="utf-8")
+def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(
+    tmp_path,
+    postgres_config,
+    postgres_database,
+):
+    runtime_dir = tmp_path / "runtime"
+    models_dir = tmp_path / "models"
+    service_code = """
+import os
+from dataclasses import replace
+from app.database.config import load_database_config
+from app.flight.application import FlightApplication
+from app.flight.config import FlightServiceConfig
+
+database_config = replace(
+    load_database_config(),
+    schema=os.environ["TRANSFORMER_TEST_SCHEMA"],
+)
+config = FlightServiceConfig(
+    runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
+    port=0,
+    allow_plaintext=True,
+    disk_min_free_bytes=1,
+).validate()
+FlightApplication.build(
+    config,
+    database_config=database_config,
+    models_dir=os.environ["TRANSFORMER_TEST_MODELS_DIR"],
+    bearer_tokens={"secret": "inventory"},
+).serve()
+"""
     process = subprocess.Popen(
         [
             sys.executable,
-            str(Path(PROJECT_ROOT) / "app" / "main.py"),
-            "flight",
-            "serve",
-            "--port", "0",
-            "--allow-plaintext",
-            "--bearer-tokens-file", str(tokens),
+            "-c",
+            service_code,
         ],
         cwd=PROJECT_ROOT,
         stdin=subprocess.DEVNULL,
@@ -181,7 +208,9 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
         start_new_session=True,
         env={
             **os.environ,
-            "TRANSFORMER_STATE_DIR": str(state_dir),
+            "TRANSFORMER_TEST_SCHEMA": postgres_config.schema,
+            "TRANSFORMER_TEST_RUNTIME_DIR": str(runtime_dir),
+            "TRANSFORMER_TEST_MODELS_DIR": str(models_dir),
         },
     )
     lines = queue.Queue()
@@ -233,6 +262,6 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(tmp_
     assert names.index("flight.service.serving") < names.index("flight.service.signal")
     assert names.index("flight.service.signal") < names.index("flight.service.stopped")
 
-    replacement = Spool(state_dir).initialize()
+    replacement = Spool(runtime_dir).initialize()
     replacement.acquire_lock()
     replacement.release_lock()

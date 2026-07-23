@@ -68,10 +68,9 @@ class _ProcessResult:
 class WorkerPool:
     """Durable single-instance worker pool for queued Flight jobs.
 
-    Each lane claims through SQLite, and each claimed job gets exactly one
-    legacy CLI subprocess. Client-provided values have already been converted
-    to immutable ModelConfig/TrainConfig records; only those typed values and
-    server-owned paths are rendered into argv.
+    PostgreSQL records lifecycle transitions; in-process FIFO queues wake the
+    CPU and CUDA lanes without polling the database. Each claimed job gets
+    exactly one legacy CLI subprocess.
     """
 
     def __init__(
@@ -111,7 +110,12 @@ class WorkerPool:
         self._active: dict[str, _ActiveAttempt] = {}
         self._pending_cancellations: set[str] = set()
         self._threads: list[threading.Thread] = []
-        self._wake = threading.Event()
+        self._queues: dict[str, queue.Queue[str | None]] = {
+            "cpu": queue.Queue(),
+            "cuda": queue.Queue(),
+        }
+        self._queue_lock = threading.Lock()
+        self._enqueued: set[str] = set()
         self._stop_claiming = threading.Event()
         self._force_stop = threading.Event()
         self._started = False
@@ -125,6 +129,8 @@ class WorkerPool:
             if self._started:
                 return self
             self._started = True
+            for job in self.ledger.queued_jobs():
+                self._enqueue(job)
             for device, count in self.lane_counts.items():
                 for index in range(count):
                     worker_id = f"{os.getpid()}-{device}-{index}"
@@ -138,9 +144,15 @@ class WorkerPool:
                     thread.start()
         return self
 
-    def notify_queued(self, _job_id: str | None = None) -> None:
-        """Wake polling lanes after a coordinator commits QUEUED."""
-        self._wake.set()
+    def notify_queued(self, job_id: str | None = None) -> None:
+        """Enqueue a job after the coordinator commits QUEUED."""
+        if job_id is None:
+            for job in self.ledger.queued_jobs():
+                self._enqueue(job)
+            return
+        job = self.ledger.get_job(job_id)
+        if job is not None:
+            self._enqueue(job)
 
     def notify_cancel(self, job_id: str) -> None:
         """Cancellation callback used after RUNNING -> CANCELLING commits."""
@@ -150,13 +162,16 @@ class WorkerPool:
                 self._pending_cancellations.add(job_id)
             else:
                 active.cancel.set()
-        self._wake.set()
 
     def stop_claiming(self) -> None:
         """Close the durable queue-claim boundary without cancelling work."""
         with self._claim_lock:
+            if self._stop_claiming.is_set():
+                return
             self._stop_claiming.set()
-        self._wake.set()
+            for device, count in self.lane_counts.items():
+                for _ in range(count):
+                    self._queues[device].put(None)
 
     def shutdown(self, timeout: float | None = None) -> None:
         self.stop_claiming()
@@ -170,7 +185,6 @@ class WorkerPool:
             with self._active_lock:
                 for active in self._active.values():
                     active.cancel.set()
-            self._wake.set()
             for thread in tuple(self._threads):
                 thread.join(self.config.cancel_grace_seconds + 1.0)
         if any(thread.is_alive() for thread in self._threads):
@@ -179,7 +193,7 @@ class WorkerPool:
                 activeWorkers=sum(thread.is_alive() for thread in self._threads),
             )
             # The process-level state lock cannot be released while a worker
-            # thread can still mutate SQLite or the spool.  Process groups have
+            # thread can still mutate PostgreSQL or the spool. Process groups have
             # already received SIGKILL; finish joining before returning control
             # to FlightApplication.shutdown().
             for thread in tuple(self._threads):
@@ -189,12 +203,29 @@ class WorkerPool:
         """Atomically claim and execute at most one job for deterministic tests."""
         if device not in ("cpu", "cuda"):
             raise ValueError("device must be cpu or cuda")
+        if self._stop_claiming.is_set():
+            return False
+        job_id = self._dequeue(device)
+        if job_id is None:
+            for job in self.ledger.queued_jobs():
+                self._enqueue(job)
+            job_id = self._dequeue(device)
+        if job_id is None:
+            return False
+        return self._claim_and_execute(
+            device,
+            job_id,
+            worker_id or f"{os.getpid()}-{device}-manual",
+        )
+
+    def _claim_and_execute(self, device: str, job_id: str, worker_id: str) -> bool:
         with self._claim_lock:
             if self._stop_claiming.is_set():
                 return False
-            claimed = self.ledger.claim_next_job(
+            claimed = self.ledger.claim_job(
+                job_id,
                 device,
-                worker_id=worker_id or f"{os.getpid()}-{device}-manual",
+                worker_id=worker_id,
             )
         if claimed is None:
             return False
@@ -233,11 +264,14 @@ class WorkerPool:
         return argv
 
     def _lane(self, device: str, worker_id: str) -> None:
-        poll_seconds = self.config.queue_poll_ms / 1000.0
-        while not self._stop_claiming.is_set():
+        while True:
+            job_id = self._queues[device].get()
+            if job_id is None:
+                return
+            with self._queue_lock:
+                self._enqueued.discard(job_id)
             try:
-                if self.run_once(device, worker_id=worker_id):
-                    continue
+                self._claim_and_execute(device, job_id, worker_id)
             except Exception as exc:
                 # A single unexpected attempt-finalization/storage error must
                 # not permanently remove capacity from the service.  The
@@ -250,8 +284,30 @@ class WorkerPool:
                     workerId=worker_id,
                     errorType=type(exc).__name__,
                 )
-            self._wake.wait(poll_seconds)
-            self._wake.clear()
+
+    def _enqueue(self, job: dict) -> None:
+        if job.get("state") != JobState.QUEUED.value:
+            return
+        device = job.get("selected_device")
+        if device not in self._queues:
+            return
+        job_id = job["job_id"]
+        with self._queue_lock:
+            if job_id in self._enqueued or self._stop_claiming.is_set():
+                return
+            self._enqueued.add(job_id)
+            self._queues[device].put(job_id)
+
+    def _dequeue(self, device: str) -> str | None:
+        try:
+            job_id = self._queues[device].get_nowait()
+        except queue.Empty:
+            return None
+        if job_id is None:
+            return None
+        with self._queue_lock:
+            self._enqueued.discard(job_id)
+        return job_id
 
     def _execute_claimed(self, job: dict) -> None:
         job_id = job["job_id"]
@@ -865,7 +921,7 @@ class WorkerPool:
             )
             if model is None:
                 raise _Failure(ErrorCode.INTERNAL, "resolved model generation is unavailable")
-            checkpoint = self.spool.absolute_path(model["checkpoint_path"])
+            checkpoint = self.spool.model_absolute_path(model["checkpoint_path"])
             expected = self.spool.model_checkpoint_path(model["model_ref"])
             if checkpoint != expected or not os.path.isfile(checkpoint):
                 raise _Failure(ErrorCode.INTERNAL, "resolved model checkpoint is unavailable")
@@ -1052,8 +1108,8 @@ class WorkerPool:
                 model_ref=model_ref,
                 label=job["model_label"],
                 generation=None,
-                checkpoint_path=self.spool.relative_path(checkpoint_path),
-                metadata_path=self.spool.relative_path(metadata_path),
+                checkpoint_path=self.spool.model_relative_path(checkpoint_path),
+                metadata_path=self.spool.model_relative_path(metadata_path),
                 sha256=digest,
                 metadata=metadata,
                 result={"modelRef": model_ref, "checkpoint": safe_checkpoint},
@@ -1170,7 +1226,7 @@ class WorkerPool:
                 code=failure.code.value,
             )
         except (ServiceError, ValueError):
-            # If cancel acquired SQLite's write lock first, the attempted
+            # If cancel committed its PostgreSQL transition first, the attempted
             # RUNNING -> FAILED transition observes CANCELLING.  Re-read and
             # complete cancellation; otherwise preserve the original error.
             latest = self.ledger.get_job(job["job_id"])

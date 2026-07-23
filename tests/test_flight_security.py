@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,8 +14,9 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
+from app.database.models import OutputTicket
 from app.flight.auth import BearerAuthMiddlewareFactory
-from app.flight.config import FlightServiceConfig, load_bearer_tokens
+from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     ACTIONS,
     CAPABILITIES_ACTION,
@@ -103,7 +105,7 @@ def protected_server(tmp_path):
     output = _CountingOutput()
     server = TransformerFlightServer(
         FlightServiceConfig(
-            state_dir=str(tmp_path),
+            runtime_dir=str(tmp_path / "runtime"),
             port=0,
             allow_plaintext=True,
         ),
@@ -203,29 +205,13 @@ def test_bearer_credentials_reject_unsafe_header_and_subject_values(tokens, mess
         )
 
 
-def test_token_file_is_validated_before_server_start(tmp_path):
-    token_file = tmp_path / "tokens.json"
-    token_file.write_text(
-        json.dumps({"tokens": {"unsafe token": "inventory"}}),
-        encoding="utf-8",
-    )
-    config = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
-        allow_plaintext=True,
-        bearer_tokens_file=str(token_file),
-    ).validate()
-
-    with pytest.raises(ValueError, match="printable ASCII"):
-        load_bearer_tokens(config)
-
-
 def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_path):
     certificate_authority = tmp_path / "ca.pem"
     certificate_authority.write_text("test CA", encoding="utf-8")
 
     with pytest.raises(ValueError, match="required with tls_ca_file"):
         FlightServiceConfig(
-            state_dir=str(tmp_path / "state"),
+            runtime_dir=str(tmp_path / "state"),
             allow_plaintext=True,
             tls_ca_file=str(certificate_authority),
             tls_require_client_cert=True,
@@ -233,7 +219,7 @@ def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_pat
 
     with pytest.raises(ValueError, match="TLS must be enabled"):
         FlightServiceConfig(
-            state_dir=str(tmp_path / "other-state"),
+            runtime_dir=str(tmp_path / "other-state"),
             allow_plaintext=True,
             tls_require_client_cert=True,
         ).validate()
@@ -305,15 +291,15 @@ def test_do_get_cancellation_closes_the_active_ipc_source(tmp_path):
 
 
 @pytest.fixture
-def published_output_server(tmp_path):
+def published_output_server(tmp_path, postgres_ledger):
     config = FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = postgres_ledger
     job_id = str(uuid.uuid4())
     ledger.create_job(
         job_id=job_id,
@@ -370,7 +356,6 @@ def published_output_server(tmp_path):
         yield ledger, job_id, client
     finally:
         server.shutdown()
-        ledger.close()
 
 
 def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
@@ -392,7 +377,11 @@ def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
         client.do_get(ticket, options=_auth("other")).read_all()
 
     with ledger.transaction() as connection:
-        connection.execute("UPDATE output_tickets SET expires_at=0")
+        record = connection.get(
+            OutputTicket,
+            hashlib.sha256(ticket.ticket).hexdigest(),
+        )
+        record.expires_at = datetime.fromtimestamp(0, timezone.utc)
     with pytest.raises(pa.ArrowInvalid, match="FAILED_PRECONDITION.*expired"):
         client.do_get(ticket, options=_auth()).read_all()
 
@@ -533,7 +522,7 @@ def test_real_tls_server_requires_bearer_authentication(tmp_path):
     certificate, private_key = _generate_tls_certificate(tmp_path)
     coordinator = _CountingCoordinator()
     config = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
         tls_cert_file=str(certificate),
         tls_key_file=str(private_key),
@@ -560,7 +549,7 @@ def test_real_mtls_server_rejects_missing_client_certificate(tmp_path):
         client_private_key,
     ) = _generate_mtls_certificates(tmp_path)
     config = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
         tls_cert_file=str(server_certificate),
         tls_key_file=str(server_private_key),
@@ -595,16 +584,19 @@ def test_real_mtls_server_rejects_missing_client_certificate(tmp_path):
         server.shutdown()
 
 
-def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(tmp_path):
+def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(
+    tmp_path,
+    postgres_ledger,
+):
     certificate, private_key = _generate_tls_certificate(tmp_path)
     configs = (
         FlightServiceConfig(
-            state_dir=str(tmp_path / "plain-state"),
+            runtime_dir=str(tmp_path / "plain-state"),
             allow_plaintext=True,
             disk_min_free_bytes=1,
         ).validate(),
         FlightServiceConfig(
-            state_dir=str(tmp_path / "tls-state"),
+            runtime_dir=str(tmp_path / "tls-state"),
             tls_cert_file=str(certificate),
             tls_key_file=str(private_key),
             disk_min_free_bytes=1,
@@ -612,8 +604,8 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(tmp_pat
     )
 
     for index, config in enumerate(configs):
-        spool = Spool(config.state_dir).initialize()
-        ledger = Ledger(config.database_path).initialize()
+        spool = Spool(config.runtime_dir, tmp_path / f"models-{index}").initialize()
+        ledger = postgres_ledger
         coordinator = JobCoordinator(
             config,
             ledger,
@@ -631,7 +623,6 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(tmp_pat
 
         assert error.value.code == ErrorCode.DEVICE_UNAVAILABLE
         assert ledger.list_jobs() == []
-        ledger.close()
 
 
 @pytest.mark.parametrize(

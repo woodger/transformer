@@ -60,12 +60,11 @@ TRAINING_CONFIG = {
 
 def _service_config(tmp_path):
     return FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
         cpu_capacity=1,
-        queue_poll_ms=20,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=1.0,
         maintenance_interval_seconds=60,
@@ -217,7 +216,11 @@ def _load_payload(path):
     return torch.load(path, map_location="cpu", weights_only=False)
 
 
-def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(tmp_path):
+def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
+    tmp_path,
+    postgres_config,
+    postgres_database,
+):
     first_batches = [
         _batch(
             [[0.10, 0.20, 0.30, 0.40]],
@@ -247,6 +250,8 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(tmp_path):
     config = _service_config(tmp_path)
     application = FlightApplication.build(
         config,
+        database_config=postgres_config,
+        models_dir=tmp_path / "models",
         bearer_tokens={TOKEN: OWNER},
     )
     client = flight.FlightClient(("localhost", application.server.port))
@@ -383,7 +388,7 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(tmp_path):
 
         model = application.ledger.get_model(model_ref, owner_subject=OWNER)
         assert model is not None
-        published_checkpoint = application.spool.absolute_path(
+        published_checkpoint = application.spool.model_absolute_path(
             model["checkpoint_path"]
         )
         assert checkpoint["bytes"] == Path(published_checkpoint).stat().st_size

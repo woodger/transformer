@@ -1,10 +1,11 @@
-import hmac
+import hashlib
 import re
 import time
 
 import pyarrow.flight as flight
 
 from app.flight.observability import JsonLogger, OperationalMetrics
+from app.flight.token_cache import AuthIdentity
 
 
 MIDDLEWARE_KEY = "auth"
@@ -40,11 +41,13 @@ class BearerAuthMiddleware(flight.ServerMiddleware):
 class BearerAuthMiddlewareFactory(flight.ServerMiddlewareFactory):
     def __init__(
         self,
-        tokens: dict[str, str],
+        token_cache,
         metrics: OperationalMetrics,
         logger: JsonLogger,
     ):
-        self._tokens = tuple(validate_bearer_credentials(tokens).items())
+        if isinstance(token_cache, dict):
+            token_cache = InMemoryAccessTokenCache(token_cache)
+        self._token_cache = token_cache
         self._metrics = metrics
         self._logger = logger
 
@@ -62,15 +65,12 @@ class BearerAuthMiddlewareFactory(flight.ServerMiddlewareFactory):
         ):
             self._reject(method, started, "invalid bearer authorization metadata")
 
-        subject = None
-        for configured_token, configured_subject in self._tokens:
-            if hmac.compare_digest(token, configured_token):
-                subject = configured_subject
-        if subject is None:
+        identity = self._token_cache.lookup(token)
+        if identity is None:
             self._reject(method, started, "invalid bearer credential")
 
         return BearerAuthMiddleware(
-            subject=subject,
+            subject=identity.subject,
             method=method,
             metrics=self._metrics,
             logger=self._logger,
@@ -137,3 +137,21 @@ def validate_bearer_credentials(tokens: dict[str, str]) -> dict[str, str]:
     for token, subject in tokens.items():
         _validate_credential(token, subject)
     return dict(tokens)
+
+
+class InMemoryAccessTokenCache:
+    """Small injection seam used by isolated middleware/server tests."""
+
+    def __init__(self, tokens: dict[str, str]):
+        credentials = validate_bearer_credentials(tokens)
+        self._entries = {
+            hashlib.sha256(token.encode("ascii")).hexdigest(): AuthIdentity(
+                token_id="in-memory",
+                subject=subject,
+            )
+            for token, subject in credentials.items()
+        }
+
+    def lookup(self, token: str) -> AuthIdentity | None:
+        digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        return self._entries.get(digest)

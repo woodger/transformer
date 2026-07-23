@@ -1,12 +1,13 @@
-import os
 import threading
 import uuid
 
 import pytest
 
+from app.database.models import JobAttempt
+from app.database.session import Database
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
-from app.flight.ledger import Ledger, SCHEMA_VERSION
+from app.flight.ledger import Ledger
 
 
 DIGEST_A = "a" * 64
@@ -14,8 +15,8 @@ DIGEST_B = "b" * 64
 
 
 @pytest.fixture
-def ledger(tmp_path):
-    return Ledger(tmp_path / "state" / "jobs.sqlite3").initialize()
+def ledger(postgres_ledger):
+    return postgres_ledger
 
 
 def create_job(ledger, *, operation="fit", owner="inventory", now=1.0):
@@ -52,44 +53,6 @@ def seal_and_queue(ledger, job_id, *, device="cpu", now=2.0):
         result={"jobId": job_id, "state": "QUEUED"},
         now=now + 1,
     )
-
-
-def test_initializes_wal_foreign_keys_and_version(ledger):
-    with ledger.connection() as connection:
-        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-        assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-
-
-def test_schema_v1_migration_adds_process_identity_and_fifo_sequence(tmp_path):
-    database_path = tmp_path / "state" / "jobs.sqlite3"
-    original = Ledger(database_path).initialize()
-    job = create_job(original, now=10.0)
-    seal_and_queue(original, job["job_id"], now=10.0)
-    with original.connection() as connection:
-        connection.execute("DROP INDEX jobs_queue_claim_idx")
-        connection.execute("DROP INDEX jobs_queue_sequence_idx")
-        connection.execute("ALTER TABLE jobs DROP COLUMN queue_sequence")
-        connection.execute("ALTER TABLE job_attempts DROP COLUMN boot_id")
-        connection.execute("ALTER TABLE job_attempts DROP COLUMN process_start_ticks")
-        connection.execute("PRAGMA user_version=1")
-        connection.commit()
-
-    migrated = Ledger(database_path).initialize()
-
-    with migrated.connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        job_columns = {
-            row["name"] for row in connection.execute("PRAGMA table_info(jobs)")
-        }
-        attempt_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(job_attempts)")
-        }
-    assert "queue_sequence" in job_columns
-    assert {"boot_id", "process_start_ticks"} <= attempt_columns
-    assert migrated.get_job(job["job_id"])["queue_sequence"] == 1
 
 
 def test_job_transitions_increment_revision_and_terminal_state_is_immutable(ledger):
@@ -156,9 +119,10 @@ def test_idempotent_mutation_is_atomic_and_conflicting_key_is_rejected(ledger):
     assert error.value.code == ErrorCode.ALREADY_EXISTS
 
 
-def test_committed_input_is_durable_unique_and_increments_job_revision(tmp_path):
-    database_path = tmp_path / "state" / "jobs.sqlite3"
-    ledger = Ledger(database_path).initialize()
+def test_committed_input_is_durable_unique_and_increments_job_revision(
+    ledger,
+    postgres_config,
+):
     job = create_job(ledger)
     payload_id = str(uuid.uuid4())
     ledger.reserve_input(
@@ -187,9 +151,13 @@ def test_committed_input_is_durable_unique_and_increments_job_revision(tmp_path)
     assert committed["ordinal"] == 0
     assert committed["batches"] == 4
     assert committed["revision"] == 2
-    assert Ledger(database_path).initialize().list_inputs(job["job_id"]) == [
-        {key: value for key, value in committed.items() if key != "revision"}
-    ]
+    reopened = Ledger(Database(postgres_config)).initialize()
+    try:
+        assert reopened.list_inputs(job["job_id"]) == [
+            {key: value for key, value in committed.items() if key != "revision"}
+        ]
+    finally:
+        reopened.close()
 
     with pytest.raises(ServiceError) as error:
         ledger.reserve_input(
@@ -342,12 +310,9 @@ def test_failed_attempt_updates_job_and_attempt_in_one_transaction(ledger):
     assert failed["state"] == JobState.FAILED.value
     assert failed["error_code"] == ErrorCode.SUBPROCESS_FAILED.value
     with ledger.connection() as connection:
-        attempt = connection.execute(
-            "SELECT * FROM job_attempts WHERE job_id=? AND attempt=1",
-            (job["job_id"],),
-        ).fetchone()
-    assert attempt["status"] == JobState.FAILED.value
-    assert attempt["exit_code"] == 2
+        attempt = connection.get(JobAttempt, (job["job_id"], 1))
+    assert attempt.status == JobState.FAILED.value
+    assert attempt.exit_code == 2
 
 
 def test_cancelled_attempt_cannot_persist_error_metadata(ledger):
@@ -524,14 +489,8 @@ def test_recovery_preserves_safe_states_and_never_requeues_running_fit(ledger):
     ]
     assert ledger.abort_input("stale-upload") is None
     with ledger.connection() as connection:
-        interrupted_attempt = connection.execute(
-            "SELECT * FROM job_attempts WHERE job_id=? AND attempt=1",
-            (running["job_id"],),
-        ).fetchone()
-        cancelled_attempt = connection.execute(
-            "SELECT * FROM job_attempts WHERE job_id=? AND attempt=1",
-            (cancelling["job_id"],),
-        ).fetchone()
-    assert interrupted_attempt["status"] == JobState.FAILED.value
-    assert interrupted_attempt["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
-    assert cancelled_attempt["status"] == JobState.CANCELLED.value
+        interrupted_attempt = connection.get(JobAttempt, (running["job_id"], 1))
+        cancelled_attempt = connection.get(JobAttempt, (cancelling["job_id"], 1))
+    assert interrupted_attempt.status == JobState.FAILED.value
+    assert interrupted_attempt.error_code == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert cancelled_attempt.status == JobState.CANCELLED.value

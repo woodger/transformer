@@ -162,6 +162,28 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
     assert not hasattr(args, "model_name")
 
 
+def test_access_and_database_namespaces_are_nested():
+    issue = parse("auth", "tokens", "issue", "--subject", "inventory")
+    listed = parse("auth", "tokens", "list")
+    token_id = "12345678-1234-4234-8234-123456789abc"
+    revoked = parse("auth", "tokens", "revoke", token_id)
+    status = parse("db", "migrations", "status")
+
+    assert (issue.action, issue.auth_action, issue.tokens_action) == (
+        "auth",
+        "tokens",
+        "issue",
+    )
+    assert issue.subject == "inventory"
+    assert listed.tokens_action == "list"
+    assert revoked.token_id == token_id
+    assert (status.action, status.db_action, status.migrations_action) == (
+        "db",
+        "migrations",
+        "status",
+    )
+
+
 @pytest.mark.parametrize(
     "argv",
     (
@@ -171,6 +193,10 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
         ("predict",),
         ("fit-stream",),
         ("flight",),
+        ("auth",),
+        ("auth", "tokens"),
+        ("db",),
+        ("db", "migrations"),
         ("plot-metrics",),
     ),
 )
@@ -279,7 +305,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
         "--tls-key-file FILE",
         "--tls-ca-file FILE",
         "--tls-require-client-cert",
-        "--bearer-tokens-file FILE",
     )
     positions = [output.index(label) for label in option_labels]
     assert positions == sorted(positions)
@@ -297,7 +322,7 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     stripped_lines = {line.strip() for line in output.splitlines()}
     assert set(expected_multiline_entries) <= stripped_lines
     assert "Allow serving without TLS." in normalized_output
-    assert "Required bearer token-to-subject JSON file." in normalized_output
+    assert "--bearer-tokens-file" not in output
     assert "--profile" not in output
     assert "--config" not in output
     assert "--state-dir" not in output
@@ -328,6 +353,12 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("predict-stream", "--help"),
         ("flight", "--help"),
         ("flight", "serve", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
+        ("db", "migrations", "status", "--help"),
+        ("db", "migrations", "apply", "--help"),
+        ("db", "migrations", "rollback", "--help"),
         ("plot-metrics", "--help"),
     ),
 )
@@ -347,6 +378,12 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("fit-stream", "--help"),
         ("predict-stream", "--help"),
         ("flight", "serve", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
+        ("db", "migrations", "status", "--help"),
+        ("db", "migrations", "apply", "--help"),
+        ("db", "migrations", "rollback", "--help"),
         ("plot-metrics", "--help"),
     ),
 )

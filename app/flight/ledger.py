@@ -2,17 +2,35 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import PurePosixPath
 import re
 import secrets
-import sqlite3
-import time
 import uuid
 from typing import Callable, Iterator, Sequence
 
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database.migrations import require_current_schema
+from app.database.models import (
+    IdempotencyRecord,
+    InputUpload,
+    Job,
+    JobAttempt,
+    JobInput,
+    JobOutput,
+    ModelAlias,
+    OutputTicket,
+    PublishedModel,
+    QUEUE_SEQUENCE,
+    RuntimeState,
+)
+from app.database.session import Database
 from app.flight.constants import (
     ErrorCode,
     FIT_SCHEMA_ID,
@@ -21,318 +39,64 @@ from app.flight.constants import (
     SUPPORTED_DEVICES,
     SUPPORTED_OPERATIONS,
 )
-from app.flight.errors import (
-    ServiceError,
-    conflict,
-    failed_precondition,
-    not_found,
-)
+from app.flight.errors import ServiceError, conflict, failed_precondition, not_found
 from app.flight.state import validate_transition
 
 
-SCHEMA_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_JSON_COLUMNS = {
-    "model_config_json",
-    "training_config_json",
-    "seal_manifest_json",
-    "seal_result_json",
-    "start_result_json",
-    "progress_json",
-    "result_json",
-    "metadata_json",
-    "response_json",
-}
-
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS jobs (
-    job_id TEXT PRIMARY KEY,
-    owner_subject TEXT NOT NULL,
-    operation TEXT NOT NULL CHECK (operation IN ('fit', 'predict')),
-    state TEXT NOT NULL CHECK (state IN (
-        'UPLOADING', 'SEALED', 'QUEUED', 'RUNNING',
-        'SUCCEEDED', 'FAILED', 'CANCELLING', 'CANCELLED'
-    )),
-    revision INTEGER NOT NULL CHECK (revision >= 1),
-    requested_device TEXT NOT NULL CHECK (requested_device IN ('cpu', 'cuda', 'auto')),
-    selected_device TEXT CHECK (selected_device IN ('cpu', 'cuda')),
-    model_label TEXT,
-    input_model_ref TEXT,
-    prediction_column TEXT NOT NULL,
-    model_config_json TEXT,
-    training_config_json TEXT,
-    config_hash TEXT NOT NULL,
-    source_width INTEGER CHECK (source_width IS NULL OR source_width > 0),
-    feature_dim INTEGER CHECK (feature_dim IS NULL OR feature_dim > 0),
-    seal_hash TEXT,
-    seal_manifest_json TEXT,
-    seal_result_json TEXT,
-    start_result_json TEXT,
-    progress_json TEXT NOT NULL DEFAULT '{}',
-    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
-    queue_sequence INTEGER CHECK (
-        queue_sequence IS NULL OR queue_sequence > 0
-    ),
-    error_code TEXT,
-    error_message TEXT,
-    result_json TEXT,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL,
-    sealed_at REAL,
-    queued_at REAL,
-    started_at REAL,
-    cancel_requested_at REAL,
-    finished_at REAL,
-    CHECK (
-        (operation = 'fit' AND model_label IS NOT NULL AND input_model_ref IS NULL)
-        OR
-        (operation = 'predict' AND model_label IS NULL AND input_model_ref IS NOT NULL)
-    )
-);
-
-CREATE INDEX IF NOT EXISTS jobs_queue_idx
-    ON jobs(state, selected_device, queued_at, job_id);
-CREATE INDEX IF NOT EXISTS jobs_owner_state_idx
-    ON jobs(owner_subject, state);
-
-CREATE TABLE IF NOT EXISTS input_uploads (
-    upload_token TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
-    payload_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-    temporary_path TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    UNIQUE(job_id, ordinal),
-    UNIQUE(job_id, payload_id)
-);
-
-CREATE TABLE IF NOT EXISTS job_inputs (
-    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
-    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-    payload_id TEXT NOT NULL,
-    schema_id TEXT NOT NULL,
-    rows INTEGER NOT NULL CHECK (rows >= 0),
-    batches INTEGER NOT NULL CHECK (batches >= 0),
-    bytes INTEGER NOT NULL CHECK (bytes >= 0),
-    sha256 TEXT NOT NULL,
-    schema_fingerprint TEXT NOT NULL,
-    relative_path TEXT NOT NULL,
-    source_width INTEGER CHECK (source_width IS NULL OR source_width > 0),
-    feature_dim INTEGER CHECK (feature_dim IS NULL OR feature_dim > 0),
-    committed_at REAL NOT NULL,
-    PRIMARY KEY(job_id, ordinal),
-    UNIQUE(job_id, payload_id),
-    UNIQUE(relative_path)
-);
-
-CREATE TABLE IF NOT EXISTS job_attempts (
-    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
-    attempt INTEGER NOT NULL CHECK (attempt > 0),
-    selected_device TEXT NOT NULL CHECK (selected_device IN ('cpu', 'cuda')),
-    status TEXT NOT NULL CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
-    worker_id TEXT,
-    pid INTEGER,
-    pgid INTEGER,
-    boot_id TEXT,
-    process_start_ticks INTEGER CHECK (
-        process_start_ticks IS NULL OR process_start_ticks > 0
-    ),
-    claimed_at REAL NOT NULL,
-    started_at REAL,
-    finished_at REAL,
-    exit_code INTEGER,
-    error_code TEXT,
-    error_message TEXT,
-    PRIMARY KEY(job_id, attempt)
-);
-
-CREATE TABLE IF NOT EXISTS job_outputs (
-    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
-    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-    rows INTEGER NOT NULL CHECK (rows >= 0),
-    batches INTEGER NOT NULL CHECK (batches >= 0),
-    bytes INTEGER NOT NULL CHECK (bytes >= 0),
-    sha256 TEXT NOT NULL,
-    schema_fingerprint TEXT NOT NULL,
-    relative_path TEXT NOT NULL,
-    published_at REAL NOT NULL,
-    PRIMARY KEY(job_id, ordinal),
-    UNIQUE(relative_path)
-);
-
-CREATE TABLE IF NOT EXISTS models (
-    model_ref TEXT PRIMARY KEY,
-    owner_subject TEXT NOT NULL,
-    label TEXT NOT NULL,
-    generation INTEGER NOT NULL CHECK (generation > 0),
-    checkpoint_path TEXT NOT NULL,
-    metadata_path TEXT NOT NULL,
-    sha256 TEXT NOT NULL,
-    metadata_json TEXT NOT NULL,
-    producing_job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
-    created_at REAL NOT NULL,
-    UNIQUE(owner_subject, label, generation),
-    UNIQUE(checkpoint_path),
-    UNIQUE(metadata_path)
-);
-
-CREATE TABLE IF NOT EXISTS model_aliases (
-    owner_subject TEXT NOT NULL,
-    label TEXT NOT NULL,
-    model_ref TEXT NOT NULL REFERENCES models(model_ref),
-    updated_at REAL NOT NULL,
-    PRIMARY KEY(owner_subject, label)
-);
-
-CREATE TABLE IF NOT EXISTS idempotency_records (
-    owner_subject TEXT NOT NULL,
-    action_name TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL,
-    request_hash TEXT NOT NULL,
-    response_json TEXT NOT NULL,
-    job_id TEXT REFERENCES jobs(job_id) ON DELETE SET NULL,
-    created_at REAL NOT NULL,
-    PRIMARY KEY(owner_subject, action_name, idempotency_key)
-);
-
-CREATE TABLE IF NOT EXISTS output_tickets (
-    ticket_hash TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL,
-    owner_subject TEXT NOT NULL,
-    expires_at REAL NOT NULL,
-    created_at REAL NOT NULL,
-    FOREIGN KEY(job_id, ordinal) REFERENCES job_outputs(job_id, ordinal)
-        ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS output_tickets_expiry_idx
-    ON output_tickets(expires_at);
-"""
+_TERMINAL_STATES = (
+    JobState.SUCCEEDED.value,
+    JobState.FAILED.value,
+    JobState.CANCELLED.value,
+)
 
 
 class Ledger:
-    """SQLite source of truth for Flight jobs and published artifacts.
+    """PostgreSQL source of truth for Flight jobs and published artifacts."""
 
-    Connections are deliberately short lived.  This makes the class safe to
-    call from Flight handler and worker threads without sharing sqlite3
-    connection objects across threads.
-    """
-
-    def __init__(self, database_path: str, *, busy_timeout_ms: int = 5000):
-        self.database_path = os.path.abspath(os.fspath(database_path))
-        self.busy_timeout_ms = busy_timeout_ms
+    def __init__(self, database: Database):
+        if not isinstance(database, Database):
+            raise TypeError("Ledger requires a PostgreSQL Database")
+        self.database = database
 
     def initialize(self) -> "Ledger":
-        parent = os.path.dirname(self.database_path)
-        database_existed = os.path.exists(self.database_path)
-        os.makedirs(parent, exist_ok=True)
-        with self.connection() as connection:
-            current_version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if current_version > SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"ledger schema version {current_version} is newer than "
-                    f"supported version {SCHEMA_VERSION}"
-                )
-            connection.executescript(_SCHEMA)
-            attempt_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(job_attempts)")
-            }
-            if "boot_id" not in attempt_columns:
-                connection.execute("ALTER TABLE job_attempts ADD COLUMN boot_id TEXT")
-            if "process_start_ticks" not in attempt_columns:
-                connection.execute(
-                    "ALTER TABLE job_attempts ADD COLUMN process_start_ticks INTEGER "
-                    "CHECK (process_start_ticks IS NULL OR process_start_ticks > 0)"
-                )
-            job_columns = {
-                row["name"] for row in connection.execute("PRAGMA table_info(jobs)")
-            }
-            if "queue_sequence" not in job_columns:
-                connection.execute(
-                    "ALTER TABLE jobs ADD COLUMN queue_sequence INTEGER "
-                    "CHECK (queue_sequence IS NULL OR queue_sequence > 0)"
-                )
-            next_sequence = connection.execute(
-                "SELECT COALESCE(MAX(queue_sequence), 0) + 1 FROM jobs"
-            ).fetchone()[0]
-            for row in connection.execute(
-                """
-                SELECT job_id FROM jobs
-                WHERE state='QUEUED' AND queue_sequence IS NULL
-                ORDER BY queued_at, rowid
-                """
-            ).fetchall():
-                connection.execute(
-                    "UPDATE jobs SET queue_sequence=? WHERE job_id=?",
-                    (next_sequence, row["job_id"]),
-                )
-                next_sequence += 1
-            connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS jobs_queue_sequence_idx "
-                "ON jobs(queue_sequence) WHERE queue_sequence IS NOT NULL"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS jobs_queue_claim_idx "
-                "ON jobs(state, selected_device, queue_sequence)"
-            )
-            connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            connection.commit()
-        if not database_existed:
-            _fsync_directory(parent)
+        require_current_schema(self.database.config)
         return self
 
     def close(self) -> None:
-        # Connections are per operation and close themselves.
-        return None
+        self.database.close()
 
     def healthcheck(self) -> bool:
-        with self.connection() as connection:
-            connection.execute("SELECT 1 FROM jobs LIMIT 1").fetchone()
+        with self.database.session() as session:
+            session.scalar(select(Job.job_id).limit(1))
         return True
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            self.database_path,
-            timeout=self.busy_timeout_ms / 1000.0,
-            isolation_level=None,
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=FULL")
-        connection.execute(f"PRAGMA busy_timeout={int(self.busy_timeout_ms)}")
-        return connection
+    @contextmanager
+    def connection(self) -> Iterator[Session]:
+        """Expose a read-only-by-default ORM session for diagnostics."""
+        with self.database.session() as session:
+            yield session
 
     @contextmanager
-    def connection(self) -> Iterator[sqlite3.Connection]:
-        connection = self._connect()
-        try:
-            yield connection
-        finally:
-            connection.close()
+    def transaction(self) -> Iterator[Session]:
+        with self.database.transaction() as session:
+            yield session
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
-        with self.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            try:
-                yield connection
-            except BaseException:
-                connection.rollback()
-                raise
-            else:
-                connection.commit()
-
-    @contextmanager
-    def _write(self, connection: sqlite3.Connection | None):
+    def _read(self, connection: Session | None):
         if connection is not None:
             yield connection
             return
-        with self.transaction() as owned:
-            yield owned
+        with self.database.session() as session:
+            yield session
+
+    @contextmanager
+    def _write(self, connection: Session | None):
+        if connection is not None:
+            yield connection
+            return
+        with self.database.transaction() as session:
+            yield session
 
     def create_job(
         self,
@@ -348,7 +112,7 @@ class Ledger:
         model_config=None,
         training_config=None,
         now: float | None = None,
-        connection: sqlite3.Connection | None = None,
+        connection: Session | None = None,
     ) -> dict:
         job_id = _canonical_uuid(job_id, "job_id")
         if not owner_subject:
@@ -363,85 +127,86 @@ class Ledger:
         if operation == "predict" and (not input_model_ref or model_label is not None):
             raise ValueError("predict job requires input_model_ref only")
         timestamp = _now(now)
+        job = Job(
+            job_id=job_id,
+            owner_subject=owner_subject,
+            operation=operation,
+            state=JobState.UPLOADING.value,
+            revision=1,
+            requested_device=requested_device,
+            model_label=model_label,
+            input_model_ref=input_model_ref,
+            prediction_column=prediction_column,
+            model_config=_json_value(model_config),
+            training_config=_json_value(training_config),
+            config_hash=config_hash,
+            progress={},
+            attempt=0,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
         try:
-            with self._write(connection) as target:
-                target.execute(
-                    """
-                    INSERT INTO jobs(
-                        job_id, owner_subject, operation, state, revision,
-                        requested_device, model_label, input_model_ref,
-                        prediction_column, model_config_json,
-                        training_config_json, config_hash, created_at, updated_at
-                    ) VALUES (?, ?, ?, 'UPLOADING', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        job_id,
-                        owner_subject,
-                        operation,
-                        requested_device,
-                        model_label,
-                        input_model_ref,
-                        prediction_column,
-                        _json_or_none(model_config),
-                        _json_or_none(training_config),
-                        config_hash,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-                row = target.execute(
-                    "SELECT * FROM jobs WHERE job_id=?", (job_id,)
-                ).fetchone()
-        except sqlite3.IntegrityError as exc:
+            with self._write(connection) as session:
+                session.add(job)
+                session.flush()
+        except IntegrityError as exc:
             raise conflict(f"job already exists: {job_id}") from exc
-        return _decode_row(row)
+        return _decode(job)
 
-    def get_job(self, job_id: str, *, owner_subject: str | None = None) -> dict | None:
-        query = "SELECT * FROM jobs WHERE job_id=?"
-        values: tuple = (job_id,)
+    def get_job(
+        self,
+        job_id: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+        for_update: bool = False,
+    ) -> dict | None:
+        statement = select(Job).where(Job.job_id == job_id)
         if owner_subject is not None:
-            query += " AND owner_subject=?"
-            values += (owner_subject,)
-        with self.connection() as connection:
-            return _decode_row(connection.execute(query, values).fetchone())
+            statement = statement.where(Job.owner_subject == owner_subject)
+        if for_update:
+            statement = statement.with_for_update()
+        with self._read(connection) as session:
+            return _decode(session.scalar(statement))
+
+    def active_job_count(self, owner_subject: str, *, connection: Session | None = None) -> int:
+        with self._read(connection) as session:
+            return int(session.scalar(
+                select(func.count()).select_from(Job).where(
+                    Job.owner_subject == owner_subject,
+                    Job.state.not_in(_TERMINAL_STATES),
+                )
+            ) or 0)
 
     def get_status_snapshot(self, job_id: str, owner_subject: str):
-        """Read job, input manifest and output manifest from one SQLite snapshot."""
-        with self.connection() as connection:
-            connection.execute("BEGIN")
-            try:
-                job = connection.execute(
-                    "SELECT * FROM jobs WHERE job_id=? AND owner_subject=?",
-                    (job_id, owner_subject),
-                ).fetchone()
-                inputs = connection.execute(
-                    "SELECT * FROM job_inputs WHERE job_id=? ORDER BY ordinal",
-                    (job_id,),
-                ).fetchall()
-                outputs = connection.execute(
-                    "SELECT * FROM job_outputs WHERE job_id=? ORDER BY ordinal",
-                    (job_id,),
-                ).fetchall()
-                connection.commit()
-            except BaseException:
-                connection.rollback()
-                raise
-        return (
-            _decode_row(job),
-            [_decode_row(row) for row in inputs],
-            [_decode_row(row) for row in outputs],
-        )
+        with self.database.transaction() as session:
+            job = session.scalar(
+                select(Job)
+                .where(Job.job_id == job_id, Job.owner_subject == owner_subject)
+                .with_for_update(read=True)
+            )
+            inputs = session.scalars(
+                select(JobInput).where(JobInput.job_id == job_id).order_by(JobInput.ordinal)
+            ).all()
+            outputs = session.scalars(
+                select(JobOutput).where(JobOutput.job_id == job_id).order_by(JobOutput.ordinal)
+            ).all()
+        return _decode(job), [_decode(row) for row in inputs], [_decode(row) for row in outputs]
 
-    def list_jobs(self, states: Sequence[str | JobState] | None = None) -> list[dict]:
-        query = "SELECT * FROM jobs"
-        values: tuple = ()
+    def list_jobs(
+        self,
+        states: Sequence[str | JobState] | None = None,
+        *,
+        connection: Session | None = None,
+    ) -> list[dict]:
+        statement = select(Job)
         if states:
-            state_values = tuple(JobState(value).value for value in states)
-            query += f" WHERE state IN ({','.join('?' for _ in state_values)})"
-            values = state_values
-        query += " ORDER BY created_at, job_id"
-        with self.connection() as connection:
-            return [_decode_row(row) for row in connection.execute(query, values)]
+            statement = statement.where(
+                Job.state.in_([JobState(value).value for value in states])
+            )
+        statement = statement.order_by(Job.created_at, Job.job_id)
+        with self._read(connection) as session:
+            return [_decode(row) for row in session.scalars(statement)]
 
     def transition_job(
         self,
@@ -451,74 +216,52 @@ class Ledger:
         expected_revision: int | None = None,
         updates: dict | None = None,
         now: float | None = None,
-        connection: sqlite3.Connection | None = None,
+        connection: Session | None = None,
     ) -> dict:
         target_state = JobState(target_state)
         timestamp = _now(now)
-        with self._write(connection) as target:
-            current = target.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
-            if current is None:
+        with self._write(connection) as session:
+            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+            if job is None:
                 raise not_found(f"job not found: {job_id}")
-            if expected_revision is not None and current["revision"] != expected_revision:
+            if expected_revision is not None and job.revision != expected_revision:
                 raise failed_precondition("job revision has changed")
-            validate_transition(current["state"], target_state)
-            assignments = ["state=?", "revision=revision+1", "updated_at=?"]
-            values: list = [target_state.value, timestamp]
+            validate_transition(job.state, target_state)
+            job.state = target_state.value
+            job.revision += 1
+            job.updated_at = timestamp
             for name, value in _transition_updates(updates or {}).items():
-                assignments.append(f"{name}=?")
-                values.append(value)
-            values.extend((job_id, current["revision"]))
-            changed = target.execute(
-                f"UPDATE jobs SET {', '.join(assignments)} "
-                "WHERE job_id=? AND revision=?",
-                values,
-            ).rowcount
-            if changed != 1:
-                raise failed_precondition("job revision has changed")
-            row = target.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row)
+                setattr(job, name, value)
+            session.flush()
+            return _decode(job)
 
-    def update_progress(
-        self,
-        job_id: str,
-        progress: dict,
-        *,
-        now: float | None = None,
-    ) -> dict:
-        timestamp = _now(now)
-        with self.transaction() as connection:
-            changed = connection.execute(
-                """
-                UPDATE jobs
-                SET progress_json=?, revision=revision+1, updated_at=?
-                WHERE job_id=? AND state IN ('RUNNING', 'CANCELLING')
-                """,
-                (_json(progress), timestamp, job_id),
-            ).rowcount
-            if changed != 1:
+    def update_progress(self, job_id: str, progress: dict, *, now: float | None = None) -> dict:
+        with self.database.transaction() as session:
+            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+            if job is None or job.state not in (
+                JobState.RUNNING.value,
+                JobState.CANCELLING.value,
+            ):
                 raise failed_precondition("job is not running")
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
-        return _decode_row(row)
+            job.progress = _json_value(progress)
+            job.revision += 1
+            job.updated_at = _now(now)
+            session.flush()
+            return _decode(job)
 
     def lookup_idempotency(
         self,
         owner_subject: str,
         action_name: str,
         idempotency_key: str,
+        *,
+        connection: Session | None = None,
     ) -> dict | None:
-        with self.connection() as connection:
-            row = connection.execute(
-                """
-                SELECT * FROM idempotency_records
-                WHERE owner_subject=? AND action_name=? AND idempotency_key=?
-                """,
+        with self._read(connection) as session:
+            return _decode(session.get(
+                IdempotencyRecord,
                 (owner_subject, action_name, idempotency_key),
-            ).fetchone()
-        return _decode_row(row)
+            ))
 
     def record_idempotency(
         self,
@@ -530,39 +273,28 @@ class Ledger:
         response: dict,
         job_id: str | None = None,
         now: float | None = None,
-        connection: sqlite3.Connection | None = None,
+        connection: Session | None = None,
     ) -> tuple[dict, bool]:
-        timestamp = _now(now)
-        with self._write(connection) as target:
-            existing = target.execute(
-                """
-                SELECT * FROM idempotency_records
-                WHERE owner_subject=? AND action_name=? AND idempotency_key=?
-                """,
+        with self._write(connection) as session:
+            _advisory_lock(session, "idempotency", owner_subject, action_name, idempotency_key)
+            existing = session.get(
+                IdempotencyRecord,
                 (owner_subject, action_name, idempotency_key),
-            ).fetchone()
-            if existing is not None:
-                decoded = _decode_row(existing)
-                if decoded["request_hash"] != request_hash:
-                    raise conflict("idempotency key was used for a different request")
-                return decoded["response"], True
-            target.execute(
-                """
-                INSERT INTO idempotency_records(
-                    owner_subject, action_name, idempotency_key, request_hash,
-                    response_json, job_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    owner_subject,
-                    action_name,
-                    idempotency_key,
-                    request_hash,
-                    _json(response),
-                    job_id,
-                    timestamp,
-                ),
             )
+            if existing is not None:
+                if existing.request_hash != request_hash:
+                    raise conflict("idempotency key was used for a different request")
+                return existing.response, True
+            session.add(IdempotencyRecord(
+                owner_subject=owner_subject,
+                action_name=action_name,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+                response=_json_value(response),
+                job_id=job_id,
+                created_at=_now(now),
+            ))
+            session.flush()
         return response, False
 
     def run_idempotent(
@@ -572,52 +304,49 @@ class Ledger:
         action_name: str,
         idempotency_key: str,
         request_hash: str,
-        mutation: Callable[[sqlite3.Connection], tuple[dict, str | None]],
+        mutation: Callable[[Session], tuple[dict, str | None]],
         now: float | None = None,
     ) -> tuple[dict, bool]:
-        with self.transaction() as connection:
-            existing = connection.execute(
-                """
-                SELECT * FROM idempotency_records
-                WHERE owner_subject=? AND action_name=? AND idempotency_key=?
-                """,
+        with self.database.transaction() as session:
+            _advisory_lock(session, "idempotency", owner_subject, action_name, idempotency_key)
+            existing = session.get(
+                IdempotencyRecord,
                 (owner_subject, action_name, idempotency_key),
-            ).fetchone()
+            )
             if existing is not None:
-                decoded = _decode_row(existing)
-                if decoded["request_hash"] != request_hash:
+                if existing.request_hash != request_hash:
                     raise conflict("idempotency key was used for a different request")
-                return decoded["response"], True
-            response, job_id = mutation(connection)
-            self.record_idempotency(
+                return existing.response, True
+            response, job_id = mutation(session)
+            session.add(IdempotencyRecord(
                 owner_subject=owner_subject,
                 action_name=action_name,
                 idempotency_key=idempotency_key,
                 request_hash=request_hash,
-                response=response,
+                response=_json_value(response),
                 job_id=job_id,
-                now=now,
-                connection=connection,
-            )
+                created_at=_now(now),
+            ))
+            session.flush()
             return response, False
 
-    def find_input(self, job_id: str, *, ordinal: int | None = None, payload_id: str | None = None):
+    def find_input(
+        self,
+        job_id: str,
+        *,
+        ordinal: int | None = None,
+        payload_id: str | None = None,
+        connection: Session | None = None,
+    ):
         if ordinal is None and payload_id is None:
             raise ValueError("ordinal or payload_id is required")
-        predicates = ["job_id=?"]
-        values: list = [job_id]
+        statement = select(JobInput).where(JobInput.job_id == job_id)
         if ordinal is not None:
-            predicates.append("ordinal=?")
-            values.append(ordinal)
+            statement = statement.where(JobInput.ordinal == ordinal)
         if payload_id is not None:
-            predicates.append("payload_id=?")
-            values.append(payload_id)
-        with self.connection() as connection:
-            row = connection.execute(
-                f"SELECT * FROM job_inputs WHERE {' AND '.join(predicates)}",
-                values,
-            ).fetchone()
-        return _decode_row(row)
+            statement = statement.where(JobInput.payload_id == payload_id)
+        with self._read(connection) as session:
+            return _decode(session.scalar(statement))
 
     def reserve_input(
         self,
@@ -630,60 +359,43 @@ class Ledger:
         now: float | None = None,
     ) -> dict:
         _nonnegative(ordinal, "ordinal")
-        _canonical_uuid(payload_id, "payload_id")
+        payload_id = _canonical_uuid(payload_id, "payload_id")
         _validate_relative_path(temporary_path)
-        timestamp = _now(now)
-        with self.transaction() as connection:
-            job = connection.execute(
-                "SELECT state FROM jobs WHERE job_id=?", (job_id,)
-            ).fetchone()
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if job["state"] != JobState.UPLOADING.value:
-                raise failed_precondition("job no longer accepts inputs")
-            committed = connection.execute(
-                """
-                SELECT 1 FROM job_inputs
-                WHERE job_id=? AND (ordinal=? OR payload_id=?)
-                """,
-                (job_id, ordinal, payload_id),
-            ).fetchone()
-            if committed is not None:
-                raise conflict("input ordinal or payloadId is already committed")
-            try:
-                connection.execute(
-                    """
-                    INSERT INTO input_uploads(
-                        upload_token, job_id, payload_id, ordinal,
-                        temporary_path, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        upload_token,
-                        job_id,
-                        payload_id,
-                        ordinal,
-                        temporary_path,
-                        timestamp,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise conflict("input ordinal or payloadId is being uploaded") from exc
-            row = connection.execute(
-                "SELECT * FROM input_uploads WHERE upload_token=?", (upload_token,)
-            ).fetchone()
-        return _decode_row(row)
+        reservation = InputUpload(
+            upload_token=upload_token,
+            job_id=job_id,
+            payload_id=payload_id,
+            ordinal=ordinal,
+            temporary_path=temporary_path,
+            created_at=_now(now),
+        )
+        try:
+            with self.database.transaction() as session:
+                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+                if job is None:
+                    raise not_found(f"job not found: {job_id}")
+                if job.state != JobState.UPLOADING.value:
+                    raise failed_precondition("job no longer accepts inputs")
+                committed = session.scalar(select(JobInput.job_id).where(
+                    JobInput.job_id == job_id,
+                    or_(JobInput.ordinal == ordinal, JobInput.payload_id == payload_id),
+                ))
+                if committed is not None:
+                    raise conflict("input ordinal or payloadId is already committed")
+                session.add(reservation)
+                session.flush()
+        except IntegrityError as exc:
+            raise conflict("input ordinal or payloadId is being uploaded") from exc
+        return _decode(reservation)
 
     def abort_input(self, upload_token: str) -> str | None:
-        with self.transaction() as connection:
-            row = connection.execute(
-                "SELECT temporary_path FROM input_uploads WHERE upload_token=?",
-                (upload_token,),
-            ).fetchone()
-            connection.execute(
-                "DELETE FROM input_uploads WHERE upload_token=?", (upload_token,)
-            )
-        return None if row is None else row["temporary_path"]
+        with self.database.transaction() as session:
+            upload = session.get(InputUpload, upload_token, with_for_update=True)
+            if upload is None:
+                return None
+            path = upload.temporary_path
+            session.delete(upload)
+            return path
 
     def commit_input(
         self,
@@ -708,118 +420,88 @@ class Ledger:
         _digest(sha256, "sha256")
         _digest(schema_fingerprint, "schema_fingerprint")
         timestamp = _now(now)
-        with self.transaction() as connection:
-            upload = connection.execute(
-                "SELECT * FROM input_uploads WHERE upload_token=?", (upload_token,)
-            ).fetchone()
-            if upload is None:
-                raise not_found("input upload reservation not found")
-            job = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (upload["job_id"],)
-            ).fetchone()
-            if job["state"] != JobState.UPLOADING.value:
-                raise failed_precondition("job no longer accepts inputs")
-            expected_schema_id = (
-                FIT_SCHEMA_ID if job["operation"] == "fit" else PREDICT_SCHEMA_ID
-            )
-            if schema_id != expected_schema_id:
-                raise failed_precondition(
-                    f"schemaId {schema_id!r} does not match job operation"
+        try:
+            with self.database.transaction() as session:
+                upload = session.get(InputUpload, upload_token, with_for_update=True)
+                if upload is None:
+                    raise not_found("input upload reservation not found")
+                job = session.scalar(
+                    select(Job).where(Job.job_id == upload.job_id).with_for_update()
                 )
-            totals = connection.execute(
-                """
-                SELECT COUNT(*) AS payloads, COALESCE(SUM(bytes), 0) AS bytes
-                FROM job_inputs WHERE job_id=?
-                """,
-                (upload["job_id"],),
-            ).fetchone()
-            if totals["payloads"] + 1 > max_payloads:
-                raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job payload quota exceeded")
-            if totals["bytes"] + byte_count > max_job_bytes:
-                raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job byte quota exceeded")
-            existing_contract = connection.execute(
-                """
-                SELECT schema_id, schema_fingerprint FROM job_inputs
-                WHERE job_id=? ORDER BY ordinal LIMIT 1
-                """,
-                (upload["job_id"],),
-            ).fetchone()
-            if existing_contract is not None and (
-                existing_contract["schema_id"] != schema_id
-                or existing_contract["schema_fingerprint"] != schema_fingerprint
-            ):
-                raise failed_precondition(
-                    "input schema is inconsistent with committed inputs"
+                if job.state != JobState.UPLOADING.value:
+                    raise failed_precondition("job no longer accepts inputs")
+                expected_schema_id = FIT_SCHEMA_ID if job.operation == "fit" else PREDICT_SCHEMA_ID
+                if schema_id != expected_schema_id:
+                    raise failed_precondition(
+                        f"schemaId {schema_id!r} does not match job operation"
+                    )
+                payload_count, total_bytes = session.execute(
+                    select(func.count(), func.coalesce(func.sum(JobInput.bytes), 0)).where(
+                        JobInput.job_id == upload.job_id
+                    )
+                ).one()
+                if payload_count + 1 > max_payloads:
+                    raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job payload quota exceeded")
+                if total_bytes + byte_count > max_job_bytes:
+                    raise ServiceError(ErrorCode.RESOURCE_EXHAUSTED, "job byte quota exceeded")
+                existing_contract = session.scalar(
+                    select(JobInput)
+                    .where(JobInput.job_id == upload.job_id)
+                    .order_by(JobInput.ordinal)
+                    .limit(1)
                 )
-            known_dimensions = connection.execute(
-                """
-                SELECT DISTINCT source_width, feature_dim FROM job_inputs
-                WHERE job_id=? AND source_width IS NOT NULL
-                """,
-                (upload["job_id"],),
-            ).fetchall()
-            if source_width is not None and any(
-                item["source_width"] != source_width
-                or item["feature_dim"] != feature_dim
-                for item in known_dimensions
-            ):
-                raise failed_precondition(
-                    "input dimensions are inconsistent with committed inputs"
+                if existing_contract is not None and (
+                    existing_contract.schema_id != schema_id
+                    or existing_contract.schema_fingerprint != schema_fingerprint
+                ):
+                    raise failed_precondition("input schema is inconsistent with committed inputs")
+                known_dimensions = session.execute(
+                    select(JobInput.source_width, JobInput.feature_dim)
+                    .where(JobInput.job_id == upload.job_id, JobInput.source_width.is_not(None))
+                    .distinct()
+                ).all()
+                if source_width is not None and any(
+                    known_width != source_width or known_dim != feature_dim
+                    for known_width, known_dim in known_dimensions
+                ):
+                    raise failed_precondition("input dimensions are inconsistent with committed inputs")
+                record = JobInput(
+                    job_id=upload.job_id,
+                    ordinal=upload.ordinal,
+                    payload_id=upload.payload_id,
+                    schema_id=schema_id,
+                    rows=rows,
+                    batches=batches,
+                    bytes=byte_count,
+                    sha256=sha256,
+                    schema_fingerprint=schema_fingerprint,
+                    relative_path=relative_path,
+                    source_width=source_width,
+                    feature_dim=feature_dim,
+                    committed_at=timestamp,
                 )
-            try:
-                connection.execute(
-                    """
-                    INSERT INTO job_inputs(
-                        job_id, ordinal, payload_id, schema_id, rows, batches,
-                        bytes, sha256, schema_fingerprint, relative_path,
-                        source_width, feature_dim, committed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        upload["job_id"],
-                        upload["ordinal"],
-                        upload["payload_id"],
-                        schema_id,
-                        rows,
-                        batches,
-                        byte_count,
-                        sha256,
-                        schema_fingerprint,
-                        relative_path,
-                        source_width,
-                        feature_dim,
-                        timestamp,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise conflict("input ordinal or payloadId is already committed") from exc
-            connection.execute(
-                "DELETE FROM input_uploads WHERE upload_token=?", (upload_token,)
-            )
-            connection.execute(
-                """
-                UPDATE jobs SET revision=revision+1, updated_at=?
-                WHERE job_id=?
-                """,
-                (timestamp, upload["job_id"]),
-            )
-            row = connection.execute(
-                "SELECT * FROM job_inputs WHERE job_id=? AND ordinal=?",
-                (upload["job_id"], upload["ordinal"]),
-            ).fetchone()
-            revision = connection.execute(
-                "SELECT revision FROM jobs WHERE job_id=?", (upload["job_id"],)
-            ).fetchone()["revision"]
-        result = _decode_row(row)
-        result["revision"] = revision
-        return result
+                session.add(record)
+                session.delete(upload)
+                job.revision += 1
+                job.updated_at = timestamp
+                session.flush()
+                result = _decode(record)
+                result["revision"] = job.revision
+                return result
+        except IntegrityError as exc:
+            raise conflict("input ordinal or payloadId is already committed") from exc
 
-    def list_inputs(self, job_id: str) -> list[dict]:
-        with self.connection() as connection:
-            rows = connection.execute(
-                "SELECT * FROM job_inputs WHERE job_id=? ORDER BY ordinal", (job_id,)
-            ).fetchall()
-        return [_decode_row(row) for row in rows]
+    def list_inputs(
+        self,
+        job_id: str,
+        *,
+        connection: Session | None = None,
+    ) -> list[dict]:
+        with self._read(connection) as session:
+            rows = session.scalars(
+                select(JobInput).where(JobInput.job_id == job_id).order_by(JobInput.ordinal)
+            )
+            return [_decode(row) for row in rows]
 
     def seal_job(
         self,
@@ -831,46 +513,36 @@ class Ledger:
         feature_dim: int | None = None,
         result: dict | None = None,
         now: float | None = None,
-        connection: sqlite3.Connection | None = None,
+        connection: Session | None = None,
     ) -> tuple[dict, bool]:
         _digest(manifest_hash, "manifest_hash")
         timestamp = _now(now)
-        with self._write(connection) as target:
-            job = target.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        with self._write(connection) as session:
+            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
             if job is None:
                 raise not_found(f"job not found: {job_id}")
-            if job["seal_hash"] is not None:
-                if job["seal_hash"] != manifest_hash:
+            if job.seal_hash is not None:
+                if job.seal_hash != manifest_hash:
                     raise conflict("job was sealed with a different manifest")
-                return _decode_row(job), True
-            if job["state"] != JobState.UPLOADING.value:
+                return _decode(job), True
+            if job.state != JobState.UPLOADING.value:
                 raise failed_precondition("job cannot be sealed from its current state")
-            active = target.execute(
-                "SELECT 1 FROM input_uploads WHERE job_id=? LIMIT 1", (job_id,)
-            ).fetchone()
+            active = session.scalar(
+                select(InputUpload.upload_token).where(InputUpload.job_id == job_id).limit(1)
+            )
             if active is not None:
                 raise failed_precondition("job has an upload in progress")
-            target.execute(
-                """
-                UPDATE jobs SET
-                    state='SEALED', revision=revision+1, updated_at=?, sealed_at=?,
-                    seal_hash=?, seal_manifest_json=?, seal_result_json=?,
-                    source_width=?, feature_dim=?
-                WHERE job_id=? AND state='UPLOADING'
-                """,
-                (
-                    timestamp,
-                    timestamp,
-                    manifest_hash,
-                    _json(manifest),
-                    _json_or_none(result),
-                    source_width,
-                    feature_dim,
-                    job_id,
-                ),
-            )
-            row = target.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row), False
+            job.state = JobState.SEALED.value
+            job.revision += 1
+            job.updated_at = timestamp
+            job.sealed_at = timestamp
+            job.seal_hash = manifest_hash
+            job.seal_manifest = _json_value(manifest)
+            job.seal_result = _json_value(result)
+            job.source_width = source_width
+            job.feature_dim = feature_dim
+            session.flush()
+            return _decode(job), False
 
     def queue_job(
         self,
@@ -879,46 +551,48 @@ class Ledger:
         selected_device: str,
         result: dict | None = None,
         now: float | None = None,
-        connection: sqlite3.Connection | None = None,
+        connection: Session | None = None,
     ) -> tuple[dict, bool]:
         if selected_device not in ("cpu", "cuda"):
             raise ValueError("selected_device must be cpu or cuda")
         timestamp = _now(now)
-        with self._write(connection) as target:
-            job = target.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        with self._write(connection) as session:
+            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
             if job is None:
                 raise not_found(f"job not found: {job_id}")
-            # A start that already committed remains an idempotent lifecycle
-            # operation after the job advances (including later cancellation).
-            # queued_at is durable evidence that SEALED -> QUEUED happened;
-            # selected_device alone is not sufficient for legacy/corrupt rows.
-            if job["queued_at"] is not None:
-                if job["selected_device"] != selected_device:
+            if job.queued_at is not None:
+                if job.selected_device != selected_device:
                     raise conflict("job was started with a different device")
-                return _decode_row(job), True
-            if job["state"] != JobState.SEALED.value:
+                return _decode(job), True
+            if job.state != JobState.SEALED.value:
                 raise failed_precondition("job must be SEALED before start")
-            queue_sequence = target.execute(
-                "SELECT COALESCE(MAX(queue_sequence), 0) + 1 FROM jobs"
-            ).fetchone()[0]
-            target.execute(
-                """
-                UPDATE jobs SET state='QUEUED', revision=revision+1,
-                    selected_device=?, start_result_json=?, queued_at=?, updated_at=?,
-                    queue_sequence=?
-                WHERE job_id=? AND state='SEALED'
-                """,
-                (
-                    selected_device,
-                    _json_or_none(result),
-                    timestamp,
-                    timestamp,
-                    queue_sequence,
-                    job_id,
-                ),
+            job.state = JobState.QUEUED.value
+            job.revision += 1
+            job.selected_device = selected_device
+            job.start_result = _json_value(result)
+            job.queued_at = timestamp
+            job.updated_at = timestamp
+            job.queue_sequence = session.scalar(select(QUEUE_SEQUENCE.next_value()))
+            session.flush()
+            return _decode(job), False
+
+    def claim_job(
+        self,
+        job_id: str,
+        selected_device: str,
+        *,
+        worker_id: str | None = None,
+        now: float | None = None,
+    ) -> dict | None:
+        if selected_device not in ("cpu", "cuda"):
+            raise ValueError("selected_device must be cpu or cuda")
+        with self.database.transaction() as session:
+            job = session.scalar(
+                select(Job).where(Job.job_id == job_id).with_for_update(skip_locked=True)
             )
-            row = target.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row), False
+            if job is None or job.state != JobState.QUEUED.value or job.selected_device != selected_device:
+                return None
+            return self._claim(session, job, worker_id, _now(now))
 
     def claim_next_job(
         self,
@@ -929,49 +603,35 @@ class Ledger:
     ) -> dict | None:
         if selected_device not in ("cpu", "cuda"):
             raise ValueError("selected_device must be cpu or cuda")
-        timestamp = _now(now)
-        with self.transaction() as connection:
-            job = connection.execute(
-                """
-                SELECT * FROM jobs
-                WHERE state='QUEUED' AND selected_device=?
-                ORDER BY queue_sequence LIMIT 1
-                """,
-                (selected_device,),
-            ).fetchone()
+        with self.database.transaction() as session:
+            job = session.scalar(
+                select(Job)
+                .where(Job.state == JobState.QUEUED.value, Job.selected_device == selected_device)
+                .order_by(Job.queue_sequence)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
             if job is None:
                 return None
-            attempt = job["attempt"] + 1
-            changed = connection.execute(
-                """
-                UPDATE jobs SET state='RUNNING', revision=revision+1,
-                    attempt=?, started_at=?, updated_at=?
-                WHERE job_id=? AND state='QUEUED' AND revision=?
-                """,
-                (attempt, timestamp, timestamp, job["job_id"], job["revision"]),
-            ).rowcount
-            if changed != 1:
-                return None
-            connection.execute(
-                """
-                INSERT INTO job_attempts(
-                    job_id, attempt, selected_device, status, worker_id,
-                    claimed_at, started_at
-                ) VALUES (?, ?, ?, 'RUNNING', ?, ?, ?)
-                """,
-                (
-                    job["job_id"],
-                    attempt,
-                    selected_device,
-                    worker_id,
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job["job_id"],)
-            ).fetchone()
-        return _decode_row(row)
+            return self._claim(session, job, worker_id, _now(now))
+
+    def _claim(self, session: Session, job: Job, worker_id: str | None, timestamp: datetime) -> dict:
+        job.state = JobState.RUNNING.value
+        job.revision += 1
+        job.attempt += 1
+        job.started_at = timestamp
+        job.updated_at = timestamp
+        session.add(JobAttempt(
+            job_id=job.job_id,
+            attempt=job.attempt,
+            selected_device=job.selected_device,
+            status=JobState.RUNNING.value,
+            worker_id=worker_id,
+            claimed_at=timestamp,
+            started_at=timestamp,
+        ))
+        session.flush()
+        return _decode(job)
 
     def set_attempt_process(
         self,
@@ -986,38 +646,29 @@ class Ledger:
         _positive(pid, "pid")
         _positive(pgid, "pgid")
         _positive(process_start_ticks, "process_start_ticks")
-        _canonical_uuid(boot_id, "boot_id")
-        with self.transaction() as connection:
-            changed = connection.execute(
-                """
-                UPDATE job_attempts SET pid=?, pgid=?, boot_id=?, process_start_ticks=?
-                WHERE job_id=? AND attempt=? AND status='RUNNING'
-                """,
-                (
-                    pid,
-                    pgid,
-                    boot_id,
-                    process_start_ticks,
-                    job_id,
-                    attempt,
-                ),
-            ).rowcount
-            if changed != 1:
+        boot_id = _canonical_uuid(boot_id, "boot_id")
+        with self.database.transaction() as session:
+            record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
+            if record is None or record.status != JobState.RUNNING.value:
                 raise failed_precondition("job attempt is not running")
+            record.pid = pid
+            record.pgid = pgid
+            record.boot_id = boot_id
+            record.process_start_ticks = process_start_ticks
 
     def list_active_attempts(self) -> list[dict]:
-        with self.connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT job_attempts.* FROM job_attempts
-                JOIN jobs USING(job_id)
-                WHERE jobs.state IN ('RUNNING', 'CANCELLING')
-                    AND job_attempts.status='RUNNING'
-                    AND job_attempts.attempt=jobs.attempt
-                ORDER BY job_attempts.job_id, job_attempts.attempt
-                """
-            ).fetchall()
-        return [_decode_row(row) for row in rows]
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(JobAttempt)
+                .join(Job, Job.job_id == JobAttempt.job_id)
+                .where(
+                    Job.state.in_((JobState.RUNNING.value, JobState.CANCELLING.value)),
+                    JobAttempt.status == JobState.RUNNING.value,
+                    JobAttempt.attempt == Job.attempt,
+                )
+                .order_by(JobAttempt.job_id, JobAttempt.attempt)
+            )
+            return [_decode(row) for row in rows]
 
     def finish_attempt(
         self,
@@ -1030,59 +681,36 @@ class Ledger:
         exit_code: int | None = None,
         now: float | None = None,
     ) -> dict:
-        """Atomically finish a failed or cancelled worker attempt."""
         target_state = JobState(target_state)
         if target_state not in (JobState.FAILED, JobState.CANCELLED):
             raise ValueError("worker attempt can finish only as FAILED or CANCELLED")
-        if target_state == JobState.CANCELLED and (
-            error_code is not None or error_message is not None
-        ):
+        if target_state == JobState.CANCELLED and (error_code is not None or error_message is not None):
             raise ValueError("cancelled attempt must not carry an error")
         timestamp = _now(now)
-        with self.transaction() as connection:
-            job = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        with self.database.transaction() as session:
+            job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
             if job is None:
                 raise not_found(f"job not found: {job_id}")
-            if job["attempt"] != attempt:
+            if job.attempt != attempt:
                 raise failed_precondition("job attempt is no longer active")
-            validate_transition(job["state"], target_state)
+            validate_transition(job.state, target_state)
+            record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
+            if record is None or record.status != JobState.RUNNING.value:
+                raise failed_precondition("job attempt is no longer active")
             code = error_code.value if isinstance(error_code, ErrorCode) else error_code
-            connection.execute(
-                """
-                UPDATE job_attempts SET status=?, finished_at=?, exit_code=?,
-                    error_code=?, error_message=?
-                WHERE job_id=? AND attempt=? AND status='RUNNING'
-                """,
-                (
-                    target_state.value,
-                    timestamp,
-                    exit_code,
-                    code,
-                    error_message,
-                    job_id,
-                    attempt,
-                ),
-            )
-            changed = connection.execute(
-                """
-                UPDATE jobs SET state=?, revision=revision+1, error_code=?,
-                    error_message=?, finished_at=?, updated_at=?
-                WHERE job_id=? AND revision=?
-                """,
-                (
-                    target_state.value,
-                    code,
-                    error_message,
-                    timestamp,
-                    timestamp,
-                    job_id,
-                    job["revision"],
-                ),
-            ).rowcount
-            if changed != 1:
-                raise failed_precondition("job revision has changed")
-            row = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row)
+            record.status = target_state.value
+            record.finished_at = timestamp
+            record.exit_code = exit_code
+            record.error_code = code
+            record.error_message = error_message
+            job.state = target_state.value
+            job.revision += 1
+            job.error_code = code
+            job.error_message = error_message
+            job.finished_at = timestamp
+            job.updated_at = timestamp
+            session.flush()
+            return _decode(job)
 
     def publish_outputs(
         self,
@@ -1094,36 +722,30 @@ class Ledger:
         now: float | None = None,
     ) -> dict:
         timestamp = _now(now)
-        with self.transaction() as connection:
-            job = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if (
-                job["operation"] != "predict"
-                or job["state"] != JobState.RUNNING.value
-                or job["attempt"] != attempt
-            ):
-                raise failed_precondition("job is not the active running attempt")
-            for output in outputs:
-                _insert_output(connection, job_id, output, timestamp)
-            connection.execute(
-                """
-                UPDATE job_attempts SET status='SUCCEEDED', finished_at=?
-                WHERE job_id=? AND attempt=?
-                """,
-                (timestamp, job_id, attempt),
-            )
-            connection.execute(
-                """
-                UPDATE jobs SET state='SUCCEEDED', revision=revision+1,
-                    result_json=?, error_code=NULL, error_message=NULL,
-                    finished_at=?, updated_at=?
-                WHERE job_id=? AND state='RUNNING' AND attempt=?
-                """,
-                (_json(result), timestamp, timestamp, job_id, attempt),
-            )
-            row = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row)
+        try:
+            with self.database.transaction() as session:
+                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+                if job is None:
+                    raise not_found(f"job not found: {job_id}")
+                if job.operation != "predict" or job.state != JobState.RUNNING.value or job.attempt != attempt:
+                    raise failed_precondition("job is not the active running attempt")
+                for output in outputs:
+                    session.add(_output_record(job_id, output, timestamp))
+                session.flush()
+                record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
+                record.status = JobState.SUCCEEDED.value
+                record.finished_at = timestamp
+                job.state = JobState.SUCCEEDED.value
+                job.revision += 1
+                job.result = _json_value(result)
+                job.error_code = None
+                job.error_message = None
+                job.finished_at = timestamp
+                job.updated_at = timestamp
+                session.flush()
+                return _decode(job)
+        except IntegrityError as exc:
+            raise conflict("job output ordinal is already published") from exc
 
     def publish_model(
         self,
@@ -1144,109 +766,111 @@ class Ledger:
         _validate_relative_path(metadata_path)
         _digest(sha256, "sha256")
         timestamp = _now(now)
-        with self.transaction() as connection:
-            job = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if (
-                job["operation"] != "fit"
-                or job["state"] != JobState.RUNNING.value
-                or job["attempt"] != attempt
-            ):
-                raise failed_precondition("job is not the active fit attempt")
-            if label != job["model_label"]:
-                raise failed_precondition("model label does not match the fit job")
-            next_generation = connection.execute(
-                """
-                SELECT COALESCE(MAX(generation), 0) + 1 FROM models
-                WHERE owner_subject=? AND label=?
-                """,
-                (job["owner_subject"], label),
-            ).fetchone()[0]
-            if generation is None:
-                generation = next_generation
-            elif generation != next_generation:
-                raise failed_precondition(
-                    f"next model generation is {next_generation}, got {generation}"
-                )
-            try:
-                connection.execute(
-                    """
-                    INSERT INTO models(
-                        model_ref, owner_subject, label, generation,
-                        checkpoint_path, metadata_path, sha256, metadata_json,
-                        producing_job_id, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        model_ref,
-                        job["owner_subject"],
-                        label,
-                        generation,
-                        checkpoint_path,
-                        metadata_path,
-                        sha256,
-                        _json(metadata),
-                        job_id,
-                        timestamp,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise conflict("model generation already exists") from exc
-            connection.execute(
-                """
-                INSERT INTO model_aliases(owner_subject, label, model_ref, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(owner_subject, label) DO UPDATE SET
-                    model_ref=excluded.model_ref, updated_at=excluded.updated_at
-                """,
-                (job["owner_subject"], label, model_ref, timestamp),
-            )
-            connection.execute(
-                """
-                UPDATE job_attempts SET status='SUCCEEDED', finished_at=?
-                WHERE job_id=? AND attempt=?
-                """,
-                (timestamp, job_id, attempt),
-            )
-            connection.execute(
-                """
-                UPDATE jobs SET state='SUCCEEDED', revision=revision+1,
-                    result_json=?, finished_at=?, updated_at=?
-                WHERE job_id=? AND state='RUNNING' AND attempt=?
-                """,
-                (_json(result), timestamp, timestamp, job_id, attempt),
-            )
-            row = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-        return _decode_row(row)
+        try:
+            with self.database.transaction() as session:
+                job = session.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
+                if job is None:
+                    raise not_found(f"job not found: {job_id}")
+                if job.operation != "fit" or job.state != JobState.RUNNING.value or job.attempt != attempt:
+                    raise failed_precondition("job is not the active fit attempt")
+                if label != job.model_label:
+                    raise failed_precondition("model label does not match the fit job")
+                _advisory_lock(session, "model-generation", job.owner_subject, label)
+                next_generation = int(session.scalar(
+                    select(func.coalesce(func.max(PublishedModel.generation), 0) + 1).where(
+                        PublishedModel.owner_subject == job.owner_subject,
+                        PublishedModel.label == label,
+                    )
+                ))
+                if generation is None:
+                    generation = next_generation
+                elif generation != next_generation:
+                    raise failed_precondition(
+                        f"next model generation is {next_generation}, got {generation}"
+                    )
+                session.add(PublishedModel(
+                    model_ref=model_ref,
+                    owner_subject=job.owner_subject,
+                    label=label,
+                    generation=generation,
+                    checkpoint_path=checkpoint_path,
+                    metadata_path=metadata_path,
+                    sha256=sha256,
+                    metadata_json=_json_value(metadata),
+                    producing_job_id=job_id,
+                    created_at=timestamp,
+                ))
+                alias = session.get(ModelAlias, (job.owner_subject, label), with_for_update=True)
+                if alias is None:
+                    session.add(ModelAlias(
+                        owner_subject=job.owner_subject,
+                        label=label,
+                        model_ref=model_ref,
+                        updated_at=timestamp,
+                    ))
+                else:
+                    alias.model_ref = model_ref
+                    alias.updated_at = timestamp
+                record = session.get(JobAttempt, (job_id, attempt), with_for_update=True)
+                record.status = JobState.SUCCEEDED.value
+                record.finished_at = timestamp
+                job.state = JobState.SUCCEEDED.value
+                job.revision += 1
+                job.result = _json_value(result)
+                job.error_code = None
+                job.error_message = None
+                job.finished_at = timestamp
+                job.updated_at = timestamp
+                session.flush()
+                return _decode(job)
+        except IntegrityError as exc:
+            raise conflict("model generation already exists") from exc
 
-    def get_model(self, model_ref: str, *, owner_subject: str | None = None) -> dict | None:
-        query = "SELECT * FROM models WHERE model_ref=?"
-        values: tuple = (model_ref,)
+    def get_model(
+        self,
+        model_ref: str,
+        *,
+        owner_subject: str | None = None,
+        connection: Session | None = None,
+    ) -> dict | None:
+        statement = select(PublishedModel).where(PublishedModel.model_ref == model_ref)
         if owner_subject is not None:
-            query += " AND owner_subject=?"
-            values += (owner_subject,)
-        with self.connection() as connection:
-            return _decode_row(connection.execute(query, values).fetchone())
+            statement = statement.where(PublishedModel.owner_subject == owner_subject)
+        with self._read(connection) as session:
+            return _decode(session.scalar(statement))
 
-    def resolve_model_alias(self, owner_subject: str, label: str) -> dict | None:
-        with self.connection() as connection:
-            row = connection.execute(
-                """
-                SELECT models.* FROM model_aliases
-                JOIN models USING(model_ref)
-                WHERE model_aliases.owner_subject=? AND model_aliases.label=?
-                """,
-                (owner_subject, label),
-            ).fetchone()
-        return _decode_row(row)
+    def resolve_model_alias(
+        self,
+        owner_subject: str,
+        label: str,
+        *,
+        connection: Session | None = None,
+    ) -> dict | None:
+        with self._read(connection) as session:
+            model = session.scalar(
+                select(PublishedModel)
+                .join(ModelAlias, ModelAlias.model_ref == PublishedModel.model_ref)
+                .where(ModelAlias.owner_subject == owner_subject, ModelAlias.label == label)
+            )
+            return _decode(model)
 
-    def list_outputs(self, job_id: str) -> list[dict]:
-        with self.connection() as connection:
-            rows = connection.execute(
-                "SELECT * FROM job_outputs WHERE job_id=? ORDER BY ordinal", (job_id,)
-            ).fetchall()
-        return [_decode_row(row) for row in rows]
+    def list_models(self) -> list[dict]:
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(PublishedModel).order_by(
+                    PublishedModel.owner_subject,
+                    PublishedModel.label,
+                    PublishedModel.generation,
+                )
+            )
+            return [_decode(row) for row in rows]
+
+    def list_outputs(self, job_id: str, *, connection: Session | None = None) -> list[dict]:
+        with self._read(connection) as session:
+            rows = session.scalars(
+                select(JobOutput).where(JobOutput.job_id == job_id).order_by(JobOutput.ordinal)
+            )
+            return [_decode(row) for row in rows]
 
     def issue_ticket(
         self,
@@ -1260,31 +884,31 @@ class Ledger:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be greater than zero")
         timestamp = _now(now)
-        expires_at = timestamp + ttl_seconds
+        expires_at = datetime.fromtimestamp(timestamp.timestamp() + ttl_seconds, timezone.utc)
         token = secrets.token_urlsafe(32).encode("ascii")
         ticket_hash = hashlib.sha256(token).hexdigest()
-        with self.transaction() as connection:
-            output = connection.execute(
-                """
-                SELECT 1 FROM job_outputs
-                JOIN jobs USING(job_id)
-                WHERE job_outputs.job_id=? AND job_outputs.ordinal=?
-                    AND jobs.owner_subject=? AND jobs.state='SUCCEEDED'
-                """,
-                (job_id, ordinal, owner_subject),
-            ).fetchone()
+        with self.database.transaction() as session:
+            output = session.scalar(
+                select(JobOutput)
+                .join(Job, Job.job_id == JobOutput.job_id)
+                .where(
+                    JobOutput.job_id == job_id,
+                    JobOutput.ordinal == ordinal,
+                    Job.owner_subject == owner_subject,
+                    Job.state == JobState.SUCCEEDED.value,
+                )
+            )
             if output is None:
                 raise not_found("published job output not found")
-            connection.execute(
-                """
-                INSERT INTO output_tickets(
-                    ticket_hash, job_id, ordinal, owner_subject,
-                    expires_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (ticket_hash, job_id, ordinal, owner_subject, expires_at, timestamp),
-            )
-        return token, expires_at
+            session.add(OutputTicket(
+                ticket_hash=ticket_hash,
+                job_id=job_id,
+                ordinal=ordinal,
+                owner_subject=owner_subject,
+                expires_at=expires_at,
+                created_at=timestamp,
+            ))
+        return token, expires_at.timestamp()
 
     def resolve_ticket(
         self,
@@ -1294,100 +918,73 @@ class Ledger:
         now: float | None = None,
     ) -> dict:
         ticket_hash = hashlib.sha256(bytes(ticket)).hexdigest()
-        timestamp = _now(now)
-        with self.connection() as connection:
-            row = connection.execute(
-                """
-                SELECT output_tickets.owner_subject AS ticket_owner,
-                    output_tickets.expires_at, job_outputs.*, jobs.state
-                FROM output_tickets
-                JOIN job_outputs USING(job_id, ordinal)
-                JOIN jobs USING(job_id)
-                WHERE ticket_hash=?
-                """,
-                (ticket_hash,),
-            ).fetchone()
+        with self.database.session() as session:
+            row = session.execute(
+                select(OutputTicket, JobOutput, Job.state)
+                .join(
+                    JobOutput,
+                    and_(
+                        JobOutput.job_id == OutputTicket.job_id,
+                        JobOutput.ordinal == OutputTicket.ordinal,
+                    ),
+                )
+                .join(Job, Job.job_id == OutputTicket.job_id)
+                .where(OutputTicket.ticket_hash == ticket_hash)
+            ).one_or_none()
         if row is None:
             raise not_found("output ticket not found")
-        if row["ticket_owner"] != owner_subject:
+        record, output, state = row
+        if record.owner_subject != owner_subject:
             raise ServiceError(ErrorCode.PERMISSION_DENIED, "output ticket belongs to another subject")
-        if row["expires_at"] <= timestamp:
+        if record.expires_at <= _now(now):
             raise failed_precondition("output ticket has expired")
-        if row["state"] != JobState.SUCCEEDED.value:
+        if state != JobState.SUCCEEDED.value:
             raise failed_precondition("job output is not available")
-        return _decode_row(row)
+        result = _decode(output)
+        result.update({
+            "ticket_owner": record.owner_subject,
+            "expires_at": record.expires_at.timestamp(),
+            "state": state,
+        })
+        return result
 
     def delete_expired_tickets(self, *, now: float | None = None) -> int:
-        with self.transaction() as connection:
-            return connection.execute(
-                "DELETE FROM output_tickets WHERE expires_at<=?", (_now(now),)
-            ).rowcount
+        with self.database.transaction() as session:
+            result = session.execute(delete(OutputTicket).where(OutputTicket.expires_at <= _now(now)))
+            return result.rowcount
 
     def reconcile_interrupted_jobs(self, *, now: float | None = None) -> dict:
         timestamp = _now(now)
-        with self.transaction() as connection:
-            uploads = [
-                row["temporary_path"]
-                for row in connection.execute("SELECT temporary_path FROM input_uploads")
-            ]
-            interrupted = [
-                row["job_id"]
-                for row in connection.execute(
-                    "SELECT job_id FROM jobs WHERE state='RUNNING' ORDER BY job_id"
-                )
-            ]
-            cancelling = [
-                row["job_id"]
-                for row in connection.execute(
-                    "SELECT job_id FROM jobs WHERE state='CANCELLING' ORDER BY job_id"
-                )
-            ]
-            connection.execute(
-                """
-                UPDATE jobs SET state='FAILED', revision=revision+1,
-                    error_code=?, error_message=?, finished_at=?, updated_at=?
-                WHERE state='RUNNING'
-                """,
-                (
-                    ErrorCode.EXECUTION_INTERRUPTED.value,
-                    "worker execution was interrupted by service restart",
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            connection.execute(
-                """
-                UPDATE job_attempts SET status='FAILED', error_code=?,
-                    error_message=?, finished_at=?
-                WHERE status='RUNNING' AND job_id IN (
-                    SELECT job_id FROM jobs WHERE state='FAILED'
-                        AND error_code=?
-                )
-                """,
-                (
-                    ErrorCode.EXECUTION_INTERRUPTED.value,
-                    "worker execution was interrupted by service restart",
-                    timestamp,
-                    ErrorCode.EXECUTION_INTERRUPTED.value,
-                ),
-            )
-            connection.execute(
-                """
-                UPDATE jobs SET state='CANCELLED', revision=revision+1,
-                    finished_at=?, updated_at=? WHERE state='CANCELLING'
-                """,
-                (timestamp, timestamp),
-            )
-            connection.execute(
-                """
-                UPDATE job_attempts SET status='CANCELLED', finished_at=?
-                WHERE status='RUNNING' AND job_id IN (
-                    SELECT job_id FROM jobs WHERE state='CANCELLED'
-                )
-                """,
-                (timestamp,),
-            )
-            connection.execute("DELETE FROM input_uploads")
+        with self.database.transaction() as session:
+            uploads = list(session.scalars(select(InputUpload.temporary_path)))
+            interrupted = list(session.scalars(
+                select(Job.job_id).where(Job.state == JobState.RUNNING.value).order_by(Job.job_id)
+            ))
+            cancelling = list(session.scalars(
+                select(Job.job_id).where(Job.state == JobState.CANCELLING.value).order_by(Job.job_id)
+            ))
+            for job in session.scalars(
+                select(Job).where(Job.state.in_((JobState.RUNNING.value, JobState.CANCELLING.value))).with_for_update()
+            ):
+                attempt = session.get(JobAttempt, (job.job_id, job.attempt), with_for_update=True)
+                if job.state == JobState.RUNNING.value:
+                    job.state = JobState.FAILED.value
+                    job.error_code = ErrorCode.EXECUTION_INTERRUPTED.value
+                    job.error_message = "worker execution was interrupted by service restart"
+                    if attempt is not None and attempt.status == JobState.RUNNING.value:
+                        attempt.status = JobState.FAILED.value
+                        attempt.error_code = job.error_code
+                        attempt.error_message = job.error_message
+                        attempt.finished_at = timestamp
+                else:
+                    job.state = JobState.CANCELLED.value
+                    if attempt is not None and attempt.status == JobState.RUNNING.value:
+                        attempt.status = JobState.CANCELLED.value
+                        attempt.finished_at = timestamp
+                job.revision += 1
+                job.finished_at = timestamp
+                job.updated_at = timestamp
+            session.execute(delete(InputUpload))
         return {
             "interrupted_jobs": interrupted,
             "cancelled_jobs": cancelling,
@@ -1395,159 +992,148 @@ class Ledger:
         }
 
     def referenced_paths(self) -> set[str]:
-        with self.connection() as connection:
-            paths = {
-                row[0]
-                for row in connection.execute("SELECT relative_path FROM job_inputs")
-            }
-            paths.update(
-                row[0]
-                for row in connection.execute("SELECT relative_path FROM job_outputs")
-            )
-            for row in connection.execute(
-                "SELECT checkpoint_path, metadata_path FROM models"
-            ):
-                paths.update(row)
-        return paths
+        with self.database.session() as session:
+            paths = set(session.scalars(select(JobInput.relative_path)))
+            paths.update(session.scalars(select(JobOutput.relative_path)))
+            return paths
 
     def delete_terminal_jobs_before(self, cutoff: float) -> list[str]:
-        """Delete retained terminal jobs that do not own a model generation.
-
-        A job remains while it has a non-expired output ticket or a recently
-        created idempotency record.  Once the retention window has elapsed,
-        its idempotency records are deleted in the same transaction so replay
-        can never return a job ID whose row was retained away.
-        """
-        terminal_values = tuple(state.value for state in (
-            JobState.SUCCEEDED,
-            JobState.FAILED,
-            JobState.CANCELLED,
-        ))
-        with self.transaction() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT job_id FROM jobs
-                WHERE state IN ({','.join('?' for _ in terminal_values)})
-                    AND finished_at IS NOT NULL AND finished_at<?
-                    AND NOT EXISTS (
-                        SELECT 1 FROM models WHERE producing_job_id=jobs.job_id
+        cutoff_at = _at(cutoff)
+        with self.database.transaction() as session:
+            candidates = session.scalars(
+                select(Job)
+                .where(
+                    Job.state.in_(_TERMINAL_STATES),
+                    Job.finished_at.is_not(None),
+                    Job.finished_at < cutoff_at,
+                    ~select(PublishedModel.model_ref)
+                    .where(PublishedModel.producing_job_id == Job.job_id)
+                    .exists(),
+                    ~select(OutputTicket.ticket_hash)
+                    .where(OutputTicket.job_id == Job.job_id)
+                    .exists(),
+                    ~select(IdempotencyRecord.idempotency_key)
+                    .where(
+                        IdempotencyRecord.job_id == Job.job_id,
+                        IdempotencyRecord.created_at >= cutoff_at,
                     )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM output_tickets
-                        WHERE output_tickets.job_id=jobs.job_id
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM idempotency_records
-                        WHERE idempotency_records.job_id=jobs.job_id
-                            AND idempotency_records.created_at>=?
-                    )
-                ORDER BY job_id
-                """,
-                (*terminal_values, float(cutoff), float(cutoff)),
-            ).fetchall()
-            job_ids = [row["job_id"] for row in rows]
+                    .exists(),
+                )
+                .order_by(Job.job_id)
+                .with_for_update()
+            ).all()
+            job_ids = [job.job_id for job in candidates]
             if job_ids:
-                connection.execute(
-                    f"DELETE FROM idempotency_records WHERE job_id IN "
-                    f"({','.join('?' for _ in job_ids)})",
-                    job_ids,
-                )
-                connection.execute(
-                    f"DELETE FROM jobs WHERE job_id IN "
-                    f"({','.join('?' for _ in job_ids)})",
-                    job_ids,
-                )
-            connection.execute(
-                """
-                DELETE FROM idempotency_records
-                WHERE job_id IS NULL AND created_at<?
-                """,
-                (float(cutoff),),
+                session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.job_id.in_(job_ids)))
+                session.execute(delete(Job).where(Job.job_id.in_(job_ids)))
+            session.execute(delete(IdempotencyRecord).where(
+                IdempotencyRecord.job_id.is_(None),
+                IdempotencyRecord.created_at < cutoff_at,
+            ))
+            return job_ids
+
+    def synchronize_runtime_epoch(self, epoch: str, *, now: float | None = None) -> dict:
+        epoch = _canonical_uuid(epoch, "runtime storage epoch")
+        timestamp = _now(now)
+        with self.database.transaction() as session:
+            state = session.get(RuntimeState, "storage_epoch", with_for_update=True)
+            if state is not None and state.value == epoch:
+                return {"reset": False, "discarded_jobs": []}
+            discarded_jobs = list(session.scalars(select(Job.job_id).order_by(Job.job_id)))
+            reset = state is not None or bool(discarded_jobs)
+            session.execute(delete(OutputTicket))
+            session.execute(delete(IdempotencyRecord))
+            session.execute(delete(InputUpload))
+            session.execute(delete(Job))
+            if state is None:
+                session.add(RuntimeState(key="storage_epoch", value=epoch, updated_at=timestamp))
+            else:
+                state.value = epoch
+                state.updated_at = timestamp
+            return {"reset": reset, "discarded_jobs": discarded_jobs}
+
+    def queued_jobs(self) -> list[dict]:
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(Job)
+                .where(Job.state == JobState.QUEUED.value)
+                .order_by(Job.queue_sequence)
             )
-        return job_ids
+            return [_decode(row) for row in rows]
 
 
-def _insert_output(connection, job_id: str, output: dict, timestamp: float) -> None:
+def _output_record(job_id: str, output: dict, timestamp: datetime) -> JobOutput:
     relative_path = output["relative_path"]
     _validate_relative_path(relative_path)
     for name in ("ordinal", "rows", "batches", "bytes"):
         _nonnegative(output[name], name)
     _digest(output["sha256"], "sha256")
     _digest(output["schema_fingerprint"], "schema_fingerprint")
-    try:
-        connection.execute(
-            """
-            INSERT INTO job_outputs(
-                job_id, ordinal, rows, batches, bytes, sha256,
-                schema_fingerprint, relative_path, published_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                job_id,
-                output["ordinal"],
-                output["rows"],
-                output["batches"],
-                output["bytes"],
-                output["sha256"],
-                output["schema_fingerprint"],
-                relative_path,
-                timestamp,
-            ),
-        )
-    except sqlite3.IntegrityError as exc:
-        raise conflict("job output ordinal is already published") from exc
+    return JobOutput(
+        job_id=job_id,
+        ordinal=output["ordinal"],
+        rows=output["rows"],
+        batches=output["batches"],
+        bytes=output["bytes"],
+        sha256=output["sha256"],
+        schema_fingerprint=output["schema_fingerprint"],
+        relative_path=relative_path,
+        published_at=timestamp,
+    )
 
 
 def _transition_updates(updates: dict) -> dict:
-    allowed = {
-        "selected_device",
-        "sealed_at",
-        "queued_at",
-        "started_at",
-        "cancel_requested_at",
-        "finished_at",
-        "error_code",
-        "error_message",
-        "result_json",
-        "progress_json",
+    mapping = {
+        "selected_device": "selected_device",
+        "sealed_at": "sealed_at",
+        "queued_at": "queued_at",
+        "started_at": "started_at",
+        "cancel_requested_at": "cancel_requested_at",
+        "finished_at": "finished_at",
+        "error_code": "error_code",
+        "error_message": "error_message",
+        "result_json": "result",
+        "progress_json": "progress",
     }
-    unknown = set(updates) - allowed
+    unknown = set(updates) - set(mapping)
     if unknown:
         raise ValueError(f"unsupported job update field(s): {', '.join(sorted(unknown))}")
     encoded = {}
     for key, value in updates.items():
+        target = mapping[key]
         if key in ("result_json", "progress_json") and value is not None:
-            value = _json(value)
-        encoded[key] = value
+            value = _json_value(value)
+        elif key.endswith("_at") and value is not None and not isinstance(value, datetime):
+            value = _at(value)
+        encoded[target] = value
     return encoded
 
 
-def _decode_row(row: sqlite3.Row | None) -> dict | None:
-    if row is None:
+def _decode(record) -> dict | None:
+    if record is None:
         return None
-    result = dict(row)
-    for column in tuple(result):
-        if column not in _JSON_COLUMNS:
-            continue
-        value = result.pop(column)
-        result[column.removesuffix("_json")] = None if value is None else json.loads(value)
+    result = {}
+    for attribute in record.__mapper__.column_attrs:
+        column = attribute.columns[0]
+        value = getattr(record, attribute.key)
+        if isinstance(value, datetime):
+            value = value.timestamp()
+        result[column.name] = value
     return result
 
 
-def _json(value) -> str:
+def _json_value(value):
+    if value is None:
+        return None
     if is_dataclass(value):
         value = asdict(value)
-    return json.dumps(
+    return json.loads(json.dumps(
         value,
         ensure_ascii=False,
         allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
-    )
-
-
-def _json_or_none(value) -> str | None:
-    return None if value is None else _json(value)
+    ))
 
 
 def _canonical_uuid(value: str, label: str) -> str:
@@ -1584,13 +1170,15 @@ def _digest(value: str, label: str) -> None:
         raise ValueError(f"{label} must be a lowercase SHA-256 digest")
 
 
-def _now(value: float | None) -> float:
-    return time.time() if value is None else float(value)
+def _now(value: float | None) -> datetime:
+    return datetime.now(timezone.utc) if value is None else _at(value)
 
 
-def _fsync_directory(path: str) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+def _at(value: float) -> datetime:
+    return datetime.fromtimestamp(float(value), timezone.utc)
+
+
+def _advisory_lock(session: Session, *parts: str) -> None:
+    digest = hashlib.sha256("\0".join(parts).encode("utf-8")).digest()
+    key = int.from_bytes(digest[:8], "big", signed=True)
+    session.scalar(select(func.pg_advisory_xact_lock(key)))

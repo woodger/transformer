@@ -5,24 +5,72 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.cli.args import parse_args
-from app.commands.fit import run as run_fit
-from app.commands.fit_stream import run as run_fit_stream
-from app.commands.plot_metrics import run as run_plot_metrics
-from app.commands.predict import run as run_predict
-from app.commands.predict_stream import run as run_predict_stream
-from app.runtime.device import get_device
-from app.runtime.reproducibility import configure_reproducibility
-from app.training.factory import build_model, build_trainer
-from app.metrics import reset_metrics_log
-from app.utils import resolve_metrics_path
+
+
+def get_device(value):
+    from app.runtime.device import get_device as implementation
+
+    return implementation(value)
+
+
+def configure_reproducibility(seed, deterministic):
+    from app.runtime.reproducibility import configure_reproducibility as implementation
+
+    return implementation(seed, deterministic)
+
+
+def build_model(*args, **kwargs):
+    from app.training.factory import build_model as implementation
+
+    return implementation(*args, **kwargs)
+
+
+def build_trainer(*args, **kwargs):
+    from app.training.factory import build_trainer as implementation
+
+    return implementation(*args, **kwargs)
 
 
 def fit_stream(args, device):
-    return run_fit_stream(args, device, build_model, build_trainer)
+    from app.commands.fit_stream import run
+
+    return run(args, device, build_model, build_trainer)
 
 
 def predict_stream(args, device):
-    return run_predict_stream(args, device, build_model, build_trainer)
+    from app.commands.predict_stream import run
+
+    return run(args, device, build_model, build_trainer)
+
+
+def run_fit(args, device, model_factory, trainer_factory):
+    from app.commands.fit import run
+
+    return run(args, device, model_factory, trainer_factory)
+
+
+def run_predict(args, device, model_factory, trainer_factory):
+    from app.commands.predict import run
+
+    return run(args, device, model_factory, trainer_factory)
+
+
+def run_plot_metrics(args):
+    from app.commands.plot_metrics import run
+
+    return run(args)
+
+
+def reset_metrics_log(path):
+    from app.metrics import reset_metrics_log as implementation
+
+    return implementation(path)
+
+
+def resolve_metrics_path(name):
+    from app.utils import resolve_metrics_path as implementation
+
+    return implementation(name)
 
 
 def main():
@@ -32,6 +80,18 @@ def main():
         from app.flight.application import run_from_args
 
         run_from_args(args)
+        return
+
+    if args.action == "auth":
+        from app.commands.auth_tokens import run
+
+        run(args)
+        return
+
+    if args.action == "db":
+        from app.commands.db_migrations import run
+
+        run(args)
         return
 
     if args.action == "plot-metrics":

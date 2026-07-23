@@ -1,18 +1,17 @@
-import json
 import math
 
 import pytest
 
-from app.flight.config import FlightServiceConfig, load_bearer_tokens, load_config
+from app.flight.config import FlightServiceConfig, load_config
 
 
 def test_plaintext_requires_explicit_opt_in(tmp_path):
     state = tmp_path / "state"
     with pytest.raises(ValueError, match="plaintext Flight is disabled"):
-        FlightServiceConfig(state_dir=str(state)).validate()
+        FlightServiceConfig(runtime_dir=str(state)).validate()
 
     config = FlightServiceConfig(
-        state_dir=str(state),
+        runtime_dir=str(state),
         allow_plaintext=True,
     ).validate()
     assert config.host == "127.0.0.1"
@@ -20,7 +19,7 @@ def test_plaintext_requires_explicit_opt_in(tmp_path):
 
 def test_explicit_plaintext_allows_non_loopback_host(tmp_path):
     FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         host="0.0.0.0",
         allow_plaintext=True,
     ).validate()
@@ -33,7 +32,7 @@ def test_tls_and_device_capacity_are_independent(tmp_path):
     key.write_text("private-key")
 
     config = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         tls_cert_file=str(cert),
         tls_key_file=str(key),
         cpu_capacity=3,
@@ -45,17 +44,13 @@ def test_tls_and_device_capacity_are_independent(tmp_path):
     assert not hasattr(config, "device")
 
 
-def test_environment_and_cli_precedence_and_secret_token_file(tmp_path):
-    token_path = tmp_path / "tokens.json"
-    token_path.write_text(json.dumps({"tokens": {"secret": "inventory-prod"}}))
-
+def test_environment_and_cli_precedence(tmp_path):
     config = load_config(
         environ={
-            "TRANSFORMER_STATE_DIR": str(tmp_path / "state"),
+            "TRANSFORMER_RUNTIME_DIR": str(tmp_path / "runtime"),
             "TRANSFORMER_CPU_CAPACITY": "4",
             "TRANSFORMER_HOST": "127.0.0.3",
             "TRANSFORMER_ALLOW_PLAINTEXT": "true",
-            "TRANSFORMER_BEARER_TOKENS_FILE": str(token_path),
         },
         overrides={"host": "127.0.0.4", "port": 0},
     )
@@ -63,7 +58,7 @@ def test_environment_and_cli_precedence_and_secret_token_file(tmp_path):
     assert config.cpu_capacity == 4
     assert config.host == "127.0.0.4"
     assert config.port == 0
-    assert load_bearer_tokens(config) == {"secret": "inventory-prod"}
+    assert config.runtime_dir == str(tmp_path / "runtime")
 
 
 def test_config_rejects_unknown_override():
@@ -101,7 +96,7 @@ def test_config_rejects_boolean_fractional_and_nonfinite_quotas(
     value,
 ):
     values = {
-        "state_dir": str(tmp_path),
+        "runtime_dir": str(tmp_path),
         "allow_plaintext": True,
         field: value,
     }
@@ -112,7 +107,7 @@ def test_config_rejects_boolean_fractional_and_nonfinite_quotas(
 def test_config_rejects_payload_count_that_cannot_fit_seal_document(tmp_path):
     with pytest.raises(ValueError, match="seal manifest"):
         FlightServiceConfig(
-            state_dir=str(tmp_path),
+            runtime_dir=str(tmp_path / "runtime"),
             allow_plaintext=True,
             max_payloads_per_job=401,
         ).validate()

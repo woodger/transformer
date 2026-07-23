@@ -32,7 +32,7 @@ class TransformerFlightServer(flight.FlightServerBase):
         self,
         config: FlightServiceConfig,
         coordinator,
-        bearer_tokens: dict[str, str],
+        token_cache,
         *,
         upload_handler=None,
         output_handler=None,
@@ -47,7 +47,7 @@ class TransformerFlightServer(flight.FlightServerBase):
         self.logger = logger or JsonLogger()
         middleware = {
             MIDDLEWARE_KEY: BearerAuthMiddlewareFactory(
-                bearer_tokens,
+                token_cache,
                 self.metrics,
                 self.logger,
             )

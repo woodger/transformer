@@ -16,7 +16,9 @@ import uuid
 import pyarrow as pa
 import pyarrow.flight as flight
 import pyarrow.ipc as ipc
+import pytest
 
+from app.database.models import JobAttempt
 from app.flight.arrow import schema_fingerprint
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -124,9 +126,22 @@ print(f"frames={frames}", flush=True)
 """
 
 
+_POSTGRES_LEDGER = None
+
+
+@pytest.fixture(autouse=True)
+def _use_postgres_ledger(postgres_ledger):
+    global _POSTGRES_LEDGER
+    _POSTGRES_LEDGER = postgres_ledger
+    try:
+        yield
+    finally:
+        _POSTGRES_LEDGER = None
+
+
 def service_config(tmp_path, **overrides):
     base = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
@@ -140,8 +155,8 @@ def service_config(tmp_path, **overrides):
 
 def components(tmp_path, *, config=None, **pool_options):
     config = config or service_config(tmp_path)
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = _POSTGRES_LEDGER
     pool = WorkerPool(config, ledger, spool, **pool_options)
     return config, spool, ledger, pool
 
@@ -306,8 +321,8 @@ def publish_seed_model(ledger, spool):
         model_ref=model_ref,
         label="seed",
         generation=None,
-        checkpoint_path=spool.relative_path(checkpoint),
-        metadata_path=spool.relative_path(metadata_path),
+        checkpoint_path=spool.model_relative_path(checkpoint),
+        metadata_path=spool.model_relative_path(metadata_path),
         sha256=digest,
         metadata=metadata,
         result={"modelRef": model_ref, "checkpoint": {}},
@@ -655,7 +670,7 @@ def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
     assert checkpoint["checkpointSelection"]["bestFrame"] == 2
     model = ledger.get_model(finished["result"]["modelRef"])
     assert model["metadata"]["model_config"]["feature_dim"] == 2
-    assert os.path.isfile(spool.absolute_path(model["checkpoint_path"]))
+    assert os.path.isfile(spool.model_absolute_path(model["checkpoint_path"]))
     assert finished["progress"]["ordinal"] == 1
     status = JobCoordinator(config, ledger, spool).status(
         "inventory",
@@ -1026,13 +1041,10 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
         assert finished["error_code"] is None
         assert finished["error_message"] is None
         with ledger.connection() as connection:
-            attempt = connection.execute(
-                "SELECT * FROM job_attempts WHERE job_id=? AND attempt=1",
-                (job["job_id"],),
-            ).fetchone()
-        assert attempt["status"] == JobState.CANCELLED.value
-        assert attempt["error_code"] is None
-        assert attempt["error_message"] is None
+            attempt = connection.get(JobAttempt, (job["job_id"], 1))
+        assert attempt.status == JobState.CANCELLED.value
+        assert attempt.error_code is None
+        assert attempt.error_message is None
         state_path = Path(f"/proc/{grandchild}/stat")
         if state_path.exists():
             # A short-lived zombie is already terminated and cannot consume CPU/GPU.
@@ -1141,15 +1153,16 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     _, _, _, pool = components(tmp_path)
     calls = []
 
-    def flaky_run_once(device, *, worker_id):
-        calls.append((device, worker_id))
+    def flaky_claim(device, job_id, worker_id):
+        calls.append((device, job_id, worker_id))
         if len(calls) == 1:
             raise RuntimeError("injected lane failure")
-        pool._stop_claiming.set()
-        pool._wake.set()
+        pool.stop_claiming()
         return False
 
-    monkeypatch.setattr(pool, "run_once", flaky_run_once)
+    monkeypatch.setattr(pool, "_claim_and_execute", flaky_claim)
+    pool._queues["cpu"].put("first-job")
+    pool._queues["cpu"].put("second-job")
     lane = threading.Thread(target=pool._lane, args=("cpu", "test-lane"))
 
     lane.start()

@@ -65,16 +65,26 @@ Global options:
 Commands:
 
 Flight:
-  flight serve    Run the durable Arrow Flight job service.
+  flight serve                    Run the durable Arrow Flight job service.
+
+Access:
+  auth tokens issue               Issue a local API access token
+  auth tokens list                List API access token metadata
+  auth tokens revoke <token-id>   Revoke an API access token
 
 Training and inference:
-  fit             Train from an Arrow file.
-  predict         Predict from an Arrow file.
-  fit-stream      Train from framed stdin.
-  predict-stream  Predict from framed stdin.
+  fit                             Train from an Arrow file.
+  predict                         Predict from an Arrow file.
+  fit-stream                      Train from framed stdin.
+  predict-stream                  Predict from framed stdin.
 
 Metrics:
-  plot-metrics    Render SVG charts from metrics JSONL.
+  plot-metrics                    Render SVG charts from metrics JSONL.
+
+Database:
+  db migrations status            Read-only schema migration state
+  db migrations apply             Apply pending schema migrations
+  db migrations rollback          Revert the latest schema migration
 
 Command details:
   transformer <command> --help

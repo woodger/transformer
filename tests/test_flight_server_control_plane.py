@@ -24,7 +24,7 @@ class StubCoordinator:
 
 class FailingCoordinator(StubCoordinator):
     def dispatch(self, action, owner, request, document):
-        raise RuntimeError("secret /srv/private/state/jobs.sqlite3")
+        raise RuntimeError("secret postgresql://private-control-plane")
 
 
 def call_options(token="secret"):
@@ -48,7 +48,7 @@ def control_server(tmp_path):
     coordinator = StubCoordinator()
     server = TransformerFlightServer(
         FlightServiceConfig(
-            state_dir=str(tmp_path),
+            runtime_dir=str(tmp_path / "runtime"),
             port=0,
             allow_plaintext=True,
         ),
@@ -125,4 +125,4 @@ def test_unexpected_handler_error_is_sanitized(control_server):
 
     assert "INTERNAL: internal service error" in str(error.value)
     assert "secret" not in str(error.value)
-    assert "jobs.sqlite3" not in str(error.value)
+    assert "private-control-plane" not in str(error.value)

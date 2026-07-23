@@ -7,6 +7,10 @@ import threading
 import time
 import uuid
 
+import pytest
+from sqlalchemy import func, select
+
+from app.database.models import OutputTicket
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import JobState
 from app.flight.ledger import Ledger
@@ -15,6 +19,17 @@ from app.flight.spool import Spool
 
 
 DIGEST = "a" * 64
+_POSTGRES_LEDGER = None
+
+
+@pytest.fixture(autouse=True)
+def _use_postgres_ledger(postgres_ledger):
+    global _POSTGRES_LEDGER
+    _POSTGRES_LEDGER = postgres_ledger
+    try:
+        yield
+    finally:
+        _POSTGRES_LEDGER = None
 
 
 class RecordingLogger:
@@ -27,7 +42,7 @@ class RecordingLogger:
 
 def service_config(tmp_path, **overrides):
     base = FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
@@ -38,8 +53,8 @@ def service_config(tmp_path, **overrides):
 
 def components(tmp_path, **config_overrides):
     config = service_config(tmp_path, **config_overrides)
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = _POSTGRES_LEDGER
     maintenance = MaintenanceService(
         config,
         ledger,
@@ -256,7 +271,9 @@ def test_expired_tickets_are_removed_without_removing_unexpired_ticket(tmp_path)
 
     assert result.expired_tickets == 1
     with ledger.connection() as connection:
-        remaining = connection.execute("SELECT COUNT(*) FROM output_tickets").fetchone()[0]
+        remaining = connection.scalar(
+            select(func.count()).select_from(OutputTicket)
+        )
     assert remaining == 1
     assert ledger.resolve_ticket(
         active_ticket,
@@ -282,8 +299,8 @@ def test_model_generation_and_producing_job_are_never_retained_away(tmp_path):
         model_ref=model_ref,
         label="daily-model",
         generation=None,
-        checkpoint_path=spool.relative_path(checkpoint_path),
-        metadata_path=spool.relative_path(metadata_path),
+        checkpoint_path=spool.model_relative_path(checkpoint_path),
+        metadata_path=spool.model_relative_path(metadata_path),
         sha256=hashlib.sha256(Path(checkpoint_path).read_bytes()).hexdigest(),
         metadata={"modelRef": model_ref},
         result={"modelRef": model_ref},

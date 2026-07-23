@@ -11,6 +11,7 @@ import tempfile
 import uuid
 from typing import BinaryIO, Iterator, Sequence
 
+from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
 
@@ -18,18 +19,18 @@ from app.flight.errors import ServiceError
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
-class StateDirectoryLocked(RuntimeError):
+class RuntimeDirectoryLocked(RuntimeError):
     pass
 
 
-class StateDirectoryLock:
-    """Exclusive process-lifetime ownership of a Flight state directory."""
+class RuntimeDirectoryLock:
+    """Exclusive process-lifetime ownership of the Flight runtime directory."""
 
     def __init__(self, path: str):
         self.path = os.path.abspath(os.fspath(path))
         self._file: BinaryIO | None = None
 
-    def acquire(self) -> "StateDirectoryLock":
+    def acquire(self) -> "RuntimeDirectoryLock":
         if self._file is not None:
             return self
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -38,8 +39,8 @@ class StateDirectoryLock:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             lock_file.close()
-            raise StateDirectoryLocked(
-                f"Flight state directory is already owned: {os.path.dirname(self.path)}"
+            raise RuntimeDirectoryLocked(
+                f"Flight runtime directory is already owned: {os.path.dirname(self.path)}"
             ) from exc
         lock_file.seek(0)
         lock_file.truncate()
@@ -57,7 +58,7 @@ class StateDirectoryLock:
             self._file.close()
             self._file = None
 
-    def __enter__(self) -> "StateDirectoryLock":
+    def __enter__(self) -> "RuntimeDirectoryLock":
         return self.acquire()
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -65,23 +66,30 @@ class StateDirectoryLock:
 
 
 class Spool:
-    """Server-controlled paths and durable filesystem primitives.
+    """Server-controlled runtime paths and model publication primitives.
 
-    Every path exposed to the ledger is relative to ``state_dir``. Temporary
-    files are always created beside their destination, so publication uses a
-    same-filesystem atomic rename.
+    Unfinished artifacts live below ``runtime_dir``. Successfully validated
+    model generations are copied and atomically published below ``models_dir``.
     """
 
-    def __init__(self, state_dir: str):
-        self.state_dir = os.path.abspath(os.fspath(state_dir))
-        self.spool_dir = os.path.join(self.state_dir, "spool")
+    def __init__(self, runtime_dir: str, models_dir: str | None = None):
+        self.runtime_dir = os.path.abspath(os.fspath(runtime_dir))
+        self.models_dir = os.path.abspath(
+            os.fspath(models_dir or os.path.join(PROJECT_ROOT, "models"))
+        )
+        if os.path.commonpath((self.runtime_dir, self.models_dir)) in (
+            self.runtime_dir,
+            self.models_dir,
+        ):
+            raise ValueError("runtime and model directories must not overlap")
+        self.spool_dir = os.path.join(self.runtime_dir, "spool")
         self.jobs_dir = os.path.join(self.spool_dir, "jobs")
-        self.models_dir = os.path.join(self.state_dir, "models")
-        self.lock = StateDirectoryLock(os.path.join(self.state_dir, "service.lock"))
+        self.epoch_path = os.path.join(self.runtime_dir, "storage-epoch")
+        self.lock = RuntimeDirectoryLock(os.path.join(self.runtime_dir, "service.lock"))
 
     def initialize(self) -> "Spool":
         created = []
-        for directory in (self.state_dir, self.spool_dir, self.jobs_dir, self.models_dir):
+        for directory in (self.runtime_dir, self.spool_dir, self.jobs_dir, self.models_dir):
             if not os.path.isdir(directory):
                 os.makedirs(directory, exist_ok=True)
                 created.append(directory)
@@ -91,11 +99,22 @@ class Spool:
                 fsync_directory(parent)
         return self
 
-    def acquire_lock(self) -> StateDirectoryLock:
+    def acquire_lock(self) -> RuntimeDirectoryLock:
         return self.lock.acquire()
 
     def release_lock(self) -> None:
         self.lock.release()
+
+    def storage_epoch(self) -> str:
+        """Return the runtime filesystem generation, creating it when absent."""
+        try:
+            with open(self.epoch_path, "r", encoding="ascii") as source:
+                value = source.read().strip()
+            return _uuid_component(value, "storage epoch")
+        except FileNotFoundError:
+            value = str(uuid.uuid4())
+            self.atomic_write_bytes(self.epoch_path, f"{value}\n".encode("ascii"))
+            return value
 
     def input_directory(self, job_id: str) -> str:
         return os.path.join(self.job_directory(job_id), "inputs")
@@ -141,28 +160,44 @@ class Spool:
         return os.path.join(self.model_directory(model_ref), "metadata.json")
 
     def relative_path(self, absolute_path: str) -> str:
-        resolved = self._inside_state(absolute_path)
-        return os.path.relpath(resolved, self.state_dir).replace(os.sep, "/")
+        resolved = self._inside_runtime(absolute_path)
+        return os.path.relpath(resolved, self.runtime_dir).replace(os.sep, "/")
 
     def absolute_path(self, relative_path: str) -> str:
         if not isinstance(relative_path, str) or not relative_path:
             raise ValueError("artifact path must be a non-empty relative path")
         if os.path.isabs(relative_path):
-            raise ValueError("artifact path must be relative to the state directory")
+            raise ValueError("artifact path must be relative to the runtime directory")
         normalized = relative_path.replace("\\", "/")
         if normalized in ("", "."):
-            raise ValueError("artifact path must name a file inside the state directory")
+            raise ValueError("artifact path must name a file inside the runtime directory")
         if ".." in Path(normalized).parts:
             raise ValueError("artifact path must not contain path traversal")
-        return self._inside_state(os.path.join(self.state_dir, *normalized.split("/")))
+        return self._inside_runtime(
+            os.path.join(self.runtime_dir, *normalized.split("/"))
+        )
+
+    def model_relative_path(self, absolute_path: str) -> str:
+        resolved = self._inside_models(absolute_path)
+        return os.path.relpath(resolved, self.models_dir).replace(os.sep, "/")
+
+    def model_absolute_path(self, relative_path: str) -> str:
+        if not isinstance(relative_path, str) or not relative_path or os.path.isabs(relative_path):
+            raise ValueError("model path must be a non-empty relative path")
+        normalized = relative_path.replace("\\", "/")
+        if normalized in ("", ".") or ".." in Path(normalized).parts:
+            raise ValueError("model path must not contain path traversal")
+        return self._inside_models(
+            os.path.join(self.models_dir, *normalized.split("/"))
+        )
 
     def ensure_parent(self, path: str) -> None:
-        path = self._inside_state(path)
+        path, root = self._inside_managed(path)
         parent = os.path.dirname(path)
-        _make_directories_durable(parent, stop_at=self.state_dir)
+        _make_directories_durable(parent, stop_at=root)
 
     def create_temporary(self, destination: str) -> tuple[BinaryIO, str]:
-        destination = self._inside_state(destination)
+        destination, _ = self._inside_managed(destination)
         self.ensure_parent(destination)
         descriptor, path = tempfile.mkstemp(
             dir=os.path.dirname(destination),
@@ -172,8 +207,10 @@ class Spool:
         return os.fdopen(descriptor, "w+b"), path
 
     def durable_replace(self, temporary_path: str, destination: str) -> str:
-        temporary_path = self._inside_state(temporary_path)
-        destination = self._inside_state(destination)
+        temporary_path, temporary_root = self._inside_managed(temporary_path)
+        destination, destination_root = self._inside_managed(destination)
+        if temporary_root != destination_root:
+            raise ValueError("temporary artifact and destination use different filesystems")
         if os.path.dirname(temporary_path) != os.path.dirname(destination):
             raise ValueError("temporary artifact must be beside its destination")
         _fsync_file(temporary_path)
@@ -213,7 +250,7 @@ class Spool:
         return self.atomic_write_bytes(destination, data)
 
     def remove(self, path: str) -> bool:
-        path = self._inside_state(path)
+        path, _ = self._inside_managed(path)
         try:
             if os.path.isdir(path) and not os.path.islink(path):
                 shutil.rmtree(path)
@@ -225,7 +262,7 @@ class Spool:
         return True
 
     def disk_usage(self) -> shutil._ntuple_diskusage:
-        return shutil.disk_usage(self.state_dir)
+        return shutil.disk_usage(self.runtime_dir)
 
     def ensure_free_space(self, minimum_free_bytes: int, *, required_bytes: int = 0) -> None:
         if minimum_free_bytes < 0 or required_bytes < 0:
@@ -234,19 +271,18 @@ class Spool:
         if free - required_bytes < minimum_free_bytes:
             raise ServiceError(
                 ErrorCode.DISK_FULL,
-                "state directory disk watermark would be exceeded",
+                "runtime directory disk watermark would be exceeded",
             )
 
     def cleanup_temporary_files(self) -> tuple[str, ...]:
         """Remove definitively orphaned sibling temp artifacts at startup.
 
-        The caller must hold the state-directory process lock.  This pass does
-        not need the ledger and therefore runs before SQLite performs any
-        writable recovery, allowing a crash-left temp file to release disk
+        The caller must hold the runtime-directory process lock. This pass
+        runs before PostgreSQL recovery so crash-left temp files release tmpfs
         space first.
         """
         removed: list[str] = []
-        for root, directories, files in os.walk(self.state_dir, topdown=False):
+        for root, directories, files in os.walk(self.runtime_dir, topdown=False):
             for name in files:
                 if not name.endswith(".tmp"):
                     continue
@@ -298,7 +334,7 @@ class Spool:
             if self.remove(candidate):
                 removed.append(self.relative_path(candidate))
 
-        for root, directories, files in os.walk(self.state_dir, topdown=False):
+        for root, directories, files in os.walk(self.runtime_dir, topdown=False):
             for name in files:
                 candidate = os.path.join(root, name)
                 if name.endswith(".tmp"):
@@ -328,24 +364,39 @@ class Spool:
                 if name.endswith(".tmp") and self.remove(candidate):
                     removed.append(self.relative_path(candidate))
 
-        if os.path.isdir(self.models_dir):
-            for name in os.listdir(self.models_dir):
-                directory = os.path.join(self.models_dir, name)
-                if not os.path.isdir(directory):
-                    continue
-                prefix = directory + os.sep
-                if any(path == directory or path.startswith(prefix) for path in referenced):
-                    continue
-                if self.remove(directory):
-                    removed.append(self.relative_path(directory))
-
         return {"removed": sorted(set(removed))}
 
-    def _inside_state(self, path: str) -> str:
+    def reconcile_model_directories(self, model_refs: Sequence[str] | set[str]) -> tuple[str, ...]:
+        known = {_safe_component(value, "model_ref") for value in model_refs}
+        removed = []
+        for name in os.listdir(self.models_dir):
+            if not name.startswith("mdl_") or name in known:
+                continue
+            candidate = os.path.join(self.models_dir, name)
+            if os.path.isdir(candidate) and not os.path.islink(candidate) and self.remove(candidate):
+                removed.append(name)
+        return tuple(sorted(removed))
+
+    def _inside_runtime(self, path: str) -> str:
+        return self._inside_root(path, self.runtime_dir, "runtime")
+
+    def _inside_models(self, path: str) -> str:
+        return self._inside_root(path, self.models_dir, "models")
+
+    def _inside_managed(self, path: str) -> tuple[str, str]:
         candidate = os.path.abspath(os.fspath(path))
-        if os.path.commonpath((self.state_dir, candidate)) != self.state_dir:
-            raise ValueError("artifact path escapes the state directory")
-        real_root = os.path.realpath(self.state_dir)
+        for root in (self.runtime_dir, self.models_dir):
+            if os.path.commonpath((root, candidate)) == root:
+                label = "runtime" if root == self.runtime_dir else "models"
+                return self._inside_root(candidate, root, label), root
+        raise ValueError("artifact path escapes managed storage")
+
+    @staticmethod
+    def _inside_root(path: str, root: str, label: str) -> str:
+        candidate = os.path.abspath(os.fspath(path))
+        if os.path.commonpath((root, candidate)) != root:
+            raise ValueError(f"artifact path escapes the {label} directory")
+        real_root = os.path.realpath(root)
         real_candidate = os.path.realpath(candidate)
         if os.path.commonpath((real_root, real_candidate)) != real_root:
             raise ValueError("artifact path escapes through a symlink")
@@ -375,7 +426,7 @@ def _make_directories_durable(path: str, *, stop_at: str) -> None:
         missing.append(current)
         parent = os.path.dirname(current)
         if parent == current:
-            raise ValueError("directory escapes the state directory")
+            raise ValueError("directory escapes managed storage")
         current = parent
     os.makedirs(path, exist_ok=True)
     for directory in reversed(missing):

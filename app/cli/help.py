@@ -32,6 +32,14 @@ _COMMAND_GROUPS = (
         (("flight serve", "Run the durable Arrow Flight job service."),),
     ),
     (
+        "Access",
+        (
+            ("auth tokens issue", "Issue a local API access token"),
+            ("auth tokens list", "List API access token metadata"),
+            ("auth tokens revoke <token-id>", "Revoke an API access token"),
+        ),
+    ),
+    (
         "Training and inference",
         (
             ("fit", "Train from an Arrow file."),
@@ -43,6 +51,14 @@ _COMMAND_GROUPS = (
     (
         "Metrics",
         (("plot-metrics", "Render SVG charts from metrics JSONL."),),
+    ),
+    (
+        "Database",
+        (
+            ("db migrations status", "Read-only schema migration state"),
+            ("db migrations apply", "Apply pending schema migrations"),
+            ("db migrations rollback", "Revert the latest schema migration"),
+        ),
     ),
 )
 _COMMAND_HELP = {
@@ -68,7 +84,7 @@ def _format_root_help() -> str:
     command_groups = "\n\n".join(
         f"{group}:\n"
         + "\n".join(
-            f"  {name:<16}{description}" for name, description in commands
+            f"  {name:<32}{description}" for name, description in commands
         )
         for group, commands in _COMMAND_GROUPS
     )
@@ -603,13 +619,100 @@ def build_parser():
         ),
     )
 
-    service.add_argument(
-        "--bearer-tokens-file",
-        default=None,
-        metavar="FILE",
-        help="Required bearer token-to-subject JSON file.",
-    )
     service.set_defaults(data=None, metrics_name=None)
+
+    auth = subparsers.add_parser(
+        "auth",
+        help="API access commands.",
+        formatter_class=_HelpFormatter,
+    )
+    auth_commands = auth.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="auth_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    tokens = auth_commands.add_parser(
+        "tokens",
+        help="API access token commands.",
+        formatter_class=_HelpFormatter,
+    )
+    token_commands = tokens.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="tokens_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    issue = token_commands.add_parser(
+        "issue",
+        add_help=False,
+        description="Issue an API access token and print its credential.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(issue)
+    issue.add_argument(
+        "--subject",
+        required=True,
+        help="Authenticated subject associated with the token.",
+    )
+    issue.set_defaults(data=None, metrics_name=None)
+    token_list = token_commands.add_parser(
+        "list",
+        add_help=False,
+        description="List API access token metadata without credentials.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(token_list)
+    token_list.set_defaults(data=None, metrics_name=None)
+    revoke = token_commands.add_parser(
+        "revoke",
+        add_help=False,
+        description="Revoke an API access token by ID.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(revoke)
+    revoke.add_argument("token_id", metavar="TOKEN_ID", help="API access token UUID.")
+    revoke.set_defaults(data=None, metrics_name=None)
+
+    database = subparsers.add_parser(
+        "db",
+        help="Database schema commands.",
+        formatter_class=_HelpFormatter,
+    )
+    database_commands = database.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="db_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    migrations = database_commands.add_parser(
+        "migrations",
+        help="Database schema migration commands.",
+        formatter_class=_HelpFormatter,
+    )
+    migration_commands = migrations.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="migrations_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    for name, description in (
+        ("status", "Read the current and expected schema revisions."),
+        ("apply", "Apply all pending schema migrations."),
+        ("rollback", "Revert the latest applied schema migration."),
+    ):
+        command = migration_commands.add_parser(
+            name,
+            add_help=False,
+            description=description,
+            formatter_class=_HelpFormatter,
+        )
+        _add_hidden_help_argument(command)
+        command.set_defaults(data=None, metrics_name=None)
 
     plot = subparsers.add_parser(
         "plot-metrics",

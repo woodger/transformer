@@ -195,13 +195,10 @@ class JobCoordinator:
 
         def mutation(connection):
             job_id = str(uuid.uuid4())
-            active = connection.execute(
-                """
-                SELECT COUNT(*) FROM jobs
-                WHERE owner_subject=? AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED')
-                """,
-                (owner,),
-            ).fetchone()[0]
+            active = self.ledger.active_job_count(
+                owner,
+                connection=connection,
+            )
             if active >= self.config.max_active_jobs_per_subject:
                 raise ServiceError(
                     ErrorCode.RESOURCE_EXHAUSTED,
@@ -279,18 +276,17 @@ class JobCoordinator:
 
         def mutation(connection):
             nonlocal transitioned
-            inputs = [
-                dict(row)
-                for row in connection.execute(
-                    "SELECT * FROM job_inputs WHERE job_id=? ORDER BY ordinal",
-                    (job["job_id"],),
-                )
-            ]
+            inputs = self.ledger.list_inputs(
+                job["job_id"],
+                connection=connection,
+            )
             source_width, feature_dim = self._validate_manifest(job, manifest, inputs)
             manifest_hash = canonical_manifest_hash(manifest)
-            current = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job["job_id"],)
-            ).fetchone()
+            current = self.ledger.get_job(
+                job["job_id"],
+                connection=connection,
+                for_update=True,
+            )
             first_response = response_document(
                 request["request_id"],
                 jobId=job["job_id"],
@@ -365,9 +361,11 @@ class JobCoordinator:
 
         def mutation(connection):
             nonlocal transitioned
-            current = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job["job_id"],)
-            ).fetchone()
+            current = self.ledger.get_job(
+                job["job_id"],
+                connection=connection,
+                for_update=True,
+            )
             if self.draining and current["queued_at"] is None:
                 raise ServiceError(ErrorCode.UNAVAILABLE, "service is draining")
             if current["selected_device"]:
@@ -394,10 +392,10 @@ class JobCoordinator:
             if repeated:
                 stored = queued.get("start_result")
                 if stored is None:
-                    input_count = connection.execute(
-                        "SELECT COUNT(*) FROM job_inputs WHERE job_id=?",
-                        (job["job_id"],),
-                    ).fetchone()[0]
+                    input_count = len(self.ledger.list_inputs(
+                        job["job_id"],
+                        connection=connection,
+                    ))
                     stored = response_document(
                         request["request_id"],
                         jobId=job["job_id"],
@@ -453,9 +451,11 @@ class JobCoordinator:
 
         def mutation(connection):
             nonlocal notify, transition
-            current_row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id=?", (job["job_id"],)
-            ).fetchone()
+            current_row = self.ledger.get_job(
+                job["job_id"],
+                connection=connection,
+                for_update=True,
+            )
             current = JobState(current_row["state"])
             if current in TERMINAL_STATES or current == JobState.CANCELLING:
                 changed = dict(current_row)
@@ -553,7 +553,7 @@ class JobCoordinator:
                 "modelRef": result.get("modelRef"),
                 "checkpoint": result.get("checkpoint"),
             },
-            pollAfterMs=0 if terminal else max(100, self.config.queue_poll_ms * 5),
+            pollAfterMs=0 if terminal else 500,
         )
 
     def set_draining(self, value: bool = True) -> None:

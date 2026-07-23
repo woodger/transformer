@@ -19,12 +19,17 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 - PyTorch
 - NumPy
 - PyArrow
+- PostgreSQL
+- SQLAlchemy 2.x
+- Psycopg 3
+- Alembic
+- python-dotenv
 - CUDA опционально
 
 Установка зависимостей:
 
 ```bash
-pip install torch numpy pyarrow pytest
+pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv pytest
 ```
 
 Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
@@ -49,17 +54,23 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
 ```bash
+python ./app/main.py db migrations apply
+python ./app/main.py auth tokens issue --subject=inventory-production
+
 python ./app/main.py flight serve \
   --host=0.0.0.0 \
   --tls-cert-file=/run/secrets/transformer/tls.crt \
-  --tls-key-file=/run/secrets/transformer/tls.key \
-  --bearer-tokens-file=/run/secrets/transformer/bearers.json
+  --tls-key-file=/run/secrets/transformer/tls.key
 ```
 
-Bearer authentication требуется при любом transport. Без TLS сервер запускается
-только с явным `--allow-plaintext`. Один DoPut остаётся одним semantic stream
-frame, checkpoint принадлежит Transformer, а клиент получает только непрозрачный
-`modelRef`. DoExchange и PollFlightInfo в v1 не входят.
+Параметры PostgreSQL читаются из `.env` или окружения: `POSTGRES_HOST`,
+`POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER` и `POSTGRES_PASSWORD`.
+Bearer authentication требуется при любом transport; токены выпускаются и
+отзываются через `auth tokens`, а Flight service держит активные credentials в
+оперативной памяти и обновляет cache через PostgreSQL `LISTEN/NOTIFY`. Без TLS
+сервер запускается только с явным `--allow-plaintext`. Один DoPut остаётся одним
+semantic stream frame, checkpoint принадлежит Transformer, а клиент получает
+только непрозрачный `modelRef`. DoExchange и PollFlightInfo в v1 не входят.
 
 ## CLI
 
@@ -73,6 +84,8 @@ python ./app/main.py fit-stream [options]
 python ./app/main.py predict-stream [options]
 python ./app/main.py flight serve [options]
 python ./app/main.py plot-metrics METRICS_FILE [options]
+python ./app/main.py auth tokens issue|list|revoke [options]
+python ./app/main.py db migrations status|apply|rollback
 ```
 
 Общий help показывает только global options и список команд. Command-specific
@@ -100,6 +113,8 @@ python ./app/main.py --version
 - `predict-stream` — читать framed Arrow payloads из stdin и писать framed
   predictions в stdout
 - `flight serve` — запустить durable Arrow Flight job service
+- `auth tokens issue|list|revoke` — управлять API access tokens в PostgreSQL
+- `db migrations status|apply|rollback` — управлять схемой PostgreSQL
 - `plot-metrics` — построить SVG-графики из metrics JSONL
 
 ## Обучение из файла

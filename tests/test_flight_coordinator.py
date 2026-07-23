@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 
+from app.database.models import Job, JobAttempt
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
@@ -44,15 +45,15 @@ def create_document(**overrides):
 
 
 @pytest.fixture
-def coordinator(tmp_path):
+def coordinator(tmp_path, postgres_ledger):
     config = FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = postgres_ledger
     return JobCoordinator(
         config,
         ledger,
@@ -83,15 +84,15 @@ def test_create_and_status_are_durable_and_idempotent(coordinator):
     assert status["committedInputs"] == []
 
 
-def test_status_hides_legacy_cancel_error_after_ledger_reopen(tmp_path):
+def test_status_hides_legacy_cancel_error(tmp_path, postgres_ledger):
     config = FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = postgres_ledger
     job_id = "b257793b-100f-4322-b28a-8c47072b7fec"
     ledger.create_job(
         job_id=job_id,
@@ -118,22 +119,17 @@ def test_status_hides_legacy_cancel_error_after_ledger_reopen(tmp_path):
         JobState.CANCELLED,
         now=6.0,
     )
-    with ledger.connection() as connection:
-        connection.execute(
-            "UPDATE jobs SET error_code='CANCELLED', error_message=? WHERE job_id=?",
-            ("job was cancelled", job_id),
-        )
-        connection.execute(
-            "UPDATE job_attempts SET error_code='CANCELLED', error_message=? "
-            "WHERE job_id=? AND attempt=1",
-            ("job was cancelled", job_id),
-        )
-        connection.commit()
+    with ledger.transaction() as connection:
+        stored_job = connection.get(Job, job_id)
+        stored_job.error_code = "CANCELLED"
+        stored_job.error_message = "job was cancelled"
+        attempt = connection.get(JobAttempt, (job_id, 1))
+        attempt.error_code = "CANCELLED"
+        attempt.error_message = "job was cancelled"
 
-    reopened = Ledger(config.database_path).initialize()
     service = JobCoordinator(
         config,
-        reopened,
+        ledger,
         spool,
         cuda_available=lambda: False,
     )
@@ -144,7 +140,7 @@ def test_status_hides_legacy_cancel_error_after_ledger_reopen(tmp_path):
     assert status["pollAfterMs"] == 0
     # Compatibility is a wire concern: immutable terminal storage is not
     # rewritten and its revision/timestamps remain untouched on startup.
-    assert reopened.get_job(job_id)["error_code"] == "CANCELLED"
+    assert ledger.get_job(job_id)["error_code"] == "CANCELLED"
 
 
 def test_same_idempotency_key_with_different_request_conflicts(coordinator):
