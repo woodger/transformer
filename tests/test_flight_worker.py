@@ -1567,6 +1567,74 @@ def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):
     assert ledger.get_job(job["job_id"])["state"] == JobState.QUEUED.value
 
 
+def test_pending_cancel_before_attempt_registration_does_not_spawn(
+    tmp_path,
+):
+    popen_calls = []
+
+    def unexpected_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        raise AssertionError("cancelled attempt must not spawn")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=unexpected_popen,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+    claimed = ledger.claim_job(
+        job["job_id"],
+        "cpu",
+        worker_id="pending-cancel-race",
+    )
+    ledger.transition_job(job["job_id"], JobState.CANCELLING)
+    pool.notify_cancel(job["job_id"])
+
+    pool._attempt_executor.execute(claimed)
+
+    finished = ledger.get_job(job["job_id"])
+    assert popen_calls == []
+    assert finished["state"] == JobState.CANCELLED.value
+    assert finished["error_code"] is None
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
+
+
+def test_force_stop_before_attempt_registration_does_not_spawn(
+    tmp_path,
+):
+    popen_calls = []
+
+    def unexpected_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        raise AssertionError("interrupted attempt must not spawn")
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        popen_factory=unexpected_popen,
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [])
+    claimed = ledger.claim_job(
+        job["job_id"],
+        "cpu",
+        worker_id="force-stop-race",
+    )
+    pool._attempt_executor.interrupt_for_shutdown()
+
+    pool._attempt_executor.execute(claimed)
+
+    failed = ledger.get_job(job["job_id"])
+    assert popen_calls == []
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert failed["error_message"] == (
+        "worker execution was interrupted by service shutdown"
+    )
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
+
+
 def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     tmp_path,
     monkeypatch,
@@ -1591,6 +1659,55 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
 
     assert not lane.is_alive()
     assert len(calls) == 2
+
+
+def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
+    tmp_path,
+    monkeypatch,
+):
+    metrics = OperationalMetrics()
+    _, _, ledger, pool = components(tmp_path, metrics=metrics)
+    job = create_fit_job(ledger)
+    seal_and_queue(ledger, job, [])
+
+    monkeypatch.setattr(
+        pool.spool,
+        "ensure_free_space",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            OSError(errno.EIO, "injected preflight failure")
+        ),
+    )
+    monkeypatch.setattr(
+        ledger,
+        "finish_attempt",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("injected terminal persistence failure")
+        ),
+    )
+    pool._queues["cpu"].put(job["job_id"])
+    pool._queues["cpu"].put(None)
+    lane = threading.Thread(
+        target=pool._lane,
+        args=("cpu", "terminal-persistence-worker"),
+    )
+
+    lane.start()
+    lane.join(2)
+
+    assert not lane.is_alive()
+    assert ledger.get_job(job["job_id"])["state"] == JobState.RUNNING.value
+    assert ledger.queued_jobs() == []
+    assert metrics.snapshot()["counters"]["workerLaneErrors"] == 1
+    assert job["job_id"] not in pool._attempt_executor._active
+    assert job["job_id"] not in pool._attempt_executor._pending_cancellations
+
+    recovery = ledger.reconcile_interrupted_jobs()
+
+    failed = ledger.get_job(job["job_id"])
+    assert recovery["interrupted_jobs"] == [job["job_id"]]
+    assert failed["state"] == JobState.FAILED.value
+    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert ledger.queued_jobs() == []
 
 
 def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):

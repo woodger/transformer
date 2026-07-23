@@ -142,7 +142,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         logger=logger,
     )
     executed = []
-    pool._execute_claimed = executed.append
+    pool._attempt_executor.execute = executed.append
 
     assert pool.run_once("cpu", worker_id="worker-1") is True
     assert executed == [claimed]

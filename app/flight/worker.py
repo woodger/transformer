@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import errno
 import os
 import queue
 import subprocess
@@ -11,45 +9,18 @@ import time
 from typing import Callable, Sequence
 
 from app.config import PROJECT_ROOT
-from app.flight.constants import ErrorCode, JobState
-from app.flight.errors import ServiceError
+from app.flight.constants import JobState
 from app.flight.observability import JsonLogger, OperationalMetrics
-from app.flight.worker_artifacts import (
-    WorkerArtifactError,
-    WorkerArtifactPublisher,
+from app.flight.worker_artifacts import WorkerArtifactPublisher
+from app.flight.worker_attempt import (
+    WorkerAttemptError,
+    WorkerAttemptExecutor,
 )
 from app.flight.worker_plan import (
     WorkerPlanBuilder,
     WorkerPlanError,
 )
-from app.flight.worker_subprocess import (
-    WorkerSubprocessError,
-    WorkerSubprocessRunner,
-)
-
-
-_DISK_FULL_ERRNOS = {
-    value
-    for value in (errno.ENOSPC, getattr(errno, "EDQUOT", None))
-    if value is not None
-}
-
-
-@dataclass(frozen=True)
-class _Failure(Exception):
-    code: ErrorCode
-    message: str
-    exit_code: int | None = None
-
-    def __post_init__(self):
-        Exception.__init__(self, self.message)
-
-
-@dataclass
-class _ActiveAttempt:
-    job_id: str
-    attempt: int
-    cancel: threading.Event = field(default_factory=threading.Event)
+from app.flight.worker_subprocess import WorkerSubprocessRunner
 
 
 class WorkerPool:
@@ -114,12 +85,21 @@ class WorkerPool:
             stage_prediction=self._artifact_publisher.stage_prediction,
             monotonic=self._monotonic,
         )
+        self._attempt_executor = WorkerAttemptExecutor(
+            config,
+            ledger,
+            spool,
+            self._plan_builder,
+            self._subprocess_runner,
+            self._artifact_publisher,
+            logger=self.logger,
+            metrics=self.metrics,
+            argv_hook=self._argv_hook,
+            monotonic=self._monotonic,
+        )
 
         self._lifecycle_lock = threading.Lock()
         self._claim_lock = threading.Lock()
-        self._active_lock = threading.Lock()
-        self._active: dict[str, _ActiveAttempt] = {}
-        self._pending_cancellations: set[str] = set()
         self._threads: list[threading.Thread] = []
         self._queues: dict[str, queue.Queue[str | None]] = {
             "cpu": queue.Queue(),
@@ -128,7 +108,6 @@ class WorkerPool:
         self._queue_lock = threading.Lock()
         self._enqueued: set[str] = set()
         self._stop_claiming = threading.Event()
-        self._force_stop = threading.Event()
         self._started = False
 
     @property
@@ -167,12 +146,7 @@ class WorkerPool:
 
     def notify_cancel(self, job_id: str) -> None:
         """Cancellation callback used after RUNNING -> CANCELLING commits."""
-        with self._active_lock:
-            active = self._active.get(job_id)
-            if active is None:
-                self._pending_cancellations.add(job_id)
-            else:
-                active.cancel.set()
+        self._attempt_executor.notify_cancel(job_id)
 
     def stop_claiming(self) -> None:
         """Close the durable queue-claim boundary without cancelling work."""
@@ -192,10 +166,7 @@ class WorkerPool:
             remaining = max(0.0, deadline - self._monotonic())
             thread.join(remaining)
         if any(thread.is_alive() for thread in self._threads):
-            self._force_stop.set()
-            with self._active_lock:
-                for active in self._active.values():
-                    active.cancel.set()
+            self._attempt_executor.interrupt_for_shutdown()
             for thread in tuple(self._threads):
                 thread.join(self.config.cancel_grace_seconds + 1.0)
         if any(thread.is_alive() for thread in self._threads):
@@ -259,7 +230,7 @@ class WorkerPool:
             toState=JobState.RUNNING.value,
             queueWaitSeconds=queue_wait,
         )
-        self._execute_claimed(claimed)
+        self._attempt_executor.execute(claimed)
         return True
 
     def build_argv(self, job: dict, attempt: int | None = None) -> list[str]:
@@ -272,7 +243,7 @@ class WorkerPool:
                 argv_hook=self._argv_hook,
             ))
         except WorkerPlanError as exc:
-            raise _Failure(exc.code, exc.message) from exc
+            raise WorkerAttemptError(exc.code, exc.message) from exc
 
     def _lane(self, device: str, worker_id: str) -> None:
         while True:
@@ -319,214 +290,3 @@ class WorkerPool:
         with self._queue_lock:
             self._enqueued.discard(job_id)
         return job_id
-
-    def _execute_claimed(self, job: dict) -> None:
-        job_id = job["job_id"]
-        attempt = job["attempt"]
-        active = _ActiveAttempt(job_id, attempt)
-        with self._active_lock:
-            self._active[job_id] = active
-            if job_id in self._pending_cancellations:
-                self._pending_cancellations.remove(job_id)
-                active.cancel.set()
-
-        started = self._monotonic()
-        succeeded = False
-        try:
-            current = self.ledger.get_job(job_id)
-            if current is None:
-                raise _Failure(ErrorCode.INTERNAL, "claimed job disappeared")
-            if current["state"] == JobState.CANCELLING.value:
-                active.cancel.set()
-                raise _Failure(ErrorCode.CANCELLED, "job cancellation was requested")
-
-            self.spool.ensure_free_space(self.config.disk_min_free_bytes)
-            try:
-                plan = self._plan_builder.build(
-                    job,
-                    attempt,
-                    argv_hook=self._argv_hook,
-                )
-            except WorkerPlanError as exc:
-                raise _Failure(exc.code, exc.message) from exc
-            try:
-                result = self._subprocess_runner.run(
-                    job,
-                    plan,
-                    cancel=active.cancel,
-                    force_stop=self._force_stop,
-                )
-            except WorkerSubprocessError as exc:
-                raise _Failure(
-                    exc.code,
-                    exc.message,
-                    exc.exit_code,
-                ) from exc
-            try:
-                if job["operation"] == "predict":
-                    self._artifact_publisher.publish_outputs(
-                        job,
-                        plan.inputs,
-                        result.outputs,
-                    )
-                else:
-                    self._artifact_publisher.publish_model(job)
-            except WorkerArtifactError as exc:
-                raise _Failure(exc.code, exc.message) from exc
-            self._record_transition(
-                job,
-                JobState.RUNNING.value,
-                JobState.SUCCEEDED.value,
-            )
-            succeeded = True
-            self.metrics.add("jobsSucceeded")
-        except BaseException as exc:
-            current = self.ledger.get_job(job_id)
-            if current is not None and current["state"] == JobState.SUCCEEDED.value:
-                succeeded = True
-            else:
-                self._artifact_publisher.cleanup_unpublished(job)
-                failure = self._coerce_failure(exc)
-                if failure.code == ErrorCode.CUDA_OUT_OF_MEMORY:
-                    self.metrics.add("cudaOutOfMemory")
-                    self.logger.event(
-                        "flight.cuda.oom",
-                        jobId=job_id,
-                        attempt=attempt,
-                        device=job["selected_device"],
-                    )
-                elif failure.code == ErrorCode.DEVICE_UNAVAILABLE:
-                    self.metrics.add("cudaUnavailableDuringExecution")
-                # Cleanup can race with a committed cancel action.  Refresh
-                # state before choosing the terminal outcome so cancel wins
-                # whenever it was registered before final artifact commit.
-                current = self.ledger.get_job(job_id)
-                if (
-                    current is not None
-                    and current["state"] == JobState.CANCELLING.value
-                ) or failure.code == ErrorCode.CANCELLED:
-                    self._finish_cancelled(job, failure.exit_code)
-                    self.metrics.add("jobsCancelled")
-                else:
-                    self._finish_failed(job, failure)
-                    self.metrics.add("jobsFailed")
-                self.logger.event(
-                    "flight.worker.failed",
-                    jobId=job_id,
-                    attempt=attempt,
-                    code=failure.code.value,
-                    errorType=type(exc).__name__,
-                )
-        finally:
-            with self._active_lock:
-                self._active.pop(job_id, None)
-                self._pending_cancellations.discard(job_id)
-            elapsed = self._monotonic() - started
-            self.metrics.add("workerRunSeconds", elapsed)
-            self.logger.event(
-                "flight.worker.finished",
-                jobId=job_id,
-                attempt=attempt,
-                device=job["selected_device"],
-                succeeded=succeeded,
-                runSeconds=elapsed,
-            )
-
-    def _finish_cancelled(self, job: dict, exit_code: int | None) -> None:
-        current = self.ledger.get_job(job["job_id"])
-        if current is None or current["state"] in (
-            JobState.CANCELLED.value,
-            JobState.SUCCEEDED.value,
-            JobState.FAILED.value,
-        ):
-            return
-        if current["state"] == JobState.RUNNING.value:
-            self.ledger.transition_job(job["job_id"], JobState.CANCELLING)
-            self._record_transition(
-                job,
-                JobState.RUNNING.value,
-                JobState.CANCELLING.value,
-            )
-        self.ledger.finish_attempt(
-            job["job_id"],
-            job["attempt"],
-            JobState.CANCELLED,
-            exit_code=exit_code,
-        )
-        self._record_transition(
-            job,
-            JobState.CANCELLING.value,
-            JobState.CANCELLED.value,
-        )
-
-    def _finish_failed(self, job: dict, failure: _Failure) -> None:
-        current = self.ledger.get_job(job["job_id"])
-        if current is None or current["state"] in (
-            JobState.SUCCEEDED.value,
-            JobState.FAILED.value,
-            JobState.CANCELLED.value,
-        ):
-            return
-        if current["state"] == JobState.CANCELLING.value:
-            self._finish_cancelled(job, failure.exit_code)
-            return
-        try:
-            self.ledger.finish_attempt(
-                job["job_id"],
-                job["attempt"],
-                JobState.FAILED,
-                error_code=failure.code,
-                error_message=failure.message,
-                exit_code=failure.exit_code,
-            )
-            self._record_transition(
-                job,
-                JobState.RUNNING.value,
-                JobState.FAILED.value,
-                code=failure.code.value,
-            )
-        except (ServiceError, ValueError):
-            # If cancel committed its PostgreSQL transition first, the attempted
-            # RUNNING -> FAILED transition observes CANCELLING.  Re-read and
-            # complete cancellation; otherwise preserve the original error.
-            latest = self.ledger.get_job(job["job_id"])
-            if latest is not None and latest["state"] == JobState.CANCELLING.value:
-                self._finish_cancelled(job, failure.exit_code)
-                return
-            if latest is not None and latest["state"] in (
-                JobState.SUCCEEDED.value,
-                JobState.FAILED.value,
-                JobState.CANCELLED.value,
-            ):
-                return
-            raise
-
-    def _record_transition(
-        self,
-        job: dict,
-        from_state: str,
-        to_state: str,
-        *,
-        code: str | None = None,
-    ) -> None:
-        self.metrics.record_transition(from_state, to_state)
-        fields = {
-            "jobId": job["job_id"],
-            "attempt": job["attempt"],
-            "device": job["selected_device"],
-            "fromState": from_state,
-            "toState": to_state,
-        }
-        if code is not None:
-            fields["code"] = code
-        self.logger.event("flight.job.transition", **fields)
-
-    @staticmethod
-    def _coerce_failure(exc: BaseException) -> _Failure:
-        if isinstance(exc, _Failure):
-            return exc
-        if isinstance(exc, ServiceError):
-            return _Failure(exc.code, exc.message)
-        if isinstance(exc, OSError) and exc.errno in _DISK_FULL_ERRNOS:
-            return _Failure(ErrorCode.DISK_FULL, "runtime directory is full")
-        return _Failure(ErrorCode.INTERNAL, "worker execution failed internally")
