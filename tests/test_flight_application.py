@@ -11,6 +11,7 @@ import pytest
 
 import app.flight.application as application_module
 from app.cli.help import build_parser
+from app.database.tokens import AccessTokenStore
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, ErrorCode, JobState
@@ -38,9 +39,10 @@ def _use_postgres_test_schema(
     )
 
 
-def options():
+def options(token="secret"):
     return flight.FlightCallOptions(
-        headers=[(b"authorization", b"Bearer secret")]
+        headers=[(b"authorization", f"Bearer {token}".encode("ascii"))],
+        timeout=5.0,
     )
 
 
@@ -78,6 +80,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
                 bearer_tokens={"secret": "inventory"},
             )
     finally:
+        client.close()
         application.shutdown()
 
     assert application.maintenance.running is False
@@ -87,6 +90,45 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
         bearer_tokens={"secret": "inventory"},
     )
     replacement.shutdown()
+
+
+def test_application_uses_database_token_cache_without_query_per_rpc(
+    tmp_path,
+    monkeypatch,
+    postgres_database,
+):
+    issued = AccessTokenStore(postgres_database).issue("inventory")
+    credential_loads = []
+
+    class CountingAccessTokenStore(AccessTokenStore):
+        def active_credentials(self):
+            credential_loads.append(True)
+            return super().active_credentials()
+
+    monkeypatch.setattr(
+        application_module,
+        "AccessTokenStore",
+        CountingAccessTokenStore,
+    )
+    application = FlightApplication.build(config(tmp_path))
+    client = flight.FlightClient(("localhost", application.server.port))
+    try:
+        for _ in range(2):
+            body = json.dumps({
+                "contract": CONTRACT_NAME,
+                "version": 1,
+                "requestId": str(uuid.uuid4()),
+            }).encode()
+            result = list(client.do_action(
+                flight.Action(CAPABILITIES_ACTION, body),
+                options=options(issued.token),
+            ))
+            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [1]
+
+        assert credential_loads == [True]
+    finally:
+        client.close()
+        application.shutdown()
 
 
 def test_build_failure_after_server_construction_releases_all_resources(
@@ -274,6 +316,7 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
     tmp_path,
     monkeypatch,
     postgres_ledger,
+    request,
 ):
     service_config = config(tmp_path)
     spool = Spool(service_config.runtime_dir, tmp_path / "models").initialize()
@@ -306,6 +349,16 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         start_new_session=True,
     )
+
+    def stop_orphan():
+        if orphan.poll() is None:
+            try:
+                os.killpg(orphan.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        orphan.wait(timeout=5)
+
+    request.addfinalizer(stop_orphan)
     orphan_identity = capture_worker_process(orphan.pid)
     ledger.set_attempt_process(
         interrupted["job_id"],
@@ -407,9 +460,6 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
     finally:
         if application is not None:
             application.shutdown()
-        if orphan.poll() is None:
-            os.killpg(orphan.pid, signal.SIGKILL)
-            orphan.wait()
 
 
 def test_flight_serve_cli_contains_only_service_configuration():

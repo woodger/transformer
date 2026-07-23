@@ -74,7 +74,8 @@ def _service_config(tmp_path):
 
 def _auth():
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {TOKEN}".encode())]
+        headers=[(b"authorization", f"Bearer {TOKEN}".encode())],
+        timeout=5.0,
     )
 
 

@@ -36,7 +36,8 @@ from app.flight.spool import Spool
 
 def _auth(token="secret"):
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {token}".encode("ascii"))]
+        headers=[(b"authorization", f"Bearer {token}".encode("ascii"))],
+        timeout=5.0,
     )
 
 
@@ -118,6 +119,7 @@ def protected_server(tmp_path):
     try:
         yield coordinator, upload, output, server, client
     finally:
+        client.close()
         server.shutdown()
 
 
@@ -355,6 +357,7 @@ def published_output_server(tmp_path, postgres_ledger):
     try:
         yield ledger, job_id, client
     finally:
+        client.close()
         server.shutdown()
 
 
@@ -456,6 +459,7 @@ def _generate_tls_certificate(tmp_path):
         ],
         check=True,
         capture_output=True,
+        timeout=30,
     )
     return certificate, private_key
 
@@ -508,7 +512,12 @@ def _generate_mtls_certificates(tmp_path):
         ],
     )
     for command in commands:
-        subprocess.run(command, check=True, capture_output=True)
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
     return (
         ca_certificate,
         server_certificate,
@@ -537,6 +546,7 @@ def test_real_tls_server_requires_bearer_authentication(tmp_path):
         with pytest.raises(flight.FlightUnauthenticatedError):
             list(client.list_actions())
     finally:
+        client.close()
         server.shutdown()
 
 
@@ -562,6 +572,8 @@ def test_real_mtls_server_rejects_missing_client_certificate(tmp_path):
         {"secret": "inventory"},
     )
     location = flight.Location.for_grpc_tls("localhost", server.port)
+    client_without_certificate = None
+    authenticated_client = None
     try:
         client_without_certificate = flight.FlightClient(
             location,
@@ -581,6 +593,10 @@ def test_real_mtls_server_rejects_missing_client_certificate(tmp_path):
             for item in authenticated_client.list_actions(options=_auth())
         ) == ACTIONS
     finally:
+        if authenticated_client is not None:
+            authenticated_client.close()
+        if client_without_certificate is not None:
+            client_without_certificate.close()
         server.shutdown()
 
 

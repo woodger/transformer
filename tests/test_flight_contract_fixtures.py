@@ -609,6 +609,7 @@ def test_arrow_golden_fixtures_are_reproducible(tmp_path):
     subprocess.run(
         [sys.executable, str(GENERATOR), "--output-dir", str(tmp_path)],
         check=True,
+        timeout=30,
     )
 
     for name in ARROW_FIXTURES:

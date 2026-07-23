@@ -1,12 +1,11 @@
 import sys
 
 import pytest
-import torch
-
 from app.runtime.device import get_device
 from app import __version__
 from app.cli.args import parse_args
 from app.cli.help import build_parser
+from app.runtime.version import __version__ as runtime_version
 from app.runtime.version import version_text
 
 
@@ -15,16 +14,25 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_gpu_fallback_to_cpu():
-    device = get_device("gpu")
-    if torch.cuda.is_available():
-        assert device.type == "cuda"
-    else:
-        assert device.type == "cpu"
+@pytest.mark.parametrize(
+    ("cuda_available", "expected"),
+    ((True, "cuda"), (False, "cpu")),
+)
+def test_legacy_gpu_device_follows_cuda_availability(
+    monkeypatch,
+    cuda_available,
+    expected,
+):
+    monkeypatch.setattr(
+        "app.runtime.device.torch.cuda.is_available",
+        lambda: cuda_available,
+    )
+
+    assert get_device("gpu").type == expected
 
 
-def test_version_is_exported():
-    assert __version__
+def test_package_reexports_runtime_version():
+    assert __version__ == runtime_version
 
 
 @pytest.mark.parametrize("option", ("--version", "-v"))

@@ -29,7 +29,8 @@ class FailingCoordinator(StubCoordinator):
 
 def call_options(token="secret"):
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {token}".encode())]
+        headers=[(b"authorization", f"Bearer {token}".encode())],
+        timeout=5.0,
     )
 
 
@@ -55,9 +56,11 @@ def control_server(tmp_path):
         coordinator,
         {"secret": "inventory"},
     )
+    client = flight.FlightClient(("localhost", server.port))
     try:
-        yield server, coordinator, flight.FlightClient(("localhost", server.port))
+        yield server, coordinator, client
     finally:
+        client.close()
         server.shutdown()
 
 

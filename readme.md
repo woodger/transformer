@@ -574,9 +574,14 @@ stdout, поскольку его stdout не является output data proto
 
 ## Тестирование
 
+PostgreSQL integration tests требуют отдельную базу, имя которой начинается с
+`transformer_test`. Внутри неё pytest создаёт миграциями одноразовую schema
+`transformer_test_<uuid>` и удаляет её после test session. Production-база для
+тестов намеренно отвергается.
+
 ```bash
 python -m pip install pytest
-python -m pytest -v
+POSTGRES_DB=transformer_test python3.11 -m pytest -q
 ```
 
 Правила разработки и review собраны в

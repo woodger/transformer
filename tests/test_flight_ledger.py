@@ -208,18 +208,26 @@ def test_claim_is_atomic_across_worker_threads(ledger):
     seal_and_queue(ledger, second["job_id"], now=4.0)
     barrier = threading.Barrier(3)
     claimed = []
+    errors = []
 
     def claim(worker_id):
-        barrier.wait()
-        claimed.append(ledger.claim_next_job("cpu", worker_id=worker_id))
+        try:
+            barrier.wait(timeout=5)
+            claimed.append(ledger.claim_next_job("cpu", worker_id=worker_id))
+        except BaseException as exc:
+            errors.append(exc)
 
     threads = [threading.Thread(target=claim, args=(f"worker-{index}",)) for index in range(2)]
     for thread in threads:
         thread.start()
-    barrier.wait()
-    for thread in threads:
-        thread.join()
+    try:
+        barrier.wait(timeout=5)
+    finally:
+        for thread in threads:
+            thread.join(timeout=5)
 
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
     assert {job["job_id"] for job in claimed} == {first["job_id"], second["job_id"]}
     assert all(job["state"] == JobState.RUNNING.value for job in claimed)
     assert all(job["attempt"] == 1 for job in claimed)

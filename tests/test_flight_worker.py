@@ -994,7 +994,8 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
             **fields,
         }
         options = flight.FlightCallOptions(
-            headers=[(b"authorization", b"Bearer secret")]
+            headers=[(b"authorization", b"Bearer secret")],
+            timeout=5.0,
         )
         results = list(client.do_action(
             flight.Action(name, json.dumps(document).encode()),
@@ -1053,6 +1054,8 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
         if runner.is_alive():
             pool.notify_cancel(job["job_id"])
             runner.join(5)
+        assert not runner.is_alive()
+        client.close()
         server.shutdown()
 
 
@@ -1095,39 +1098,44 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
     seal_and_queue(ledger, job, [])
     runner = threading.Thread(target=pool.run_once, args=("cpu",))
     runner.start()
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
+            if os.path.exists(stderr_path):
+                text = Path(stderr_path).read_text(errors="replace")
+                if "grandchild=" in text:
+                    break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("term-resistant subprocess group did not start")
 
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        stderr_path = spool.attempt_stderr_path(job["job_id"], 1)
-        if os.path.exists(stderr_path):
-            text = Path(stderr_path).read_text(errors="replace")
-            if "grandchild=" in text:
-                break
-        time.sleep(0.02)
-    else:
-        raise AssertionError("term-resistant subprocess group did not start")
+        grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
+        cancel = {
+            "contract": CONTRACT_NAME,
+            "version": 1,
+            "requestId": str(uuid.uuid4()),
+            "idempotencyKey": "cancel-term-resistant-worker",
+            "jobId": job["job_id"],
+        }
+        coordinator.cancel(
+            "inventory",
+            validate_action_request(CANCEL_ACTION, cancel),
+            cancel,
+        )
+        runner.join(5)
 
-    grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
-    cancel = {
-        "contract": CONTRACT_NAME,
-        "version": 1,
-        "requestId": str(uuid.uuid4()),
-        "idempotencyKey": "cancel-term-resistant-worker",
-        "jobId": job["job_id"],
-    }
-    coordinator.cancel(
-        "inventory",
-        validate_action_request(CANCEL_ACTION, cancel),
-        cancel,
-    )
-    runner.join(5)
-
-    assert not runner.is_alive()
-    assert sent_signals[:2] == [signal.SIGTERM, signal.SIGKILL]
-    assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
-    state_path = Path(f"/proc/{grandchild}/stat")
-    if state_path.exists():
-        assert state_path.read_text().split()[2] == "Z"
+        assert not runner.is_alive()
+        assert sent_signals[:2] == [signal.SIGTERM, signal.SIGKILL]
+        assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
+        state_path = Path(f"/proc/{grandchild}/stat")
+        if state_path.exists():
+            assert state_path.read_text().split()[2] == "Z"
+    finally:
+        if runner.is_alive():
+            pool.notify_cancel(job["job_id"])
+            runner.join(5)
+        assert not runner.is_alive()
 
 
 def test_pool_exposes_configured_cpu_lanes_and_exactly_one_cuda_lane(tmp_path):
@@ -1191,25 +1199,26 @@ def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):
             job["job_id"],
         ]
 
-    config, spool, ledger, pool = components(tmp_path, argv_hook=hook)
+    _, spool, ledger, pool = components(tmp_path, argv_hook=hook)
     first = create_predict_job(ledger, spool)
     second = create_predict_job(ledger, spool)
     seal_and_queue(ledger, first, [], device="cuda")
-    time.sleep(0.01)
     seal_and_queue(ledger, second, [], device="cuda")
 
     pool.start()
-    pool.notify_queued()
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        states = [
-            ledger.get_job(first["job_id"])["state"],
-            ledger.get_job(second["job_id"])["state"],
-        ]
-        if states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]:
-            break
-        time.sleep(0.02)
-    pool.shutdown(timeout=1)
+    try:
+        pool.notify_queued()
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            states = [
+                ledger.get_job(first["job_id"])["state"],
+                ledger.get_job(second["job_id"])["state"],
+            ]
+            if states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]:
+                break
+            time.sleep(0.02)
+    finally:
+        pool.shutdown(timeout=1)
 
     assert states == [JobState.SUCCEEDED.value, JobState.SUCCEEDED.value]
     assert execution_log.read_text().splitlines() == [
@@ -1218,5 +1227,3 @@ def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):
         f"start {second['job_id']}",
         f"end {second['job_id']}",
     ]
-    assert len([thread for thread in pool._threads if "-cuda-" in thread.name]) == 1
-    assert len([thread for thread in pool._threads if "-cpu-" in thread.name]) == config.cpu_capacity

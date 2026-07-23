@@ -30,7 +30,8 @@ from app.flight.errors import ServiceError
 
 def auth(token="secret"):
     return flight.FlightCallOptions(
-        headers=[(b"authorization", f"Bearer {token}".encode())]
+        headers=[(b"authorization", f"Bearer {token}".encode())],
+        timeout=5.0,
     )
 
 
@@ -116,6 +117,7 @@ def data_plane(tmp_path, postgres_ledger):
     try:
         yield config, spool, ledger, upload, server, client
     finally:
+        client.close()
         server.shutdown()
 
 
