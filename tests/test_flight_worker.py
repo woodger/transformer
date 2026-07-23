@@ -345,28 +345,65 @@ def create_predict_job(ledger, spool):
 
 
 def test_fit_argv_contains_exact_immutable_config_and_server_paths(tmp_path):
-    _, spool, ledger, pool = components(tmp_path)
+    config, spool, ledger, pool = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
     queued = ledger.get_job(job["job_id"])
     argv = pool.build_argv({**queued, "attempt": 1}, 1)
 
-    assert argv[:3] == [sys.executable, pool._cli_path, "fit-stream"]
-    assert argv[argv.index("--device") + 1] == "cpu"
-    assert argv[argv.index("--weight-decay") + 1] == "0.0025"
-    assert argv[argv.index("--checkpoint-out") + 1] == spool.attempt_checkpoint_path(
-        job["job_id"], 1
-    )
-    assert argv[argv.index("--metrics-out") + 1] == spool.attempt_metrics_path(
-        job["job_id"], 1
-    )
-    assert argv[argv.index("--input-spool-dir") + 1] == spool.input_directory(
-        job["job_id"]
-    )
-    assert argv[argv.index("--input-frame-count") + 1] == "0"
-    assert "--no-save-best-checkpoint" in argv
-    assert "--deterministic" in argv
-    assert "returns.daily" not in argv
+    assert argv == [
+        sys.executable,
+        pool._cli_path,
+        "fit-stream",
+        "--device",
+        "cpu",
+        "--checkpoint-out",
+        spool.attempt_checkpoint_path(job["job_id"], 1),
+        "--metrics-out",
+        spool.attempt_metrics_path(job["job_id"], 1),
+        "--max-frame-bytes",
+        str(config.max_payload_bytes),
+        "--input-spool-dir",
+        spool.input_directory(job["job_id"]),
+        "--input-frame-count",
+        "0",
+        "--seq-len",
+        "2",
+        "--hidden",
+        "8",
+        "--layers",
+        "1",
+        "--dropout",
+        "0.0",
+        "--nhead",
+        "2",
+        "--mode",
+        "relaxed",
+        "--lr",
+        "0.001",
+        "--weight-decay",
+        "0.0025",
+        "--batch-size",
+        "2",
+        "--epochs",
+        "1",
+        "--loss-stage",
+        "1",
+        "--loss-schedule",
+        "none",
+        "--stage-size",
+        "1",
+        "--patience",
+        "0",
+        "--monitor",
+        "loss",
+        "--monitor-min-improvement",
+        "0.0",
+        "--seed",
+        "7",
+        "--no-save-best-checkpoint",
+        "--deterministic",
+    ]
 
 
 def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path):
@@ -381,7 +418,7 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
         defaults.append(argv)
         return [sys.executable, "-c", PREDICT_HELPER, "ok"]
 
-    _, spool, ledger, pool = components(
+    config, spool, ledger, pool = components(
         tmp_path,
         popen_factory=popen,
         argv_hook=hook,
@@ -421,10 +458,23 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
     )
     assert launch_argv[2:4] == [str(os.getpid()), "--"]
     assert launch_argv[4:] == [sys.executable, "-c", PREDICT_HELPER, "ok"]
-    assert defaults[0][2] == "predict-stream"
-    assert defaults[0][defaults[0].index("--checkpoint") + 1].startswith(
-        spool.models_dir
+    model = ledger.get_model(
+        job["input_model_ref"],
+        owner_subject=job["owner_subject"],
     )
+    assert defaults == [(
+        sys.executable,
+        pool._cli_path,
+        "predict-stream",
+        "--device",
+        "cpu",
+        "--checkpoint",
+        spool.model_absolute_path(model["checkpoint_path"]),
+        "--pred-col",
+        "out",
+        "--max-frame-bytes",
+        str(config.max_payload_bytes),
+    )]
 
 
 def test_malformed_second_prediction_publishes_no_partial_outputs(tmp_path):

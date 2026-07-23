@@ -4,6 +4,37 @@ from app.flight.constants import JobState
 from app.flight.state import is_terminal, validate_transition
 
 
+ALLOWED_TRANSITIONS = {
+    (JobState.UPLOADING, JobState.SEALED),
+    (JobState.UPLOADING, JobState.CANCELLED),
+    (JobState.SEALED, JobState.QUEUED),
+    (JobState.SEALED, JobState.CANCELLED),
+    (JobState.QUEUED, JobState.RUNNING),
+    (JobState.QUEUED, JobState.CANCELLED),
+    (JobState.RUNNING, JobState.SUCCEEDED),
+    (JobState.RUNNING, JobState.FAILED),
+    (JobState.RUNNING, JobState.CANCELLING),
+    (JobState.CANCELLING, JobState.CANCELLED),
+}
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        (current, target)
+        for current in JobState
+        for target in JobState
+    ],
+)
+def test_state_machine_transition_matrix_is_explicit(current, target):
+    if (current, target) in ALLOWED_TRANSITIONS:
+        validate_transition(current, target)
+        return
+
+    with pytest.raises(ValueError, match="invalid job state transition"):
+        validate_transition(current, target)
+
+
 def test_state_machine_accepts_normative_flow_and_immediate_cancel():
     validate_transition(JobState.UPLOADING, JobState.SEALED)
     validate_transition(JobState.SEALED, JobState.QUEUED)
