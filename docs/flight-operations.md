@@ -267,8 +267,9 @@ Inventory.
 The process writes structured JSON logs to stderr. A deployment supervisor
 must forward SIGTERM, allow at least `shutdownDrainSeconds +
 cancelGraceSeconds` before an external SIGKILL, and never start two processes
-against the same runtime directory. Deployment-unit creation is intentionally
-outside this database migration.
+against the same runtime directory. The target Fedora systemd unit, runtime
+directory policy and operator procedure are documented in
+[`deployment/systemd.md`](deployment/systemd.md).
 
 ## Startup and recovery
 

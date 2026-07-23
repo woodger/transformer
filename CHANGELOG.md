@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-23
+
+### Added
+
+- Добавлено руководство по ручному production-развёртыванию на Fedora/systemd
+  259: готовые unit и tmpfiles configuration, migrations, CUDA validation,
+  restart и recovery semantics.
+- Добавлен корневой `.env.example` с документированными настройками PostgreSQL,
+  Flight transport, runtime storage, worker capacity и retention.
+
 ## [0.1.4] - 2026-07-23
 
 ### Added
@@ -158,7 +168,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/woodger/transformer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/woodger/transformer/compare/v0.1.1...v0.1.2
