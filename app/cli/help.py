@@ -32,6 +32,14 @@ _COMMAND_GROUPS = (
         (("flight serve", "Run the durable Arrow Flight job service."),),
     ),
     (
+        "Access",
+        (
+            ("auth tokens issue", "Issue a local API access token"),
+            ("auth tokens list", "List API access token metadata"),
+            ("auth tokens revoke <token-id>", "Revoke an API access token"),
+        ),
+    ),
+    (
         "Training and inference",
         (
             ("fit", "Train from an Arrow file."),
@@ -43,6 +51,14 @@ _COMMAND_GROUPS = (
     (
         "Metrics",
         (("plot-metrics", "Render SVG charts from metrics JSONL."),),
+    ),
+    (
+        "Database",
+        (
+            ("db migrations status", "Read-only schema migration state"),
+            ("db migrations apply", "Apply pending schema migrations"),
+            ("db migrations rollback", "Revert the latest schema migration"),
+        ),
     ),
 )
 _COMMAND_HELP = {
@@ -57,17 +73,18 @@ _COMMAND_EXAMPLES = {
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
 """,
-    "flight serve": """Examples:
-  transformer flight serve --config=/etc/transformer/flight.json
-""",
 }
+
+_FLIGHT_SERVE_DESCRIPTION = (
+    "Run the durable Arrow Flight service for fit and predict jobs."
+)
 
 
 def _format_root_help() -> str:
     command_groups = "\n\n".join(
         f"{group}:\n"
         + "\n".join(
-            f"  {name:<16}{description}" for name, description in commands
+            f"  {name:<32}{description}" for name, description in commands
         )
         for group, commands in _COMMAND_GROUPS
     )
@@ -92,6 +109,13 @@ class _HelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
     argparse.RawDescriptionHelpFormatter,
 ):
+    def _get_help_string(self, action):
+        if action.default is None:
+            return action.help
+        return super()._get_help_string(action)
+
+
+class _FlightServiceHelpFormatter(argparse.RawTextHelpFormatter):
     pass
 
 
@@ -110,6 +134,15 @@ class _ArgumentParser(argparse.ArgumentParser):
 class _RootArgumentParser(_ArgumentParser):
     def format_help(self):
         return _format_root_help()
+
+
+def _add_hidden_help_argument(parser):
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help=argparse.SUPPRESS,
+    )
 
 
 def _positive_int(value: str) -> int:
@@ -212,53 +245,88 @@ def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
             "--seq-len",
             type=_positive_int,
             default=None,
-            help="Legacy override; otherwise read from the checkpoint.",
+            help=(
+                "Sequence length; read from the checkpoint, but required for "
+                "legacy checkpoints."
+            ),
         )
 
-    defaults = {
-        "hidden": D_MODEL,
-        "layers": NUM_LAYERS,
-        "dropout": DROPOUT,
-        "nhead": NHEAD,
-        "context_mode": CONTEXT_MODE,
-    } if training else {
-        "hidden": None,
-        "layers": None,
-        "dropout": None,
-        "nhead": None,
-        "context_mode": None,
-    }
+    if training:
+        defaults = {
+            "hidden": D_MODEL,
+            "layers": NUM_LAYERS,
+            "dropout": DROPOUT,
+            "nhead": NHEAD,
+            "context_mode": CONTEXT_MODE,
+        }
+        argument_help = {
+            "hidden": "Transformer hidden dimension.",
+            "layers": "Number of Transformer encoder layers.",
+            "dropout": "Dropout probability.",
+            "nhead": "Number of attention heads.",
+            "context_mode": "How NaNs in context timesteps are handled.",
+        }
+    else:
+        defaults = {
+            "hidden": None,
+            "layers": None,
+            "dropout": None,
+            "nhead": None,
+            "context_mode": None,
+        }
+        argument_help = {
+            "hidden": (
+                "Transformer hidden dimension; read from the checkpoint, "
+                f"or {D_MODEL} for legacy checkpoints."
+            ),
+            "layers": (
+                "Number of Transformer encoder layers; read from the checkpoint, "
+                f"or {NUM_LAYERS} for legacy checkpoints."
+            ),
+            "dropout": (
+                "Dropout probability; read from the checkpoint, "
+                f"or {DROPOUT} for legacy checkpoints."
+            ),
+            "nhead": (
+                "Number of attention heads; read from the checkpoint, "
+                f"or {NHEAD} for legacy checkpoints."
+            ),
+            "context_mode": (
+                "NaN handling mode; read from the checkpoint, "
+                f"or {CONTEXT_MODE} for legacy checkpoints."
+            ),
+        }
 
     model.add_argument(
         "--hidden",
         type=_positive_int,
         default=defaults["hidden"],
-        help="Transformer hidden dimension; prediction may read it from checkpoint.",
+        help=argument_help["hidden"],
     )
     model.add_argument(
         "--layers",
         type=_positive_int,
         default=defaults["layers"],
-        help="Number of Transformer encoder layers; prediction may read it from checkpoint.",
+        help=argument_help["layers"],
     )
     model.add_argument(
         "--dropout",
         type=_dropout,
         default=defaults["dropout"],
-        help="Dropout probability; prediction may read it from checkpoint.",
+        help=argument_help["dropout"],
     )
     model.add_argument(
         "--nhead",
         type=_positive_int,
         default=defaults["nhead"],
-        help="Number of attention heads; prediction may read it from checkpoint.",
+        help=argument_help["nhead"],
     )
     model.add_argument(
         "--mode",
         choices=["strict", "relaxed"],
         default=defaults["context_mode"],
         dest="context_mode",
-        help="How NaNs in context timesteps are handled.",
+        help=argument_help["context_mode"],
     )
 
 
@@ -358,10 +426,12 @@ def _add_training_arguments(parser):
 def _add_fit_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
+        add_help=False,
         help=_COMMAND_HELP[name],
         epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(parser)
     if stream:
         parser.set_defaults(data=None)
     else:
@@ -381,7 +451,10 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
         "--metrics-name",
         dest="metrics_name",
         default=None,
-        help="Metrics JSONL output path; relative paths are resolved inside models/.",
+        help=(
+            "Metrics JSONL output path; omit to disable metrics logging. "
+            "Relative paths are resolved inside models/."
+        ),
     )
     if stream:
         _add_max_frame_bytes_argument(runtime)
@@ -403,10 +476,12 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
 def _add_predict_parser(subparsers, name: str, *, stream: bool):
     parser = subparsers.add_parser(
         name,
+        add_help=False,
         help=_COMMAND_HELP[name],
         epilog=_COMMAND_EXAMPLES.get(name),
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(parser)
     if stream:
         parser.set_defaults(data=None)
     else:
@@ -488,56 +563,164 @@ def build_parser():
     )
     service = flight_commands.add_parser(
         "serve",
+        add_help=False,
         help=_COMMAND_HELP["flight serve"],
-        epilog=_COMMAND_EXAMPLES["flight serve"],
-        formatter_class=_HelpFormatter,
+        description=_FLIGHT_SERVE_DESCRIPTION,
+        formatter_class=_FlightServiceHelpFormatter,
+        usage="%(prog)s [options]",
     )
-    service.add_argument(
-        "--config",
-        default=None,
-        help="JSON service configuration file; environment and CLI override it.",
-    )
-    service.add_argument("--state-dir", default=None, help="Persistent service state directory.")
+    _add_hidden_help_argument(service)
     service.add_argument(
         "--host",
         metavar="HOST",
         default=None,
-        help="Flight listen host.",
+        help="Listen host. (default: 127.0.0.1)",
     )
-    service.add_argument("--port", type=_nonnegative_int, default=None, help="Flight port.")
     service.add_argument(
-        "--profile",
-        choices=["production", "development", "lan"],
+        "--port",
+        type=_nonnegative_int,
         default=None,
-        help="Security profile.",
+        help="Listen port. (default: 8815)",
     )
+
     service.add_argument(
         "--allow-plaintext",
         action="store_true",
         default=None,
-        help="Explicitly allow plaintext in development/LAN profile.",
+        help="Allow serving without TLS.",
     )
-    service.add_argument("--tls-cert-file", default=None, help="TLS certificate PEM file.")
-    service.add_argument("--tls-key-file", default=None, help="TLS private key PEM file.")
-    service.add_argument("--tls-ca-file", default=None, help="mTLS client CA PEM file.")
+
+    service.add_argument(
+        "--tls-cert-file",
+        default=None,
+        metavar="FILE",
+        help="Server certificate PEM.\nRequires --tls-key-file.",
+    )
+    service.add_argument(
+        "--tls-key-file",
+        default=None,
+        metavar="FILE",
+        help="Server private key PEM.\nRequires --tls-cert-file.",
+    )
+
+    service.add_argument(
+        "--tls-ca-file",
+        default=None,
+        metavar="FILE",
+        help="Client CA PEM.\nRequires server TLS.",
+    )
     service.add_argument(
         "--tls-require-client-cert",
         action="store_true",
         default=None,
-        help="Require and verify client certificates.",
+        help=(
+            "Require client certificates.\n"
+            "Requires --tls-ca-file and server TLS."
+        ),
     )
-    service.add_argument(
-        "--bearer-tokens-file",
-        default=None,
-        help="Secret JSON token-to-subject mapping file.",
-    )
+
     service.set_defaults(data=None, metrics_name=None)
+
+    auth = subparsers.add_parser(
+        "auth",
+        help="API access commands.",
+        formatter_class=_HelpFormatter,
+    )
+    auth_commands = auth.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="auth_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    tokens = auth_commands.add_parser(
+        "tokens",
+        help="API access token commands.",
+        formatter_class=_HelpFormatter,
+    )
+    token_commands = tokens.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="tokens_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    issue = token_commands.add_parser(
+        "issue",
+        add_help=False,
+        description="Issue an API access token and print its credential.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(issue)
+    issue.add_argument(
+        "--subject",
+        required=True,
+        help="Authenticated subject associated with the token.",
+    )
+    issue.set_defaults(data=None, metrics_name=None)
+    token_list = token_commands.add_parser(
+        "list",
+        add_help=False,
+        description="List API access token metadata without credentials.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(token_list)
+    token_list.set_defaults(data=None, metrics_name=None)
+    revoke = token_commands.add_parser(
+        "revoke",
+        add_help=False,
+        description="Revoke an API access token by ID.",
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(revoke)
+    revoke.add_argument("token_id", metavar="TOKEN_ID", help="API access token UUID.")
+    revoke.set_defaults(data=None, metrics_name=None)
+
+    database = subparsers.add_parser(
+        "db",
+        help="Database schema commands.",
+        formatter_class=_HelpFormatter,
+    )
+    database_commands = database.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="db_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    migrations = database_commands.add_parser(
+        "migrations",
+        help="Database schema migration commands.",
+        formatter_class=_HelpFormatter,
+    )
+    migration_commands = migrations.add_subparsers(
+        parser_class=_ArgumentParser,
+        dest="migrations_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    for name, description in (
+        ("status", "Read the current and expected schema revisions."),
+        ("apply", "Apply all pending schema migrations."),
+        ("rollback", "Revert the latest applied schema migration."),
+    ):
+        command = migration_commands.add_parser(
+            name,
+            add_help=False,
+            description=description,
+            formatter_class=_HelpFormatter,
+        )
+        _add_hidden_help_argument(command)
+        command.set_defaults(data=None, metrics_name=None)
 
     plot = subparsers.add_parser(
         "plot-metrics",
+        add_help=False,
         help=_COMMAND_HELP["plot-metrics"],
         formatter_class=_HelpFormatter,
     )
+    _add_hidden_help_argument(plot)
     plot.add_argument("data", metavar="METRICS_FILE", help="Metrics JSONL file.")
     plot.add_argument(
         "--plots-dir",

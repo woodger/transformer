@@ -16,7 +16,26 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, ErrorCode, JobState
 from app.flight.ledger import Ledger
 from app.flight.process import capture_worker_process
-from app.flight.spool import Spool, StateDirectoryLocked
+from app.flight.spool import Spool, RuntimeDirectoryLocked
+
+
+@pytest.fixture(autouse=True)
+def _use_postgres_test_schema(
+    monkeypatch,
+    postgres_config,
+    postgres_database,
+    tmp_path,
+):
+    monkeypatch.setattr(
+        application_module,
+        "load_database_config",
+        lambda: postgres_config,
+    )
+    monkeypatch.setattr(
+        FlightServiceConfig,
+        "models_dir",
+        property(lambda _self: str(tmp_path / "models")),
+    )
 
 
 def options():
@@ -27,15 +46,14 @@ def options():
 
 def config(tmp_path):
     return FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
 
 
-def test_application_is_runnable_and_owns_state_directory(tmp_path):
+def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
     application = FlightApplication.build(
         config(tmp_path),
         bearer_tokens={"secret": "inventory"},
@@ -54,7 +72,7 @@ def test_application_is_runnable_and_owns_state_directory(tmp_path):
         ))
         assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [1]
 
-        with pytest.raises(StateDirectoryLocked):
+        with pytest.raises(RuntimeDirectoryLocked):
             FlightApplication.build(
                 config(tmp_path),
                 bearer_tokens={"secret": "inventory"},
@@ -255,10 +273,12 @@ def test_shutdown_closes_queue_claims_before_stopping_flight_server():
 def test_restart_recovers_nonterminal_states_without_retrying_running_job(
     tmp_path,
     monkeypatch,
+    postgres_ledger,
 ):
     service_config = config(tmp_path)
-    spool = Spool(service_config.state_dir).initialize()
-    ledger = Ledger(service_config.database_path).initialize()
+    spool = Spool(service_config.runtime_dir, tmp_path / "models").initialize()
+    ledger = postgres_ledger
+    ledger.synchronize_runtime_epoch(spool.storage_epoch())
 
     def create(label):
         return ledger.create_job(
@@ -393,20 +413,22 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
 
 
 def test_flight_serve_cli_contains_only_service_configuration():
+    omitted = build_parser().parse_args(["flight", "serve"])
+    assert omitted.host is None
+    assert omitted.port is None
+    assert not hasattr(omitted, "config")
+    assert not hasattr(omitted, "runtime_dir")
+
     args = build_parser().parse_args([
         "flight",
         "serve",
-        "--state-dir", "/var/lib/transformer",
         "--host", "127.0.0.1",
         "--port", "8815",
-        "--profile", "development",
         "--allow-plaintext",
-        "--bearer-tokens-file", "/run/secrets/flight-tokens.json",
     ])
 
     assert args.action == "flight"
     assert args.flight_action == "serve"
-    assert args.state_dir == "/var/lib/transformer"
     assert args.host == "127.0.0.1"
     assert args.port == 8815
     assert not hasattr(args, "epochs")

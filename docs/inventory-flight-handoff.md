@@ -27,12 +27,12 @@ The Transformer test suite does not depend on an Inventory checkout. No real
 Node-to-PyArrow interoperability run is implied by this document; Inventory
 owns that consumer-side verification.
 
-Inventory receives the service host, port and transport profile through its
+Inventory receives the service host, port and transport settings through its
 deployment configuration; v1 has no endpoint-discovery action. Production
 configuration must include the trusted server CA and server name expected by
 the certificate, plus client certificate/key when mTLS is enabled. Endpoint
 URI spelling is client-library specific, so the normative contract identifies
-the authority and TLS profile rather than inventing a second URI format.
+the authority and TLS settings rather than inventing a second URI format.
 
 ## Actions
 

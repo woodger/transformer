@@ -52,15 +52,15 @@ class OperationalMetrics:
         with self._lock:
             self._gauges[name] = value
 
-    def snapshot(self, state_dir: str | None = None) -> dict:
+    def snapshot(self, runtime_dir: str | None = None) -> dict:
         with self._lock:
             result = {
                 "rpc": dict(sorted(self._rpc.items())),
                 "counters": dict(sorted(self._counters.items())),
                 "gauges": dict(sorted(self._gauges.items())),
             }
-        if state_dir:
-            usage = shutil.disk_usage(state_dir)
+        if runtime_dir:
+            usage = shutil.disk_usage(runtime_dir)
             result["disk"] = {
                 "totalBytes": usage.total,
                 "usedBytes": usage.used,

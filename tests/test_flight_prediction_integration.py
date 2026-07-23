@@ -41,13 +41,11 @@ PREDICTION_COLUMN = "prediction"
 
 def _service_config(tmp_path):
     return FlightServiceConfig(
-        state_dir=str(tmp_path / "state"),
+        runtime_dir=str(tmp_path / "state"),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
         cpu_capacity=1,
-        queue_poll_ms=20,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=1.0,
         maintenance_interval_seconds=60,
@@ -143,9 +141,8 @@ def _streamed_table(client, ticket):
     return pa.Table.from_batches(batches, schema=schema), len(batches)
 
 
-def _seed_model(config):
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+def _seed_model(config, ledger, models_dir):
+    spool = Spool(config.runtime_dir, models_dir).initialize()
     model_config = ModelConfig(
         seq_len=2,
         hidden=8,
@@ -245,13 +242,12 @@ def _seed_model(config):
         model_ref=model_ref,
         label="integration-seed",
         generation=None,
-        checkpoint_path=spool.relative_path(checkpoint_path),
-        metadata_path=spool.relative_path(metadata_path),
+        checkpoint_path=spool.model_relative_path(checkpoint_path),
+        metadata_path=spool.model_relative_path(metadata_path),
         sha256=hashlib.sha256(checkpoint_bytes).hexdigest(),
         metadata=metadata,
         result={"modelRef": model_ref, "checkpoint": {}},
     )
-    ledger.close()
     return model_ref, checkpoint_path
 
 
@@ -276,9 +272,18 @@ def _direct_predict(checkpoint_path, payloads):
     return list(iter_framed_arrow(BytesIO(process.stdout)))
 
 
-def test_real_cpu_flight_prediction_matches_predict_stream(tmp_path):
+def test_real_cpu_flight_prediction_matches_predict_stream(
+    tmp_path,
+    postgres_ledger,
+    postgres_config,
+):
     config = _service_config(tmp_path)
-    model_ref, checkpoint_path = _seed_model(config)
+    models_dir = tmp_path / "models"
+    model_ref, checkpoint_path = _seed_model(
+        config,
+        postgres_ledger,
+        models_dir,
+    )
     first_batches = [
         _batch([
             [0.1, 0.2, 0.3, 0.4],
@@ -296,6 +301,8 @@ def test_real_cpu_flight_prediction_matches_predict_stream(tmp_path):
 
     application = FlightApplication.build(
         config,
+        database_config=postgres_config,
+        models_dir=models_dir,
         bearer_tokens={TOKEN: OWNER},
     )
     client = flight.FlightClient(("localhost", application.server.port))

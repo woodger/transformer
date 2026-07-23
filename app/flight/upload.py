@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import secrets
-import sqlite3
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
@@ -49,14 +48,7 @@ class UploadHandler:
             if exc.errno in _DISK_FULL_ERRNOS:
                 raise ServiceError(
                     ErrorCode.DISK_FULL,
-                    "state directory is full",
-                ) from exc
-            raise
-        except sqlite3.OperationalError as exc:
-            if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL:
-                raise ServiceError(
-                    ErrorCode.DISK_FULL,
-                    "state database is full",
+                    "runtime directory is full",
                 ) from exc
             raise
 
@@ -266,7 +258,7 @@ class UploadHandler:
             if temporary_path is not None:
                 _best_effort_unlink(temporary_path)
             if upload_token is not None and not committed:
-                # If commit raised after SQLite committed, preserve the final
+                # If commit raised after PostgreSQL committed, preserve the final
                 # file and record.  If the reconciliation query itself cannot
                 # run, preserving the file is safer than corrupting a possible
                 # committed input; startup reconciliation will decide later.

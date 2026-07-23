@@ -7,4 +7,3 @@ venv/
 *.pth
 metrics_plots
 models
-state/

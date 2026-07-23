@@ -1,7 +1,10 @@
 import signal
 import threading
 
-from app.flight.config import load_bearer_tokens, load_config
+from app.database import Database, load_database_config
+from app.database.tokens import AccessTokenStore
+from app.flight.auth import InMemoryAccessTokenCache
+from app.flight.config import load_config
 from app.flight.coordinator import JobCoordinator
 from app.flight.ledger import Ledger
 from app.flight.maintenance import MaintenanceService
@@ -10,6 +13,7 @@ from app.flight.output import OutputHandler
 from app.flight.process import recover_process_groups
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
+from app.flight.token_cache import AccessTokenCache, AccessTokenCacheService
 from app.flight.upload import UploadHandler
 from app.flight.worker import WorkerPool
 
@@ -26,6 +30,7 @@ class FlightApplication:
         worker,
         metrics,
         logger,
+        token_cache_service=None,
     ):
         self.config = config
         self.spool = spool
@@ -36,24 +41,37 @@ class FlightApplication:
         self.worker = worker
         self.metrics = metrics
         self.logger = logger
+        self.token_cache_service = token_cache_service
         self._shutdown_lock = threading.Lock()
         self._shutdown_started = False
         self._shutdown_complete = threading.Event()
 
     @classmethod
-    def build(cls, config, *, bearer_tokens=None, logger=None):
+    def build(
+        cls,
+        config,
+        *,
+        database_config=None,
+        models_dir=None,
+        token_cache=None,
+        bearer_tokens=None,
+        logger=None,
+    ):
         logger = logger or JsonLogger()
         metrics = OperationalMetrics()
-        spool = Spool(config.state_dir).initialize()
+        spool = Spool(config.runtime_dir, models_dir or config.models_dir).initialize()
         spool.acquire_lock()
         ledger = None
+        token_cache_service = None
         worker = None
         coordinator = None
         server = None
         maintenance = None
         try:
             precleaned = spool.cleanup_temporary_files()
-            ledger = Ledger(config.database_path).initialize()
+            database_config = database_config or load_database_config()
+            ledger = Ledger(Database(database_config)).initialize()
+            epoch_result = ledger.synchronize_runtime_epoch(spool.storage_epoch())
             process_recovery = recover_process_groups(
                 ledger.list_active_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
@@ -65,6 +83,19 @@ class FlightApplication:
                 temporary_paths=recovery["temporary_paths"],
                 known_job_ids={job["job_id"] for job in ledger.list_jobs()},
             )
+            removed_models = spool.reconcile_model_directories(
+                {model["model_ref"] for model in ledger.list_models()}
+            )
+            if token_cache is None and bearer_tokens is not None:
+                token_cache = InMemoryAccessTokenCache(bearer_tokens)
+            if token_cache is None:
+                token_cache = AccessTokenCache()
+                token_cache_service = AccessTokenCacheService(
+                    database_config,
+                    AccessTokenStore(ledger.database),
+                    token_cache,
+                    logger=logger,
+                ).start()
             worker = WorkerPool(
                 config,
                 ledger,
@@ -98,7 +129,7 @@ class FlightApplication:
             server = TransformerFlightServer(
                 config,
                 coordinator,
-                bearer_tokens or load_bearer_tokens(config),
+                token_cache,
                 upload_handler=upload,
                 output_handler=output,
                 metrics=metrics,
@@ -122,6 +153,7 @@ class FlightApplication:
                 worker,
                 metrics,
                 logger,
+                token_cache_service,
             )
             worker.start()
             maintenance.start()
@@ -150,14 +182,16 @@ class FlightApplication:
                 host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
-                profile=config.profile,
                 recoveredInterruptedJobs=len(recovery["interrupted_jobs"]),
                 recoveredProcessGroups=sum(
                     result.outcome in ("terminated", "killed")
                     for result in process_recovery
                 ),
                 removedOrphans=len(reconciliation["removed"]),
+                removedUnpublishedModels=len(removed_models),
                 removedStartupTemporaries=len(precleaned),
+                runtimeStorageReset=epoch_result["reset"],
+                discardedRuntimeJobs=len(epoch_result["discarded_jobs"]),
                 diskTotalBytes=usage.total,
                 diskUsedBytes=usage.used,
                 diskFreeBytes=usage.free,
@@ -171,6 +205,7 @@ class FlightApplication:
                 server=server,
                 worker=worker,
                 maintenance=maintenance,
+                token_cache_service=token_cache_service,
                 ledger=ledger,
                 spool=spool,
                 worker_timeout=0,
@@ -270,6 +305,7 @@ class FlightApplication:
                 server=self.server,
                 worker=self.worker,
                 maintenance=self.maintenance,
+                token_cache_service=self.token_cache_service,
                 ledger=self.ledger,
                 spool=self.spool,
                 worker_timeout=self.config.shutdown_drain_seconds,
@@ -288,18 +324,15 @@ class FlightApplication:
 
 def run_from_args(args):
     overrides = {
-        "state_dir": args.state_dir,
         "host": args.host,
         "port": args.port,
-        "profile": args.profile,
         "allow_plaintext": args.allow_plaintext,
         "tls_cert_file": args.tls_cert_file,
         "tls_key_file": args.tls_key_file,
         "tls_ca_file": args.tls_ca_file,
         "tls_require_client_cert": args.tls_require_client_cert,
-        "bearer_tokens_file": args.bearer_tokens_file,
     }
-    config = load_config(args.config, overrides=overrides)
+    config = load_config(overrides=overrides)
     FlightApplication.build(config).serve()
 
 
@@ -308,6 +341,7 @@ def _cleanup_runtime(
     server,
     worker,
     maintenance,
+    token_cache_service,
     ledger,
     spool,
     worker_timeout,
@@ -319,6 +353,7 @@ def _cleanup_runtime(
         None if server is None else server.shutdown,
         None if worker is None else lambda: worker.shutdown(worker_timeout),
         None if maintenance is None else lambda: maintenance.shutdown(maintenance_timeout),
+        None if token_cache_service is None else lambda: token_cache_service.shutdown(maintenance_timeout),
         None if ledger is None else ledger.close,
         spool.release_lock,
     )

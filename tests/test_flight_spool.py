@@ -7,20 +7,20 @@ import pytest
 import app.flight.spool as spool_module
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
-from app.flight.spool import Spool, StateDirectoryLocked
+from app.flight.spool import Spool, RuntimeDirectoryLocked
 
 
 @pytest.fixture
 def spool(tmp_path):
-    return Spool(tmp_path / "state").initialize()
+    return Spool(tmp_path / "runtime", tmp_path / "models").initialize()
 
 
-def test_state_directory_lock_excludes_second_service(spool):
-    second = Spool(spool.state_dir).initialize()
+def test_runtime_directory_lock_excludes_second_service(spool):
+    second = Spool(spool.runtime_dir).initialize()
 
     spool.acquire_lock()
     try:
-        with pytest.raises(StateDirectoryLocked, match="already owned"):
+        with pytest.raises(RuntimeDirectoryLocked, match="already owned"):
             second.acquire_lock()
     finally:
         spool.release_lock()
@@ -95,8 +95,8 @@ def test_reconcile_removes_orphans_and_preserves_ledger_references(spool):
     spool.atomic_write_bytes(orphan_input, b"orphan")
     spool.atomic_write_bytes(orphan_output, b"orphan output")
 
-    kept_model = "model-kept"
-    orphan_model = "model-orphan"
+    kept_model = "mdl_kept"
+    orphan_model = "mdl_orphan"
     kept_checkpoint = spool.model_checkpoint_path(kept_model)
     kept_metadata = spool.model_metadata_path(kept_model)
     spool.atomic_write_bytes(kept_checkpoint, b"checkpoint")
@@ -107,11 +107,8 @@ def test_reconcile_removes_orphans_and_preserves_ledger_references(spool):
     dangling_file.write(b"partial")
     dangling_file.close()
 
-    result = spool.reconcile({
-        spool.relative_path(referenced_input),
-        spool.relative_path(kept_checkpoint),
-        spool.relative_path(kept_metadata),
-    })
+    result = spool.reconcile({spool.relative_path(referenced_input)})
+    removed_models = spool.reconcile_model_directories({kept_model})
 
     assert os.path.exists(referenced_input)
     assert os.path.exists(kept_checkpoint)
@@ -121,6 +118,7 @@ def test_reconcile_removes_orphans_and_preserves_ledger_references(spool):
     assert not os.path.exists(spool.model_directory(orphan_model))
     assert not os.path.exists(dangling_path)
     assert result["removed"]
+    assert removed_models == (orphan_model,)
 
 
 def test_startup_reconcile_removes_job_directory_absent_from_ledger(spool):
@@ -179,7 +177,7 @@ def test_preledger_cleanup_removes_only_temporary_artifacts(spool):
     assert spool.relative_path(temporary_path) in removed
 
 
-def test_paths_cannot_escape_state_directory_or_follow_external_symlink(spool, tmp_path):
+def test_paths_cannot_escape_runtime_directory_or_follow_external_symlink(spool, tmp_path):
     with pytest.raises(ValueError, match="traversal"):
         spool.absolute_path("../outside.arrow")
     with pytest.raises(ValueError, match="relative"):
@@ -187,7 +185,7 @@ def test_paths_cannot_escape_state_directory_or_follow_external_symlink(spool, t
 
     outside = tmp_path / "outside"
     outside.mkdir()
-    link = os.path.join(spool.state_dir, "linked")
+    link = os.path.join(spool.runtime_dir, "linked")
     os.symlink(outside, link, target_is_directory=True)
     with pytest.raises(ValueError, match="symlink"):
         spool.absolute_path("linked/file.arrow")

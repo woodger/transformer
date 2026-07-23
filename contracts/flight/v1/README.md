@@ -126,9 +126,8 @@ the 16 MiB value is a compatibility target rather than a server transport hard
 limit. Logical payload/row/job limits are enforced by the application. See
 `../../../docs/flight-dependency-note.md` for the exact impact.
 
-## Security profile
+## Transport security
 
-Production uses TLS and bearer authentication; mTLS is independently optional.
-Plaintext is a temporary, explicitly enabled `development` or `lan` profile,
-not a production security profile. Explicit CUDA selection never falls back to
-CPU regardless of TLS profile.
+Bearer authentication is always required. TLS and mTLS are optional transport
+settings; plaintext must be enabled explicitly. Explicit CUDA selection never
+falls back to CPU regardless of transport security.

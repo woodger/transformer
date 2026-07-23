@@ -12,7 +12,9 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
+from sqlalchemy import func, select
 
+from app.database.models import InputUpload
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import CONTRACT_NAME, ErrorCode, FIT_SCHEMA_ID, JobState
 from app.flight.coordinator import JobCoordinator
@@ -80,17 +82,21 @@ def create_fit_job(ledger, *, owner="inventory", job_id=None):
     )
 
 
+def active_upload_count(ledger):
+    with ledger.connection() as connection:
+        return connection.scalar(select(func.count()).select_from(InputUpload))
+
+
 @pytest.fixture
-def data_plane(tmp_path):
+def data_plane(tmp_path, postgres_ledger):
     config = FlightServiceConfig(
-        state_dir=str(tmp_path),
+        runtime_dir=str(tmp_path / "runtime"),
         port=0,
-        profile="development",
         allow_plaintext=True,
         disk_min_free_bytes=1,
     ).validate()
-    spool = Spool(config.state_dir).initialize()
-    ledger = Ledger(config.database_path).initialize()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    ledger = postgres_ledger
     coordinator = JobCoordinator(
         config,
         ledger,
@@ -298,8 +304,7 @@ def test_partial_upload_never_becomes_committed(data_plane):
         )
 
     assert ledger.list_inputs(job["job_id"]) == []
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
     input_directory = Path(spool.input_directory(job["job_id"]))
     assert not input_directory.exists() or list(input_directory.iterdir()) == []
 
@@ -334,8 +339,7 @@ def test_cancel_during_upload_never_publishes_a_committed_input(data_plane):
     assert ledger.get_job(job["job_id"])["state"] == JobState.CANCELLED.value
     assert ledger.list_inputs(job["job_id"]) == []
     assert not os.path.exists(spool.input_path(job["job_id"], 0))
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
 
 
 def test_lost_put_result_after_durable_commit_does_not_rollback_input(data_plane):
@@ -399,8 +403,7 @@ def test_physical_ipc_size_is_limited_during_zero_row_batch_stream(data_plane):
 
     assert reader.reads < reader.maximum_reads
     assert ledger.list_inputs(job["job_id"]) == []
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
 
 
 def test_oversized_ordinal_is_rejected_before_staging(data_plane):
@@ -496,8 +499,7 @@ def test_commit_failure_removes_published_file_and_reservation(
 
     assert not os.path.exists(spool.input_path(job["job_id"], 0))
     assert ledger.list_inputs(job["job_id"]) == []
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
 
 
 def test_disk_full_during_durable_rename_has_stable_code_and_no_commit(
@@ -532,8 +534,7 @@ def test_disk_full_during_durable_rename_has_stable_code_and_no_commit(
 
     assert error.value.code.value == "DISK_FULL"
     assert ledger.list_inputs(job["job_id"]) == []
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
 
 
 def test_post_rename_directory_fsync_failure_leaves_no_live_orphan(
@@ -571,8 +572,7 @@ def test_post_rename_directory_fsync_failure_leaves_no_live_orphan(
 
     assert ledger.list_inputs(job["job_id"]) == []
     assert not os.path.exists(spool.input_path(job["job_id"], 0))
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
 
 
 def test_post_staging_watermark_does_not_double_count_payload_bytes(
@@ -642,7 +642,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
         ),
     )
 
-    with pytest.raises(ServiceError, match="state directory is full"):
+    with pytest.raises(ServiceError, match="runtime directory is full"):
         upload.handle(
             "inventory",
             descriptor,
@@ -655,8 +655,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
         )
 
     assert ledger.list_inputs(job["job_id"]) == []
-    with ledger.connection() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM input_uploads").fetchone()[0] == 0
+    assert active_upload_count(ledger) == 0
     directory = Path(spool.input_directory(job["job_id"]))
     assert not directory.exists() or list(directory.iterdir()) == []
 

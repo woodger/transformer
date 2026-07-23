@@ -7,6 +7,51 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-23
+
+### Added
+
+- Добавлены PostgreSQL control plane на SQLAlchemy 2, Alembic migrations и
+  команды `db migrations status|apply|rollback`. Параметры подключения читаются
+  из `.env`/окружения через `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`,
+  `POSTGRES_USER` и `POSTGRES_PASSWORD`.
+- Добавлены команды `auth tokens issue|list|revoke`. API tokens формата
+  `a.<base64url>` хранятся в PostgreSQL, а Flight middleware проверяет их digest
+  по in-memory cache, обновляемому через `LISTEN/NOTIFY`.
+
+### Changed
+
+- PostgreSQL стал единственным durable source of truth для jobs, attempts,
+  idempotency, output tickets, model metadata и access tokens. Worker lanes
+  получают задачи через in-memory FIFO и не опрашивают базу данных в idle loop.
+- Незавершённые Arrow payloads и attempt artifacts перенесены в
+  `/tmp/transformer`. Storage epoch не позволяет продолжить job после потери
+  runtime filesystem: все связанные jobs отклоняются и удаляются, включая
+  ранее завершённые runtime outputs.
+- Только успешно обученные модели атомарно публикуются в persistent `models/`;
+  их `modelRef` и access tokens переживают потерю `/tmp`.
+- Command-specific help больше не показывает технический CLI default `None`:
+  optional outputs, checkpoint-derived model parameters и Flight overrides
+  описывают реальное fallback-поведение, а `--host` и `--port` показывают
+  встроенные значения `127.0.0.1` и `8815`.
+- `flight serve --help` теперь описывает назначение команды и явно фиксирует
+  зависимости transport, TLS, mTLS и authentication parameters.
+- Leaf command help больше не повторяет строку `-h, --help`; сам help-флаг
+  остаётся доступным и документируется в глобальном `Usage`.
+- Environment namespace конфигурации сервиса сокращён с
+  `TRANSFORMER_FLIGHT_*` до `TRANSFORMER_*`; прежний namespace больше не
+  поддерживается.
+
+### Removed
+
+- `flight serve` больше не принимает `--config` и `--state-dir`; загрузка
+  service configuration из JSON-файла удалена.
+- Удалены `--profile`, `TRANSFORMER_PROFILE` и поле `profile` service config.
+  Plaintext transport теперь включается только через `--allow-plaintext` или
+  `TRANSFORMER_ALLOW_PLAINTEXT=true` без дополнительных host restrictions.
+- Удалены token JSON file и его CLI/environment configuration. Access tokens
+  управляются только через PostgreSQL-backed команды `auth tokens`.
+
 ## [0.1.3] - 2026-07-22
 
 ### Changed
@@ -54,8 +99,8 @@
 ### Added
 
 - Добавлен single-instance Arrow Flight v1 job service для remote fit и predict:
-  durable SQLite/WAL ledger, filesystem spool, очереди, subprocess workers, cancellation,
-  recovery, retention и operational observability.
+  durable database ledger, filesystem spool, очереди, subprocess workers,
+  cancellation, recovery, retention и operational observability.
 - Добавлен нормативный Flight contract v1 с JSON Schemas, golden JSON/Arrow fixtures,
   ADR и production runbook.
 - CLI переведён на настоящие mode-specific subcommands `fit`, `predict`,
@@ -113,7 +158,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/woodger/transformer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/woodger/transformer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/woodger/transformer/compare/v0.1.0...v0.1.1

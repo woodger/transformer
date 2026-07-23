@@ -1,35 +1,31 @@
 from dataclasses import dataclass, fields, replace
-import ipaddress
-import json
 import math
 import os
 from pathlib import Path
 
 from app.config import PROJECT_ROOT
-from app.flight.auth import validate_bearer_credentials
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
 
-ENV_PREFIX = "TRANSFORMER_FLIGHT_"
+ENV_PREFIX = "TRANSFORMER_"
+LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 
 
-def _default_state_dir() -> str:
-    return os.path.join(PROJECT_ROOT, "state")
+def _default_runtime_dir() -> str:
+    return os.path.join(os.sep, "tmp", "transformer")
 
 
 @dataclass(frozen=True)
 class FlightServiceConfig:
-    state_dir: str = _default_state_dir()
+    runtime_dir: str = _default_runtime_dir()
     host: str = "127.0.0.1"
     port: int = 8815
-    profile: str = "production"
     allow_plaintext: bool = False
 
     tls_cert_file: str | None = None
     tls_key_file: str | None = None
     tls_ca_file: str | None = None
     tls_require_client_cert: bool = False
-    bearer_tokens_file: str | None = None
 
     max_message_bytes: int = 16 * 1024 * 1024
     target_batch_bytes: int = 8 * 1024 * 1024
@@ -42,7 +38,6 @@ class FlightServiceConfig:
 
     cpu_capacity: int = 2
     cuda_capacity: int = 1
-    queue_poll_ms: int = 100
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
@@ -57,24 +52,20 @@ class FlightServiceConfig:
         return bool(self.tls_cert_file or self.tls_key_file)
 
     @property
-    def database_path(self) -> str:
-        return os.path.join(self.state_dir, "jobs.sqlite3")
-
-    @property
     def spool_dir(self) -> str:
-        return os.path.join(self.state_dir, "spool")
+        return os.path.join(self.runtime_dir, "spool")
 
     @property
     def models_dir(self) -> str:
-        return os.path.join(self.state_dir, "models")
+        return os.path.join(PROJECT_ROOT, "models")
 
     @property
     def lock_path(self) -> str:
-        return os.path.join(self.state_dir, "service.lock")
+        return os.path.join(self.runtime_dir, "service.lock")
 
     def validate(self) -> "FlightServiceConfig":
-        if not isinstance(self.state_dir, str) or not self.state_dir:
-            raise ValueError("state_dir must not be empty")
+        if not isinstance(self.runtime_dir, str) or not self.runtime_dir:
+            raise ValueError("runtime_dir must not be empty")
         if not isinstance(self.host, str) or not self.host:
             raise ValueError("host must be a non-empty string")
         if (
@@ -84,10 +75,6 @@ class FlightServiceConfig:
             or self.port > 65535
         ):
             raise ValueError("port must be between 0 and 65535")
-        if not isinstance(self.profile, str) or self.profile not in (
-            "production", "development", "lan"
-        ):
-            raise ValueError("profile must be one of: production, development, lan")
         for name in ("allow_plaintext", "tls_require_client_cert"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"{name} must be a boolean")
@@ -106,15 +93,7 @@ class FlightServiceConfig:
             if not self.allow_plaintext:
                 raise ValueError(
                     "plaintext Flight is disabled; configure TLS or explicitly "
-                    "enable a development/LAN plaintext profile"
-                )
-            if self.profile not in ("development", "lan"):
-                raise ValueError(
-                    "plaintext is allowed only in development or lan profile"
-                )
-            if not _is_loopback(self.host) and self.profile != "lan":
-                raise ValueError(
-                    "non-loopback plaintext requires the explicit lan profile"
+                    "enable plaintext"
                 )
 
         positive_integers = (
@@ -128,7 +107,6 @@ class FlightServiceConfig:
             "max_active_jobs_per_subject",
             "cpu_capacity",
             "cuda_capacity",
-            "queue_poll_ms",
             "ticket_ttl_seconds",
             "disk_min_free_bytes",
             "retention_seconds",
@@ -169,7 +147,6 @@ class FlightServiceConfig:
             "tls_cert_file",
             "tls_key_file",
             "tls_ca_file",
-            "bearer_tokens_file",
         ):
             path = getattr(self, path_name)
             if path is not None and not isinstance(path, str):
@@ -180,20 +157,20 @@ class FlightServiceConfig:
 
 
 def load_config(
-    path: str | None = None,
     *,
     environ: dict[str, str] | None = None,
     overrides: dict | None = None,
 ) -> FlightServiceConfig:
     values = {}
-    if path:
-        with open(path, "r", encoding="utf-8") as source:
-            document = json.load(source)
-        if not isinstance(document, dict):
-            raise ValueError("Flight configuration must be a JSON object")
-        values.update(_normalize_mapping(document))
-
     env = os.environ if environ is None else environ
+    legacy_keys = sorted(
+        key for key in env if key.startswith(LEGACY_ENV_PREFIX)
+    )
+    if legacy_keys:
+        raise ValueError(
+            "unsupported legacy Transformer environment variable(s): "
+            f"{', '.join(legacy_keys)}; remove FLIGHT from the prefix"
+        )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
@@ -220,19 +197,6 @@ def load_config(
     return FlightServiceConfig(**values).validate()
 
 
-def load_bearer_tokens(config: FlightServiceConfig) -> dict[str, str]:
-    if not config.bearer_tokens_file:
-        raise ValueError("bearer_tokens_file is required")
-    with open(config.bearer_tokens_file, "r", encoding="utf-8") as source:
-        document = json.load(source)
-    if isinstance(document, dict) and "tokens" in document:
-        document = document["tokens"]
-    if not isinstance(document, dict) or not document:
-        raise ValueError("bearer token file must contain a non-empty token-to-subject object")
-
-    return validate_bearer_credentials(document)
-
-
 def tls_server_options(config: FlightServiceConfig) -> dict:
     if not config.tls_enabled:
         return {}
@@ -249,37 +213,6 @@ def tls_server_options(config: FlightServiceConfig) -> dict:
 
 def with_bound_port(config: FlightServiceConfig, port: int) -> FlightServiceConfig:
     return replace(config, port=port)
-
-
-def _normalize_mapping(document: dict) -> dict:
-    aliases = {
-        "stateDir": "state_dir",
-        "allowPlaintext": "allow_plaintext",
-        "tlsCertFile": "tls_cert_file",
-        "tlsKeyFile": "tls_key_file",
-        "tlsCaFile": "tls_ca_file",
-        "tlsRequireClientCert": "tls_require_client_cert",
-        "bearerTokensFile": "bearer_tokens_file",
-        "maxMessageBytes": "max_message_bytes",
-        "targetBatchBytes": "target_batch_bytes",
-        "maxBatchBytes": "max_batch_bytes",
-        "maxPayloadBytes": "max_payload_bytes",
-        "maxRowsPerPayload": "max_rows_per_payload",
-        "maxPayloadsPerJob": "max_payloads_per_job",
-        "maxJobBytes": "max_job_bytes",
-        "maxActiveJobsPerSubject": "max_active_jobs_per_subject",
-        "cpuCapacity": "cpu_capacity",
-        "cudaCapacity": "cuda_capacity",
-        "queuePollMs": "queue_poll_ms",
-        "ticketTtlSeconds": "ticket_ttl_seconds",
-        "cancelGraceSeconds": "cancel_grace_seconds",
-        "shutdownDrainSeconds": "shutdown_drain_seconds",
-        "diskMinFreeBytes": "disk_min_free_bytes",
-        "retentionSeconds": "retention_seconds",
-        "maintenanceIntervalSeconds": "maintenance_interval_seconds",
-        "subprocessTimeoutSeconds": "subprocess_timeout_seconds",
-    }
-    return {aliases.get(key, key): value for key, value in document.items()}
 
 
 def _parse_environment_value(value: str, annotation, key: str):
@@ -302,12 +235,3 @@ def _parse_environment_value(value: str, annotation, key: str):
         except ValueError as exc:
             raise ValueError(f"{key} must be a number") from exc
     return value
-
-
-def _is_loopback(host: str) -> bool:
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
