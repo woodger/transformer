@@ -5,7 +5,7 @@ import os
 import signal
 import time
 import uuid
-from typing import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from app.flight.records import (
     RecoverableAttemptRecord,
@@ -42,7 +42,7 @@ class ProcessRecoveryResult:
 
 def read_boot_id(*, path: str = _BOOT_ID_PATH) -> str:
     try:
-        with open(path, "r", encoding="ascii") as source:
+        with open(path, encoding="ascii") as source:
             value = source.read().strip().lower()
         parsed = uuid.UUID(value)
     except (OSError, ValueError) as exc:

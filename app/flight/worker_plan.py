@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import os
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 from app.flight.constants import ErrorCode
 from app.flight.records import ExecutionJobRecord

@@ -447,7 +447,7 @@ def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
 
 
 def test_model_config_rejects_hidden_not_divisible_by_nhead():
-    with pytest.raises(ValueError, match="hidden .* must be divisible by nhead"):
+    with pytest.raises(ValueError, match=r"hidden .* must be divisible by nhead"):
         ModelConfig(seq_len=10, hidden=30, nhead=8)
 
 
@@ -592,7 +592,7 @@ def test_device_auto_selects_cuda_only_when_available(monkeypatch):
 def test_explicit_cuda_errors_when_unavailable(monkeypatch):
     monkeypatch.setattr("app.runtime.device.torch.cuda.is_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="CUDA .* not available"):
+    with pytest.raises(RuntimeError, match=r"CUDA .* not available"):
         get_device("cuda")
 
 

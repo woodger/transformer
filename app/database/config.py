@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Mapping
 
 from dotenv import dotenv_values
 from sqlalchemy import URL

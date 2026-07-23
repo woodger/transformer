@@ -12,7 +12,7 @@ import signal
 import subprocess
 import threading
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
@@ -469,7 +469,7 @@ class WorkerSubprocessRunner:
                         raise WorkerSubprocessError(
                             ErrorCode.MALFORMED_OUTPUT,
                             "fit subprocess did not produce metrics JSONL",
-                        )
+                        ) from None
                     finished.wait(0.05)
                     continue
                 identity = (stat.st_dev, stat.st_ino)

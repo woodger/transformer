@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 import shutil
 import subprocess
@@ -383,8 +383,8 @@ def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
             OutputTicket,
             hashlib.sha256(ticket.ticket).hexdigest(),
         )
-        record.expires_at = datetime.fromtimestamp(0, timezone.utc)
-    with pytest.raises(pa.ArrowInvalid, match="FAILED_PRECONDITION.*expired"):
+        record.expires_at = datetime.fromtimestamp(0, UTC)
+    with pytest.raises(pa.ArrowInvalid, match=r"FAILED_PRECONDITION.*expired"):
         client.do_get(ticket, options=_auth()).read_all()
 
     with pytest.raises(pa.ArrowKeyError, match="NOT_FOUND"):

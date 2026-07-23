@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -66,7 +66,7 @@ class Ledger:
         self._artifacts = ArtifactLedgerSlice(self._sessions)
         self._maintenance = MaintenanceLedgerSlice(self._sessions)
 
-    def initialize(self) -> "Ledger":
+    def initialize(self) -> Ledger:
         require_current_schema(self.database.config)
         return self
 

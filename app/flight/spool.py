@@ -9,7 +9,8 @@ import re
 import shutil
 import tempfile
 import uuid
-from typing import BinaryIO, Iterator, Sequence
+from typing import BinaryIO
+from collections.abc import Iterator, Sequence
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
@@ -30,7 +31,7 @@ class RuntimeDirectoryLock:
         self.path = os.path.abspath(os.fspath(path))
         self._file: BinaryIO | None = None
 
-    def acquire(self) -> "RuntimeDirectoryLock":
+    def acquire(self) -> RuntimeDirectoryLock:
         if self._file is not None:
             return self
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -58,7 +59,7 @@ class RuntimeDirectoryLock:
             self._file.close()
             self._file = None
 
-    def __enter__(self) -> "RuntimeDirectoryLock":
+    def __enter__(self) -> RuntimeDirectoryLock:
         return self.acquire()
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -87,7 +88,7 @@ class Spool:
         self.epoch_path = os.path.join(self.runtime_dir, "storage-epoch")
         self.lock = RuntimeDirectoryLock(os.path.join(self.runtime_dir, "service.lock"))
 
-    def initialize(self) -> "Spool":
+    def initialize(self) -> Spool:
         created = []
         for directory in (self.runtime_dir, self.spool_dir, self.jobs_dir, self.models_dir):
             if not os.path.isdir(directory):
@@ -108,7 +109,7 @@ class Spool:
     def storage_epoch(self) -> str:
         """Return the runtime filesystem generation, creating it when absent."""
         try:
-            with open(self.epoch_path, "r", encoding="ascii") as source:
+            with open(self.epoch_path, encoding="ascii") as source:
                 value = source.read().strip()
             return _uuid_component(value, "storage epoch")
         except FileNotFoundError:

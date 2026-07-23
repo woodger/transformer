@@ -234,7 +234,7 @@ class DisconnectingReader:
         try:
             return next(self._chunks)
         except StopIteration:
-            raise OSError("client disconnected")
+            raise OSError("client disconnected") from None
 
 
 class CompleteReader:

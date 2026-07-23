@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import hashlib
 import json
 import os
 from pathlib import PurePosixPath
 import re
 import uuid
-from typing import Iterator
+from collections.abc import Iterator
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -106,11 +106,11 @@ def digest(value: str, label: str) -> None:
 
 
 def now(value: float | None) -> datetime:
-    return datetime.now(timezone.utc) if value is None else at(value)
+    return datetime.now(UTC) if value is None else at(value)
 
 
 def at(value: float) -> datetime:
-    return datetime.fromtimestamp(float(value), timezone.utc)
+    return datetime.fromtimestamp(float(value), UTC)
 
 
 def advisory_lock(session: Session, *parts: str) -> None:

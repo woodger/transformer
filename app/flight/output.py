@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -48,7 +48,7 @@ class OutputHandler:
             expiresAt=expires_at,
         )
         expiry = pa.scalar(
-            datetime.fromtimestamp(expires_at, tz=timezone.utc),
+            datetime.fromtimestamp(expires_at, tz=UTC),
             type=pa.timestamp("s", tz="UTC"),
         )
         endpoint = flight.FlightEndpoint(

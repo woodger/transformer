@@ -41,7 +41,7 @@ def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):
 
 def load_metrics_jsonl(path: str) -> list[dict]:
     rows = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import base64
 import secrets
 import uuid
@@ -32,7 +32,7 @@ class AccessTokenStore:
             token_id=str(uuid.uuid4()),
             token=token,
             subject=subject,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         with self.database.transaction() as session:
             session.add(record)
@@ -56,7 +56,7 @@ class AccessTokenStore:
             if record is None:
                 raise LookupError(f"API access token not found: {token_id}")
             if record.revoked_at is None:
-                record.revoked_at = datetime.now(timezone.utc)
+                record.revoked_at = datetime.now(UTC)
                 session.flush()
             return _record(record)
 

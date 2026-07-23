@@ -62,7 +62,7 @@ class AccessTokenCacheService:
         self._thread: threading.Thread | None = None
         self._startup_error: BaseException | None = None
 
-    def start(self, timeout: float = 10.0) -> "AccessTokenCacheService":
+    def start(self, timeout: float = 10.0) -> AccessTokenCacheService:
         if self._thread is not None:
             return self
         self._thread = threading.Thread(

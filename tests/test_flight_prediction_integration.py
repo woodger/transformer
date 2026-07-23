@@ -264,8 +264,7 @@ def _direct_predict(checkpoint_path, payloads):
         ],
         cwd=PROJECT_ROOT,
         input=_framed_payloads(payloads),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
         timeout=30,
     )

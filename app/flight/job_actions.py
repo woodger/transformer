@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import time
-from typing import Callable
+from collections.abc import Callable
 import uuid
 
 from app.flight.constants import (
@@ -667,7 +667,7 @@ def _timestamp(value) -> str | None:
     if value is None:
         return None
     return (
-        datetime.fromtimestamp(value, tz=timezone.utc)
+        datetime.fromtimestamp(value, tz=UTC)
         .isoformat()
         .replace("+00:00", "Z")
     )

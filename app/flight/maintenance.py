@@ -74,7 +74,7 @@ class MaintenanceService:
         thread = self._thread
         return thread is not None and thread.is_alive()
 
-    def start(self) -> "MaintenanceService":
+    def start(self) -> MaintenanceService:
         with self._lifecycle_lock:
             if self._thread is not None:
                 return self

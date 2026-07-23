@@ -6,7 +6,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import JobState
@@ -118,7 +118,7 @@ class WorkerPool:
     def lane_counts(self) -> dict[str, int]:
         return {"cpu": self.config.cpu_capacity, "cuda": 1}
 
-    def start(self) -> "WorkerPool":
+    def start(self) -> WorkerPool:
         with self._lifecycle_lock:
             if self._started:
                 return self

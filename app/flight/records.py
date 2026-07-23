@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 from app.flight.constants import JobState
 from app.training.run_config import ModelConfig, TrainConfig

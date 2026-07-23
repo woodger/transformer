@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import errno
 import threading
 import time
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
