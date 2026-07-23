@@ -6,6 +6,24 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ======================
+# Server
+# ======================
+RUNTIME_DIR = "/tmp/transformer"
+HOST = "127.0.0.1"
+PORT = 8815
+ALLOW_PLAINTEXT = True
+
+TLS_CERT_FILE = None
+TLS_KEY_FILE = None
+TLS_CA_FILE = None
+TLS_REQUIRE_CLIENT_CERT = False
+
+CPU_CAPACITY = 2
+CUDA_CAPACITY = 1
+DISK_MIN_FREE_BYTES = 1024 * 1024 * 1024
+RETENTION_SECONDS = 7 * 24 * 60 * 60
+
+# ======================
 # Model
 # ======================
 D_MODEL = 256

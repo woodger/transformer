@@ -3,28 +3,52 @@ import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from app.config import PROJECT_ROOT
+from app.config import (
+    ALLOW_PLAINTEXT,
+    CPU_CAPACITY,
+    CUDA_CAPACITY,
+    DISK_MIN_FREE_BYTES,
+    HOST,
+    PORT,
+    PROJECT_ROOT,
+    RETENTION_SECONDS,
+    RUNTIME_DIR,
+    TLS_CA_FILE,
+    TLS_CERT_FILE,
+    TLS_KEY_FILE,
+    TLS_REQUIRE_CLIENT_CERT,
+)
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
-
-
-def _default_runtime_dir() -> str:
-    return os.path.join(os.sep, "tmp", "transformer")
+_APP_CONFIG_FIELDS = frozenset({
+    "allow_plaintext",
+    "cpu_capacity",
+    "cuda_capacity",
+    "disk_min_free_bytes",
+    "host",
+    "port",
+    "retention_seconds",
+    "runtime_dir",
+    "tls_ca_file",
+    "tls_cert_file",
+    "tls_key_file",
+    "tls_require_client_cert",
+})
 
 
 @dataclass(frozen=True)
 class FlightServiceConfig:
-    runtime_dir: str = _default_runtime_dir()
-    host: str = "127.0.0.1"
-    port: int = 8815
-    allow_plaintext: bool = False
+    runtime_dir: str = RUNTIME_DIR
+    host: str = HOST
+    port: int = PORT
+    allow_plaintext: bool = ALLOW_PLAINTEXT
 
-    tls_cert_file: str | None = None
-    tls_key_file: str | None = None
-    tls_ca_file: str | None = None
-    tls_require_client_cert: bool = False
+    tls_cert_file: str | None = TLS_CERT_FILE
+    tls_key_file: str | None = TLS_KEY_FILE
+    tls_ca_file: str | None = TLS_CA_FILE
+    tls_require_client_cert: bool = TLS_REQUIRE_CLIENT_CERT
 
     max_message_bytes: int = 16 * 1024 * 1024
     target_batch_bytes: int = 8 * 1024 * 1024
@@ -35,14 +59,14 @@ class FlightServiceConfig:
     max_job_bytes: int = 64 * 1024 * 1024 * 1024
     max_active_jobs_per_subject: int = 32
 
-    cpu_capacity: int = 2
-    cuda_capacity: int = 1
+    cpu_capacity: int = CPU_CAPACITY
+    cuda_capacity: int = CUDA_CAPACITY
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
 
-    disk_min_free_bytes: int = 1024 * 1024 * 1024
-    retention_seconds: int = 7 * 24 * 60 * 60
+    disk_min_free_bytes: int = DISK_MIN_FREE_BYTES
+    retention_seconds: int = RETENTION_SECONDS
     maintenance_interval_seconds: int = 60
     subprocess_timeout_seconds: float = 24 * 60 * 60
 
@@ -168,15 +192,18 @@ def load_config(
     if legacy_keys:
         raise ValueError(
             "unsupported legacy Transformer environment variable(s): "
-            f"{', '.join(legacy_keys)}; remove FLIGHT from the prefix"
+            f"{', '.join(legacy_keys)}; use the current app/config.py and "
+            "TRANSFORMER_* settings"
         )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            f"use {ENV_PREFIX}HOST"
+            "configure HOST in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
+        if field.name in _APP_CONFIG_FIELDS:
+            continue
         key = ENV_PREFIX + field.name.upper()
         if key not in env:
             continue

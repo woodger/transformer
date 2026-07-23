@@ -1,6 +1,14 @@
 from configparser import ConfigParser
 from pathlib import Path
 
+from app.config import (
+    ALLOW_PLAINTEXT,
+    CPU_CAPACITY,
+    CUDA_CAPACITY,
+    HOST,
+    PORT,
+    RUNTIME_DIR,
+)
 from app.database.config import load_database_config
 from app.flight.config import FlightServiceConfig, load_config
 
@@ -97,23 +105,19 @@ def test_environment_example_uses_current_configuration_contract():
     keys = set(environment)
     content = "\n".join(lines)
 
-    assert {
+    assert keys == {
         "POSTGRES_HOST",
         "POSTGRES_PORT",
         "POSTGRES_DB",
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
-        "TRANSFORMER_RUNTIME_DIR",
-        "TRANSFORMER_HOST",
-        "TRANSFORMER_PORT",
-        "TRANSFORMER_ALLOW_PLAINTEXT",
-        "TRANSFORMER_CPU_CAPACITY",
-        "TRANSFORMER_CUDA_CAPACITY",
-    } <= keys
+    }
     assert "POSTGRES_SSLMODE" not in content
     assert "TRANSFORMER_FLIGHT_" not in content
     assert "BEARER_TOKENS_FILE" not in content
     assert "TRANSFORMER_PROFILE" not in content
+    assert "TRANSFORMER_HOST" not in content
+    assert "TRANSFORMER_PORT" not in content
 
     database = load_database_config(
         environ=environment,
@@ -121,6 +125,9 @@ def test_environment_example_uses_current_configuration_contract():
     )
     flight = load_config(environ=environment)
     assert database.port == 5432
-    assert flight.runtime_dir == "/tmp/transformer"
-    assert flight.host == "127.0.0.1"
-    assert flight.port == 8815
+    assert flight.runtime_dir == RUNTIME_DIR
+    assert flight.host == HOST
+    assert flight.port == PORT
+    assert flight.allow_plaintext is ALLOW_PLAINTEXT
+    assert flight.cpu_capacity == CPU_CAPACITY
+    assert flight.cuda_capacity == CUDA_CAPACITY

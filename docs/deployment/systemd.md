@@ -13,6 +13,9 @@
 `/home/nerv/transformer/.env`. Не перезаписывайте уже настроенный файл с
 доступами к PostgreSQL.
 
+Параметры Transformer service задаются в `/home/nerv/transformer/app/config.py`.
+Проверьте их перед первым запуском.
+
 ```bash
 sudo chown nerv:nerv /home/nerv/transformer/.env
 sudo chmod 0600 /home/nerv/transformer/.env
@@ -50,6 +53,8 @@ nerv:nerv 700 /tmp/transformer
 
 Потеря `/tmp/transformer` инвалидирует связанные задания. Успешно
 опубликованные модели остаются в `/home/nerv/transformer/models`.
+Если `RUNTIME_DIR` изменён в `app/config.py`, тот же путь необходимо указать в
+tmpfiles configuration.
 
 ## Создать unit-файл
 
@@ -142,8 +147,9 @@ sudo -u nerv -H /usr/bin/python3.11 -c \
 
 ## Открыть порт 8815
 
-Этот шаг нужен, только если `TRANSFORMER_HOST` не является loopback-адресом и
-к сервису подключается удалённый Inventory.
+Этот шаг нужен, только если `HOST` в `app/config.py` или переданный через
+`--host` адрес не является loopback-адресом и к сервису подключается удалённый
+Inventory.
 
 Если используется `firewalld`:
 

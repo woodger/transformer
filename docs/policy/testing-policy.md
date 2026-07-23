@@ -68,9 +68,12 @@ JSON Schemas проверяются как Draft 2020-12 через `jsonschema`
 Хорошо:
 
 ```python
-def test_plaintext_requires_explicit_opt_in(tmp_path):
+def test_disabled_plaintext_requires_tls(tmp_path):
     with pytest.raises(ValueError, match="plaintext Flight is disabled"):
-        FlightServiceConfig(runtime_dir=str(tmp_path)).validate()
+        FlightServiceConfig(
+            runtime_dir=str(tmp_path),
+            allow_plaintext=False,
+        ).validate()
 ```
 
 Плохо:

@@ -2,19 +2,46 @@ import math
 
 import pytest
 
+from app.config import (
+    ALLOW_PLAINTEXT,
+    CPU_CAPACITY,
+    CUDA_CAPACITY,
+    DISK_MIN_FREE_BYTES,
+    HOST,
+    PORT,
+    RETENTION_SECONDS,
+    RUNTIME_DIR,
+    TLS_CA_FILE,
+    TLS_CERT_FILE,
+    TLS_KEY_FILE,
+    TLS_REQUIRE_CLIENT_CERT,
+)
 from app.flight.config import FlightServiceConfig, load_config
 
 
-def test_plaintext_requires_explicit_opt_in(tmp_path):
+def test_service_defaults_come_from_app_config(tmp_path):
     state = tmp_path / "state"
-    with pytest.raises(ValueError, match="plaintext Flight is disabled"):
-        FlightServiceConfig(runtime_dir=str(state)).validate()
-
     config = FlightServiceConfig(
         runtime_dir=str(state),
-        allow_plaintext=True,
     ).validate()
-    assert config.host == "127.0.0.1"
+    assert config.runtime_dir == str(state)
+    assert config.host == HOST
+    assert config.port == PORT
+    assert config.allow_plaintext is ALLOW_PLAINTEXT
+    assert config.tls_cert_file == TLS_CERT_FILE
+    assert config.tls_key_file == TLS_KEY_FILE
+    assert config.tls_ca_file == TLS_CA_FILE
+    assert config.tls_require_client_cert is TLS_REQUIRE_CLIENT_CERT
+    assert config.cpu_capacity == CPU_CAPACITY
+    assert config.cuda_capacity == CUDA_CAPACITY
+    assert config.disk_min_free_bytes == DISK_MIN_FREE_BYTES
+    assert config.retention_seconds == RETENTION_SECONDS
+
+    with pytest.raises(ValueError, match="plaintext Flight is disabled"):
+        FlightServiceConfig(
+            runtime_dir=str(state),
+            allow_plaintext=False,
+        ).validate()
 
 
 def test_explicit_plaintext_allows_non_loopback_host(tmp_path):
@@ -44,21 +71,18 @@ def test_tls_and_device_capacity_are_independent(tmp_path):
     assert not hasattr(config, "device")
 
 
-def test_environment_and_cli_precedence(tmp_path):
+def test_remaining_environment_and_cli_precedence():
     config = load_config(
         environ={
-            "TRANSFORMER_RUNTIME_DIR": str(tmp_path / "runtime"),
-            "TRANSFORMER_CPU_CAPACITY": "4",
-            "TRANSFORMER_HOST": "127.0.0.3",
-            "TRANSFORMER_ALLOW_PLAINTEXT": "true",
+            "TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT": "4",
         },
         overrides={"host": "127.0.0.4", "port": 0},
     )
 
-    assert config.cpu_capacity == 4
+    assert config.max_active_jobs_per_subject == 4
     assert config.host == "127.0.0.4"
     assert config.port == 0
-    assert config.runtime_dir == str(tmp_path / "runtime")
+    assert config.runtime_dir == RUNTIME_DIR
 
 
 def test_config_rejects_unknown_override():

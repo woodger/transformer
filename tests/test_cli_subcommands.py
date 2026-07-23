@@ -3,7 +3,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.help import build_parser
-from app.config import DETERMINISTIC, SAVE_BEST_CHECKPOINT, SEED, WEIGHT_DECAY
+from app.config import (
+    DETERMINISTIC,
+    HOST,
+    PORT,
+    SAVE_BEST_CHECKPOINT,
+    SEED,
+    WEIGHT_DECAY,
+)
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.device import get_device
 from app.training.run_config import (
@@ -309,8 +316,8 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     positions = [output.index(label) for label in option_labels]
     assert positions == sorted(positions)
 
-    assert "Listen host. (default: 127.0.0.1)" in output
-    assert "Listen port. (default: 8815)" in output
+    assert f"Listen host. (default: {HOST})" in output
+    assert f"Listen port. (default: {PORT})" in output
     assert "built-in default" not in output
     assert "(default: None)" not in output
     expected_multiline_entries = (

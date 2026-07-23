@@ -170,8 +170,8 @@ source of truth.
 
 Service configuration precedence, from lowest to highest, is:
 
-1. built-in defaults;
-2. `TRANSFORMER_*` environment variables;
+1. settings in `app/config.py` and remaining built-in defaults;
+2. supported `TRANSFORMER_*` environment variables;
 3. explicitly supplied `flight serve` options.
 
 The CLI exposes only endpoint and transport overrides:
@@ -186,18 +186,26 @@ The CLI exposes only endpoint and transport overrides:
 --tls-require-client-cert
 ```
 
-### Endpoint and transport
+The following service settings are configured in `app/config.py`, not through
+the environment:
 
-| Environment variable | Default | Notes |
+| Python setting | Default | Notes |
 | --- | --- | --- |
-| `TRANSFORMER_RUNTIME_DIR` | `/tmp/transformer` | Ephemeral runtime spool and process lock |
-| `TRANSFORMER_HOST` | `127.0.0.1` | Flight listen host |
-| `TRANSFORMER_PORT` | `8815` | Flight listen port; `0` is accepted for tests |
-| `TRANSFORMER_ALLOW_PLAINTEXT` | `false` | Required when TLS is absent |
-| `TRANSFORMER_TLS_CERT_FILE` | unset | PEM server certificate; configure with key |
-| `TRANSFORMER_TLS_KEY_FILE` | unset | PEM private key; configure with certificate |
-| `TRANSFORMER_TLS_CA_FILE` | unset | Client CA for mTLS |
-| `TRANSFORMER_TLS_REQUIRE_CLIENT_CERT` | `false` | Requires TLS and a client CA |
+| `RUNTIME_DIR` | `/tmp/transformer` | Ephemeral runtime spool and process lock |
+| `HOST` | `127.0.0.1` | Flight listen host |
+| `PORT` | `8815` | Flight listen port; `0` is accepted for tests |
+| `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
+| `TLS_CERT_FILE` | `None` | PEM server certificate; configure with key |
+| `TLS_KEY_FILE` | `None` | PEM private key; configure with certificate |
+| `TLS_CA_FILE` | `None` | Client CA for mTLS |
+| `TLS_REQUIRE_CLIENT_CERT` | `false` | Requires TLS and a client CA |
+| `CPU_CAPACITY` | `2` | Concurrent CPU lanes |
+| `CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
+| `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
+| `RETENTION_SECONDS` | `604800` | Terminal-job retention |
+
+The corresponding `TRANSFORMER_*` environment variables are not read.
+Applicable `flight serve` options remain explicit per-process overrides.
 
 Certificate and key must be configured together. `tls-require-client-cert`
 also requires a CA file. Plaintext transport is accepted only when explicitly
@@ -215,24 +223,20 @@ enabled; bearer authentication remains mandatory in every transport mode.
 | `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `400` | Logical payloads in one job |
 | `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Total committed input bytes per job |
 | `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Non-terminal jobs per subject |
-| `TRANSFORMER_DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
 
 The validated ordering is
 `targetBatchBytes <= maxBatchBytes <= maxMessageBytes <= maxPayloadBytes`.
 Inventory should discover effective values through capabilities instead of
 copying defaults.
 
-### Worker and retention policy
+### Lifecycle policy
 
 | Environment variable | Default | Notes |
 | --- | --- | --- |
-| `TRANSFORMER_CPU_CAPACITY` | `2` | Concurrent CPU lanes |
-| `TRANSFORMER_CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
 | `TRANSFORMER_TICKET_TTL_SECONDS` | `600` | Opaque DoGet ticket lifetime |
 | `TRANSFORMER_CANCEL_GRACE_SECONDS` | `10.0` | SIGTERM grace before SIGKILL |
 | `TRANSFORMER_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Worker drain before forced cancellation |
 | `TRANSFORMER_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Hard CLI execution deadline |
-| `TRANSFORMER_RETENTION_SECONDS` | `604800` | Terminal-job retention |
 | `TRANSFORMER_MAINTENANCE_INTERVAL_SECONDS` | `60` | Maintenance interval |
 
 All quotas, capacities and intervals must be positive. Only the service port
@@ -389,6 +393,7 @@ Details are recorded in
 - Loss of runtime storage invalidates all jobs in that storage epoch.
 - Transformer owns checkpoints; clients receive only opaque `modelRef` values.
 - Output tickets are short-lived and are not model references.
-- Plaintext requires explicit `--allow-plaintext`.
+- Plaintext availability is controlled by `ALLOW_PLAINTEXT` in
+  `app/config.py`; `--allow-plaintext` can enable it for one process.
 - Node-to-PyArrow interoperability and physical CUDA behavior require separate
   target-environment validation.
