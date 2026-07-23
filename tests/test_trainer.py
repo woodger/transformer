@@ -1,17 +1,18 @@
-import math
-import torch
 import json
+import math
 
 import pytest
+import torch
 from torch import nn
-from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
+
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
+from app.model.transformer import TransformerModel
+from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
 from app.training.early_stopping import EarlyStopping
 from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
-from app.model.transformer import TransformerModel
 from app.utils import MODELS_DIR, resolve_metrics_path
 
 

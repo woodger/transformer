@@ -4,7 +4,6 @@ from pathlib import Path
 from app.database.config import load_database_config
 from app.flight.config import FlightServiceConfig, load_config
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD_DOCUMENT = PROJECT_ROOT / "docs" / "deployment" / "systemd.md"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"

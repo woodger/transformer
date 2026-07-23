@@ -3,6 +3,10 @@ import uuid
 
 import pyarrow.flight as flight
 import pytest
+from flight_contract_schema import (
+    read_contract_schema,
+    validate_schema_subset,
+)
 
 from app.database.models import Job, JobAttempt
 from app.flight.config import FlightServiceConfig
@@ -20,11 +24,6 @@ from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
-from flight_contract_schema import (
-    read_contract_schema,
-    validate_schema_subset,
-)
-
 
 ACTION_RESULT_SCHEMAS = {
     CREATE_ACTION: "create-result.schema.json",

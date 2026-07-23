@@ -1,6 +1,5 @@
 from enum import StrEnum
 
-
 CONTRACT_NAME = "transformer-flight"
 CONTRACT_VERSION = 1
 

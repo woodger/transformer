@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from types import MappingProxyType
 import threading
+from dataclasses import dataclass
+from types import MappingProxyType
 
 import psycopg
 
 from app.database.config import DatabaseConfig
 from app.database.tokens import AccessTokenStore
 from app.flight.observability import JsonLogger
-
 
 _NOTIFY_CHANNEL = "transformer_auth_tokens"
 

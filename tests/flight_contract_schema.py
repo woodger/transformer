@@ -1,9 +1,8 @@
-from datetime import datetime
 import json
-from pathlib import Path
 import re
 import uuid
-
+from datetime import datetime
+from pathlib import Path
 
 SCHEMA_ROOT = (
     Path(__file__).parents[1]

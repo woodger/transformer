@@ -1,10 +1,8 @@
-from dataclasses import replace
 import errno
 import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import queue
 import signal
 import subprocess
@@ -12,6 +10,8 @@ import sys
 import threading
 import time
 import uuid
+from dataclasses import replace
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -24,11 +24,11 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
     STATUS_ACTION,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
@@ -37,7 +37,6 @@ from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.worker import WorkerPool
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 PREDICT_HELPER = r"""
 import sys

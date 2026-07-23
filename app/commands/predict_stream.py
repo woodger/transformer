@@ -9,12 +9,12 @@ from app.data.arrow import (
     table_to_source_tensor,
     write_framed_arrow,
 )
-from app.storage.checkpoint import load_checkpoint
 from app.data.tensors import (
     reshape_source,
     validate_checkpoint_feature_dim,
     validate_feature_dim,
 )
+from app.storage.checkpoint import load_checkpoint
 from app.training.factory import build_model, build_trainer
 from app.training.run_config import model_config_from_args
 

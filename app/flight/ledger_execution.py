@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import Job, JobAttempt, QUEUE_SEQUENCE
+from app.database.models import QUEUE_SEQUENCE, Job, JobAttempt
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import conflict, failed_precondition, not_found
 from app.flight.ledger_support import (

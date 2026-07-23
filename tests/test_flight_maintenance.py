@@ -1,11 +1,11 @@
-from dataclasses import replace
 import hashlib
 import os
-from pathlib import Path
-from types import SimpleNamespace
 import threading
 import time
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -15,7 +15,6 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import JobState
 from app.flight.maintenance import MaintenanceService
 from app.flight.spool import Spool
-
 
 DIGEST = "a" * 64
 _POSTGRES_LEDGER = None

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, UTC
 import hashlib
 import secrets
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError

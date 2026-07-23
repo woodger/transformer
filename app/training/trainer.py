@@ -1,6 +1,6 @@
-from contextlib import nullcontext
 import math
 import time
+from contextlib import nullcontext
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -17,8 +17,10 @@ from app.config import (
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
+from app.metrics import TrainMetrics, append_metrics_jsonl
 from app.model.context import context_token_ratios
 from app.training.early_stopping import EarlyStopping
+from app.training.loss_scheduler import LossScheduler
 from app.training.losses import (
     LOSS_STAGES,
     combined_loss,
@@ -26,11 +28,8 @@ from app.training.losses import (
     validate_loss_stage,
     validate_stage_size,
 )
-from app.training.loss_scheduler import LossScheduler
-from app.metrics import TrainMetrics, append_metrics_jsonl
 from app.training.training_state import TrainingState
-from app.utils import save_model, load_model, tree_stats
-
+from app.utils import load_model, save_model, tree_stats
 
 _MAX_SHUFFLE_WINDOW_BATCHES = 32
 _MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024

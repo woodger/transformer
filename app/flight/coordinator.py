@@ -7,14 +7,14 @@ from app.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_VERSION,
     CREATE_ACTION,
-    ErrorCode,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    PREDICTION_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
+    PREDICTION_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    ErrorCode,
 )
 from app.flight.contract import encode_document, response_document
 from app.flight.errors import ServiceError

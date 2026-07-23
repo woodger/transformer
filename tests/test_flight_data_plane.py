@@ -1,11 +1,11 @@
-from dataclasses import replace
-from types import SimpleNamespace
 import errno
 import hashlib
 import json
 import os
-from pathlib import Path
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pyarrow as pa
@@ -14,17 +14,17 @@ import pyarrow.ipc as ipc
 import pytest
 from sqlalchemy import func, select
 
+import app.flight.spool as spool_module
+import app.flight.upload_session as upload_session_module
 from app.database.models import InputUpload
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CONTRACT_NAME, ErrorCode, FIT_SCHEMA_ID, JobState
+from app.flight.constants import CONTRACT_NAME, FIT_SCHEMA_ID, ErrorCode, JobState
 from app.flight.coordinator import JobCoordinator
+from app.flight.errors import ServiceError
 from app.flight.output import OutputHandler
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
-import app.flight.upload_session as upload_session_module
-import app.flight.spool as spool_module
-from app.flight.errors import ServiceError
 
 
 def auth(token="secret", *, timeout=5.0):

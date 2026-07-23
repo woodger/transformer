@@ -1,13 +1,13 @@
 import torch
 
 from app.config import CONTEXT_MODE
+from app.model.transformer import TransformerModel
 from app.training.run_config import (
     ModelConfig,
     TrainConfig,
     model_config_from_args,
     train_config_from_args,
 )
-from app.model.transformer import TransformerModel
 from app.training.trainer import Trainer
 from app.utils import resolve_metrics_path
 

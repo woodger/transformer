@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -19,14 +19,13 @@ from app.flight.constants import (
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    JobState,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    JobState,
 )
 from app.runtime.version import __version__
 from app.storage.checkpoint import CHECKPOINT_FORMAT
-
 
 OWNER = "inventory"
 TOKEN = "secret"

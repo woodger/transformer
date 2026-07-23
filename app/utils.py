@@ -1,7 +1,7 @@
 import torch
 
-from app.storage.checkpoint import MODELS_DIR, load_checkpoint, save_checkpoint
 from app.storage.atomic import resolve_artifact_path
+from app.storage.checkpoint import MODELS_DIR, load_checkpoint, save_checkpoint
 
 
 def save_model(model_name: str, model, model_config=None, train_config=None, extra=None):

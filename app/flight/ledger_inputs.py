@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.database.models import InputUpload, Job, JobInput
 from app.flight.constants import (
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
+    ErrorCode,
+    JobState,
 )
 from app.flight.errors import (
     ServiceError,

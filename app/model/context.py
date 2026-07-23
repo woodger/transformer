@@ -1,6 +1,5 @@
 import torch
 
-
 CONTEXT_MODES = ("strict", "relaxed")
 
 

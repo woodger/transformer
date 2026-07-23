@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
-from pathlib import Path
 from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from dotenv import dotenv_values
 from sqlalchemy import URL
 
 from app.config import PROJECT_ROOT
-
 
 _REQUIRED_KEYS = (
     "POSTGRES_HOST",

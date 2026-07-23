@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import fcntl
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import tempfile
 import uuid
-from typing import BinaryIO
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
+from typing import BinaryIO
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
-
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 

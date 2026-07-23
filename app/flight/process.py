@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import signal
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 
 from app.flight.records import (
     RecoverableAttemptRecord,
     recoverable_attempt_from_mapping,
 )
-
 
 _BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
 _PROC_ROOT = "/proc"

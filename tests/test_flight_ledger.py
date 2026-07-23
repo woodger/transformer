@@ -9,7 +9,6 @@ from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
 from app.flight.ledger import Ledger
 
-
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
 

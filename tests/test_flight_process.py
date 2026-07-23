@@ -1,11 +1,11 @@
 import os
-from pathlib import Path
 import select
 import signal
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 
 from app.flight.process import (
     capture_worker_process,

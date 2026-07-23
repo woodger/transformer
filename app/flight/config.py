@@ -1,11 +1,10 @@
-from dataclasses import dataclass, fields
 import math
 import os
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import MAX_MANIFEST_ITEMS
-
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"

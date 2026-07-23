@@ -1,4 +1,3 @@
-from dataclasses import replace
 import json
 import os
 import queue
@@ -7,8 +6,9 @@ import subprocess
 import sys
 import threading
 import time
-from types import SimpleNamespace
 import uuid
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pyarrow.flight as flight
 import pytest

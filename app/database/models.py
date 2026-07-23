@@ -22,7 +22,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
 SCHEMA = "transformer"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)
 

@@ -10,7 +10,6 @@ from app.flight.state import (
     validate_transition,
 )
 
-
 ALLOWED_TRANSITIONS = {
     (JobState.UPLOADING, JobState.SEALED),
     (JobState.UPLOADING, JobState.CANCELLED),

@@ -1,10 +1,10 @@
-from collections import defaultdict
 import json
 import logging
 import shutil
 import sys
 import threading
 import time
+from collections import defaultdict
 
 
 class JsonLogger:

@@ -13,7 +13,6 @@ from app.flight.contract import parse_action_body, validate_action_request
 from app.flight.errors import ServiceError, invalid, to_flight_exception
 from app.flight.observability import JsonLogger, OperationalMetrics
 
-
 ACTION_DESCRIPTIONS = {
     "transformer.v1.capabilities": "Return Flight v1 capabilities and limits.",
     "transformer.v1.health": "Return liveness, readiness and device health.",

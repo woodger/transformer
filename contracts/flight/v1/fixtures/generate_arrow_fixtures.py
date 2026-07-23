@@ -7,7 +7,6 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-
 FIXTURE_NAMES = (
     "fit-multi-batch.arrow",
     "predict-multi-batch.arrow",

@@ -23,7 +23,6 @@ from app.flight.constants import (
 from app.flight.errors import invalid
 from app.training.run_config import ModelConfig, TrainConfig
 
-
 MAX_ACTION_DOCUMENT_BYTES = 64 * 1024
 _LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _PREDICTION_COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")

@@ -1,5 +1,5 @@
-from dataclasses import FrozenInstanceError, fields
 import uuid
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
@@ -11,7 +11,6 @@ from app.flight.records import (
     RecoverableAttemptRecord,
 )
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64

@@ -8,7 +8,6 @@ import torch
 from app.storage.checkpoint import load_checkpoint_metadata, save_checkpoint
 from app.training.run_config import ModelConfig
 
-
 fit_module = importlib.import_module("app.commands.fit")
 fit_stream_module = importlib.import_module("app.commands.fit_stream")
 predict_module = importlib.import_module("app.commands.predict")

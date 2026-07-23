@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
-from collections.abc import Callable, Iterator, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -17,10 +17,10 @@ from app.database.models import (
 )
 from app.database.session import Database
 from app.flight.constants import (
-    ErrorCode,
-    JobState,
     SUPPORTED_DEVICES,
     SUPPORTED_OPERATIONS,
+    ErrorCode,
+    JobState,
 )
 from app.flight.errors import conflict, failed_precondition, not_found
 from app.flight.ledger_artifacts import ArtifactLedgerSlice
@@ -44,7 +44,6 @@ from app.flight.records import (
     RecoverableAttemptRecord,
 )
 from app.flight.state import validate_transition
-
 
 _TERMINAL_STATES = (
     JobState.SUCCEEDED.value,

@@ -1,12 +1,11 @@
-from dataclasses import asdict, is_dataclass
 import os
+from dataclasses import asdict, is_dataclass
 
 import torch
 
 from app.config import PROJECT_ROOT
 from app.runtime.version import __version__
 from app.storage.atomic import atomic_output_path, resolve_artifact_path
-
 
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 CHECKPOINT_FORMAT = "transformer-checkpoint-v2"

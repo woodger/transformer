@@ -4,9 +4,9 @@ import math
 from app.config import (
     BATCH_SIZE,
     CONTEXT_MODE,
+    D_MODEL,
     DEFAULT_DEVICE,
     DETERMINISTIC,
-    D_MODEL,
     DROPOUT,
     EPOCHS,
     LOSS_SCHEDULE,
@@ -15,8 +15,8 @@ from app.config import (
     NHEAD,
     NUM_LAYERS,
     PATIENCE,
-    SEED,
     SAVE_BEST_CHECKPOINT,
+    SEED,
     STAGE_SIZE,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
@@ -24,7 +24,6 @@ from app.config import (
 )
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.version import __version__, version_text
-
 
 _COMMAND_GROUPS = (
     (

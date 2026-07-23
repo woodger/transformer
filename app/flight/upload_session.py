@@ -1,17 +1,17 @@
-from dataclasses import dataclass
 import hashlib
 import json
 import os
 import secrets
+from dataclasses import dataclass
 
 import pyarrow.ipc as ipc
 
 from app.flight.arrow import InputBatchValidator
 from app.flight.constants import (
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import validate_upload_metadata
 from app.flight.errors import (

@@ -3,7 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from app.config import CONTEXT_MODE
-from app.model.context import context_input_dim, prepare_context_input, validate_context_mode
+from app.model.context import (
+    context_input_dim,
+    prepare_context_input,
+    validate_context_mode,
+)
 from app.model.positional_encoding import PositionalEncoding
 
 

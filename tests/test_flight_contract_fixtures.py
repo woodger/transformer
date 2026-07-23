@@ -1,14 +1,18 @@
-from copy import deepcopy
-import json
 import hashlib
-from pathlib import Path
+import json
 import subprocess
 import sys
+from copy import deepcopy
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 import torch
+from flight_contract_schema import (
+    read_contract_schema,
+    validate_schema_subset,
+)
 
 from app.data.arrow import (
     empty_predictions_table,
@@ -17,6 +21,7 @@ from app.data.arrow import (
     table_to_tensors,
     validate_arrow_table,
 )
+from app.flight.arrow import schema_fingerprint
 from app.flight.constants import (
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
@@ -31,12 +36,6 @@ from app.flight.contract import (
     validate_action_request,
     validate_upload_metadata,
 )
-from app.flight.arrow import schema_fingerprint
-from flight_contract_schema import (
-    read_contract_schema,
-    validate_schema_subset,
-)
-
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v1" / "fixtures"
 JSON_ROOT = FIXTURE_ROOT / "json"

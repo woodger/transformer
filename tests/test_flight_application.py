@@ -3,8 +3,8 @@ import os
 import signal
 import subprocess
 import sys
-from types import SimpleNamespace
 import uuid
+from types import SimpleNamespace
 
 import pyarrow.flight as flight
 import pytest
@@ -16,7 +16,7 @@ from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, ErrorCode, JobState
 from app.flight.process import capture_worker_process
-from app.flight.spool import Spool, RuntimeDirectoryLocked
+from app.flight.spool import RuntimeDirectoryLocked, Spool
 
 
 @pytest.fixture(autouse=True)

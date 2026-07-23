@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from app.flight.constants import ErrorCode
 from app.flight.records import ExecutionJobRecord
-
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 _FIT_SPOOL_OPTION = "--input-spool-dir"

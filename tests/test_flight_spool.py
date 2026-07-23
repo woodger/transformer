@@ -1,13 +1,13 @@
-from types import SimpleNamespace
 import os
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 import app.flight.spool as spool_module
 from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
-from app.flight.spool import Spool, RuntimeDirectoryLocked
+from app.flight.spool import RuntimeDirectoryLocked, Spool
 
 
 @pytest.fixture

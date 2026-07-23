@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import errno
 import threading
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
@@ -18,7 +18,6 @@ from app.flight.worker_subprocess import (
     WorkerSubprocessError,
     WorkerSubprocessRunner,
 )
-
 
 _DISK_FULL_ERRNOS = {
     value

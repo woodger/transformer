@@ -1,12 +1,12 @@
-from dataclasses import replace
-from io import BytesIO
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
 import uuid
+from dataclasses import replace
+from io import BytesIO
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -20,18 +20,17 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CONTRACT_NAME,
     CREATE_ACTION,
-    JobState,
     PREDICT_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    JobState,
 )
 from app.flight.spool import Spool
 from app.model.transformer import TransformerModel
 from app.runtime.version import __version__
 from app.storage.checkpoint import CHECKPOINT_FORMAT
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 OWNER = "inventory"
 TOKEN = "secret"

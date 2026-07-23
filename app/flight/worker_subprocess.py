@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import errno
 import json
 import math
 import os
-from pathlib import Path
 import queue
 import shutil
 import signal
@@ -13,6 +11,8 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
@@ -24,7 +24,6 @@ from app.flight.worker_artifacts import (
     WorkerArtifactError,
 )
 from app.flight.worker_plan import ExecutionInput, ExecutionPlan
-
 
 _FRAME_HEADER_BYTES = 8
 _COPY_CHUNK_BYTES = 1024 * 1024

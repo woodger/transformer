@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, UTC
 import time
-from collections.abc import Callable
 import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from app.flight.constants import (
     CANCEL_ACTION,
     CREATE_ACTION,
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     TERMINAL_STATES,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import (
     canonical_manifest_hash,

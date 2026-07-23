@@ -16,6 +16,7 @@
 - Ruff baseline расширен проверками потенциальных ошибок, безопасной
   модернизации для Python 3.11, порядка `__all__` и регулярных выражений в
   `pytest.raises`.
+- Ruff также проверяет единый порядок Python import-блоков.
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
   технические идентификаторы CLI, Flight contract и environment не менялись.
 

@@ -8,7 +8,6 @@ import signal
 import subprocess
 import sys
 
-
 _PR_SET_PDEATHSIG = 1
 _PARENT_DEATH_SIGNAL = signal.SIGUSR1
 

@@ -5,7 +5,6 @@ import torch
 
 from app.training.losses import combined_loss
 
-
 VARIANCE_EPS = 1e-6
 
 

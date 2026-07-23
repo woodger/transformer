@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import pyarrow as pa
 import pyarrow.flight as flight

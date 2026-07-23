@@ -1,13 +1,13 @@
 import hashlib
 import json
 import os
-from datetime import datetime, UTC
-from pathlib import Path
 import shutil
 import subprocess
 import threading
-from types import SimpleNamespace
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -24,7 +24,11 @@ from app.flight.constants import (
     CREATE_ACTION,
     ErrorCode,
 )
-from app.flight.contract import encode_document, response_document, validate_action_request
+from app.flight.contract import (
+    encode_document,
+    response_document,
+    validate_action_request,
+)
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError, to_flight_exception
 from app.flight.observability import JsonLogger, OperationalMetrics

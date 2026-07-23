@@ -21,7 +21,6 @@ from app.flight.ledger_support import (
 )
 from app.flight.state import decide_interrupted_attempt
 
-
 _TERMINAL_STATES = (
     JobState.SUCCEEDED.value,
     JobState.FAILED.value,
