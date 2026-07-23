@@ -44,7 +44,7 @@
     "modelRef": "mdl_01j2x5f4x6h7k8m9n0p1q2r3s4",
     "checkpoint": {
       "format": "transformer-checkpoint-v2",
-      "serviceVersion": "0.1.4",
+      "serviceVersion": "0.1.5",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "bytes": 123456,
       "generation": 1,
