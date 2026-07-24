@@ -139,6 +139,16 @@ class Spool:
     def attempt_stderr_path(self, job_id: str, attempt: int) -> str:
         return os.path.join(self.attempt_directory(job_id, attempt), "stderr.log")
 
+    def attempt_recovery_events_path(
+        self,
+        job_id: str,
+        attempt: int,
+    ) -> str:
+        return os.path.join(
+            self.attempt_directory(job_id, attempt),
+            "recovery-events.jsonl",
+        )
+
     def attempt_output_path(self, job_id: str, attempt: int, ordinal: int) -> str:
         _nonnegative(ordinal, "ordinal")
         return os.path.join(

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v2/put-result.schema.json",
+  "title": "Transformer Flight v2 PutResult application metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "jobId", "payloadId", "ordinal", "status",
+    "rows", "batches", "bytes", "sha256", "schemaFingerprint"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 2},
+    "jobId": {"type": "string", "format": "uuid"},
+    "payloadId": {"type": "string", "format": "uuid"},
+    "ordinal": {"type": "integer", "minimum": 0, "maximum": 399},
+    "status": {"const": "committed"},
+    "rows": {"type": "integer", "minimum": 0},
+    "batches": {"type": "integer", "minimum": 0},
+    "bytes": {"type": "integer", "minimum": 0},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "schemaFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

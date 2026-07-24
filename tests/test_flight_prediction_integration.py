@@ -61,7 +61,7 @@ def _auth():
 def _request(**fields):
     return {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -107,7 +107,7 @@ def _framed_payloads(payloads):
 
 def _put(client, job_id, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -116,7 +116,7 @@ def _put(client, job_id, payload_id, ordinal, batches):
     )
     metadata = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": ordinal,
@@ -375,7 +375,7 @@ def test_real_cpu_flight_prediction_matches_predict_stream(
         output_batch_counts = []
         for ordinal in range(2):
             descriptor = flight.FlightDescriptor.for_path(
-                "transformer", "v1", "jobs", job_id, "outputs", str(ordinal)
+                "transformer", "v2", "jobs", job_id, "outputs", str(ordinal)
             )
             info = client.get_flight_info(descriptor, options=_auth())
             assert info.descriptor == descriptor

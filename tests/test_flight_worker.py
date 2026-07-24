@@ -24,7 +24,6 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
-    CUDA_LANE_COUNT,
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
     STATUS_ACTION,
@@ -33,6 +32,7 @@ from app.flight.constants import (
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
+from app.flight.device_inventory import CudaDeviceInventory
 from app.flight.observability import OperationalMetrics
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
@@ -1265,7 +1265,9 @@ def test_nonzero_cuda_oom_has_stable_error_code(tmp_path):
     assert metrics.snapshot()["counters"]["cudaOutOfMemory"] == 1
 
 
-def test_cuda_disconnect_has_stable_device_unavailable_error(tmp_path):
+def test_unconfirmed_cuda_disconnect_is_terminal_subprocess_failure(
+    tmp_path,
+):
     _, spool, ledger, pool = components(
         tmp_path,
         argv_hook=lambda job, argv: [
@@ -1285,9 +1287,9 @@ def test_cuda_disconnect_has_stable_device_unavailable_error(tmp_path):
 
     failed = ledger.get_job(job["job_id"])
     assert failed["state"] == JobState.FAILED.value
-    assert failed["error_code"] == "DEVICE_UNAVAILABLE"
+    assert failed["error_code"] == "SUBPROCESS_FAILED"
     assert failed["error_message"] == (
-        "CUDA device became unavailable during execution"
+        "CUDA subprocess failed while its assigned device remained available"
     )
 
 
@@ -1417,7 +1419,7 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
     def action(name, **fields):
         document = {
             "contract": CONTRACT_NAME,
-            "version": 1,
+            "version": 2,
             "requestId": str(uuid.uuid4()),
             **fields,
         }
@@ -1541,7 +1543,7 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
         grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
         cancel = {
             "contract": CONTRACT_NAME,
-            "version": 1,
+            "version": 2,
             "requestId": str(uuid.uuid4()),
             "idempotencyKey": "cancel-term-resistant-worker",
             "jobId": job["job_id"],
@@ -1566,12 +1568,100 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
         assert not runner.is_alive()
 
 
-def test_pool_exposes_configured_cpu_lanes_and_exactly_one_cuda_lane(tmp_path):
-    config, _, _, pool = components(tmp_path)
+def test_pool_exposes_configured_cpu_lanes_and_cuda_inventory(tmp_path):
+    inventory = CudaDeviceInventory(probe=lambda: {
+        "devices": [
+            {"id": "GPU-a", "ordinal": 0, "name": "First"},
+            {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+        ],
+        "runtimeVersion": "13.3",
+        "torchVersion": "2.12.0",
+    }).initialize()
+    config, _, _, pool = components(
+        tmp_path,
+        device_inventory=inventory,
+    )
     assert pool.lane_counts == {
         "cpu": config.cpu_capacity,
-        "cuda": CUDA_LANE_COUNT,
+        "cuda": 2,
     }
+
+
+def test_confirmed_gpu_loss_retries_on_another_physical_device(
+    tmp_path,
+):
+    probes = iter([
+        {
+            "devices": [
+                {"id": "GPU-a", "ordinal": 0, "name": "First"},
+                {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+            ],
+            "runtimeVersion": "13.3",
+            "torchVersion": "2.12.0",
+        },
+        {
+            "devices": [
+                {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+            ],
+            "runtimeVersion": "13.3",
+            "torchVersion": "2.12.0",
+        },
+    ])
+    inventory = CudaDeviceInventory(
+        probe=lambda: next(probes),
+    ).initialize()
+
+    def worker_hook(job, _argv):
+        if job["attempt"] == 1:
+            program = (
+                "import os, sys; "
+                "assert os.environ['CUDA_VISIBLE_DEVICES'] == 'GPU-a'; "
+                "sys.stdout.buffer.write(b'x'); "
+                "sys.stdout.buffer.flush(); "
+                "sys.stderr.write('CUDA_ERROR_DEVICE_LOST\\n'); "
+                "raise SystemExit(1)"
+            )
+        else:
+            program = (
+                "import os; "
+                "assert os.environ['CUDA_VISIBLE_DEVICES'] == 'GPU-b'"
+            )
+        return [sys.executable, "-c", program]
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=worker_hook,
+        device_inventory=inventory,
+    )
+    model_ref = publish_seed_model(ledger, spool)
+    job = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="predict",
+        requested_device="cuda",
+        prediction_column="out",
+        config_hash="c" * 64,
+        input_model_ref=model_ref,
+        model_config=model_config(feature_dim=2),
+    )
+    seal_and_queue(ledger, job, [], device="cuda")
+
+    assert pool.run_once("cuda") is True
+    retrying = ledger.get_job(job["job_id"])
+    assert retrying["state"] == JobState.RETRYING.value
+    assert inventory.is_quarantined("GPU-a") is True
+
+    assert pool.run_once("cuda") is True
+    succeeded = ledger.get_job(job["job_id"])
+    assert succeeded["state"] == JobState.SUCCEEDED.value
+    assert succeeded["attempt"] == 2
+    with ledger.connection() as connection:
+        first = connection.get(JobAttempt, (job["job_id"], 1))
+        second = connection.get(JobAttempt, (job["job_id"], 2))
+    assert first.device_id == "GPU-a"
+    assert first.error_code == ErrorCode.DEVICE_LOST.value
+    assert second.device_id == "GPU-b"
+    assert second.status == JobState.SUCCEEDED.value
 
 
 def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):

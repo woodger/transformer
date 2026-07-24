@@ -23,10 +23,20 @@ from app.flight.upload_session import InputUploadSession
 
 
 class UploadHandler:
-    def __init__(self, config, ledger, spool, *, metrics=None, logger=None):
+    def __init__(
+        self,
+        config,
+        ledger,
+        spool,
+        recovery_store=None,
+        *,
+        metrics=None,
+        logger=None,
+    ):
         self.config = config
         self.ledger = ledger
         self.spool = spool
+        self.recovery_store = recovery_store
         self.metrics = metrics or OperationalMetrics()
         self.logger = logger or JsonLogger()
 
@@ -37,7 +47,7 @@ class UploadHandler:
             if exc.errno in _DISK_FULL_ERRNOS:
                 raise ServiceError(
                     ErrorCode.DISK_FULL,
-                    "runtime directory is full",
+                    "artifact storage is full",
                 ) from exc
             raise
 
@@ -56,7 +66,22 @@ class UploadHandler:
         outcome = InputUploadSession(
             self.config,
             self.ledger,
-            self.spool,
+            (
+                self.recovery_store
+                if (
+                    job["operation"] == "fit"
+                    and self.recovery_store is not None
+                )
+                else self.spool
+            ),
+            storage_class=(
+                "recovery"
+                if (
+                    job["operation"] == "fit"
+                    and self.recovery_store is not None
+                )
+                else "runtime"
+            ),
             owner=owner,
             job=job,
             ordinal=descriptor_ordinal,

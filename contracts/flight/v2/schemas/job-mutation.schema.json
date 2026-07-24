@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v2/job-mutation.schema.json",
+  "title": "Start or cancel request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "requestId", "idempotencyKey", "jobId"],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 2},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "jobId": {"type": "string", "format": "uuid"}
+  }
+}

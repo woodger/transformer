@@ -1,15 +1,16 @@
 from enum import StrEnum
 
 CONTRACT_NAME = "transformer-flight"
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
+CONTRACT_PATH_VERSION = "v2"
 
-CAPABILITIES_ACTION = "transformer.v1.capabilities"
-HEALTH_ACTION = "transformer.v1.health"
-CREATE_ACTION = "transformer.v1.job.create"
-SEAL_ACTION = "transformer.v1.job.seal"
-START_ACTION = "transformer.v1.job.start"
-STATUS_ACTION = "transformer.v1.job.status"
-CANCEL_ACTION = "transformer.v1.job.cancel"
+CAPABILITIES_ACTION = "transformer.v2.capabilities"
+HEALTH_ACTION = "transformer.v2.health"
+CREATE_ACTION = "transformer.v2.job.create"
+SEAL_ACTION = "transformer.v2.job.seal"
+START_ACTION = "transformer.v2.job.start"
+STATUS_ACTION = "transformer.v2.job.status"
+CANCEL_ACTION = "transformer.v2.job.cancel"
 
 ACTIONS = (
     CAPABILITIES_ACTION,
@@ -28,10 +29,6 @@ PREDICTION_SCHEMA_ID = "transformer.prediction.v1"
 SUPPORTED_OPERATIONS = ("fit", "predict")
 SUPPORTED_DEVICES = ("cpu", "cuda", "auto")
 
-# Flight v1 schedules at most one CUDA job at a time. Device-specific lanes
-# require a versioned multi-GPU execution contract.
-CUDA_LANE_COUNT = 1
-
 # A complete seal manifest must fit in the 64 KiB action-document limit even
 # with maximum-length idempotency keys and decimal ordinals.  Four hundred
 # entries leave a conservative envelope margin and keep every advertised job
@@ -44,6 +41,7 @@ class JobState(StrEnum):
     SEALED = "SEALED"
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
+    RETRYING = "RETRYING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLING = "CANCELLING"
@@ -60,6 +58,7 @@ IMMEDIATE_CANCEL_STATES = frozenset({
     JobState.UPLOADING,
     JobState.SEALED,
     JobState.QUEUED,
+    JobState.RETRYING,
 })
 
 STATE_TRANSITIONS = {
@@ -70,6 +69,12 @@ STATE_TRANSITIONS = {
         JobState.SUCCEEDED,
         JobState.FAILED,
         JobState.CANCELLING,
+        JobState.RETRYING,
+    }),
+    JobState.RETRYING: frozenset({
+        JobState.RUNNING,
+        JobState.FAILED,
+        JobState.CANCELLED,
     }),
     JobState.CANCELLING: frozenset({JobState.CANCELLED}),
     JobState.SUCCEEDED: frozenset(),
@@ -91,9 +96,13 @@ class ErrorCode(StrEnum):
     INTERNAL = "INTERNAL"
 
     DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
+    DEVICE_LOST = "DEVICE_LOST"
     EXECUTION_INTERRUPTED = "EXECUTION_INTERRUPTED"
     SUBPROCESS_FAILED = "SUBPROCESS_FAILED"
     SUBPROCESS_HUNG = "SUBPROCESS_HUNG"
     MALFORMED_OUTPUT = "MALFORMED_OUTPUT"
     CUDA_OUT_OF_MEMORY = "CUDA_OUT_OF_MEMORY"
     DISK_FULL = "DISK_FULL"
+    RECOVERY_CHECKPOINT_UNAVAILABLE = "RECOVERY_CHECKPOINT_UNAVAILABLE"
+    RECOVERY_CHECKPOINT_INCOMPATIBLE = "RECOVERY_CHECKPOINT_INCOMPATIBLE"
+    RECOVERY_INPUT_UNAVAILABLE = "RECOVERY_INPUT_UNAVAILABLE"

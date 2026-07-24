@@ -53,8 +53,8 @@ def _run(ledger, job):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0001",)
-    assert status.heads == ("0001",)
+    assert status.current == ("0002",)
+    assert status.heads == ("0002",)
     assert status.pending is False
 
 
@@ -75,11 +75,11 @@ def test_alembic_upgrade_and_single_revision_rollback(postgres_config):
         rolled_back = rollback_migration(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0001",)
+        assert initial.heads == ("0002",)
         assert initial.pending is True
-        assert applied.current == ("0001",)
+        assert applied.current == ("0002",)
         assert applied.pending is False
-        assert rolled_back.current == ()
+        assert rolled_back.current == ("0001",)
         assert rolled_back.pending is True
     finally:
         with cleanup_engine.begin() as connection:
@@ -133,7 +133,7 @@ def test_access_token_cache_refreshes_after_issue_and_revoke(
         listener.shutdown(timeout=3.0)
 
 
-def test_runtime_epoch_reset_discards_jobs_but_preserves_tokens_and_models(
+def test_runtime_epoch_reset_discards_runtime_jobs_and_preserves_recovery_fits(
     postgres_database,
 ):
     ledger = Ledger(postgres_database).initialize()
@@ -160,15 +160,66 @@ def test_runtime_epoch_reset_discards_jobs_but_preserves_tokens_and_models(
     queued = _fit_job(ledger, "next")
     ledger.seal_job(queued["job_id"], manifest_hash="d" * 64, manifest=[])
     ledger.queue_job(queued["job_id"], selected_device="cpu")
+    prediction = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="predict",
+        requested_device="cpu",
+        prediction_column="out",
+        config_hash="e" * 64,
+        input_model_ref=model_ref,
+    )
+    ledger.seal_job(
+        prediction["job_id"],
+        manifest_hash="f" * 64,
+        manifest=[],
+    )
+    ledger.queue_job(
+        prediction["job_id"],
+        selected_device="cpu",
+    )
+    runtime_fit = _fit_job(ledger, "legacy-runtime")
+    payload_id = str(uuid.uuid4())
+    ledger.reserve_input(
+        job_id=runtime_fit["job_id"],
+        payload_id=payload_id,
+        ordinal=0,
+        upload_token="runtime-input",
+        temporary_path=(
+            f"spool/jobs/{runtime_fit['job_id']}/inputs/.0.tmp"
+        ),
+    )
+    ledger.commit_input(
+        upload_token="runtime-input",
+        relative_path=(
+            f"spool/jobs/{runtime_fit['job_id']}/inputs/0.arrow"
+        ),
+        schema_id="inventory.sequence.fit.v1",
+        rows=1,
+        batches=1,
+        byte_count=1,
+        sha256="1" * 64,
+        schema_fingerprint="2" * 64,
+        source_width=2,
+        feature_dim=1,
+        max_payloads=1,
+        max_job_bytes=1,
+    )
 
     reset = ledger.synchronize_runtime_epoch(str(uuid.uuid4()))
 
     assert reset["reset"] is True
-    assert set(reset["discarded_jobs"]) == {producer["job_id"], queued["job_id"]}
-    assert ledger.list_jobs() == []
+    assert set(reset["discarded_jobs"]) == {
+        prediction["job_id"],
+        runtime_fit["job_id"],
+    }
+    assert {
+        job["job_id"]
+        for job in ledger.list_jobs()
+    } == {producer["job_id"], queued["job_id"]}
     model = ledger.get_model(model_ref, owner_subject="inventory")
     assert model is not None
-    assert model["producing_job_id"] is None
+    assert model["producing_job_id"] == producer["job_id"]
     assert ledger.resolve_model_alias("inventory", "daily")["model_ref"] == model_ref
     assert token_store.list()[0].token_id == token.token_id
     assert token_store.active_credentials()[0][0] == token.token

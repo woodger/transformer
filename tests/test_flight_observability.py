@@ -53,7 +53,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -125,9 +125,13 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         prediction_column="predictions",
         model_config=None,
         training_config=None,
+        config_hash="a" * 64,
+        seal_hash="b" * 64,
         feature_dim=None,
         input_frame_count=0,
         attempt=1,
+        assigned_device_id=None,
+        resume_generation=None,
         queued_at=10.0,
         started_at=15.25,
     )
@@ -142,16 +146,22 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         def queued_execution_jobs(self):
             return [queued]
 
+        def get_execution_job(self, requested_job_id):
+            assert requested_job_id == job_id
+            return queued
+
         def claim_execution_job(
             self,
             requested_job_id,
             selected_device,
             *,
             worker_id,
+            device_id,
         ):
             assert requested_job_id == job_id
             assert selected_device == "cpu"
             assert worker_id == "worker-1"
+            assert device_id is None
             return claimed
 
     metrics = OperationalMetrics()
@@ -185,6 +195,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         "jobId": job_id,
         "attempt": 1,
         "device": "cpu",
+        "deviceId": None,
         "fromState": "QUEUED",
         "toState": "RUNNING",
         "queueWaitSeconds": 5.25,

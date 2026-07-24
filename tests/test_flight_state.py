@@ -20,6 +20,10 @@ ALLOWED_TRANSITIONS = {
     (JobState.RUNNING, JobState.SUCCEEDED),
     (JobState.RUNNING, JobState.FAILED),
     (JobState.RUNNING, JobState.CANCELLING),
+    (JobState.RUNNING, JobState.RETRYING),
+    (JobState.RETRYING, JobState.RUNNING),
+    (JobState.RETRYING, JobState.FAILED),
+    (JobState.RETRYING, JobState.CANCELLED),
     (JobState.CANCELLING, JobState.CANCELLED),
 }
 
@@ -83,6 +87,10 @@ def test_cancelling_can_only_finish_as_cancelled():
             CancelDecision(JobState.CANCELLING, True),
         ),
         (
+            JobState.RETRYING,
+            CancelDecision(JobState.CANCELLED, False),
+        ),
+        (
             JobState.CANCELLING,
             CancelDecision(None, False),
         ),
@@ -137,6 +145,7 @@ def test_interrupted_attempt_decision_is_explicit(state, expected):
         JobState.UPLOADING,
         JobState.SEALED,
         JobState.QUEUED,
+        JobState.RETRYING,
         JobState.SUCCEEDED,
         JobState.FAILED,
         JobState.CANCELLED,

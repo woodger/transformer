@@ -41,6 +41,7 @@ class MaintenanceService:
         config,
         ledger,
         spool,
+        recovery_store=None,
         *,
         interval_seconds: float = 60.0,
         logger: JsonLogger | None = None,
@@ -59,6 +60,7 @@ class MaintenanceService:
         self.config = config
         self.ledger = ledger
         self.spool = spool
+        self.recovery_store = recovery_store
         self.interval_seconds = float(interval_seconds)
         self.logger = logger or JsonLogger()
         self.metrics = metrics or OperationalMetrics()
@@ -128,6 +130,28 @@ class MaintenanceService:
             self.metrics.set("diskFreeBytes", usage.free)
             self.metrics.set("diskWatermarkBytes", watermark)
             self.metrics.set("diskWatermarkExceeded", watermark_exceeded)
+        recovery_usage = None
+        if self.recovery_store is not None and watermark is not None:
+            recovery_usage = self.recovery_store.disk_usage()
+            recovery_watermark_exceeded = (
+                recovery_usage.free < watermark
+            )
+            self.metrics.set(
+                "recoveryDiskTotalBytes",
+                recovery_usage.total,
+            )
+            self.metrics.set(
+                "recoveryDiskUsedBytes",
+                recovery_usage.used,
+            )
+            self.metrics.set(
+                "recoveryDiskFreeBytes",
+                recovery_usage.free,
+            )
+            self.metrics.set(
+                "recoveryDiskWatermarkExceeded",
+                recovery_watermark_exceeded,
+            )
 
         expired_tickets = self.ledger.delete_expired_tickets(now=timestamp)
         deleted_jobs = tuple(self.ledger.delete_terminal_jobs_before(cutoff))
@@ -154,6 +178,22 @@ class MaintenanceService:
                 self._pending_job_directories.discard(job_id)
             (removed if existed else missing).append(job_id)
 
+        recovery_removed = 0
+        recovery_failed = 0
+        if self.recovery_store is not None:
+            for job_id in self.ledger.terminal_recovery_job_ids():
+                directory = self.recovery_store.job_directory(job_id)
+                try:
+                    if self.recovery_store.remove(directory):
+                        recovery_removed += 1
+                except OSError as exc:
+                    recovery_failed += 1
+                    self.logger.event(
+                        "flight.maintenance.recovery_directory_failed",
+                        jobId=job_id,
+                        errorType=type(exc).__name__,
+                    )
+
         with self._pending_lock:
             still_pending = tuple(sorted(self._pending_job_directories))
         result = MaintenanceResult(
@@ -172,6 +212,8 @@ class MaintenanceService:
             "removedJobDirectories": len(removed),
             "missingJobDirectories": len(missing),
             "failedJobDirectories": len(failed),
+            "removedRecoveryDirectories": recovery_removed,
+            "failedRecoveryDirectories": recovery_failed,
         }
         if usage is not None:
             log_fields.update(
@@ -180,6 +222,16 @@ class MaintenanceService:
                 diskFreeBytes=usage.free,
                 diskWatermarkBytes=watermark,
                 diskWatermarkExceeded=watermark_exceeded,
+            )
+        if recovery_usage is not None:
+            log_fields.update(
+                recoveryDiskTotalBytes=recovery_usage.total,
+                recoveryDiskUsedBytes=recovery_usage.used,
+                recoveryDiskFreeBytes=recovery_usage.free,
+                recoveryDiskWatermarkBytes=watermark,
+                recoveryDiskWatermarkExceeded=(
+                    recovery_watermark_exceeded
+                ),
             )
         self.logger.event(
             "flight.maintenance.completed",

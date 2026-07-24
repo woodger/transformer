@@ -23,11 +23,19 @@
 ## Надёжность и хранение
 
 - PostgreSQL остаётся единственным durable control-plane source of truth;
-- runtime payload и незавершённые artifacts остаются в `/tmp/transformer`;
+- prediction payload и незавершённые attempt artifacts остаются в
+  `/tmp/transformer`;
+- fit payload и completed-epoch recovery checkpoints остаются в project
+  `recovery/`;
 - успешно опубликованные checkpoints остаются в project `models/`;
-- потеря runtime storage инвалидирует jobs, а не запускает неполное recovery;
+- потеря runtime storage инвалидирует prediction jobs, но не fit с целыми
+  persistent recovery artifacts;
+- fit возобновляется только с зарегистрированной границы полной глобальной
+  эпохи, без silent restart при повреждении recovery;
 - файловая публикация и database transitions остаются атомарными;
-- один runtime directory принадлежит одному процессу сервиса.
+- runtime и recovery directories принадлежат одному процессу сервиса;
+- CUDA attempt привязан к одному physical GPU, а подтверждённо потерянный GPU
+  не возвращается в pool до следующего Linux boot.
 
 ## Безопасность и эксплуатация
 

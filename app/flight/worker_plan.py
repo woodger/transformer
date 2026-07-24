@@ -35,6 +35,8 @@ class ExecutionPlan:
     inputs: tuple[ExecutionInput, ...]
     argv: tuple[str, ...]
     uses_spooled_fit: bool
+    uses_training_recovery: bool = False
+    resume_training_complete: bool = False
 
 
 class WorkerPlanBuilder:
@@ -45,6 +47,7 @@ class WorkerPlanBuilder:
         config,
         ledger,
         spool,
+        recovery_store=None,
         *,
         python_executable: str,
         cli_path: str,
@@ -52,6 +55,7 @@ class WorkerPlanBuilder:
         self.config = config
         self.ledger = ledger
         self.spool = spool
+        self.recovery_store = recovery_store
         self.python_executable = python_executable
         self.cli_path = cli_path
 
@@ -62,13 +66,36 @@ class WorkerPlanBuilder:
         *,
         argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
     ) -> ExecutionPlan:
+        if (
+            job.operation == "fit"
+            and self.recovery_store is not None
+        ):
+            self.recovery_store.ensure_free_space(
+                self.config.disk_min_free_bytes
+            )
         inputs = self._validated_inputs(job)
         argv = self.build_argv(job, attempt, argv_hook=argv_hook)
+        recovery_checkpoint = (
+            self.ledger.latest_recovery_checkpoint(job.job_id)
+            if (
+                job.operation == "fit"
+                and self.recovery_store is not None
+            )
+            else None
+        )
         return ExecutionPlan(
             inputs=inputs,
             argv=argv,
             uses_spooled_fit=(
                 job.operation == "fit" and _FIT_SPOOL_OPTION in argv
+            ),
+            uses_training_recovery=(
+                job.operation == "fit"
+                and self.recovery_store is not None
+            ),
+            resume_training_complete=bool(
+                recovery_checkpoint is not None
+                and recovery_checkpoint.training_complete
             ),
         )
 
@@ -78,20 +105,20 @@ class WorkerPlanBuilder:
         attempt: int,
         *,
         argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
-        legacy_job: dict | None = None,
+        job_mapping: dict | None = None,
     ) -> tuple[str, ...]:
         if not isinstance(attempt, int) or attempt <= 0:
             raise ValueError("attempt must be a positive integer")
         argv = self._default_argv(job, attempt)
         if argv_hook is not None:
-            if legacy_job is None:
-                legacy_job = self.ledger.get_job(job.job_id)
-            if legacy_job is None:
+            if job_mapping is None:
+                job_mapping = self.ledger.get_job(job.job_id)
+            if job_mapping is None:
                 raise WorkerPlanError(
                     ErrorCode.INTERNAL,
                     "claimed job disappeared",
                 )
-            argv = list(argv_hook(legacy_job, tuple(argv)))
+            argv = list(argv_hook(job_mapping, tuple(argv)))
         if not argv or any(
             not isinstance(value, str) or "\x00" in value
             for value in argv
@@ -111,8 +138,19 @@ class WorkerPlanBuilder:
             )
         prepared = []
         for item in inputs:
-            expected = self.spool.input_path(job.job_id, item.ordinal)
-            actual = self.spool.absolute_path(item.relative_path)
+            persistent = item.storage_class == "recovery"
+            store = (
+                self.recovery_store
+                if persistent
+                else self.spool
+            )
+            if store is None:
+                raise WorkerPlanError(
+                    ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
+                    "persistent fit input storage is unavailable",
+                )
+            expected = store.input_path(job.job_id, item.ordinal)
+            actual = store.absolute_path(item.relative_path)
             if actual != expected:
                 raise WorkerPlanError(
                     ErrorCode.INTERNAL,
@@ -122,17 +160,29 @@ class WorkerPlanBuilder:
                 size = os.path.getsize(actual)
             except OSError as exc:
                 raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
+                    (
+                        ErrorCode.RECOVERY_INPUT_UNAVAILABLE
+                        if persistent
+                        else ErrorCode.INTERNAL
+                    ),
                     "committed input is unavailable",
                 ) from exc
             if size != item.byte_count or size > self.config.max_payload_bytes:
                 raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
+                    (
+                        ErrorCode.RECOVERY_INPUT_UNAVAILABLE
+                        if persistent
+                        else ErrorCode.INTERNAL
+                    ),
                     "committed input size is invalid",
                 )
             if _sha256_file(actual) != item.sha256:
                 raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
+                    (
+                        ErrorCode.RECOVERY_INPUT_UNAVAILABLE
+                        if persistent
+                        else ErrorCode.INTERNAL
+                    ),
                     "committed input digest is invalid",
                 )
             prepared.append(ExecutionInput(
@@ -196,6 +246,11 @@ class WorkerPlanBuilder:
                 ErrorCode.INTERNAL,
                 "fit job configuration is unavailable",
             )
+        input_directory = (
+            self.recovery_store.input_directory(job.job_id)
+            if self.recovery_store is not None
+            else self.spool.input_directory(job.job_id)
+        )
         argv = [
             *base,
             "fit-stream",
@@ -209,7 +264,7 @@ class WorkerPlanBuilder:
                 attempt,
             ),
             "--max-frame-bytes", str(self.config.max_payload_bytes),
-            _FIT_SPOOL_OPTION, self.spool.input_directory(job.job_id),
+            _FIT_SPOOL_OPTION, input_directory,
             "--input-frame-count", str(job.input_frame_count),
             "--seq-len", str(model.seq_len),
             "--hidden", str(model.hidden),
@@ -240,6 +295,71 @@ class WorkerPlanBuilder:
             argv.append("--use-amp")
         if train.deterministic:
             argv.append("--deterministic")
+        if self.recovery_store is not None:
+            if job.seal_hash is None:
+                raise WorkerPlanError(
+                    ErrorCode.INTERNAL,
+                    "sealed fit manifest hash is unavailable",
+                )
+            if any(
+                item.storage_class != "recovery"
+                for item in self.ledger.list_committed_inputs(
+                    job.job_id
+                )
+            ):
+                raise WorkerPlanError(
+                    ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
+                    "fit inputs are not stored persistently",
+                )
+            argv.extend([
+                "--recovery-checkpoint-dir",
+                self.recovery_store.checkpoint_directory(job.job_id),
+                "--recovery-events-out",
+                self.spool.attempt_recovery_events_path(
+                    job.job_id,
+                    attempt,
+                ),
+                "--recovery-config-hash",
+                job.config_hash,
+                "--recovery-seal-hash",
+                job.seal_hash,
+            ])
+            checkpoint = self.ledger.latest_recovery_checkpoint(
+                job.job_id
+            )
+            checkpoint_generation = (
+                None
+                if checkpoint is None
+                else checkpoint.generation
+            )
+            if checkpoint_generation != job.resume_generation:
+                raise WorkerPlanError(
+                    ErrorCode.INTERNAL,
+                    "claimed recovery generation does not match the ledger",
+                )
+            if checkpoint is not None:
+                path = self.recovery_store.absolute_path(
+                    checkpoint.relative_path
+                )
+                expected = self.recovery_store.checkpoint_path(
+                    job.job_id,
+                    checkpoint.generation,
+                )
+                if (
+                    path != expected
+                    or not os.path.isfile(path)
+                    or os.path.getsize(path) != checkpoint.byte_count
+                ):
+                    raise WorkerPlanError(
+                        ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+                        "registered training recovery checkpoint is unavailable",
+                    )
+                if _sha256_file(path) != checkpoint.sha256:
+                    raise WorkerPlanError(
+                        ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+                        "registered training recovery checkpoint is corrupt",
+                    )
+                argv.extend(["--resume-checkpoint", path])
         return argv
 
 

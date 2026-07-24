@@ -47,7 +47,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -55,7 +55,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "operation": "fit",
@@ -369,7 +369,7 @@ def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
 ):
     ledger, job_id, client = published_output_server
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "outputs", "0"
+        "transformer", "v2", "jobs", job_id, "outputs", "0"
     )
 
     with pytest.raises(pa.ArrowKeyError):
@@ -420,7 +420,7 @@ def test_client_cancellation_reaches_active_do_get_and_closes_output(
 
     monkeypatch.setattr(output_module, "_stream_batches", observable_stream)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "outputs", "0"
+        "transformer", "v2", "jobs", job_id, "outputs", "0"
     )
     ticket = client.get_flight_info(descriptor, options=_auth()).endpoints[0].ticket
     reader = client.do_get(ticket, options=_auth())
@@ -680,6 +680,26 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(
             flight.FlightUnavailableError,
         ),
         (ErrorCode.INTERNAL, flight.FlightInternalError, flight.FlightInternalError),
+        (
+            ErrorCode.DEVICE_LOST,
+            flight.FlightInternalError,
+            flight.FlightInternalError,
+        ),
+        (
+            ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+            flight.FlightInternalError,
+            flight.FlightInternalError,
+        ),
+        (
+            ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
+            flight.FlightInternalError,
+            flight.FlightInternalError,
+        ),
+        (
+            ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
+            flight.FlightInternalError,
+            flight.FlightInternalError,
+        ),
     ],
 )
 def test_pyarrow24_error_mapping_is_non_success_and_preserves_stable_code(

@@ -27,7 +27,8 @@ dependencies. CLI schema и help находятся в `app/cli/`, handlers — 
 
 - добавлять shell wrapper, Makefile или install script только для удобства;
 - выполнять migrations или cleanup автоматически при старте сервиса;
-- удалять `models/`, `/tmp/transformer` или output-файлы перед тестом/запуском;
+- удалять `models/`, `recovery/`, `/tmp/transformer` или output-файлы перед
+  тестом/запуском;
 - менять `app/main.py` ради unrelated refactoring;
 - объединять команды через shell или запускать subprocess с `shell=True`;
 - писать diagnostics в бинарный stdout `predict-stream`;

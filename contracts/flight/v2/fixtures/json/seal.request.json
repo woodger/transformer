@@ -1,0 +1,14 @@
+{
+  "contract": "transformer-flight",
+  "version": 2,
+  "requestId": "55555555-5555-4555-8555-555555555555",
+  "idempotencyKey": "inventory-seal-20260718-1",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "manifest": [
+    {
+      "payloadId": "44444444-4444-4444-8444-444444444444",
+      "ordinal": 0,
+      "sha256": "eb454cc6a7bd34dc00d818d9e39282b359a309b151dbaa31a9f86e876f3d17bb"
+    }
+  ]
+}

@@ -8,17 +8,14 @@ from flight_contract_schema import (
     validate_contract_document,
 )
 
-from app.database.models import Job, JobAttempt
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
-    CUDA_LANE_COUNT,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
-    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
@@ -38,7 +35,7 @@ ACTION_RESULT_SCHEMAS = {
 def common():
     return {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
     }
 
@@ -207,65 +204,6 @@ def test_action_facade_preserves_lifecycle_over_real_flight_loopback(
         server.shutdown()
 
 
-def test_status_hides_legacy_cancel_error(tmp_path, postgres_ledger):
-    config = FlightServiceConfig(
-        runtime_dir=str(tmp_path / "runtime"),
-        port=0,
-        allow_plaintext=True,
-        disk_min_free_bytes=1,
-    ).validate()
-    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
-    ledger = postgres_ledger
-    job_id = "b257793b-100f-4322-b28a-8c47072b7fec"
-    ledger.create_job(
-        job_id=job_id,
-        owner_subject="inventory",
-        operation="fit",
-        requested_device="cuda",
-        prediction_column="out",
-        config_hash="a" * 64,
-        model_label="legacy-cancelled",
-        now=1.0,
-    )
-    ledger.seal_job(
-        job_id,
-        manifest_hash="b" * 64,
-        manifest=[],
-        now=2.0,
-    )
-    ledger.queue_job(job_id, selected_device="cuda", now=3.0)
-    running = ledger.claim_next_job("cuda", now=4.0)
-    ledger.transition_job(job_id, JobState.CANCELLING, now=5.0)
-    ledger.finish_attempt(
-        job_id,
-        running["attempt"],
-        JobState.CANCELLED,
-        now=6.0,
-    )
-    with ledger.transaction() as connection:
-        stored_job = connection.get(Job, job_id)
-        stored_job.error_code = "CANCELLED"
-        stored_job.error_message = "job was cancelled"
-        attempt = connection.get(JobAttempt, (job_id, 1))
-        attempt.error_code = "CANCELLED"
-        attempt.error_message = "job was cancelled"
-
-    service = JobCoordinator(
-        config,
-        ledger,
-        spool,
-        cuda_available=lambda: False,
-    )
-    status = service.status("inventory", job_id, str(uuid.uuid4()))
-
-    assert status["state"] == JobState.CANCELLED.value
-    assert status["error"] is None
-    assert status["pollAfterMs"] == 0
-    # Compatibility is a wire concern: immutable terminal storage is not
-    # rewritten and its revision/timestamps remain untouched on startup.
-    assert ledger.get_job(job_id)["error_code"] == "CANCELLED"
-
-
 def test_same_idempotency_key_with_different_request_conflicts(coordinator):
     service, _ = coordinator
     document = create_document()
@@ -305,12 +243,19 @@ def test_cuda_unavailable_does_not_make_liveness_false(coordinator):
     capabilities = service.capabilities(str(uuid.uuid4()))
 
     assert result["live"] is True
-    assert result["cuda"] == {"available": False}
+    assert result["cuda"] == {
+        "available": False,
+        "deviceCount": 0,
+        "quarantinedCount": 0,
+    }
     assert capabilities["devices"]["cuda"]["available"] is False
-    assert capabilities["queue"]["cudaCapacity"] == CUDA_LANE_COUNT
+    assert capabilities["queue"]["cudaCapacity"] == 0
     assert capabilities["features"] == {
         "doExchange": False,
         "pollFlightInfo": False,
+        "resumableFit": True,
+        "recoveryBoundary": "globalEpoch",
+        "deviceAwareCuda": True,
     }
 
 

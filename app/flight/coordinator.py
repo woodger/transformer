@@ -1,5 +1,4 @@
 import pyarrow
-import torch
 
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -7,7 +6,6 @@ from app.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_VERSION,
     CREATE_ACTION,
-    CUDA_LANE_COUNT,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
     PREDICT_SCHEMA_ID,
@@ -18,6 +16,10 @@ from app.flight.constants import (
     ErrorCode,
 )
 from app.flight.contract import encode_document, response_document
+from app.flight.device_inventory import (
+    CudaDeviceInventory,
+    static_cuda_inventory,
+)
 from app.flight.errors import ServiceError
 from app.flight.job_actions import CreateStatusActions, LifecycleActions
 from app.flight.observability import JsonLogger, OperationalMetrics
@@ -33,6 +35,8 @@ class JobCoordinator:
         spool: Spool,
         *,
         cuda_available=None,
+        device_inventory: CudaDeviceInventory | None = None,
+        recovery_store=None,
         metrics: OperationalMetrics | None = None,
         logger: JsonLogger | None = None,
         cancel_notifier=None,
@@ -41,7 +45,17 @@ class JobCoordinator:
         self.config = config
         self.ledger = ledger
         self.spool = spool
-        self._cuda_available = cuda_available or torch.cuda.is_available
+        self.recovery_store = recovery_store or spool
+        if device_inventory is None:
+            device_inventory = (
+                static_cuda_inventory(cuda_available)
+                if cuda_available is not None
+                else CudaDeviceInventory().initialize()
+            )
+        self.device_inventory = device_inventory
+        self._cuda_available = lambda: (
+            self.device_inventory.snapshot().cuda_capacity > 0
+        )
         self.metrics = metrics or OperationalMetrics()
         self.logger = logger or JsonLogger()
         self.cancel_notifier = cancel_notifier
@@ -51,6 +65,7 @@ class JobCoordinator:
             config,
             ledger,
             spool,
+            self.recovery_store,
             cuda_available=lambda: self._cuda_available(),
             is_draining=lambda: self.draining,
             limits=self._limits,
@@ -87,7 +102,8 @@ class JobCoordinator:
         return encode_document(result)
 
     def capabilities(self, request_id: str) -> dict:
-        cuda_available = bool(self._cuda_available())
+        inventory = self.device_inventory.snapshot()
+        cuda_available = inventory.cuda_capacity > 0
         self.metrics.set("cudaAvailable", cuda_available)
         return response_document(
             request_id,
@@ -96,7 +112,7 @@ class JobCoordinator:
                 "name": "transformer-flight",
                 "version": __version__,
                 "pyarrowVersion": pyarrow.__version__,
-                "torchVersion": torch.__version__,
+                "torchVersion": inventory.torch_version,
             },
             schemaIds={
                 "fitInput": FIT_SCHEMA_ID,
@@ -108,21 +124,29 @@ class JobCoordinator:
                 "cpu": {"available": True},
                 "cuda": {
                     "available": cuda_available,
-                    "deviceCount": torch.cuda.device_count() if cuda_available else 0,
-                    "runtimeVersion": torch.version.cuda,
+                    "deviceCount": inventory.device_count,
+                    "quarantinedCount": inventory.quarantined_count,
+                    "runtimeVersion": inventory.runtime_version,
                 },
             },
             queue={
                 "cpuCapacity": self.config.cpu_capacity,
-                "cudaCapacity": CUDA_LANE_COUNT,
+                "cudaCapacity": inventory.cuda_capacity,
                 "singleInstance": True,
             },
             supportedOperations=["fit", "predict"],
-            features={"doExchange": False, "pollFlightInfo": False},
+            features={
+                "doExchange": False,
+                "pollFlightInfo": False,
+                "resumableFit": True,
+                "recoveryBoundary": "globalEpoch",
+                "deviceAwareCuda": True,
+            },
         )
 
     def health(self, request_id: str) -> dict:
-        usage = self.spool.disk_usage()
+        runtime_usage = self.spool.disk_usage()
+        recovery_usage = self.recovery_store.disk_usage()
         try:
             ledger_ready = bool(self.ledger.healthcheck())
         except Exception as exc:
@@ -134,18 +158,39 @@ class JobCoordinator:
         ready = (
             not self.draining
             and ledger_ready
-            and usage.free >= self.config.disk_min_free_bytes
+            and runtime_usage.free >= self.config.disk_min_free_bytes
+            and recovery_usage.free >= self.config.disk_min_free_bytes
         )
-        cuda_available = bool(self._cuda_available())
+        inventory = self.device_inventory.snapshot()
+        cuda_available = inventory.cuda_capacity > 0
         self.metrics.set("cudaAvailable", cuda_available)
         self.metrics.set("ready", ready)
-        self.metrics.set("diskTotalBytes", usage.total)
-        self.metrics.set("diskUsedBytes", usage.used)
-        self.metrics.set("diskFreeBytes", usage.free)
-        self.metrics.set("diskWatermarkBytes", self.config.disk_min_free_bytes)
+        self.metrics.set("diskTotalBytes", runtime_usage.total)
+        self.metrics.set("diskUsedBytes", runtime_usage.used)
+        self.metrics.set("diskFreeBytes", runtime_usage.free)
+        self.metrics.set(
+            "diskWatermarkBytes",
+            self.config.disk_min_free_bytes,
+        )
         self.metrics.set(
             "diskWatermarkExceeded",
-            usage.free < self.config.disk_min_free_bytes,
+            runtime_usage.free < self.config.disk_min_free_bytes,
+        )
+        self.metrics.set(
+            "recoveryDiskTotalBytes",
+            recovery_usage.total,
+        )
+        self.metrics.set(
+            "recoveryDiskUsedBytes",
+            recovery_usage.used,
+        )
+        self.metrics.set(
+            "recoveryDiskFreeBytes",
+            recovery_usage.free,
+        )
+        self.metrics.set(
+            "recoveryDiskWatermarkExceeded",
+            recovery_usage.free < self.config.disk_min_free_bytes,
         )
         return response_document(
             request_id,
@@ -153,11 +198,20 @@ class JobCoordinator:
             ready=ready,
             draining=self.draining,
             ledger={"available": ledger_ready},
-            cuda={"available": cuda_available},
-            disk={
-                "freeBytes": usage.free,
-                "watermarkBytes": self.config.disk_min_free_bytes,
-                "watermarkExceeded": usage.free < self.config.disk_min_free_bytes,
+            cuda={
+                "available": cuda_available,
+                "deviceCount": inventory.device_count,
+                "quarantinedCount": inventory.quarantined_count,
+            },
+            storage={
+                "runtime": _storage_health(
+                    runtime_usage,
+                    self.config.disk_min_free_bytes,
+                ),
+                "recovery": _storage_health(
+                    recovery_usage,
+                    self.config.disk_min_free_bytes,
+                ),
             },
             metrics=self.metrics.snapshot(),
         )
@@ -206,3 +260,11 @@ class JobCoordinator:
             "maxActiveJobsPerSubject": self.config.max_active_jobs_per_subject,
             "transportMessageLimitEnforced": False,
         }
+
+
+def _storage_health(usage, watermark: int) -> dict:
+    return {
+        "freeBytes": usage.free,
+        "watermarkBytes": watermark,
+        "watermarkExceeded": usage.free < watermark,
+    }

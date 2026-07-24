@@ -1,3 +1,4 @@
+import os
 import signal
 import threading
 
@@ -6,11 +7,13 @@ from app.database.tokens import AccessTokenStore
 from app.flight.auth import InMemoryAccessTokenCache
 from app.flight.config import load_config
 from app.flight.coordinator import JobCoordinator
+from app.flight.device_inventory import CudaDeviceInventory
 from app.flight.ledger import Ledger
 from app.flight.maintenance import MaintenanceService
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.output import OutputHandler
 from app.flight.process import recover_process_groups
+from app.flight.recovery_store import RecoveryStore
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.token_cache import AccessTokenCache, AccessTokenCacheService
@@ -31,6 +34,7 @@ class FlightApplication:
         metrics,
         logger,
         token_cache_service=None,
+        recovery_store=None,
     ):
         self.config = config
         self.spool = spool
@@ -42,6 +46,7 @@ class FlightApplication:
         self.metrics = metrics
         self.logger = logger
         self.token_cache_service = token_cache_service
+        self.recovery_store = recovery_store
         self._shutdown_lock = threading.Lock()
         self._shutdown_started = False
         self._shutdown_complete = threading.Event()
@@ -56,11 +61,26 @@ class FlightApplication:
         token_cache=None,
         bearer_tokens=None,
         logger=None,
+        device_inventory=None,
     ):
         logger = logger or JsonLogger()
         metrics = OperationalMetrics()
-        spool = Spool(config.runtime_dir, models_dir or config.models_dir).initialize()
-        spool.acquire_lock()
+        effective_models_dir = os.path.abspath(
+            os.fspath(models_dir or config.models_dir)
+        )
+        spool = Spool(
+            config.runtime_dir,
+            effective_models_dir,
+        ).initialize()
+        recovery_dir = (
+            config.recovery_dir
+            if models_dir is None
+            else os.path.join(
+                os.path.dirname(effective_models_dir),
+                "recovery",
+            )
+        )
+        recovery_store = RecoveryStore(recovery_dir).initialize()
         ledger = None
         token_cache_service = None
         worker = None
@@ -68,20 +88,34 @@ class FlightApplication:
         server = None
         maintenance = None
         try:
-            precleaned = spool.cleanup_temporary_files()
+            recovery_store.acquire_lock()
+            spool.acquire_lock()
             database_config = database_config or load_database_config()
             ledger = Ledger(Database(database_config)).initialize()
-            epoch_result = ledger.synchronize_runtime_epoch(spool.storage_epoch())
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
                 logger=logger,
+            )
+            precleaned = spool.cleanup_temporary_files()
+            recovery_precleaned = (
+                recovery_store.cleanup_temporary_files()
+            )
+            epoch_result = ledger.synchronize_runtime_epoch(
+                spool.storage_epoch()
             )
             recovery = ledger.reconcile_interrupted_jobs()
             reconciliation = spool.reconcile(
                 ledger.referenced_paths(),
                 temporary_paths=recovery["temporary_paths"],
                 known_job_ids={job["job_id"] for job in ledger.list_jobs()},
+            )
+            recovery_reconciliation = recovery_store.reconcile(
+                ledger.recovery_referenced_paths(),
+                known_job_ids=ledger.active_recovery_job_ids(),
+                temporary_paths=recovery[
+                    "recovery_temporary_paths"
+                ],
             )
             removed_models = spool.reconcile_model_directories(
                 {model["model_ref"] for model in ledger.list_models()}
@@ -96,12 +130,22 @@ class FlightApplication:
                     token_cache,
                     logger=logger,
                 ).start()
+            if device_inventory is None:
+                device_inventory = CudaDeviceInventory(
+                    logger=logger,
+                    quarantine_path=os.path.join(
+                        config.runtime_dir,
+                        "cuda-quarantine.json",
+                    ),
+                ).initialize()
             worker = WorkerPool(
                 config,
                 ledger,
                 spool,
+                recovery_store,
                 metrics=metrics,
                 logger=logger,
+                device_inventory=device_inventory,
             )
             coordinator = JobCoordinator(
                 config,
@@ -111,11 +155,14 @@ class FlightApplication:
                 logger=logger,
                 cancel_notifier=worker.notify_cancel,
                 queue_notifier=worker.notify_queued,
+                device_inventory=device_inventory,
+                recovery_store=recovery_store,
             )
             upload = UploadHandler(
                 config,
                 ledger,
                 spool,
+                recovery_store,
                 metrics=metrics,
                 logger=logger,
             )
@@ -139,6 +186,7 @@ class FlightApplication:
                 config,
                 ledger,
                 spool,
+                recovery_store,
                 interval_seconds=config.maintenance_interval_seconds,
                 logger=logger,
                 metrics=metrics,
@@ -154,6 +202,7 @@ class FlightApplication:
                 metrics,
                 logger,
                 token_cache_service,
+                recovery_store,
             )
             worker.start()
             maintenance.start()
@@ -167,6 +216,16 @@ class FlightApplication:
                     code="EXECUTION_INTERRUPTED",
                     recovery=True,
                 )
+            for job_id in recovery["retried_jobs"]:
+                metrics.record_transition("RUNNING", "RETRYING")
+                logger.event(
+                    "flight.job.transition",
+                    jobId=job_id,
+                    fromState="RUNNING",
+                    toState="RETRYING",
+                    code="EXECUTION_INTERRUPTED",
+                    recovery=True,
+                )
             for job_id in recovery["cancelled_jobs"]:
                 metrics.record_transition("CANCELLING", "CANCELLED")
                 logger.event(
@@ -177,12 +236,14 @@ class FlightApplication:
                     recovery=True,
                 )
             usage = spool.disk_usage()
+            recovery_usage = recovery_store.disk_usage()
             logger.event(
                 "flight.service.started",
                 host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
                 recoveredInterruptedJobs=len(recovery["interrupted_jobs"]),
+                recoveredRetryingJobs=len(recovery["retried_jobs"]),
                 recoveredProcessGroups=sum(
                     result.outcome in ("terminated", "killed")
                     for result in process_recovery
@@ -190,6 +251,12 @@ class FlightApplication:
                 removedOrphans=len(reconciliation["removed"]),
                 removedUnpublishedModels=len(removed_models),
                 removedStartupTemporaries=len(precleaned),
+                removedRecoveryTemporaries=len(
+                    recovery_precleaned
+                ),
+                removedRecoveryOrphans=len(
+                    recovery_reconciliation
+                ),
                 runtimeStorageReset=epoch_result["reset"],
                 discardedRuntimeJobs=len(epoch_result["discarded_jobs"]),
                 diskTotalBytes=usage.total,
@@ -198,6 +265,22 @@ class FlightApplication:
                 diskWatermarkBytes=config.disk_min_free_bytes,
                 diskWatermarkExceeded=(
                     usage.free < config.disk_min_free_bytes
+                ),
+                recoveryDiskTotalBytes=recovery_usage.total,
+                recoveryDiskUsedBytes=recovery_usage.used,
+                recoveryDiskFreeBytes=recovery_usage.free,
+                recoveryDiskWatermarkBytes=(
+                    config.disk_min_free_bytes
+                ),
+                recoveryDiskWatermarkExceeded=(
+                    recovery_usage.free
+                    < config.disk_min_free_bytes
+                ),
+                cudaDevices=(
+                    device_inventory.snapshot().device_count
+                ),
+                cudaCapacity=(
+                    device_inventory.snapshot().cuda_capacity
                 ),
             )
         except BaseException:
@@ -208,6 +291,7 @@ class FlightApplication:
                 token_cache_service=token_cache_service,
                 ledger=ledger,
                 spool=spool,
+                recovery_store=recovery_store,
                 worker_timeout=0,
                 maintenance_timeout=0,
             )
@@ -308,6 +392,7 @@ class FlightApplication:
                 token_cache_service=self.token_cache_service,
                 ledger=self.ledger,
                 spool=self.spool,
+                recovery_store=self.recovery_store,
                 worker_timeout=self.config.shutdown_drain_seconds,
                 maintenance_timeout=self.config.shutdown_drain_seconds,
             ))
@@ -344,6 +429,7 @@ def _cleanup_runtime(
     token_cache_service,
     ledger,
     spool,
+    recovery_store=None,
     worker_timeout,
     maintenance_timeout,
 ) -> list[BaseException]:
@@ -356,6 +442,11 @@ def _cleanup_runtime(
         None if token_cache_service is None else lambda: token_cache_service.shutdown(maintenance_timeout),
         None if ledger is None else ledger.close,
         spool.release_lock,
+        (
+            None
+            if recovery_store is None
+            else recovery_store.release_lock
+        ),
     )
     for operation in operations:
         if operation is None:

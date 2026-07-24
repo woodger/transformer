@@ -12,8 +12,10 @@ from app.database.migrations import require_current_schema
 from app.database.models import (
     IdempotencyRecord,
     Job,
+    JobAttempt,
     JobInput,
     JobOutput,
+    TrainingRecoveryCheckpoint,
 )
 from app.database.session import Database
 from app.flight.constants import (
@@ -27,6 +29,7 @@ from app.flight.ledger_artifacts import ArtifactLedgerSlice
 from app.flight.ledger_execution import ExecutionLedgerSlice
 from app.flight.ledger_inputs import InputLedgerSlice
 from app.flight.ledger_maintenance import MaintenanceLedgerSlice
+from app.flight.ledger_recovery import RecoveryLedgerSlice
 from app.flight.ledger_support import (
     LedgerSessions,
     advisory_lock as _advisory_lock,
@@ -42,6 +45,8 @@ from app.flight.records import (
     ExecutionJobRecord,
     ModelArtifactRecord,
     RecoverableAttemptRecord,
+    StatusRecoveryRecord,
+    TrainingRecoveryCheckpointRecord,
 )
 from app.flight.state import validate_transition
 
@@ -64,6 +69,7 @@ class Ledger:
         self._execution = ExecutionLedgerSlice(self._sessions)
         self._artifacts = ArtifactLedgerSlice(self._sessions)
         self._maintenance = MaintenanceLedgerSlice(self._sessions)
+        self._recovery = RecoveryLedgerSlice(self._sessions)
 
     def initialize(self) -> Ledger:
         require_current_schema(self.database.config)
@@ -206,7 +212,85 @@ class Ledger:
             outputs = session.scalars(
                 select(JobOutput).where(JobOutput.job_id == job_id).order_by(JobOutput.ordinal)
             ).all()
-        return _decode(job), [_decode(row) for row in inputs], [_decode(row) for row in outputs]
+            recovery = None
+            if job is not None and job.operation == "fit":
+                checkpoint = session.scalar(
+                    select(TrainingRecoveryCheckpoint)
+                    .where(
+                        TrainingRecoveryCheckpoint.job_id
+                        == job_id
+                    )
+                    .order_by(
+                        TrainingRecoveryCheckpoint.generation.desc()
+                    )
+                    .limit(1)
+                )
+                last_retry = session.scalar(
+                    select(JobAttempt)
+                    .where(
+                        JobAttempt.job_id == job_id,
+                        JobAttempt.error_code.in_((
+                            ErrorCode.DEVICE_LOST.value,
+                            ErrorCode.EXECUTION_INTERRUPTED.value,
+                        )),
+                    )
+                    .order_by(JobAttempt.attempt.desc())
+                    .limit(1)
+                )
+                retry_count = int(session.scalar(
+                    select(func.count())
+                    .select_from(JobAttempt)
+                    .where(
+                        JobAttempt.job_id == job_id,
+                        JobAttempt.error_code.in_((
+                            ErrorCode.DEVICE_LOST.value,
+                            ErrorCode.EXECUTION_INTERRUPTED.value,
+                        )),
+                    )
+                ) or 0)
+                active_attempt = (
+                    None
+                    if job.attempt <= 0
+                    else session.get(
+                        JobAttempt,
+                        (job_id, job.attempt),
+                    )
+                )
+                recovery = StatusRecoveryRecord(
+                    checkpoint=(
+                        None
+                        if checkpoint is None
+                        else TrainingRecoveryCheckpointRecord(
+                            job_id=checkpoint.job_id,
+                            generation=checkpoint.generation,
+                            attempt=checkpoint.attempt,
+                            format=checkpoint.format,
+                            relative_path=checkpoint.relative_path,
+                            byte_count=checkpoint.bytes,
+                            sha256=checkpoint.sha256,
+                            completed_epochs=checkpoint.completed_epochs,
+                            global_step=checkpoint.global_step,
+                            training_complete=checkpoint.training_complete,
+                        )
+                    ),
+                    retry_count=retry_count,
+                    last_retry_code=(
+                        None
+                        if last_retry is None
+                        else last_retry.error_code
+                    ),
+                    resumed_from_generation=(
+                        None
+                        if active_attempt is None
+                        else active_attempt.resume_generation
+                    ),
+                )
+        return (
+            _decode(job),
+            [_decode(row) for row in inputs],
+            [_decode(row) for row in outputs],
+            recovery,
+        )
 
     def list_jobs(
         self,
@@ -361,6 +445,7 @@ class Ledger:
         ordinal: int,
         upload_token: str,
         temporary_path: str,
+        storage_class: str = "runtime",
         now: float | None = None,
     ) -> dict:
         return self._inputs.reserve_input(
@@ -369,6 +454,7 @@ class Ledger:
             ordinal=ordinal,
             upload_token=upload_token,
             temporary_path=temporary_path,
+            storage_class=storage_class,
             now=now,
         )
 
@@ -390,6 +476,7 @@ class Ledger:
         feature_dim: int | None,
         max_payloads: int,
         max_job_bytes: int,
+        storage_class: str = "runtime",
         now: float | None = None,
     ) -> dict:
         return self._inputs.commit_input(
@@ -405,6 +492,7 @@ class Ledger:
             feature_dim=feature_dim,
             max_payloads=max_payloads,
             max_job_bytes=max_job_bytes,
+            storage_class=storage_class,
             now=now,
         )
 
@@ -473,12 +561,14 @@ class Ledger:
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
         return self._execution.claim_job(
             job_id,
             selected_device,
             worker_id=worker_id,
+            device_id=device_id,
             now=now,
         )
 
@@ -488,12 +578,14 @@ class Ledger:
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> ExecutionJobRecord | None:
         return self._execution.claim_execution_job(
             job_id,
             selected_device,
             worker_id=worker_id,
+            device_id=device_id,
             now=now,
         )
 
@@ -502,11 +594,13 @@ class Ledger:
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
         return self._execution.claim_next_job(
             selected_device,
             worker_id=worker_id,
+            device_id=device_id,
             now=now,
         )
 
@@ -550,6 +644,86 @@ class Ledger:
             job_id,
             attempt,
             target_state,
+            error_code=error_code,
+            error_message=error_message,
+            exit_code=exit_code,
+            now=now,
+        )
+
+    def register_recovery_checkpoint(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        generation: int,
+        format: str,
+        relative_path: str,
+        byte_count: int,
+        sha256: str,
+        completed_epochs: int,
+        global_step: int,
+        training_complete: bool,
+        now: float | None = None,
+    ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
+        return self._recovery.register_checkpoint(
+            job_id=job_id,
+            attempt=attempt,
+            generation=generation,
+            format=format,
+            relative_path=relative_path,
+            byte_count=byte_count,
+            sha256=sha256,
+            completed_epochs=completed_epochs,
+            global_step=global_step,
+            training_complete=training_complete,
+            now=now,
+        )
+
+    def latest_recovery_checkpoint(
+        self,
+        job_id: str,
+    ) -> TrainingRecoveryCheckpointRecord | None:
+        return self._recovery.latest_checkpoint(job_id)
+
+    def list_recovery_checkpoints(
+        self,
+        job_id: str,
+    ) -> list[TrainingRecoveryCheckpointRecord]:
+        return self._recovery.list_checkpoints(job_id)
+
+    def recovery_referenced_paths(self) -> set[str]:
+        return self._recovery.referenced_paths()
+
+    def active_recovery_job_ids(self) -> set[str]:
+        return self._recovery.active_fit_job_ids()
+
+    def terminal_recovery_job_ids(self) -> set[str]:
+        return self._recovery.terminal_fit_job_ids()
+
+    def prune_recovery_checkpoints(
+        self,
+        job_id: str,
+        *,
+        keep: int = 2,
+    ) -> list[str]:
+        return self._recovery.prune_checkpoints(
+            job_id,
+            keep=keep,
+        )
+
+    def schedule_retry(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        error_code: str | ErrorCode,
+        error_message: str,
+        exit_code: int | None = None,
+        now: float | None = None,
+    ) -> dict:
+        return self._recovery.schedule_retry(
+            job_id,
+            attempt,
             error_code=error_code,
             error_message=error_message,
             exit_code=exit_code,

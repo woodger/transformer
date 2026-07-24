@@ -1,11 +1,13 @@
-# Transformer Arrow Flight service: runbook v1
+# Transformer Arrow Flight service: runbook v2
 
 This runbook covers the single-instance Transformer Flight service. Consumer
 wire details are in the
 [`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
-fixtures are in [`contracts/flight/v1`](../contracts/flight/v1/README.md), and
-the service boundary is recorded in
-[`ADR 0001`](adr/0001-arrow-flight-job-service.md).
+fixtures are in [`contracts/flight/v2`](../contracts/flight/v2/README.md), and
+the original service boundary is recorded in
+[`ADR 0001`](adr/0001-arrow-flight-job-service.md), and durable resumable
+training plus device-aware execution are fixed by
+[`ADR 0003`](adr/0003-durable-resumable-training-and-device-aware-execution.md).
 
 ## Runtime requirements
 
@@ -14,9 +16,14 @@ the service boundary is recorded in
 - SQLAlchemy 2, Psycopg 3, Alembic and python-dotenv for PostgreSQL access.
 - PostgreSQL reachable on the private network.
 - A persistent project `models/` directory for successfully published models.
-- A RAM-backed `/tmp` large enough for all active Arrow payloads and attempts.
+- A persistent project `recovery/` directory for fit inputs and internal
+  global-epoch checkpoints.
+- A RAM-backed `/tmp` large enough for prediction inputs and active attempt
+  artifacts.
 - A visible Linux `/proc`, libc `prctl(PR_SET_PDEATHSIG)` support and permission
   to signal worker-owned process groups.
+- For CUDA scheduling, `nvidia-smi` with stable GPU UUID output. Each visible
+  GPU must be usable by the service user.
 
 Each training or prediction subprocess starts in an isolated process group.
 Startup recovery compares the recorded PID, process group, boot ID and process
@@ -41,19 +48,21 @@ PostgreSQL is the single durable source of truth for:
 
 - jobs, attempts and state transitions;
 - input/output metadata, idempotency records and output tickets;
+- registered training-recovery generations and retry history;
 - published-model metadata and owner-scoped model aliases;
 - API access tokens;
 - the current runtime storage epoch.
 
-The default runtime filesystem is intentionally ephemeral:
+The runtime filesystem is intentionally ephemeral:
 
 ```text
 /tmp/transformer/
   service.lock
   storage-epoch
+  cuda-quarantine.json
   spool/
     jobs/{jobId}/
-      inputs/{ordinal}.arrow
+      inputs/{ordinal}.arrow        # prediction only
       attempts/{attempt}/
         metrics.jsonl
         stdout.log
@@ -62,7 +71,16 @@ The default runtime filesystem is intentionally ephemeral:
         checkpoint.pth
 ```
 
-Only successfully trained models are published persistently:
+Fit inputs and recoverable training state are persistent but remain internal:
+
+```text
+<project-root>/recovery/
+  jobs/{jobId}/
+    inputs/{ordinal}.arrow
+    checkpoints/{completedEpoch}.pth
+```
+
+Only successfully trained models receive a persistent public identity:
 
 ```text
 <project-root>/models/
@@ -72,27 +90,31 @@ Only successfully trained models are published persistently:
 ```
 
 Files are staged beside their destination, fsynced, atomically renamed and
-followed by a directory fsync. Model publication copies a successful attempt
-checkpoint into `models/` first and commits its metadata to PostgreSQL only
-after the filesystem publication succeeds. Failed and interrupted attempts
-never create a model generation.
+followed by a directory fsync. A recovery checkpoint becomes visible only
+after the file is durable and its generation is registered in PostgreSQL.
+Model publication copies a successful attempt checkpoint into `models/` first
+and commits its metadata to PostgreSQL only after the filesystem publication
+succeeds. Failed and interrupted attempts never create a model generation.
 
-One process owns a runtime directory through its non-blocking `service.lock`.
-V1 remains single-instance: PostgreSQL does not turn the in-memory worker queue
-or local runtime spool into a multi-replica scheduler.
+One process owns both runtime and recovery directories through non-blocking
+`service.lock` files. V2 remains single-instance: PostgreSQL does not turn the
+in-memory worker queue or local stores into a multi-replica scheduler.
 
 ### Loss of `/tmp`
 
 `storage-epoch` identifies the current runtime filesystem generation. If
 `/tmp/transformer` is lost, the next process creates a new epoch. Transformer
-then rejects the old runtime generation and removes every job plus its attempts,
-inputs, prediction outputs, tickets and idempotency records from PostgreSQL.
-It does not attempt to resume or reconstruct any work. A fit that had already
-run for 22 hours must be submitted and trained again as a new job.
+removes prediction jobs, their inputs/outputs/tickets and linked idempotency
+records because those artifacts cannot be reconstructed. A non-terminal fit
+whose inputs are in `recovery/` remains authoritative: an interrupted attempt
+becomes `RETRYING` and resumes from its latest registered completed epoch.
 
-Published models and API access tokens are not tied to the runtime epoch and
-remain available. Their files and metadata are persistent. This is the only
-intentional split in durability; there is no duplicated local database.
+Published models, persistent fit inputs/checkpoints and API access tokens are
+not tied to the runtime epoch. Loss of `recovery/` is different: a registered
+input or checkpoint which is absent or corrupt produces an explicit recovery
+error; Transformer never silently restarts the fit from epoch zero. PostgreSQL
+stores metadata only, so neither filesystem can be reconstructed from the
+database.
 
 ## PostgreSQL configuration and migrations
 
@@ -128,6 +150,12 @@ python3.11 ./app/main.py db migrations rollback
 
 The service and token-management commands refuse to start against a missing or
 outdated schema and direct the operator to `db migrations apply`.
+
+Revision `0002` is the deliberate breaking Flight v2 cutover. Applying it
+removes v1 jobs, attempts, input/output tickets and idempotency records. It
+preserves published model generations, aliases and access tokens. Stop the v1
+service before applying the revision and start only v2 code afterwards; mixed
+v1/v2 operation is unsupported.
 
 PostgreSQL stores control-plane state, not Arrow payloads and not a local cache.
 Transactions are short. Worker dispatch uses an in-process FIFO initialized
@@ -195,7 +223,7 @@ the environment:
 | `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
 | `CPU_WORKERS` | `2` | Concurrent CPU worker lanes |
-| `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
+| `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime and recovery admission watermark |
 | `RETENTION_SECONDS` | `604800` | Terminal-job retention |
 
 The runtime directory is derived with
@@ -205,8 +233,8 @@ The runtime directory is derived with
 The corresponding `TRANSFORMER_*` environment variables are not read.
 TLS and mTLS have no persistent configuration defaults: they are enabled only
 by explicitly supplying certificate options to `flight serve`.
-Flight v1 derives `cudaCapacity=1` from its single CUDA scheduler lane; it is
-not an application setting.
+Flight v2 derives `cudaCapacity` from the healthy physical GPUs discovered at
+startup; it is not an application setting.
 
 Certificate and key must be configured together. `tls-require-client-cert`
 also requires a CA file. Plaintext transport is accepted only when explicitly
@@ -278,34 +306,37 @@ directory policy and operator procedure are documented in
 
 ## Startup and recovery
 
-With the same runtime storage epoch, startup:
+Startup:
 
-1. locks the runtime directory and removes crash-left temporary files;
+1. locks the runtime and recovery directories;
 2. verifies that the PostgreSQL schema is at the current Alembic head;
 3. identifies and safely terminates exact surviving worker process groups;
-4. marks interrupted `RUNNING` jobs `FAILED / EXECUTION_INTERRUPTED` and
-   interrupted `CANCELLING` jobs `CANCELLED`;
-5. removes incomplete upload reservations and unpublished attempt artifacts;
-6. reconciles persistent model directories against PostgreSQL metadata;
-7. loads `QUEUED` jobs into the in-memory device queues;
-8. loads the API token cache and starts its notification listener;
-9. starts workers, maintenance and Flight RPC serving.
+4. removes crash-left temporary files after all surviving workers are reaped;
+5. reconciles a changed runtime epoch, discarding jobs whose required runtime
+   artifacts no longer exist;
+6. moves interrupted persistent fits to `RETRYING`, marks interrupted
+   predictions `FAILED / EXECUTION_INTERRUPTED`, and finishes interrupted
+   `CANCELLING` jobs as `CANCELLED`;
+7. removes incomplete upload reservations and unpublished/orphan artifacts;
+8. reconciles persistent model directories against PostgreSQL metadata;
+9. inventories usable physical CUDA devices without initializing CUDA in the
+   Flight process;
+10. loads the API token cache and starts its notification listener;
+11. loads `QUEUED` and `RETRYING` jobs into the in-memory device queues and
+    starts workers plus maintenance;
+12. begins Flight RPC serving.
 
-`UPLOADING`, `SEALED` and `QUEUED` jobs can survive an ordinary service restart
-only while their runtime epoch and files remain present. A running fit is never
-automatically retried because its optimizer and model state may already have
-mutated.
-
-If the epoch changes, the runtime-loss policy runs before ordinary job
-recovery: every old job is discarded, including queued and terminal jobs.
-Published models remain because their files and database records live outside
-the runtime generation.
+A resumed fit restores the latest PostgreSQL-registered global-epoch
+checkpoint. If none exists, it restarts from epoch zero using the same
+persistent inputs and immutable job configuration. The incomplete epoch, if
+any, is deliberately repeated.
 
 ## Cancellation and shutdown
 
 Job cancellation behavior:
 
-- `UPLOADING`, `SEALED`, `QUEUED` become `CANCELLED` transactionally;
+- `UPLOADING`, `SEALED`, `QUEUED`, `RETRYING` become `CANCELLED`
+  transactionally;
 - `RUNNING` becomes `CANCELLING`, then the complete worker process group is
   sent SIGTERM and, after the configured grace period, SIGKILL if necessary;
 - no prediction output or model is published after cancellation wins the final
@@ -322,23 +353,26 @@ PostgreSQL connection pool closes and the runtime lock is released.
 
 Maintenance periodically deletes expired output tickets and eligible terminal
 jobs. A job is retained while it has a live ticket, a recent linked idempotency
-record or immutable model provenance. Published model directories are not
-deleted by job retention, and v1 has no network action for model deletion.
+record or immutable model provenance. Recovery inputs/checkpoints are removed
+after a fit becomes terminal; published model directories are not deleted by
+job retention, and v2 has no network action for model deletion.
 
-Create, upload and worker admission check the runtime filesystem free-space
-watermark. Health reports `ready=false` below that watermark. Runtime disk-full
-failures use stable `DISK_FULL` and do not publish partial artifacts. Monitor
-both `/tmp/transformer` capacity and persistent model-directory growth.
+Create, upload and worker admission check the applicable filesystem free-space
+watermark. Health reports `ready=false` when either runtime or recovery
+storage is below it. Disk-full failures use stable `DISK_FULL` and do not
+publish partial artifacts. Monitor `/tmp/transformer`, persistent `recovery/`
+and model-directory growth separately.
 
 ## Health and observability
 
 The service has no separate unauthenticated HTTP health endpoint. Call the
-authenticated `transformer.v1.health` Flight action.
+authenticated `transformer.v2.health` Flight action.
 
 - `live=true` means the process can answer the action.
 - `ready=true` requires a non-draining service, a successful PostgreSQL health
-  check and enough free runtime storage.
-- CUDA availability is reported independently.
+  check and enough free runtime and recovery storage.
+- CUDA availability, physical-device count and quarantine count are reported
+  independently.
 
 Service logs are one JSON object per line on stderr. They cover service
 lifecycle, RPC/action completion, job transitions, input commits, worker
@@ -354,10 +388,10 @@ belongs to the active runtime generation.
 Recommended alerts include:
 
 - `ready=false` or PostgreSQL unavailable;
-- runtime free space below the watermark;
-- persistent model growth outside forecast;
-- worker-lane errors, CUDA OOM, device unavailability or repeated subprocess
-  failure;
+- runtime or recovery free space below the watermark;
+- persistent recovery/model growth outside forecast;
+- worker-lane errors, CUDA OOM, quarantined devices or repeated subprocess
+  failure/retry;
 - interrupted-process recovery or a runtime storage epoch reset;
 - long queue wait relative to configured CPU/CUDA capacity.
 
@@ -379,9 +413,10 @@ PyArrow 24 has two confirmed binding limitations:
 Details are recorded in
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Known v1 limits
+## Known v2 limits
 
-- One Transformer service instance and one local runtime directory.
+- One Transformer service instance with one local runtime store and one
+  persistent recovery store.
 - No replica scheduling or automatic failover.
 - No `DoExchange` and no `PollFlightInfo`.
 - At most 400 logical payloads per job so the seal manifest remains within the
@@ -390,8 +425,13 @@ Details are recorded in
   epochs or prediction invocation boundaries.
 - One predict job loads one checkpoint once and emits one output per input
   ordinal.
-- Running fit is never automatically retried.
-- Loss of runtime storage invalidates all jobs in that storage epoch.
+- Fit recovery is only at a completed global-epoch boundary; an incomplete
+  epoch is repeated.
+- One fit attempt uses one GPU; a single job is not distributed across GPUs.
+- A confirmed lost GPU is quarantined until the next Linux boot; an ordinary
+  service restart does not return it to the pool.
+- Loss of runtime storage invalidates prediction work but not a fit with intact
+  persistent recovery artifacts.
 - Transformer owns checkpoints; clients receive only opaque `modelRef` values.
 - Output tickets are short-lived and are not model references.
 - Plaintext availability is controlled by `ALLOW_PLAINTEXT` in

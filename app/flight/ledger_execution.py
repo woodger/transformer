@@ -5,7 +5,12 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import QUEUE_SEQUENCE, Job, JobAttempt
+from app.database.models import (
+    QUEUE_SEQUENCE,
+    Job,
+    JobAttempt,
+    TrainingRecoveryCheckpoint,
+)
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import conflict, failed_precondition, not_found
 from app.flight.ledger_support import (
@@ -47,7 +52,16 @@ class ExecutionLedgerSlice:
         if for_update:
             statement = statement.with_for_update()
         with self.sessions.read(connection) as session:
-            return _execution_job_record(session.scalar(statement))
+            job = session.scalar(statement)
+            attempt = (
+                None
+                if job is None or job.attempt <= 0
+                else session.get(
+                    JobAttempt,
+                    (job.job_id, job.attempt),
+                )
+            )
+            return _execution_job_record(job, attempt)
 
     def update_progress(
         self,
@@ -121,6 +135,7 @@ class ExecutionLedgerSlice:
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
         if selected_device not in ("cpu", "cuda"):
@@ -133,18 +148,21 @@ class ExecutionLedgerSlice:
             )
             if (
                 job is None
-                or job.state != JobState.QUEUED.value
+                or job.state not in (
+                    JobState.QUEUED.value,
+                    JobState.RETRYING.value,
+                )
                 or job.selected_device != selected_device
             ):
                 return None
-            return decode(
-                self._claim(
-                    session,
-                    job,
-                    worker_id,
-                    timestamp_now(now),
-                )
+            job, _ = self._claim(
+                session,
+                job,
+                worker_id,
+                timestamp_now(now),
+                device_id=device_id,
             )
+            return decode(job)
 
     def claim_execution_job(
         self,
@@ -152,6 +170,7 @@ class ExecutionLedgerSlice:
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> ExecutionJobRecord | None:
         if selected_device not in ("cpu", "cuda"):
@@ -164,24 +183,28 @@ class ExecutionLedgerSlice:
             )
             if (
                 job is None
-                or job.state != JobState.QUEUED.value
+                or job.state not in (
+                    JobState.QUEUED.value,
+                    JobState.RETRYING.value,
+                )
                 or job.selected_device != selected_device
             ):
                 return None
-            return _execution_job_record(
-                self._claim(
-                    session,
-                    job,
-                    worker_id,
-                    timestamp_now(now),
-                )
+            job, attempt = self._claim(
+                session,
+                job,
+                worker_id,
+                timestamp_now(now),
+                device_id=device_id,
             )
+            return _execution_job_record(job, attempt)
 
     def claim_next_job(
         self,
         selected_device: str,
         *,
         worker_id: str | None = None,
+        device_id: str | None = None,
         now: float | None = None,
     ) -> dict | None:
         if selected_device not in ("cpu", "cuda"):
@@ -190,7 +213,10 @@ class ExecutionLedgerSlice:
             job = session.scalar(
                 select(Job)
                 .where(
-                    Job.state == JobState.QUEUED.value,
+                    Job.state.in_((
+                        JobState.QUEUED.value,
+                        JobState.RETRYING.value,
+                    )),
                     Job.selected_device == selected_device,
                 )
                 .order_by(Job.queue_sequence)
@@ -199,14 +225,14 @@ class ExecutionLedgerSlice:
             )
             if job is None:
                 return None
-            return decode(
-                self._claim(
-                    session,
-                    job,
-                    worker_id,
-                    timestamp_now(now),
-                )
+            job, _ = self._claim(
+                session,
+                job,
+                worker_id,
+                timestamp_now(now),
+                device_id=device_id,
             )
+            return decode(job)
 
     def _claim(
         self,
@@ -214,23 +240,48 @@ class ExecutionLedgerSlice:
         job: Job,
         worker_id: str | None,
         claimed_at: datetime,
-    ) -> Job:
+        *,
+        device_id: str | None = None,
+    ) -> tuple[Job, JobAttempt]:
+        if job.selected_device == "cuda" and not device_id:
+            raise ValueError(
+                "CUDA attempt requires a physical device assignment"
+            )
+        if job.selected_device == "cpu" and device_id is not None:
+            raise ValueError(
+                "CPU attempt must not carry a CUDA device assignment"
+            )
+        resume_generation = None
+        if job.operation == "fit":
+            resume_generation = session.scalar(
+                select(TrainingRecoveryCheckpoint.generation)
+                .where(
+                    TrainingRecoveryCheckpoint.job_id == job.job_id
+                )
+                .order_by(
+                    TrainingRecoveryCheckpoint.generation.desc()
+                )
+                .limit(1)
+            )
         job.state = JobState.RUNNING.value
         job.revision += 1
         job.attempt += 1
         job.started_at = claimed_at
         job.updated_at = claimed_at
-        session.add(JobAttempt(
+        record = JobAttempt(
             job_id=job.job_id,
             attempt=job.attempt,
             selected_device=job.selected_device,
+            device_id=device_id,
+            resume_generation=resume_generation,
             status=JobState.RUNNING.value,
             worker_id=worker_id,
             claimed_at=claimed_at,
             started_at=claimed_at,
-        ))
+        )
+        session.add(record)
         session.flush()
-        return job
+        return job, record
 
     def set_attempt_process(
         self,
@@ -370,7 +421,10 @@ class ExecutionLedgerSlice:
         with self.database.session() as session:
             rows = session.scalars(
                 select(Job)
-                .where(Job.state == JobState.QUEUED.value)
+                .where(Job.state.in_((
+                    JobState.QUEUED.value,
+                    JobState.RETRYING.value,
+                )))
                 .order_by(Job.queue_sequence)
             )
             return [decode(row) for row in rows]
@@ -379,7 +433,10 @@ class ExecutionLedgerSlice:
         with self.database.session() as session:
             rows = session.scalars(
                 select(Job)
-                .where(Job.state == JobState.QUEUED.value)
+                .where(Job.state.in_((
+                    JobState.QUEUED.value,
+                    JobState.RETRYING.value,
+                )))
                 .order_by(Job.queue_sequence)
             )
             return [_execution_job_record(row) for row in rows]
@@ -387,6 +444,7 @@ class ExecutionLedgerSlice:
 
 def _execution_job_record(
     record: Job | None,
+    attempt: JobAttempt | None = None,
 ) -> ExecutionJobRecord | None:
     if record is None:
         return None
@@ -401,9 +459,17 @@ def _execution_job_record(
         prediction_column=record.prediction_column,
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),
+        config_hash=record.config_hash,
+        seal_hash=record.seal_hash,
         feature_dim=record.feature_dim,
         input_frame_count=len(record.seal_manifest or ()),
         attempt=record.attempt,
+        assigned_device_id=(
+            None if attempt is None else attempt.device_id
+        ),
+        resume_generation=(
+            None if attempt is None else attempt.resume_generation
+        ),
         queued_at=timestamp(record.queued_at),
         started_at=timestamp(record.started_at),
     )

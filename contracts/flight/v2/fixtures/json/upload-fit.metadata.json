@@ -1,0 +1,9 @@
+{
+  "contract": "transformer-flight",
+  "version": 2,
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "payloadId": "44444444-4444-4444-8444-444444444444",
+  "ordinal": 0,
+  "schemaId": "inventory.sequence.fit.v1",
+  "rows": 3
+}

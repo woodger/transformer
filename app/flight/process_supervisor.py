@@ -1,4 +1,4 @@
-"""Linux parent-death guard for a worker-owned legacy CLI subprocess."""
+"""Linux parent-death guard for a worker-owned CLI subprocess."""
 
 from __future__ import annotations
 

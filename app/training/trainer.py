@@ -1,7 +1,11 @@
+import copy
 import math
+import random
 import time
 from contextlib import nullcontext
+from dataclasses import asdict
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -81,6 +85,13 @@ class Trainer:
         self.best_frame = None
         self.best_epoch = None
         self.state = TrainingState()
+        self.early_stopping = EarlyStopping(
+            patience=self.patience,
+            min_stage=min(self.loss_stage, LOSS_STAGES),
+        )
+        self.training_complete = False
+        self._payload_shuffle_generator = torch.Generator()
+        self._payload_shuffle_generator.manual_seed(self.seed)
         self.loss_scheduler = LossScheduler(
             loss_schedule=self.loss_schedule,
             stage_size=self.stage_size,
@@ -280,13 +291,18 @@ class Trainer:
         epoch. Optimizer batches and bounded shuffle windows may cross payload
         boundaries, so transport partitioning cannot change the trajectory.
         """
-        shuffle_generator = torch.Generator()
-        shuffle_generator.manual_seed(self.seed)
-
         def loaders():
-            yield self._payload_batches(payloads(), shuffle_generator)
+            yield self._payload_batches(
+                payloads(),
+                self._payload_shuffle_generator,
+            )
 
-        return self._fit_loader_epochs(loaders, on_epoch=on_epoch)
+        return self._fit_loader_epochs(
+            loaders,
+            on_epoch=on_epoch,
+            start_epoch=self.state.global_epoch,
+            stopper=self.early_stopping,
+        )
 
     def _payload_batches(self, payloads, generator):
         window_rows = None
@@ -381,15 +397,25 @@ class Trainer:
             num_workers=0,
         )
 
-    def _fit_loader_epochs(self, loaders, on_epoch=None, frame: int | None = None):
+    def _fit_loader_epochs(
+        self,
+        loaders,
+        on_epoch=None,
+        frame: int | None = None,
+        *,
+        start_epoch: int = 0,
+        stopper: EarlyStopping | None = None,
+        on_epoch_committed=None,
+    ):
         metrics_rows = []
-        stopper = EarlyStopping(
+        stopper = stopper or EarlyStopping(
             patience=self.patience,
             min_stage=min(self.loss_stage, LOSS_STAGES),
         )
         self.state.begin_frame(frame)
+        self.training_complete = False
 
-        for epoch in range(self.epochs):
+        for epoch in range(start_epoch, self.epochs):
             self.state.begin_epoch(epoch)
             metrics = self._train_loaders(loaders())
             metrics_rows.append(metrics)
@@ -407,10 +433,172 @@ class Trainer:
                 metrics.loss_stage,
             )
             self.state.finish_epoch()
+            self.training_complete = (
+                should_stop or self.state.global_epoch >= self.epochs
+            )
+            if on_epoch_committed is not None:
+                on_epoch_committed(
+                    epoch,
+                    metrics,
+                    monitor_payload,
+                    self.training_complete,
+                )
             if should_stop:
                 break
 
         return metrics_rows
+
+    def fit_payloads_resumable(
+        self,
+        payloads,
+        *,
+        on_epoch=None,
+        on_epoch_committed=None,
+    ):
+        """Train job-wide epochs and expose only complete recovery boundaries."""
+
+        def loaders():
+            yield self._payload_batches(
+                payloads(),
+                self._payload_shuffle_generator,
+            )
+
+        return self._fit_loader_epochs(
+            loaders,
+            on_epoch=on_epoch,
+            start_epoch=self.state.global_epoch,
+            stopper=self.early_stopping,
+            on_epoch_committed=on_epoch_committed,
+        )
+
+    def recovery_state_dict(self) -> dict:
+        """Return the complete trusted state needed to resume a fit."""
+
+        cuda_rng_state = None
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            cuda_rng_state = [
+                state.detach().cpu()
+                for state in torch.cuda.get_rng_state_all()
+            ]
+        return {
+            "model_state_dict": _tree_to_cpu(self.model.state_dict()),
+            "optimizer_state_dict": _tree_to_cpu(
+                self.optimizer.state_dict()
+            ),
+            "scaler_state_dict": copy.deepcopy(self.scaler.state_dict()),
+            "training_state": asdict(self.state),
+            "early_stopping": asdict(self.early_stopping),
+            "selection": {
+                "best_monitor": self.best_monitor,
+                "best_state_dict": (
+                    None
+                    if self.best_state_dict is None
+                    else _tree_to_cpu(self.best_state_dict)
+                ),
+                "best_metrics": copy.deepcopy(self.best_metrics),
+                "best_frame": self.best_frame,
+                "best_epoch": self.best_epoch,
+            },
+            "payload_shuffle_generator_state": (
+                self._payload_shuffle_generator.get_state()
+            ),
+            "rng": {
+                "python": random.getstate(),
+                "numpy": np.random.get_state(),
+                "torch": torch.get_rng_state(),
+                "cuda": cuda_rng_state,
+            },
+            "training_complete": self.training_complete,
+        }
+
+    def load_recovery_state_dict(self, payload: dict) -> None:
+        """Restore a state produced by :meth:`recovery_state_dict`."""
+
+        if not isinstance(payload, dict):
+            raise ValueError("training recovery state must be an object")
+        required = {
+            "model_state_dict",
+            "optimizer_state_dict",
+            "scaler_state_dict",
+            "training_state",
+            "early_stopping",
+            "selection",
+            "payload_shuffle_generator_state",
+            "rng",
+            "training_complete",
+        }
+        if set(payload) != required:
+            raise ValueError("training recovery state has invalid fields")
+
+        training_state = payload["training_state"]
+        early_stopping = payload["early_stopping"]
+        selection = payload["selection"]
+        rng = payload["rng"]
+        if not isinstance(training_state, dict) or set(training_state) != {
+            "frame",
+            "frame_epoch",
+            "global_epoch",
+            "train_step",
+        }:
+            raise ValueError("training recovery progress is invalid")
+        if not isinstance(early_stopping, dict) or set(early_stopping) != {
+            "patience",
+            "min_stage",
+            "best_score",
+            "wait",
+            "current_stage",
+        }:
+            raise ValueError("training recovery early stopping is invalid")
+        if not isinstance(selection, dict) or set(selection) != {
+            "best_monitor",
+            "best_state_dict",
+            "best_metrics",
+            "best_frame",
+            "best_epoch",
+        }:
+            raise ValueError("training recovery checkpoint selection is invalid")
+        if not isinstance(rng, dict) or set(rng) != {
+            "python",
+            "numpy",
+            "torch",
+            "cuda",
+        }:
+            raise ValueError("training recovery random state is invalid")
+        if early_stopping["patience"] != self.patience:
+            raise ValueError("training recovery patience does not match")
+        if early_stopping["min_stage"] != min(
+            self.loss_stage,
+            LOSS_STAGES,
+        ):
+            raise ValueError(
+                "training recovery loss stage does not match"
+            )
+
+        self.model.load_state_dict(payload["model_state_dict"])
+        self.optimizer.load_state_dict(payload["optimizer_state_dict"])
+        _optimizer_to(self.optimizer, self.device)
+        self.scaler.load_state_dict(payload["scaler_state_dict"])
+        self.state = TrainingState(**training_state)
+        self.early_stopping = EarlyStopping(**early_stopping)
+        self.best_monitor = selection["best_monitor"]
+        self.best_state_dict = selection["best_state_dict"]
+        self.best_metrics = selection["best_metrics"]
+        self.best_frame = selection["best_frame"]
+        self.best_epoch = selection["best_epoch"]
+        self._payload_shuffle_generator.set_state(
+            payload["payload_shuffle_generator_state"]
+        )
+        random.setstate(rng["python"])
+        np.random.set_state(rng["numpy"])
+        torch.set_rng_state(rng["torch"])
+        cuda_rng_state = rng["cuda"]
+        if cuda_rng_state is not None:
+            if self.device.type != "cuda" or not torch.cuda.is_available():
+                raise ValueError(
+                    "CUDA training recovery requires an available CUDA device"
+                )
+            torch.cuda.set_rng_state_all(cuda_rng_state)
+        self.training_complete = bool(payload["training_complete"])
 
     def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
         def on_epoch(epoch: int, metrics: TrainMetrics, monitor_payload: dict):
@@ -502,3 +690,25 @@ class Trainer:
         payload = {**self.metrics_context, **extra}
         payload.setdefault("context_mode", self.context_mode)
         append_metrics_jsonl(self.metrics_path, metrics, **payload)
+
+
+def _tree_to_cpu(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().clone()
+    if isinstance(value, dict):
+        return {
+            key: _tree_to_cpu(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_tree_to_cpu(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_tree_to_cpu(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def _optimizer_to(optimizer, device) -> None:
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device)

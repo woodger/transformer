@@ -81,7 +81,7 @@ def _auth():
 def _action(client, name, **fields):
     request = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -120,7 +120,7 @@ def _ipc_payload(batches):
 
 def _put(client, job_id, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -129,7 +129,7 @@ def _put(client, job_id, payload_id, ordinal, batches):
     )
     metadata = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": ordinal,
@@ -276,6 +276,17 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
             (item["ordinal"], item["rows"], item["batches"])
             for item in committed
         ] == [(0, 2, 2), (1, 1, 1)]
+        stored_inputs = application.ledger.list_inputs(job_id)
+        assert {
+            item["storage_class"]
+            for item in stored_inputs
+        } == {"recovery"}
+        assert all(
+            Path(application.recovery_store.absolute_path(
+                item["relative_path"]
+            )).is_file()
+            for item in stored_inputs
+        )
 
         manifest = [
             {
@@ -322,6 +333,18 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
 
         assert saw_running
         assert status["state"] == JobState.SUCCEEDED.value, status
+        assert status["recovery"] == {
+            "latestCheckpoint": {
+                "generation": 1,
+                "completedEpochs": 1,
+                "globalStep": 1,
+                "trainingComplete": True,
+            },
+            "resumedFromGeneration": None,
+            "retryCount": 0,
+            "lastRetryCode": None,
+            "boundary": "globalEpoch",
+        }
         assert [
             (item["ordinal"], item["rows"], item["batches"])
             for item in status["committedInputs"]

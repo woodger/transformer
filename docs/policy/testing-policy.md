@@ -49,12 +49,12 @@ config parsing, state transitions, serialization helpers.
 
 ### Contract tests
 
-Проверяют normative schemas и golden fixtures в `contracts/flight/v1/`.
+Проверяют normative schemas и golden fixtures в `contracts/flight/v2/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
 JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
-`$ref` разрешаются только из `contracts/flight/v1/schemas/`.
+`$ref` разрешаются только из `contracts/flight/v2/schemas/`.
 
 ## Структура и именование
 
@@ -142,10 +142,12 @@ test session.
 ## Filesystem и artifacts
 
 - временные файлы создаются только внутри `tmp_path`;
-- published model и runtime spool в тесте используют разные roots;
+- published model, recovery store и runtime spool в тесте используют разные
+  roots;
 - path traversal и symlink escape проверяются явно;
 - atomicity tests моделируют failure до и после replace/fsync;
-- тест не читает и не изменяет project `models/` или `/tmp/transformer`.
+- тест не читает и не изменяет project `models/`, `recovery/` или
+  `/tmp/transformer`.
 
 Cleanup не должен скрывать partial artifact, который и является предметом
 assertion.
@@ -193,6 +195,10 @@ assertion.
 - valid/invalid job state transitions;
 - cancellation до и во время worker execution;
 - ordinary restart и runtime storage epoch loss;
+- resume с completed-global-epoch, missing/corrupt recovery artifacts и
+  cancellation races вокруг retry;
+- physical GPU assignment, confirmed device loss, boot-scoped quarantine и
+  reassignment на другой healthy GPU;
 - atomic model publication и opaque `modelRef`;
 - token cache refresh без database query на каждый RPC.
 

@@ -11,7 +11,7 @@ SCHEMA_ROOT = (
     Path(__file__).parents[1]
     / "contracts"
     / "flight"
-    / "v1"
+    / "v2"
     / "schemas"
 )
 

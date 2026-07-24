@@ -1,0 +1,7 @@
+{
+  "contract": "transformer-flight",
+  "version": 2,
+  "requestId": "99999999-9999-4999-8999-999999999999",
+  "idempotencyKey": "inventory-start-20260718-1",
+  "jobId": "33333333-3333-4333-8333-333333333333"
+}

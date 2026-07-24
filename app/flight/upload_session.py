@@ -38,8 +38,9 @@ class InputUploadSession:
         self,
         config,
         ledger,
-        spool,
+        artifact_store,
         *,
+        storage_class,
         owner,
         job,
         ordinal,
@@ -47,13 +48,21 @@ class InputUploadSession:
     ):
         self.config = config
         self.ledger = ledger
-        self.spool = spool
+        if storage_class not in ("runtime", "recovery"):
+            raise ValueError(
+                "storage_class must be runtime or recovery"
+            )
+        self.artifact_store = artifact_store
+        self.storage_class = storage_class
         self.owner = owner
         self.job = job
         self.ordinal = ordinal
         self.reader = reader
 
-        self.destination = self.spool.input_path(job["job_id"], ordinal)
+        self.destination = self.artifact_store.input_path(
+            job["job_id"],
+            ordinal,
+        )
         self.temporary_file = None
         self.temporary_path = None
         self.ipc_writer = None
@@ -74,7 +83,9 @@ class InputUploadSession:
             max_payload_bytes=self.config.max_payload_bytes,
             max_rows=self.config.max_rows_per_payload,
         )
-        self.spool.ensure_free_space(self.config.disk_min_free_bytes)
+        self.artifact_store.ensure_free_space(
+            self.config.disk_min_free_bytes
+        )
 
         try:
             while True:
@@ -115,10 +126,13 @@ class InputUploadSession:
                         self.job["job_id"],
                         self.ordinal,
                         self.metadata["payload_id"],
+                        self.storage_class,
                     )
 
                     self.temporary_file, self.temporary_path = (
-                        self.spool.create_temporary(self.destination)
+                        self.artifact_store.create_temporary(
+                            self.destination
+                        )
                     )
                     if self.existing is None:
                         self.upload_token = secrets.token_hex(24)
@@ -127,9 +141,10 @@ class InputUploadSession:
                             payload_id=self.metadata["payload_id"],
                             ordinal=self.ordinal,
                             upload_token=self.upload_token,
-                            temporary_path=self.spool.relative_path(
+                            temporary_path=self.artifact_store.relative_path(
                                 self.temporary_path
                             ),
+                            storage_class=self.storage_class,
                         )
                     self.ipc_writer = ipc.new_file(
                         self.temporary_file,
@@ -175,7 +190,9 @@ class InputUploadSession:
                     f"payload size {byte_count} exceeds limit "
                     f"{self.config.max_payload_bytes}"
                 )
-            self.spool.ensure_free_space(self.config.disk_min_free_bytes)
+            self.artifact_store.ensure_free_space(
+                self.config.disk_min_free_bytes
+            )
             digest = _sha256_file(self.temporary_path)
             feature_dim = (
                 None
@@ -191,6 +208,11 @@ class InputUploadSession:
                     byte_count,
                     digest,
                 )
+                _validate_committed_artifact(
+                    self.existing,
+                    self.destination,
+                    self.storage_class,
+                )
                 os.unlink(self.temporary_path)
                 self.temporary_path = None
                 return UploadOutcome(self.existing, False)
@@ -199,12 +221,17 @@ class InputUploadSession:
             # parent directory. Mark publication before the call so the
             # failure path removes any final-named, uncommitted artifact.
             self.destination_published = True
-            self.spool.durable_replace(self.temporary_path, self.destination)
+            self.artifact_store.durable_replace(
+                self.temporary_path,
+                self.destination,
+            )
             self.temporary_path = None
             try:
                 record = self.ledger.commit_input(
                     upload_token=self.upload_token,
-                    relative_path=self.spool.relative_path(self.destination),
+                    relative_path=self.artifact_store.relative_path(
+                        self.destination
+                    ),
                     schema_id=self.metadata["schema_id"],
                     rows=stats.rows,
                     batches=stats.batches,
@@ -215,6 +242,7 @@ class InputUploadSession:
                     feature_dim=feature_dim,
                     max_payloads=self.config.max_payloads_per_job,
                     max_job_bytes=self.config.max_job_bytes,
+                    storage_class=self.storage_class,
                 )
             except BaseException:
                 # A failure can happen before the transaction commits, or
@@ -229,7 +257,10 @@ class InputUploadSession:
                 if durable is not None:
                     self.committed = True
                 else:
-                    _best_effort_remove(self.spool, self.destination)
+                    _best_effort_remove(
+                        self.artifact_store,
+                        self.destination,
+                    )
                 raise
             self.committed = True
             return UploadOutcome(record, True)
@@ -263,7 +294,10 @@ class InputUploadSession:
             )
             if durable is None:
                 if self.destination_published:
-                    _best_effort_remove(self.spool, self.destination)
+                    _best_effort_remove(
+                        self.artifact_store,
+                        self.destination,
+                    )
                 _best_effort_abort(self.ledger, self.upload_token)
 
 
@@ -290,7 +324,13 @@ def _match_upload(job: dict, metadata: dict, descriptor_ordinal: int) -> None:
         raise invalid("metadata schemaId does not match job operation")
 
 
-def _find_existing(ledger, job_id: str, ordinal: int, payload_id: str):
+def _find_existing(
+    ledger,
+    job_id: str,
+    ordinal: int,
+    payload_id: str,
+    storage_class: str,
+):
     by_ordinal = ledger.find_input(job_id, ordinal=ordinal)
     by_payload = ledger.find_input(job_id, payload_id=payload_id)
     if by_ordinal is None and by_payload is None:
@@ -299,6 +339,11 @@ def _find_existing(ledger, job_id: str, ordinal: int, payload_id: str):
         raise conflict("input ordinal or payloadId is already committed")
     if by_ordinal["ordinal"] != by_payload["ordinal"]:
         raise conflict("input ordinal and payloadId refer to different inputs")
+    if (
+        by_ordinal.get("storage_class") != storage_class
+        or by_payload.get("storage_class") != storage_class
+    ):
+        raise conflict("input is committed in a different storage class")
     return by_ordinal
 
 
@@ -316,6 +361,34 @@ def _validate_exact_duplicate(existing, metadata, stats, byte_count, digest):
     )
     if not matches:
         raise conflict("input ordinal or payloadId conflicts with committed input")
+
+
+def _validate_committed_artifact(
+    existing,
+    destination: str,
+    storage_class: str,
+) -> None:
+    code = (
+        ErrorCode.RECOVERY_INPUT_UNAVAILABLE
+        if storage_class == "recovery"
+        else ErrorCode.INTERNAL
+    )
+    try:
+        valid = (
+            os.path.isfile(destination)
+            and os.path.getsize(destination) == existing["bytes"]
+            and _sha256_file(destination) == existing["sha256"]
+        )
+    except OSError as exc:
+        raise ServiceError(
+            code,
+            "committed input artifact is unavailable",
+        ) from exc
+    if not valid:
+        raise ServiceError(
+            code,
+            "committed input artifact is unavailable",
+        )
 
 
 def _sha256_file(path: str) -> str:

@@ -8,3 +8,4 @@ venv/
 *.pth
 metrics_plots
 models
+recovery

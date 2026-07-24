@@ -470,6 +470,31 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
             default=None,
             help=argparse.SUPPRESS,
         )
+        runtime.add_argument(
+            "--recovery-checkpoint-dir",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-events-out",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--resume-checkpoint",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-config-hash",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-seal-hash",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
     _add_model_arguments(parser, required_seq_len=True, training=True)
     _add_training_arguments(parser)
 

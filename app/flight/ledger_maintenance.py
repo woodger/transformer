@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import delete, select
 
 from app.database.models import (
+    QUEUE_SEQUENCE,
     IdempotencyRecord,
     InputUpload,
     Job,
@@ -13,7 +14,7 @@ from app.database.models import (
     PublishedModel,
     RuntimeState,
 )
-from app.flight.constants import JobState
+from app.flight.constants import ErrorCode, JobState
 from app.flight.ledger_support import (
     at,
     canonical_uuid,
@@ -55,14 +56,14 @@ class MaintenanceLedgerSlice:
     ) -> dict:
         reconciled_at = timestamp_now(now)
         with self.database.transaction() as session:
-            uploads = list(
-                session.scalars(select(InputUpload.temporary_path))
-            )
-            interrupted = list(session.scalars(
-                select(Job.job_id)
-                .where(Job.state == JobState.RUNNING.value)
-                .order_by(Job.job_id)
-            ))
+            uploads = session.execute(
+                select(
+                    InputUpload.temporary_path,
+                    InputUpload.storage_class,
+                )
+            ).all()
+            interrupted = []
+            retried = []
             cancelling = list(session.scalars(
                 select(Job.job_id)
                 .where(Job.state == JobState.CANCELLING.value)
@@ -74,6 +75,7 @@ class MaintenanceLedgerSlice:
                     JobState.RUNNING.value,
                     JobState.CANCELLING.value,
                 )))
+                .order_by(Job.job_id)
                 .with_for_update()
             )
             for job in jobs:
@@ -83,6 +85,47 @@ class MaintenanceLedgerSlice:
                     with_for_update=True,
                 )
                 decision = decide_interrupted_attempt(job.state)
+                resumable = False
+                if (
+                    job.state == JobState.RUNNING.value
+                    and job.operation == "fit"
+                ):
+                    runtime_input = session.scalar(
+                        select(JobInput.job_id)
+                        .where(
+                            JobInput.job_id == job.job_id,
+                            JobInput.storage_class == "runtime",
+                        )
+                        .limit(1)
+                    )
+                    resumable = runtime_input is None
+                if resumable:
+                    if (
+                        attempt is not None
+                        and attempt.status == JobState.RUNNING.value
+                    ):
+                        attempt.status = JobState.FAILED.value
+                        attempt.error_code = (
+                            ErrorCode.EXECUTION_INTERRUPTED.value
+                        )
+                        attempt.error_message = (
+                            "worker execution was interrupted by service restart"
+                        )
+                        attempt.finished_at = reconciled_at
+                    job.state = JobState.RETRYING.value
+                    job.queue_sequence = session.scalar(
+                        select(QUEUE_SEQUENCE.next_value())
+                    )
+                    job.queued_at = reconciled_at
+                    job.error_code = None
+                    job.error_message = None
+                    job.finished_at = None
+                    job.revision += 1
+                    job.updated_at = reconciled_at
+                    retried.append(job.job_id)
+                    continue
+                if job.state == JobState.RUNNING.value:
+                    interrupted.append(job.job_id)
                 job.state = decision.target.value
                 if decision.error_code is not None:
                     job.error_code = decision.error_code.value
@@ -108,14 +151,28 @@ class MaintenanceLedgerSlice:
             session.execute(delete(InputUpload))
         return {
             "interrupted_jobs": interrupted,
+            "retried_jobs": retried,
             "cancelled_jobs": cancelling,
-            "temporary_paths": uploads,
+            "temporary_paths": [
+                path
+                for path, storage_class in uploads
+                if storage_class == "runtime"
+            ],
+            "recovery_temporary_paths": [
+                path
+                for path, storage_class in uploads
+                if storage_class == "recovery"
+            ],
         }
 
     def referenced_paths(self) -> set[str]:
         with self.database.session() as session:
             paths = set(
-                session.scalars(select(JobInput.relative_path))
+                session.scalars(
+                    select(JobInput.relative_path).where(
+                        JobInput.storage_class == "runtime"
+                    )
+                )
             )
             paths.update(
                 session.scalars(select(JobOutput.relative_path))
@@ -183,16 +240,38 @@ class MaintenanceLedgerSlice:
             )
             if state is not None and state.value == epoch:
                 return {"reset": False, "discarded_jobs": []}
-            discarded_jobs = list(
-                session.scalars(
-                    select(Job.job_id).order_by(Job.job_id)
+            discarded_jobs = []
+            jobs = session.scalars(
+                select(Job).order_by(Job.job_id)
+            ).all()
+            for job in jobs:
+                if job.operation != "fit":
+                    discarded_jobs.append(job.job_id)
+                    continue
+                runtime_input = session.scalar(
+                    select(JobInput.job_id)
+                    .where(
+                        JobInput.job_id == job.job_id,
+                        JobInput.storage_class == "runtime",
+                    )
+                    .limit(1)
                 )
-            )
+                if runtime_input is not None:
+                    discarded_jobs.append(job.job_id)
             reset = state is not None or bool(discarded_jobs)
-            session.execute(delete(OutputTicket))
-            session.execute(delete(IdempotencyRecord))
-            session.execute(delete(InputUpload))
-            session.execute(delete(Job))
+            if discarded_jobs:
+                session.execute(
+                    delete(IdempotencyRecord).where(
+                        IdempotencyRecord.job_id.in_(
+                            discarded_jobs
+                        )
+                    )
+                )
+                session.execute(
+                    delete(Job).where(
+                        Job.job_id.in_(discarded_jobs)
+                    )
+                )
             if state is None:
                 session.add(RuntimeState(
                     key="storage_epoch",

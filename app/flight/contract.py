@@ -8,6 +8,7 @@ from app.flight.constants import (
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
+    CONTRACT_PATH_VERSION,
     CONTRACT_VERSION,
     CREATE_ACTION,
     FIT_SCHEMA_ID,
@@ -97,7 +98,11 @@ def validate_upload_metadata(document: dict) -> dict:
 
 def parse_input_descriptor(descriptor) -> tuple[str, int]:
     parts = _descriptor_parts(descriptor)
-    if len(parts) != 6 or parts[:3] != ("transformer", "v1", "jobs"):
+    if (
+        len(parts) != 6
+        or parts[:3]
+        != ("transformer", CONTRACT_PATH_VERSION, "jobs")
+    ):
         raise invalid("invalid input Flight descriptor")
     if parts[4] != "inputs":
         raise invalid("invalid input Flight descriptor")
@@ -108,7 +113,11 @@ def parse_input_descriptor(descriptor) -> tuple[str, int]:
 
 def parse_output_descriptor(descriptor) -> tuple[str, int]:
     parts = _descriptor_parts(descriptor)
-    if len(parts) != 6 or parts[:3] != ("transformer", "v1", "jobs"):
+    if (
+        len(parts) != 6
+        or parts[:3]
+        != ("transformer", CONTRACT_PATH_VERSION, "jobs")
+    ):
         raise invalid("invalid output Flight descriptor")
     if parts[4] != "outputs":
         raise invalid("invalid output Flight descriptor")

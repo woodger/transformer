@@ -12,6 +12,13 @@
 - Добавлен Ruff с единым минимальным baseline для Python lint checks.
 - Добавлен `jsonschema` для полноценной Draft 2020-12 проверки нормативных
   Flight JSON Schemas и golden fixtures в contract tests.
+- Добавлены persistent `recovery/` store и PostgreSQL metadata для fit inputs,
+  completed-global-epoch checkpoints, попыток возобновления и состояния
+  `RETRYING`.
+- Добавлен boot-scoped physical CUDA inventory: отдельная lane на каждый
+  доступный GPU, обязательная привязка subprocess через
+  `CUDA_VISIBLE_DEVICES` и quarantine потерянного устройства до следующего
+  Linux boot.
 
 ### Changed
 
@@ -23,10 +30,27 @@
   имени проекта. Listen endpoint, plaintext policy, worker capacity, disk
   watermark и retention перенесены из `TRANSFORMER_*` в `app/config.py`;
   TLS/mTLS включается только явными параметрами `flight serve`.
-- CUDA capacity удалена из application config и определяется единственной
-  поддерживаемой Flight v1 scheduler lane.
+- Flight contract переведён на breaking v2: добавлены recovery status,
+  dynamic CUDA capacity/quarantine и раздельное состояние runtime/recovery
+  storage.
+- CUDA capacity удалена из application config и вычисляется по фактически
+  доступным physical GPU.
+- Fit checkpoints теперь сохраняют model, optimizer, AMP scaler,
+  early-stopping/best-selection progress и RNG state. После service/host
+  interruption обучение продолжается с последней полностью завершённой
+  глобальной эпохи; подтверждённая потеря GPU переносит новую попытку на
+  здоровое устройство.
+- Prediction job после подтверждённой потери GPU также создаёт новую попытку
+  на здоровом устройстве; ordinary subprocess failures и CUDA OOM остаются
+  terminal.
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
-  технические идентификаторы CLI и Flight contract не менялись.
+  технические имя CLI и `transformer-flight` не менялись.
+
+### Removed
+
+- Удалена runtime-совместимость Flight v1: прежние actions, descriptors,
+  jobs, tickets и idempotency responses не переносятся через migration `0002`.
+  Published models, aliases и API access tokens сохраняются.
 
 ## [0.1.6] - 2026-07-23
 

@@ -8,19 +8,28 @@ from app.flight.auth import (
     authenticated_subject,
 )
 from app.flight.config import FlightServiceConfig, tls_server_options
-from app.flight.constants import ACTIONS
+from app.flight.constants import (
+    ACTIONS,
+    CANCEL_ACTION,
+    CAPABILITIES_ACTION,
+    CREATE_ACTION,
+    HEALTH_ACTION,
+    SEAL_ACTION,
+    START_ACTION,
+    STATUS_ACTION,
+)
 from app.flight.contract import parse_action_body, validate_action_request
 from app.flight.errors import ServiceError, invalid, to_flight_exception
 from app.flight.observability import JsonLogger, OperationalMetrics
 
 ACTION_DESCRIPTIONS = {
-    "transformer.v1.capabilities": "Return Flight v1 capabilities and limits.",
-    "transformer.v1.health": "Return liveness, readiness and device health.",
-    "transformer.v1.job.create": "Create an upload job.",
-    "transformer.v1.job.seal": "Seal an ordered input manifest.",
-    "transformer.v1.job.start": "Queue a sealed job.",
-    "transformer.v1.job.status": "Read durable job status.",
-    "transformer.v1.job.cancel": "Cancel a job.",
+    CAPABILITIES_ACTION: "Return Flight v2 capabilities and limits.",
+    HEALTH_ACTION: "Return liveness, readiness and device health.",
+    CREATE_ACTION: "Create an upload job.",
+    SEAL_ACTION: "Seal an ordered input manifest.",
+    START_ACTION: "Queue a sealed job.",
+    STATUS_ACTION: "Read durable job status.",
+    CANCEL_ACTION: "Cancel a job.",
 }
 
 

@@ -39,7 +39,7 @@ from app.flight.contract import (
     validate_upload_metadata,
 )
 
-FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v1" / "fixtures"
+FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v2" / "fixtures"
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 GENERATOR = FIXTURE_ROOT / "generate_arrow_fixtures.py"
@@ -76,7 +76,7 @@ RESULT_REQUIRED_FIELDS = {
     },
     "health-result.schema.json": {
         "contract", "version", "requestId", "live", "ready", "draining",
-        "ledger", "cuda", "disk", "metrics",
+        "ledger", "cuda", "storage", "metrics",
     },
     "create-result.schema.json": {
         "contract", "version", "requestId", "jobId", "operation", "state",
@@ -96,7 +96,7 @@ RESULT_REQUIRED_FIELDS = {
     "status-result.schema.json": {
         "contract", "version", "requestId", "jobId", "operation", "state",
         "revision", "timestamps", "device", "committedInputs", "progress",
-        "attempt", "error", "results", "pollAfterMs",
+        "attempt", "recovery", "error", "results", "pollAfterMs",
     },
 }
 
@@ -281,18 +281,19 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
             ("queue",),
             ("features",),
         ),
-        "health-result.schema.json": (
-            ("ledger",),
-            ("cuda",),
-            ("disk",),
-            ("metrics",),
+            "health-result.schema.json": (
+                ("ledger",),
+                ("cuda",),
+                ("storage",),
+                ("metrics",),
         ),
         "create-result.schema.json": (("device",), ("limits",), ("upload",)),
         "start-result.schema.json": (("device",),),
         "status-result.schema.json": (
             ("timestamps",),
-            ("device",),
-            ("error",),
+                ("device",),
+                ("recovery",),
+                ("error",),
             ("results",),
             ("results", "checkpoint"),
             ("results", "checkpoint", "modelConfig"),
@@ -304,6 +305,12 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
     for name, paths in closed_nested_objects.items():
         for path in paths:
             assert _schema_property(schemas[name], *path)["additionalProperties"] is False
+    assert (
+        schemas["health-result.schema.json"]["$defs"][
+            "storageHealth"
+        ]["additionalProperties"]
+        is False
+    )
 
     checkpoint = _schema_property(
         schemas["status-result.schema.json"], "results", "checkpoint"

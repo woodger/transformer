@@ -77,6 +77,13 @@ class FlightServiceConfig:
         return os.path.join(PROJECT_ROOT, "models")
 
     @property
+    def recovery_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.models_dir),
+            "recovery",
+        )
+
+    @property
     def lock_path(self) -> str:
         return os.path.join(self.runtime_dir, "service.lock")
 
