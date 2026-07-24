@@ -54,8 +54,8 @@ nerv:nerv 700 /tmp/transformer
 
 Потеря `/tmp/transformer` инвалидирует связанные задания. Успешно
 опубликованные модели остаются в `/home/nerv/transformer/models`.
-Если `RUNTIME_DIR` изменён в `app/config.py`, тот же путь необходимо указать в
-tmpfiles configuration.
+Если системная temporary directory отличается от `/tmp`, соответствующий
+вычисляемый путь необходимо указать и в tmpfiles configuration.
 
 ## Создать unit-файл
 

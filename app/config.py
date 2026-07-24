@@ -3,12 +3,12 @@ import os
 # ======================
 # System
 # ======================
+PROJECT_NAME = "transformer"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ======================
 # Server
 # ======================
-RUNTIME_DIR = "/tmp/transformer"
 HOST_DEFAULT = "127.0.0.1"
 PORT_DEFAULT = 8815
 ALLOW_PLAINTEXT = True

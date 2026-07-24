@@ -1,5 +1,6 @@
 from configparser import ConfigParser
 from pathlib import Path
+from tempfile import gettempdir
 
 from app.config import (
     ALLOW_PLAINTEXT,
@@ -7,7 +8,7 @@ from app.config import (
     CUDA_CAPACITY,
     HOST_DEFAULT,
     PORT_DEFAULT,
-    RUNTIME_DIR,
+    PROJECT_NAME,
 )
 from app.database.config import load_database_config
 from app.flight.config import FlightServiceConfig, load_config
@@ -125,7 +126,7 @@ def test_environment_example_uses_current_configuration_contract():
     )
     flight = load_config(environ=environment)
     assert database.port == 5432
-    assert flight.runtime_dir == RUNTIME_DIR
+    assert flight.runtime_dir == str(Path(gettempdir()) / PROJECT_NAME)
     assert flight.host == HOST_DEFAULT
     assert flight.port == PORT_DEFAULT
     assert flight.allow_plaintext is ALLOW_PLAINTEXT

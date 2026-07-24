@@ -191,7 +191,6 @@ the environment:
 
 | Python setting | Default | Notes |
 | --- | --- | --- |
-| `RUNTIME_DIR` | `/tmp/transformer` | Ephemeral runtime spool and process lock |
 | `HOST_DEFAULT` | `127.0.0.1` | Flight listen host |
 | `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
@@ -199,6 +198,10 @@ the environment:
 | `CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
 | `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
 | `RETENTION_SECONDS` | `604800` | Terminal-job retention |
+
+The runtime directory is derived with
+`os.path.join(tempfile.gettempdir(), PROJECT_NAME)`. It resolves to
+`/tmp/transformer` in the target systemd environment.
 
 The corresponding `TRANSFORMER_*` environment variables are not read.
 TLS and mTLS have no persistent configuration defaults: they are enabled only

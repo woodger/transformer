@@ -1,4 +1,6 @@
 import math
+import os
+import tempfile
 
 import pytest
 
@@ -9,8 +11,8 @@ from app.config import (
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
     PORT_DEFAULT,
+    PROJECT_NAME,
     RETENTION_SECONDS,
-    RUNTIME_DIR,
 )
 from app.flight.config import FlightServiceConfig, load_config
 
@@ -78,7 +80,10 @@ def test_remaining_environment_and_cli_precedence():
     assert config.max_active_jobs_per_subject == 4
     assert config.host == "127.0.0.4"
     assert config.port == 0
-    assert config.runtime_dir == RUNTIME_DIR
+    assert config.runtime_dir == os.path.join(
+        tempfile.gettempdir(),
+        PROJECT_NAME,
+    )
 
 
 def test_config_rejects_unknown_override():

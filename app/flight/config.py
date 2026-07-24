@@ -1,5 +1,6 @@
 import math
 import os
+import tempfile
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -10,9 +11,9 @@ from app.config import (
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
     PORT_DEFAULT,
+    PROJECT_NAME,
     PROJECT_ROOT,
     RETENTION_SECONDS,
-    RUNTIME_DIR,
 )
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
@@ -36,7 +37,7 @@ _NON_ENVIRONMENT_FIELDS = frozenset({
 
 @dataclass(frozen=True)
 class FlightServiceConfig:
-    runtime_dir: str = RUNTIME_DIR
+    runtime_dir: str = os.path.join(tempfile.gettempdir(), PROJECT_NAME)
     host: str = HOST_DEFAULT
     port: int = PORT_DEFAULT
     allow_plaintext: bool = ALLOW_PLAINTEXT
