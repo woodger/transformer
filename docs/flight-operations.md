@@ -195,17 +195,14 @@ the environment:
 | `HOST_DEFAULT` | `127.0.0.1` | Flight listen host |
 | `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
-| `TLS_CERT_FILE` | `None` | PEM server certificate; configure with key |
-| `TLS_KEY_FILE` | `None` | PEM private key; configure with certificate |
-| `TLS_CA_FILE` | `None` | Client CA for mTLS |
-| `TLS_REQUIRE_CLIENT_CERT` | `false` | Requires TLS and a client CA |
 | `CPU_CAPACITY` | `2` | Concurrent CPU lanes |
 | `CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
 | `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
 | `RETENTION_SECONDS` | `604800` | Terminal-job retention |
 
 The corresponding `TRANSFORMER_*` environment variables are not read.
-Applicable `flight serve` options remain explicit per-process overrides.
+TLS and mTLS have no persistent configuration defaults: they are enabled only
+by explicitly supplying certificate options to `flight serve`.
 
 Certificate and key must be configured together. `tls-require-client-cert`
 also requires a CA file. Plaintext transport is accepted only when explicitly

@@ -15,6 +15,7 @@
 
 Параметры Transformer service задаются в `/home/nerv/transformer/app/config.py`.
 Проверьте их перед первым запуском.
+TLS или mTLS включается только явными certificate options в `ExecStart`.
 
 ```bash
 sudo chown nerv:nerv /home/nerv/transformer/.env

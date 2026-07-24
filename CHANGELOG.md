@@ -19,9 +19,9 @@
   модернизации для Python 3.11, порядка `__all__` и регулярных выражений в
   `pytest.raises`.
 - Ruff также проверяет единый порядок Python import-блоков.
-- Runtime storage, listen endpoint, transport/TLS, worker capacity, disk
-  watermark и retention перенесены из `TRANSFORMER_*` в `app/config.py`;
-  применимые CLI overrides сохранены.
+- Runtime storage, listen endpoint, plaintext policy, worker capacity, disk
+  watermark и retention перенесены из `TRANSFORMER_*` в `app/config.py`.
+  TLS/mTLS включается только явными параметрами `flight serve`.
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
   технические идентификаторы CLI и Flight contract не менялись.
 

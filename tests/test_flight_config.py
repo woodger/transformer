@@ -11,10 +11,6 @@ from app.config import (
     PORT_DEFAULT,
     RETENTION_SECONDS,
     RUNTIME_DIR,
-    TLS_CA_FILE,
-    TLS_CERT_FILE,
-    TLS_KEY_FILE,
-    TLS_REQUIRE_CLIENT_CERT,
 )
 from app.flight.config import FlightServiceConfig, load_config
 
@@ -28,10 +24,10 @@ def test_service_defaults_come_from_app_config(tmp_path):
     assert config.host == HOST_DEFAULT
     assert config.port == PORT_DEFAULT
     assert config.allow_plaintext is ALLOW_PLAINTEXT
-    assert config.tls_cert_file == TLS_CERT_FILE
-    assert config.tls_key_file == TLS_KEY_FILE
-    assert config.tls_ca_file == TLS_CA_FILE
-    assert config.tls_require_client_cert is TLS_REQUIRE_CLIENT_CERT
+    assert config.tls_cert_file is None
+    assert config.tls_key_file is None
+    assert config.tls_ca_file is None
+    assert config.tls_require_client_cert is False
     assert config.cpu_capacity == CPU_CAPACITY
     assert config.cuda_capacity == CUDA_CAPACITY
     assert config.disk_min_free_bytes == DISK_MIN_FREE_BYTES

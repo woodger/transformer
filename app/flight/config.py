@@ -13,16 +13,12 @@ from app.config import (
     PROJECT_ROOT,
     RETENTION_SECONDS,
     RUNTIME_DIR,
-    TLS_CA_FILE,
-    TLS_CERT_FILE,
-    TLS_KEY_FILE,
-    TLS_REQUIRE_CLIENT_CERT,
 )
 from app.flight.constants import MAX_MANIFEST_ITEMS
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
-_APP_CONFIG_FIELDS = frozenset({
+_NON_ENVIRONMENT_FIELDS = frozenset({
     "allow_plaintext",
     "cpu_capacity",
     "cuda_capacity",
@@ -45,10 +41,10 @@ class FlightServiceConfig:
     port: int = PORT_DEFAULT
     allow_plaintext: bool = ALLOW_PLAINTEXT
 
-    tls_cert_file: str | None = TLS_CERT_FILE
-    tls_key_file: str | None = TLS_KEY_FILE
-    tls_ca_file: str | None = TLS_CA_FILE
-    tls_require_client_cert: bool = TLS_REQUIRE_CLIENT_CERT
+    tls_cert_file: str | None = None
+    tls_key_file: str | None = None
+    tls_ca_file: str | None = None
+    tls_require_client_cert: bool = False
 
     max_message_bytes: int = 16 * 1024 * 1024
     target_batch_bytes: int = 8 * 1024 * 1024
@@ -202,7 +198,7 @@ def load_config(
             "configure HOST_DEFAULT in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
-        if field.name in _APP_CONFIG_FIELDS:
+        if field.name in _NON_ENVIRONMENT_FIELDS:
             continue
         key = ENV_PREFIX + field.name.upper()
         if key not in env:
