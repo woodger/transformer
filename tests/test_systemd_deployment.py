@@ -4,7 +4,7 @@ from tempfile import gettempdir
 
 from app.config import (
     ALLOW_PLAINTEXT,
-    CPU_CAPACITY,
+    CPU_WORKERS,
     CUDA_CAPACITY,
     HOST_DEFAULT,
     PORT_DEFAULT,
@@ -130,5 +130,5 @@ def test_environment_example_uses_current_configuration_contract():
     assert flight.host == HOST_DEFAULT
     assert flight.port == PORT_DEFAULT
     assert flight.allow_plaintext is ALLOW_PLAINTEXT
-    assert flight.cpu_capacity == CPU_CAPACITY
+    assert flight.cpu_capacity == CPU_WORKERS
     assert flight.cuda_capacity == CUDA_CAPACITY

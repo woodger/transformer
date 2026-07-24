@@ -6,7 +6,7 @@ import pytest
 
 from app.config import (
     ALLOW_PLAINTEXT,
-    CPU_CAPACITY,
+    CPU_WORKERS,
     CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
@@ -30,7 +30,7 @@ def test_service_defaults_come_from_app_config(tmp_path):
     assert config.tls_key_file is None
     assert config.tls_ca_file is None
     assert config.tls_require_client_cert is False
-    assert config.cpu_capacity == CPU_CAPACITY
+    assert config.cpu_capacity == CPU_WORKERS
     assert config.cuda_capacity == CUDA_CAPACITY
     assert config.disk_min_free_bytes == DISK_MIN_FREE_BYTES
     assert config.retention_seconds == RETENTION_SECONDS

@@ -194,7 +194,7 @@ the environment:
 | `HOST_DEFAULT` | `127.0.0.1` | Flight listen host |
 | `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
-| `CPU_CAPACITY` | `2` | Concurrent CPU lanes |
+| `CPU_WORKERS` | `2` | Concurrent CPU worker lanes |
 | `CUDA_CAPACITY` | `1` | V1 requires exactly one FIFO CUDA lane |
 | `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime-spool admission watermark |
 | `RETENTION_SECONDS` | `604800` | Terminal-job retention |

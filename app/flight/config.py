@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.config import (
     ALLOW_PLAINTEXT,
-    CPU_CAPACITY,
+    CPU_WORKERS,
     CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
@@ -56,7 +56,7 @@ class FlightServiceConfig:
     max_job_bytes: int = 64 * 1024 * 1024 * 1024
     max_active_jobs_per_subject: int = 32
 
-    cpu_capacity: int = CPU_CAPACITY
+    cpu_capacity: int = CPU_WORKERS
     cuda_capacity: int = CUDA_CAPACITY
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
