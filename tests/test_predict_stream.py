@@ -11,7 +11,6 @@ import app.main as main_module
 import app.storage.checkpoint as checkpoint_module
 from app.data.arrow import iter_framed_arrow
 
-
 predict_stream_module = importlib.import_module("app.commands.predict_stream")
 
 

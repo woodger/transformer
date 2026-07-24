@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import fcntl
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import tempfile
 import uuid
-from typing import BinaryIO, Iterator, Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from pathlib import Path
+from typing import BinaryIO
 
 from app.config import PROJECT_ROOT
-from app.flight.constants import ErrorCode
-from app.flight.errors import ServiceError
-
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -30,7 +28,7 @@ class RuntimeDirectoryLock:
         self.path = os.path.abspath(os.fspath(path))
         self._file: BinaryIO | None = None
 
-    def acquire(self) -> "RuntimeDirectoryLock":
+    def acquire(self) -> RuntimeDirectoryLock:
         if self._file is not None:
             return self
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -58,7 +56,7 @@ class RuntimeDirectoryLock:
             self._file.close()
             self._file = None
 
-    def __enter__(self) -> "RuntimeDirectoryLock":
+    def __enter__(self) -> RuntimeDirectoryLock:
         return self.acquire()
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -87,7 +85,7 @@ class Spool:
         self.epoch_path = os.path.join(self.runtime_dir, "storage-epoch")
         self.lock = RuntimeDirectoryLock(os.path.join(self.runtime_dir, "service.lock"))
 
-    def initialize(self) -> "Spool":
+    def initialize(self) -> Spool:
         created = []
         for directory in (self.runtime_dir, self.spool_dir, self.jobs_dir, self.models_dir):
             if not os.path.isdir(directory):
@@ -108,7 +106,7 @@ class Spool:
     def storage_epoch(self) -> str:
         """Return the runtime filesystem generation, creating it when absent."""
         try:
-            with open(self.epoch_path, "r", encoding="ascii") as source:
+            with open(self.epoch_path, encoding="ascii") as source:
                 value = source.read().strip()
             return _uuid_component(value, "storage epoch")
         except FileNotFoundError:
@@ -138,6 +136,16 @@ class Spool:
 
     def attempt_stderr_path(self, job_id: str, attempt: int) -> str:
         return os.path.join(self.attempt_directory(job_id, attempt), "stderr.log")
+
+    def attempt_recovery_events_path(
+        self,
+        job_id: str,
+        attempt: int,
+    ) -> str:
+        return os.path.join(
+            self.attempt_directory(job_id, attempt),
+            "recovery-events.jsonl",
+        )
 
     def attempt_output_path(self, job_id: str, attempt: int, ordinal: int) -> str:
         _nonnegative(ordinal, "ordinal")
@@ -263,16 +271,6 @@ class Spool:
 
     def disk_usage(self) -> shutil._ntuple_diskusage:
         return shutil.disk_usage(self.runtime_dir)
-
-    def ensure_free_space(self, minimum_free_bytes: int, *, required_bytes: int = 0) -> None:
-        if minimum_free_bytes < 0 or required_bytes < 0:
-            raise ValueError("disk limits must be non-negative")
-        free = self.disk_usage().free
-        if free - required_bytes < minimum_free_bytes:
-            raise ServiceError(
-                ErrorCode.DISK_FULL,
-                "runtime directory disk watermark would be exceeded",
-            )
 
     def cleanup_temporary_files(self) -> tuple[str, ...]:
         """Remove definitively orphaned sibling temp artifacts at startup.

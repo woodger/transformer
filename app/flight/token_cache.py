@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from types import MappingProxyType
 import threading
+from dataclasses import dataclass
+from types import MappingProxyType
 
 import psycopg
 
 from app.database.config import DatabaseConfig
 from app.database.tokens import AccessTokenStore
 from app.flight.observability import JsonLogger
-
 
 _NOTIFY_CHANNEL = "transformer_auth_tokens"
 
@@ -62,7 +61,7 @@ class AccessTokenCacheService:
         self._thread: threading.Thread | None = None
         self._startup_error: BaseException | None = None
 
-    def start(self, timeout: float = 10.0) -> "AccessTokenCacheService":
+    def start(self, timeout: float = 10.0) -> AccessTokenCacheService:
         if self._thread is not None:
             return self
         self._thread = threading.Thread(

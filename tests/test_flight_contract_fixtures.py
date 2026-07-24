@@ -1,14 +1,20 @@
-from copy import deepcopy
-import json
 import hashlib
-from pathlib import Path
+import json
 import subprocess
 import sys
+from copy import deepcopy
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 import torch
+from flight_contract_schema import (
+    check_contract_schema,
+    read_contract_schema,
+    validate_contract_document,
+)
+from jsonschema.exceptions import ValidationError
 
 from app.data.arrow import (
     empty_predictions_table,
@@ -17,6 +23,7 @@ from app.data.arrow import (
     table_to_tensors,
     validate_arrow_table,
 )
+from app.flight.arrow import schema_fingerprint
 from app.flight.constants import (
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
@@ -31,14 +38,8 @@ from app.flight.contract import (
     validate_action_request,
     validate_upload_metadata,
 )
-from app.flight.arrow import schema_fingerprint
-from flight_contract_schema import (
-    read_contract_schema,
-    validate_schema_subset,
-)
 
-
-FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v1" / "fixtures"
+FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v2" / "fixtures"
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 GENERATOR = FIXTURE_ROOT / "generate_arrow_fixtures.py"
@@ -54,6 +55,19 @@ RESULT_FIXTURES = {
     "status.result.json": "status-result.schema.json",
 }
 
+REQUEST_FIXTURES = {
+    "capabilities.request.json": "query.schema.json",
+    "health.request.json": "query.schema.json",
+    "create-fit.request.json": "create.schema.json",
+    "create-predict.request.json": "create.schema.json",
+    "seal.request.json": "seal.schema.json",
+    "start.request.json": "job-mutation.schema.json",
+    "cancel.request.json": "job-mutation.schema.json",
+    "status.request.json": "status.schema.json",
+    "upload-fit.metadata.json": "upload-metadata.schema.json",
+    "put-result.metadata.json": "put-result.schema.json",
+}
+
 RESULT_REQUIRED_FIELDS = {
     "capabilities-result.schema.json": {
         "contract", "version", "requestId", "protocolVersions", "service",
@@ -62,7 +76,7 @@ RESULT_REQUIRED_FIELDS = {
     },
     "health-result.schema.json": {
         "contract", "version", "requestId", "live", "ready", "draining",
-        "ledger", "cuda", "disk", "metrics",
+        "ledger", "cuda", "storage", "metrics",
     },
     "create-result.schema.json": {
         "contract", "version", "requestId", "jobId", "operation", "state",
@@ -82,7 +96,7 @@ RESULT_REQUIRED_FIELDS = {
     "status-result.schema.json": {
         "contract", "version", "requestId", "jobId", "operation", "state",
         "revision", "timestamps", "device", "committedInputs", "progress",
-        "attempt", "error", "results", "pollAfterMs",
+        "attempt", "recovery", "error", "results", "pollAfterMs",
     },
 }
 
@@ -238,6 +252,7 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
         "status-result.schema.json",
     } <= set(schemas)
     for document in schemas.values():
+        check_contract_schema(document)
         assert document["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert document["type"] == "object"
     for name in (
@@ -266,18 +281,19 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
             ("queue",),
             ("features",),
         ),
-        "health-result.schema.json": (
-            ("ledger",),
-            ("cuda",),
-            ("disk",),
-            ("metrics",),
+            "health-result.schema.json": (
+                ("ledger",),
+                ("cuda",),
+                ("storage",),
+                ("metrics",),
         ),
         "create-result.schema.json": (("device",), ("limits",), ("upload",)),
         "start-result.schema.json": (("device",),),
         "status-result.schema.json": (
             ("timestamps",),
-            ("device",),
-            ("error",),
+                ("device",),
+                ("recovery",),
+                ("error",),
             ("results",),
             ("results", "checkpoint"),
             ("results", "checkpoint", "modelConfig"),
@@ -289,6 +305,12 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
     for name, paths in closed_nested_objects.items():
         for path in paths:
             assert _schema_property(schemas[name], *path)["additionalProperties"] is False
+    assert (
+        schemas["health-result.schema.json"]["$defs"][
+            "storageHealth"
+        ]["additionalProperties"]
+        is False
+    )
 
     checkpoint = _schema_property(
         schemas["status-result.schema.json"], "results", "checkpoint"
@@ -309,11 +331,20 @@ def test_language_neutral_json_schemas_are_parseable_and_strict_at_boundaries():
     } == set(RESULT_FIXTURES.values())
 
 
-def test_result_golden_fixtures_match_specific_language_neutral_schemas():
-    for fixture_name, schema_name in RESULT_FIXTURES.items():
-        validate_schema_subset(
+def test_json_golden_fixtures_match_language_neutral_schemas():
+    for fixture_name, schema_name in (
+        REQUEST_FIXTURES | RESULT_FIXTURES
+    ).items():
+        validate_contract_document(
             _read_json(fixture_name),
             read_contract_schema(schema_name),
+        )
+
+    action_result_schema = read_contract_schema("action-result.schema.json")
+    for fixture_name in RESULT_FIXTURES:
+        validate_contract_document(
+            _read_json(fixture_name),
+            action_result_schema,
         )
 
 
@@ -324,18 +355,18 @@ def test_result_schemas_enforce_required_and_closed_object_semantics():
 
         missing_required = deepcopy(fixture)
         missing_required.pop(schema["required"][-1])
-        with pytest.raises(AssertionError, match="missing required"):
-            validate_schema_subset(missing_required, schema)
+        with pytest.raises(ValidationError):
+            validate_contract_document(missing_required, schema)
 
         extra_top_level = {**fixture, "checkpointPath": "/srv/models/model.pth"}
-        with pytest.raises(AssertionError, match="unexpected fields"):
-            validate_schema_subset(extra_top_level, schema)
+        with pytest.raises(ValidationError):
+            validate_contract_document(extra_top_level, schema)
 
     status = _read_json("status.result.json")
     missing_checkpoint_metadata = deepcopy(status)
     missing_checkpoint_metadata["results"]["checkpoint"].pop("dataSchema")
-    with pytest.raises(AssertionError, match="missing required"):
-        validate_schema_subset(
+    with pytest.raises(ValidationError):
+        validate_contract_document(
             missing_checkpoint_metadata,
             read_contract_schema("status-result.schema.json"),
         )
@@ -344,8 +375,8 @@ def test_result_schemas_enforce_required_and_closed_object_semantics():
     leaked_checkpoint_path["results"]["checkpoint"]["checkpointPath"] = (
         "/srv/transformer/state/models/checkpoint.pth"
     )
-    with pytest.raises(AssertionError, match="unexpected fields"):
-        validate_schema_subset(
+    with pytest.raises(ValidationError):
+        validate_contract_document(
             leaked_checkpoint_path,
             read_contract_schema("status-result.schema.json"),
         )
@@ -355,34 +386,34 @@ def test_result_schemas_enforce_device_state_and_result_conditionals():
     health_schema = read_contract_schema("health-result.schema.json")
     unhealthy_ready = deepcopy(_read_json("health.result.json"))
     unhealthy_ready["draining"] = True
-    with pytest.raises(AssertionError, match="expected const False"):
-        validate_schema_subset(unhealthy_ready, health_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(unhealthy_ready, health_schema)
 
     capabilities_schema = read_contract_schema(
         "capabilities-result.schema.json"
     )
     impossible_cuda = deepcopy(_read_json("capabilities.result.json"))
     impossible_cuda["devices"]["cuda"]["deviceCount"] = 1
-    with pytest.raises(AssertionError, match="expected const 0"):
-        validate_schema_subset(impossible_cuda, capabilities_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(impossible_cuda, capabilities_schema)
 
     create_schema = read_contract_schema("create-result.schema.json")
     fit_with_resolved_model = deepcopy(_read_json("create-fit.result.json"))
     fit_with_resolved_model["resolvedModelRef"] = "mdl_should_not_exist_for_fit"
-    with pytest.raises(AssertionError, match="expected const None"):
-        validate_schema_subset(fit_with_resolved_model, create_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(fit_with_resolved_model, create_schema)
 
     start_schema = read_contract_schema("start-result.schema.json")
     cuda_fell_back_to_cpu = deepcopy(_read_json("start.result.json"))
     cuda_fell_back_to_cpu["device"] = {"requested": "cuda", "selected": "cpu"}
-    with pytest.raises(AssertionError, match="expected const 'cuda'"):
-        validate_schema_subset(cuda_fell_back_to_cpu, start_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(cuda_fell_back_to_cpu, start_schema)
 
     status_schema = read_contract_schema("status-result.schema.json")
     successful_fit_without_model = deepcopy(_read_json("status.result.json"))
     successful_fit_without_model["results"]["modelRef"] = None
-    with pytest.raises(AssertionError, match=r"expected type \['string'\]"):
-        validate_schema_subset(successful_fit_without_model, status_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(successful_fit_without_model, status_schema)
 
     nonterminal = deepcopy(_read_json("status.result.json"))
     nonterminal.update({"state": "RUNNING", "pollAfterMs": 100, "error": None})
@@ -391,39 +422,39 @@ def test_result_schemas_enforce_device_state_and_result_conditionals():
         "modelRef": None,
         "checkpoint": None,
     }
-    validate_schema_subset(nonterminal, status_schema)
+    validate_contract_document(nonterminal, status_schema)
 
     queued = deepcopy(nonterminal)
     queued.update({"state": "QUEUED", "attempt": 0, "pollAfterMs": 100})
-    validate_schema_subset(queued, status_schema)
+    validate_contract_document(queued, status_schema)
 
     nonterminal["pollAfterMs"] = 0
-    with pytest.raises(AssertionError, match="below minimum"):
-        validate_schema_subset(nonterminal, status_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(nonterminal, status_schema)
 
     failed_without_error = deepcopy(nonterminal)
     failed_without_error.update({"state": "FAILED", "pollAfterMs": 0})
-    with pytest.raises(AssertionError, match=r"expected type \['object'\]"):
-        validate_schema_subset(failed_without_error, status_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(failed_without_error, status_schema)
 
     cancelled = deepcopy(nonterminal)
     cancelled.update({"state": "CANCELLED", "pollAfterMs": 0})
-    validate_schema_subset(cancelled, status_schema)
+    validate_contract_document(cancelled, status_schema)
 
     cancelled_with_error = deepcopy(cancelled)
     cancelled_with_error["error"] = {
         "code": "CANCELLED",
         "message": "job was cancelled",
     }
-    with pytest.raises(AssertionError, match="expected const None"):
-        validate_schema_subset(cancelled_with_error, status_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(cancelled_with_error, status_schema)
 
     wrong_missing_flags = deepcopy(_read_json("status.result.json"))
     wrong_missing_flags["results"]["checkpoint"]["dataSchema"]["missing"][
         "flags"
     ] = "none"
-    with pytest.raises(AssertionError, match="expected const 'per-feature'"):
-        validate_schema_subset(wrong_missing_flags, status_schema)
+    with pytest.raises(ValidationError):
+        validate_contract_document(wrong_missing_flags, status_schema)
 
 
 def test_arrow_golden_fixtures_have_expected_batch_and_row_boundaries():

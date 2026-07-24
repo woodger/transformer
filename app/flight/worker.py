@@ -6,10 +6,14 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import JobState
+from app.flight.device_inventory import (
+    CudaDeviceInventory,
+    static_cuda_inventory,
+)
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.records import (
     ExecutionJobRecord,
@@ -24,6 +28,7 @@ from app.flight.worker_plan import (
     WorkerPlanBuilder,
     WorkerPlanError,
 )
+from app.flight.worker_recovery import RecoveryCheckpointPublisher
 from app.flight.worker_subprocess import WorkerSubprocessRunner
 
 
@@ -31,8 +36,8 @@ class WorkerPool:
     """Durable single-instance worker pool for queued Flight jobs.
 
     PostgreSQL records lifecycle transitions; in-process FIFO queues wake the
-    CPU and CUDA lanes without polling the database. Each claimed job gets
-    exactly one legacy CLI subprocess.
+    CPU and CUDA lanes without polling the database. Each claimed attempt gets
+    exactly one trusted CLI subprocess.
     """
 
     def __init__(
@@ -40,6 +45,7 @@ class WorkerPool:
         config,
         ledger,
         spool,
+        recovery_store=None,
         *,
         logger: JsonLogger | None = None,
         metrics: OperationalMetrics | None = None,
@@ -49,14 +55,14 @@ class WorkerPool:
         python_executable: str | None = None,
         cli_path: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        device_inventory: CudaDeviceInventory | None = None,
     ):
         if config.cpu_capacity <= 0:
             raise ValueError("cpu_capacity must be greater than zero")
-        if config.cuda_capacity != 1:
-            raise ValueError("Flight contract v1 requires exactly one CUDA lane")
         self.config = config
         self.ledger = ledger
         self.spool = spool
+        self.recovery_store = recovery_store
         self.logger = logger or JsonLogger()
         self.metrics = metrics or OperationalMetrics()
         self._popen = popen_factory
@@ -65,10 +71,16 @@ class WorkerPool:
         self._python = python_executable or sys.executable
         self._cli_path = cli_path or os.path.join(PROJECT_ROOT, "app", "main.py")
         self._monotonic = monotonic
+        self.device_inventory = (
+            device_inventory
+            if device_inventory is not None
+            else static_cuda_inventory(lambda: True)
+        )
         self._plan_builder = WorkerPlanBuilder(
             config,
             ledger,
             spool,
+            recovery_store,
             python_executable=self._python,
             cli_path=self._cli_path,
         )
@@ -77,6 +89,16 @@ class WorkerPool:
             spool,
             logger=self.logger,
             metrics=self.metrics,
+        )
+        self._recovery_publisher = (
+            None
+            if recovery_store is None
+            else RecoveryCheckpointPublisher(
+                ledger,
+                recovery_store,
+                logger=self.logger,
+                metrics=self.metrics,
+            )
         )
         self._subprocess_runner = WorkerSubprocessRunner(
             config,
@@ -87,18 +109,24 @@ class WorkerPool:
             signal_group=self._signal_group,
             python_executable=self._python,
             stage_prediction=self._artifact_publisher.stage_prediction,
+            publish_recovery=(
+                None
+                if self._recovery_publisher is None
+                else self._recovery_publisher.publish
+            ),
             monotonic=self._monotonic,
         )
         self._attempt_executor = WorkerAttemptExecutor(
-            config,
             ledger,
-            spool,
             self._plan_builder,
             self._subprocess_runner,
             self._artifact_publisher,
             logger=self.logger,
             metrics=self.metrics,
             argv_hook=self._argv_hook,
+            retry_notifier=self.notify_queued,
+            confirm_device_loss=self.device_inventory.confirm_loss,
+            resumable_fit=self._recovery_publisher is not None,
             monotonic=self._monotonic,
         )
 
@@ -116,26 +144,47 @@ class WorkerPool:
 
     @property
     def lane_counts(self) -> dict[str, int]:
-        return {"cpu": self.config.cpu_capacity, "cuda": 1}
+        return {
+            "cpu": self.config.cpu_capacity,
+            "cuda": len(
+                self.device_inventory.schedulable_devices()
+            ),
+        }
 
-    def start(self) -> "WorkerPool":
+    def start(self) -> WorkerPool:
         with self._lifecycle_lock:
             if self._started:
                 return self
             self._started = True
             for job in self.ledger.queued_execution_jobs():
                 self._enqueue(job)
-            for device, count in self.lane_counts.items():
-                for index in range(count):
-                    worker_id = f"{os.getpid()}-{device}-{index}"
-                    thread = threading.Thread(
-                        target=self._lane,
-                        args=(device, worker_id),
-                        name=f"transformer-flight-{device}-{index}",
-                        daemon=True,
-                    )
-                    self._threads.append(thread)
-                    thread.start()
+            for index in range(self.config.cpu_capacity):
+                worker_id = f"{os.getpid()}-cpu-{index}"
+                thread = threading.Thread(
+                    target=self._lane,
+                    args=("cpu", worker_id),
+                    name=f"transformer-flight-cpu-{index}",
+                    daemon=True,
+                )
+                self._threads.append(thread)
+                thread.start()
+            for cuda_device in (
+                self.device_inventory.schedulable_devices()
+            ):
+                worker_id = (
+                    f"{os.getpid()}-cuda-{cuda_device.ordinal}"
+                )
+                thread = threading.Thread(
+                    target=self._lane,
+                    args=("cuda", worker_id, cuda_device.device_id),
+                    name=(
+                        "transformer-flight-cuda-"
+                        f"{cuda_device.ordinal}"
+                    ),
+                    daemon=True,
+                )
+                self._threads.append(thread)
+                thread.start()
         return self
 
     def notify_queued(self, job_id: str | None = None) -> None:
@@ -158,9 +207,10 @@ class WorkerPool:
             if self._stop_claiming.is_set():
                 return
             self._stop_claiming.set()
-            for device, count in self.lane_counts.items():
-                for _ in range(count):
-                    self._queues[device].put(None)
+            for _ in range(self.config.cpu_capacity):
+                self._queues["cpu"].put(None)
+            for _ in self.device_inventory.snapshot().devices:
+                self._queues["cuda"].put(None)
 
     def shutdown(self, timeout: float | None = None) -> None:
         self.stop_claiming()
@@ -198,13 +248,44 @@ class WorkerPool:
             job_id = self._dequeue(device)
         if job_id is None:
             return False
-        return self._claim_and_execute(
-            device,
-            job_id,
-            worker_id or f"{os.getpid()}-{device}-manual",
-        )
+        device_id = None
+        if device == "cuda":
+            available = self.device_inventory.schedulable_devices()
+            if not available:
+                self._enqueue_job_id(device, job_id)
+                return False
+            device_id = available[0].device_id
+            if not self.device_inventory.mark_busy(device_id):
+                self._enqueue_job_id(device, job_id)
+                return False
+        try:
+            claimed = self._claim_and_execute(
+                device,
+                job_id,
+                worker_id or f"{os.getpid()}-{device}-manual",
+                device_id=device_id,
+            )
+        finally:
+            if device_id is not None:
+                self.device_inventory.release(device_id)
+        if not claimed:
+            self._requeue_if_pending(job_id)
+        return claimed
 
-    def _claim_and_execute(self, device: str, job_id: str, worker_id: str) -> bool:
+    def _claim_and_execute(
+        self,
+        device: str,
+        job_id: str,
+        worker_id: str,
+        *,
+        device_id: str | None = None,
+    ) -> bool:
+        pending = self.ledger.get_execution_job(job_id)
+        from_state = (
+            JobState.QUEUED
+            if pending is None
+            else pending.state
+        )
         with self._claim_lock:
             if self._stop_claiming.is_set():
                 return False
@@ -212,6 +293,7 @@ class WorkerPool:
                 job_id,
                 device,
                 worker_id=worker_id,
+                device_id=device_id,
             )
         if claimed is None:
             return False
@@ -222,7 +304,7 @@ class WorkerPool:
         self.metrics.add("jobsStarted")
         self.metrics.add("workerQueueWaitSeconds", queue_wait)
         self.metrics.record_transition(
-            JobState.QUEUED.value,
+            from_state.value,
             JobState.RUNNING.value,
         )
         self.logger.event(
@@ -230,7 +312,8 @@ class WorkerPool:
             jobId=claimed.job_id,
             attempt=claimed.attempt,
             device=device,
-            fromState=JobState.QUEUED.value,
+            deviceId=device_id,
+            fromState=from_state.value,
             toState=JobState.RUNNING.value,
             queueWaitSeconds=queue_wait,
         )
@@ -246,25 +329,54 @@ class WorkerPool:
                 record,
                 attempt,
                 argv_hook=self._argv_hook,
-                legacy_job=job,
+                job_mapping=job,
             ))
         except WorkerPlanError as exc:
             raise WorkerAttemptError(exc.code, exc.message) from exc
 
-    def _lane(self, device: str, worker_id: str) -> None:
+    def _lane(
+        self,
+        device: str,
+        worker_id: str,
+        device_id: str | None = None,
+    ) -> None:
         while True:
+            if (
+                device_id is not None
+                and self.device_inventory.is_quarantined(device_id)
+            ):
+                return
             job_id = self._queues[device].get()
             if job_id is None:
                 return
             with self._queue_lock:
                 self._enqueued.discard(job_id)
             try:
-                self._claim_and_execute(device, job_id, worker_id)
+                if (
+                    device_id is not None
+                    and not self.device_inventory.mark_busy(device_id)
+                ):
+                    self._enqueue_job_id(device, job_id)
+                    if self.device_inventory.is_quarantined(device_id):
+                        return
+                    continue
+                try:
+                    claimed = self._claim_and_execute(
+                        device,
+                        job_id,
+                        worker_id,
+                        device_id=device_id,
+                    )
+                finally:
+                    if device_id is not None:
+                        self.device_inventory.release(device_id)
+                if not claimed:
+                    self._requeue_if_pending(job_id)
             except Exception as exc:
                 # A single unexpected attempt-finalization/storage error must
                 # not permanently remove capacity from the service.  The
-                # claimed job is never requeued here (especially not fit); its
-                # durable state is left for explicit recovery/reconciliation.
+                # Durable attempt finalization decides whether a fit becomes
+                # RETRYING. The lane never invents a retry from an exception.
                 self.metrics.add("workerLaneErrors")
                 self.logger.event(
                     "flight.worker.lane_error",
@@ -273,13 +385,25 @@ class WorkerPool:
                     errorType=type(exc).__name__,
                 )
 
+    def _requeue_if_pending(self, job_id: str) -> None:
+        pending = self.ledger.get_execution_job(job_id)
+        if pending is not None:
+            self._enqueue(pending)
+
     def _enqueue(self, job: ExecutionJobRecord) -> None:
-        if job.state != JobState.QUEUED:
+        if job.state not in (JobState.QUEUED, JobState.RETRYING):
             return
         device = job.selected_device
         if device not in self._queues:
             return
         job_id = job.job_id
+        with self._queue_lock:
+            if job_id in self._enqueued or self._stop_claiming.is_set():
+                return
+            self._enqueued.add(job_id)
+            self._queues[device].put(job_id)
+
+    def _enqueue_job_id(self, device: str, job_id: str) -> None:
         with self._queue_lock:
             if job_id in self._enqueued or self._stop_claiming.is_set():
                 return

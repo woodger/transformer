@@ -1,12 +1,12 @@
-from dataclasses import replace
-from io import BytesIO
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
 import uuid
+from dataclasses import replace
+from io import BytesIO
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -20,19 +20,17 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CONTRACT_NAME,
     CREATE_ACTION,
-    JobState,
     PREDICT_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    JobState,
 )
-from app.flight.ledger import Ledger
 from app.flight.spool import Spool
 from app.model.transformer import TransformerModel
 from app.runtime.version import __version__
 from app.storage.checkpoint import CHECKPOINT_FORMAT
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 OWNER = "inventory"
 TOKEN = "secret"
@@ -44,7 +42,6 @@ def _service_config(tmp_path):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         cpu_capacity=1,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=1.0,
@@ -63,7 +60,7 @@ def _auth():
 def _request(**fields):
     return {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -109,7 +106,7 @@ def _framed_payloads(payloads):
 
 def _put(client, job_id, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -118,7 +115,7 @@ def _put(client, job_id, payload_id, ordinal, batches):
     )
     metadata = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": ordinal,
@@ -265,8 +262,7 @@ def _direct_predict(checkpoint_path, payloads):
         ],
         cwd=PROJECT_ROOT,
         input=_framed_payloads(payloads),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
         timeout=30,
     )
@@ -378,7 +374,7 @@ def test_real_cpu_flight_prediction_matches_predict_stream(
         output_batch_counts = []
         for ordinal in range(2):
             descriptor = flight.FlightDescriptor.for_path(
-                "transformer", "v1", "jobs", job_id, "outputs", str(ordinal)
+                "transformer", "v2", "jobs", job_id, "outputs", str(ordinal)
             )
             info = client.get_flight_info(descriptor, options=_auth())
             assert info.descriptor == descriptor

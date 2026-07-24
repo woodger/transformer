@@ -1,5 +1,5 @@
-from dataclasses import FrozenInstanceError, fields
 import uuid
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
@@ -11,7 +11,6 @@ from app.flight.records import (
     RecoverableAttemptRecord,
 )
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
@@ -172,6 +171,7 @@ def test_committed_input_mapper_renames_bytes_without_changing_legacy_shape(
             byte_count=byte_count,
             sha256=DIGEST_A,
             relative_path=f"spool/jobs/{job_id}/inputs/0.arrow",
+            storage_class="runtime",
         )
     ]
     _assert_frozen_slots(records[0])

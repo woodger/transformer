@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 from app.model.context import (
     context_input_dim,

@@ -1,15 +1,14 @@
-from dataclasses import replace
 import json
 import os
-from pathlib import Path
 import queue
 import signal
 import subprocess
 import sys
 import threading
 import time
-from types import SimpleNamespace
 import uuid
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pyarrow.flight as flight
 import pytest
@@ -54,7 +53,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -126,9 +125,13 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         prediction_column="predictions",
         model_config=None,
         training_config=None,
+        config_hash="a" * 64,
+        seal_hash="b" * 64,
         feature_dim=None,
         input_frame_count=0,
         attempt=1,
+        assigned_device_id=None,
+        resume_generation=None,
         queued_at=10.0,
         started_at=15.25,
     )
@@ -143,16 +146,22 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         def queued_execution_jobs(self):
             return [queued]
 
+        def get_execution_job(self, requested_job_id):
+            assert requested_job_id == job_id
+            return queued
+
         def claim_execution_job(
             self,
             requested_job_id,
             selected_device,
             *,
             worker_id,
+            device_id,
         ):
             assert requested_job_id == job_id
             assert selected_device == "cpu"
             assert worker_id == "worker-1"
+            assert device_id is None
             return claimed
 
     metrics = OperationalMetrics()
@@ -160,7 +169,6 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     pool = WorkerPool(
         SimpleNamespace(
             cpu_capacity=1,
-            cuda_capacity=1,
             shutdown_drain_seconds=1.0,
             cancel_grace_seconds=0.1,
         ),
@@ -187,6 +195,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         "jobId": job_id,
         "attempt": 1,
         "device": "cpu",
+        "deviceId": None,
         "fromState": "QUEUED",
         "toState": "RUNNING",
         "queueWaitSeconds": 5.25,
@@ -215,7 +224,6 @@ config = FlightServiceConfig(
     runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
     port=0,
     allow_plaintext=True,
-    disk_min_free_bytes=1,
 ).validate()
 FlightApplication.build(
     config,

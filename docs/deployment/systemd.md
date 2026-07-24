@@ -13,12 +13,17 @@
 `/home/nerv/transformer/.env`. Не перезаписывайте уже настроенный файл с
 доступами к PostgreSQL.
 
+Параметры Transformer service задаются в `/home/nerv/transformer/app/config.py`.
+Проверьте их перед первым запуском.
+TLS или mTLS включается только явными certificate options в `ExecStart`.
+
 ```bash
 sudo chown nerv:nerv /home/nerv/transformer/.env
 sudo chmod 0600 /home/nerv/transformer/.env
 
 sudo install -d -o nerv -g nerv -m 0700 \
-  /home/nerv/transformer/models
+  /home/nerv/transformer/models \
+  /home/nerv/transformer/recovery
 
 sudo -u nerv -H /usr/bin/python3.11 -m pip check
 ```
@@ -48,8 +53,12 @@ stat -c '%U:%G %a %n' /tmp/transformer
 nerv:nerv 700 /tmp/transformer
 ```
 
-Потеря `/tmp/transformer` инвалидирует связанные задания. Успешно
-опубликованные модели остаются в `/home/nerv/transformer/models`.
+Потеря `/tmp/transformer` инвалидирует prediction jobs и незавершённые attempt
+artifacts. Fit jobs продолжаются по данным из
+`/home/nerv/transformer/recovery`; успешно опубликованные модели остаются в
+`/home/nerv/transformer/models`.
+Если системная temporary directory отличается от `/tmp`, соответствующий
+вычисляемый путь необходимо указать и в tmpfiles configuration.
 
 ## Создать unit-файл
 
@@ -135,15 +144,24 @@ journalctl -u transformer -f
 ```bash
 sudo -u nerv -H /usr/bin/python3.11 -c \
   'import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
+
+sudo -u nerv -H nvidia-smi \
+  --query-gpu=index,uuid,name \
+  --format=csv,noheader,nounits
 ```
 
-Не перезапускайте сервис во время длительного `RUNNING` fit, если не готовы
-отменить обучение.
+При штатном перезапуске сервис сначала использует drain interval. Если fit всё
+же прерывается, следующая попытка продолжает его с последней полностью
+завершённой глобальной эпохи; незавершённая эпоха выполняется повторно.
+Подтверждённо отказавший GPU записывается в
+`/tmp/transformer/cuda-quarantine.json`: `systemctl restart` не возвращает его
+в scheduler, а новая загрузка Linux очищает boot-scoped quarantine.
 
 ## Открыть порт 8815
 
-Этот шаг нужен, только если `TRANSFORMER_HOST` не является loopback-адресом и
-к сервису подключается удалённый Inventory.
+Этот шаг нужен, только если `HOST_DEFAULT` в `app/config.py` или переданный
+через `--host` адрес не является loopback-адресом и к сервису подключается
+удалённый Inventory.
 
 Если используется `firewalld`:
 

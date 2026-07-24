@@ -41,7 +41,8 @@
 - Flight actions, JSON fields, error codes и golden fixtures;
 - checkpoint format, metadata и совместимости чтения;
 - PostgreSQL schema, migrations и транзакционных переходов job state;
-- разделения данных между PostgreSQL, `/tmp/transformer` и `models/`;
+- разделения данных между PostgreSQL, `/tmp/transformer`, `recovery/` и
+  `models/`;
 - authentication, TLS/mTLS, process groups и shutdown semantics;
 - optimizer, scheduler, early stopping и порядка обхода training payload.
 
@@ -56,6 +57,7 @@
 Базовый полный запуск:
 
 ```bash
+python3.11 -m ruff check .
 python3.11 -m pytest -q
 git diff --check
 ```

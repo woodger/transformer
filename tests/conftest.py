@@ -1,10 +1,9 @@
 import sys
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 import pytest
-from sqlalchemy import delete
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 from sqlalchemy.schema import DropSchema
 
 # add project root to PYTHONPATH

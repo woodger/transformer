@@ -1,26 +1,42 @@
-from dataclasses import dataclass, fields
 import math
 import os
+import tempfile
+from dataclasses import dataclass, fields
 from pathlib import Path
 
-from app.config import PROJECT_ROOT
+from app.config import (
+    ALLOW_PLAINTEXT,
+    CPU_WORKERS,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
+    PROJECT_NAME,
+    PROJECT_ROOT,
+    RETENTION_SECONDS,
+)
 from app.flight.constants import MAX_MANIFEST_ITEMS
-
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
-
-
-def _default_runtime_dir() -> str:
-    return os.path.join(os.sep, "tmp", "transformer")
+_NON_ENVIRONMENT_FIELDS = frozenset({
+    "allow_plaintext",
+    "cpu_capacity",
+    "host",
+    "port",
+    "retention_seconds",
+    "runtime_dir",
+    "tls_ca_file",
+    "tls_cert_file",
+    "tls_key_file",
+    "tls_require_client_cert",
+})
 
 
 @dataclass(frozen=True)
 class FlightServiceConfig:
-    runtime_dir: str = _default_runtime_dir()
-    host: str = "127.0.0.1"
-    port: int = 8815
-    allow_plaintext: bool = False
+    runtime_dir: str = os.path.join(tempfile.gettempdir(), PROJECT_NAME)
+    host: str = HOST_DEFAULT
+    port: int = PORT_DEFAULT
+    allow_plaintext: bool = ALLOW_PLAINTEXT
 
     tls_cert_file: str | None = None
     tls_key_file: str | None = None
@@ -36,14 +52,12 @@ class FlightServiceConfig:
     max_job_bytes: int = 64 * 1024 * 1024 * 1024
     max_active_jobs_per_subject: int = 32
 
-    cpu_capacity: int = 2
-    cuda_capacity: int = 1
+    cpu_capacity: int = CPU_WORKERS
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
 
-    disk_min_free_bytes: int = 1024 * 1024 * 1024
-    retention_seconds: int = 7 * 24 * 60 * 60
+    retention_seconds: int = RETENTION_SECONDS
     maintenance_interval_seconds: int = 60
     subprocess_timeout_seconds: float = 24 * 60 * 60
 
@@ -58,6 +72,13 @@ class FlightServiceConfig:
     @property
     def models_dir(self) -> str:
         return os.path.join(PROJECT_ROOT, "models")
+
+    @property
+    def recovery_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.models_dir),
+            "recovery",
+        )
 
     @property
     def lock_path(self) -> str:
@@ -106,9 +127,7 @@ class FlightServiceConfig:
             "max_job_bytes",
             "max_active_jobs_per_subject",
             "cpu_capacity",
-            "cuda_capacity",
             "ticket_ttl_seconds",
-            "disk_min_free_bytes",
             "retention_seconds",
             "maintenance_interval_seconds",
         )
@@ -129,8 +148,6 @@ class FlightServiceConfig:
                 or value <= 0
             ):
                 raise ValueError(f"{name} must be a positive finite number")
-        if self.cuda_capacity != 1:
-            raise ValueError("Flight contract v1 requires cuda_capacity=1")
         if self.target_batch_bytes > self.max_batch_bytes:
             raise ValueError("target_batch_bytes must not exceed max_batch_bytes")
         if self.max_batch_bytes > self.max_message_bytes:
@@ -169,15 +186,18 @@ def load_config(
     if legacy_keys:
         raise ValueError(
             "unsupported legacy Transformer environment variable(s): "
-            f"{', '.join(legacy_keys)}; remove FLIGHT from the prefix"
+            f"{', '.join(legacy_keys)}; use the current app/config.py and "
+            "TRANSFORMER_* settings"
         )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            f"use {ENV_PREFIX}HOST"
+            "configure HOST_DEFAULT in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
+        if field.name in _NON_ENVIRONMENT_FIELDS:
+            continue
         key = ENV_PREFIX + field.name.upper()
         if key not in env:
             continue

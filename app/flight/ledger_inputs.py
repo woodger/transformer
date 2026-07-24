@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.database.models import InputUpload, Job, JobInput
 from app.flight.constants import (
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
+    ErrorCode,
+    JobState,
 )
 from app.flight.errors import (
     ServiceError,
@@ -62,17 +62,23 @@ class InputLedgerSlice:
         ordinal: int,
         upload_token: str,
         temporary_path: str,
+        storage_class: str = "runtime",
         now: float | None = None,
     ) -> dict:
         nonnegative(ordinal, "ordinal")
         payload_id = canonical_uuid(payload_id, "payload_id")
         validate_relative_path(temporary_path)
+        if storage_class not in ("runtime", "recovery"):
+            raise ValueError(
+                "storage_class must be runtime or recovery"
+            )
         reservation = InputUpload(
             upload_token=upload_token,
             job_id=job_id,
             payload_id=payload_id,
             ordinal=ordinal,
             temporary_path=temporary_path,
+            storage_class=storage_class,
             created_at=timestamp_now(now),
         )
         try:
@@ -135,9 +141,14 @@ class InputLedgerSlice:
         feature_dim: int | None,
         max_payloads: int,
         max_job_bytes: int,
+        storage_class: str = "runtime",
         now: float | None = None,
     ) -> dict:
         validate_relative_path(relative_path)
+        if storage_class not in ("runtime", "recovery"):
+            raise ValueError(
+                "storage_class must be runtime or recovery"
+            )
         for value, name in (
             (rows, "rows"),
             (batches, "batches"),
@@ -156,6 +167,10 @@ class InputLedgerSlice:
                 )
                 if upload is None:
                     raise not_found("input upload reservation not found")
+                if upload.storage_class != storage_class:
+                    raise failed_precondition(
+                        "input storage class differs from its reservation"
+                    )
                 job = session.scalar(
                     select(Job)
                     .where(Job.job_id == upload.job_id)
@@ -228,6 +243,7 @@ class InputLedgerSlice:
                     sha256=sha256,
                     schema_fingerprint=schema_fingerprint,
                     relative_path=relative_path,
+                    storage_class=storage_class,
                     source_width=source_width,
                     feature_dim=feature_dim,
                     committed_at=timestamp,
@@ -333,6 +349,7 @@ def _committed_input_record(record: JobInput) -> CommittedInputRecord:
         byte_count=record.bytes,
         sha256=record.sha256,
         relative_path=record.relative_path,
+        storage_class=record.storage_class,
     )
 
 

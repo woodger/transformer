@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import secrets
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
@@ -301,7 +301,7 @@ class ArtifactLedgerSlice:
         created_at = timestamp_now(now)
         expires_at = datetime.fromtimestamp(
             created_at.timestamp() + ttl_seconds,
-            timezone.utc,
+            UTC,
         )
         token = secrets.token_urlsafe(32).encode("ascii")
         ticket_hash = hashlib.sha256(token).hexdigest()

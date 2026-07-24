@@ -15,7 +15,6 @@ from app.data.arrow import (
     write_arrow,
 )
 
-
 FLOAT_LIST = pa.list_(pa.float32())
 
 

@@ -1,11 +1,11 @@
-from dataclasses import replace
 import hashlib
 import os
-from pathlib import Path
-from types import SimpleNamespace
 import threading
 import time
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -13,10 +13,8 @@ from sqlalchemy import func, select
 from app.database.models import OutputTicket
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import JobState
-from app.flight.ledger import Ledger
 from app.flight.maintenance import MaintenanceService
 from app.flight.spool import Spool
-
 
 DIGEST = "a" * 64
 _POSTGRES_LEDGER = None
@@ -45,7 +43,6 @@ def service_config(tmp_path, **overrides):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         retention_seconds=50,
     )
     return replace(base, **overrides).validate()

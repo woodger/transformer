@@ -1,10 +1,8 @@
-from dataclasses import replace
 import errno
 import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import queue
 import signal
 import subprocess
@@ -12,6 +10,8 @@ import sys
 import threading
 import time
 import uuid
+from dataclasses import replace
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -24,21 +24,20 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
     STATUS_ACTION,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
-from app.flight.ledger import Ledger
+from app.flight.device_inventory import CudaDeviceInventory
 from app.flight.observability import OperationalMetrics
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.worker import WorkerPool
 from app.training.run_config import ModelConfig, TrainConfig
-
 
 PREDICT_HELPER = r"""
 import sys
@@ -166,7 +165,6 @@ def service_config(tmp_path, **overrides):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         cpu_capacity=2,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=0.2,
@@ -960,12 +958,13 @@ def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
         "committedInputs",
         "progress",
         "attempt",
+        "recovery",
         "error",
         "results",
         "pollAfterMs",
     }
     assert status["contract"] == "transformer-flight"
-    assert status["version"] == 1
+    assert status["version"] == 2
     assert status["state"] == JobState.SUCCEEDED.value
     assert status["results"] == {
         "outputs": [],
@@ -1266,7 +1265,9 @@ def test_nonzero_cuda_oom_has_stable_error_code(tmp_path):
     assert metrics.snapshot()["counters"]["cudaOutOfMemory"] == 1
 
 
-def test_cuda_disconnect_has_stable_device_unavailable_error(tmp_path):
+def test_unconfirmed_cuda_disconnect_is_terminal_subprocess_failure(
+    tmp_path,
+):
     _, spool, ledger, pool = components(
         tmp_path,
         argv_hook=lambda job, argv: [
@@ -1286,9 +1287,9 @@ def test_cuda_disconnect_has_stable_device_unavailable_error(tmp_path):
 
     failed = ledger.get_job(job["job_id"])
     assert failed["state"] == JobState.FAILED.value
-    assert failed["error_code"] == "DEVICE_UNAVAILABLE"
+    assert failed["error_code"] == "SUBPROCESS_FAILED"
     assert failed["error_message"] == (
-        "CUDA device became unavailable during execution"
+        "CUDA subprocess failed while its assigned device remained available"
     )
 
 
@@ -1418,7 +1419,7 @@ def test_cancel_and_status_loopback_terminate_running_process_group(tmp_path):
     def action(name, **fields):
         document = {
             "contract": CONTRACT_NAME,
-            "version": 1,
+            "version": 2,
             "requestId": str(uuid.uuid4()),
             **fields,
         }
@@ -1542,7 +1543,7 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
         grandchild = int(text.split("grandchild=", 1)[1].splitlines()[0])
         cancel = {
             "contract": CONTRACT_NAME,
-            "version": 1,
+            "version": 2,
             "requestId": str(uuid.uuid4()),
             "idempotencyKey": "cancel-term-resistant-worker",
             "jobId": job["job_id"],
@@ -1567,9 +1568,100 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
         assert not runner.is_alive()
 
 
-def test_pool_exposes_configured_cpu_lanes_and_exactly_one_cuda_lane(tmp_path):
-    config, _, _, pool = components(tmp_path)
-    assert pool.lane_counts == {"cpu": config.cpu_capacity, "cuda": 1}
+def test_pool_exposes_configured_cpu_lanes_and_cuda_inventory(tmp_path):
+    inventory = CudaDeviceInventory(probe=lambda: {
+        "devices": [
+            {"id": "GPU-a", "ordinal": 0, "name": "First"},
+            {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+        ],
+        "runtimeVersion": "13.3",
+        "torchVersion": "2.12.0",
+    }).initialize()
+    config, _, _, pool = components(
+        tmp_path,
+        device_inventory=inventory,
+    )
+    assert pool.lane_counts == {
+        "cpu": config.cpu_capacity,
+        "cuda": 2,
+    }
+
+
+def test_confirmed_gpu_loss_retries_on_another_physical_device(
+    tmp_path,
+):
+    probes = iter([
+        {
+            "devices": [
+                {"id": "GPU-a", "ordinal": 0, "name": "First"},
+                {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+            ],
+            "runtimeVersion": "13.3",
+            "torchVersion": "2.12.0",
+        },
+        {
+            "devices": [
+                {"id": "GPU-b", "ordinal": 1, "name": "Second"},
+            ],
+            "runtimeVersion": "13.3",
+            "torchVersion": "2.12.0",
+        },
+    ])
+    inventory = CudaDeviceInventory(
+        probe=lambda: next(probes),
+    ).initialize()
+
+    def worker_hook(job, _argv):
+        if job["attempt"] == 1:
+            program = (
+                "import os, sys; "
+                "assert os.environ['CUDA_VISIBLE_DEVICES'] == 'GPU-a'; "
+                "sys.stdout.buffer.write(b'x'); "
+                "sys.stdout.buffer.flush(); "
+                "sys.stderr.write('CUDA_ERROR_DEVICE_LOST\\n'); "
+                "raise SystemExit(1)"
+            )
+        else:
+            program = (
+                "import os; "
+                "assert os.environ['CUDA_VISIBLE_DEVICES'] == 'GPU-b'"
+            )
+        return [sys.executable, "-c", program]
+
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=worker_hook,
+        device_inventory=inventory,
+    )
+    model_ref = publish_seed_model(ledger, spool)
+    job = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="predict",
+        requested_device="cuda",
+        prediction_column="out",
+        config_hash="c" * 64,
+        input_model_ref=model_ref,
+        model_config=model_config(feature_dim=2),
+    )
+    seal_and_queue(ledger, job, [], device="cuda")
+
+    assert pool.run_once("cuda") is True
+    retrying = ledger.get_job(job["job_id"])
+    assert retrying["state"] == JobState.RETRYING.value
+    assert inventory.is_quarantined("GPU-a") is True
+
+    assert pool.run_once("cuda") is True
+    succeeded = ledger.get_job(job["job_id"])
+    assert succeeded["state"] == JobState.SUCCEEDED.value
+    assert succeeded["attempt"] == 2
+    with ledger.connection() as connection:
+        first = connection.get(JobAttempt, (job["job_id"], 1))
+        second = connection.get(JobAttempt, (job["job_id"], 2))
+    assert first.device_id == "GPU-a"
+    assert first.error_code == ErrorCode.DEVICE_LOST.value
+    assert second.device_id == "GPU-b"
+    assert second.status == JobState.SUCCEEDED.value
 
 
 def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):
@@ -1581,6 +1673,36 @@ def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):
 
     assert pool.run_once("cpu", worker_id="shutdown-race") is False
     assert ledger.get_job(job["job_id"])["state"] == JobState.QUEUED.value
+
+
+def test_transient_claim_contention_preserves_queued_job(
+    tmp_path,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            "",
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [], device="cpu")
+
+    with ledger.transaction() as connection:
+        locked = ledger.get_job(
+            job["job_id"],
+            connection=connection,
+            for_update=True,
+        )
+        assert locked["state"] == JobState.QUEUED.value
+        assert pool.run_once("cpu") is False
+        assert (
+            ledger.get_job(job["job_id"])["state"]
+            == JobState.QUEUED.value
+        )
+    assert pool.run_once("cpu") is True
+    assert ledger.get_job(job["job_id"])["state"] == JobState.SUCCEEDED.value
 
 
 def test_pending_cancel_before_attempt_registration_does_not_spawn(
@@ -1658,8 +1780,8 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     _, _, _, pool = components(tmp_path)
     calls = []
 
-    def flaky_claim(device, job_id, worker_id):
-        calls.append((device, job_id, worker_id))
+    def flaky_claim(device, job_id, worker_id, *, device_id=None):
+        calls.append((device, job_id, worker_id, device_id))
         if len(calls) == 1:
             raise RuntimeError("injected lane failure")
         pool.stop_claiming()
@@ -1677,7 +1799,7 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     assert len(calls) == 2
 
 
-def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
+def test_terminal_persistence_failure_is_recovered_as_retrying_fit(
     tmp_path,
     monkeypatch,
 ):
@@ -1687,8 +1809,8 @@ def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
     seal_and_queue(ledger, job, [])
 
     monkeypatch.setattr(
-        pool.spool,
-        "ensure_free_space",
+        pool._plan_builder,
+        "build",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             OSError(errno.EIO, "injected preflight failure")
         ),
@@ -1719,11 +1841,15 @@ def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
 
     recovery = ledger.reconcile_interrupted_jobs()
 
-    failed = ledger.get_job(job["job_id"])
-    assert recovery["interrupted_jobs"] == [job["job_id"]]
-    assert failed["state"] == JobState.FAILED.value
-    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
-    assert ledger.queued_jobs() == []
+    retrying = ledger.get_job(job["job_id"])
+    assert recovery["interrupted_jobs"] == []
+    assert recovery["retried_jobs"] == [job["job_id"]]
+    assert retrying["state"] == JobState.RETRYING.value
+    assert retrying["error_code"] is None
+    assert [
+        queued["job_id"]
+        for queued in ledger.queued_jobs()
+    ] == [job["job_id"]]
 
 
 def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):

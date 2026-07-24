@@ -1,4 +1,5 @@
 import torch
+
 from app.config import DEFAULT_DEVICE
 
 

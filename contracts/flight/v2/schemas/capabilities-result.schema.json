@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v2/capabilities-result.schema.json",
+  "title": "transformer.v2.capabilities result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "requestId",
+    "protocolVersions",
+    "service",
+    "schemaIds",
+    "limits",
+    "devices",
+    "queue",
+    "supportedOperations",
+    "features"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 2},
+    "requestId": {"type": "string", "format": "uuid"},
+    "protocolVersions": {
+      "type": "array",
+      "prefixItems": [{"const": 2}],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "pyarrowVersion", "torchVersion"],
+      "properties": {
+        "name": {"const": "transformer-flight"},
+        "version": {"type": "string", "minLength": 1},
+        "pyarrowVersion": {"type": "string", "minLength": 1},
+        "torchVersion": {"type": "string", "minLength": 1}
+      }
+    },
+    "schemaIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fitInput", "predictInput", "predictionOutput"],
+      "properties": {
+        "fitInput": {"const": "inventory.sequence.fit.v1"},
+        "predictInput": {"const": "inventory.sequence.predict.v1"},
+        "predictionOutput": {"const": "transformer.prediction.v1"}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxMessageBytes",
+        "targetBatchBytes",
+        "maxBatchBytes",
+        "maxPayloadBytes",
+        "maxRowsPerPayload",
+        "maxPayloadsPerJob",
+        "maxJobBytes",
+        "maxActiveJobsPerSubject",
+        "transportMessageLimitEnforced"
+      ],
+      "properties": {
+        "maxMessageBytes": {"type": "integer", "minimum": 1},
+        "targetBatchBytes": {"type": "integer", "minimum": 1},
+        "maxBatchBytes": {"type": "integer", "minimum": 1},
+        "maxPayloadBytes": {"type": "integer", "minimum": 1},
+        "maxRowsPerPayload": {"type": "integer", "minimum": 1},
+        "maxPayloadsPerJob": {"type": "integer", "minimum": 1, "maximum": 400},
+        "maxJobBytes": {"type": "integer", "minimum": 1},
+        "maxActiveJobsPerSubject": {"type": "integer", "minimum": 1},
+        "transportMessageLimitEnforced": {"const": false}
+      }
+    },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "cuda"],
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available"],
+          "properties": {"available": {"const": true}}
+        },
+        "cuda": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "available",
+            "deviceCount",
+            "quarantinedCount",
+            "runtimeVersion"
+          ],
+          "properties": {
+            "available": {"type": "boolean"},
+            "deviceCount": {"type": "integer", "minimum": 0},
+            "quarantinedCount": {"type": "integer", "minimum": 0},
+            "runtimeVersion": {"type": ["string", "null"]}
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"available": {"const": false}},
+                "required": ["available"]
+              },
+              "then": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "deviceCount": {"const": 0},
+                      "quarantinedCount": {"const": 0}
+                    }
+                  },
+                  {
+                    "properties": {
+                      "deviceCount": {"type": "integer", "minimum": 1},
+                      "quarantinedCount": {"type": "integer", "minimum": 1}
+                    }
+                  }
+                ]
+              },
+              "else": {
+                "properties": {
+                  "deviceCount": {"type": "integer", "minimum": 1}
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpuCapacity", "cudaCapacity", "singleInstance"],
+      "properties": {
+        "cpuCapacity": {"type": "integer", "minimum": 1},
+        "cudaCapacity": {"type": "integer", "minimum": 0},
+        "singleInstance": {"const": true}
+      }
+    },
+    "supportedOperations": {
+      "type": "array",
+      "prefixItems": [{"const": "fit"}, {"const": "predict"}],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doExchange",
+        "pollFlightInfo",
+        "resumableFit",
+        "recoveryBoundary",
+        "deviceAwareCuda"
+      ],
+      "properties": {
+        "doExchange": {"const": false},
+        "pollFlightInfo": {"const": false},
+        "resumableFit": {"const": true},
+        "recoveryBoundary": {"const": "globalEpoch"},
+        "deviceAwareCuda": {"const": true}
+      }
+    }
+  }
+}

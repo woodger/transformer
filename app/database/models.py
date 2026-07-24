@@ -22,7 +22,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
 SCHEMA = "transformer"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)
 
@@ -37,7 +36,7 @@ class Job(Base):
         CheckConstraint("operation IN ('fit', 'predict')", name="jobs_operation_ck"),
         CheckConstraint(
             "state IN ('UPLOADING', 'SEALED', 'QUEUED', 'RUNNING', "
-            "'SUCCEEDED', 'FAILED', 'CANCELLING', 'CANCELLED')",
+            "'RETRYING', 'SUCCEEDED', 'FAILED', 'CANCELLING', 'CANCELLED')",
             name="jobs_state_ck",
         ),
         CheckConstraint("revision >= 1", name="jobs_revision_ck"),
@@ -115,6 +114,10 @@ class InputUpload(Base):
         UniqueConstraint("job_id", "ordinal", name="input_uploads_job_ordinal_uq"),
         UniqueConstraint("job_id", "payload_id", name="input_uploads_job_payload_uq"),
         CheckConstraint("ordinal >= 0", name="input_uploads_ordinal_ck"),
+        CheckConstraint(
+            "storage_class IN ('runtime', 'recovery')",
+            name="input_uploads_storage_class_ck",
+        ),
         {"schema": SCHEMA},
     )
 
@@ -125,6 +128,12 @@ class InputUpload(Base):
     payload_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     temporary_path: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_class: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="runtime",
+        server_default="runtime",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -140,6 +149,10 @@ class JobInput(Base):
         CheckConstraint("bytes >= 0", name="job_inputs_bytes_ck"),
         CheckConstraint("source_width IS NULL OR source_width > 0", name="job_inputs_source_width_ck"),
         CheckConstraint("feature_dim IS NULL OR feature_dim > 0", name="job_inputs_feature_dim_ck"),
+        CheckConstraint(
+            "storage_class IN ('runtime', 'recovery')",
+            name="job_inputs_storage_class_ck",
+        ),
         {"schema": SCHEMA},
     )
 
@@ -155,6 +168,12 @@ class JobInput(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_class: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="runtime",
+        server_default="runtime",
+    )
     source_width: Mapped[int | None] = mapped_column(Integer)
     feature_dim: Mapped[int | None] = mapped_column(Integer)
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -174,6 +193,15 @@ class JobAttempt(Base):
             "process_start_ticks IS NULL OR process_start_ticks > 0",
             name="job_attempts_process_start_ticks_ck",
         ),
+        CheckConstraint(
+            "resume_generation IS NULL OR resume_generation > 0",
+            name="job_attempts_resume_generation_ck",
+        ),
+        CheckConstraint(
+            "(selected_device = 'cpu' AND device_id IS NULL) OR "
+            "(selected_device = 'cuda' AND device_id IS NOT NULL)",
+            name="job_attempts_device_assignment_ck",
+        ),
         {"schema": SCHEMA},
     )
 
@@ -182,6 +210,8 @@ class JobAttempt(Base):
     )
     attempt: Mapped[int] = mapped_column(Integer)
     selected_device: Mapped[str] = mapped_column(String(8), nullable=False)
+    device_id: Mapped[str | None] = mapped_column(String(128))
+    resume_generation: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     worker_id: Mapped[str | None] = mapped_column(String(256))
     pid: Mapped[int | None] = mapped_column(Integer)
@@ -194,6 +224,63 @@ class JobAttempt(Base):
     exit_code: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class TrainingRecoveryCheckpoint(Base):
+    __tablename__ = "training_recovery_checkpoints"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "job_id",
+            "generation",
+            name="training_recovery_checkpoints_pk",
+        ),
+        ForeignKeyConstraint(
+            ("job_id", "attempt"),
+            (f"{SCHEMA}.job_attempts.job_id", f"{SCHEMA}.job_attempts.attempt"),
+            ondelete="CASCADE",
+            name="training_recovery_checkpoints_attempt_fk",
+        ),
+        UniqueConstraint(
+            "relative_path",
+            name="training_recovery_checkpoints_relative_path_uq",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="training_recovery_checkpoints_generation_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="training_recovery_checkpoints_attempt_ck",
+        ),
+        CheckConstraint(
+            "bytes > 0",
+            name="training_recovery_checkpoints_bytes_ck",
+        ),
+        CheckConstraint(
+            "completed_epochs > 0",
+            name="training_recovery_checkpoints_epochs_ck",
+        ),
+        CheckConstraint(
+            "global_step >= 0",
+            name="training_recovery_checkpoints_step_ck",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    generation: Mapped[int] = mapped_column(Integer)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    format: Mapped[str] = mapped_column(String(64), nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_epochs: Mapped[int] = mapped_column(Integer, nullable=False)
+    global_step: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    training_complete: Mapped[bool] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
 
 
 class JobOutput(Base):

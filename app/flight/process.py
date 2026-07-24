@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import signal
 import time
 import uuid
-from typing import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 
 from app.flight.records import (
     RecoverableAttemptRecord,
     recoverable_attempt_from_mapping,
 )
-
 
 _BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
 _PROC_ROOT = "/proc"
@@ -42,7 +41,7 @@ class ProcessRecoveryResult:
 
 def read_boot_id(*, path: str = _BOOT_ID_PATH) -> str:
     try:
-        with open(path, "r", encoding="ascii") as source:
+        with open(path, encoding="ascii") as source:
             value = source.read().strip().lower()
         parsed = uuid.UUID(value)
     except (OSError, ValueError) as exc:

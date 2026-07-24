@@ -1,11 +1,11 @@
-from dataclasses import asdict, dataclass
 import math
+from dataclasses import asdict, dataclass
 
 from app.config import (
     BATCH_SIZE,
     CONTEXT_MODE,
-    DETERMINISTIC,
     D_MODEL,
+    DETERMINISTIC,
     DROPOUT,
     EPOCHS,
     LOSS_SCHEDULE,
@@ -14,9 +14,9 @@ from app.config import (
     NHEAD,
     NUM_LAYERS,
     PATIENCE,
-    STAGE_SIZE,
     SAVE_BEST_CHECKPOINT,
     SEED,
+    STAGE_SIZE,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,

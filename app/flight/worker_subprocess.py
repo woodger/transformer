@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import errno
 import json
 import math
 import os
-from pathlib import Path
 import queue
 import shutil
 import signal
 import subprocess
 import threading
 import time
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import PROJECT_ROOT
 from app.flight.constants import ErrorCode
@@ -24,7 +24,7 @@ from app.flight.worker_artifacts import (
     WorkerArtifactError,
 )
 from app.flight.worker_plan import ExecutionInput, ExecutionPlan
-
+from app.flight.worker_recovery import WorkerRecoveryError
 
 _FRAME_HEADER_BYTES = 8
 _COPY_CHUNK_BYTES = 1024 * 1024
@@ -68,6 +68,7 @@ class WorkerSubprocessRunner:
         signal_group: Callable[[int, int], None] = os.killpg,
         python_executable: str,
         stage_prediction: Callable,
+        publish_recovery: Callable | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ):
         self.config = config
@@ -78,6 +79,7 @@ class WorkerSubprocessRunner:
         self._signal_group = signal_group
         self._python = python_executable
         self._stage_prediction = stage_prediction
+        self._publish_recovery = publish_recovery
         self._monotonic = monotonic
 
     def run(
@@ -99,6 +101,13 @@ class WorkerSubprocessRunner:
 
         environment = os.environ.copy()
         environment["PYTHONUNBUFFERED"] = "1"
+        if job.selected_device == "cuda":
+            if not job.assigned_device_id:
+                raise WorkerSubprocessError(
+                    ErrorCode.INTERNAL,
+                    "CUDA attempt has no assigned physical device",
+                )
+            environment["CUDA_VISIBLE_DEVICES"] = job.assigned_device_id
         supervised_argv = [
             self._python,
             os.path.join(
@@ -200,9 +209,25 @@ class WorkerSubprocessRunner:
                     name=f"flight-stdout-{job_id}",
                     daemon=True,
                 ))
+                if (
+                    plan.uses_training_recovery
+                    and self._publish_recovery is not None
+                ):
+                    threads.append(threading.Thread(
+                        target=self._tail_recovery_events,
+                        args=(job, finished, errors),
+                        name=f"flight-recovery-{job_id}",
+                        daemon=True,
+                    ))
                 threads.append(threading.Thread(
                     target=self._tail_metrics,
-                    args=(job, inputs, finished, errors),
+                    args=(
+                        job,
+                        inputs,
+                        finished,
+                        errors,
+                        plan.resume_training_complete,
+                    ),
                     name=f"flight-metrics-{job_id}",
                     daemon=True,
                 ))
@@ -304,6 +329,7 @@ class WorkerSubprocessRunner:
         if classified_exit is not None and classified_exit.code in (
             ErrorCode.CUDA_OUT_OF_MEMORY,
             ErrorCode.DEVICE_UNAVAILABLE,
+            ErrorCode.DEVICE_LOST,
         ):
             raise classified_exit
         if failure is not None:
@@ -448,6 +474,7 @@ class WorkerSubprocessRunner:
         inputs: tuple[ExecutionInput, ...],
         finished,
         errors,
+        allow_empty: bool = False,
     ) -> None:
         path = self.spool.attempt_metrics_path(job.job_id, job.attempt)
         offset = 0
@@ -466,10 +493,12 @@ class WorkerSubprocessRunner:
                     stat = os.stat(path)
                 except FileNotFoundError:
                     if finished_at_iteration_start:
+                        if allow_empty:
+                            return
                         raise WorkerSubprocessError(
                             ErrorCode.MALFORMED_OUTPUT,
                             "fit subprocess did not produce metrics JSONL",
-                        )
+                        ) from None
                     finished.wait(0.05)
                     continue
                 identity = (stat.st_dev, stat.st_ino)
@@ -510,7 +539,7 @@ class WorkerSubprocessRunner:
                             ErrorCode.MALFORMED_OUTPUT,
                             "fit subprocess left an incomplete metrics record",
                         )
-                    if records == 0:
+                    if records == 0 and not allow_empty:
                         raise WorkerSubprocessError(
                             ErrorCode.MALFORMED_OUTPUT,
                             "fit subprocess produced no metrics records",
@@ -536,6 +565,77 @@ class WorkerSubprocessRunner:
             errors.put(WorkerSubprocessError(
                 ErrorCode.INTERNAL,
                 "fit progress processing failed internally",
+            ))
+
+    def _tail_recovery_events(
+        self,
+        job: ExecutionJobRecord,
+        finished,
+        errors,
+    ) -> None:
+        path = self.spool.attempt_recovery_events_path(
+            job.job_id,
+            job.attempt,
+        )
+        offset = 0
+        partial = b""
+        try:
+            while True:
+                finished_at_iteration_start = finished.is_set()
+                try:
+                    with open(path, "rb") as source:
+                        source.seek(offset)
+                        chunk = source.read()
+                        offset = source.tell()
+                except FileNotFoundError:
+                    if finished_at_iteration_start:
+                        return
+                    finished.wait(0.05)
+                    continue
+                partial += chunk
+                lines = partial.split(b"\n")
+                partial = lines.pop()
+                for line in lines:
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line.decode("utf-8"))
+                    except (UnicodeDecodeError, ValueError) as exc:
+                        raise WorkerSubprocessError(
+                            ErrorCode.MALFORMED_OUTPUT,
+                            "fit subprocess emitted malformed recovery events",
+                        ) from exc
+                    try:
+                        self._publish_recovery(job, event)
+                    except WorkerRecoveryError as exc:
+                        raise WorkerSubprocessError(
+                            exc.code,
+                            exc.message,
+                        ) from exc
+                if finished_at_iteration_start:
+                    if partial.strip():
+                        raise WorkerSubprocessError(
+                            ErrorCode.MALFORMED_OUTPUT,
+                            "fit subprocess left an incomplete recovery event",
+                        )
+                    return
+                finished.wait(0.05)
+        except WorkerSubprocessError as exc:
+            errors.put(exc)
+        except OSError as exc:
+            code = (
+                ErrorCode.DISK_FULL
+                if exc.errno in _DISK_FULL_ERRNOS
+                else ErrorCode.INTERNAL
+            )
+            errors.put(WorkerSubprocessError(
+                code,
+                "fit recovery event could not be read",
+            ))
+        except Exception:
+            errors.put(WorkerSubprocessError(
+                ErrorCode.INTERNAL,
+                "fit recovery event processing failed internally",
             ))
 
     def _signal_process_group(self, process, signum: int) -> None:
@@ -569,6 +669,12 @@ class WorkerSubprocessRunner:
         stderr_tail: bytes,
     ) -> WorkerSubprocessError:
         text = stderr_tail.lower()
+        if b"training recovery" in text:
+            return WorkerSubprocessError(
+                ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
+                "training recovery checkpoint could not be restored",
+                exit_code,
+            )
         if b"cuda" in text and (
             b"out of memory" in text or b"outofmemoryerror" in text
         ):
@@ -581,9 +687,16 @@ class WorkerSubprocessRunner:
             b"not available",
             b"driver shutting down",
             b"no cuda gpus",
+            b"device has been lost",
+            b"cuda_error_device_lost",
+            b"cuda error: unknown error",
+            b"cuda_error_unknown",
+            b"cuda error: initialization error",
+            b"cudaerrorinitializationerror",
+            b"cuda driver error",
         )):
             return WorkerSubprocessError(
-                ErrorCode.DEVICE_UNAVAILABLE,
+                ErrorCode.DEVICE_LOST,
                 "CUDA device became unavailable during execution",
                 exit_code,
             )

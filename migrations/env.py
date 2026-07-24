@@ -9,7 +9,6 @@ from sqlalchemy.schema import CreateSchema
 from app.database.config import load_database_config
 from app.database.models import Base
 
-
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

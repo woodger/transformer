@@ -1,11 +1,11 @@
-from dataclasses import replace
-from types import SimpleNamespace
 import errno
 import hashlib
 import json
 import os
-from pathlib import Path
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pyarrow as pa
@@ -14,18 +14,17 @@ import pyarrow.ipc as ipc
 import pytest
 from sqlalchemy import func, select
 
+import app.flight.spool as spool_module
+import app.flight.upload_session as upload_session_module
 from app.database.models import InputUpload
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CONTRACT_NAME, ErrorCode, FIT_SCHEMA_ID, JobState
+from app.flight.constants import CONTRACT_NAME, FIT_SCHEMA_ID, ErrorCode, JobState
 from app.flight.coordinator import JobCoordinator
-from app.flight.ledger import Ledger
+from app.flight.errors import ServiceError
 from app.flight.output import OutputHandler
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
-import app.flight.upload_session as upload_session_module
-import app.flight.spool as spool_module
-from app.flight.errors import ServiceError
 
 
 def auth(token="secret", *, timeout=5.0):
@@ -51,7 +50,7 @@ def fit_batch(rows, *, offset=0.0):
 def upload_metadata(job_id, payload_id, ordinal, rows):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": ordinal,
@@ -94,7 +93,6 @@ def data_plane(tmp_path, postgres_ledger):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     ledger = postgres_ledger
@@ -136,7 +134,7 @@ def put(
         ("tgt", pa.list_(pa.float32())),
     ])
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -235,7 +233,7 @@ class DisconnectingReader:
         try:
             return next(self._chunks)
         except StopIteration:
-            raise OSError("client disconnected")
+            raise OSError("client disconnected") from None
 
 
 class CompleteReader:
@@ -303,7 +301,7 @@ def test_partial_upload_never_becomes_committed(data_plane):
     batch = fit_batch(1)
     payload_id = new_id()
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
 
     with pytest.raises(OSError, match="disconnected"):
@@ -329,7 +327,7 @@ def test_cancel_during_upload_never_publishes_a_committed_input(data_plane):
     job = create_fit_job(ledger)
     batch = fit_batch(1)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
 
     reader = CancellingReader(
@@ -363,7 +361,7 @@ def test_lost_put_result_after_durable_commit_does_not_rollback_input(data_plane
     batch = fit_batch(1)
     payload_id = new_id()
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
 
     with pytest.raises(OSError, match="response channel lost"):
@@ -405,7 +403,7 @@ def test_physical_ipc_size_is_limited_during_zero_row_batch_stream(data_plane):
         upload_metadata(job["job_id"], new_id(), 0, 0),
     )
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
 
     with pytest.raises(ServiceError, match="staged IPC payload size"):
@@ -427,7 +425,7 @@ def test_oversized_ordinal_is_rejected_before_staging(data_plane):
     upload = UploadHandler(limited, ledger, spool)
     job = create_fit_job(ledger)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs",
+        "transformer", "v2", "jobs", job["job_id"], "inputs",
         str(limited.max_payloads_per_job),
     )
 
@@ -449,7 +447,7 @@ def test_pathological_json_integer_in_upload_metadata_is_invalid_not_internal(
     job = create_fit_job(ledger)
     schema = fit_batch(0).schema
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     body = b'{"ordinal":' + (b"9" * 5000) + b"}"
 
@@ -469,7 +467,7 @@ def test_upload_metadata_document_has_a_size_limit(data_plane):
     job = create_fit_job(ledger)
     schema = fit_batch(0).schema
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
 
     with pytest.raises(ServiceError, match="exceeds 65536 bytes"):
@@ -492,7 +490,7 @@ def test_commit_failure_removes_published_file_and_reservation(
     batch = fit_batch(1)
     payload_id = new_id()
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     monkeypatch.setattr(
         ledger,
@@ -525,7 +523,7 @@ def test_disk_full_during_durable_rename_has_stable_code_and_no_commit(
     job = create_fit_job(ledger)
     batch = fit_batch(1)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     monkeypatch.setattr(
         spool,
@@ -560,7 +558,7 @@ def test_post_rename_directory_fsync_failure_leaves_no_live_orphan(
     job = create_fit_job(ledger)
     batch = fit_batch(1)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     # Ensure parent creation is not the injected failure point; the failure is
     # specifically after os.replace has published the final filename.
@@ -590,42 +588,6 @@ def test_post_rename_directory_fsync_failure_leaves_no_live_orphan(
     assert active_upload_count(ledger) == 0
 
 
-def test_post_staging_watermark_does_not_double_count_payload_bytes(
-    data_plane,
-    monkeypatch,
-):
-    _, spool, ledger, upload, _, _ = data_plane
-    job = create_fit_job(ledger)
-    batch = fit_batch(1)
-    calls = []
-    monkeypatch.setattr(
-        spool,
-        "ensure_free_space",
-        lambda minimum, *, required_bytes=0: calls.append(
-            (minimum, required_bytes)
-        ),
-    )
-
-    descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
-    )
-    upload.handle(
-        "inventory",
-        descriptor,
-        CompleteReader(
-            batch.schema,
-            upload_metadata(job["job_id"], new_id(), 0, 1),
-            [batch],
-        ),
-        SimpleNamespace(write=lambda _: None),
-    )
-
-    assert calls == [
-        (upload.config.disk_min_free_bytes, 0),
-        (upload.config.disk_min_free_bytes, 0),
-    ]
-
-
 def test_ipc_close_failure_still_cleans_temporary_and_reservation(
     data_plane,
     monkeypatch,
@@ -634,7 +596,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
     job = create_fit_job(ledger)
     batch = fit_batch(1)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     original_new_file = upload_session_module.ipc.new_file
 
@@ -657,7 +619,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
         ),
     )
 
-    with pytest.raises(ServiceError, match="runtime directory is full"):
+    with pytest.raises(ServiceError, match="artifact storage is full"):
         upload.handle(
             "inventory",
             descriptor,
@@ -683,7 +645,7 @@ def test_post_commit_exception_preserves_ledger_referenced_input(
     job = create_fit_job(ledger)
     batch = fit_batch(1)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
     )
     original_commit = ledger.commit_input
 
@@ -762,7 +724,7 @@ def test_get_flight_info_issues_opaque_ticket_and_do_get_streams_output(data_pla
     ledger.publish_outputs(job_id, running["attempt"], [output], result={})
 
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "outputs", "0"
+        "transformer", "v2", "jobs", job_id, "outputs", "0"
     )
     info = client.get_flight_info(descriptor, options=auth())
     ticket = info.endpoints[0].ticket

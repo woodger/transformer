@@ -1,12 +1,12 @@
 import sys
 
 import pytest
-from app.runtime.device import get_device
+
 from app import __version__
 from app.cli.args import parse_args
 from app.cli.help import build_parser
-from app.runtime.version import __version__ as runtime_version
-from app.runtime.version import version_text
+from app.runtime.device import get_device
+from app.runtime.version import __version__ as runtime_version, version_text
 
 
 def test_cpu_device():

@@ -1,4 +1,4 @@
-"""Linux parent-death guard for a worker-owned legacy CLI subprocess."""
+"""Linux parent-death guard for a worker-owned CLI subprocess."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import os
 import signal
 import subprocess
 import sys
-
 
 _PR_SET_PDEATHSIG = 1
 _PARENT_DEATH_SIGNAL = signal.SIGUSR1

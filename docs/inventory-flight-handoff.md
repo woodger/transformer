@@ -1,7 +1,7 @@
-# Inventory handoff: Transformer Arrow Flight v1
+# Inventory handoff: Transformer Arrow Flight v2
 
 This document is the integration handoff for the Inventory client. The
-language-neutral source of truth is [`contracts/flight/v1`](../contracts/flight/v1/README.md):
+language-neutral source of truth is [`contracts/flight/v2`](../contracts/flight/v2/README.md):
 its JSON Schemas and golden fixtures take precedence over examples in prose.
 Operational deployment is covered by the
 [`Flight service runbook`](flight-operations.md).
@@ -9,26 +9,29 @@ Operational deployment is covered by the
 ## Compatibility boundary
 
 - Contract name: `transformer-flight`.
-- Contract version: `1`.
+- Contract version: `2`.
 - Supported operations: `fit`, `predict`.
 - Canonical devices: `cpu`, `cuda`, `auto`.
 - Expected Inventory client: `arrow-flight-client@0.0.8`.
 - Every RPC carries configured metadata `authorization: Bearer TOKEN`.
 - Inventory configures client `maxSendMessageLength` and
   `maxReceiveMessageLength` to at least the `maxMessageBytes` value returned by
-  capabilities. The v1 default interoperability target is 16 MiB; the initial
+  capabilities. The v2 default interoperability target is 16 MiB; the initial
   RecordBatch target is about 8 MiB.
-- V1 uses `DoAction`, streaming `DoPut`, `GetFlightInfo`, and streaming
+- V2 uses `DoAction`, streaming `DoPut`, `GetFlightInfo`, and streaming
   `DoGet`. It does **not** use `DoExchange` or `PollFlightInfo`.
-- V1 is a single-Transformer-instance protocol. There is no shared-storage or
+- V2 is a single-Transformer-instance protocol. There is no shared-storage or
   multi-replica scheduling contract.
+- V1 actions, descriptor paths, durable jobs and idempotency responses are not
+  accepted. Inventory and Transformer must switch to v2 in one deployment
+  boundary.
 
 The Transformer test suite does not depend on an Inventory checkout. No real
 Node-to-PyArrow interoperability run is implied by this document; Inventory
 owns that consumer-side verification.
 
 Inventory receives the service host, port and transport settings through its
-deployment configuration; v1 has no endpoint-discovery action. Production
+deployment configuration; v2 has no endpoint-discovery action. Production
 configuration must include the trusted server CA and server name expected by
 the certificate, plus client certificate/key when mTLS is enabled. Endpoint
 URI spelling is client-library specific, so the normative contract identifies
@@ -40,13 +43,13 @@ the authority and TLS settings rather than inventing a second URI format.
 
 | Action | Request schema | Purpose | Idempotency |
 | --- | --- | --- | --- |
-| `transformer.v1.capabilities` | `query.schema.json` | Versions, schemas, limits, devices and queue capacity | Read-only |
-| `transformer.v1.health` | `query.schema.json` | Authenticated liveness/readiness and aggregate metrics | Read-only |
-| `transformer.v1.job.create` | `create.schema.json` | Create an immutable fit or predict job | Required |
-| `transformer.v1.job.seal` | `seal.schema.json` | Make the complete ordered input manifest immutable | Required |
-| `transformer.v1.job.start` | `job-mutation.schema.json` | Move a sealed job to the durable queue | Required |
-| `transformer.v1.job.status` | `status.schema.json` | Read durable state, progress and results | Read-only |
-| `transformer.v1.job.cancel` | `job-mutation.schema.json` | Request transactional cancellation | Required |
+| `transformer.v2.capabilities` | `query.schema.json` | Versions, schemas, limits, devices and queue capacity | Read-only |
+| `transformer.v2.health` | `query.schema.json` | Authenticated liveness/readiness and aggregate metrics | Read-only |
+| `transformer.v2.job.create` | `create.schema.json` | Create an immutable fit or predict job | Required |
+| `transformer.v2.job.seal` | `seal.schema.json` | Make the complete ordered input manifest immutable | Required |
+| `transformer.v2.job.start` | `job-mutation.schema.json` | Move a sealed job to the durable queue | Required |
+| `transformer.v2.job.status` | `status.schema.json` | Read durable state, progress and results | Read-only |
+| `transformer.v2.job.cancel` | `job-mutation.schema.json` | Request transactional cancellation | Required |
 
 Every action body and every successful action result is a small UTF-8 JSON
 object containing:
@@ -54,7 +57,7 @@ object containing:
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "11111111-1111-4111-8111-111111111111"
 }
 ```
@@ -76,32 +79,33 @@ retries; for example, do not rewrite an integer as a floating-point number.
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "66666666-6666-4666-8666-666666666666"
 }
 ```
 
-Send that body with either `transformer.v1.capabilities` or
-`transformer.v1.health`. Capabilities is the authoritative runtime source for
-service/PyArrow/Torch versions, schema IDs, limits, CPU/CUDA availability and
-queue capacities. Health returns `live`, `ready`, `draining`, ledger status,
-disk watermark state, CUDA availability and aggregate metrics. CUDA being
-unavailable does not make `live` false and does not by itself make `ready`
-false.
+Send that body with either `transformer.v2.capabilities` or
+`transformer.v2.health`. Capabilities is the authoritative runtime source for
+service/PyArrow/Torch versions, schema IDs, limits, CPU/CUDA availability,
+physical-device count and dynamic queue capacities. Health returns `live`,
+`ready`, `draining`, ledger status, separate runtime/recovery storage
+free-space telemetry, CUDA availability/quarantine count and aggregate metrics. CUDA
+being unavailable does not make `live` false and does not by itself make
+`ready` false.
 
 Exact examples:
 
-- [`capabilities.request.json`](../contracts/flight/v1/fixtures/json/capabilities.request.json)
-  and [`capabilities.result.json`](../contracts/flight/v1/fixtures/json/capabilities.result.json)
-- [`health.request.json`](../contracts/flight/v1/fixtures/json/health.request.json)
-  and [`health.result.json`](../contracts/flight/v1/fixtures/json/health.result.json)
+- [`capabilities.request.json`](../contracts/flight/v2/fixtures/json/capabilities.request.json)
+  and [`capabilities.result.json`](../contracts/flight/v2/fixtures/json/capabilities.result.json)
+- [`health.request.json`](../contracts/flight/v2/fixtures/json/health.request.json)
+  and [`health.result.json`](../contracts/flight/v2/fixtures/json/health.result.json)
 
 ### Create fit
 
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "11111111-1111-4111-8111-111111111111",
   "idempotencyKey": "inventory-fit-20260718-1",
   "operation": "fit",
@@ -139,15 +143,15 @@ defaults as the existing CLI when omitted. Fit accepts a logical `modelLabel`,
 never a checkpoint path or model reference. On success the label's
 owner-scoped alias advances to the new immutable model generation.
 
-See [`create-fit.request.json`](../contracts/flight/v1/fixtures/json/create-fit.request.json)
-and [`create-fit.result.json`](../contracts/flight/v1/fixtures/json/create-fit.result.json).
+See [`create-fit.request.json`](../contracts/flight/v2/fixtures/json/create-fit.request.json)
+and [`create-fit.result.json`](../contracts/flight/v2/fixtures/json/create-fit.result.json).
 
 ### Create predict
 
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "22222222-2222-4222-8222-222222222222",
   "idempotencyKey": "inventory-predict-20260718-1",
   "operation": "predict",
@@ -163,7 +167,7 @@ resolved during create and the concrete immutable generation is returned as
 preprocessing configuration is loaded from that generation. Predict does not
 accept training/model overrides, paths or arbitrary argv.
 
-See [`create-predict.request.json`](../contracts/flight/v1/fixtures/json/create-predict.request.json).
+See [`create-predict.request.json`](../contracts/flight/v2/fixtures/json/create-predict.request.json).
 
 ### Seal, start, status and cancel
 
@@ -172,7 +176,7 @@ Seal uses the authoritative server digests returned by committed uploads:
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "55555555-5555-4555-8555-555555555555",
   "idempotencyKey": "inventory-seal-20260718-1",
   "jobId": "33333333-3333-4333-8333-333333333333",
@@ -196,7 +200,7 @@ Start and cancel have the same body shape:
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "99999999-9999-4999-8999-999999999999",
   "idempotencyKey": "inventory-start-20260718-1",
   "jobId": "33333333-3333-4333-8333-333333333333"
@@ -208,14 +212,14 @@ Use the action-specific idempotency key and action name. Status omits the key:
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "requestId": "88888888-8888-4888-8888-888888888888",
   "jobId": "33333333-3333-4333-8333-333333333333"
 }
 ```
 
 Exact request/result pairs are in
-[`fixtures/json`](../contracts/flight/v1/fixtures/json/). Poll status using its
+[`fixtures/json`](../contracts/flight/v2/fixtures/json/). Poll status using its
 `pollAfterMs`; terminal status uses `0`.
 
 ## Upload protocol
@@ -225,7 +229,7 @@ For every current logical Inventory payload, open exactly one streaming
 
 ```text
 pathDescriptor(
-  "transformer", "v1", "jobs", jobId, "inputs", decimalOrdinal
+  "transformer", "v2", "jobs", jobId, "inputs", decimalOrdinal
 )
 ```
 
@@ -235,7 +239,7 @@ message before any RecordBatch:
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "jobId": "33333333-3333-4333-8333-333333333333",
   "payloadId": "44444444-4444-4444-8444-444444444444",
   "ordinal": 0,
@@ -250,8 +254,8 @@ compatible with `arrow-flight-client@0.0.8`; it also represents typed empty
 input by sending the schema and metadata but no RecordBatch.
 
 RecordBatch boundaries are only transport chunking. **One DoPut is one
-semantic legacy `fit-stream`/`predict-stream` frame**, whether it carries zero,
-one or many RecordBatches. RPC completion order has no semantic meaning;
+semantic `fit-stream`/`predict-stream` frame**, whether it carries zero, one or
+many RecordBatches. RPC completion order has no semantic meaning;
 `ordinal` defines frame order. Uploads may execute concurrently or out of
 order, but the sealed manifest is ordered.
 
@@ -281,7 +285,7 @@ commits the ledger before returning exactly one `PutResult`. Its
 ```json
 {
   "contract": "transformer-flight",
-  "version": 1,
+  "version": 2,
   "jobId": "33333333-3333-4333-8333-333333333333",
   "payloadId": "44444444-4444-4444-8444-444444444444",
   "ordinal": 0,
@@ -296,8 +300,8 @@ commits the ledger before returning exactly one `PutResult`. Its
 
 Treat `sha256` and `schemaFingerprint` as opaque authoritative server values.
 The golden forms are
-[`upload-fit.metadata.json`](../contracts/flight/v1/fixtures/json/upload-fit.metadata.json)
-and [`put-result.metadata.json`](../contracts/flight/v1/fixtures/json/put-result.metadata.json).
+[`upload-fit.metadata.json`](../contracts/flight/v2/fixtures/json/upload-fit.metadata.json)
+and [`put-result.metadata.json`](../contracts/flight/v2/fixtures/json/put-result.metadata.json).
 
 ### Upload retries and disconnects
 
@@ -368,12 +372,14 @@ semantics require at least one non-empty training frame.
 ## State machine and device behavior
 
 ```text
-UPLOADING -> SEALED -> QUEUED -> RUNNING -> SUCCEEDED
-                                  |       -> FAILED
-                                  `       -> CANCELLING -> CANCELLED
+UPLOADING -> SEALED -> QUEUED -> RUNNING
+                                  |-> SUCCEEDED
+                                  |-> FAILED
+                                  |-> RETRYING -> RUNNING
+                                  `-> CANCELLING -> CANCELLED
 ```
 
-Cancel from `UPLOADING`, `SEALED` or `QUEUED` immediately produces
+Cancel from `UPLOADING`, `SEALED`, `QUEUED` or `RETRYING` immediately produces
 `CANCELLED`. Cancel from `RUNNING` first produces `CANCELLING`. Terminal states
 are immutable. Every state mutation increments `revision`.
 
@@ -381,24 +387,40 @@ are immutable. Every state mutation increments `revision`.
 otherwise. Explicit `cuda` is checked at create and again at start; it never
 falls back to CPU. If CUDA disappears before start, start fails with
 `DEVICE_UNAVAILABLE` while the job remains `SEALED`. An available but busy GPU
-leaves the job `QUEUED`. CUDA queue capacity is exactly one; CPU capacity is
-advertised and configurable.
+leaves the job `QUEUED`. CUDA capacity is discovered from a boot-scoped
+physical-device inventory; each attempt is bound to one GPU, but physical IDs
+are never exposed through the contract.
 
-Do not automatically create/restart a failed `RUNNING` fit job. Its optimizer
-may already have changed state. A deliberate retry is a new job with new
-uploads and idempotency keys. `UPLOADING`, `SEALED`, and `QUEUED` survive a
-service restart. An interrupted `RUNNING` job becomes
-`FAILED / EXECUTION_INTERRUPTED` and is not requeued.
+A confirmed GPU loss closes the failed attempt, quarantines that device until
+the next Linux boot and moves the job to `RETRYING`. Another healthy GPU
+may claim the next attempt. The running subprocess is never migrated between
+devices. CUDA OOM and an ordinary subprocess failure remain terminal.
+
+Fit inputs are stored persistently by Transformer. At each completed global
+epoch the service registers a recovery checkpoint containing model, optimizer,
+AMP scaler, loss/early-stopping progress, best-checkpoint selection and random
+state. A service or host interruption moves the fit to `RETRYING`; the next
+attempt resumes from the latest registered epoch, or epoch zero when none was
+completed. An incomplete epoch is repeated. Missing, corrupt or incompatible
+registered recovery data fails explicitly and never causes a silent restart.
+
+`UPLOADING`, `SEALED`, `QUEUED` and `RETRYING` fit jobs survive a service
+restart. Prediction inputs and attempt artifacts remain runtime data; an
+interrupted prediction becomes `FAILED / EXECUTION_INTERRUPTED`.
 
 ## Results and model references
 
 Every status result includes `jobId`, `operation`, `state`, `revision`, all
 state timestamps, requested/selected device, the committed input manifest,
-scalar progress, attempt number, nullable safe error, result object and
-`pollAfterMs`. Progress keys follow the existing metrics JSONL and may grow;
-clients should preserve unknown scalar keys rather than treating them as a
-closed schema. `revision` and terminal state, not progress text, are the
-authoritative concurrency/result signals.
+scalar progress, attempt number, nullable recovery metadata, nullable safe
+error, result object and `pollAfterMs`. Fit recovery metadata reports the
+latest completed generation, whether training was already complete, the
+generation restored by the most recently claimed attempt, retry count and last
+retry code. It contains neither a filesystem path nor a physical GPU ID.
+Progress keys follow the existing metrics JSONL and may grow; clients should
+preserve unknown scalar keys rather than treating them as a closed schema.
+`revision` and terminal state, not progress text, are the authoritative
+concurrency/result signals.
 
 For prediction, successful status contains one output descriptor per committed
 input, with the same ordinal and row count. Use the exact `descriptorPath` from
@@ -406,7 +428,7 @@ status with `GetFlightInfo`:
 
 ```text
 pathDescriptor(
-  "transformer", "v1", "jobs", jobId, "outputs", decimalOrdinal
+  "transformer", "v2", "jobs", jobId, "outputs", decimalOrdinal
 )
 ```
 
@@ -432,7 +454,8 @@ alias.** No network response exposes a checkpoint path.
 | DoPut | Read status; if absent, repeat the exact upload with the same payload ID, ordinal and transport partitioning |
 | GetFlightInfo | Request a new ticket from the status-provided descriptor |
 | DoGet | Retry GetFlightInfo/DoGet while the output is retained; never invent a ticket |
-| failed/interrupted fit execution | No automatic retry; create an explicitly new fit job |
+| `RETRYING` | Keep polling the same `jobId`; do not create a replacement job |
+| terminal `FAILED` fit | Fix the reported cause and submit a new job; the failed job is immutable |
 
 `status` is authoritative after any ambiguous transport outcome. In
 particular, a replayed start result can still say `QUEUED` even if a later
@@ -445,7 +468,8 @@ Stable contract/application codes are:
 | Category | Codes |
 | --- | --- |
 | Protocol, access and control | `INVALID_ARGUMENT`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `NOT_FOUND`, `ALREADY_EXISTS`, `FAILED_PRECONDITION`, `RESOURCE_EXHAUSTED`, `CANCELLED`, `UNAVAILABLE`, `INTERNAL` |
-| Device, execution and storage | `DEVICE_UNAVAILABLE`, `EXECUTION_INTERRUPTED`, `SUBPROCESS_FAILED`, `SUBPROCESS_HUNG`, `MALFORMED_OUTPUT`, `CUDA_OUT_OF_MEMORY`, `DISK_FULL` |
+| Device, execution and storage | `DEVICE_UNAVAILABLE`, `DEVICE_LOST`, `EXECUTION_INTERRUPTED`, `SUBPROCESS_FAILED`, `SUBPROCESS_HUNG`, `MALFORMED_OUTPUT`, `CUDA_OUT_OF_MEMORY`, `DISK_FULL` |
+| Training recovery | `RECOVERY_CHECKPOINT_UNAVAILABLE`, `RECOVERY_CHECKPOINT_INCOMPATIBLE`, `RECOVERY_INPUT_UNAVAILABLE` |
 
 Terminal status contains only a stable code and safe message. Authentication
 is evaluated before application handlers. Jobs, model aliases/generations,
@@ -474,7 +498,7 @@ limitation for a successful result. See
 TLS/mTLS policy never selects a compute device. The job's canonical `device`
 field is the only device request.
 
-Recommended client settings for v1 defaults:
+Recommended client settings for v2 defaults:
 
 ```text
 configured metadata:       authorization = Bearer <secret>
@@ -490,7 +514,7 @@ server receive cap; application quotas remain authoritative.
 
 ## Minimal integration sequence
 
-1. Call authenticated `ListActions`, capabilities and health; require v1 and
+1. Call authenticated `ListActions`, capabilities and health; require v2 and
    the expected schema IDs.
 2. Create the fit/predict job with a fresh idempotency key. Persist `jobId`,
    create result and, for predict, `resolvedModelRef`.

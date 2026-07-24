@@ -3,8 +3,8 @@ import os
 import torch
 
 from app.data.arrow import read_source_arrow, write_arrow
-from app.storage.checkpoint import load_checkpoint_metadata
 from app.data.tensors import reshape_source, validate_checkpoint_feature_dim
+from app.storage.checkpoint import load_checkpoint_metadata
 from app.training.factory import build_model, build_trainer
 from app.training.run_config import model_config_from_args
 

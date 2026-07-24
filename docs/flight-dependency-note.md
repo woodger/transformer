@@ -3,7 +3,7 @@
 ## Scope
 
 This note records two confirmed limitations of `pyarrow==24.0.0` that affect
-the Transformer Flight v1 contract. They are limitations of the Python Flight
+the Transformer Flight v2 contract. They are limitations of the Python Flight
 server binding, not defects in `arrow-flight-client@0.0.8` or Inventory.
 
 Environment used to reproduce the behavior:
@@ -74,7 +74,7 @@ resource-exhausted exception in `pyarrow.flight`.
 
 ### Expected result and migration impact
 
-Flight v1 requires the actual failing RPC to carry the normative gRPC code; an
+Flight v2 requires the actual failing RPC to carry the normative gRPC code; an
 error encoded in a successful JSON result is not acceptable. Consequently the
 pure-Python service cannot pass the exact `ALREADY_EXISTS`,
 `FAILED_PRECONDITION`, and `RESOURCE_EXHAUSTED` wire-status gate. Stable
@@ -143,15 +143,15 @@ Transformer should be able to enforce and advertise a 16 MiB transport receive
 limit while accepting approximately 8 MiB client RecordBatches. With PyArrow
 24, payloads larger than gRPC's historical 4 MiB default work because receive
 size is unlimited, but application validation runs only after gRPC has already
-allocated the incoming message. Application batch, payload, row, job, disk,
-and queue quotas therefore do not provide the same pre-allocation protection.
+allocated the incoming message. Application batch, payload, row, job and queue
+quotas therefore do not provide the same pre-allocation protection.
 
 ### Safe temporary behavior
 
 - Inventory configures `maxSendMessageLength` and `maxReceiveMessageLength` and
   targets RecordBatches of about 8 MiB.
-- Transformer enforces batch, logical payload, total job, row, and disk quotas
-  while reading each chunk.
+- Transformer enforces batch, logical payload, total job and row limits while
+  reading each chunk.
 - Capabilities describe 16 MiB as the interoperability target, not as a hard
   PyArrow server transport limit.
 - A trusted TLS/network boundary may add an independent request-size policy,

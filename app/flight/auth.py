@@ -7,7 +7,6 @@ import pyarrow.flight as flight
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.token_cache import AuthIdentity
 
-
 MIDDLEWARE_KEY = "auth"
 _BEARER_TOKEN = re.compile(r"^[\x21-\x7e]{1,4096}$")
 

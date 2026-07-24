@@ -5,10 +5,9 @@ Revises: None
 """
 from __future__ import annotations
 
-from alembic import context, op
 import sqlalchemy as sa
+from alembic import context, op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "0001"
 down_revision = None

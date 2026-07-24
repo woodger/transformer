@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import time
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from app.flight.constants import (
     CANCEL_ACTION,
+    CONTRACT_PATH_VERSION,
     CREATE_ACTION,
-    ErrorCode,
     FIT_SCHEMA_ID,
-    JobState,
     PREDICT_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     TERMINAL_STATES,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import (
     canonical_manifest_hash,
@@ -27,7 +28,6 @@ from app.flight.errors import (
     failed_precondition,
     not_found,
 )
-from app.flight.spool import Spool
 from app.flight.state import decide_cancel
 from app.training.run_config import ModelConfig
 
@@ -39,7 +39,6 @@ class CreateStatusActions:
         self,
         config,
         ledger,
-        spool: Spool,
         *,
         cuda_available: Callable[[], bool],
         is_draining: Callable[[], bool],
@@ -49,7 +48,6 @@ class CreateStatusActions:
     ):
         self.config = config
         self.ledger = ledger
-        self.spool = spool
         self._cuda_available = cuda_available
         self._is_draining = is_draining
         self._limits = limits
@@ -69,7 +67,6 @@ class CreateStatusActions:
             return replay
         if self._is_draining():
             raise ServiceError(ErrorCode.UNAVAILABLE, "service is draining")
-        self.spool.ensure_free_space(self.config.disk_min_free_bytes)
         if request["device"] == "cuda" and not self._cuda_available():
             self.metrics.add("cudaUnavailableRequests")
             raise ServiceError(
@@ -134,7 +131,7 @@ class CreateStatusActions:
                 upload={
                     "descriptorPath": [
                         "transformer",
-                        "v1",
+                        CONTRACT_PATH_VERSION,
                         "jobs",
                         job_id,
                         "inputs",
@@ -176,14 +173,14 @@ class CreateStatusActions:
         return response
 
     def status(self, owner: str, job_id: str, request_id: str) -> dict:
-        job, inputs, outputs = self.ledger.get_status_snapshot(job_id, owner)
+        job, inputs, outputs, recovery = (
+            self.ledger.get_status_snapshot(job_id, owner)
+        )
         if job is None:
             raise not_found("job not found")
         terminal = JobState(job["state"]) in TERMINAL_STATES
         result = job.get("result") or {}
-        # The v1 wire contract exposes an error only for FAILED. Older
-        # releases persisted a CANCELLED marker as an error; state-gating here
-        # keeps those immutable durable jobs wire-valid without rewriting them.
+        # A cancellation is a terminal state, not an execution error.
         error = None
         if job["state"] == JobState.FAILED.value:
             error = {
@@ -204,6 +201,7 @@ class CreateStatusActions:
             committedInputs=[_safe_input(item) for item in inputs],
             progress=job.get("progress") or {},
             attempt=job["attempt"],
+            recovery=_safe_recovery(recovery),
             error=error,
             results={
                 "outputs": [
@@ -211,7 +209,7 @@ class CreateStatusActions:
                         "ordinal": item["ordinal"],
                         "descriptorPath": [
                             "transformer",
-                            "v1",
+                            CONTRACT_PATH_VERSION,
                             "jobs",
                             job_id,
                             "outputs",
@@ -536,6 +534,28 @@ class LifecycleActions:
         return "cpu"
 
 
+def _safe_recovery(recovery) -> dict | None:
+    if recovery is None:
+        return None
+    checkpoint = recovery.checkpoint
+    return {
+        "latestCheckpoint": (
+            None
+            if checkpoint is None
+            else {
+                "generation": checkpoint.generation,
+                "completedEpochs": checkpoint.completed_epochs,
+                "globalStep": checkpoint.global_step,
+                "trainingComplete": checkpoint.training_complete,
+            }
+        ),
+        "resumedFromGeneration": recovery.resumed_from_generation,
+        "retryCount": recovery.retry_count,
+        "lastRetryCode": recovery.last_retry_code,
+        "boundary": "globalEpoch",
+    }
+
+
 def _replay(
     ledger,
     owner: str,
@@ -667,7 +687,7 @@ def _timestamp(value) -> str | None:
     if value is None:
         return None
     return (
-        datetime.fromtimestamp(value, tz=timezone.utc)
+        datetime.fromtimestamp(value, tz=UTC)
         .isoformat()
         .replace("+00:00", "Z")
     )

@@ -29,7 +29,7 @@ def request_id():
 def fit_create_request(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id(),
         "idempotencyKey": "fit-create-1",
         "operation": "fit",
@@ -56,7 +56,7 @@ def test_fit_create_contract_normalizes_and_validates_configs():
 def test_predict_create_accepts_one_opaque_model_selector():
     document = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id(),
         "idempotencyKey": "predict-create-1",
         "operation": "predict",
@@ -74,7 +74,7 @@ def test_predict_create_accepts_one_opaque_model_selector():
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"version": 2},
+        {"version": 1},
         {"device": "gpu"},
         {"modelLabel": "../../outside"},
         {"modelConfig": {"seqLen": 10, "argv": ["--epochs", "999"]}},
@@ -104,7 +104,7 @@ def test_seal_manifest_is_strict_and_language_neutral():
     payload_id = request_id()
     document = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id(),
         "idempotencyKey": "seal-1",
         "jobId": request_id(),
@@ -127,7 +127,7 @@ def test_seal_manifest_is_strict_and_language_neutral():
 def test_seal_manifest_count_is_bounded_by_action_document_capacity():
     document = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": request_id(),
         "idempotencyKey": "seal-limit",
         "jobId": request_id(),
@@ -150,7 +150,7 @@ def test_upload_metadata_and_descriptors_are_strict():
     payload_id = request_id()
     metadata = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": 3,
@@ -162,25 +162,25 @@ def test_upload_metadata_and_descriptors_are_strict():
     assert parsed["rows"] == 255
     assert parse_input_descriptor(
         flight.FlightDescriptor.for_path(
-            "transformer", "v1", "jobs", job_id, "inputs", "3"
+            "transformer", "v2", "jobs", job_id, "inputs", "3"
         )
     ) == (job_id, 3)
     assert parse_output_descriptor(
         flight.FlightDescriptor.for_path(
-            "transformer", "v1", "jobs", job_id, "outputs", "3"
+            "transformer", "v2", "jobs", job_id, "outputs", "3"
         )
     ) == (job_id, 3)
 
     with pytest.raises(ServiceError):
         parse_input_descriptor(
             flight.FlightDescriptor.for_path(
-                "transformer", "v1", "jobs", job_id, "inputs", "../3"
+                "transformer", "v2", "jobs", job_id, "inputs", "../3"
             )
         )
     with pytest.raises(ServiceError, match="non-negative integer"):
         parse_input_descriptor(
             flight.FlightDescriptor.for_path(
-                "transformer", "v1", "jobs", job_id, "inputs", "9" * 5000
+                "transformer", "v2", "jobs", job_id, "inputs", "9" * 5000
             )
         )
 

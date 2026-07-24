@@ -18,7 +18,7 @@
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v1 contract | `contracts/flight/v1/` |
+| Нормативный Flight v2 contract | `contracts/flight/v2/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -78,7 +78,7 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `contracts/flight/v1/` нормативны для wire
+JSON Schemas и golden fixtures в `contracts/flight/v2/` нормативны для wire
 format. README или operations guide не могут переопределять их.
 
 Изменение Flight contract требует синхронно проверить:

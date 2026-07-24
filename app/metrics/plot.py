@@ -5,7 +5,6 @@ import os
 from app.metrics.io import load_metrics_jsonl
 from app.storage.atomic import atomic_output_path
 
-
 PLOT_METRICS = [
     "loss",
     "loss_ret",

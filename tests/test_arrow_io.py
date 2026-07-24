@@ -1,7 +1,8 @@
-import torch
+import io
+
 import pyarrow as pa
 import pyarrow.ipc as ipc
-import io
+import torch
 
 from app.data.arrow import (
     iter_framed_arrow,

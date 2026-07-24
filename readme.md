@@ -1,13 +1,14 @@
-# Transformer
+# Transformer Arrow Flight service
 
-Python-проект для обучения и инференса PyTorch Transformer на датасетах в
+Python-сервис для обучения и инференса PyTorch Transformer на датасетах в
 формате Apache Arrow.
 
-Проект умеет работать в двух режимах:
+Проект умеет работать в трёх режимах:
 
 - читать готовый Arrow-файл с диска (`fit`, `predict`)
 - принимать поток micro-batch Arrow payloads через stdin (`fit-stream`,
   `predict-stream`)
+- обслуживать durable remote jobs по Arrow Flight (`flight serve`)
 
 Checkpoint v2 сохраняет веса, model/train config и размер входной фичи
 `feature_dim`. Поэтому `predict` и `predict-stream` восстанавливают архитектуру
@@ -25,11 +26,12 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 - Alembic
 - python-dotenv
 - CUDA опционально
+- `nvidia-smi` для автоматического inventory и привязки нескольких NVIDIA GPU
 
 Установка зависимостей:
 
 ```bash
-pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv pytest
+pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv
 ```
 
 Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
@@ -49,9 +51,9 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 
 ## Remote Arrow Flight service
 
-Проект содержит single-instance Arrow Flight v1 job service поверх существующих
+Проект содержит single-instance Arrow Flight v2 job service поверх существующих
 `fit-stream`/`predict-stream`. Нормативный wire contract находится в
-[`contracts/flight/v1`](contracts/flight/v1/README.md), а конфигурация, TLS/mTLS,
+[`contracts/flight/v2`](contracts/flight/v2/README.md), а конфигурация, TLS/mTLS,
 запуск, recovery и retention — в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
@@ -72,7 +74,11 @@ Bearer authentication требуется при любом transport; токен
 оперативной памяти и обновляет cache через PostgreSQL `LISTEN/NOTIFY`. Без TLS
 сервер запускается только с явным `--allow-plaintext`. Один DoPut остаётся одним
 semantic stream frame, checkpoint принадлежит Transformer, а клиент получает
-только непрозрачный `modelRef`. DoExchange и PollFlightInfo в v1 не входят.
+только непрозрачный `modelRef`. Fit inputs и completed-epoch recovery
+checkpoints сохраняются в project `recovery/`, поэтому прерванное обучение
+продолжается с последней зарегистрированной эпохи. CUDA capacity вычисляется
+из physical device inventory, а каждый subprocess привязывается к одному GPU.
+DoExchange и PollFlightInfo в v2 не входят.
 
 ## CLI
 
@@ -582,7 +588,8 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 тестов намеренно отвергается.
 
 ```bash
-python -m pip install pytest
+python -m pip install jsonschema pytest ruff
+python3.11 -m ruff check .
 POSTGRES_DB=transformer_test python3.11 -m pytest -q
 ```
 
@@ -599,10 +606,12 @@ app/data/            # Arrow file/framed protocol, reshape и shape validation
 app/model/           # Transformer, positional encoding, context masking
 app/training/        # Trainer, configs, loss stages, scheduler, early stopping
 app/metrics/         # TrainMetrics, JSONL writer/reader, SVG-графики
-app/storage/         # checkpoint с весами и конфигурацией модели
+app/storage/         # published и training-recovery checkpoint formats
 app/runtime/         # device selection и версия приложения
-app/flight/          # durable Arrow Flight service, ledger, spool и worker
-contracts/flight/v1/ # нормативные JSON Schemas и golden fixtures
+app/flight/          # Flight contract, ledger, stores, scheduler и workers
+contracts/flight/v2/ # нормативные JSON Schemas и golden fixtures
+migrations/          # PostgreSQL schema revisions
+recovery/            # runtime-created persistent fit inputs/checkpoints
 app/config.py        # project defaults
 app/utils.py         # небольшие совместные runtime helpers
 ```

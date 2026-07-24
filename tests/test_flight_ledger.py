@@ -8,7 +8,7 @@ from app.database.session import Database
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
 from app.flight.ledger import Ledger
-
+from app.storage.training_recovery import TRAINING_RECOVERY_FORMAT
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
@@ -37,11 +37,18 @@ def create_job(ledger, *, operation="fit", owner="inventory", now=1.0):
     return ledger.create_job(**arguments)
 
 
-def seal_and_queue(ledger, job_id, *, device="cpu", now=2.0):
+def seal_and_queue(
+    ledger,
+    job_id,
+    *,
+    device="cpu",
+    manifest=None,
+    now=2.0,
+):
     ledger.seal_job(
         job_id,
         manifest_hash=DIGEST_A,
-        manifest=[],
+        manifest=[] if manifest is None else manifest,
         source_width=4,
         feature_dim=2,
         result={"jobId": job_id, "state": "SEALED"},
@@ -53,6 +60,36 @@ def seal_and_queue(ledger, job_id, *, device="cpu", now=2.0):
         result={"jobId": job_id, "state": "QUEUED"},
         now=now + 1,
     )
+
+
+def commit_recovery_input(ledger, job_id, *, ordinal=0):
+    payload_id = str(uuid.uuid4())
+    upload_token = f"recovery-{job_id}-{ordinal}"
+    relative_path = f"jobs/{job_id}/inputs/{ordinal}.arrow"
+    ledger.reserve_input(
+        job_id=job_id,
+        payload_id=payload_id,
+        ordinal=ordinal,
+        upload_token=upload_token,
+        temporary_path=f"jobs/{job_id}/inputs/.{ordinal}.tmp",
+        storage_class="recovery",
+    )
+    ledger.commit_input(
+        upload_token=upload_token,
+        relative_path=relative_path,
+        schema_id="inventory.sequence.fit.v1",
+        rows=1,
+        batches=1,
+        byte_count=128,
+        sha256=DIGEST_A,
+        schema_fingerprint=DIGEST_B,
+        source_width=4,
+        feature_dim=2,
+        max_payloads=1,
+        max_job_bytes=1024,
+        storage_class="recovery",
+    )
+    return payload_id
 
 
 def test_job_transitions_increment_revision_and_terminal_state_is_immutable(ledger):
@@ -90,14 +127,14 @@ def test_idempotent_mutation_is_atomic_and_conflicting_key_is_rejected(ledger):
 
     first, replayed = ledger.run_idempotent(
         owner_subject="inventory",
-        action_name="transformer.v1.job.create",
+        action_name="transformer.v2.job.create",
         idempotency_key="create-1",
         request_hash=DIGEST_A,
         mutation=mutation,
     )
     repeated, repeated_replayed = ledger.run_idempotent(
         owner_subject="inventory",
-        action_name="transformer.v1.job.create",
+        action_name="transformer.v2.job.create",
         idempotency_key="create-1",
         request_hash=DIGEST_A,
         mutation=mutation,
@@ -111,7 +148,7 @@ def test_idempotent_mutation_is_atomic_and_conflicting_key_is_rejected(ledger):
     with pytest.raises(ServiceError) as error:
         ledger.run_idempotent(
             owner_subject="inventory",
-            action_name="transformer.v1.job.create",
+            action_name="transformer.v2.job.create",
             idempotency_key="create-1",
             request_hash=DIGEST_B,
             mutation=mutation,
@@ -138,7 +175,7 @@ def test_idempotent_mutation_and_replay_record_roll_back_together(ledger):
     with pytest.raises(RuntimeError, match="injected mutation failure"):
         ledger.run_idempotent(
             owner_subject="inventory",
-            action_name="transformer.v1.job.create",
+            action_name="transformer.v2.job.create",
             idempotency_key="create-rollback",
             request_hash=DIGEST_A,
             mutation=failing_mutation,
@@ -147,7 +184,7 @@ def test_idempotent_mutation_and_replay_record_roll_back_together(ledger):
     assert ledger.get_job(job_id) is None
     assert ledger.lookup_idempotency(
         owner_subject="inventory",
-        action_name="transformer.v1.job.create",
+        action_name="transformer.v2.job.create",
         idempotency_key="create-rollback",
     ) is None
 
@@ -290,12 +327,163 @@ def test_claim_fifo_uses_durable_queue_sequence_when_timestamps_tie(ledger):
     seal_and_queue(ledger, first["job_id"], device="cuda", now=10.0)
     seal_and_queue(ledger, second["job_id"], device="cuda", now=10.0)
 
-    first_claim = ledger.claim_next_job("cuda", now=11.0)
-    second_claim = ledger.claim_next_job("cuda", now=11.0)
+    first_claim = ledger.claim_next_job(
+        "cuda",
+        device_id="GPU-test",
+        now=11.0,
+    )
+    second_claim = ledger.claim_next_job(
+        "cuda",
+        device_id="GPU-test",
+        now=11.0,
+    )
 
     assert first_claim["job_id"] == first["job_id"]
     assert second_claim["job_id"] == second["job_id"]
     assert first_claim["queue_sequence"] < second_claim["queue_sequence"]
+
+
+def test_fit_retry_resumes_latest_registered_epoch_checkpoint(ledger):
+    job = create_job(ledger)
+    payload_id = commit_recovery_input(ledger, job["job_id"])
+    seal_and_queue(
+        ledger,
+        job["job_id"],
+        manifest=[{
+            "payloadId": payload_id,
+            "ordinal": 0,
+            "sha256": DIGEST_A,
+        }],
+        now=10.0,
+    )
+    first_attempt = ledger.claim_next_job("cpu", now=11.0)
+    checkpoint_path = (
+        f"jobs/{job['job_id']}/checkpoints/1.pth"
+    )
+
+    checkpoint, replayed = ledger.register_recovery_checkpoint(
+        job_id=job["job_id"],
+        attempt=first_attempt["attempt"],
+        generation=1,
+        format=TRAINING_RECOVERY_FORMAT,
+        relative_path=checkpoint_path,
+        byte_count=4096,
+        sha256=DIGEST_A,
+        completed_epochs=1,
+        global_step=300,
+        training_complete=False,
+        now=12.0,
+    )
+    repeated, repeated_replayed = ledger.register_recovery_checkpoint(
+        job_id=job["job_id"],
+        attempt=first_attempt["attempt"],
+        generation=1,
+        format=TRAINING_RECOVERY_FORMAT,
+        relative_path=checkpoint_path,
+        byte_count=4096,
+        sha256=DIGEST_A,
+        completed_epochs=1,
+        global_step=300,
+        training_complete=False,
+        now=13.0,
+    )
+
+    assert replayed is False
+    assert repeated_replayed is True
+    assert repeated == checkpoint
+    with pytest.raises(ServiceError) as conflict_error:
+        ledger.register_recovery_checkpoint(
+            job_id=job["job_id"],
+            attempt=first_attempt["attempt"],
+            generation=1,
+            format=TRAINING_RECOVERY_FORMAT,
+            relative_path=checkpoint_path,
+            byte_count=4096,
+            sha256=DIGEST_B,
+            completed_epochs=1,
+            global_step=300,
+            training_complete=False,
+        )
+    assert conflict_error.value.code == ErrorCode.ALREADY_EXISTS
+
+    retried = ledger.schedule_retry(
+        job["job_id"],
+        first_attempt["attempt"],
+        error_code=ErrorCode.EXECUTION_INTERRUPTED,
+        error_message="service restarted",
+        now=14.0,
+    )
+    second_attempt = ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        worker_id="recovery-worker",
+        now=15.0,
+    )
+    status_job, _, _, recovery = ledger.get_status_snapshot(
+        job["job_id"],
+        "inventory",
+    )
+
+    assert retried["state"] == JobState.RETRYING.value
+    assert retried["error_code"] is None
+    assert second_attempt.state == JobState.RUNNING
+    assert second_attempt.attempt == 2
+    assert second_attempt.resume_generation == 1
+    assert status_job["state"] == JobState.RUNNING.value
+    assert recovery.checkpoint == checkpoint
+    assert recovery.retry_count == 1
+    assert (
+        recovery.last_retry_code
+        == ErrorCode.EXECUTION_INTERRUPTED.value
+    )
+    assert recovery.resumed_from_generation == 1
+
+
+def test_confirmed_device_loss_reassigns_predict_to_another_gpu(ledger):
+    job = create_job(ledger, operation="predict")
+    seal_and_queue(
+        ledger,
+        job["job_id"],
+        device="cuda",
+        now=20.0,
+    )
+    first_attempt = ledger.claim_execution_job(
+        job["job_id"],
+        "cuda",
+        worker_id="cuda-worker-0",
+        device_id="GPU-a",
+        now=21.0,
+    )
+
+    retried = ledger.schedule_retry(
+        job["job_id"],
+        first_attempt.attempt,
+        error_code=ErrorCode.DEVICE_LOST,
+        error_message="assigned GPU disappeared",
+        exit_code=1,
+        now=22.0,
+    )
+    second_attempt = ledger.claim_execution_job(
+        job["job_id"],
+        "cuda",
+        worker_id="cuda-worker-1",
+        device_id="GPU-b",
+        now=23.0,
+    )
+
+    assert retried["state"] == JobState.RETRYING.value
+    assert second_attempt.state == JobState.RUNNING
+    assert second_attempt.attempt == 2
+    assert second_attempt.assigned_device_id == "GPU-b"
+    assert second_attempt.resume_generation is None
+    with ledger.connection() as connection:
+        failed_attempt = connection.get(
+            JobAttempt,
+            (job["job_id"], 1),
+        )
+    assert failed_attempt.status == JobState.FAILED.value
+    assert failed_attempt.device_id == "GPU-a"
+    assert failed_attempt.error_code == ErrorCode.DEVICE_LOST.value
 
 
 def test_output_publication_is_all_or_nothing(ledger):
@@ -427,7 +615,7 @@ def test_retention_keeps_recent_idempotency_then_deletes_it_with_job(ledger):
     )
     ledger.record_idempotency(
         owner_subject="inventory",
-        action_name="transformer.v1.job.cancel",
+        action_name="transformer.v2.job.cancel",
         idempotency_key="cancel-retained",
         request_hash=DIGEST_A,
         response={"jobId": job["job_id"], "state": "CANCELLED"},
@@ -438,13 +626,13 @@ def test_retention_keeps_recent_idempotency_then_deletes_it_with_job(ledger):
     assert ledger.delete_terminal_jobs_before(50.0) == []
     assert ledger.get_job(job["job_id"]) is not None
     assert ledger.lookup_idempotency(
-        "inventory", "transformer.v1.job.cancel", "cancel-retained"
+        "inventory", "transformer.v2.job.cancel", "cancel-retained"
     ) is not None
 
     assert ledger.delete_terminal_jobs_before(81.0) == [job["job_id"]]
     assert ledger.get_job(job["job_id"]) is None
     assert ledger.lookup_idempotency(
-        "inventory", "transformer.v1.job.cancel", "cancel-retained"
+        "inventory", "transformer.v2.job.cancel", "cancel-retained"
     ) is None
 
 
@@ -483,7 +671,7 @@ def test_retention_does_not_delete_job_with_active_output_ticket(ledger):
     )["job_id"] == job["job_id"]
 
 
-def test_recovery_preserves_safe_states_and_never_requeues_running_fit(ledger):
+def test_recovery_requeues_persistent_fit_and_fails_runtime_fit(ledger):
     uploading = create_job(ledger)
     ledger.reserve_input(
         job_id=uploading["job_id"],
@@ -502,12 +690,42 @@ def test_recovery_preserves_safe_states_and_never_requeues_running_fit(ledger):
     sealed_revision = ledger.get_job(sealed["job_id"])["revision"]
     to_interrupt = create_job(ledger)
     seal_and_queue(ledger, to_interrupt["job_id"])
-    running = ledger.claim_next_job("cpu")
+    retrying_attempt = ledger.claim_next_job("cpu")
 
     cancelling = create_job(ledger)
     seal_and_queue(ledger, cancelling["job_id"], now=10.0)
     cancelling_running = ledger.claim_next_job("cpu")
     ledger.transition_job(cancelling_running["job_id"], JobState.CANCELLING)
+
+    runtime_fit = create_job(ledger)
+    runtime_payload_id = str(uuid.uuid4())
+    ledger.reserve_input(
+        job_id=runtime_fit["job_id"],
+        payload_id=runtime_payload_id,
+        ordinal=0,
+        upload_token="runtime-fit-upload",
+        temporary_path=(
+            f"spool/jobs/{runtime_fit['job_id']}/inputs/.0.tmp"
+        ),
+    )
+    ledger.commit_input(
+        upload_token="runtime-fit-upload",
+        relative_path=(
+            f"spool/jobs/{runtime_fit['job_id']}/inputs/0.arrow"
+        ),
+        schema_id="inventory.sequence.fit.v1",
+        rows=1,
+        batches=1,
+        byte_count=1,
+        sha256=DIGEST_A,
+        schema_fingerprint=DIGEST_B,
+        source_width=4,
+        feature_dim=2,
+        max_payloads=1,
+        max_job_bytes=1,
+    )
+    seal_and_queue(ledger, runtime_fit["job_id"], now=15.0)
+    runtime_attempt = ledger.claim_next_job("cpu")
 
     queued = create_job(ledger)
     seal_and_queue(ledger, queued["job_id"], now=20.0)
@@ -519,19 +737,38 @@ def test_recovery_preserves_safe_states_and_never_requeues_running_fit(ledger):
     assert recovered_sealed["state"] == JobState.SEALED.value
     assert recovered_sealed["revision"] == sealed_revision
     assert ledger.get_job(queued["job_id"])["state"] == JobState.QUEUED.value
-    # No RUNNING fit is ever returned to the queue during recovery.
-    assert ledger.get_job(running["job_id"])["state"] == JobState.FAILED.value
-    assert ledger.get_job(running["job_id"])["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+    retried = ledger.get_job(retrying_attempt["job_id"])
+    assert retried["state"] == JobState.RETRYING.value
+    assert retried["error_code"] is None
+    failed = ledger.get_job(runtime_attempt["job_id"])
+    assert failed["state"] == JobState.FAILED.value
+    assert (
+        failed["error_code"]
+        == ErrorCode.EXECUTION_INTERRUPTED.value
+    )
     assert ledger.get_job(cancelling["job_id"])["state"] == JobState.CANCELLED.value
-    assert recovery["interrupted_jobs"] == [running["job_id"]]
+    assert recovery["interrupted_jobs"] == [runtime_attempt["job_id"]]
+    assert recovery["retried_jobs"] == [retrying_attempt["job_id"]]
     assert recovery["cancelled_jobs"] == [cancelling["job_id"]]
     assert recovery["temporary_paths"] == [
         f"spool/jobs/{uploading['job_id']}/inputs/.0.tmp"
     ]
     assert ledger.abort_input("stale-upload") is None
     with ledger.connection() as connection:
-        interrupted_attempt = connection.get(JobAttempt, (running["job_id"], 1))
+        retried_attempt = connection.get(
+            JobAttempt,
+            (retrying_attempt["job_id"], 1),
+        )
+        interrupted_attempt = connection.get(
+            JobAttempt,
+            (runtime_attempt["job_id"], 1),
+        )
         cancelled_attempt = connection.get(JobAttempt, (cancelling["job_id"], 1))
+    assert retried_attempt.status == JobState.FAILED.value
+    assert (
+        retried_attempt.error_code
+        == ErrorCode.EXECUTION_INTERRUPTED.value
+    )
     assert interrupted_attempt.status == JobState.FAILED.value
     assert interrupted_attempt.error_code == ErrorCode.EXECUTION_INTERRUPTED.value
     assert cancelled_attempt.status == JobState.CANCELLED.value

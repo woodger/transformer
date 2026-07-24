@@ -23,7 +23,7 @@
 Некоторые живые файлы не импортируются обычным production-кодом:
 
 - `migrations/env.py` и `migrations/versions/*.py`, загружаемые Alembic;
-- `contracts/flight/v1/`, используемый внешними consumers и contract tests;
+- `contracts/flight/v2/`, используемый внешними consumers и contract tests;
 - `.env.example`, `alembic.ini` и deployment reference;
 - golden JSON/Arrow fixtures;
 - files, найденные по dynamic string path или reflection.
@@ -112,8 +112,8 @@ fields, а migrations обнаруживаются инструментом по
 runtime spool не являются source code. Они не должны попадать в repository и
 не используются как доказательство актуальности исходников.
 
-Удаление production artifacts (`models/`, `/tmp/transformer`, PostgreSQL data)
-не является code cleanup и требует отдельного явного решения.
+Удаление production artifacts (`models/`, `recovery/`, `/tmp/transformer`,
+PostgreSQL data) не является code cleanup и требует отдельного явного решения.
 
 ## Правило удаления
 

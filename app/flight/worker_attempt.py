@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import errno
 import threading
 import time
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 from app.flight.constants import ErrorCode, JobState
 from app.flight.errors import ServiceError
@@ -18,7 +18,6 @@ from app.flight.worker_subprocess import (
     WorkerSubprocessError,
     WorkerSubprocessRunner,
 )
-
 
 _DISK_FULL_ERRNOS = {
     value
@@ -49,9 +48,7 @@ class WorkerAttemptExecutor:
 
     def __init__(
         self,
-        config,
         ledger,
-        spool,
         plan_builder: WorkerPlanBuilder,
         subprocess_runner: WorkerSubprocessRunner,
         artifact_publisher: WorkerArtifactPublisher,
@@ -59,17 +56,21 @@ class WorkerAttemptExecutor:
         logger,
         metrics,
         argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
+        retry_notifier: Callable[[str], None] | None = None,
+        confirm_device_loss: Callable[[str], bool] | None = None,
+        resumable_fit: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
     ):
-        self.config = config
         self.ledger = ledger
-        self.spool = spool
         self.plan_builder = plan_builder
         self.subprocess_runner = subprocess_runner
         self.artifact_publisher = artifact_publisher
         self.logger = logger
         self.metrics = metrics
         self.argv_hook = argv_hook
+        self.retry_notifier = retry_notifier
+        self.confirm_device_loss = confirm_device_loss
+        self.resumable_fit = bool(resumable_fit)
         self._monotonic = monotonic
         self._active_lock = threading.Lock()
         self._active: dict[str, _ActiveAttempt] = {}
@@ -126,8 +127,6 @@ class WorkerAttemptExecutor:
                     ErrorCode.EXECUTION_INTERRUPTED,
                     "worker execution was interrupted by service shutdown",
                 )
-
-            self.spool.ensure_free_space(self.config.disk_min_free_bytes)
             try:
                 plan = self.plan_builder.build(
                     job,
@@ -174,6 +173,8 @@ class WorkerAttemptExecutor:
             else:
                 self.artifact_publisher.cleanup_unpublished(job)
                 failure = self._coerce_failure(exc)
+                if failure.code == ErrorCode.DEVICE_LOST:
+                    failure = self._confirm_device_loss(job, failure)
                 if failure.code == ErrorCode.CUDA_OUT_OF_MEMORY:
                     self.metrics.add("cudaOutOfMemory")
                     self.logger.event(
@@ -182,7 +183,7 @@ class WorkerAttemptExecutor:
                         attempt=attempt,
                         device=job.selected_device,
                     )
-                elif failure.code == ErrorCode.DEVICE_UNAVAILABLE:
+                elif failure.code == ErrorCode.DEVICE_LOST:
                     self.metrics.add("cudaUnavailableDuringExecution")
                 # Cleanup can race with a committed cancel action. Refresh
                 # state before choosing the terminal outcome so cancel wins
@@ -194,6 +195,28 @@ class WorkerAttemptExecutor:
                 ) or failure.code == ErrorCode.CANCELLED:
                     self._finish_cancelled(job, failure.exit_code)
                     self.metrics.add("jobsCancelled")
+                elif (
+                    failure.code == ErrorCode.DEVICE_LOST
+                    and (
+                        job.operation == "predict"
+                        or self.resumable_fit
+                    )
+                ) or (
+                    self.resumable_fit
+                    and job.operation == "fit"
+                    and failure.code
+                    == ErrorCode.EXECUTION_INTERRUPTED
+                ):
+                    if self._finish_retrying(job, failure):
+                        self.metrics.add("jobsRetried")
+                    elif (
+                        (
+                            latest := self.ledger.get_execution_job(job_id)
+                        )
+                        is not None
+                        and latest.state == JobState.CANCELLED
+                    ):
+                        self.metrics.add("jobsCancelled")
                 else:
                     self._finish_failed(job, failure)
                     self.metrics.add("jobsFailed")
@@ -206,8 +229,9 @@ class WorkerAttemptExecutor:
                 )
         finally:
             with self._active_lock:
-                self._active.pop(job_id, None)
-                self._pending_cancellations.discard(job_id)
+                if self._active.get(job_id) is active:
+                    self._active.pop(job_id, None)
+                    self._pending_cancellations.discard(job_id)
             elapsed = self._monotonic() - started
             self.metrics.add("workerRunSeconds", elapsed)
             self.logger.event(
@@ -218,6 +242,35 @@ class WorkerAttemptExecutor:
                 succeeded=succeeded,
                 runSeconds=elapsed,
             )
+
+    def _confirm_device_loss(
+        self,
+        job: ExecutionJobRecord,
+        failure: WorkerAttemptError,
+    ) -> WorkerAttemptError:
+        if (
+            job.selected_device != "cuda"
+            or not job.assigned_device_id
+            or self.confirm_device_loss is None
+        ):
+            return WorkerAttemptError(
+                ErrorCode.SUBPROCESS_FAILED,
+                "CUDA subprocess failed without a verifiable device loss",
+                failure.exit_code,
+            )
+        try:
+            confirmed = self.confirm_device_loss(
+                job.assigned_device_id
+            )
+        except Exception:
+            confirmed = False
+        if confirmed:
+            return failure
+        return WorkerAttemptError(
+            ErrorCode.SUBPROCESS_FAILED,
+            "CUDA subprocess failed while its assigned device remained available",
+            failure.exit_code,
+        )
 
     def _finish_cancelled(
         self,
@@ -295,6 +348,52 @@ class WorkerAttemptExecutor:
             ):
                 return
             raise
+
+    def _finish_retrying(
+        self,
+        job: ExecutionJobRecord,
+        failure: WorkerAttemptError,
+    ) -> bool:
+        current = self.ledger.get_execution_job(job.job_id)
+        if current is None or current.state in (
+            JobState.SUCCEEDED,
+            JobState.FAILED,
+            JobState.CANCELLED,
+        ):
+            return False
+        if current.state == JobState.CANCELLING:
+            self._finish_cancelled(job, failure.exit_code)
+            return False
+        try:
+            self.ledger.schedule_retry(
+                job.job_id,
+                job.attempt,
+                error_code=failure.code,
+                error_message=failure.message,
+                exit_code=failure.exit_code,
+            )
+        except (ServiceError, ValueError):
+            latest = self.ledger.get_execution_job(job.job_id)
+            if latest is not None and latest.state == JobState.CANCELLING:
+                self._finish_cancelled(job, failure.exit_code)
+                return False
+            if latest is not None and latest.state in (
+                JobState.RETRYING,
+                JobState.SUCCEEDED,
+                JobState.FAILED,
+                JobState.CANCELLED,
+            ):
+                return latest.state == JobState.RETRYING
+            raise
+        self._record_transition(
+            job,
+            JobState.RUNNING.value,
+            JobState.RETRYING.value,
+            code=failure.code.value,
+        )
+        if self.retry_notifier is not None:
+            self.retry_notifier(job.job_id)
+        return True
 
     def _record_transition(
         self,

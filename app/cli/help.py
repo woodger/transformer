@@ -4,19 +4,21 @@ import math
 from app.config import (
     BATCH_SIZE,
     CONTEXT_MODE,
+    D_MODEL,
     DEFAULT_DEVICE,
     DETERMINISTIC,
-    D_MODEL,
     DROPOUT,
     EPOCHS,
+    HOST_DEFAULT,
     LOSS_SCHEDULE,
     LOSS_STAGE,
     LR,
     NHEAD,
     NUM_LAYERS,
     PATIENCE,
-    SEED,
+    PORT_DEFAULT,
     SAVE_BEST_CHECKPOINT,
+    SEED,
     STAGE_SIZE,
     TRAIN_MONITOR,
     TRAIN_MONITOR_MIN_IMPROVEMENT,
@@ -24,7 +26,6 @@ from app.config import (
 )
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.version import __version__, version_text
-
 
 _COMMAND_GROUPS = (
     (
@@ -469,6 +470,31 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
             default=None,
             help=argparse.SUPPRESS,
         )
+        runtime.add_argument(
+            "--recovery-checkpoint-dir",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-events-out",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--resume-checkpoint",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-config-hash",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
+        runtime.add_argument(
+            "--recovery-seal-hash",
+            default=None,
+            help=argparse.SUPPRESS,
+        )
     _add_model_arguments(parser, required_seq_len=True, training=True)
     _add_training_arguments(parser)
 
@@ -574,13 +600,13 @@ def build_parser():
         "--host",
         metavar="HOST",
         default=None,
-        help="Listen host. (default: 127.0.0.1)",
+        help=f"Listen host. (default: {HOST_DEFAULT})",
     )
     service.add_argument(
         "--port",
         type=_nonnegative_int,
         default=None,
-        help="Listen port. (default: 8815)",
+        help=f"Listen port. (default: {PORT_DEFAULT})",
     )
 
     service.add_argument(

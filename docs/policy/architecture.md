@@ -12,10 +12,11 @@
 ```text
 app/main.py
 ├── app/cli → app/commands → data/model/training/metrics/storage/runtime
-└── app/flight → app/database + spool/worker
-                         └── subprocess → app/main.py fit-stream|predict-stream
+└── app/flight → app/database + runtime spool + recovery store + scheduler
+                                                        └── subprocess
+                                                            → fit-stream|predict-stream
 
-contracts/flight/v1 ← нормативный внешний контракт
+contracts/flight/v2 ← нормативный внешний контракт
 migrations/         ← эволюция PostgreSQL schema
 ```
 
@@ -66,8 +67,8 @@ SQLite, локальный ledger и дублирующее durable storage не
 - action contract validation;
 - job coordination и state transitions;
 - PostgreSQL ledger;
-- `/tmp/transformer` spool;
-- worker queue и subprocess lifecycle;
+- `/tmp/transformer` runtime spool и persistent `recovery/`;
+- physical CUDA inventory, worker queues и subprocess lifecycle;
 - cancellation, recovery, maintenance и observability.
 
 RPC handler выполняет только bounded validation, IO и control-plane mutation.
@@ -76,7 +77,7 @@ Model training и prediction остаются в worker subprocess. Network requ
 
 ### Внешние contracts и migrations
 
-- `contracts/flight/v1/` содержит нормативные JSON Schemas и golden fixtures;
+- `contracts/flight/v2/` содержит нормативные JSON Schemas и golden fixtures;
 - `migrations/` содержит Alembic environment и последовательность revisions;
 - `docs/adr/` фиксирует принятые архитектурные решения.
 
@@ -87,15 +88,20 @@ production contract и tool-driven runtime.
 
 Архитектурное разделение данных является обязательным:
 
-- PostgreSQL — jobs, attempts, idempotency, tickets, model metadata и tokens;
-- `/tmp/transformer` — входные payload, незавершённые artifacts и runtime
-  storage epoch;
+- PostgreSQL — jobs, attempts, idempotency, tickets, recovery metadata, model
+  metadata и tokens;
+- `/tmp/transformer` — prediction payloads, attempt artifacts, runtime storage
+  epoch и boot-scoped CUDA quarantine;
+- `recovery/` — persistent fit payloads и внутренние completed-epoch
+  checkpoints без `modelRef`;
 - `models/` — только успешно опубликованные immutable checkpoints;
 - RAM — worker queues, token digest cache и активное process state.
 
-Потеря `/tmp` инвалидирует связанные jobs. Она не восстанавливается из
-PostgreSQL и не затрагивает уже опубликованные models или access tokens.
-PostgreSQL нельзя использовать как payload storage или idle queue polling
+Потеря `/tmp` инвалидирует prediction jobs и attempt-local artifacts, но fit с
+целыми persistent inputs переходит в `RETRYING`. Потеря зарегистрированного
+файла из `recovery/` является явной ошибкой и не разрешает silent restart
+обучения. Уже опубликованные models и access tokens не затрагиваются.
+PostgreSQL нельзя использовать как blob/payload storage или idle queue polling
 mechanism.
 
 ## Направление зависимостей
@@ -107,7 +113,8 @@ mechanism.
 - помещать CLI formatting в model, training, database или Flight state logic;
 - читать environment или открывать resources при import модуля;
 - дублировать wire validation независимо от normative contract;
-- смешивать persistent models и ephemeral runtime spool;
+- смешивать published models, internal recovery artifacts и ephemeral runtime
+  spool;
 - обходить ORM/session boundary случайными SQL-запросами в других packages.
 
 Допустимо:

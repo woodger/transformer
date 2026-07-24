@@ -1,10 +1,9 @@
+import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
-import numpy as np
 import torch
 
 from app.storage.atomic import atomic_output_path
-
 
 FRAME_HEADER_BYTES = 8
 DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024

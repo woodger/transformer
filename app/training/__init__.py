@@ -10,8 +10,8 @@ from app.training.run_config import ModelConfig, TrainConfig
 from app.training.trainer import Trainer
 
 __all__ = [
-    "LOSS_STAGE_DEFINITIONS",
     "LOSS_STAGES",
+    "LOSS_STAGE_DEFINITIONS",
     "ModelConfig",
     "TrainConfig",
     "Trainer",

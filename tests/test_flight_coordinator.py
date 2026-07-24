@@ -3,30 +3,25 @@ import uuid
 
 import pyarrow.flight as flight
 import pytest
+from flight_contract_schema import (
+    read_contract_schema,
+    validate_contract_document,
+)
 
-from app.database.models import Job, JobAttempt
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
-    HEALTH_ACTION,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
-    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
-from app.flight.ledger import Ledger
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
-from flight_contract_schema import (
-    read_contract_schema,
-    validate_schema_subset,
-)
-
 
 ACTION_RESULT_SCHEMAS = {
     CREATE_ACTION: "create-result.schema.json",
@@ -40,7 +35,7 @@ ACTION_RESULT_SCHEMAS = {
 def common():
     return {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
     }
 
@@ -65,7 +60,6 @@ def coordinator(tmp_path, postgres_ledger):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     ledger = postgres_ledger
@@ -124,7 +118,7 @@ def test_action_facade_preserves_lifecycle_over_real_flight_loopback(
         ))
         assert len(results) == 1
         response = json.loads(results[0].body.to_pybytes())
-        validate_schema_subset(
+        validate_contract_document(
             response,
             read_contract_schema(ACTION_RESULT_SCHEMAS[action_name]),
         )
@@ -209,65 +203,6 @@ def test_action_facade_preserves_lifecycle_over_real_flight_loopback(
         server.shutdown()
 
 
-def test_status_hides_legacy_cancel_error(tmp_path, postgres_ledger):
-    config = FlightServiceConfig(
-        runtime_dir=str(tmp_path / "runtime"),
-        port=0,
-        allow_plaintext=True,
-        disk_min_free_bytes=1,
-    ).validate()
-    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
-    ledger = postgres_ledger
-    job_id = "b257793b-100f-4322-b28a-8c47072b7fec"
-    ledger.create_job(
-        job_id=job_id,
-        owner_subject="inventory",
-        operation="fit",
-        requested_device="cuda",
-        prediction_column="out",
-        config_hash="a" * 64,
-        model_label="legacy-cancelled",
-        now=1.0,
-    )
-    ledger.seal_job(
-        job_id,
-        manifest_hash="b" * 64,
-        manifest=[],
-        now=2.0,
-    )
-    ledger.queue_job(job_id, selected_device="cuda", now=3.0)
-    running = ledger.claim_next_job("cuda", now=4.0)
-    ledger.transition_job(job_id, JobState.CANCELLING, now=5.0)
-    ledger.finish_attempt(
-        job_id,
-        running["attempt"],
-        JobState.CANCELLED,
-        now=6.0,
-    )
-    with ledger.transaction() as connection:
-        stored_job = connection.get(Job, job_id)
-        stored_job.error_code = "CANCELLED"
-        stored_job.error_message = "job was cancelled"
-        attempt = connection.get(JobAttempt, (job_id, 1))
-        attempt.error_code = "CANCELLED"
-        attempt.error_message = "job was cancelled"
-
-    service = JobCoordinator(
-        config,
-        ledger,
-        spool,
-        cuda_available=lambda: False,
-    )
-    status = service.status("inventory", job_id, str(uuid.uuid4()))
-
-    assert status["state"] == JobState.CANCELLED.value
-    assert status["error"] is None
-    assert status["pollAfterMs"] == 0
-    # Compatibility is a wire concern: immutable terminal storage is not
-    # rewritten and its revision/timestamps remain untouched on startup.
-    assert ledger.get_job(job_id)["error_code"] == "CANCELLED"
-
-
 def test_same_idempotency_key_with_different_request_conflicts(coordinator):
     service, _ = coordinator
     document = create_document()
@@ -307,11 +242,19 @@ def test_cuda_unavailable_does_not_make_liveness_false(coordinator):
     capabilities = service.capabilities(str(uuid.uuid4()))
 
     assert result["live"] is True
-    assert result["cuda"] == {"available": False}
+    assert result["cuda"] == {
+        "available": False,
+        "deviceCount": 0,
+        "quarantinedCount": 0,
+    }
     assert capabilities["devices"]["cuda"]["available"] is False
+    assert capabilities["queue"]["cudaCapacity"] == 0
     assert capabilities["features"] == {
         "doExchange": False,
         "pollFlightInfo": False,
+        "resumableFit": True,
+        "recoveryBoundary": "globalEpoch",
+        "deviceAwareCuda": True,
     }
 
 
@@ -328,6 +271,30 @@ def test_failed_ledger_probe_changes_readiness_not_liveness(coordinator, monkeyp
     assert result["live"] is True
     assert result["ready"] is False
     assert result["ledger"] == {"available": False}
+
+
+def test_storage_free_bytes_are_telemetry_not_readiness_policy(
+    coordinator,
+    monkeypatch,
+):
+    service, _ = coordinator
+    monkeypatch.setattr(
+        service.spool,
+        "disk_usage",
+        lambda: type("Usage", (), {
+            "total": 100,
+            "used": 100,
+            "free": 0,
+        })(),
+    )
+
+    result = service.health(str(uuid.uuid4()))
+
+    assert result["ready"] is True
+    assert result["storage"] == {
+        "runtime": {"freeBytes": 0},
+        "recovery": {"freeBytes": 0},
+    }
 
 
 def test_wrong_owner_cannot_observe_job(coordinator):

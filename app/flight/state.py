@@ -1,13 +1,12 @@
 from dataclasses import dataclass
 
 from app.flight.constants import (
-    ErrorCode,
     IMMEDIATE_CANCEL_STATES,
-    JobState,
     STATE_TRANSITIONS,
     TERMINAL_STATES,
+    ErrorCode,
+    JobState,
 )
-
 
 _EXECUTION_INTERRUPTED_MESSAGE = (
     "worker execution was interrupted by service restart"

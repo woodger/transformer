@@ -3,8 +3,8 @@ import os
 import signal
 import subprocess
 import sys
-from types import SimpleNamespace
 import uuid
+from types import SimpleNamespace
 
 import pyarrow.flight as flight
 import pytest
@@ -14,10 +14,9 @@ from app.cli.help import build_parser
 from app.database.tokens import AccessTokenStore
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, ErrorCode, JobState
-from app.flight.ledger import Ledger
+from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, JobState
 from app.flight.process import capture_worker_process
-from app.flight.spool import Spool, RuntimeDirectoryLocked
+from app.flight.spool import RuntimeDirectoryLocked, Spool
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +50,6 @@ def config(tmp_path):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
 
 
@@ -63,7 +61,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
     client = flight.FlightClient(("localhost", application.server.port))
     body = json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
     }).encode()
     try:
@@ -72,7 +70,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
             flight.Action(CAPABILITIES_ACTION, body),
             options=options(),
         ))
-        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [1]
+        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [2]
 
         with pytest.raises(RuntimeDirectoryLocked):
             FlightApplication.build(
@@ -116,14 +114,14 @@ def test_application_uses_database_token_cache_without_query_per_rpc(
         for _ in range(2):
             body = json.dumps({
                 "contract": CONTRACT_NAME,
-                "version": 1,
+                "version": 2,
                 "requestId": str(uuid.uuid4()),
             }).encode()
             result = list(client.do_action(
                 flight.Action(CAPABILITIES_ACTION, body),
                 options=options(issued.token),
             ))
-            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [1]
+            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [2]
 
         assert credential_loads == [True]
     finally:
@@ -312,7 +310,7 @@ def test_shutdown_closes_queue_claims_before_stopping_flight_server():
     ]
 
 
-def test_restart_recovers_nonterminal_states_without_retrying_running_job(
+def test_restart_requeues_persistent_fit_and_recovers_other_states(
     tmp_path,
     monkeypatch,
     postgres_ledger,
@@ -438,15 +436,19 @@ def test_restart_recovers_nonterminal_states_without_retrying_running_job(
         assert recovered.get_job(uploading["job_id"])["state"] == JobState.UPLOADING.value
         assert recovered.get_job(sealed["job_id"])["state"] == JobState.SEALED.value
         assert recovered.get_job(queued["job_id"])["state"] == JobState.QUEUED.value
-        failed = recovered.get_job(interrupted["job_id"])
-        assert failed["state"] == JobState.FAILED.value
-        assert failed["attempt"] == 1
-        assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
+        retrying = recovered.get_job(interrupted["job_id"])
+        assert retrying["state"] == JobState.RETRYING.value
+        assert retrying["attempt"] == 1
+        assert retrying["error_code"] is None
         assert orphan.wait(timeout=5) < 0
         assert recovered.get_job(cancelling["job_id"])["state"] == JobState.CANCELLED.value
-        assert [job["job_id"] for job in recovered.list_jobs([JobState.QUEUED])] == [
-            queued["job_id"]
-        ]
+        assert {
+            job["job_id"]
+            for job in recovered.list_jobs([
+                JobState.QUEUED,
+                JobState.RETRYING,
+            ])
+        } == {interrupted["job_id"], queued["job_id"]}
         for job in (interrupted, cancelling):
             assert not os.path.exists(
                 spool.attempt_checkpoint_path(job["job_id"], job["attempt"])

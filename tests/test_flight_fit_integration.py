@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
@@ -19,14 +19,13 @@ from app.flight.constants import (
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    JobState,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    JobState,
 )
 from app.runtime.version import __version__
 from app.storage.checkpoint import CHECKPOINT_FORMAT
-
 
 OWNER = "inventory"
 TOKEN = "secret"
@@ -63,7 +62,6 @@ def _service_config(tmp_path):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         cpu_capacity=1,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=1.0,
@@ -82,7 +80,7 @@ def _auth():
 def _action(client, name, **fields):
     request = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -121,7 +119,7 @@ def _ipc_payload(batches):
 
 def _put(client, job_id, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v1", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -130,7 +128,7 @@ def _put(client, job_id, payload_id, ordinal, batches):
     )
     metadata = {
         "contract": CONTRACT_NAME,
-        "version": 1,
+        "version": 2,
         "jobId": job_id,
         "payloadId": payload_id,
         "ordinal": ordinal,
@@ -189,8 +187,7 @@ def _direct_fit(tmp_path, payloads):
         command,
         cwd=PROJECT_ROOT,
         input=b"",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
         timeout=30,
     )
@@ -278,6 +275,17 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
             (item["ordinal"], item["rows"], item["batches"])
             for item in committed
         ] == [(0, 2, 2), (1, 1, 1)]
+        stored_inputs = application.ledger.list_inputs(job_id)
+        assert {
+            item["storage_class"]
+            for item in stored_inputs
+        } == {"recovery"}
+        assert all(
+            Path(application.recovery_store.absolute_path(
+                item["relative_path"]
+            )).is_file()
+            for item in stored_inputs
+        )
 
         manifest = [
             {
@@ -324,6 +332,18 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
 
         assert saw_running
         assert status["state"] == JobState.SUCCEEDED.value, status
+        assert status["recovery"] == {
+            "latestCheckpoint": {
+                "generation": 1,
+                "completedEpochs": 1,
+                "globalStep": 1,
+                "trainingComplete": True,
+            },
+            "resumedFromGeneration": None,
+            "retryCount": 0,
+            "lastRetryCode": None,
+            "boundary": "globalEpoch",
+        }
         assert [
             (item["ordinal"], item["rows"], item["batches"])
             for item in status["committedInputs"]

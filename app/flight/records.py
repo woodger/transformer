@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from app.flight.constants import JobState
 from app.training.run_config import ModelConfig, TrainConfig
@@ -21,9 +22,13 @@ class ExecutionJobRecord:
     prediction_column: str
     model_config: ModelConfig | None
     training_config: TrainConfig | None
+    config_hash: str
+    seal_hash: str | None
     feature_dim: int | None
     input_frame_count: int
     attempt: int
+    assigned_device_id: str | None
+    resume_generation: int | None
     queued_at: float | None
     started_at: float | None
 
@@ -38,6 +43,33 @@ class CommittedInputRecord:
     byte_count: int
     sha256: str
     relative_path: str
+    storage_class: str
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingRecoveryCheckpointRecord:
+    """Registered recovery point visible to a later fit attempt."""
+
+    job_id: str
+    generation: int
+    attempt: int
+    format: str
+    relative_path: str
+    byte_count: int
+    sha256: str
+    completed_epochs: int
+    global_step: int
+    training_complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StatusRecoveryRecord:
+    """Recovery fields read in the same transaction as public status."""
+
+    checkpoint: TrainingRecoveryCheckpointRecord | None
+    retry_count: int
+    last_retry_code: str | None
+    resumed_from_generation: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,9 +111,13 @@ def execution_job_from_mapping(
         prediction_column=value["prediction_column"],
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
+        config_hash=value["config_hash"],
+        seal_hash=value.get("seal_hash"),
         feature_dim=value.get("feature_dim"),
         input_frame_count=len(manifest or ()),
         attempt=value["attempt"],
+        assigned_device_id=value.get("device_id"),
+        resume_generation=value.get("resume_generation"),
         queued_at=value.get("queued_at"),
         started_at=value.get("started_at"),
     )

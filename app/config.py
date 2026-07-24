@@ -3,7 +3,18 @@ import os
 # ======================
 # System
 # ======================
+PROJECT_NAME = "transformer"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ======================
+# Server
+# ======================
+HOST_DEFAULT = "127.0.0.1"
+PORT_DEFAULT = 8815
+ALLOW_PLAINTEXT = True
+
+CPU_WORKERS = 2
+RETENTION_SECONDS = 7 * 24 * 60 * 60
 
 # ======================
 # Model

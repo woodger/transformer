@@ -1,6 +1,6 @@
-from contextlib import contextmanager
 import os
 import tempfile
+from contextlib import contextmanager
 
 
 def resolve_artifact_path(path, base_dir, *, label: str) -> str:

@@ -1,5 +1,7 @@
+import json
+import os
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from app.data.arrow import (
@@ -9,6 +11,10 @@ from app.data.arrow import (
     table_to_tensors,
 )
 from app.data.tensors import reshape_source, validate_feature_dim, validate_target_dim
+from app.storage.training_recovery import (
+    load_training_recovery,
+    save_training_recovery,
+)
 from app.training.factory import build_model, build_trainer
 from app.training.run_config import model_config_from_args
 
@@ -62,19 +68,26 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
                 print(config_line())
             print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
 
-        def on_epoch(epoch, metrics, monitor_payload):
+        def on_epoch(
+            epoch,
+            metrics,
+            monitor_payload,
+            *,
+            frame=received_frames,
+            active_trainer=trainer,
+        ):
             nonlocal trained_epochs
             trained_epochs += 1
             print(metrics.console_line(
-                frame=received_frames,
+                frame=frame,
                 epoch=epoch + 1,
-                **getattr(trainer, "metrics_context", {}),
+                **getattr(active_trainer, "metrics_context", {}),
                 **monitor_payload,
             ))
-            trainer.record_metrics(
+            active_trainer.record_metrics(
                 metrics,
                 mode="fit-stream",
-                frame=received_frames,
+                frame=frame,
                 epoch=epoch + 1,
                 **monitor_payload,
             )
@@ -109,6 +122,7 @@ def _run_spooled(
         raise ValueError("input_frame_count must be a non-negative integer")
 
     model_config = model_config_from_args(args)
+    recovery = _recovery_arguments(args)
     model = None
     trainer = None
     expected_feat_dim = None
@@ -146,6 +160,28 @@ def _run_spooled(
     if trainer is None:
         raise ValueError("No non-empty frames received in input spool")
 
+    if recovery is not None and recovery["resume_checkpoint"] is not None:
+        try:
+            payload = load_training_recovery(
+                recovery["resume_checkpoint"],
+                device,
+                expected_config_hash=recovery["config_hash"],
+                expected_seal_hash=recovery["seal_hash"],
+            )
+            if payload["model_config"] != asdict(model_config):
+                raise ValueError(
+                    "training recovery model configuration does not match"
+                )
+            if payload["train_config"] != asdict(trainer.train_config):
+                raise ValueError(
+                    "training recovery train configuration does not match"
+                )
+            trainer.load_recovery_state_dict(payload["trainer_state"])
+        except Exception as exc:
+            raise ValueError(
+                "training recovery checkpoint could not be restored"
+            ) from exc
+
     def payloads():
         for path in trained_inputs:
             X_cpu, Y_cpu = read_arrow(str(path))
@@ -172,9 +208,84 @@ def _run_spooled(
             **monitor_payload,
         )
 
-    trainer.fit_payloads(payloads, on_epoch=on_epoch)
+    def on_epoch_committed(
+        _epoch,
+        _metrics,
+        _monitor_payload,
+        _training_complete,
+    ):
+        generation = trainer.state.global_epoch
+        checkpoint_path = os.path.join(
+            recovery["checkpoint_dir"],
+            f"{generation}.pth",
+        )
+        event = save_training_recovery(
+            checkpoint_path,
+            trainer,
+            generation=generation,
+            config_hash=recovery["config_hash"],
+            seal_hash=recovery["seal_hash"],
+        )
+        _append_recovery_event(recovery["events_path"], event)
+
+    if not getattr(trainer, "training_complete", False):
+        if recovery is None:
+            trainer.fit_payloads(payloads, on_epoch=on_epoch)
+        else:
+            trainer.fit_payloads_resumable(
+                payloads,
+                on_epoch=on_epoch,
+                on_epoch_committed=on_epoch_committed,
+            )
     trainer.save(args.model_name)
     print(
         f"Model saved after {len(trained_inputs)} trained frame(s), "
         f"{trained_epochs} epoch(s) from {input_frame_count} received frame(s)"
     )
+
+
+def _recovery_arguments(args) -> dict | None:
+    values = {
+        "checkpoint_dir": getattr(
+            args,
+            "recovery_checkpoint_dir",
+            None,
+        ),
+        "events_path": getattr(args, "recovery_events_out", None),
+        "config_hash": getattr(args, "recovery_config_hash", None),
+        "seal_hash": getattr(args, "recovery_seal_hash", None),
+        "resume_checkpoint": getattr(args, "resume_checkpoint", None),
+    }
+    required = (
+        "checkpoint_dir",
+        "events_path",
+        "config_hash",
+        "seal_hash",
+    )
+    configured = [values[name] is not None for name in required]
+    if not any(configured):
+        if values["resume_checkpoint"] is not None:
+            raise ValueError(
+                "resume_checkpoint requires training recovery outputs"
+            )
+        return None
+    if not all(configured):
+        raise ValueError(
+            "training recovery arguments must be provided together"
+        )
+    return values
+
+
+def _append_recovery_event(path: str, event: dict) -> None:
+    destination = os.path.abspath(os.fspath(path))
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    line = json.dumps(
+        event,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+    with open(destination, "ab", buffering=0) as target:
+        target.write(line)
+        os.fsync(target.fileno())

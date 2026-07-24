@@ -7,6 +7,62 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-25
+
+### Added
+
+- Добавлен Ruff с единым минимальным baseline для Python lint checks.
+- Добавлен `jsonschema` для полноценной Draft 2020-12 проверки нормативных
+  Flight JSON Schemas и golden fixtures в contract tests.
+- Добавлены persistent `recovery/` store и PostgreSQL metadata для fit inputs,
+  completed-global-epoch checkpoints, попыток возобновления и состояния
+  `RETRYING`.
+- Добавлен boot-scoped physical CUDA inventory: отдельная lane на каждый
+  доступный GPU, обязательная привязка subprocess через
+  `CUDA_VISIBLE_DEVICES` и quarantine потерянного устройства до следующего
+  Linux boot.
+
+### Changed
+
+- Ruff baseline расширен проверками потенциальных ошибок, безопасной
+  модернизации для Python 3.11, порядка `__all__` и регулярных выражений в
+  `pytest.raises`.
+- Ruff также проверяет единый порядок Python import-блоков.
+- Runtime storage вычисляется из системной temporary directory и технического
+  имени проекта. Listen endpoint, plaintext policy, worker capacity и retention
+  перенесены из `TRANSFORMER_*` в `app/config.py`;
+  TLS/mTLS включается только явными параметрами `flight serve`.
+- Flight contract переведён на breaking v2: добавлены recovery status,
+  dynamic CUDA capacity/quarantine и раздельное состояние runtime/recovery
+  storage.
+- CUDA capacity удалена из application config и вычисляется по фактически
+  доступным physical GPU.
+- Fit checkpoints теперь сохраняют model, optimizer, AMP scaler,
+  early-stopping/best-selection progress и RNG state. После service/host
+  interruption обучение продолжается с последней полностью завершённой
+  глобальной эпохи; подтверждённая потеря GPU переносит новую попытку на
+  здоровое устройство.
+- Prediction job после подтверждённой потери GPU также создаёт новую попытку
+  на здоровом устройстве; ordinary subprocess failures и CUDA OOM остаются
+  terminal.
+- Публичное название проекта изменено на `Transformer Arrow Flight service`;
+  технические имя CLI и `transformer-flight` не менялись.
+
+### Fixed
+
+- Worker scheduler возвращает job в локальную FIFO после временного
+  PostgreSQL `SKIP LOCKED`, если durable state остаётся `QUEUED` или
+  `RETRYING`; job больше не зависает без повторного claim.
+
+### Removed
+
+- Удалена runtime-совместимость Flight v1: прежние actions, descriptors,
+  jobs, tickets и idempotency responses не переносятся через migration `0002`.
+  Published models, aliases и API access tokens сохраняются.
+- Удалён преждевременный `DISK_MIN_FREE_BYTES` и связанный proactive admission
+  watermark. Фактические `ENOSPC`/`EDQUOT` по-прежнему возвращают стабильный
+  `DISK_FULL`, а health сохраняет наблюдаемое свободное место хранилищ.
+
 ## [0.1.6] - 2026-07-23
 
 ### Added
@@ -195,7 +251,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4

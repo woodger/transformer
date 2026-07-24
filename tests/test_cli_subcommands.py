@@ -3,7 +3,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.help import build_parser
-from app.config import DETERMINISTIC, SAVE_BEST_CHECKPOINT, SEED, WEIGHT_DECAY
+from app.config import (
+    DETERMINISTIC,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
+    SAVE_BEST_CHECKPOINT,
+    SEED,
+    WEIGHT_DECAY,
+)
 from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.runtime.device import get_device
 from app.training.run_config import (
@@ -309,8 +316,8 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     positions = [output.index(label) for label in option_labels]
     assert positions == sorted(positions)
 
-    assert "Listen host. (default: 127.0.0.1)" in output
-    assert "Listen port. (default: 8815)" in output
+    assert f"Listen host. (default: {HOST_DEFAULT})" in output
+    assert f"Listen port. (default: {PORT_DEFAULT})" in output
     assert "built-in default" not in output
     assert "(default: None)" not in output
     expected_multiline_entries = (
@@ -447,7 +454,7 @@ def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
 
 
 def test_model_config_rejects_hidden_not_divisible_by_nhead():
-    with pytest.raises(ValueError, match="hidden .* must be divisible by nhead"):
+    with pytest.raises(ValueError, match=r"hidden .* must be divisible by nhead"):
         ModelConfig(seq_len=10, hidden=30, nhead=8)
 
 
@@ -592,7 +599,7 @@ def test_device_auto_selects_cuda_only_when_available(monkeypatch):
 def test_explicit_cuda_errors_when_unavailable(monkeypatch):
     monkeypatch.setattr("app.runtime.device.torch.cuda.is_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="CUDA .* not available"):
+    with pytest.raises(RuntimeError, match=r"CUDA .* not available"):
         get_device("cuda")
 
 
