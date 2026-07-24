@@ -14,6 +14,7 @@ from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
+    CUDA_LANE_COUNT,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
@@ -306,6 +307,7 @@ def test_cuda_unavailable_does_not_make_liveness_false(coordinator):
     assert result["live"] is True
     assert result["cuda"] == {"available": False}
     assert capabilities["devices"]["cuda"]["available"] is False
+    assert capabilities["queue"]["cudaCapacity"] == CUDA_LANE_COUNT
     assert capabilities["features"] == {
         "doExchange": False,
         "pollFlightInfo": False,

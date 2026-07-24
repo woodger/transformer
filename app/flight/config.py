@@ -7,7 +7,6 @@ from pathlib import Path
 from app.config import (
     ALLOW_PLAINTEXT,
     CPU_WORKERS,
-    CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
     PORT_DEFAULT,
@@ -22,7 +21,6 @@ LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 _NON_ENVIRONMENT_FIELDS = frozenset({
     "allow_plaintext",
     "cpu_capacity",
-    "cuda_capacity",
     "disk_min_free_bytes",
     "host",
     "port",
@@ -57,7 +55,6 @@ class FlightServiceConfig:
     max_active_jobs_per_subject: int = 32
 
     cpu_capacity: int = CPU_WORKERS
-    cuda_capacity: int = CUDA_CAPACITY
     ticket_ttl_seconds: int = 600
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
@@ -126,7 +123,6 @@ class FlightServiceConfig:
             "max_job_bytes",
             "max_active_jobs_per_subject",
             "cpu_capacity",
-            "cuda_capacity",
             "ticket_ttl_seconds",
             "disk_min_free_bytes",
             "retention_seconds",
@@ -149,8 +145,6 @@ class FlightServiceConfig:
                 or value <= 0
             ):
                 raise ValueError(f"{name} must be a positive finite number")
-        if self.cuda_capacity != 1:
-            raise ValueError("Flight contract v1 requires cuda_capacity=1")
         if self.target_batch_bytes > self.max_batch_bytes:
             raise ValueError("target_batch_bytes must not exceed max_batch_bytes")
         if self.max_batch_bytes > self.max_message_bytes:

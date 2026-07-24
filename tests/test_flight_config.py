@@ -7,7 +7,6 @@ import pytest
 from app.config import (
     ALLOW_PLAINTEXT,
     CPU_WORKERS,
-    CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
     PORT_DEFAULT,
@@ -31,7 +30,6 @@ def test_service_defaults_come_from_app_config(tmp_path):
     assert config.tls_ca_file is None
     assert config.tls_require_client_cert is False
     assert config.cpu_capacity == CPU_WORKERS
-    assert config.cuda_capacity == CUDA_CAPACITY
     assert config.disk_min_free_bytes == DISK_MIN_FREE_BYTES
     assert config.retention_seconds == RETENTION_SECONDS
 
@@ -50,7 +48,7 @@ def test_explicit_plaintext_allows_non_loopback_host(tmp_path):
     ).validate()
 
 
-def test_tls_and_device_capacity_are_independent(tmp_path):
+def test_tls_and_cpu_worker_count_are_independent(tmp_path):
     cert = tmp_path / "cert.pem"
     key = tmp_path / "key.pem"
     cert.write_text("certificate")
@@ -61,7 +59,6 @@ def test_tls_and_device_capacity_are_independent(tmp_path):
         tls_cert_file=str(cert),
         tls_key_file=str(key),
         cpu_capacity=3,
-        cuda_capacity=1,
     ).validate()
 
     assert config.tls_enabled is True

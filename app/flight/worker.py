@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Sequence
 
 from app.config import PROJECT_ROOT
-from app.flight.constants import JobState
+from app.flight.constants import CUDA_LANE_COUNT, JobState
 from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.records import (
     ExecutionJobRecord,
@@ -52,8 +52,6 @@ class WorkerPool:
     ):
         if config.cpu_capacity <= 0:
             raise ValueError("cpu_capacity must be greater than zero")
-        if config.cuda_capacity != 1:
-            raise ValueError("Flight contract v1 requires exactly one CUDA lane")
         self.config = config
         self.ledger = ledger
         self.spool = spool
@@ -116,7 +114,10 @@ class WorkerPool:
 
     @property
     def lane_counts(self) -> dict[str, int]:
-        return {"cpu": self.config.cpu_capacity, "cuda": 1}
+        return {
+            "cpu": self.config.cpu_capacity,
+            "cuda": CUDA_LANE_COUNT,
+        }
 
     def start(self) -> WorkerPool:
         with self._lifecycle_lock:

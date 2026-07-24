@@ -28,6 +28,10 @@ PREDICTION_SCHEMA_ID = "transformer.prediction.v1"
 SUPPORTED_OPERATIONS = ("fit", "predict")
 SUPPORTED_DEVICES = ("cpu", "cuda", "auto")
 
+# Flight v1 schedules at most one CUDA job at a time. Device-specific lanes
+# require a versioned multi-GPU execution contract.
+CUDA_LANE_COUNT = 1
+
 # A complete seal manifest must fit in the 64 KiB action-document limit even
 # with maximum-length idempotency keys and decimal ordinals.  Four hundred
 # entries leave a conservative envelope margin and keep every advertised job

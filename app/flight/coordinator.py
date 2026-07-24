@@ -7,6 +7,7 @@ from app.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_VERSION,
     CREATE_ACTION,
+    CUDA_LANE_COUNT,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
     PREDICT_SCHEMA_ID,
@@ -113,7 +114,7 @@ class JobCoordinator:
             },
             queue={
                 "cpuCapacity": self.config.cpu_capacity,
-                "cudaCapacity": self.config.cuda_capacity,
+                "cudaCapacity": CUDA_LANE_COUNT,
                 "singleInstance": True,
             },
             supportedOperations=["fit", "predict"],

@@ -24,6 +24,7 @@ from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     CANCEL_ACTION,
     CONTRACT_NAME,
+    CUDA_LANE_COUNT,
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
     STATUS_ACTION,
@@ -1567,7 +1568,10 @@ def test_cancel_escalates_to_sigkill_for_term_resistant_process_group(tmp_path):
 
 def test_pool_exposes_configured_cpu_lanes_and_exactly_one_cuda_lane(tmp_path):
     config, _, _, pool = components(tmp_path)
-    assert pool.lane_counts == {"cpu": config.cpu_capacity, "cuda": 1}
+    assert pool.lane_counts == {
+        "cpu": config.cpu_capacity,
+        "cuda": CUDA_LANE_COUNT,
+    }
 
 
 def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):

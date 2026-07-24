@@ -159,7 +159,6 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     pool = WorkerPool(
         SimpleNamespace(
             cpu_capacity=1,
-            cuda_capacity=1,
             shutdown_drain_seconds=1.0,
             cancel_grace_seconds=0.1,
         ),

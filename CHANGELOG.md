@@ -23,6 +23,8 @@
   имени проекта. Listen endpoint, plaintext policy, worker capacity, disk
   watermark и retention перенесены из `TRANSFORMER_*` в `app/config.py`;
   TLS/mTLS включается только явными параметрами `flight serve`.
+- CUDA capacity удалена из application config и определяется единственной
+  поддерживаемой Flight v1 scheduler lane.
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
   технические идентификаторы CLI и Flight contract не менялись.
 
