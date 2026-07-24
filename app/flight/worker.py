@@ -117,9 +117,7 @@ class WorkerPool:
             monotonic=self._monotonic,
         )
         self._attempt_executor = WorkerAttemptExecutor(
-            config,
             ledger,
-            spool,
             self._plan_builder,
             self._subprocess_runner,
             self._artifact_publisher,

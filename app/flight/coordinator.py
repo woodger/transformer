@@ -64,8 +64,6 @@ class JobCoordinator:
         self._create_status_actions = CreateStatusActions(
             config,
             ledger,
-            spool,
-            self.recovery_store,
             cuda_available=lambda: self._cuda_available(),
             is_draining=lambda: self.draining,
             limits=self._limits,
@@ -155,12 +153,7 @@ class JobCoordinator:
                 "flight.ledger.health_failed",
                 errorType=type(exc).__name__,
             )
-        ready = (
-            not self.draining
-            and ledger_ready
-            and runtime_usage.free >= self.config.disk_min_free_bytes
-            and recovery_usage.free >= self.config.disk_min_free_bytes
-        )
+        ready = not self.draining and ledger_ready
         inventory = self.device_inventory.snapshot()
         cuda_available = inventory.cuda_capacity > 0
         self.metrics.set("cudaAvailable", cuda_available)
@@ -168,14 +161,6 @@ class JobCoordinator:
         self.metrics.set("diskTotalBytes", runtime_usage.total)
         self.metrics.set("diskUsedBytes", runtime_usage.used)
         self.metrics.set("diskFreeBytes", runtime_usage.free)
-        self.metrics.set(
-            "diskWatermarkBytes",
-            self.config.disk_min_free_bytes,
-        )
-        self.metrics.set(
-            "diskWatermarkExceeded",
-            runtime_usage.free < self.config.disk_min_free_bytes,
-        )
         self.metrics.set(
             "recoveryDiskTotalBytes",
             recovery_usage.total,
@@ -187,10 +172,6 @@ class JobCoordinator:
         self.metrics.set(
             "recoveryDiskFreeBytes",
             recovery_usage.free,
-        )
-        self.metrics.set(
-            "recoveryDiskWatermarkExceeded",
-            recovery_usage.free < self.config.disk_min_free_bytes,
         )
         return response_document(
             request_id,
@@ -204,14 +185,8 @@ class JobCoordinator:
                 "quarantinedCount": inventory.quarantined_count,
             },
             storage={
-                "runtime": _storage_health(
-                    runtime_usage,
-                    self.config.disk_min_free_bytes,
-                ),
-                "recovery": _storage_health(
-                    recovery_usage,
-                    self.config.disk_min_free_bytes,
-                ),
+                "runtime": _storage_health(runtime_usage),
+                "recovery": _storage_health(recovery_usage),
             },
             metrics=self.metrics.snapshot(),
         )
@@ -262,9 +237,5 @@ class JobCoordinator:
         }
 
 
-def _storage_health(usage, watermark: int) -> dict:
-    return {
-        "freeBytes": usage.free,
-        "watermarkBytes": watermark,
-        "watermarkExceeded": usage.free < watermark,
-    }
+def _storage_health(usage) -> dict:
+    return {"freeBytes": usage.free}

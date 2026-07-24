@@ -43,7 +43,6 @@ def service_config(tmp_path, **overrides):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         retention_seconds=50,
     )
     return replace(base, **overrides).validate()

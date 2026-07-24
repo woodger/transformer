@@ -66,13 +66,6 @@ class WorkerPlanBuilder:
         *,
         argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
     ) -> ExecutionPlan:
-        if (
-            job.operation == "fit"
-            and self.recovery_store is not None
-        ):
-            self.recovery_store.ensure_free_space(
-                self.config.disk_min_free_bytes
-            )
         inputs = self._validated_inputs(job)
         argv = self.build_argv(job, attempt, argv_hook=argv_hook)
         recovery_checkpoint = (

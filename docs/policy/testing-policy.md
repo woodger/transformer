@@ -191,7 +191,7 @@ assertion.
 - missing/invalid authentication;
 - duplicate, out-of-order и repeated requests;
 - lost-response replay и idempotency conflict;
-- quota и disk watermark;
+- quota и фактические `ENOSPC`/`EDQUOT` storage failures;
 - valid/invalid job state transitions;
 - cancellation до и во время worker execution;
 - ordinary restart и runtime storage epoch loss;

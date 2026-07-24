@@ -89,7 +89,7 @@ Send that body with either `transformer.v2.capabilities` or
 service/PyArrow/Torch versions, schema IDs, limits, CPU/CUDA availability,
 physical-device count and dynamic queue capacities. Health returns `live`,
 `ready`, `draining`, ledger status, separate runtime/recovery storage
-watermarks, CUDA availability/quarantine count and aggregate metrics. CUDA
+free-space telemetry, CUDA availability/quarantine count and aggregate metrics. CUDA
 being unavailable does not make `live` false and does not by itself make
 `ready` false.
 

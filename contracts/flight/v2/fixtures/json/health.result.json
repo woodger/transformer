@@ -13,14 +13,10 @@
   },
   "storage": {
     "runtime": {
-      "freeBytes": 17179869184,
-      "watermarkBytes": 1073741824,
-      "watermarkExceeded": false
+      "freeBytes": 17179869184
     },
     "recovery": {
-      "freeBytes": 17179869184,
-      "watermarkBytes": 1073741824,
-      "watermarkExceeded": false
+      "freeBytes": 17179869184
     }
   },
   "metrics": {

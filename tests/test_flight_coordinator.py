@@ -60,7 +60,6 @@ def coordinator(tmp_path, postgres_ledger):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     ledger = postgres_ledger
@@ -272,6 +271,30 @@ def test_failed_ledger_probe_changes_readiness_not_liveness(coordinator, monkeyp
     assert result["live"] is True
     assert result["ready"] is False
     assert result["ledger"] == {"available": False}
+
+
+def test_storage_free_bytes_are_telemetry_not_readiness_policy(
+    coordinator,
+    monkeypatch,
+):
+    service, _ = coordinator
+    monkeypatch.setattr(
+        service.spool,
+        "disk_usage",
+        lambda: type("Usage", (), {
+            "total": 100,
+            "used": 100,
+            "free": 0,
+        })(),
+    )
+
+    result = service.health(str(uuid.uuid4()))
+
+    assert result["ready"] is True
+    assert result["storage"] == {
+        "runtime": {"freeBytes": 0},
+        "recovery": {"freeBytes": 0},
+    }
 
 
 def test_wrong_owner_cannot_observe_job(coordinator):

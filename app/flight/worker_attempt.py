@@ -48,9 +48,7 @@ class WorkerAttemptExecutor:
 
     def __init__(
         self,
-        config,
         ledger,
-        spool,
         plan_builder: WorkerPlanBuilder,
         subprocess_runner: WorkerSubprocessRunner,
         artifact_publisher: WorkerArtifactPublisher,
@@ -63,9 +61,7 @@ class WorkerAttemptExecutor:
         resumable_fit: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
     ):
-        self.config = config
         self.ledger = ledger
-        self.spool = spool
         self.plan_builder = plan_builder
         self.subprocess_runner = subprocess_runner
         self.artifact_publisher = artifact_publisher
@@ -131,8 +127,6 @@ class WorkerAttemptExecutor:
                     ErrorCode.EXECUTION_INTERRUPTED,
                     "worker execution was interrupted by service shutdown",
                 )
-
-            self.spool.ensure_free_space(self.config.disk_min_free_bytes)
             try:
                 plan = self.plan_builder.build(
                     job,

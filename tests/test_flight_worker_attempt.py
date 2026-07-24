@@ -137,9 +137,7 @@ def test_retry_handoff_keeps_second_attempt_registered_for_cancel():
         assert runner.second_started.wait(2)
 
     executor = WorkerAttemptExecutor(
-        SimpleNamespace(disk_min_free_bytes=1),
         ledger,
-        SimpleNamespace(ensure_free_space=lambda _minimum: None),
         SimpleNamespace(
             build=lambda *_args, **_kwargs: SimpleNamespace(
                 inputs=(),

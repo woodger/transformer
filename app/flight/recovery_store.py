@@ -176,23 +176,6 @@ class RecoveryStore:
     def disk_usage(self) -> shutil._ntuple_diskusage:
         return shutil.disk_usage(self.root_dir)
 
-    def ensure_free_space(
-        self,
-        minimum_free_bytes: int,
-        *,
-        required_bytes: int = 0,
-    ) -> None:
-        if minimum_free_bytes < 0 or required_bytes < 0:
-            raise ValueError("disk limits must be non-negative")
-        if self.disk_usage().free - required_bytes < minimum_free_bytes:
-            from app.flight.constants import ErrorCode
-            from app.flight.errors import ServiceError
-
-            raise ServiceError(
-                ErrorCode.DISK_FULL,
-                "persistent recovery storage watermark would be exceeded",
-            )
-
     def cleanup_temporary_files(self) -> tuple[str, ...]:
         removed = []
         for root, _, files in os.walk(self.root_dir):

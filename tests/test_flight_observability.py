@@ -224,7 +224,6 @@ config = FlightServiceConfig(
     runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
     port=0,
     allow_plaintext=True,
-    disk_min_free_bytes=1,
 ).validate()
 FlightApplication.build(
     config,

@@ -28,7 +28,6 @@ from app.flight.errors import (
     failed_precondition,
     not_found,
 )
-from app.flight.spool import Spool
 from app.flight.state import decide_cancel
 from app.training.run_config import ModelConfig
 
@@ -40,8 +39,6 @@ class CreateStatusActions:
         self,
         config,
         ledger,
-        spool: Spool,
-        recovery_store,
         *,
         cuda_available: Callable[[], bool],
         is_draining: Callable[[], bool],
@@ -51,8 +48,6 @@ class CreateStatusActions:
     ):
         self.config = config
         self.ledger = ledger
-        self.spool = spool
-        self.recovery_store = recovery_store
         self._cuda_available = cuda_available
         self._is_draining = is_draining
         self._limits = limits
@@ -72,11 +67,6 @@ class CreateStatusActions:
             return replay
         if self._is_draining():
             raise ServiceError(ErrorCode.UNAVAILABLE, "service is draining")
-        self.spool.ensure_free_space(self.config.disk_min_free_bytes)
-        if request["operation"] == "fit":
-            self.recovery_store.ensure_free_space(
-                self.config.disk_min_free_bytes
-            )
         if request["device"] == "cuda" and not self._cuda_available():
             self.metrics.add("cudaUnavailableRequests")
             raise ServiceError(

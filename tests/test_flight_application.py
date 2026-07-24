@@ -50,7 +50,6 @@ def config(tmp_path):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
 
 

@@ -1,12 +1,9 @@
 import os
 import uuid
-from types import SimpleNamespace
 
 import pytest
 
 import app.flight.spool as spool_module
-from app.flight.constants import ErrorCode
-from app.flight.errors import ServiceError
 from app.flight.spool import RuntimeDirectoryLocked, Spool
 
 
@@ -189,15 +186,3 @@ def test_paths_cannot_escape_runtime_directory_or_follow_external_symlink(spool,
     os.symlink(outside, link, target_is_directory=True)
     with pytest.raises(ValueError, match="symlink"):
         spool.absolute_path("linked/file.arrow")
-
-
-def test_disk_watermark_is_checked_before_staging(spool, monkeypatch):
-    monkeypatch.setattr(
-        spool,
-        "disk_usage",
-        lambda: SimpleNamespace(total=100, used=91, free=9),
-    )
-
-    with pytest.raises(ServiceError) as error:
-        spool.ensure_free_space(5, required_bytes=5)
-    assert error.value.code == ErrorCode.DISK_FULL

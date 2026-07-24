@@ -83,10 +83,6 @@ class InputUploadSession:
             max_payload_bytes=self.config.max_payload_bytes,
             max_rows=self.config.max_rows_per_payload,
         )
-        self.artifact_store.ensure_free_space(
-            self.config.disk_min_free_bytes
-        )
-
         try:
             while True:
                 try:
@@ -190,9 +186,6 @@ class InputUploadSession:
                     f"payload size {byte_count} exceeds limit "
                     f"{self.config.max_payload_bytes}"
                 )
-            self.artifact_store.ensure_free_space(
-                self.config.disk_min_free_bytes
-            )
             digest = _sha256_file(self.temporary_path)
             feature_dim = (
                 None

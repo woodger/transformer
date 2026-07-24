@@ -223,7 +223,6 @@ the environment:
 | `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
 | `CPU_WORKERS` | `2` | Concurrent CPU worker lanes |
-| `DISK_MIN_FREE_BYTES` | `1073741824` | Runtime and recovery admission watermark |
 | `RETENTION_SECONDS` | `604800` | Terminal-job retention |
 
 The runtime directory is derived with
@@ -349,7 +348,7 @@ draining, stops accepting RPC work, waits for running work and cancels any
 remaining worker groups. Maintenance and the token listener stop before the
 PostgreSQL connection pool closes and the runtime lock is released.
 
-## Retention and disk policy
+## Retention and storage failures
 
 Maintenance periodically deletes expired output tickets and eligible terminal
 jobs. A job is retained while it has a live ticket, a recent linked idempotency
@@ -357,11 +356,10 @@ record or immutable model provenance. Recovery inputs/checkpoints are removed
 after a fit becomes terminal; published model directories are not deleted by
 job retention, and v2 has no network action for model deletion.
 
-Create, upload and worker admission check the applicable filesystem free-space
-watermark. Health reports `ready=false` when either runtime or recovery
-storage is below it. Disk-full failures use stable `DISK_FULL` and do not
-publish partial artifacts. Monitor `/tmp/transformer`, persistent `recovery/`
-and model-directory growth separately.
+The service does not apply a configured free-space admission watermark.
+Health reports current free bytes for runtime and recovery storage without
+deriving readiness from them. Actual filesystem exhaustion uses stable
+`DISK_FULL` and does not publish partial artifacts.
 
 ## Health and observability
 
@@ -369,8 +367,8 @@ The service has no separate unauthenticated HTTP health endpoint. Call the
 authenticated `transformer.v2.health` Flight action.
 
 - `live=true` means the process can answer the action.
-- `ready=true` requires a non-draining service, a successful PostgreSQL health
-  check and enough free runtime and recovery storage.
+- `ready=true` requires a non-draining service and a successful PostgreSQL
+  health check.
 - CUDA availability, physical-device count and quarantine count are reported
   independently.
 
@@ -388,7 +386,7 @@ belongs to the active runtime generation.
 Recommended alerts include:
 
 - `ready=false` or PostgreSQL unavailable;
-- runtime or recovery free space below the watermark;
+- filesystem exhaustion reported as `DISK_FULL`;
 - persistent recovery/model growth outside forecast;
 - worker-lane errors, CUDA OOM, quarantined devices or repeated subprocess
   failure/retry;
@@ -407,7 +405,7 @@ PyArrow 24 has two confirmed binding limitations:
    `FAILED_PRECONDITION` or `RESOURCE_EXHAUSTED`; the service preserves its
    stable application code in safe text.
 2. Python `FlightServerBase` cannot configure a hard server receive-message
-   limit. Per-batch, logical-payload, row, job and storage limits remain
+   limit. Per-batch, logical-payload, row and job limits remain
    application-enforced.
 
 Details are recorded in

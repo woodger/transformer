@@ -301,7 +301,6 @@ def published_output_server(tmp_path, postgres_ledger):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     ledger = postgres_ledger
@@ -612,13 +611,11 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "plain-state"),
             allow_plaintext=True,
-            disk_min_free_bytes=1,
         ).validate(),
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "tls-state"),
             tls_cert_file=str(certificate),
             tls_key_file=str(private_key),
-            disk_min_free_bytes=1,
         ).validate(),
     )
 

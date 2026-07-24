@@ -93,7 +93,6 @@ def data_plane(tmp_path, postgres_ledger):
         runtime_dir=str(tmp_path / "runtime"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     ledger = postgres_ledger
@@ -587,42 +586,6 @@ def test_post_rename_directory_fsync_failure_leaves_no_live_orphan(
     assert ledger.list_inputs(job["job_id"]) == []
     assert not os.path.exists(spool.input_path(job["job_id"], 0))
     assert active_upload_count(ledger) == 0
-
-
-def test_post_staging_watermark_does_not_double_count_payload_bytes(
-    data_plane,
-    monkeypatch,
-):
-    _, spool, ledger, upload, _, _ = data_plane
-    job = create_fit_job(ledger)
-    batch = fit_batch(1)
-    calls = []
-    monkeypatch.setattr(
-        spool,
-        "ensure_free_space",
-        lambda minimum, *, required_bytes=0: calls.append(
-            (minimum, required_bytes)
-        ),
-    )
-
-    descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v2", "jobs", job["job_id"], "inputs", "0"
-    )
-    upload.handle(
-        "inventory",
-        descriptor,
-        CompleteReader(
-            batch.schema,
-            upload_metadata(job["job_id"], new_id(), 0, 1),
-            [batch],
-        ),
-        SimpleNamespace(write=lambda _: None),
-    )
-
-    assert calls == [
-        (upload.config.disk_min_free_bytes, 0),
-        (upload.config.disk_min_free_bytes, 0),
-    ]
 
 
 def test_ipc_close_failure_still_cleans_temporary_and_reservation(

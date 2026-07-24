@@ -262,20 +262,9 @@ class FlightApplication:
                 diskTotalBytes=usage.total,
                 diskUsedBytes=usage.used,
                 diskFreeBytes=usage.free,
-                diskWatermarkBytes=config.disk_min_free_bytes,
-                diskWatermarkExceeded=(
-                    usage.free < config.disk_min_free_bytes
-                ),
                 recoveryDiskTotalBytes=recovery_usage.total,
                 recoveryDiskUsedBytes=recovery_usage.used,
                 recoveryDiskFreeBytes=recovery_usage.free,
-                recoveryDiskWatermarkBytes=(
-                    config.disk_min_free_bytes
-                ),
-                recoveryDiskWatermarkExceeded=(
-                    recovery_usage.free
-                    < config.disk_min_free_bytes
-                ),
                 cudaDevices=(
                     device_inventory.snapshot().device_count
                 ),

@@ -79,20 +79,6 @@
           "draining": {"const": false},
           "ledger": {
             "properties": {"available": {"const": true}}
-          },
-          "storage": {
-            "properties": {
-              "runtime": {
-                "properties": {
-                  "watermarkExceeded": {"const": false}
-                }
-              },
-              "recovery": {
-                "properties": {
-                  "watermarkExceeded": {"const": false}
-                }
-              }
-            }
           }
         }
       }
@@ -115,44 +101,6 @@
         "required": ["ledger"]
       },
       "then": {"properties": {"ready": {"const": false}}}
-    },
-    {
-      "if": {
-        "properties": {
-          "storage": {
-            "properties": {
-              "runtime": {
-                "properties": {
-                  "watermarkExceeded": {"const": true}
-                },
-                "required": ["watermarkExceeded"]
-              }
-            },
-            "required": ["runtime"]
-          }
-        },
-        "required": ["storage"]
-      },
-      "then": {"properties": {"ready": {"const": false}}}
-    },
-    {
-      "if": {
-        "properties": {
-          "storage": {
-            "properties": {
-              "recovery": {
-                "properties": {
-                  "watermarkExceeded": {"const": true}
-                },
-                "required": ["watermarkExceeded"]
-              }
-            },
-            "required": ["recovery"]
-          }
-        },
-        "required": ["storage"]
-      },
-      "then": {"properties": {"ready": {"const": false}}}
     }
   ],
   "$defs": {
@@ -160,14 +108,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "freeBytes",
-        "watermarkBytes",
-        "watermarkExceeded"
+        "freeBytes"
       ],
       "properties": {
-        "freeBytes": {"type": "integer", "minimum": 0},
-        "watermarkBytes": {"type": "integer", "minimum": 1},
-        "watermarkExceeded": {"type": "boolean"}
+        "freeBytes": {"type": "integer", "minimum": 0}
       }
     }
   }

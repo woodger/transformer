@@ -7,7 +7,6 @@ from pathlib import Path
 from app.config import (
     ALLOW_PLAINTEXT,
     CPU_WORKERS,
-    DISK_MIN_FREE_BYTES,
     HOST_DEFAULT,
     PORT_DEFAULT,
     PROJECT_NAME,
@@ -21,7 +20,6 @@ LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 _NON_ENVIRONMENT_FIELDS = frozenset({
     "allow_plaintext",
     "cpu_capacity",
-    "disk_min_free_bytes",
     "host",
     "port",
     "retention_seconds",
@@ -59,7 +57,6 @@ class FlightServiceConfig:
     cancel_grace_seconds: float = 10.0
     shutdown_drain_seconds: float = 30.0
 
-    disk_min_free_bytes: int = DISK_MIN_FREE_BYTES
     retention_seconds: int = RETENTION_SECONDS
     maintenance_interval_seconds: int = 60
     subprocess_timeout_seconds: float = 24 * 60 * 60
@@ -131,7 +128,6 @@ class FlightServiceConfig:
             "max_active_jobs_per_subject",
             "cpu_capacity",
             "ticket_ttl_seconds",
-            "disk_min_free_bytes",
             "retention_seconds",
             "maintenance_interval_seconds",
         )

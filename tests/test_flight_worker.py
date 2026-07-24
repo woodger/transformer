@@ -165,7 +165,6 @@ def service_config(tmp_path, **overrides):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         cpu_capacity=2,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=0.2,
@@ -1810,8 +1809,8 @@ def test_terminal_persistence_failure_is_recovered_as_retrying_fit(
     seal_and_queue(ledger, job, [])
 
     monkeypatch.setattr(
-        pool.spool,
-        "ensure_free_space",
+        pool._plan_builder,
+        "build",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             OSError(errno.EIO, "injected preflight failure")
         ),

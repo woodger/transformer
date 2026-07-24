@@ -27,8 +27,8 @@
   `pytest.raises`.
 - Ruff также проверяет единый порядок Python import-блоков.
 - Runtime storage вычисляется из системной temporary directory и технического
-  имени проекта. Listen endpoint, plaintext policy, worker capacity, disk
-  watermark и retention перенесены из `TRANSFORMER_*` в `app/config.py`;
+  имени проекта. Listen endpoint, plaintext policy, worker capacity и retention
+  перенесены из `TRANSFORMER_*` в `app/config.py`;
   TLS/mTLS включается только явными параметрами `flight serve`.
 - Flight contract переведён на breaking v2: добавлены recovery status,
   dynamic CUDA capacity/quarantine и раздельное состояние runtime/recovery
@@ -51,6 +51,9 @@
 - Удалена runtime-совместимость Flight v1: прежние actions, descriptors,
   jobs, tickets и idempotency responses не переносятся через migration `0002`.
   Published models, aliases и API access tokens сохраняются.
+- Удалён преждевременный `DISK_MIN_FREE_BYTES` и связанный proactive admission
+  watermark. Фактические `ENOSPC`/`EDQUOT` по-прежнему возвращают стабильный
+  `DISK_FULL`, а health сохраняет наблюдаемое свободное место хранилищ.
 
 ## [0.1.6] - 2026-07-23
 

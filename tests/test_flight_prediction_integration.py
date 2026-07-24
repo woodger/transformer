@@ -42,7 +42,6 @@ def _service_config(tmp_path):
         runtime_dir=str(tmp_path / "state"),
         port=0,
         allow_plaintext=True,
-        disk_min_free_bytes=1,
         cpu_capacity=1,
         cancel_grace_seconds=0.1,
         shutdown_drain_seconds=1.0,

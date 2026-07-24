@@ -120,22 +120,15 @@ class MaintenanceService:
         timestamp = float(timestamp)
         cutoff = timestamp - self.config.retention_seconds
         usage = None
-        watermark = getattr(self.config, "disk_min_free_bytes", None)
         disk_usage = getattr(self.spool, "disk_usage", None)
-        if disk_usage is not None and watermark is not None:
+        if disk_usage is not None:
             usage = disk_usage()
-            watermark_exceeded = usage.free < watermark
             self.metrics.set("diskTotalBytes", usage.total)
             self.metrics.set("diskUsedBytes", usage.used)
             self.metrics.set("diskFreeBytes", usage.free)
-            self.metrics.set("diskWatermarkBytes", watermark)
-            self.metrics.set("diskWatermarkExceeded", watermark_exceeded)
         recovery_usage = None
-        if self.recovery_store is not None and watermark is not None:
+        if self.recovery_store is not None:
             recovery_usage = self.recovery_store.disk_usage()
-            recovery_watermark_exceeded = (
-                recovery_usage.free < watermark
-            )
             self.metrics.set(
                 "recoveryDiskTotalBytes",
                 recovery_usage.total,
@@ -147,10 +140,6 @@ class MaintenanceService:
             self.metrics.set(
                 "recoveryDiskFreeBytes",
                 recovery_usage.free,
-            )
-            self.metrics.set(
-                "recoveryDiskWatermarkExceeded",
-                recovery_watermark_exceeded,
             )
 
         expired_tickets = self.ledger.delete_expired_tickets(now=timestamp)
@@ -220,18 +209,12 @@ class MaintenanceService:
                 diskTotalBytes=usage.total,
                 diskUsedBytes=usage.used,
                 diskFreeBytes=usage.free,
-                diskWatermarkBytes=watermark,
-                diskWatermarkExceeded=watermark_exceeded,
             )
         if recovery_usage is not None:
             log_fields.update(
                 recoveryDiskTotalBytes=recovery_usage.total,
                 recoveryDiskUsedBytes=recovery_usage.used,
                 recoveryDiskFreeBytes=recovery_usage.free,
-                recoveryDiskWatermarkBytes=watermark,
-                recoveryDiskWatermarkExceeded=(
-                    recovery_watermark_exceeded
-                ),
             )
         self.logger.event(
             "flight.maintenance.completed",
