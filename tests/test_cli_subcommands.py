@@ -5,8 +5,8 @@ import pytest
 from app.cli.help import build_parser
 from app.config import (
     DETERMINISTIC,
-    HOST,
-    PORT,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
     SAVE_BEST_CHECKPOINT,
     SEED,
     WEIGHT_DECAY,
@@ -316,8 +316,8 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     positions = [output.index(label) for label in option_labels]
     assert positions == sorted(positions)
 
-    assert f"Listen host. (default: {HOST})" in output
-    assert f"Listen port. (default: {PORT})" in output
+    assert f"Listen host. (default: {HOST_DEFAULT})" in output
+    assert f"Listen port. (default: {PORT_DEFAULT})" in output
     assert "built-in default" not in output
     assert "(default: None)" not in output
     expected_multiline_entries = (

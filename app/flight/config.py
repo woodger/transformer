@@ -8,8 +8,8 @@ from app.config import (
     CPU_CAPACITY,
     CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
-    HOST,
-    PORT,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
     PROJECT_ROOT,
     RETENTION_SECONDS,
     RUNTIME_DIR,
@@ -41,8 +41,8 @@ _APP_CONFIG_FIELDS = frozenset({
 @dataclass(frozen=True)
 class FlightServiceConfig:
     runtime_dir: str = RUNTIME_DIR
-    host: str = HOST
-    port: int = PORT
+    host: str = HOST_DEFAULT
+    port: int = PORT_DEFAULT
     allow_plaintext: bool = ALLOW_PLAINTEXT
 
     tls_cert_file: str | None = TLS_CERT_FILE
@@ -199,7 +199,7 @@ def load_config(
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            "configure HOST in app/config.py or use --host"
+            "configure HOST_DEFAULT in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
         if field.name in _APP_CONFIG_FIELDS:

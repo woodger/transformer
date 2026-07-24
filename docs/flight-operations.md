@@ -192,8 +192,8 @@ the environment:
 | Python setting | Default | Notes |
 | --- | --- | --- |
 | `RUNTIME_DIR` | `/tmp/transformer` | Ephemeral runtime spool and process lock |
-| `HOST` | `127.0.0.1` | Flight listen host |
-| `PORT` | `8815` | Flight listen port; `0` is accepted for tests |
+| `HOST_DEFAULT` | `127.0.0.1` | Flight listen host |
+| `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
 | `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
 | `TLS_CERT_FILE` | `None` | PEM server certificate; configure with key |
 | `TLS_KEY_FILE` | `None` | PEM private key; configure with certificate |

@@ -7,8 +7,8 @@ from app.config import (
     CPU_CAPACITY,
     CUDA_CAPACITY,
     DISK_MIN_FREE_BYTES,
-    HOST,
-    PORT,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
     RETENTION_SECONDS,
     RUNTIME_DIR,
     TLS_CA_FILE,
@@ -25,8 +25,8 @@ def test_service_defaults_come_from_app_config(tmp_path):
         runtime_dir=str(state),
     ).validate()
     assert config.runtime_dir == str(state)
-    assert config.host == HOST
-    assert config.port == PORT
+    assert config.host == HOST_DEFAULT
+    assert config.port == PORT_DEFAULT
     assert config.allow_plaintext is ALLOW_PLAINTEXT
     assert config.tls_cert_file == TLS_CERT_FILE
     assert config.tls_key_file == TLS_KEY_FILE

@@ -9,14 +9,14 @@ from app.config import (
     DETERMINISTIC,
     DROPOUT,
     EPOCHS,
-    HOST,
+    HOST_DEFAULT,
     LOSS_SCHEDULE,
     LOSS_STAGE,
     LR,
     NHEAD,
     NUM_LAYERS,
     PATIENCE,
-    PORT,
+    PORT_DEFAULT,
     SAVE_BEST_CHECKPOINT,
     SEED,
     STAGE_SIZE,
@@ -575,13 +575,13 @@ def build_parser():
         "--host",
         metavar="HOST",
         default=None,
-        help=f"Listen host. (default: {HOST})",
+        help=f"Listen host. (default: {HOST_DEFAULT})",
     )
     service.add_argument(
         "--port",
         type=_nonnegative_int,
         default=None,
-        help=f"Listen port. (default: {PORT})",
+        help=f"Listen port. (default: {PORT_DEFAULT})",
     )
 
     service.add_argument(

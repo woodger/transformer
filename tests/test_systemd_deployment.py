@@ -5,8 +5,8 @@ from app.config import (
     ALLOW_PLAINTEXT,
     CPU_CAPACITY,
     CUDA_CAPACITY,
-    HOST,
-    PORT,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
     RUNTIME_DIR,
 )
 from app.database.config import load_database_config
@@ -126,8 +126,8 @@ def test_environment_example_uses_current_configuration_contract():
     flight = load_config(environ=environment)
     assert database.port == 5432
     assert flight.runtime_dir == RUNTIME_DIR
-    assert flight.host == HOST
-    assert flight.port == PORT
+    assert flight.host == HOST_DEFAULT
+    assert flight.port == PORT_DEFAULT
     assert flight.allow_plaintext is ALLOW_PLAINTEXT
     assert flight.cpu_capacity == CPU_CAPACITY
     assert flight.cuda_capacity == CUDA_CAPACITY

@@ -9,8 +9,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Server
 # ======================
 RUNTIME_DIR = "/tmp/transformer"
-HOST = "127.0.0.1"
-PORT = 8815
+HOST_DEFAULT = "127.0.0.1"
+PORT_DEFAULT = 8815
 ALLOW_PLAINTEXT = True
 
 TLS_CERT_FILE = None
