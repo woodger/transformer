@@ -959,12 +959,13 @@ def test_fit_two_inputs_publish_one_immutable_model_and_progress(tmp_path):
         "committedInputs",
         "progress",
         "attempt",
+        "recovery",
         "error",
         "results",
         "pollAfterMs",
     }
     assert status["contract"] == "transformer-flight"
-    assert status["version"] == 1
+    assert status["version"] == 2
     assert status["state"] == JobState.SUCCEEDED.value
     assert status["results"] == {
         "outputs": [],
@@ -1675,6 +1676,36 @@ def test_stop_claiming_preserves_queued_job_for_restart(tmp_path):
     assert ledger.get_job(job["job_id"])["state"] == JobState.QUEUED.value
 
 
+def test_transient_claim_contention_preserves_queued_job(
+    tmp_path,
+):
+    _, spool, ledger, pool = components(
+        tmp_path,
+        argv_hook=lambda job, argv: [
+            sys.executable,
+            "-c",
+            "",
+        ],
+    )
+    job = create_predict_job(ledger, spool)
+    seal_and_queue(ledger, job, [], device="cpu")
+
+    with ledger.transaction() as connection:
+        locked = ledger.get_job(
+            job["job_id"],
+            connection=connection,
+            for_update=True,
+        )
+        assert locked["state"] == JobState.QUEUED.value
+        assert pool.run_once("cpu") is False
+        assert (
+            ledger.get_job(job["job_id"])["state"]
+            == JobState.QUEUED.value
+        )
+    assert pool.run_once("cpu") is True
+    assert ledger.get_job(job["job_id"])["state"] == JobState.SUCCEEDED.value
+
+
 def test_pending_cancel_before_attempt_registration_does_not_spawn(
     tmp_path,
 ):
@@ -1750,8 +1781,8 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     _, _, _, pool = components(tmp_path)
     calls = []
 
-    def flaky_claim(device, job_id, worker_id):
-        calls.append((device, job_id, worker_id))
+    def flaky_claim(device, job_id, worker_id, *, device_id=None):
+        calls.append((device, job_id, worker_id, device_id))
         if len(calls) == 1:
             raise RuntimeError("injected lane failure")
         pool.stop_claiming()
@@ -1769,7 +1800,7 @@ def test_unexpected_attempt_error_does_not_permanently_kill_lane(
     assert len(calls) == 2
 
 
-def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
+def test_terminal_persistence_failure_is_recovered_as_retrying_fit(
     tmp_path,
     monkeypatch,
 ):
@@ -1811,11 +1842,15 @@ def test_terminal_persistence_failure_is_not_requeued_and_recovery_fails_fit(
 
     recovery = ledger.reconcile_interrupted_jobs()
 
-    failed = ledger.get_job(job["job_id"])
-    assert recovery["interrupted_jobs"] == [job["job_id"]]
-    assert failed["state"] == JobState.FAILED.value
-    assert failed["error_code"] == ErrorCode.EXECUTION_INTERRUPTED.value
-    assert ledger.queued_jobs() == []
+    retrying = ledger.get_job(job["job_id"])
+    assert recovery["interrupted_jobs"] == []
+    assert recovery["retried_jobs"] == [job["job_id"]]
+    assert retrying["state"] == JobState.RETRYING.value
+    assert retrying["error_code"] is None
+    assert [
+        queued["job_id"]
+        for queued in ledger.queued_jobs()
+    ] == [job["job_id"]]
 
 
 def test_cuda_lane_runs_queued_jobs_fifo_without_overlap(tmp_path):

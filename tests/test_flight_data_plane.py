@@ -656,7 +656,7 @@ def test_ipc_close_failure_still_cleans_temporary_and_reservation(
         ),
     )
 
-    with pytest.raises(ServiceError, match="runtime directory is full"):
+    with pytest.raises(ServiceError, match="artifact storage is full"):
         upload.handle(
             "inventory",
             descriptor,

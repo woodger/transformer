@@ -261,7 +261,7 @@ class WorkerPool:
                 self._enqueue_job_id(device, job_id)
                 return False
         try:
-            return self._claim_and_execute(
+            claimed = self._claim_and_execute(
                 device,
                 job_id,
                 worker_id or f"{os.getpid()}-{device}-manual",
@@ -270,6 +270,9 @@ class WorkerPool:
         finally:
             if device_id is not None:
                 self.device_inventory.release(device_id)
+        if not claimed:
+            self._requeue_if_pending(job_id)
+        return claimed
 
     def _claim_and_execute(
         self,
@@ -360,7 +363,7 @@ class WorkerPool:
                         return
                     continue
                 try:
-                    self._claim_and_execute(
+                    claimed = self._claim_and_execute(
                         device,
                         job_id,
                         worker_id,
@@ -369,6 +372,8 @@ class WorkerPool:
                 finally:
                     if device_id is not None:
                         self.device_inventory.release(device_id)
+                if not claimed:
+                    self._requeue_if_pending(job_id)
             except Exception as exc:
                 # A single unexpected attempt-finalization/storage error must
                 # not permanently remove capacity from the service.  The
@@ -381,6 +386,11 @@ class WorkerPool:
                     workerId=worker_id,
                     errorType=type(exc).__name__,
                 )
+
+    def _requeue_if_pending(self, job_id: str) -> None:
+        pending = self.ledger.get_execution_job(job_id)
+        if pending is not None:
+            self._enqueue(pending)
 
     def _enqueue(self, job: ExecutionJobRecord) -> None:
         if job.state not in (JobState.QUEUED, JobState.RETRYING):
