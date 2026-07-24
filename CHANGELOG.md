@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-25
+
 ### Added
 
 - Добавлен Ruff с единым минимальным baseline для Python lint checks.
@@ -45,6 +47,12 @@
   terminal.
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
   технические имя CLI и `transformer-flight` не менялись.
+
+### Fixed
+
+- Worker scheduler возвращает job в локальную FIFO после временного
+  PostgreSQL `SKIP LOCKED`, если durable state остаётся `QUEUED` или
+  `RETRYING`; job больше не зависает без повторного claim.
 
 ### Removed
 
@@ -243,7 +251,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/woodger/transformer/compare/v0.1.3...v0.1.4

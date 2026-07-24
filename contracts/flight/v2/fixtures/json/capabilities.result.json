@@ -5,7 +5,7 @@
   "protocolVersions": [2],
   "service": {
     "name": "transformer-flight",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "pyarrowVersion": "24.0.0",
     "torchVersion": "2.12.0+cpu"
   },
