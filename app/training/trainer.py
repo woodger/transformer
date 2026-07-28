@@ -627,7 +627,22 @@ class Trainer:
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         self.model.eval()
         with torch.no_grad(), self._autocast():
-            return self.model(X.to(self.device))
+            if X.size(0) == 0:
+                return self.model(X.to(self.device))
+
+            predictions = None
+            for offset in range(0, X.size(0), self.batch_size):
+                batch = X[offset:offset + self.batch_size].to(self.device)
+                output = self.model(batch)
+                if predictions is None:
+                    predictions = torch.empty(
+                        (X.size(0), *output.shape[1:]),
+                        dtype=output.dtype,
+                        device=output.device,
+                    )
+                predictions[offset:offset + output.size(0)].copy_(output)
+
+            return predictions
 
     def load(self, model_name: str):
         load_model(model_name, self.model, self.device)

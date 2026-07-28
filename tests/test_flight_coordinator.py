@@ -1,4 +1,5 @@
 import json
+import threading
 import uuid
 
 import pyarrow.flight as flight
@@ -399,6 +400,119 @@ def test_seal_rejects_missing_or_out_of_order_ordinal(coordinator):
             seal,
         )
     assert ledger.get_job(created["jobId"])["state"] == "UPLOADING"
+
+
+def test_seal_serializes_manifest_validation_with_input_commit(
+    coordinator,
+    monkeypatch,
+):
+    service, ledger = coordinator
+    create = create_document(idempotencyKey="create-seal-race")
+    created = service.create(
+        "inventory",
+        validate_action_request(CREATE_ACTION, create),
+        create,
+    )
+    first_payload = str(uuid.uuid4())
+    second_payload = str(uuid.uuid4())
+    commit_input(
+        ledger,
+        created["jobId"],
+        0,
+        first_payload,
+        "a" * 64,
+    )
+    ledger.reserve_input(
+        job_id=created["jobId"],
+        payload_id=second_payload,
+        ordinal=1,
+        upload_token="upload-seal-race",
+        temporary_path=(
+            f"spool/jobs/{created['jobId']}/inputs/.1.tmp"
+        ),
+    )
+    seal = {
+        **common(),
+        "idempotencyKey": "seal-race",
+        "jobId": created["jobId"],
+        "manifest": [{
+            "payloadId": first_payload,
+            "ordinal": 0,
+            "sha256": "a" * 64,
+        }],
+    }
+
+    snapshot_read = threading.Event()
+    continue_seal = threading.Event()
+    original_list_inputs = ledger.list_inputs
+
+    def paused_list_inputs(*args, **kwargs):
+        inputs = original_list_inputs(*args, **kwargs)
+        if not snapshot_read.is_set():
+            snapshot_read.set()
+            if not continue_seal.wait(timeout=5):
+                raise TimeoutError("seal race test did not resume")
+        return inputs
+
+    monkeypatch.setattr(ledger, "list_inputs", paused_list_inputs)
+    seal_errors = []
+    commit_errors = []
+
+    def seal_job():
+        try:
+            service.seal(
+                "inventory",
+                validate_action_request(SEAL_ACTION, seal),
+                seal,
+            )
+        except BaseException as exc:
+            seal_errors.append(exc)
+
+    def commit_second_input():
+        try:
+            ledger.commit_input(
+                upload_token="upload-seal-race",
+                relative_path=(
+                    f"spool/jobs/{created['jobId']}/inputs/1.arrow"
+                ),
+                schema_id="inventory.sequence.fit.v1",
+                rows=1,
+                batches=1,
+                byte_count=100,
+                sha256="b" * 64,
+                schema_fingerprint="f" * 64,
+                source_width=4,
+                feature_dim=2,
+                max_payloads=10,
+                max_job_bytes=10_000,
+            )
+        except BaseException as exc:
+            commit_errors.append(exc)
+
+    seal_thread = threading.Thread(target=seal_job)
+    commit_thread = threading.Thread(target=commit_second_input)
+    seal_thread.start()
+    try:
+        assert snapshot_read.wait(timeout=5)
+        commit_thread.start()
+        commit_thread.join(timeout=0.5)
+    finally:
+        continue_seal.set()
+        seal_thread.join(timeout=5)
+        if commit_thread.ident is not None:
+            commit_thread.join(timeout=5)
+
+    assert not seal_thread.is_alive()
+    assert not commit_thread.is_alive()
+    assert commit_errors == []
+    assert len(seal_errors) == 1
+    assert isinstance(seal_errors[0], ServiceError)
+    assert "upload in progress" in str(seal_errors[0])
+    assert ledger.get_job(created["jobId"])["state"] == "UPLOADING"
+    assert [
+        item["ordinal"]
+        for item in original_list_inputs(created["jobId"])
+    ] == [0, 1]
 
 
 @pytest.mark.parametrize(

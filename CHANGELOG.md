@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Seal manifest теперь проверяется под той же PostgreSQL row lock, что и
+  переход job в `SEALED`; конкурентный `DoPut` больше не может оставить
+  committed input за пределами sealed manifest.
+- Prediction выполняет model forward ограниченными `batch_size` порциями,
+  поэтому размер transport payload больше не определяет пиковый объём CUDA
+  activations.
+- Arrow input и prediction output преобразуются через векторные Arrow/NumPy
+  buffers без Python list/scalar materialization.
+
 ## [0.1.7] - 2026-07-25
 
 ### Added

@@ -266,21 +266,24 @@ class LifecycleActions:
 
         def mutation(connection):
             nonlocal transitioned
+            current = self.ledger.get_job(
+                job["job_id"],
+                owner_subject=owner,
+                connection=connection,
+                for_update=True,
+            )
+            if current is None:
+                raise not_found("job not found")
             inputs = self.ledger.list_inputs(
                 job["job_id"],
                 connection=connection,
             )
             source_width, feature_dim = _validate_manifest(
-                job,
+                current,
                 manifest,
                 inputs,
             )
             manifest_hash = canonical_manifest_hash(manifest)
-            current = self.ledger.get_job(
-                job["job_id"],
-                connection=connection,
-                for_update=True,
-            )
             first_response = response_document(
                 request["request_id"],
                 jobId=job["job_id"],

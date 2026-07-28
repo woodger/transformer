@@ -150,6 +150,38 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
         validate_prediction_file(str(path), "out", expected_rows=2)
 
 
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        (
+            pa.array([None], type=pa.list_(pa.float32())),
+            "null row",
+        ),
+        (
+            pa.array(
+                [[0.0, 1.0, None, 3.0, 4.0, 5.0]],
+                type=pa.list_(pa.float32()),
+            ),
+            "null value",
+        ),
+        (
+            pa.array([[0.0] * 5], type=pa.list_(pa.float32())),
+            "list width must be 6, got 5",
+        ),
+    ],
+)
+def test_prediction_file_rejects_invalid_list_structure(
+    tmp_path,
+    values,
+    message,
+):
+    path = tmp_path / "invalid-structure.arrow"
+    write_table(path, pa.table({"out": values}))
+
+    with pytest.raises(ServiceError, match=message):
+        validate_prediction_file(str(path), "out", expected_rows=1)
+
+
 def test_schema_fingerprint_ignores_nonsemantic_metadata():
     plain = pa.schema([("src", pa.list_(pa.float32()))])
     annotated = plain.with_metadata({b"producer": b"inventory"})

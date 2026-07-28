@@ -88,66 +88,108 @@ def _validate_list_column(
             f"Arrow column '{name}' must be a list<float32> or list<float64> column"
         )
 
-    values = table.column(name).to_pylist()
     width = column_type.list_size if pa.types.is_fixed_size_list(column_type) else None
+    chunks = []
+    row_offset = 0
 
-    for row_index, row in enumerate(values, start=1):
-        if row is None:
-            raise ValueError(f"Arrow column '{name}' has null row at index {row_index}")
+    for chunk in table.column(column_index).chunks:
+        if len(chunk) == 0:
+            continue
 
-        if width is None:
-            width = len(row)
-        elif len(row) != width:
+        null_row = _first_true(chunk.is_null().to_numpy(zero_copy_only=False))
+        if null_row is not None:
             raise ValueError(
-                f"Arrow column '{name}' has inconsistent list length at row {row_index}"
+                f"Arrow column '{name}' has null row at index "
+                f"{row_offset + null_row + 1}"
             )
 
-        for value_index, value in enumerate(row, start=1):
-            if value is None:
+        if not pa.types.is_fixed_size_list(column_type):
+            offsets = chunk.offsets.to_numpy(zero_copy_only=False)
+            lengths = np.diff(offsets)
+            if width is None:
+                width = int(lengths[0])
+            inconsistent = _first_true(lengths != width)
+            if inconsistent is not None:
                 raise ValueError(
-                    f"Arrow column '{name}' has null element at row {row_index}, "
-                    f"position {value_index}"
+                    f"Arrow column '{name}' has inconsistent list length at row "
+                    f"{row_offset + inconsistent + 1}"
                 )
 
-            if np.isinf(value) or (not allow_nan and np.isnan(value)):
-                raise ValueError(
-                    f"Arrow column '{name}' has non-finite value at row {row_index}, "
-                    f"position {value_index}"
-                )
-            if not np.isnan(value) and abs(value) > FLOAT32_MAX:
-                raise ValueError(
-                    f"Arrow column '{name}' has value outside float32 range at "
-                    f"row {row_index}, position {value_index}"
-                )
+        flat = chunk.flatten()
+        null_value = _first_true(flat.is_null().to_numpy(zero_copy_only=False))
+        if null_value is not None:
+            row_index, value_index = divmod(null_value, width)
+            raise ValueError(
+                f"Arrow column '{name}' has null element at row "
+                f"{row_offset + row_index + 1}, position {value_index + 1}"
+            )
+
+        flat_values = flat.to_numpy(zero_copy_only=False)
+        invalid = (
+            np.isinf(flat_values)
+            if allow_nan
+            else ~np.isfinite(flat_values)
+        )
+        invalid_value = _first_true(invalid)
+        if invalid_value is not None:
+            row_index, value_index = divmod(invalid_value, width)
+            raise ValueError(
+                f"Arrow column '{name}' has non-finite value at row "
+                f"{row_offset + row_index + 1}, position {value_index + 1}"
+            )
+
+        outside_float32 = _first_true(np.abs(flat_values) > FLOAT32_MAX)
+        if outside_float32 is not None:
+            row_index, value_index = divmod(outside_float32, width)
+            raise ValueError(
+                f"Arrow column '{name}' has value outside float32 range at "
+                f"row {row_offset + row_index + 1}, position {value_index + 1}"
+            )
+
+        chunks.append((row_offset, len(chunk), flat_values))
+        row_offset += len(chunk)
 
     if expected_width is not None and width is not None and width != expected_width:
         raise ValueError(
             f"Arrow column '{name}' must have list length {expected_width}, got {width}"
         )
-    if name == "src" and values and width == 0:
+    if name == "src" and table.num_rows > 0 and width == 0:
         raise ValueError("Arrow column 'src' must have a positive list length")
 
+    if table.num_rows == 0:
+        return np.empty((0, 0), dtype=np.float32)
+
+    values = np.empty((table.num_rows, width), dtype=np.float32)
+    for offset, rows, flat_values in chunks:
+        values[offset:offset + rows] = flat_values.reshape(rows, width)
     return values
 
 
 def _list_values_to_tensor(values):
-    if not values:
-        return torch.empty((0, 0), dtype=torch.float32)
-
-    return torch.from_numpy(np.asarray(values, dtype=np.float32))
+    return torch.from_numpy(values)
 
 
 def _validate_target_values(values):
-    for row_index, row in enumerate(values, start=1):
-        if row[4] < 0.0:
-            raise ValueError(
-                f"Arrow column 'tgt' has negative volatility at row {row_index}"
-            )
-        if row[5] < 0.0 or row[5] > 1.0:
-            raise ValueError(
-                f"Arrow column 'tgt' has hit probability outside [0, 1] "
-                f"at row {row_index}"
-            )
+    if values.shape[0] == 0:
+        return
+    invalid_volatility = values[:, 4] < 0.0
+    invalid_probability = (values[:, 5] < 0.0) | (values[:, 5] > 1.0)
+    invalid_row = _first_true(invalid_volatility | invalid_probability)
+    if invalid_row is None:
+        return
+    if invalid_volatility[invalid_row]:
+        raise ValueError(
+            f"Arrow column 'tgt' has negative volatility at row {invalid_row + 1}"
+        )
+    raise ValueError(
+        f"Arrow column 'tgt' has hit probability outside [0, 1] "
+        f"at row {invalid_row + 1}"
+    )
+
+
+def _first_true(values) -> int | None:
+    indices = np.flatnonzero(values)
+    return None if indices.size == 0 else int(indices[0])
 
 
 def _read_exact(stream, size):
@@ -225,7 +267,19 @@ def predictions_to_table(
     arr = preds.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
-    col = pa.array(arr.tolist(), type=pa.list_(pa.float32()))
+    arr = np.ascontiguousarray(arr)
+    if arr.size > np.iinfo(np.int32).max:
+        raise ValueError("Predictions exceed Arrow list offset capacity")
+    offsets = pa.array(
+        np.arange(
+            0,
+            arr.size + 1,
+            TARGET_WIDTH,
+            dtype=np.int32,
+        )
+    )
+    values = pa.array(arr.reshape(-1), type=pa.float32())
+    col = pa.ListArray.from_arrays(offsets, values)
 
     return pa.table({col_name: col})
 
@@ -239,7 +293,7 @@ def write_framed_arrow(stream, table):
     with ipc.new_file(sink, table.schema) as writer:
         writer.write_table(table)
 
-    payload = sink.getvalue().to_pybytes()
+    payload = sink.getvalue()
     stream.write(
         len(payload).to_bytes(
             FRAME_HEADER_BYTES,
@@ -247,5 +301,5 @@ def write_framed_arrow(stream, table):
             signed=False,
         )
     )
-    stream.write(payload)
+    stream.write(memoryview(payload))
     stream.flush()

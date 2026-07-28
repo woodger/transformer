@@ -40,6 +40,41 @@ def test_source_accepts_supported_list_types(column_type):
     assert tensor.tolist() == [[1.0, 2.0]]
 
 
+def test_source_conversion_preserves_chunked_sliced_arrow_values():
+    column_type = pa.list_(pa.float32())
+    first = pa.array(
+        [[-1.0, -2.0], [1.0, 2.0]],
+        type=column_type,
+    ).slice(1)
+    second = pa.array(
+        [[3.0, 4.0], [5.0, 6.0]],
+        type=column_type,
+    )
+    table = pa.table({
+        "src": pa.chunked_array([first, second], type=column_type),
+    })
+
+    tensor = table_to_source_tensor(table)
+
+    assert tensor.tolist() == [
+        [1.0, 2.0],
+        [3.0, 4.0],
+        [5.0, 6.0],
+    ]
+
+
+def test_empty_training_table_preserves_typed_empty_tensors():
+    table = pa.table({
+        "src": pa.array([], type=FLOAT_LIST),
+        "tgt": pa.array([], type=FLOAT_LIST),
+    })
+
+    source, target = table_to_tensors(table)
+
+    assert source.shape == (0, 0)
+    assert target.shape == (0, 0)
+
+
 @pytest.mark.parametrize("name", ["src", "tgt"])
 @pytest.mark.parametrize("value_type", [pa.int32(), pa.bool_(), pa.string()])
 def test_columns_reject_non_float_value_types(name, value_type):

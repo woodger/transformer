@@ -133,20 +133,37 @@ def validate_prediction_file(
         _validate_prediction_schema(schema, prediction_column)
         for index in range(reader.num_record_batches):
             batch = reader.get_batch(index)
-            values = batch.column(0).to_pylist()
-            for row_index, row in enumerate(values, start=rows + 1):
-                if row is None:
-                    raise invalid(
-                        f"prediction has null row at index {row_index}"
-                    )
-                if len(row) != TARGET_WIDTH:
-                    raise invalid(
-                        f"prediction list width must be {TARGET_WIDTH}, got {len(row)}"
-                    )
-                if any(value is None or not np.isfinite(value) for value in row):
-                    raise invalid(
-                        f"prediction has non-finite or null value at row {row_index}"
-                    )
+            array = batch.column(0)
+            null_row = _first_true(
+                array.is_null().to_numpy(zero_copy_only=False)
+            )
+            if null_row is not None:
+                raise invalid(
+                    f"prediction has null row at index {rows + null_row + 1}"
+                )
+
+            lengths = np.diff(
+                array.offsets.to_numpy(zero_copy_only=False)
+            )
+            wrong_width = _first_true(lengths != TARGET_WIDTH)
+            if wrong_width is not None:
+                raise invalid(
+                    f"prediction list width must be {TARGET_WIDTH}, "
+                    f"got {int(lengths[wrong_width])}"
+                )
+
+            flat = array.flatten()
+            values = flat.to_numpy(zero_copy_only=False)
+            invalid_value = np.logical_or(
+                flat.is_null().to_numpy(zero_copy_only=False),
+                ~np.isfinite(values),
+            )
+            first_invalid = _first_true(invalid_value)
+            if first_invalid is not None:
+                raise invalid(
+                    "prediction has non-finite or null value at row "
+                    f"{rows + first_invalid // TARGET_WIDTH + 1}"
+                )
             rows += batch.num_rows
             batches += 1
     if rows != expected_rows:
@@ -212,10 +229,17 @@ def _fixed_width(schema: pa.Schema, name: str) -> int | None:
 
 
 def _observed_width(array) -> int | None:
-    for row in array.to_pylist():
-        if row is not None:
-            return len(row)
-    return None
+    if len(array) == 0:
+        return None
+    if pa.types.is_fixed_size_list(array.type):
+        return array.type.list_size
+    offsets = array.offsets.to_numpy(zero_copy_only=False)
+    return int(offsets[1] - offsets[0])
+
+
+def _first_true(values) -> int | None:
+    indices = np.flatnonzero(values)
+    return None if indices.size == 0 else int(indices[0])
 
 
 def _merge_width(name: str, current: int | None, observed: int | None) -> int | None:

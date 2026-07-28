@@ -212,6 +212,40 @@ def test_trainer_fit_batch_cpu():
     assert 0.0 <= metrics.empty_token_ratio <= 1.0
 
 
+def test_trainer_predict_limits_each_model_forward_to_batch_size():
+    class RecordingLinear(nn.Linear):
+        def __init__(self):
+            super().__init__(3, 6)
+            self.forward_batch_sizes = []
+
+        def forward(self, inputs):
+            self.forward_batch_sizes.append(inputs.size(0))
+            return super().forward(inputs)
+
+    model = RecordingLinear()
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=4,
+        epochs=1,
+        patience=1,
+        use_amp=False,
+    )
+    source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
+    expected = torch.nn.functional.linear(
+        source,
+        model.weight.detach(),
+        model.bias.detach(),
+    )
+
+    predictions = trainer.predict(source)
+
+    assert model.forward_batch_sizes == [4, 4, 2]
+    assert model.training is False
+    assert torch.allclose(predictions, expected)
+
+
 def test_trainer_stage_size_is_configurable():
     model = nn.Linear(2, 6)
 
