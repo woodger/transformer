@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлены реальные конкурентные PostgreSQL regression tests для
+  exact/conflicting idempotency, `cancel` против result publication и
+  согласованного status snapshot во время publication.
+
 ### Fixed
 
 - Seal manifest теперь проверяется под той же PostgreSQL row lock, что и

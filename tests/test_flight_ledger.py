@@ -1,7 +1,9 @@
 import threading
+import time
 import uuid
 
 import pytest
+from sqlalchemy import event as sqlalchemy_event, text
 
 from app.database.models import JobAttempt
 from app.database.session import Database
@@ -12,6 +14,137 @@ from app.storage.training_recovery import TRAINING_RECOVERY_FORMAT
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
+
+
+def _wait_for_any_postgres_lock(
+    database,
+    backend_pids,
+    *,
+    timeout=5.0,
+):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with database.engine.connect() as connection:
+            waiting = [
+                connection.scalar(
+                    text(
+                        "SELECT wait_event_type "
+                        "FROM pg_stat_activity WHERE pid = :pid"
+                    ),
+                    {"pid": pid},
+                )
+                for pid in backend_pids
+            ]
+        if "Lock" in waiting:
+            return
+        time.sleep(0.01)
+    pytest.fail("concurrent PostgreSQL transaction did not wait for a lock")
+
+
+def _run_concurrent_idempotency(ledger, requests, *, idempotency_key):
+    release_mutation = threading.Event()
+    mutation_entered = threading.Event()
+    both_locks_attempted = threading.Event()
+    mutation_calls = []
+    backend_pids = set()
+    pid_lock = threading.Lock()
+
+    def capture_advisory_attempt(
+        connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if (
+            not threading.current_thread().name.startswith(
+                "idempotency-race"
+            )
+            or "pg_advisory_xact_lock" not in statement
+        ):
+            return
+        with pid_lock:
+            backend_pids.add(
+                connection.connection.driver_connection.info.backend_pid
+            )
+            if len(backend_pids) == 2:
+                both_locks_attempted.set()
+
+    def invoke(request_hash, job_id):
+        def mutation(connection):
+            mutation_calls.append((request_hash, job_id))
+            ledger.create_job(
+                job_id=job_id,
+                owner_subject="inventory",
+                operation="fit",
+                requested_device="cpu",
+                prediction_column="out",
+                config_hash=request_hash,
+                model_label="daily-model",
+                connection=connection,
+            )
+            mutation_entered.set()
+            if not release_mutation.wait(timeout=5):
+                raise TimeoutError(
+                    "concurrent idempotency mutation was not released"
+                )
+            return {"jobId": job_id, "revision": 1}, job_id
+
+        return ledger.run_idempotent(
+            owner_subject="inventory",
+            action_name="transformer.v2.job.create",
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            mutation=mutation,
+        )
+
+    sqlalchemy_event.listen(
+        ledger.database.engine,
+        "before_cursor_execute",
+        capture_advisory_attempt,
+    )
+    outcomes = [None] * len(requests)
+
+    def run(index, request):
+        request_hash, job_id = request
+        try:
+            result = invoke(request_hash, job_id)
+        except BaseException as exc:
+            outcomes[index] = (request_hash, job_id, None, exc)
+        else:
+            outcomes[index] = (request_hash, job_id, result, None)
+
+    threads = [
+        threading.Thread(
+            target=run,
+            args=(index, request),
+            name=f"idempotency-race-{index}",
+        )
+        for index, request in enumerate(requests)
+    ]
+    try:
+        for thread in threads:
+            thread.start()
+        assert mutation_entered.wait(timeout=5)
+        assert both_locks_attempted.wait(timeout=5)
+        _wait_for_any_postgres_lock(
+            ledger.database,
+            list(backend_pids),
+        )
+    finally:
+        release_mutation.set()
+        for thread in threads:
+            if thread.ident is not None:
+                thread.join(timeout=5)
+        sqlalchemy_event.remove(
+            ledger.database.engine,
+            "before_cursor_execute",
+            capture_advisory_attempt,
+        )
+
+    assert all(not thread.is_alive() for thread in threads)
+    return mutation_calls, outcomes
 
 
 @pytest.fixture
@@ -107,53 +240,70 @@ def test_job_transitions_increment_revision_and_terminal_state_is_immutable(ledg
         ledger.transition_job(cancelled["job_id"], JobState.QUEUED)
 
 
-def test_idempotent_mutation_is_atomic_and_conflicting_key_is_rejected(ledger):
+def test_concurrent_exact_idempotency_executes_mutation_once(ledger):
     job_id = str(uuid.uuid4())
-    calls = []
-
-    def mutation(connection):
-        calls.append(True)
-        ledger.create_job(
-            job_id=job_id,
-            owner_subject="inventory",
-            operation="fit",
-            requested_device="cpu",
-            prediction_column="out",
-            config_hash=DIGEST_A,
-            model_label="daily-model",
-            connection=connection,
-        )
-        return {"jobId": job_id, "revision": 1}, job_id
-
-    first, replayed = ledger.run_idempotent(
-        owner_subject="inventory",
-        action_name="transformer.v2.job.create",
-        idempotency_key="create-1",
-        request_hash=DIGEST_A,
-        mutation=mutation,
+    mutation_calls, outcomes = _run_concurrent_idempotency(
+        ledger,
+        [(DIGEST_A, job_id), (DIGEST_A, job_id)],
+        idempotency_key="create-concurrent-exact",
     )
-    repeated, repeated_replayed = ledger.run_idempotent(
-        owner_subject="inventory",
-        action_name="transformer.v2.job.create",
-        idempotency_key="create-1",
-        request_hash=DIGEST_A,
-        mutation=mutation,
-    )
+    results = [
+        result
+        for _, _, result, error in outcomes
+        if error is None
+    ]
 
-    assert first == repeated == {"jobId": job_id, "revision": 1}
+    assert all(error is None for _, _, _, error in outcomes)
+    assert len(mutation_calls) == 1
+    assert sorted(replayed for _, replayed in results) == [False, True]
+    assert {
+        response["jobId"]
+        for response, _ in results
+    } == {job_id}
+    assert [job["job_id"] for job in ledger.list_jobs()] == [job_id]
+
+
+def test_concurrent_conflicting_idempotency_accepts_only_one_request(
+    ledger,
+):
+    mutation_calls, outcomes = _run_concurrent_idempotency(
+        ledger,
+        [
+            (DIGEST_A, str(uuid.uuid4())),
+            (DIGEST_B, str(uuid.uuid4())),
+        ],
+        idempotency_key="create-concurrent-conflict",
+    )
+    results = [
+        (request_hash, result)
+        for request_hash, _, result, error in outcomes
+        if error is None
+    ]
+    errors = [
+        (request_hash, error)
+        for request_hash, _, _, error in outcomes
+        if error is not None
+    ]
+
+    assert len(mutation_calls) == 1
+    assert len(results) == 1
+    assert len(errors) == 1
+    losing_hash, losing_error = errors[0]
+    assert isinstance(losing_error, ServiceError)
+    assert losing_error.code == ErrorCode.ALREADY_EXISTS
+
+    winning_hash, (response, replayed) = results[0]
+    assert losing_hash != winning_hash
     assert replayed is False
-    assert repeated_replayed is True
-    assert len(calls) == 1
-
-    with pytest.raises(ServiceError) as error:
-        ledger.run_idempotent(
-            owner_subject="inventory",
-            action_name="transformer.v2.job.create",
-            idempotency_key="create-1",
-            request_hash=DIGEST_B,
-            mutation=mutation,
-        )
-    assert error.value.code == ErrorCode.ALREADY_EXISTS
+    assert response["jobId"] == mutation_calls[0][1]
+    assert ledger.list_jobs()[0]["job_id"] == response["jobId"]
+    idempotency = ledger.lookup_idempotency(
+        owner_subject="inventory",
+        action_name="transformer.v2.job.create",
+        idempotency_key="create-concurrent-conflict",
+    )
+    assert idempotency["request_hash"] == winning_hash
+    assert idempotency["response"] == response
 
 
 def test_idempotent_mutation_and_replay_record_roll_back_together(ledger):
