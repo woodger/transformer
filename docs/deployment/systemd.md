@@ -2,63 +2,41 @@
 
 > Type: Reference. Production-запуск `transformer flight serve` через systemd.
 
-Целевой проект установлен в `/home/nerv/transformer`, сервис работает от
-`nerv:nerv` через `/usr/bin/python3.11`. Развёртывание выполняется вручную.
-Подробная семантика Flight service описана в
-[`../flight-operations.md`](../flight-operations.md).
+Проект установлен в `/home/nerv/transformer`, сервис запускается от
+`nerv:nerv`. Целевая система — Fedora с SELinux в режиме `Enforcing`.
 
-## Подготовить окружение
+## Подготовить проект
 
-Используйте корневой файл [`.env.example`](../../.env.example) как образец для
-`/home/nerv/transformer/.env`. Не перезаписывайте уже настроенный файл с
-доступами к PostgreSQL.
-
-Параметры Transformer service задаются в `/home/nerv/transformer/app/config.py`.
-Проверьте их перед первым запуском.
-TLS или mTLS включается только явными certificate options в `ExecStart`.
+Файл `/home/nerv/transformer/.env` содержит параметры PostgreSQL и читается
+самим приложением. Ограничить доступ к нему:
 
 ```bash
-sudo chown nerv:nerv /home/nerv/transformer/.env
-sudo chmod 0600 /home/nerv/transformer/.env
-
-sudo install -d -o nerv -g nerv -m 0700 \
-  /home/nerv/transformer/models \
-  /home/nerv/transformer/recovery
-
-sudo -u nerv -H /usr/bin/python3.11 -m pip check
+chmod 0600 /home/nerv/transformer/.env
 ```
 
-## Подготовить runtime-директорию
+Проверить Python, зависимости и CUDA от имени `nerv`:
 
 ```bash
-sudo nano /etc/tmpfiles.d/transformer.conf
+/usr/bin/python3.14 -c \
+  'import alembic, dotenv, psycopg, pyarrow, sqlalchemy, torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
+/usr/bin/python3.14 -m pip check
+nvidia-smi --query-gpu=index,uuid,name --format=csv,noheader,nounits
 ```
 
-Содержимое файла:
+Unit должен использовать тот же интерпретатор, для которого выполнены эти
+проверки. Если хотя бы одна команда завершается с ошибкой, unit запускать ещё
+рано. Скопированную с другой системы `.venv` использовать нельзя.
 
-```text
-d /tmp/transformer 0700 nerv nerv -
-```
-
-Применить конфигурацию:
+## Применить миграции
 
 ```bash
-sudo systemd-tmpfiles --create /etc/tmpfiles.d/transformer.conf
-stat -c '%U:%G %a %n' /tmp/transformer
+cd /home/nerv/transformer
+/usr/bin/python3.14 ./app/main.py db migrations status
+/usr/bin/python3.14 ./app/main.py db migrations apply
 ```
 
-Ожидаемый результат:
-
-```text
-nerv:nerv 700 /tmp/transformer
-```
-
-Потеря `/tmp/transformer` инвалидирует prediction jobs и незавершённые attempt
-artifacts. Fit jobs продолжаются по данным из
-`/home/nerv/transformer/recovery`; успешно опубликованные модели остаются в
-`/home/nerv/transformer/models`.
-Если системная temporary directory отличается от `/tmp`, соответствующий
-вычисляемый путь необходимо указать и в tmpfiles configuration.
+Миграции не выполняются при запуске сервиса. Если команда `status` не может
+подключиться к PostgreSQL, сначала нужно восстановить доступность базы данных.
 
 ## Создать unit-файл
 
@@ -72,32 +50,26 @@ sudo nano /etc/systemd/system/transformer.service
 [Unit]
 Description=Transformer Arrow Flight service
 Documentation=file:/home/nerv/transformer/docs/deployment/systemd.md
+After=network-online.target
 Wants=network-online.target
-After=network-online.target systemd-tmpfiles-setup.service
-StartLimitIntervalSec=60s
-StartLimitBurst=5
 
 [Service]
 Type=exec
+
 User=nerv
 Group=nerv
 WorkingDirectory=/home/nerv/transformer
-EnvironmentFile=/home/nerv/transformer/.env
+
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3.11 /home/nerv/transformer/app/main.py flight serve
+
+ExecStart=/usr/bin/python3.14 /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
 
 Restart=on-failure
-RestartSec=5s
+RestartSec=5
 
-KillSignal=SIGTERM
 KillMode=mixed
-SendSIGKILL=yes
-TimeoutStopSec=60s
-
+TimeoutStopSec=60
 UMask=0077
-PrivateTmp=no
-PrivateDevices=no
-ProtectSystem=full
 
 StandardOutput=journal
 StandardError=journal
@@ -107,61 +79,45 @@ SyslogIdentifier=transformer
 WantedBy=multi-user.target
 ```
 
-## Применить миграции
-
-```bash
-sudo -u nerv -H /usr/bin/python3.11 \
-  /home/nerv/transformer/app/main.py db migrations status
-
-sudo -u nerv -H /usr/bin/python3.11 \
-  /home/nerv/transformer/app/main.py db migrations apply
-```
-
-Миграции не выполняются автоматически при запуске сервиса.
+Не добавляйте `EnvironmentFile=/home/nerv/transformer/.env`. На системе с
+SELinux файл проекта имеет тип `user_home_t`, поэтому PID 1 в домене `init_t`
+не сможет прочитать его до запуска процесса от имени `nerv`. Отключать SELinux
+или создавать правило через `audit2allow` для этого не требуется.
 
 ## Запустить сервис
 
 ```bash
 sudo systemd-analyze verify /etc/systemd/system/transformer.service
 sudo systemctl daemon-reload
+sudo systemctl reset-failed transformer
 sudo systemctl enable --now transformer
 ```
 
 Проверить статус:
 
 ```bash
-systemctl status transformer
+systemctl status transformer --no-pager -l
 ```
 
-Посмотреть логи:
+Посмотреть журнал текущей загрузки:
+
+```bash
+journalctl -u transformer -b --no-pager -n 100
+```
+
+Следить за журналом:
 
 ```bash
 journalctl -u transformer -f
 ```
 
-Проверить CUDA от имени service user:
+Проверить, что сервис слушает порт `8815`:
 
 ```bash
-sudo -u nerv -H /usr/bin/python3.11 -c \
-  'import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
-
-sudo -u nerv -H nvidia-smi \
-  --query-gpu=index,uuid,name \
-  --format=csv,noheader,nounits
+ss -ltn 'sport = :8815'
 ```
 
-При штатном перезапуске сервис сначала использует drain interval. Если fit всё
-же прерывается, следующая попытка продолжает его с последней полностью
-завершённой глобальной эпохи; незавершённая эпоха выполняется повторно.
-Подтверждённо отказавший GPU записывается в
-`/tmp/transformer/cuda-quarantine.json`: `systemctl restart` не возвращает его
-в scheduler, а новая загрузка Linux очищает boot-scoped quarantine.
-
 ## Открыть порт 8815
-
-Этот шаг нужен, только если `HOST_DEFAULT` в `app/config.py` или переданный
-через `--host` адрес не является loopback-адресом и к сервису подключается
-удалённый Inventory.
 
 Если используется `firewalld`:
 
@@ -175,3 +131,6 @@ sudo firewall-cmd --reload
 ```bash
 sudo firewall-cmd --list-ports
 ```
+
+Подробности о PostgreSQL, TLS, recovery и runtime storage приведены в
+[`../flight-operations.md`](../flight-operations.md).

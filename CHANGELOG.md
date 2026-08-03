@@ -15,6 +15,10 @@
 
 ### Fixed
 
+- Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:
+  приложение самостоятельно читает project `.env`, unit не использует
+  несовместимый с SELinux `EnvironmentFile`, а Python и CUDA проверяются до
+  запуска сервиса.
 - Seal manifest теперь проверяется под той же PostgreSQL row lock, что и
   переход job в `SEALED`; конкурентный `DoPut` больше не может оставить
   committed input за пределами sealed manifest.
