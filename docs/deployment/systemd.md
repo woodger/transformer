@@ -2,37 +2,66 @@
 
 > Type: Reference. Production-запуск `transformer flight serve` через systemd.
 
-Проект установлен в `/home/nerv/transformer`, сервис запускается от
-`nerv:nerv`. Целевая система — Fedora с SELinux в режиме `Enforcing`.
+Production-проект установлен в `/opt/transformer` и запускается от
+`nerv:nerv`. Рабочая копия `/home/nerv/transformer` не является частью
+production runtime. Целевая система — Fedora с SELinux в режиме `Enforcing`.
 
 ## Подготовить проект
 
-Файл `/home/nerv/transformer/.env` содержит параметры PostgreSQL и читается
-самим приложением. Ограничить доступ к нему:
+Первичный перенос выполняется при остановленном сервисе. Он переносит `.env`,
+`models/` и `recovery/`, но исключает development environment и кэши:
 
 ```bash
-chmod 0600 /home/nerv/transformer/.env
+sudo systemctl stop transformer
+test ! -e /opt/transformer
+sudo install -d -o nerv -g nerv -m 0755 /opt/transformer
+
+tar \
+  --exclude=.git \
+  --exclude='.venv*' \
+  --exclude=.pytest_cache \
+  --exclude=.ruff_cache \
+  --exclude=transformer-pending.service \
+  --exclude=transformer.service.pending \
+  -C /home/nerv/transformer -cf - . | \
+  tar -C /opt/transformer -xf -
+
+chmod 0600 /opt/transformer/.env
 ```
 
-Проверить Python, зависимости и CUDA от имени `nerv`:
+Создать production-окружение Python 3.11 и установить production lock:
 
 ```bash
-/usr/bin/python3.14 -c \
+/usr/bin/python3.11 -m venv /opt/transformer/.venv
+/opt/transformer/.venv/bin/python -m pip install \
+  -r /opt/transformer/requirements.txt
+/opt/transformer/.venv/bin/python -m pip check
+sudo restorecon -RF /opt/transformer
+matchpathcon -V /opt/transformer/.venv/bin/python
+```
+
+Окружение создаётся на целевом сервере и не копируется с другой системы.
+`requirements.txt` — единственный источник production-версий Python-пакетов.
+Production root находится под `/opt`, потому что SELinux запрещает systemd
+исполнять файлы с типом `user_home_t` из `/home`.
+
+Проверить CUDA:
+
+```bash
+/opt/transformer/.venv/bin/python -c \
   'import alembic, dotenv, psycopg, pyarrow, sqlalchemy, torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
-/usr/bin/python3.14 -m pip check
 nvidia-smi --query-gpu=index,uuid,name --format=csv,noheader,nounits
 ```
 
-Unit должен использовать тот же интерпретатор, для которого выполнены эти
-проверки. Если хотя бы одна команда завершается с ошибкой, unit запускать ещё
-рано. Скопированную с другой системы `.venv` использовать нельзя.
+Если хотя бы одна команда завершается с ошибкой, unit запускать ещё рано.
 
 ## Применить миграции
 
 ```bash
-cd /home/nerv/transformer
-/usr/bin/python3.14 ./app/main.py db migrations status
-/usr/bin/python3.14 ./app/main.py db migrations apply
+/opt/transformer/.venv/bin/python \
+  /opt/transformer/app/main.py db migrations status
+/opt/transformer/.venv/bin/python \
+  /opt/transformer/app/main.py db migrations apply
 ```
 
 Миграции не выполняются при запуске сервиса. Если команда `status` не может
@@ -49,7 +78,7 @@ sudo nano /etc/systemd/system/transformer.service
 ```ini
 [Unit]
 Description=Transformer Arrow Flight service
-Documentation=file:/home/nerv/transformer/docs/deployment/systemd.md
+Documentation=file:/opt/transformer/docs/deployment/systemd.md
 After=network-online.target
 Wants=network-online.target
 
@@ -58,11 +87,11 @@ Type=exec
 
 User=nerv
 Group=nerv
-WorkingDirectory=/home/nerv/transformer
+WorkingDirectory=/opt/transformer
 
 Environment=PYTHONUNBUFFERED=1
 
-ExecStart=/usr/bin/python3.14 /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
+ExecStart=/opt/transformer/.venv/bin/python /opt/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
 
 Restart=on-failure
 RestartSec=5
@@ -79,10 +108,9 @@ SyslogIdentifier=transformer
 WantedBy=multi-user.target
 ```
 
-Не добавляйте `EnvironmentFile=/home/nerv/transformer/.env`. На системе с
-SELinux файл проекта имеет тип `user_home_t`, поэтому PID 1 в домене `init_t`
-не сможет прочитать его до запуска процесса от имени `nerv`. Отключать SELinux
-или создавать правило через `audit2allow` для этого не требуется.
+Не добавляйте `EnvironmentFile`. Приложение самостоятельно читает ровно один
+файл `/opt/transformer/.env` после запуска process от имени `nerv`; это
+исключает второй источник PostgreSQL configuration в unit.
 
 ## Запустить сервис
 

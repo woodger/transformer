@@ -6,7 +6,7 @@
 Проект не имеет отдельного build step. Основная точка запуска:
 
 ```text
-python3.11 app/main.py <command>
+.venv/bin/python app/main.py <command>
 ```
 
 `app/main.py` выполняет dispatch и лениво подключает command-specific

@@ -241,13 +241,13 @@ def test_fit_stream_runs_epochs_over_all_payloads():
 Сначала запускается изменённый module или группа:
 
 ```bash
-python3.11 -m pytest -q tests/test_flight_config.py
+.venv/bin/python -m pytest -q tests/test_flight_config.py
 ```
 
 Перед release и после изменений общих contracts:
 
 ```bash
-python3.11 -m pytest -q
+.venv/bin/python -m pytest -q
 ```
 
 Skipped test не считается доказательством проверенного поведения. Причина skip

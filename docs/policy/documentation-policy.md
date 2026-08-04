@@ -10,7 +10,9 @@
 
 | Тема | Основной источник |
 | --- | --- |
-| Назначение, установка и общий CLI | `readme.md` |
+| Назначение, навигация и общий CLI | `readme.md` |
+| Production Python package versions | `requirements.txt` |
+| Development/test package versions | `requirements-dev.txt` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |
@@ -109,7 +111,10 @@ ADR или явным изменением статуса.
 storage semantics.
 
 Deployment guide не должен дублировать всю архитектуру сервиса или
-автоматизировать изменение production-хоста.
+автоматизировать изменение production-хоста. Для target Fedora deployment он
+фиксирует один production root `/opt/transformer`, один runtime layout и способ
+запуска; альтернативные или предположительные варианты в reference-инструкцию
+не добавляются.
 
 ## Policy documents
 
@@ -146,4 +151,5 @@ protocol, checkpoint или архитектурную границу, соот�
 
 Устаревший текст удаляется, а не сохраняется «на всякий случай». Перед
 завершением проверяются links, команды, paths, version markers и отсутствие
-секретов.
+секретов. Deployment-команда считается документированной только после
+успешной проверки на целевом host environment.

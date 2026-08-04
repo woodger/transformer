@@ -12,12 +12,15 @@
 - Добавлены реальные конкурентные PostgreSQL regression tests для
   exact/conflicting idempotency, `cancel` против result publication и
   согласованного status snapshot во время publication.
+- Добавлены зафиксированные production и development dependency locks для
+  воспроизводимого Python 3.11 environment.
 
 ### Fixed
 
 - Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:
   приложение самостоятельно читает project `.env`, unit не использует
-  несовместимый с SELinux `EnvironmentFile`, а Python и CUDA проверяются до
+  несовместимый с SELinux `EnvironmentFile`, полный production tree размещён
+  в `/opt/transformer`, а Python, packages, PostgreSQL и CUDA проверяются до
   запуска сервиса.
 - Seal manifest теперь проверяется под той же PostgreSQL row lock, что и
   переход job в `SEALED`; конкурентный `DoPut` больше не может оставить

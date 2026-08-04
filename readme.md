@@ -14,35 +14,17 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 `feature_dim`. Поэтому `predict` и `predict-stream` восстанавливают архитектуру
 и проверяют вход по metadata checkpoint.
 
-## Требования
+## Python environment
 
-- Python 3.11+
-- PyTorch
-- NumPy
-- PyArrow
-- PostgreSQL
-- SQLAlchemy 2.x
-- Psycopg 3
-- Alembic
-- python-dotenv
-- CUDA опционально
-- `nvidia-smi` для автоматического inventory и привязки нескольких NVIDIA GPU
-
-Установка зависимостей:
-
-```bash
-pip install torch numpy pyarrow SQLAlchemy 'psycopg[binary]' alembic python-dotenv
-```
-
-Этого достаточно для обычного запуска на CPU и NVIDIA GPU. При работающем
-NVIDIA driver отдельно устанавливать CUDA Toolkit, cuDNN или NCCL через
-system package manager не нужно.
-
-Проверка CUDA:
-
-```bash
-python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")'
-```
+Проект использует Python 3.11. Примеры локальных CLI и test-команд ниже
+выполняются через project `.venv`. Production systemd unit использует целое
+production tree в `/opt/transformer`, включая `.venv`, совместимое с политикой
+SELinux на Fedora.
+Production package lock находится в
+[`requirements.txt`](requirements.txt), development/test lock — в
+[`requirements-dev.txt`](requirements-dev.txt). Единственная инструкция по
+созданию production environment и проверке CUDA находится в
+[`docs/deployment/systemd.md`](docs/deployment/systemd.md).
 
 Подробная production-настройка Flight service находится в
 [`docs/flight-operations.md`](docs/flight-operations.md).
@@ -57,15 +39,9 @@ python -c 'import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 запуск, recovery и retention — в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
-```bash
-python ./app/main.py db migrations apply
-python ./app/main.py auth tokens issue --subject=inventory-production
-
-python ./app/main.py flight serve \
-  --host=0.0.0.0 \
-  --tls-cert-file=/run/secrets/transformer/tls.crt \
-  --tls-key-file=/run/secrets/transformer/tls.key
-```
+Первичная подготовка PostgreSQL, выпуск access token и production-запуск
+зафиксированы только в
+[`docs/deployment/systemd.md`](docs/deployment/systemd.md).
 
 Параметры PostgreSQL читаются из `.env` или окружения: `POSTGRES_HOST`,
 `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER` и `POSTGRES_PASSWORD`.
@@ -86,14 +62,14 @@ DoExchange и PollFlightInfo в v2 не входят.
 собственными positional arguments и наборами options:
 
 ```text
-python ./app/main.py fit INPUT [options]
-python ./app/main.py predict INPUT [options]
-python ./app/main.py fit-stream [options]
-python ./app/main.py predict-stream [options]
-python ./app/main.py flight serve [options]
-python ./app/main.py plot-metrics METRICS_FILE [options]
-python ./app/main.py auth tokens issue|list|revoke [options]
-python ./app/main.py db migrations status|apply|rollback
+./.venv/bin/python ./app/main.py fit INPUT [options]
+./.venv/bin/python ./app/main.py predict INPUT [options]
+./.venv/bin/python ./app/main.py fit-stream [options]
+./.venv/bin/python ./app/main.py predict-stream [options]
+./.venv/bin/python ./app/main.py flight serve [options]
+./.venv/bin/python ./app/main.py plot-metrics METRICS_FILE [options]
+./.venv/bin/python ./app/main.py auth tokens issue|list|revoke [options]
+./.venv/bin/python ./app/main.py db migrations status|apply|rollback
 ```
 
 Общий help показывает только global options и список команд. Command-specific
@@ -101,16 +77,16 @@ help содержит применимые к выбранной команде 
 полезно, отдельный блок с примерами:
 
 ```bash
-python ./app/main.py --help
-python ./app/main.py fit --help
-python ./app/main.py predict-stream --help
-python ./app/main.py flight serve --help
+./.venv/bin/python ./app/main.py --help
+./.venv/bin/python ./app/main.py fit --help
+./.venv/bin/python ./app/main.py predict-stream --help
+./.venv/bin/python ./app/main.py flight serve --help
 ```
 
 Версию можно посмотреть через `--version` или его короткую форму `-v`:
 
 ```bash
-python ./app/main.py --version
+./.venv/bin/python ./app/main.py --version
 ```
 
 Доступные действия:
@@ -128,7 +104,7 @@ python ./app/main.py --version
 ## Обучение из файла
 
 ```bash
-python ./app/main.py fit ./data/train.arrow \
+./.venv/bin/python ./app/main.py fit ./data/train.arrow \
   --device=cpu \
   --checkpoint-out=model_weights.pth \
   --seq-len=20 \
@@ -140,7 +116,7 @@ python ./app/main.py fit ./data/train.arrow \
 ## Предсказание из файла
 
 ```bash
-python ./app/main.py predict ./data/test.arrow \
+./.venv/bin/python ./app/main.py predict ./data/test.arrow \
   --device=cpu \
   --checkpoint=model_weights.pth \
   --output=/tmp/preds.arrow \
@@ -163,7 +139,7 @@ checkpoint нет model config, `--seq-len` обязателен, а отлич�
 отклоняется parser. Режим читает stdin до terminator или EOF:
 
 ```bash
-python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit-stream \
   --device=cpu \
   --checkpoint-out=model_weights.pth \
   --seq-len=20 \
@@ -323,7 +299,7 @@ Stage 1 NLL может быть отрицательным — это допус
 Loss schedule можно зафиксировать вручную:
 
 ```bash
-python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-schedule=none \
   --loss-stage=1
@@ -332,7 +308,7 @@ python ./app/main.py fit-stream \
 Или включить автоматический curriculum по эпохам:
 
 ```bash
-python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-stage=4 \
   --loss-schedule=epoch \
@@ -342,7 +318,7 @@ python ./app/main.py fit-stream \
 Для schedule по optimizer steps:
 
 ```bash
-python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit-stream \
   --seq-len=20 \
   --loss-stage=4 \
   --loss-schedule=step \
@@ -431,7 +407,7 @@ Summary показывает основной результат эпохи, с�
 Чтобы сохранять полный набор метрик для каждой эпохи в JSONL:
 
 ```bash
-python ./app/main.py fit ./data/train.arrow \
+./.venv/bin/python ./app/main.py fit ./data/train.arrow \
   --seq-len=20 \
   --metrics-out=train.jsonl
 ```
@@ -439,7 +415,7 @@ python ./app/main.py fit ./data/train.arrow \
 Для `fit-stream` используется тот же аргумент:
 
 ```bash
-python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit-stream \
   --seq-len=20 \
   --metrics-out=train-stream.jsonl
 ```
@@ -451,7 +427,7 @@ Non-finite значения сериализуются как JSON `null`.
 Построить SVG-графики по JSONL:
 
 ```bash
-python ./app/main.py plot-metrics train.jsonl \
+./.venv/bin/python ./app/main.py plot-metrics train.jsonl \
   --plots-dir=./metrics/plots
 ```
 
@@ -468,7 +444,7 @@ payloads из stdin, загружает модель один раз на пер
 по одному framed Arrow result на каждый input frame, включая пустой:
 
 ```bash
-python ./app/main.py predict-stream \
+./.venv/bin/python ./app/main.py predict-stream \
   --device=cpu \
   --checkpoint=model_weights.pth \
   --pred-col=out
@@ -479,7 +455,7 @@ stdout в этом режиме является бинарным протоко
 перенаправлять в файл или следующему процессу:
 
 ```bash
-python ./app/main.py predict-stream \
+./.venv/bin/python ./app/main.py predict-stream \
   --checkpoint=model_weights.pth \
   > /tmp/predictions.framed
 ```
@@ -588,9 +564,9 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 тестов намеренно отвергается.
 
 ```bash
-python -m pip install jsonschema pytest ruff
-python3.11 -m ruff check .
-POSTGRES_DB=transformer_test python3.11 -m pytest -q
+./.venv/bin/python -m pip install -r requirements-dev.txt
+./.venv/bin/python -m ruff check .
+POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
 ```
 
 Правила разработки и review собраны в

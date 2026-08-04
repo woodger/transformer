@@ -15,6 +15,8 @@ from app.flight.config import FlightServiceConfig, load_config
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD_DOCUMENT = PROJECT_ROOT / "docs" / "deployment" / "systemd.md"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
+PRODUCTION_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
+DEVELOPMENT_REQUIREMENTS = PROJECT_ROOT / "requirements-dev.txt"
 
 
 def _configuration_block(heading: str, language: str) -> str:
@@ -36,27 +38,51 @@ def test_service_uses_target_runtime_identity_and_entrypoint():
 
     assert (
         unit["Unit"]["Documentation"]
-        == "file:/home/nerv/transformer/docs/deployment/systemd.md"
+        == "file:/opt/transformer/docs/deployment/systemd.md"
     )
     assert service["Type"] == "exec"
     assert service["User"] == "nerv"
     assert service["Group"] == "nerv"
-    assert service["WorkingDirectory"] == "/home/nerv/transformer"
-    assert service["EnvironmentFile"] == "/home/nerv/transformer/.env"
+    assert service["WorkingDirectory"] == "/opt/transformer"
+    assert "EnvironmentFile" not in service
     assert service["ExecStart"].split() == [
-        "/usr/bin/python3.11",
-        "/home/nerv/transformer/app/main.py",
+        "/opt/transformer/.venv/bin/python",
+        "/opt/transformer/app/main.py",
         "flight",
         "serve",
+        "--host=0.0.0.0",
+        "--port=8815",
+        "--allow-plaintext",
     ]
 
 
-def test_service_preserves_runtime_storage_and_allows_cuda():
-    service = _load_unit()["Service"]
+def test_deployment_has_one_python_environment_contract():
+    document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
 
-    assert service["PrivateTmp"] == "no"
-    assert service["PrivateDevices"] == "no"
-    assert service["ProtectSystem"] == "full"
+    assert document.count(
+        "/usr/bin/python3.11 -m venv /opt/transformer/.venv"
+    ) == 1
+    assert "/usr/bin/python3.14" not in document
+    assert "ExecStart=/home/nerv/transformer" not in document
+    assert "EnvironmentFile=" not in _configuration_block(
+        "Создать unit-файл",
+        "ini",
+    )
+    assert "requirements.txt" in document
+
+
+def test_initial_migration_preserves_production_data_but_not_development_state():
+    document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
+
+    assert "test ! -e /opt/transformer" in document
+    assert "--exclude='.venv*'" in document
+    assert "--exclude=.pytest_cache" in document
+    assert "--exclude=.ruff_cache" in document
+    assert "`models/` и `recovery/`" in document
+    assert "--exclude=models" not in document
+    assert "--exclude=recovery" not in document
+    assert "-C /home/nerv/transformer -cf - ." in document
+    assert "tar -C /opt/transformer -xf -" in document
 
 
 def test_service_stop_policy_allows_application_to_drain_workers():
@@ -64,9 +90,7 @@ def test_service_stop_policy_allows_application_to_drain_workers():
     config = FlightServiceConfig()
     timeout = int(service["TimeoutStopSec"].removesuffix("s"))
 
-    assert service["KillSignal"] == "SIGTERM"
     assert service["KillMode"] == "mixed"
-    assert service["SendSIGKILL"] == "yes"
     assert timeout >= (
         config.shutdown_drain_seconds + config.cancel_grace_seconds + 20
     )
@@ -80,19 +104,39 @@ def test_service_does_not_apply_database_migrations_on_start():
     assert "migrations" not in service["ExecStart"]
 
 
-def test_tmpfiles_policy_creates_runtime_directory_without_age_cleanup():
-    lines = [
-        line.split()
-        for line in _configuration_block(
-            "Подготовить runtime-директорию",
-            "text",
+def test_requirement_manifests_are_exact_and_layered():
+    production = [
+        line
+        for line in PRODUCTION_REQUIREMENTS.read_text(
+            encoding="utf-8",
         ).splitlines()
         if line and not line.startswith("#")
     ]
-
-    assert lines == [
-        ["d", "/tmp/transformer", "0700", "nerv", "nerv", "-"],
+    development = [
+        line
+        for line in DEVELOPMENT_REQUIREMENTS.read_text(
+            encoding="utf-8",
+        ).splitlines()
+        if line and not line.startswith("#")
     ]
+    package_names = {
+        line.split("==", 1)[0].lower()
+        for line in production
+    }
+
+    assert all(line.count("==") == 1 for line in production)
+    assert {
+        "alembic",
+        "numpy",
+        "psycopg",
+        "psycopg-binary",
+        "pyarrow",
+        "python-dotenv",
+        "sqlalchemy",
+        "torch",
+    } <= package_names
+    assert development[0] == "-r requirements.txt"
+    assert all(line.count("==") == 1 for line in development[1:])
 
 
 def test_environment_example_uses_current_configuration_contract():
