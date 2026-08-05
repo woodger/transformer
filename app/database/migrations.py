@@ -25,8 +25,11 @@ class MigrationStatus:
 
 
 def alembic_config(database_config: DatabaseConfig) -> Config:
-    config = Config(str(Path(PROJECT_ROOT) / "alembic.ini"))
-    config.set_main_option("script_location", str(Path(PROJECT_ROOT) / "migrations"))
+    config = Config(toml_file=str(Path(PROJECT_ROOT) / "pyproject.toml"))
+    config.set_main_option(
+        "script_location",
+        str(Path(PROJECT_ROOT) / "app" / "database" / "alembic"),
+    )
     config.attributes["database_config"] = database_config
     config.attributes["schema"] = database_config.schema
     return config

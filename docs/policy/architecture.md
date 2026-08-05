@@ -17,7 +17,7 @@ app/main.py
                                                             → fit-stream|predict-stream
 
 contracts/flight/v2 ← нормативный внешний контракт
-migrations/         ← эволюция PostgreSQL schema
+app/database/alembic ← эволюция PostgreSQL schema
 ```
 
 `app/main.py` является composition root и CLI dispatcher. Flight RPC не
@@ -75,10 +75,11 @@ RPC handler выполняет только bounded validation, IO и control-pl
 Model training и prediction остаются в worker subprocess. Network request не
 может передавать произвольный filesystem path или CLI argument.
 
-### Внешние contracts и migrations
+### Contracts и schema migrations
 
 - `contracts/flight/v2/` содержит нормативные JSON Schemas и golden fixtures;
-- `migrations/` содержит Alembic environment и последовательность revisions;
+- `app/database/alembic/` содержит Alembic environment и последовательность
+  revisions, принадлежащие PostgreSQL infrastructure приложения;
 - `docs/adr/` фиксирует принятые архитектурные решения.
 
 Эти файлы могут не иметь обычного Python import path, но являются частью

@@ -22,9 +22,10 @@
 
 Некоторые живые файлы не импортируются обычным production-кодом:
 
-- `migrations/env.py` и `migrations/versions/*.py`, загружаемые Alembic;
+- `app/database/alembic/env.py` и `app/database/alembic/versions/*.py`,
+  загружаемые Alembic;
 - `contracts/flight/v2/`, используемый внешними consumers и contract tests;
-- `.env.example`, `alembic.ini` и deployment reference;
+- `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;
 - files, найденные по dynamic string path или reflection.
 

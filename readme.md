@@ -584,8 +584,8 @@ app/metrics/         # TrainMetrics, JSONL writer/reader, SVG-графики
 app/storage/         # published и training-recovery checkpoint formats
 app/runtime/         # device selection и версия приложения
 app/flight/          # Flight contract, ledger, stores, scheduler и workers
+app/database/        # PostgreSQL configuration, persistence и Alembic revisions
 contracts/flight/v2/ # нормативные JSON Schemas и golden fixtures
-migrations/          # PostgreSQL schema revisions
 recovery/            # runtime-created persistent fit inputs/checkpoints
 app/config.py        # project defaults
 app/utils.py         # небольшие совместные runtime helpers

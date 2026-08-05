@@ -15,6 +15,13 @@
 - Добавлен единый lock-файл всех зависимостей проектного Python 3.11
   environment.
 
+### Changed
+
+- Конфигурация Ruff, pytest и Alembic объединена в `pyproject.toml`; локальные
+  tool caches складываются в единую игнорируемую директорию `.cache/`.
+- Alembic environment и schema revisions перенесены под `app/database/`,
+  которому принадлежит PostgreSQL persistence приложения.
+
 ### Fixed
 
 - Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:

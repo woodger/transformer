@@ -19,6 +19,7 @@ sudo install -d -o nerv -g nerv -m 0755 /opt/transformer
 tar \
   --exclude=.git \
   --exclude='.venv*' \
+  --exclude=.cache \
   --exclude=.pytest_cache \
   --exclude=.ruff_cache \
   --exclude=transformer-pending.service \

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from logging.config import fileConfig
+from logging.config import dictConfig
 
 from alembic import context
 from sqlalchemy import create_engine
@@ -10,8 +10,42 @@ from app.database.config import load_database_config
 from app.database.models import Base
 
 config = context.config
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+dictConfig(
+    {
+        "version": 1,
+        "disable_existing_loggers": True,
+        "formatters": {
+            "generic": {
+                "format": "%(levelname)-5.5s [%(name)s] %(message)s",
+                "datefmt": "%H:%M:%S",
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "level": "NOTSET",
+                "formatter": "generic",
+                "stream": "ext://sys.stderr",
+            }
+        },
+        "root": {
+            "level": "WARNING",
+            "handlers": ["console"],
+        },
+        "loggers": {
+            "sqlalchemy.engine": {
+                "level": "WARNING",
+                "handlers": [],
+                "propagate": True,
+            },
+            "alembic": {
+                "level": "INFO",
+                "handlers": [],
+                "propagate": True,
+            },
+        },
+    }
+)
 
 target_metadata = Base.metadata
 

@@ -70,11 +70,12 @@ def test_deployment_has_one_python_environment_contract():
     assert "requirements.txt" in document
 
 
-def test_initial_migration_preserves_production_data_but_not_development_state():
+def test_initial_migration_preserves_runtime_data_and_excludes_local_tool_state():
     document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
 
     assert "test ! -e /opt/transformer" in document
     assert "--exclude='.venv*'" in document
+    assert "--exclude=.cache" in document
     assert "--exclude=.pytest_cache" in document
     assert "--exclude=.ruff_cache" in document
     assert "`models/` и `recovery/`" in document
