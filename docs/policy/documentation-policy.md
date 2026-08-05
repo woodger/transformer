@@ -11,8 +11,7 @@
 | Тема | Основной источник |
 | --- | --- |
 | Назначение, навигация и общий CLI | `readme.md` |
-| Production Python package versions | `requirements.txt` |
-| Development/test package versions | `requirements-dev.txt` |
+| Версии Python-пакетов проекта | `requirements.txt` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |

@@ -9,7 +9,7 @@ production runtime. Целевая система — Fedora с SELinux в ре�
 ## Подготовить проект
 
 Первичный перенос выполняется при остановленном сервисе. Он переносит `.env`,
-`models/` и `recovery/`, но исключает development environment и кэши:
+`models/` и `recovery/`, но исключает старое Python-окружение и кэши:
 
 ```bash
 sudo systemctl stop transformer
@@ -29,7 +29,8 @@ tar \
 chmod 0600 /opt/transformer/.env
 ```
 
-Создать production-окружение Python 3.11 и установить production lock:
+Создать проектное окружение Python 3.11 и установить зафиксированные
+зависимости:
 
 ```bash
 /usr/bin/python3.11 -m venv /opt/transformer/.venv
@@ -41,7 +42,7 @@ matchpathcon -V /opt/transformer/.venv/bin/python
 ```
 
 Окружение создаётся на целевом сервере и не копируется с другой системы.
-`requirements.txt` — единственный источник production-версий Python-пакетов.
+`requirements.txt` — единственный источник версий Python-пакетов проекта.
 Production root находится под `/opt`, потому что SELinux запрещает systemd
 исполнять файлы с типом `user_home_t` из `/home`.
 

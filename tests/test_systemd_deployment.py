@@ -15,8 +15,7 @@ from app.flight.config import FlightServiceConfig, load_config
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD_DOCUMENT = PROJECT_ROOT / "docs" / "deployment" / "systemd.md"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
-PRODUCTION_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
-DEVELOPMENT_REQUIREMENTS = PROJECT_ROOT / "requirements-dev.txt"
+REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 
 
 def _configuration_block(heading: str, language: str) -> str:
@@ -104,39 +103,33 @@ def test_service_does_not_apply_database_migrations_on_start():
     assert "migrations" not in service["ExecStart"]
 
 
-def test_requirement_manifests_are_exact_and_layered():
-    production = [
+def test_requirement_manifest_is_exact_and_complete():
+    requirements = [
         line
-        for line in PRODUCTION_REQUIREMENTS.read_text(
-            encoding="utf-8",
-        ).splitlines()
-        if line and not line.startswith("#")
-    ]
-    development = [
-        line
-        for line in DEVELOPMENT_REQUIREMENTS.read_text(
+        for line in REQUIREMENTS.read_text(
             encoding="utf-8",
         ).splitlines()
         if line and not line.startswith("#")
     ]
     package_names = {
         line.split("==", 1)[0].lower()
-        for line in production
+        for line in requirements
     }
 
-    assert all(line.count("==") == 1 for line in production)
+    assert all(line.count("==") == 1 for line in requirements)
     assert {
         "alembic",
+        "jsonschema",
         "numpy",
         "psycopg",
         "psycopg-binary",
         "pyarrow",
+        "pytest",
         "python-dotenv",
+        "ruff",
         "sqlalchemy",
         "torch",
     } <= package_names
-    assert development[0] == "-r requirements.txt"
-    assert all(line.count("==") == 1 for line in development[1:])
 
 
 def test_environment_example_uses_current_configuration_contract():

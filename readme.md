@@ -20,10 +20,9 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 выполняются через project `.venv`. Production systemd unit использует целое
 production tree в `/opt/transformer`, включая `.venv`, совместимое с политикой
 SELinux на Fedora.
-Production package lock находится в
-[`requirements.txt`](requirements.txt), development/test lock — в
-[`requirements-dev.txt`](requirements-dev.txt). Единственная инструкция по
-созданию production environment и проверке CUDA находится в
+Версии всех Python-пакетов проекта зафиксированы в единственном lock-файле
+[`requirements.txt`](requirements.txt). Единственная инструкция по созданию
+production environment и проверке CUDA находится в
 [`docs/deployment/systemd.md`](docs/deployment/systemd.md).
 
 Подробная production-настройка Flight service находится в
@@ -564,7 +563,7 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 тестов намеренно отвергается.
 
 ```bash
-./.venv/bin/python -m pip install -r requirements-dev.txt
+./.venv/bin/python -m pip install -r requirements.txt
 ./.venv/bin/python -m ruff check .
 POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
 ```

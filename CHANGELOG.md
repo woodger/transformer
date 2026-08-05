@@ -12,8 +12,8 @@
 - Добавлены реальные конкурентные PostgreSQL regression tests для
   exact/conflicting idempotency, `cancel` против result publication и
   согласованного status snapshot во время publication.
-- Добавлены зафиксированные production и development dependency locks для
-  воспроизводимого Python 3.11 environment.
+- Добавлен единый lock-файл всех зависимостей проектного Python 3.11
+  environment.
 
 ### Fixed
 
