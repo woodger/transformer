@@ -1,156 +1,156 @@
 # Архитектурная политика
 
-> Type: Policy. Этот документ фиксирует существующие package boundaries,
-> направление зависимостей и ownership данных Transformer.
+> Type: Policy. Документ фиксирует process boundaries, направление зависимостей
+> и ownership данных Transformer Arrow Flight service.
 
-Проект использует package-oriented архитектуру. В нём нет искусственного
-деления на `domain/application/infrastructure`, и такая структура не должна
-добавляться без отдельного архитектурного решения.
+Проект использует Clean Architecture отдельно для каждого исполняемого
+процесса. Нормативное решение и его причины зафиксированы в
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md).
 
-## Общая схема
+## Процессы и composition roots
 
 ```text
-app/main.py
-├── app/cli → app/commands → data/model/training/metrics/storage/runtime
-└── app/flight → app/database + runtime spool + recovery store + scheduler
-                                                        └── subprocess
-                                                            → fit-stream|predict-stream
+app/main.py                         ленивый CLI dispatcher
+├── app/service/bootstrap          Arrow Flight service
+├── app/worker/bootstrap           один ML execution attempt
+└── app/admin/bootstrap            auth и database commands
 
-contracts/flight/v2 ← нормативный внешний контракт
-app/database/alembic ← эволюция PostgreSQL schema
+app/contracts/flight/v2            публичный Flight contract
+app/contracts/worker/v1            внутренний process contract
 ```
 
-`app/main.py` является composition root и CLI dispatcher. Flight RPC не
-выполняет Torch внутри handler: worker запускает существующий CLI в отдельной
-process group, как зафиксировано в
-[ADR 0001](../adr/0001-arrow-flight-job-service.md).
+Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
+как установленный executable по версионированному process contract и не
+импортирует его Python implementation. Admin-команды не загружают Flight
+server, Arrow/Torch worker runtime или модель.
 
-## Роли пакетов
+## Service
 
-### Core ML и data path
+```text
+service/adapters/inbound/flight
+              │
+              ▼
+service/application/{commands,queries,services,ports}
+              │
+              ▼
+service/domain
 
-- `app/model/` — PyTorch modules, context masking и positional encoding;
-- `app/training/` — training config, losses, scheduler, early stopping и
-  trainer lifecycle;
-- `app/data/` — Arrow IO, framed protocol, tensor reshape и shape validation;
-- `app/storage/` — atomic file operations и checkpoint formats;
-- `app/metrics/` — metrics records, JSONL и plots;
-- `app/runtime/` — device selection, reproducibility и version;
-- `app/config.py` — встроенные defaults проекта.
+service/bootstrap ── собирает inbound и outbound adapters
+service/adapters/outbound/{postgres,artifact_storage,worker_process,worker_probe}
+```
 
-Эти пакеты не должны зависеть от CLI presentation, Flight server или
-PostgreSQL control plane. Допустимы направленные зависимости между профильными
-core packages, если они соответствуют текущему data/training flow.
+- `service/domain` содержит job states, error codes, immutable records и pure
+  lifecycle policies. Он не знает о Flight, SQLAlchemy, PyArrow, filesystem,
+  subprocess и Torch.
+- `service/application` содержит use cases, scheduler orchestration и
+  capability-oriented ports. Он зависит только от domain и нейтральных
+  contracts.
+- inbound Flight adapter валидирует wire DTO, выполняет mapping и преобразует
+  application errors в Flight/Arrow status.
+- outbound adapters реализуют PostgreSQL, artifact storage, worker process и
+  worker capability boundaries. Inbound и outbound adapters не импортируют
+  друг друга.
+- `service/bootstrap` — единственное место сборки конкретных service adapters.
 
-### CLI
+Ports называются по возможностям: `JobRepository`, `ArtifactPublisher`,
+`ExecutionPlanBuilder`, `AttemptProcess`, `WorkerExecutor`,
+`WorkerCapabilities`, `DeviceLeaseManager`. Имена технологий в application
+ports и generic `Repository[T]` не допускаются. Каждый port имеет текущего
+runtime consumer и adapter; интерфейсы «на будущее» не создаются.
 
-- `app/cli/` определяет parser, help и пользовательскую форму команд;
-- `app/commands/` оркестрирует конкретные CLI-сценарии;
-- `app/main.py` выбирает handler и инициализирует только нужные ресурсы.
+## Worker
 
-Создание parser или вывод `--help` не должны открывать PostgreSQL connections,
-создавать runtime spool или запускать training.
+`app/worker/` владеет Arrow-to-tensor data path, model, training, metrics,
+device/reproducibility runtime и checkpoint staging. Один процесс обслуживает
+ровно один execution attempt. Worker:
 
-### PostgreSQL
+- читает только service-owned immutable command manifest;
+- пишет только в attempt workspace;
+- отправляет bounded NDJSON events в stdout и diagnostics в stderr;
+- не подключается к PostgreSQL и не знает о Flight, bearer auth, idempotency,
+  public job state или `modelRef`;
+- не публикует output, recovery generation или model generation.
 
-`app/database/` владеет configuration, SQLAlchemy models, sessions, migrations
-и token persistence. Он не должен зависеть от `app/flight/` или CLI handlers.
+`app/data`, `app/model`, `app/training`, `app/storage`, `app/runtime` и
+`app/metrics` временно сохраняются только как compatibility import facades.
+Новый production-код размещается непосредственно в `app/worker/`.
 
-Изменение ORM-модели, которое меняет schema, требует Alembic migration.
-SQLite, локальный ledger и дублирующее durable storage не допускаются.
+## Admin
 
-### Arrow Flight service
+`app/admin/cli` отвечает только за presentation. `app/admin/bootstrap`
+создаёт короткоживущие PostgreSQL resources и вызывает те же application use
+cases, которые определяют операции с access tokens. Alembic-команды имеют
+отдельный короткоживущий SQLAlchemy lifecycle и не запускают service или worker.
 
-`app/flight/` владеет:
+## Contracts
 
-- authentication и transport boundary;
-- action contract validation;
-- job coordination и state transitions;
-- PostgreSQL ledger;
-- `/tmp/transformer` runtime spool и persistent `recovery/`;
-- physical CUDA inventory, worker queues и subprocess lifecycle;
-- cancellation, recovery, maintenance и observability.
+- `app/contracts/flight/v2/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/worker/v1/` — command/result manifests, capability document,
+  Arrow artifact manifests, events и exit semantics;
+- эти contracts версионируются независимо;
+- worker `attemptId` — UUID execution identity и equality fence; публичный
+  `attempt` остаётся положительным job-local ordinal;
+- ownership никогда не передаётся при неизменном `attemptId`. Retry создаёт
+  новый ordinal и новый `attemptId`.
 
-RPC handler выполняет только bounded validation, IO и control-plane mutation.
-Model training и prediction остаются в worker subprocess. Network request не
-может передавать произвольный filesystem path или CLI argument.
+Любая worker mutation атомарно проверяет `jobId`, текущий `attemptId` и
+разрешённое non-terminal state. Отдельный случайный fencing token не добавляется
+до появления lifecycle, где ownership меняется внутри одного attempt.
 
-### Contracts и schema migrations
+## PostgreSQL и artifacts
 
-- `contracts/flight/v2/` содержит нормативные JSON Schemas и golden fixtures;
-- `app/database/alembic/` содержит Alembic environment и последовательность
-  revisions, принадлежащие PostgreSQL infrastructure приложения;
-- `docs/adr/` фиксирует принятые архитектурные решения.
+PostgreSQL adapter, ORM и Alembic находятся в
+`app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
+источником истины для job lifecycle, revision, idempotency, active attempt,
+tokens и published metadata. SQLite и dual-write запрещены.
 
-Эти файлы могут не иметь обычного Python import path, но являются частью
-production contract и tool-driven runtime.
+PostgreSQL-транзакция не охватывает filesystem или subprocess. Artifact
+lifecycle всегда staged:
 
-## Ownership и durability
+```text
+temporary write → close/fsync → atomic rename → validation
+→ immutable publication/fsync → PostgreSQL reference/state transaction
+```
 
-Архитектурное разделение данных является обязательным:
+После crash допустим непривязанный staged artifact, но не запись БД на
+недописанный файл. Orphans удаляет reconciliation.
 
-- PostgreSQL — jobs, attempts, idempotency, tickets, recovery metadata, model
-  metadata и tokens;
-- `/tmp/transformer` — prediction payloads, attempt artifacts, runtime storage
+Ownership хранения:
+
+- `/tmp/transformer` — prediction inputs/outputs, attempt workspaces, runtime
   epoch и boot-scoped CUDA quarantine;
-- `recovery/` — persistent fit payloads и внутренние completed-epoch
-  checkpoints без `modelRef`;
-- `models/` — только успешно опубликованные immutable checkpoints;
-- RAM — worker queues, token digest cache и активное process state.
+- `recovery/` — persistent fit inputs и completed-global-epoch checkpoints;
+- `models/` — только успешно опубликованные immutable model generations;
+- RAM — FIFO queues, token digest cache и active process handles.
 
-Потеря `/tmp` инвалидирует prediction jobs и attempt-local artifacts, но fit с
-целыми persistent inputs переходит в `RETRYING`. Потеря зарегистрированного
-файла из `recovery/` является явной ошибкой и не разрешает silent restart
-обучения. Уже опубликованные models и access tokens не затрагиваются.
-PostgreSQL нельзя использовать как blob/payload storage или idle queue polling
-mechanism.
+## Обязательные dependency rules
 
-## Направление зависимостей
+- domain не зависит от application, adapters или bootstrap;
+- application не зависит от adapters или bootstrap;
+- adapters зависят от application/domain, но не от другого направления
+  transport-а;
+- service не импортирует `app.worker` implementation;
+- worker не импортирует service, Flight или database implementation;
+- admin не импортирует worker или Flight server;
+- shared service/worker данные находятся только в `app/contracts/worker/v1`;
+- import graph не содержит циклов;
+- environment, connections, CUDA initialization и filesystem mutation не
+  выполняются при import.
 
-Запрещено:
+Правила закреплены AST- и process-import тестами в
+`tests/test_architecture_boundaries.py`.
 
-- импортировать `app/flight` или `app/database` из core ML packages;
-- переносить training execution в Flight RPC thread;
-- помещать CLI formatting в model, training, database или Flight state logic;
-- читать environment или открывать resources при import модуля;
-- дублировать wire validation независимо от normative contract;
-- смешивать published models, internal recovery artifacts и ephemeral runtime
-  spool;
-- обходить ORM/session boundary случайными SQL-запросами в других packages.
+## Размещение нового кода
 
-Допустимо:
+- lifecycle rule или record — `app/service/domain/`;
+- command/query и capability port — `app/service/application/`;
+- Flight parser/presenter — `app/service/adapters/inbound/flight/`;
+- ORM/repository/Alembic — `app/service/adapters/outbound/postgres/`;
+- spool/publication — `app/service/adapters/outbound/artifact_storage/`;
+- subprocess supervision — `app/service/adapters/outbound/worker_process/`;
+- model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в `app/worker/`;
+- wire/process schema — соответствующий versioned package в `app/contracts/`;
+- runtime wiring — composition root конкретного процесса.
 
-- `app/commands` зависит от профильных core/database packages;
-- `app/flight` переиспользует Arrow, checkpoint и immutable training config;
-- `app/flight` зависит от `app/database`;
-- `app/main.py` и `app/flight/application.py` собирают runtime components;
-- integration adapter преобразует внешний contract в внутренние records на
-  границе package.
-
-## Размещение файлов
-
-Новый файл помещается в пакет, который владеет его основной ответственностью.
-
-Примеры:
-
-- новый loss или scheduler — `app/training/`;
-- новый Arrow validator — `app/data/` или `app/flight/arrow.py`, в зависимости
-  от того, является ли правило общим или transport-specific;
-- checkpoint serialization — `app/storage/`;
-- PostgreSQL repository — `app/database/`;
-- Flight action parsing — `app/flight/`;
-- CLI handler — `app/commands/`;
-- parser/help metadata — `app/cli/`.
-
-Новые generic directories `common`, `shared`, `helpers`, `lib` и `misc` без
-чёткой роли не создаются. Новая top-level directory или package boundary
-требует обновления архитектурной документации.
-
-## Минимальность архитектурных изменений
-
-Перенос файла не должен одновременно менять его public API и runtime
-поведение. Массовое переименование, новая package hierarchy или смена
-persistence ownership выполняются отдельным решением с тестами и документацией.
-
-Если placement меняет ownership данных, направление зависимостей или внешний
-контракт, это не локальный cleanup и требует явного согласования.
+Новые `common`, `helpers`, `lib` и `misc` без одного ясного owner не создаются.
+Compatibility facade не становится владельцем новой логики.

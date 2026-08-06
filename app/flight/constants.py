@@ -1,108 +1,53 @@
-from enum import StrEnum
+"""Compatibility exports while Flight is reduced to an inbound adapter."""
 
-CONTRACT_NAME = "transformer-flight"
-CONTRACT_VERSION = 2
-CONTRACT_PATH_VERSION = "v2"
-
-CAPABILITIES_ACTION = "transformer.v2.capabilities"
-HEALTH_ACTION = "transformer.v2.health"
-CREATE_ACTION = "transformer.v2.job.create"
-SEAL_ACTION = "transformer.v2.job.seal"
-START_ACTION = "transformer.v2.job.start"
-STATUS_ACTION = "transformer.v2.job.status"
-CANCEL_ACTION = "transformer.v2.job.cancel"
-
-ACTIONS = (
+from app.contracts.flight.v2.constants import (
+    ACTIONS,
+    CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    HEALTH_ACTION,
+    CONTRACT_NAME,
+    CONTRACT_PATH_VERSION,
+    CONTRACT_VERSION,
     CREATE_ACTION,
+    FIT_SCHEMA_ID,
+    HEALTH_ACTION,
+    MAX_MANIFEST_ITEMS,
+    PREDICT_SCHEMA_ID,
+    PREDICTION_SCHEMA_ID,
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
-    CANCEL_ACTION,
+)
+from app.service.domain.job import (
+    IMMEDIATE_CANCEL_STATES,
+    STATE_TRANSITIONS,
+    SUPPORTED_DEVICES,
+    SUPPORTED_OPERATIONS,
+    TERMINAL_STATES,
+    ErrorCode,
+    JobState,
 )
 
-FIT_SCHEMA_ID = "inventory.sequence.fit.v1"
-PREDICT_SCHEMA_ID = "inventory.sequence.predict.v1"
-PREDICTION_SCHEMA_ID = "transformer.prediction.v1"
-
-SUPPORTED_OPERATIONS = ("fit", "predict")
-SUPPORTED_DEVICES = ("cpu", "cuda", "auto")
-
-# A complete seal manifest must fit in the 64 KiB action-document limit even
-# with maximum-length idempotency keys and decimal ordinals.  Four hundred
-# entries leave a conservative envelope margin and keep every advertised job
-# sealable through the same public action contract.
-MAX_MANIFEST_ITEMS = 400
-
-
-class JobState(StrEnum):
-    UPLOADING = "UPLOADING"
-    SEALED = "SEALED"
-    QUEUED = "QUEUED"
-    RUNNING = "RUNNING"
-    RETRYING = "RETRYING"
-    SUCCEEDED = "SUCCEEDED"
-    FAILED = "FAILED"
-    CANCELLING = "CANCELLING"
-    CANCELLED = "CANCELLED"
-
-
-TERMINAL_STATES = frozenset({
-    JobState.SUCCEEDED,
-    JobState.FAILED,
-    JobState.CANCELLED,
-})
-
-IMMEDIATE_CANCEL_STATES = frozenset({
-    JobState.UPLOADING,
-    JobState.SEALED,
-    JobState.QUEUED,
-    JobState.RETRYING,
-})
-
-STATE_TRANSITIONS = {
-    JobState.UPLOADING: frozenset({JobState.SEALED, JobState.CANCELLED}),
-    JobState.SEALED: frozenset({JobState.QUEUED, JobState.CANCELLED}),
-    JobState.QUEUED: frozenset({JobState.RUNNING, JobState.CANCELLED}),
-    JobState.RUNNING: frozenset({
-        JobState.SUCCEEDED,
-        JobState.FAILED,
-        JobState.CANCELLING,
-        JobState.RETRYING,
-    }),
-    JobState.RETRYING: frozenset({
-        JobState.RUNNING,
-        JobState.FAILED,
-        JobState.CANCELLED,
-    }),
-    JobState.CANCELLING: frozenset({JobState.CANCELLED}),
-    JobState.SUCCEEDED: frozenset(),
-    JobState.FAILED: frozenset(),
-    JobState.CANCELLED: frozenset(),
-}
-
-
-class ErrorCode(StrEnum):
-    INVALID_ARGUMENT = "INVALID_ARGUMENT"
-    UNAUTHENTICATED = "UNAUTHENTICATED"
-    PERMISSION_DENIED = "PERMISSION_DENIED"
-    NOT_FOUND = "NOT_FOUND"
-    ALREADY_EXISTS = "ALREADY_EXISTS"
-    FAILED_PRECONDITION = "FAILED_PRECONDITION"
-    RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
-    CANCELLED = "CANCELLED"
-    UNAVAILABLE = "UNAVAILABLE"
-    INTERNAL = "INTERNAL"
-
-    DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
-    DEVICE_LOST = "DEVICE_LOST"
-    EXECUTION_INTERRUPTED = "EXECUTION_INTERRUPTED"
-    SUBPROCESS_FAILED = "SUBPROCESS_FAILED"
-    SUBPROCESS_HUNG = "SUBPROCESS_HUNG"
-    MALFORMED_OUTPUT = "MALFORMED_OUTPUT"
-    CUDA_OUT_OF_MEMORY = "CUDA_OUT_OF_MEMORY"
-    DISK_FULL = "DISK_FULL"
-    RECOVERY_CHECKPOINT_UNAVAILABLE = "RECOVERY_CHECKPOINT_UNAVAILABLE"
-    RECOVERY_CHECKPOINT_INCOMPATIBLE = "RECOVERY_CHECKPOINT_INCOMPATIBLE"
-    RECOVERY_INPUT_UNAVAILABLE = "RECOVERY_INPUT_UNAVAILABLE"
+__all__ = [
+    "ACTIONS",
+    "CANCEL_ACTION",
+    "CAPABILITIES_ACTION",
+    "CONTRACT_NAME",
+    "CONTRACT_PATH_VERSION",
+    "CONTRACT_VERSION",
+    "CREATE_ACTION",
+    "FIT_SCHEMA_ID",
+    "HEALTH_ACTION",
+    "IMMEDIATE_CANCEL_STATES",
+    "MAX_MANIFEST_ITEMS",
+    "PREDICTION_SCHEMA_ID",
+    "PREDICT_SCHEMA_ID",
+    "SEAL_ACTION",
+    "START_ACTION",
+    "STATE_TRANSITIONS",
+    "STATUS_ACTION",
+    "SUPPORTED_DEVICES",
+    "SUPPORTED_OPERATIONS",
+    "TERMINAL_STATES",
+    "ErrorCode",
+    "JobState",
+]

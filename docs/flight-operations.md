@@ -3,7 +3,7 @@
 This runbook covers the single-instance Transformer Flight service. Consumer
 wire details are in the
 [`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
-fixtures are in [`contracts/flight/v2`](../contracts/flight/v2/README.md), and
+fixtures are in [`app/contracts/flight/v2`](../app/contracts/flight/v2/README.md), and
 the original service boundary is recorded in
 [`ADR 0001`](adr/0001-arrow-flight-job-service.md), and durable resumable
 training plus device-aware execution are fixed by

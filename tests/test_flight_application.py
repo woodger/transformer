@@ -361,6 +361,7 @@ def test_restart_requeues_persistent_fit_and_recovers_other_states(
     ledger.set_attempt_process(
         interrupted["job_id"],
         interrupted["attempt"],
+        attempt_id=interrupted["attempt_id"],
         pid=orphan.pid,
         pgid=orphan.pid,
         boot_id=orphan_identity.boot_id,

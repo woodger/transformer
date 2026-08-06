@@ -246,6 +246,7 @@ def test_expired_tickets_are_removed_without_removing_unexpired_ticket(tmp_path)
                 f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow"
             ),
         }],
+        attempt_id=running["attempt_id"],
         result={"outputs": [0]},
         now=80.0,
     )
@@ -293,6 +294,7 @@ def test_model_generation_and_producing_job_are_never_retained_away(tmp_path):
     ledger.publish_model(
         job["job_id"],
         running["attempt"],
+        attempt_id=running["attempt_id"],
         model_ref=model_ref,
         label="daily-model",
         generation=None,

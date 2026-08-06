@@ -39,7 +39,14 @@ from app.flight.contract import (
     validate_upload_metadata,
 )
 
-FIXTURE_ROOT = Path(__file__).parents[1] / "contracts" / "flight" / "v2" / "fixtures"
+FIXTURE_ROOT = (
+    Path(__file__).parents[1]
+    / "app"
+    / "contracts"
+    / "flight"
+    / "v2"
+    / "fixtures"
+)
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 GENERATOR = FIXTURE_ROOT / "generate_arrow_fixtures.py"

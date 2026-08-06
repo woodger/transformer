@@ -34,7 +34,7 @@ production environment и проверке CUDA находится в
 
 Проект содержит single-instance Arrow Flight v2 job service поверх существующих
 `fit-stream`/`predict-stream`. Нормативный wire contract находится в
-[`contracts/flight/v2`](contracts/flight/v2/README.md), а конфигурация, TLS/mTLS,
+[`app/contracts/flight/v2`](app/contracts/flight/v2/README.md), а конфигурация, TLS/mTLS,
 запуск, recovery и retention — в
 [`docs/flight-operations.md`](docs/flight-operations.md).
 
@@ -576,17 +576,12 @@ POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
 ```text
 app/main.py          # тонкий CLI entrypoint
 app/cli/             # argparse и форматированный --help/--version
-app/commands/        # реализации fit/predict/stream/plot команд
-app/data/            # Arrow file/framed protocol, reshape и shape validation
-app/model/           # Transformer, positional encoding, context masking
-app/training/        # Trainer, configs, loss stages, scheduler, early stopping
-app/metrics/         # TrainMetrics, JSONL writer/reader, SVG-графики
-app/storage/         # published и training-recovery checkpoint formats
-app/runtime/         # device selection и версия приложения
-app/flight/          # Flight contract, ledger, stores, scheduler и workers
-app/database/        # PostgreSQL configuration, persistence и Alembic revisions
-contracts/flight/v2/ # нормативные JSON Schemas и golden fixtures
+app/contracts/       # внешний Flight v2 и внутренний worker v1 contracts
+app/service/         # domain/application, Flight и outbound adapters, bootstrap
+app/worker/          # Arrow/Torch model, training, checkpoints и process root
+app/admin/           # auth/database CLI и отдельные composition roots
+app/flight/          # временные compatibility imports старого service API
+app/database/        # временные compatibility imports PostgreSQL adapter
 recovery/            # runtime-created persistent fit inputs/checkpoints
 app/config.py        # project defaults
-app/utils.py         # небольшие совместные runtime helpers
 ```

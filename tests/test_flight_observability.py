@@ -25,7 +25,7 @@ from app.flight.observability import OperationalMetrics
 from app.flight.records import ExecutionJobRecord
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
-from app.flight.worker import WorkerPool
+from app.service.application.services.worker_pool import WorkerPool
 
 
 class RecordingLogger:
@@ -166,6 +166,16 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
 
     metrics = OperationalMetrics()
     logger = RecordingLogger()
+    executed = []
+    attempt_executor = SimpleNamespace(
+        execute=executed.append,
+        notify_cancel=lambda _job_id: None,
+        interrupt_for_shutdown=lambda: None,
+    )
+    device_inventory = SimpleNamespace(
+        schedulable_devices=lambda: (),
+        snapshot=lambda: SimpleNamespace(devices=()),
+    )
     pool = WorkerPool(
         SimpleNamespace(
             cpu_capacity=1,
@@ -173,12 +183,11 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
             cancel_grace_seconds=0.1,
         ),
         LedgerDouble(),
-        object(),
         metrics=metrics,
         logger=logger,
+        device_inventory=device_inventory,
+        attempt_executor=attempt_executor,
     )
-    executed = []
-    pool._attempt_executor.execute = executed.append
 
     assert pool.run_once("cpu", worker_id="worker-1") is True
     assert executed == [claimed]

@@ -20,7 +20,8 @@
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v2 contract | `contracts/flight/v2/` |
+| Нормативный Flight v2 contract | `app/contracts/flight/v2/` |
+| Нормативный worker v1 contract | `app/contracts/worker/v1/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -47,8 +48,9 @@ CLI help является публичным контрактом.
 
 - `app/cli/help.py` — parser metadata, descriptions и rendering;
 - `app/cli/args.py` — parsing entry;
-- `app/commands/` — command behavior;
-- `app/main.py` — dispatch и lifecycle.
+- `app/commands/` и `app/admin/` — command behavior;
+- process roots в `app/service/bootstrap/`, `app/worker/bootstrap/` и
+  `app/admin/bootstrap/` — resource lifecycle.
 
 Глобальный help остаётся компактным: Usage, global options и список command
 groups. Полные arguments/options находятся в leaf command help:
@@ -68,7 +70,8 @@ transformer <command> --help
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Фактические правила parsing и defaults находятся в
-`app/database/config.py` и `app/flight/config.py`.
+`app/config.py`, `app/service/bootstrap/config.py` и
+`app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:
 
@@ -80,7 +83,7 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `contracts/flight/v2/` нормативны для wire
+JSON Schemas и golden fixtures в `app/contracts/flight/v2/` нормативны для wire
 format. README или operations guide не могут переопределять их.
 
 Изменение Flight contract требует синхронно проверить:

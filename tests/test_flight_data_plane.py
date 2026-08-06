@@ -721,7 +721,13 @@ def test_get_flight_info_issues_opaque_ticket_and_do_get_streams_output(data_pla
     path = spool.attempt_output_path(job_id, running["attempt"], 0)
     output = write_output(path, empty=empty)
     output["relative_path"] = spool.relative_path(path)
-    ledger.publish_outputs(job_id, running["attempt"], [output], result={})
+    ledger.publish_outputs(
+        job_id,
+        running["attempt"],
+        [output],
+        attempt_id=running["attempt_id"],
+        result={},
+    )
 
     descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v2", "jobs", job_id, "outputs", "0"

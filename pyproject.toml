@@ -12,5 +12,5 @@ combine-as-imports = true
 cache_dir = ".cache/pytest"
 
 [tool.alembic]
-script_location = "%(here)s/app/database/alembic"
+script_location = "%(here)s/app/service/adapters/outbound/postgres/alembic"
 prepend_sys_path = ["."]

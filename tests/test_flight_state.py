@@ -2,11 +2,15 @@ import pytest
 
 from app.flight.constants import ErrorCode, JobState
 from app.flight.state import (
+    AttemptOutcomeDecision,
     CancelDecision,
+    DeviceDecision,
     RecoveryDecision,
+    decide_attempt_outcome,
     decide_cancel,
     decide_interrupted_attempt,
     is_terminal,
+    resolve_device,
     validate_transition,
 )
 
@@ -157,3 +161,44 @@ def test_only_active_attempt_states_can_be_reconciled(state):
         match="job state cannot be reconciled as interrupted",
     ):
         decide_interrupted_attempt(state)
+
+
+@pytest.mark.parametrize(
+    ("state", "failure", "operation", "resumable", "target"),
+    [
+        (JobState.CANCELLING, ErrorCode.SUBPROCESS_FAILED, "fit", True, JobState.CANCELLED),
+        (JobState.RUNNING, ErrorCode.CANCELLED, "predict", False, JobState.CANCELLED),
+        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "predict", False, JobState.RETRYING),
+        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "fit", True, JobState.RETRYING),
+        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "fit", False, JobState.FAILED),
+        (
+            JobState.RUNNING,
+            ErrorCode.EXECUTION_INTERRUPTED,
+            "fit",
+            True,
+            JobState.RETRYING,
+        ),
+        (JobState.RUNNING, ErrorCode.SUBPROCESS_FAILED, "fit", True, JobState.FAILED),
+    ],
+)
+def test_attempt_outcome_policy(state, failure, operation, resumable, target):
+    assert decide_attempt_outcome(
+        state,
+        failure,
+        operation=operation,
+        resumable_fit=resumable,
+    ) == AttemptOutcomeDecision(target)
+
+
+@pytest.mark.parametrize(
+    ("requested", "available", "expected"),
+    [
+        ("cpu", False, DeviceDecision("cpu", None)),
+        ("auto", False, DeviceDecision("cpu", None)),
+        ("auto", True, DeviceDecision("cuda", None)),
+        ("cuda", True, DeviceDecision("cuda", None)),
+        ("cuda", False, DeviceDecision(None, ErrorCode.DEVICE_UNAVAILABLE)),
+    ],
+)
+def test_device_resolution_policy(requested, available, expected):
+    assert resolve_device(requested, available) == expected

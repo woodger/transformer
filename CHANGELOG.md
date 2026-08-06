@@ -14,13 +14,31 @@
   согласованного status snapshot во время publication.
 - Добавлен единый lock-файл всех зависимостей проектного Python 3.11
   environment.
+- Добавлен независимый worker process contract v1 с immutable manifests,
+  bounded NDJSON events, capability inspection и equality fence `attemptId`.
+- Добавлена migration `0003`, создающая UUID execution identity для каждой
+  PostgreSQL attempt.
 
 ### Changed
 
 - Конфигурация Ruff, pytest и Alembic объединена в `pyproject.toml`; локальные
   tool caches складываются в единую игнорируемую директорию `.cache/`.
-- Alembic environment и schema revisions перенесены под `app/database/`,
-  которому принадлежит PostgreSQL persistence приложения.
+- Проект разделён на process-specific Clean Architecture boundaries:
+  `app/service`, `app/worker` и `app/admin` имеют собственные composition
+  roots, а публичный Flight v2 и внутренний worker v1 contracts находятся в
+  `app/contracts/`.
+- PostgreSQL adapter, ORM и Alembic перенесены в
+  `app/service/adapters/outbound/postgres/`; прежние `app/database` и
+  `app/flight` import paths временно сохранены совместимыми фасадами.
+- ML model, training, Arrow tensor path и checkpoint runtime перенесены под
+  `app/worker/`. Service обнаруживает Torch/CUDA только через
+  `transformer-worker inspect` и не импортирует worker implementation.
+- Каждый claimed attempt выполняется отдельным worker v1 subprocess через
+  immutable manifest; progress, recovery checkpoints и terminal result
+  принимаются как identity-bound NDJSON events, а публикация остаётся за
+  service-процессом.
+- Job lifecycle разделён на application commands/query, persistence boundary
+  возвращает immutable records и согласованный `StatusSnapshot`.
 
 ### Fixed
 
@@ -37,6 +55,8 @@
   activations.
 - Arrow input и prediction output преобразуются через векторные Arrow/NumPy
   buffers без Python list/scalar materialization.
+- Все worker mutations, включая cancel и повтор `RETRYING`, атомарно проверяют
+  текущий `attemptId`; запоздалый executor не может изменить новый attempt.
 
 ## [0.1.7] - 2026-07-25
 

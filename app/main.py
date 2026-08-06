@@ -77,19 +77,19 @@ def main():
     args = parse_args()
 
     if args.action == "flight" and args.flight_action == "serve":
-        from app.flight.application import run_from_args
+        from app.service.bootstrap.application import run_from_args
 
         run_from_args(args)
         return
 
     if args.action == "auth":
-        from app.commands.auth_tokens import run
+        from app.admin.bootstrap.auth_tokens import run
 
         run(args)
         return
 
     if args.action == "db":
-        from app.commands.db_migrations import run
+        from app.admin.bootstrap.db_migrations import run
 
         run(args)
         return

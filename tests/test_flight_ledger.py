@@ -514,6 +514,7 @@ def test_fit_retry_resumes_latest_registered_epoch_checkpoint(ledger):
     checkpoint, replayed = ledger.register_recovery_checkpoint(
         job_id=job["job_id"],
         attempt=first_attempt["attempt"],
+        attempt_id=first_attempt["attempt_id"],
         generation=1,
         format=TRAINING_RECOVERY_FORMAT,
         relative_path=checkpoint_path,
@@ -527,6 +528,7 @@ def test_fit_retry_resumes_latest_registered_epoch_checkpoint(ledger):
     repeated, repeated_replayed = ledger.register_recovery_checkpoint(
         job_id=job["job_id"],
         attempt=first_attempt["attempt"],
+        attempt_id=first_attempt["attempt_id"],
         generation=1,
         format=TRAINING_RECOVERY_FORMAT,
         relative_path=checkpoint_path,
@@ -545,6 +547,7 @@ def test_fit_retry_resumes_latest_registered_epoch_checkpoint(ledger):
         ledger.register_recovery_checkpoint(
             job_id=job["job_id"],
             attempt=first_attempt["attempt"],
+            attempt_id=first_attempt["attempt_id"],
             generation=1,
             format=TRAINING_RECOVERY_FORMAT,
             relative_path=checkpoint_path,
@@ -559,6 +562,7 @@ def test_fit_retry_resumes_latest_registered_epoch_checkpoint(ledger):
     retried = ledger.schedule_retry(
         job["job_id"],
         first_attempt["attempt"],
+        attempt_id=first_attempt["attempt_id"],
         error_code=ErrorCode.EXECUTION_INTERRUPTED,
         error_message="service restarted",
         now=14.0,
@@ -608,6 +612,7 @@ def test_confirmed_device_loss_reassigns_predict_to_another_gpu(ledger):
     retried = ledger.schedule_retry(
         job["job_id"],
         first_attempt.attempt,
+        attempt_id=first_attempt.attempt_id,
         error_code=ErrorCode.DEVICE_LOST,
         error_message="assigned GPU disappeared",
         exit_code=1,
@@ -655,6 +660,7 @@ def test_output_publication_is_all_or_nothing(ledger):
             job["job_id"],
             running["attempt"],
             [output, output],
+            attempt_id=running["attempt_id"],
             result={"outputs": [0]},
         )
     assert error.value.code == ErrorCode.ALREADY_EXISTS
@@ -665,10 +671,138 @@ def test_output_publication_is_all_or_nothing(ledger):
         job["job_id"],
         running["attempt"],
         [output],
+        attempt_id=running["attempt_id"],
         result={"outputs": [0]},
     )
     assert succeeded["state"] == JobState.SUCCEEDED.value
     assert len(ledger.list_outputs(job["job_id"])) == 1
+
+
+def test_worker_mutations_reject_wrong_attempt_identity(ledger):
+    job = create_job(ledger, operation="predict")
+    seal_and_queue(ledger, job["job_id"])
+    running = ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        worker_id="worker",
+    )
+    wrong_attempt_id = str(uuid.uuid4())
+    output = {
+        "ordinal": 0,
+        "rows": 0,
+        "batches": 0,
+        "bytes": 128,
+        "sha256": DIGEST_A,
+        "schema_fingerprint": DIGEST_B,
+        "relative_path": (
+            f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow"
+        ),
+    }
+
+    operations = (
+        lambda: ledger.update_progress(
+            job["job_id"],
+            {"epoch": 1},
+            attempt_id=wrong_attempt_id,
+        ),
+        lambda: ledger.set_attempt_process(
+            job["job_id"],
+            running.attempt,
+            attempt_id=wrong_attempt_id,
+            pid=123,
+            pgid=123,
+            boot_id=str(uuid.uuid4()),
+            process_start_ticks=1,
+        ),
+        lambda: ledger.publish_outputs(
+            job["job_id"],
+            running.attempt,
+            [output],
+            attempt_id=wrong_attempt_id,
+            result={"outputs": [0]},
+        ),
+        lambda: ledger.finish_attempt(
+            job["job_id"],
+            running.attempt,
+            JobState.FAILED,
+            attempt_id=wrong_attempt_id,
+            error_code=ErrorCode.SUBPROCESS_FAILED,
+            error_message="stale worker",
+        ),
+        lambda: ledger.request_attempt_cancel(
+            job["job_id"],
+            running.attempt,
+            attempt_id=wrong_attempt_id,
+        ),
+    )
+    for operation in operations:
+        with pytest.raises(ServiceError) as error:
+            operation()
+        assert error.value.code == ErrorCode.FAILED_PRECONDITION
+        assert ledger.get_job(job["job_id"])["state"] == JobState.RUNNING.value
+
+    succeeded = ledger.publish_outputs(
+        job["job_id"],
+        running.attempt,
+        [output],
+        attempt_id=running.attempt_id,
+        result={"outputs": [0]},
+    )
+    assert succeeded["state"] == JobState.SUCCEEDED.value
+
+
+def test_recovery_mutations_reject_wrong_attempt_identity(ledger):
+    job = create_job(ledger)
+    seal_and_queue(ledger, job["job_id"])
+    running = ledger.claim_execution_job(job["job_id"], "cpu")
+    wrong_attempt_id = str(uuid.uuid4())
+
+    with pytest.raises(ServiceError) as checkpoint_error:
+        ledger.register_recovery_checkpoint(
+            job_id=job["job_id"],
+            attempt=running.attempt,
+            attempt_id=wrong_attempt_id,
+            generation=1,
+            format=TRAINING_RECOVERY_FORMAT,
+            relative_path=f"jobs/{job['job_id']}/checkpoints/1.pth",
+            byte_count=4096,
+            sha256=DIGEST_A,
+            completed_epochs=1,
+            global_step=1,
+            training_complete=False,
+        )
+    assert checkpoint_error.value.code == ErrorCode.FAILED_PRECONDITION
+
+    with pytest.raises(ServiceError) as retry_error:
+        ledger.schedule_retry(
+            job["job_id"],
+            running.attempt,
+            attempt_id=wrong_attempt_id,
+            error_code=ErrorCode.EXECUTION_INTERRUPTED,
+            error_message="stale worker",
+        )
+    assert retry_error.value.code == ErrorCode.FAILED_PRECONDITION
+    assert ledger.get_job(job["job_id"])["state"] == JobState.RUNNING.value
+
+    retried = ledger.schedule_retry(
+        job["job_id"],
+        running.attempt,
+        attempt_id=running.attempt_id,
+        error_code=ErrorCode.EXECUTION_INTERRUPTED,
+        error_message="service restarted",
+    )
+    assert retried["state"] == JobState.RETRYING.value
+
+    with pytest.raises(ServiceError) as replay_error:
+        ledger.schedule_retry(
+            job["job_id"],
+            running.attempt,
+            attempt_id=wrong_attempt_id,
+            error_code=ErrorCode.EXECUTION_INTERRUPTED,
+            error_message="stale retry replay",
+        )
+    assert replay_error.value.code == ErrorCode.FAILED_PRECONDITION
+    assert ledger.get_job(job["job_id"])["state"] == JobState.RETRYING.value
 
 
 def test_failed_attempt_updates_job_and_attempt_in_one_transaction(ledger):
@@ -680,6 +814,7 @@ def test_failed_attempt_updates_job_and_attempt_in_one_transaction(ledger):
         job["job_id"],
         running["attempt"],
         JobState.FAILED,
+        attempt_id=running["attempt_id"],
         error_code=ErrorCode.SUBPROCESS_FAILED,
         error_message="worker exited with status 2",
         exit_code=2,
@@ -705,6 +840,7 @@ def test_cancelled_attempt_cannot_persist_error_metadata(ledger):
             job["job_id"],
             running["attempt"],
             JobState.CANCELLED,
+            attempt_id=running["attempt_id"],
             error_code=ErrorCode.CANCELLED,
             error_message="job was cancelled",
         )
@@ -713,6 +849,7 @@ def test_cancelled_attempt_cannot_persist_error_metadata(ledger):
         job["job_id"],
         running["attempt"],
         JobState.CANCELLED,
+        attempt_id=running["attempt_id"],
     )
     assert cancelled["error_code"] is None
     assert cancelled["error_message"] is None
@@ -734,6 +871,7 @@ def test_ticket_is_opaque_owner_bound_and_expires(ledger):
             "schema_fingerprint": DIGEST_B,
             "relative_path": f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow",
         }],
+        attempt_id=running["attempt_id"],
         result={"outputs": [0]},
         now=10.0,
     )
@@ -802,6 +940,7 @@ def test_retention_does_not_delete_job_with_active_output_ticket(ledger):
             "schema_fingerprint": DIGEST_B,
             "relative_path": f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow",
         }],
+        attempt_id=running["attempt_id"],
         result={"outputs": [0]},
         now=10.0,
     )

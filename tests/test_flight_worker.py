@@ -378,6 +378,7 @@ def publish_seed_model(ledger, spool):
     ledger.publish_model(
         producer["job_id"],
         running["attempt"],
+        attempt_id=running["attempt_id"],
         model_ref=model_ref,
         label="seed",
         generation=None,
@@ -621,7 +622,10 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
     assert launch_argv[1] == os.path.join(
         Path(pool._cli_path).parents[1],
         "app",
-        "flight",
+        "service",
+        "adapters",
+        "outbound",
+        "worker_process",
         "process_supervisor.py",
     )
     assert launch_argv[2:4] == [str(os.getpid()), "--"]

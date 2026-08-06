@@ -11,7 +11,8 @@
 
 `app/main.py` выполняет dispatch и лениво подключает command-specific
 dependencies. CLI schema и help находятся в `app/cli/`, handlers — в
-`app/commands/`, Flight composition root — в `app/flight/application.py`.
+`app/commands/`, а process-specific roots — в `app/service/bootstrap/`,
+`app/worker/bootstrap/` и `app/admin/bootstrap/`.
 
 ## Что считается контрактом
 
@@ -48,7 +49,7 @@ Subprocess следует запускать списком аргументов
 
 - CLI tests и command-specific help;
 - README или профильный behavioral reference;
-- Flight worker, если он вызывает изменённую команду;
+- internal worker contract и worker bootstrap, если изменён process invocation;
 - systemd-документацию, если изменился service entrypoint.
 
 Скрипты не должны использоваться для маскировки проблемы окружения или

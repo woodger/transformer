@@ -9,6 +9,7 @@ from referencing import Registry, Resource
 
 SCHEMA_ROOT = (
     Path(__file__).parents[1]
+    / "app"
     / "contracts"
     / "flight"
     / "v2"

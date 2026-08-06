@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v1/arrow-manifest.schema.json",
+  "title": "Transformer worker v1 Arrow input and output manifests",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaId", "ordinal", "rows", "artifact"],
+  "properties": {
+    "schemaId": {
+      "enum": [
+        "inventory.sequence.fit.v1",
+        "inventory.sequence.predict.v1",
+        "transformer.prediction.v1"
+      ]
+    },
+    "ordinal": {"type": "integer", "minimum": 0},
+    "rows": {"type": "integer", "minimum": 0},
+    "artifact": {
+      "$ref": "https://transformer.local/contracts/worker/v1/common.schema.json#/$defs/artifact"
+    }
+  }
+}

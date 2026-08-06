@@ -1121,6 +1121,7 @@ def test_cancel_commit_before_result_publication_prevents_success(coordinator):
             job["job_id"],
             running["attempt"],
             [_prediction_output(job["job_id"])],
+            attempt_id=running["attempt_id"],
             result={"outputs": [{"ordinal": 0}]},
         )
     assert ledger.list_outputs(job["job_id"]) == []
@@ -1133,6 +1134,7 @@ def test_result_publication_commit_before_cancel_remains_successful(coordinator)
         job["job_id"],
         running["attempt"],
         [_prediction_output(job["job_id"])],
+        attempt_id=running["attempt_id"],
         result={"outputs": [{"ordinal": 0}]},
     )
     cancel = {
@@ -1217,6 +1219,7 @@ def test_cancel_and_result_publication_have_one_atomic_winner(
             job["job_id"],
             running["attempt"],
             [output],
+            attempt_id=running["attempt_id"],
             result={"outputs": [{"ordinal": 0}]},
         ),
         name="cancel-publication-race-publish",
@@ -1342,6 +1345,7 @@ def test_status_snapshot_is_consistent_while_result_is_published(
             job["job_id"],
             running["attempt"],
             [output],
+            attempt_id=running["attempt_id"],
             result={"outputs": [{"ordinal": 0}]},
         ),
         name="status-publication-publish",

@@ -1,16 +1,5 @@
-import platform
+import sys
 
-import torch
+from app import version as _implementation
 
-__version__ = "0.1.7"
-
-
-def version_text(prog: str = "main.py") -> str:
-    cuda_status = "available" if torch.cuda.is_available() else "unavailable"
-
-    return "\n".join([
-        f"{prog} {__version__}",
-        f"python {platform.python_version()}",
-        f"torch {torch.__version__}",
-        f"cuda {cuda_status}",
-    ])
+sys.modules[__name__] = _implementation
