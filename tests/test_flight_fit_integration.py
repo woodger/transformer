@@ -436,11 +436,14 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
         assert [row["step"] for row in service_metrics] == [1]
         assert _without_elapsed(service_metrics) == _without_elapsed(direct_metrics)
 
-        service_stdout = Path(application.spool.attempt_stdout_path(
+        service_stderr = Path(application.spool.attempt_stderr_path(
             job_id,
             status["attempt"],
         )).read_text(errors="replace")
-        assert "2 trained frame(s), 1 epoch(s) from 2 received frame(s)" in service_stdout
+        assert (
+            "2 trained frame(s), 1 epoch(s) from 2 received frame(s)"
+            in service_stderr
+        )
     finally:
         client.close()
         application.shutdown()

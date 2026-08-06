@@ -170,16 +170,20 @@ class WorkerApplication:
                 yield X_cpu, Y_cpu
                 del X_cpu, Y_cpu
 
+        trained_epochs = 0
+
         def on_epoch(epoch, metrics, monitor_payload):
+            nonlocal trained_epochs
+            trained_epochs += 1
             progress = metrics.to_dict(
                 **trainer.metrics_context,
-                mode="worker-fit",
+                mode="fit-stream",
                 epoch=epoch + 1,
                 **monitor_payload,
             )
             trainer.record_metrics(
                 metrics,
-                mode="worker-fit",
+                mode="fit-stream",
                 epoch=epoch + 1,
                 **monitor_payload,
             )
@@ -224,6 +228,11 @@ class WorkerApplication:
 
         checkpoint_path = os.path.join(workspace, "checkpoint.pth")
         trainer.save(checkpoint_path)
+        print(
+            f"Model saved after {len(input_paths)} trained frame(s), "
+            f"{trained_epochs} epoch(s) from "
+            f"{len(manifest['inputs'])} received frame(s)"
+        )
         result = _result_identity(manifest)
         result.update({
             "artifacts": [],
@@ -255,7 +264,10 @@ class WorkerApplication:
         trainer = None
         expected_feature_dim = None
         artifacts = []
+        received_frames = 0
+        predicted_frames = 0
         for item in manifest["inputs"]:
+            received_frames += 1
             if item["schemaId"] != PREDICT_INPUT_SCHEMA_ID:
                 raise ValueError("prediction input schemaId is invalid")
             input_path = _validate_artifact(item["artifact"])
@@ -269,7 +281,8 @@ class WorkerApplication:
                 "outputs",
                 f"{item['ordinal']}.arrow",
             )
-            if X_cpu.size(0) == 0:
+            empty_input = X_cpu.size(0) == 0
+            if empty_input:
                 predictions = torch.empty((0, 6), dtype=torch.float32)
             else:
                 X_cpu = reshape_source(X_cpu, model_config.seq_len)
@@ -291,6 +304,8 @@ class WorkerApplication:
                     )
                     trainer.load_payload(checkpoint)
                     checkpoint = None
+                    print("X:", X_cpu.shape)
+                    print("Model loaded")
                 predictions = trainer.predict(X_cpu)
             write_arrow(
                 output_path,
@@ -298,6 +313,16 @@ class WorkerApplication:
                 prediction_column,
                 expected_rows=item["rows"],
             )
+            if empty_input:
+                print(
+                    f"frame {received_frames}, emitted empty predictions"
+                )
+            else:
+                predicted_frames += 1
+                print(
+                    f"frame {received_frames}, predicted "
+                    f"{predictions.shape[0]} row(s)"
+                )
             artifacts.append({
                 "schemaId": PREDICTION_OUTPUT_SCHEMA_ID,
                 "ordinal": item["ordinal"],
@@ -308,6 +333,10 @@ class WorkerApplication:
                 "ordinal": item["ordinal"],
                 "rows": item["rows"],
             })
+        print(
+            f"Predicted {predicted_frames} non-empty frame(s) "
+            f"from {received_frames} received frame(s)"
+        )
         result = _result_identity(manifest)
         result["artifacts"] = artifacts
         validate_document(result, "result-manifest")

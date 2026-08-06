@@ -281,7 +281,7 @@ class WorkerArtifactPublisher:
         except Exception as exc:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
-                "fit subprocess created invalid checkpoint metadata",
+                "fit subprocess created an invalid checkpoint",
             ) from exc
         expected_model = job.model_config
         expected_train = job.training_config
