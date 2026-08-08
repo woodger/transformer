@@ -30,7 +30,6 @@ Type=exec
 
 User=nerv
 Group=nerv
-WorkingDirectory=/home/nerv/transformer
 
 Environment=PYTHONUNBUFFERED=1
 

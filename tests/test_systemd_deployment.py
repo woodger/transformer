@@ -39,7 +39,7 @@ def test_service_uses_target_runtime_identity_and_entrypoint():
     assert service["Type"] == "exec"
     assert service["User"] == "nerv"
     assert service["Group"] == "nerv"
-    assert service["WorkingDirectory"] == "/home/nerv/transformer"
+    assert "WorkingDirectory" not in service
     assert "EnvironmentFile" not in service
     assert service["ExecStart"].split() == [
         "/home/nerv/transformer/.venv/bin/python",
@@ -57,7 +57,7 @@ def test_deployment_uses_the_project_runtime_without_versioned_python():
 
     assert "/opt/transformer" not in document
     assert "/usr/bin/python3." not in document
-    assert "WorkingDirectory=/home/nerv/transformer" in document
+    assert "WorkingDirectory=" not in document
     assert "ExecStart=/home/nerv/transformer/.venv/bin/python" in document
     assert "EnvironmentFile=" not in _configuration_block(
         "Создать unit-файл",
