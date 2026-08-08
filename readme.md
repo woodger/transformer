@@ -16,10 +16,20 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 
 ## Python environment
 
-Проект использует Python 3.11. Примеры локальных CLI и test-команд ниже
-выполняются через project `.venv`. Production systemd unit использует целое
-production tree в `/opt/transformer`, включая `.venv`, совместимое с политикой
-SELinux на Fedora.
+Проект использует только project `.venv`. Его base interpreter — системный
+`/usr/bin/python3` конкретного development или production-хоста; выбор и
+поддержка подходящей версии этого interpreter — ответственность владельца
+среды. Создать локальное окружение можно так:
+
+```bash
+/usr/bin/python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+Все примеры локальных CLI и test-команд ниже выполняются через project
+`.venv`; зависимости приложения не устанавливаются в system Python или
+user-site. Production systemd unit использует целое production tree в
+`/opt/transformer`, включая `.venv`, совместимое с политикой SELinux на Fedora.
 Версии всех Python-пакетов проекта зафиксированы в единственном lock-файле
 [`requirements.txt`](requirements.txt). Единственная инструкция по созданию
 production environment и проверке CUDA находится в

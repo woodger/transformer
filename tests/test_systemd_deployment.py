@@ -59,9 +59,9 @@ def test_deployment_has_one_python_environment_contract():
     document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
 
     assert document.count(
-        "/usr/bin/python3.11 -m venv /opt/transformer/.venv"
+        "/usr/bin/python3 -m venv /opt/transformer/.venv"
     ) == 1
-    assert "/usr/bin/python3.14" not in document
+    assert "/usr/bin/python3." not in document
     assert "ExecStart=/home/nerv/transformer" not in document
     assert "EnvironmentFile=" not in _configuration_block(
         "Создать unit-файл",

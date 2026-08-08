@@ -1,4 +1,4 @@
-# Project dependency lock for CPython 3.11 on Linux x86_64 with NVIDIA CUDA 13.0.
+# Project dependency lock for the deployment-managed CPython runtime on Linux x86_64 with NVIDIA CUDA 13.0.
 # Update only from a clean environment validated on the target GPU host.
 alembic==1.18.5
 attrs==26.1.0

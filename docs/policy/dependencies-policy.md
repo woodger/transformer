@@ -8,7 +8,8 @@
 
 Нужно оценить:
 
-- поддержку и совместимость с Python 3.11+;
+- поддержку и совместимость с system Python, предоставленным `/usr/bin/python3`
+  в target deployment-среде;
 - совместимость с PyTorch, PyArrow, SQLAlchemy и Psycopg;
 - наличие native extensions, CUDA и системных требований;
 - безопасность, лицензию и частоту обновлений;

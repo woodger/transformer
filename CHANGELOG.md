@@ -7,13 +7,14 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-06
+
 ### Added
 
 - Добавлены реальные конкурентные PostgreSQL regression tests для
   exact/conflicting idempotency, `cancel` против result publication и
   согласованного status snapshot во время publication.
-- Добавлен единый lock-файл всех зависимостей проектного Python 3.11
-  environment.
+- Добавлен единый lock-файл всех зависимостей project `.venv`.
 - Добавлен независимый worker process contract v1 с immutable manifests,
   bounded NDJSON events, capability inspection и equality fence `attemptId`.
 - Добавлена migration `0003`, создающая UUID execution identity для каждой
@@ -57,6 +58,8 @@
   buffers без Python list/scalar materialization.
 - Все worker mutations, включая cancel и повтор `RETRYING`, атомарно проверяют
   текущий `attemptId`; запоздалый executor не может изменить новый attempt.
+- Worker v1 сохраняет прежний формат fit-метрик и диагностические сообщения
+  fit/predict в `stderr`, не смешивая их с NDJSON event stream в `stdout`.
 
 ## [0.1.7] - 2026-07-25
 
@@ -76,7 +79,7 @@
 ### Changed
 
 - Ruff baseline расширен проверками потенциальных ошибок, безопасной
-  модернизации для Python 3.11, порядка `__all__` и регулярных выражений в
+  модернизации Python-кода, порядка `__all__` и регулярных выражений в
   `pytest.raises`.
 - Ruff также проверяет единый порядок Python import-блоков.
 - Runtime storage вычисляется из системной temporary directory и технического
@@ -302,7 +305,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/woodger/transformer/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5

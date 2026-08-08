@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import platform
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 
 
 def version_text(prog: str = "main.py") -> str:

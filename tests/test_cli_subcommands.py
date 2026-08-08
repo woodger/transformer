@@ -282,6 +282,18 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "(default: None)" not in serve_help
 
 
+def test_cli_help_does_not_select_a_python_minor_version(capsys):
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--help"])
+    assert exc.value.code == 0
+
+    help_text = capsys.readouterr().out.lower()
+    assert "python3." not in help_text
+    assert "python 3." not in help_text
+
+
 def test_flight_serve_help_documents_configuration_contract(capsys):
     with pytest.raises(SystemExit) as exc:
         build_parser().parse_args(["flight", "serve", "--help"])

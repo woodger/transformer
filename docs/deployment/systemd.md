@@ -30,11 +30,15 @@ tar \
 chmod 0600 /opt/transformer/.env
 ```
 
-Создать проектное окружение Python 3.11 и установить зафиксированные
-зависимости:
+Создать project `.venv` от системного `/usr/bin/python3` и установить
+зафиксированные зависимости. Владелец target host отвечает за подходящую
+версию system Python; проект не использует versioned interpreter paths.
+
+При смене `/usr/bin/python3` существующее `.venv` нужно пересоздать, а затем
+повторно установить lock-файл:
 
 ```bash
-/usr/bin/python3.11 -m venv /opt/transformer/.venv
+/usr/bin/python3 -m venv /opt/transformer/.venv
 /opt/transformer/.venv/bin/python -m pip install \
   -r /opt/transformer/requirements.txt
 /opt/transformer/.venv/bin/python -m pip check
@@ -43,7 +47,8 @@ matchpathcon -V /opt/transformer/.venv/bin/python
 ```
 
 Окружение создаётся на целевом сервере и не копируется с другой системы.
-`requirements.txt` — единственный источник версий Python-пакетов проекта.
+`requirements.txt` — единственный источник версий Python-пакетов проекта;
+системный Python и user-site не используются для зависимостей приложения.
 Production root находится под `/opt`, потому что SELinux запрещает systemd
 исполнять файлы с типом `user_home_t` из `/home`.
 

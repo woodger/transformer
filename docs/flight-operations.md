@@ -11,7 +11,9 @@ training plus device-aware execution are fixed by
 
 ## Runtime requirements
 
-- Python 3.11 on Linux.
+- Linux с `/usr/bin/python3`; подходящую версию system Python обеспечивает
+  владелец deployment-среды, а зависимости приложения находятся только в
+  project `.venv`.
 - PyTorch, NumPy and PyArrow for training and Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic and python-dotenv for PostgreSQL access.
 - PostgreSQL reachable on the private network.

@@ -1,5 +1,4 @@
 [tool.ruff]
-target-version = "py311"
 cache-dir = ".cache/ruff"
 
 [tool.ruff.lint]
