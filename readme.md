@@ -30,6 +30,9 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 `.venv`; зависимости приложения не устанавливаются в system Python или
 user-site. Production systemd unit использует целое production tree в
 `/opt/transformer`, включая `.venv`, совместимое с политикой SELinux на Fedora.
+Нормативные правила ownership system Python, `.venv` и package installation
+зафиксированы в
+[`docs/policy/python-runtime-policy.md`](docs/policy/python-runtime-policy.md).
 Версии всех Python-пакетов проекта зафиксированы в единственном lock-файле
 [`requirements.txt`](requirements.txt). Единственная инструкция по созданию
 production environment и проверке CUDA находится в

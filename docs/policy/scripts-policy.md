@@ -9,6 +9,9 @@
 .venv/bin/python app/main.py <command>
 ```
 
+Выбор base interpreter, создание `.venv` и установка package dependencies
+нормативно определены в [Политике Python runtime и виртуальных окружений](./python-runtime-policy.md).
+
 `app/main.py` выполняет dispatch и лениво подключает command-specific
 dependencies. CLI schema и help находятся в `app/cli/`, handlers — в
 `app/commands/`, а process-specific roots — в `app/service/bootstrap/`,

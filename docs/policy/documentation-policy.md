@@ -13,6 +13,7 @@
 | Назначение, навигация и общий CLI | `readme.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
 | Конфигурация Ruff, pytest и Alembic | `pyproject.toml` |
+| Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |

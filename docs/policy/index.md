@@ -21,6 +21,7 @@
 - [Политика комментариев](./comment-style.md)
 - [Политика зависимостей](./dependencies-policy.md)
 - [Политика именования](./naming-policy.md)
+- [Политика Python runtime и виртуальных окружений](./python-runtime-policy.md)
 - [Политика скриптов и точек запуска](./scripts-policy.md)
 
 ## Когда обращаться к политикам
