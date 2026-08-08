@@ -14,6 +14,7 @@ from app.flight.config import FlightServiceConfig, load_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SYSTEMD_DOCUMENT = PROJECT_ROOT / "docs" / "deployment" / "systemd.md"
+README = PROJECT_ROOT / "readme.md"
 ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 
@@ -68,6 +69,14 @@ def test_deployment_has_one_python_environment_contract():
         "ini",
     )
     assert "requirements.txt" in document
+
+
+def test_readme_quick_start_creates_a_clean_project_environment():
+    document = README.read_text(encoding="utf-8")
+    section = document.split("## Быстрый старт\n", 1)[1].split("\n## ", 1)[0]
+
+    assert "/usr/bin/python3 -m venv --clear .venv" in section
+    assert ".venv/bin/python -m pip install -r requirements.txt" in section
 
 
 def test_initial_migration_preserves_runtime_data_and_excludes_local_tool_state():

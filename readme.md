@@ -14,17 +14,23 @@ Checkpoint v2 сохраняет веса, model/train config и размер в
 `feature_dim`. Поэтому `predict` и `predict-stream` восстанавливают архитектуру
 и проверяют вход по metadata checkpoint.
 
+## Быстрый старт
+
+Из корня project создайте чистое виртуальное окружение и установите
+зафиксированные зависимости:
+
+```bash
+/usr/bin/python3 -m venv --clear .venv
+./.venv/bin/python -m pip install -r requirements.txt
+```
+
+Повторяйте этот сценарий при изменении `requirements.txt` или system Python.
+
 ## Python environment
 
 Проект использует только project `.venv`. Его base interpreter — системный
 `/usr/bin/python3` конкретного development или production-хоста; выбор и
-поддержка подходящей версии этого interpreter — ответственность владельца
-среды. Создать локальное окружение можно так:
-
-```bash
-/usr/bin/python3 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
-```
+поддержка подходящей версии этого interpreter — ответственность владельца среды.
 
 Все примеры локальных CLI и test-команд ниже выполняются через project
 `.venv`; зависимости приложения не устанавливаются в system Python или
