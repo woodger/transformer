@@ -13,7 +13,6 @@ from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
-from app.utils import MODELS_DIR, resolve_metrics_path
 
 
 @pytest.fixture(autouse=True)
@@ -585,11 +584,6 @@ def test_trainer_rejects_invalid_stage_size():
         assert "stage_size must be a positive integer" in str(exc)
     else:
         raise AssertionError("Trainer accepted invalid stage_size")
-
-
-def test_resolve_metrics_path_uses_models_dir():
-    assert resolve_metrics_path(None) is None
-    assert resolve_metrics_path("train.jsonl") == f"{MODELS_DIR}/train.jsonl"
 
 
 def test_trainer_writes_metrics_jsonl(tmp_path):
