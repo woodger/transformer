@@ -31,11 +31,11 @@ Production Python package versions are fixed only in
 [`requirements.txt`](../requirements.txt). The environment is created on the
 target host according to
 [`deployment/systemd.md`](deployment/systemd.md). Commands in this runbook are
-executed from `/opt/transformer` through
+executed from `/home/nerv/transformer` through
 `./.venv/bin/python`.
 
 ```bash
-cd /opt/transformer
+cd /home/nerv/transformer
 ```
 
 Each training or prediction subprocess starts in an isolated process group.

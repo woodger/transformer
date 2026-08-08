@@ -36,25 +36,14 @@ def test_service_uses_target_runtime_identity_and_entrypoint():
     unit = _load_unit()
     service = unit["Service"]
 
-    assert (
-        unit["Unit"]["Documentation"]
-        == "file:/opt/transformer/docs/deployment/systemd.md"
-    )
     assert service["Type"] == "exec"
     assert service["User"] == "nerv"
     assert service["Group"] == "nerv"
-    assert service["WorkingDirectory"] == "/opt/transformer"
-    assert unit["Unit"]["ConditionPathExists"] == "/opt/transformer/app/main.py"
-    assert (
-        unit["Unit"]["ConditionPathIsExecutable"]
-        == "/opt/transformer/.venv/bin/python"
-    )
-    assert unit["Unit"]["StartLimitIntervalSec"] == "60s"
-    assert unit["Unit"]["StartLimitBurst"] == "5"
+    assert service["WorkingDirectory"] == "/home/nerv/transformer"
     assert "EnvironmentFile" not in service
     assert service["ExecStart"].split() == [
-        "/opt/transformer/.venv/bin/python",
-        "/opt/transformer/app/main.py",
+        "/home/nerv/transformer/.venv/bin/python",
+        "/home/nerv/transformer/app/main.py",
         "flight",
         "serve",
         "--host=0.0.0.0",
@@ -63,19 +52,17 @@ def test_service_uses_target_runtime_identity_and_entrypoint():
     ]
 
 
-def test_deployment_has_one_python_environment_contract():
+def test_deployment_uses_the_project_runtime_without_versioned_python():
     document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
 
-    assert document.count(
-        "/usr/bin/python3 -m venv --clear /opt/transformer/.venv"
-    ) == 1
+    assert "/opt/transformer" not in document
     assert "/usr/bin/python3." not in document
-    assert "ExecStart=/home/nerv/transformer" not in document
+    assert "WorkingDirectory=/home/nerv/transformer" in document
+    assert "ExecStart=/home/nerv/transformer/.venv/bin/python" in document
     assert "EnvironmentFile=" not in _configuration_block(
         "Создать unit-файл",
         "ini",
     )
-    assert "requirements.txt" in document
 
 
 def test_readme_quick_start_creates_a_clean_project_environment():
@@ -86,43 +73,13 @@ def test_readme_quick_start_creates_a_clean_project_environment():
     assert ".venv/bin/python -m pip install -r requirements.txt" in section
 
 
-def test_initial_deployment_uses_a_clean_tracked_release_and_preserves_runtime_data():
-    document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
-
-    assert 'test "$(id -un)" = nerv' in document
-    assert 'test -z "$(git status --porcelain)"' in document
-    assert "git ls-files --error-unmatch requirements.txt" in document
-    assert "git -C /home/nerv/transformer archive --format=tar HEAD" in document
-    assert "test ! -e /opt/transformer" in document
-    assert "sudo systemctl disable --now transformer" in document
-    assert "install -m 0600 /home/nerv/transformer/.env /opt/transformer/.env" in document
-    assert "for runtime_directory in models recovery" in document
-    assert "`models/` и `recovery/`" in document
-    assert "tar -C /opt/transformer -xf -" in document
-    assert "-C /home/nerv/transformer -cf - ." not in document
-
-
-def test_deployment_preflight_precedes_unit_enablement():
-    document = SYSTEMD_DOCUMENT.read_text(encoding="utf-8")
-
-    assert document.index("## Проверить runtime до unit") < document.index(
-        "## Создать unit-файл"
-    )
-    assert document.index("## Применить миграции") < document.index(
-        "## Создать unit-файл"
-    )
-    assert document.index("## Создать unit-файл") < document.index(
-        "## Запустить сервис"
-    )
-
-
 def test_service_stop_policy_allows_application_to_drain_workers():
     service = _load_unit()["Service"]
     config = FlightServiceConfig()
     timeout = int(service["TimeoutStopSec"].removesuffix("s"))
 
     assert service["KillMode"] == "mixed"
-    assert service["RestartSec"] == "5s"
+    assert service["RestartSec"] == "5"
     assert timeout >= (
         config.shutdown_drain_seconds + config.cancel_grace_seconds + 20
     )

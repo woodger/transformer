@@ -123,9 +123,9 @@ storage semantics.
 
 Deployment guide не должен дублировать всю архитектуру сервиса или
 автоматизировать изменение production-хоста. Для target Fedora deployment он
-фиксирует один production root `/opt/transformer`, один runtime layout и способ
-запуска; альтернативные или предположительные варианты в reference-инструкцию
-не добавляются.
+фиксирует один production root `/home/nerv/transformer`, один runtime layout и
+способ запуска; альтернативные или предположительные варианты в
+reference-инструкцию не добавляются.
 
 ## Policy documents
 
