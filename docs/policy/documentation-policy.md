@@ -11,6 +11,10 @@
 | Тема | Основной источник |
 | --- | --- |
 | Назначение, навигация и общий CLI | `readme.md` |
+| Локальный quick start и проверка working copy | `docs/getting-started.md` |
+| Local CLI commands, options и artifact paths | `docs/cli/index.md` |
+| Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
+| Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
 | Конфигурация Ruff, pytest и Alembic | `pyproject.toml` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
@@ -33,13 +37,14 @@
 `readme.md` отвечает на вопросы:
 
 - что делает проект;
-- какие runtime dependencies нужны;
-- как запустить основные команды;
+- какие режимы работы поддержаны;
+- как создать локальное окружение и увидеть основные команды;
 - где находятся подробные contracts и operations.
 
-Новые длинные объяснения recovery, deployment, protocol edge cases и
-архитектурных решений следует помещать в профильный документ, оставляя в README
-краткую ссылку.
+README использует навигационную структуру: что есть в проекте, режимы, быстрый
+старт, CLI, документация, структура и deployment. Длинные объяснения recovery,
+deployment, protocol edge cases, training semantics и архитектурных решений
+следует помещать в профильный документ, оставляя в README краткую ссылку.
 
 ## CLI help
 
@@ -95,8 +100,10 @@ format. README или operations guide не могут переопределя�
 - version/compatibility policy;
 - Inventory handoff.
 
-Checkpoint format, Arrow columns и framed protocol также должны описываться в
-одном основном месте и проверяться тестами.
+Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
+основные источники: `docs/training-runtime.md` и
+`docs/local-arrow-protocol.md`. Flight v2 schemas и fixtures остаются
+нормативными для remote API. Эти contracts проверяются тестами.
 
 ## ADR
 
