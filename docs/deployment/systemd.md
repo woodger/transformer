@@ -42,6 +42,25 @@ UMask=0077
 WantedBy=multi-user.target
 ```
 
+## Настроить SELinux
+
+Разрешить systemd читать Python-ссылки виртуального окружения:
+
+```bash
+sudo semanage fcontext -a -f l -t bin_t \
+  '/home/nerv/transformer/\.venv/bin/python([0-9]+(\.[0-9]+)?)?'
+sudo restorecon -Rv /home/nerv/transformer/.venv/bin
+```
+
+Проверить тип ссылок:
+
+```bash
+ls -lZ /home/nerv/transformer/.venv/bin/python*
+```
+
+Python-ссылки должны иметь тип `bin_t`. После пересоздания `.venv` повторно
+выполнить `restorecon`.
+
 ## Запустить сервис
 
 ```bash
