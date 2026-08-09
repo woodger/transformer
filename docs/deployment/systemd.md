@@ -27,11 +27,7 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-
 User=nerv
-Group=nerv
-
-Environment=PYTHONUNBUFFERED=1
 
 ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
 
@@ -41,10 +37,6 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=60
 UMask=0077
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=transformer
 
 [Install]
 WantedBy=multi-user.target
