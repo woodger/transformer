@@ -50,8 +50,33 @@ systemd — [deployment guide](./deployment/systemd.md).
 Команда выводит token ID, subject и новый credential вида `a.<base64url>`.
 Сохраните credential в secret storage клиентского приложения; не помещайте его
 в repository, логи или server `.env`. Перезапуск Transformer не требуется:
-token cache обновляется автоматически. Команды просмотра metadata и отзыва
-токена описаны в [Flight runbook](./flight-operations.md#api-access-tokens).
+token cache обновляется автоматически.
+
+## Отозвать API-токен
+
+Сначала найдите token ID без раскрытия credentials:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
+```
+
+Затем отзовите токен по его ID:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke <token-id>
+```
+
+Например:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke \
+  35dc6236-cfb9-4ac7-80db-320db21ef463
+```
+
+Используйте именно token ID, а не credential вида `a.<base64url>`. Перезапуск
+Transformer не требуется: token cache обновляется автоматически. Подробности
+управления токенами находятся в
+[Flight runbook](./flight-operations.md#api-access-tokens).
 
 ## Локальное обучение и prediction
 
