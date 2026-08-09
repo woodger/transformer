@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-## [0.1.8] - 2026-08-06
+## [0.1.8] - 2026-08-09
 
 ### Added
 
@@ -15,6 +15,9 @@
   exact/conflicting idempotency, `cancel` против result publication и
   согласованного status snapshot во время publication.
 - Добавлен единый lock-файл всех зависимостей project `.venv`.
+- Добавлена единая политика Python runtime: `.venv` создаётся от системного
+  `/usr/bin/python3`, а application dependencies устанавливаются только из
+  `requirements.txt` project interpreter.
 - Добавлен независимый worker process contract v1 с immutable manifests,
   bounded NDJSON events, capability inspection и equality fence `attemptId`.
 - Добавлена migration `0003`, создающая UUID execution identity для каждой
@@ -40,14 +43,15 @@
   service-процессом.
 - Job lifecycle разделён на application commands/query, persistence boundary
   возвращает immutable records и согласованный `StatusSnapshot`.
+- README сокращён до quick start и навигации; подробные CLI, Arrow stream,
+  training runtime и deployment contracts вынесены в профильные документы.
 
 ### Fixed
 
 - Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:
-  приложение самостоятельно читает project `.env`, unit не использует
-  несовместимый с SELinux `EnvironmentFile`, полный production tree размещён
-  в `/opt/transformer`, а Python, packages, PostgreSQL и CUDA проверяются до
-  запуска сервиса.
+  project запускается из `/home/nerv/transformer`, unit напрямую использует
+  interpreter из `.venv`, а SELinux назначает тип `bin_t` только Python-ссылкам
+  виртуального окружения.
 - Seal manifest теперь проверяется под той же PostgreSQL row lock, что и
   переход job в `SEALED`; конкурентный `DoPut` больше не может оставить
   committed input за пределами sealed manifest.
