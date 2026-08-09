@@ -37,6 +37,22 @@ systemd — [deployment guide](./deployment/systemd.md).
 `./.venv/bin/python ./app/main.py <command> --help`. Краткая карта команд и их
 поведение собраны в [справочнике CLI](./cli/index.md).
 
+## Создать API-токен
+
+После настройки PostgreSQL и применения migrations выпустите bearer token для
+клиентского service identity:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue \
+  --subject=inventory-production
+```
+
+Команда выводит token ID, subject и новый credential вида `a.<base64url>`.
+Сохраните credential в secret storage клиентского приложения; не помещайте его
+в repository, логи или server `.env`. Перезапуск Transformer не требуется:
+token cache обновляется автоматически. Команды просмотра metadata и отзыва
+токена описаны в [Flight runbook](./flight-operations.md#api-access-tokens).
+
 ## Локальное обучение и prediction
 
 Входной файл — самостоятельный Arrow IPC file с колонками, описанными в
@@ -87,4 +103,3 @@ session; production database намеренно отклоняется.
 ./.venv/bin/python -m ruff check .
 POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
 ```
-
