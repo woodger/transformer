@@ -3,7 +3,7 @@
 This runbook covers the single-instance Transformer Flight service. Consumer
 wire details are in the
 [`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
-fixtures are in [`contracts/flight/v2`](../contracts/flight/v2/README.md), and
+fixtures are in [`app/contracts/flight/v2`](../app/contracts/flight/v2/README.md), and
 the original service boundary is recorded in
 [`ADR 0001`](adr/0001-arrow-flight-job-service.md), and durable resumable
 training plus device-aware execution are fixed by
@@ -11,7 +11,9 @@ training plus device-aware execution are fixed by
 
 ## Runtime requirements
 
-- Python 3.11 on Linux.
+- Linux с `/usr/bin/python3`; подходящую версию system Python обеспечивает
+  владелец deployment-среды, а зависимости приложения находятся только в
+  project `.venv`.
 - PyTorch, NumPy and PyArrow for training and Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic and python-dotenv for PostgreSQL access.
 - PostgreSQL reachable on the private network.
@@ -25,22 +27,21 @@ training plus device-aware execution are fixed by
 - For CUDA scheduling, `nvidia-smi` with stable GPU UUID output. Each visible
   GPU must be usable by the service user.
 
+Production Python package versions are fixed only in
+[`requirements.txt`](../requirements.txt). The environment is created on the
+target host according to
+[`deployment/systemd.md`](deployment/systemd.md). Commands in this runbook are
+executed from `/home/nerv/transformer` through
+`./.venv/bin/python`.
+
+```bash
+cd /home/nerv/transformer
+```
+
 Each training or prediction subprocess starts in an isolated process group.
 Startup recovery compares the recorded PID, process group, boot ID and process
 start ticks before signalling an interrupted group. If identity cannot be
 proved safely, startup fails instead of risking a signal to a reused PID.
-
-Install the direct Python dependencies into the environment used by the
-service:
-
-```bash
-python3.11 -m pip install torch numpy pyarrow \
-  SQLAlchemy 'psycopg[binary]' alembic python-dotenv
-python3.11 -m pip check
-```
-
-Select the CPU or CUDA PyTorch wheel appropriate for the deployment host.
-CUDA availability is a runtime capability; a CPU-only installation is valid.
 
 ## Storage and source-of-truth boundaries
 
@@ -137,15 +138,15 @@ Transformer uses the `transformer` PostgreSQL schema. The service never applies
 migrations at startup. Inspect and update it explicitly:
 
 ```bash
-python3.11 ./app/main.py db migrations status
-python3.11 ./app/main.py db migrations apply
+./.venv/bin/python ./app/main.py db migrations status
+./.venv/bin/python ./app/main.py db migrations apply
 ```
 
 `status` is read-only. `apply` upgrades to the current Alembic head. To revert
 exactly the latest applied revision:
 
 ```bash
-python3.11 ./app/main.py db migrations rollback
+./.venv/bin/python ./app/main.py db migrations rollback
 ```
 
 The service and token-management commands refuse to start against a missing or
@@ -167,7 +168,7 @@ Bearer authentication is required for every Flight RPC, including actions,
 DoPut, GetFlightInfo and DoGet. Issue a token for a local service identity:
 
 ```bash
-python3.11 ./app/main.py auth tokens issue --subject=inventory-production
+./.venv/bin/python ./app/main.py auth tokens issue --subject=inventory-production
 ```
 
 The command prints the token ID, subject and newly generated credential. The
@@ -178,13 +179,13 @@ in command history, logs or the repository.
 List metadata without revealing credentials:
 
 ```bash
-python3.11 ./app/main.py auth tokens list
+./.venv/bin/python ./app/main.py auth tokens list
 ```
 
 Revoke by token ID:
 
 ```bash
-python3.11 ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
+./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
 ```
 
 The Flight process builds an immutable SHA-256 digest index of active tokens in
@@ -270,13 +271,14 @@ copying defaults.
 All quotas, capacities and intervals must be positive. Only the service port
 may be zero.
 
-## Start the service
+## Manual foreground start
 
-Apply migrations and issue the Inventory token before the first start. A local
-plaintext process can then be started with:
+Production startup is defined only in
+[`deployment/systemd.md`](deployment/systemd.md). For foreground diagnostics,
+a local plaintext process can be started with:
 
 ```bash
-python3.11 ./app/main.py flight serve \
+./.venv/bin/python ./app/main.py flight serve \
   --allow-plaintext \
   --host=127.0.0.1 \
   --port=8815
@@ -285,7 +287,7 @@ python3.11 ./app/main.py flight serve \
 For a TLS endpoint:
 
 ```bash
-python3.11 ./app/main.py flight serve \
+./.venv/bin/python ./app/main.py flight serve \
   --host=0.0.0.0 \
   --port=8815 \
   --tls-cert-file=/run/secrets/transformer/tls.crt \

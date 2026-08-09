@@ -10,7 +10,14 @@
 
 | Тема | Основной источник |
 | --- | --- |
-| Назначение, установка и общий CLI | `readme.md` |
+| Назначение, навигация и общий CLI | `readme.md` |
+| Локальный quick start и проверка working copy | `docs/getting-started.md` |
+| Local CLI commands, options и artifact paths | `docs/cli/index.md` |
+| Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
+| Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
+| Версии Python-пакетов проекта | `requirements.txt` |
+| Конфигурация Ruff, pytest и Alembic | `pyproject.toml` |
+| Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |
@@ -18,7 +25,8 @@
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v2 contract | `contracts/flight/v2/` |
+| Нормативный Flight v2 contract | `app/contracts/flight/v2/` |
+| Нормативный worker v1 contract | `app/contracts/worker/v1/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -29,13 +37,14 @@
 `readme.md` отвечает на вопросы:
 
 - что делает проект;
-- какие runtime dependencies нужны;
-- как запустить основные команды;
+- какие режимы работы поддержаны;
+- как создать локальное окружение и увидеть основные команды;
 - где находятся подробные contracts и operations.
 
-Новые длинные объяснения recovery, deployment, protocol edge cases и
-архитектурных решений следует помещать в профильный документ, оставляя в README
-краткую ссылку.
+README использует навигационную структуру: что есть в проекте, режимы, быстрый
+старт, CLI, документация, структура и deployment. Длинные объяснения recovery,
+deployment, protocol edge cases, training semantics и архитектурных решений
+следует помещать в профильный документ, оставляя в README краткую ссылку.
 
 ## CLI help
 
@@ -45,8 +54,9 @@ CLI help является публичным контрактом.
 
 - `app/cli/help.py` — parser metadata, descriptions и rendering;
 - `app/cli/args.py` — parsing entry;
-- `app/commands/` — command behavior;
-- `app/main.py` — dispatch и lifecycle.
+- `app/commands/` и `app/admin/` — command behavior;
+- process roots в `app/service/bootstrap/`, `app/worker/bootstrap/` и
+  `app/admin/bootstrap/` — resource lifecycle.
 
 Глобальный help остаётся компактным: Usage, global options и список command
 groups. Полные arguments/options находятся в leaf command help:
@@ -66,7 +76,8 @@ transformer <command> --help
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Фактические правила parsing и defaults находятся в
-`app/database/config.py` и `app/flight/config.py`.
+`app/config.py`, `app/service/bootstrap/config.py` и
+`app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:
 
@@ -78,7 +89,7 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `contracts/flight/v2/` нормативны для wire
+JSON Schemas и golden fixtures в `app/contracts/flight/v2/` нормативны для wire
 format. README или operations guide не могут переопределять их.
 
 Изменение Flight contract требует синхронно проверить:
@@ -89,8 +100,10 @@ format. README или operations guide не могут переопределя�
 - version/compatibility policy;
 - Inventory handoff.
 
-Checkpoint format, Arrow columns и framed protocol также должны описываться в
-одном основном месте и проверяться тестами.
+Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
+основные источники: `docs/training-runtime.md` и
+`docs/local-arrow-protocol.md`. Flight v2 schemas и fixtures остаются
+нормативными для remote API. Эти contracts проверяются тестами.
 
 ## ADR
 
@@ -109,7 +122,10 @@ ADR или явным изменением статуса.
 storage semantics.
 
 Deployment guide не должен дублировать всю архитектуру сервиса или
-автоматизировать изменение production-хоста.
+автоматизировать изменение production-хоста. Для target Fedora deployment он
+фиксирует один production root `/home/nerv/transformer`, один runtime layout и
+способ запуска; альтернативные или предположительные варианты в
+reference-инструкцию не добавляются.
 
 ## Policy documents
 
@@ -146,4 +162,5 @@ protocol, checkpoint или архитектурную границу, соот�
 
 Устаревший текст удаляется, а не сохраняется «на всякий случай». Перед
 завершением проверяются links, команды, paths, version markers и отсутствие
-секретов.
+секретов. Deployment-команда считается документированной только после
+успешной проверки на целевом host environment.

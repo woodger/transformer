@@ -13,8 +13,9 @@
 Основные roots:
 
 - `app/main.py` и зарегистрированные CLI commands;
-- `app/flight/application.py` и Flight server wiring;
-- worker subprocess commands;
+- `app/service/bootstrap/application.py` и Flight server wiring;
+- `app/worker/bootstrap/` и один worker process на attempt;
+- `app/admin/bootstrap/` для auth/database commands;
 - package imports и `__init__.py` exports;
 - systemd entrypoint и documented operator commands.
 
@@ -22,9 +23,12 @@
 
 Некоторые живые файлы не импортируются обычным production-кодом:
 
-- `migrations/env.py` и `migrations/versions/*.py`, загружаемые Alembic;
-- `contracts/flight/v2/`, используемый внешними consumers и contract tests;
-- `.env.example`, `alembic.ini` и deployment reference;
+- `app/service/adapters/outbound/postgres/alembic/env.py` и
+  `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
+  загружаемые Alembic;
+- `app/contracts/flight/v2/`, используемый внешними consumers и contract tests;
+- `app/contracts/worker/v1/`, используемый service и worker processes;
+- `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;
 - files, найденные по dynamic string path или reflection.
 

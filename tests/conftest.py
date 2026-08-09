@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, delete
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.schema import DropSchema
 
 # add project root to PYTHONPATH
@@ -35,6 +36,16 @@ def postgres_config():
         schema,
     )
     cleanup_engine = create_engine(config.url)
+    try:
+        with cleanup_engine.connect():
+            pass
+    except OperationalError:
+        cleanup_engine.dispose()
+        pytest.exit(
+            "PostgreSQL integration is blocked: the dedicated test database "
+            "is unavailable",
+            returncode=4,
+        )
     try:
         apply_migrations(config)
         yield config

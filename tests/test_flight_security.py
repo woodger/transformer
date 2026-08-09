@@ -342,7 +342,13 @@ def published_output_server(tmp_path, postgres_ledger):
         ).hexdigest(),
         "relative_path": spool.relative_path(path),
     }
-    ledger.publish_outputs(job_id, running["attempt"], [output], result={})
+    ledger.publish_outputs(
+        job_id,
+        running["attempt"],
+        [output],
+        attempt_id=running["attempt_id"],
+        result={},
+    )
     coordinator = JobCoordinator(
         config,
         ledger,

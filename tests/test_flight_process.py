@@ -180,10 +180,13 @@ print(supervisor.pid, flush=True)
             str(Path(__file__).resolve().parents[1]),
             child_code,
             str(
-                Path(__file__).resolve().parents[1]
-                / "app"
-                / "flight"
-                / "process_supervisor.py"
+                    Path(__file__).resolve().parents[1]
+                    / "app"
+                    / "service"
+                    / "adapters"
+                    / "outbound"
+                    / "worker_process"
+                    / "process_supervisor.py"
             ),
         ],
         stdout=subprocess.PIPE,

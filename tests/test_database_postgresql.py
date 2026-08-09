@@ -53,8 +53,8 @@ def _run(ledger, job):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0002",)
-    assert status.heads == ("0002",)
+    assert status.current == ("0003",)
+    assert status.heads == ("0003",)
     assert status.pending is False
 
 
@@ -75,11 +75,11 @@ def test_alembic_upgrade_and_single_revision_rollback(postgres_config):
         rolled_back = rollback_migration(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0002",)
+        assert initial.heads == ("0003",)
         assert initial.pending is True
-        assert applied.current == ("0002",)
+        assert applied.current == ("0003",)
         assert applied.pending is False
-        assert rolled_back.current == ("0001",)
+        assert rolled_back.current == ("0002",)
         assert rolled_back.pending is True
     finally:
         with cleanup_engine.begin() as connection:
@@ -148,6 +148,7 @@ def test_runtime_epoch_reset_discards_runtime_jobs_and_preserves_recovery_fits(
     ledger.publish_model(
         producer["job_id"],
         running["attempt"],
+        attempt_id=running["attempt_id"],
         model_ref=model_ref,
         label="daily",
         generation=None,

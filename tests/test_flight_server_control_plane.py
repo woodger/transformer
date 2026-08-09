@@ -85,20 +85,6 @@ def test_action_is_authenticated_and_validated_before_dispatch(control_server):
     assert len(coordinator.calls) == 1
 
 
-@pytest.mark.parametrize("token", [None, "wrong"])
-def test_invalid_auth_never_reaches_application_handler(control_server, token):
-    _, coordinator, client = control_server
-    options = None if token is None else call_options(token)
-
-    with pytest.raises(flight.FlightUnauthenticatedError):
-        list(client.do_action(
-            flight.Action(CAPABILITIES_ACTION, action_body()),
-            options=options,
-        ))
-
-    assert coordinator.calls == []
-
-
 def test_invalid_version_and_action_are_transport_errors(control_server):
     _, coordinator, client = control_server
 

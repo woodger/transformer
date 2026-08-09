@@ -1,7 +1,7 @@
 # Inventory handoff: Transformer Arrow Flight v2
 
 This document is the integration handoff for the Inventory client. The
-language-neutral source of truth is [`contracts/flight/v2`](../contracts/flight/v2/README.md):
+language-neutral source of truth is [`app/contracts/flight/v2`](../app/contracts/flight/v2/README.md):
 its JSON Schemas and golden fixtures take precedence over examples in prose.
 Operational deployment is covered by the
 [`Flight service runbook`](flight-operations.md).
@@ -95,10 +95,10 @@ being unavailable does not make `live` false and does not by itself make
 
 Exact examples:
 
-- [`capabilities.request.json`](../contracts/flight/v2/fixtures/json/capabilities.request.json)
-  and [`capabilities.result.json`](../contracts/flight/v2/fixtures/json/capabilities.result.json)
-- [`health.request.json`](../contracts/flight/v2/fixtures/json/health.request.json)
-  and [`health.result.json`](../contracts/flight/v2/fixtures/json/health.result.json)
+- [`capabilities.request.json`](../app/contracts/flight/v2/fixtures/json/capabilities.request.json)
+  and [`capabilities.result.json`](../app/contracts/flight/v2/fixtures/json/capabilities.result.json)
+- [`health.request.json`](../app/contracts/flight/v2/fixtures/json/health.request.json)
+  and [`health.result.json`](../app/contracts/flight/v2/fixtures/json/health.result.json)
 
 ### Create fit
 
@@ -143,8 +143,8 @@ defaults as the existing CLI when omitted. Fit accepts a logical `modelLabel`,
 never a checkpoint path or model reference. On success the label's
 owner-scoped alias advances to the new immutable model generation.
 
-See [`create-fit.request.json`](../contracts/flight/v2/fixtures/json/create-fit.request.json)
-and [`create-fit.result.json`](../contracts/flight/v2/fixtures/json/create-fit.result.json).
+See [`create-fit.request.json`](../app/contracts/flight/v2/fixtures/json/create-fit.request.json)
+and [`create-fit.result.json`](../app/contracts/flight/v2/fixtures/json/create-fit.result.json).
 
 ### Create predict
 
@@ -167,7 +167,7 @@ resolved during create and the concrete immutable generation is returned as
 preprocessing configuration is loaded from that generation. Predict does not
 accept training/model overrides, paths or arbitrary argv.
 
-See [`create-predict.request.json`](../contracts/flight/v2/fixtures/json/create-predict.request.json).
+See [`create-predict.request.json`](../app/contracts/flight/v2/fixtures/json/create-predict.request.json).
 
 ### Seal, start, status and cancel
 
@@ -219,7 +219,7 @@ Use the action-specific idempotency key and action name. Status omits the key:
 ```
 
 Exact request/result pairs are in
-[`fixtures/json`](../contracts/flight/v2/fixtures/json/). Poll status using its
+[`fixtures/json`](../app/contracts/flight/v2/fixtures/json/). Poll status using its
 `pollAfterMs`; terminal status uses `0`.
 
 ## Upload protocol
@@ -300,8 +300,8 @@ commits the ledger before returning exactly one `PutResult`. Its
 
 Treat `sha256` and `schemaFingerprint` as opaque authoritative server values.
 The golden forms are
-[`upload-fit.metadata.json`](../contracts/flight/v2/fixtures/json/upload-fit.metadata.json)
-and [`put-result.metadata.json`](../contracts/flight/v2/fixtures/json/put-result.metadata.json).
+[`upload-fit.metadata.json`](../app/contracts/flight/v2/fixtures/json/upload-fit.metadata.json)
+and [`put-result.metadata.json`](../app/contracts/flight/v2/fixtures/json/put-result.metadata.json).
 
 ### Upload retries and disconnects
 

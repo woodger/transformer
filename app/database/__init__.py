@@ -1,6 +1,9 @@
-"""PostgreSQL persistence and schema management."""
+"""Compatibility imports for the PostgreSQL service adapter."""
 
-from app.database.config import DatabaseConfig, load_database_config
-from app.database.session import Database
+from app.service.adapters.outbound.postgres.config import (
+    DatabaseConfig,
+    load_database_config,
+)
+from app.service.adapters.outbound.postgres.session import Database
 
 __all__ = ["Database", "DatabaseConfig", "load_database_config"]

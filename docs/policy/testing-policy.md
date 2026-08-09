@@ -49,12 +49,14 @@ config parsing, state transitions, serialization helpers.
 
 ### Contract tests
 
-Проверяют normative schemas и golden fixtures в `contracts/flight/v2/`.
+Проверяют normative schemas и golden fixtures в `app/contracts/flight/v2/` и
+process envelopes в `app/contracts/worker/v1/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
 JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
-`$ref` разрешаются только из `contracts/flight/v2/schemas/`.
+`$ref` разрешаются только из каталога schemas соответствующего versioned
+contract.
 
 ## Структура и именование
 
@@ -125,7 +127,8 @@ serialized field или side effect.
 
 PostgreSQL tests используют реальный PostgreSQL и отдельную disposable schema
 вида `transformer_test_<uuid>`. Schema создаётся migrations и удаляется после
-test session.
+test session. До применения migrations fixture проверяет доступность выделенной
+test database и при ошибке завершает прогон без вывода URL или credentials.
 
 Запрещено:
 
@@ -241,13 +244,13 @@ def test_fit_stream_runs_epochs_over_all_payloads():
 Сначала запускается изменённый module или группа:
 
 ```bash
-python3.11 -m pytest -q tests/test_flight_config.py
+.venv/bin/python -m pytest -q tests/test_flight_config.py
 ```
 
 Перед release и после изменений общих contracts:
 
 ```bash
-python3.11 -m pytest -q
+.venv/bin/python -m pytest -q
 ```
 
 Skipped test не считается доказательством проверенного поведения. Причина skip

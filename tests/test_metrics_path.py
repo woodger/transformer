@@ -4,6 +4,10 @@ import app.utils as utils_module
 from app.utils import resolve_metrics_path
 
 
+def test_omitted_metrics_path_remains_disabled():
+    assert resolve_metrics_path(None) is None
+
+
 def test_relative_metrics_path_stays_inside_models(monkeypatch, tmp_path):
     models_dir = tmp_path / "models"
     monkeypatch.setattr(utils_module, "MODELS_DIR", str(models_dir))

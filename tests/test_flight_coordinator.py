@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import uuid
 
 import pyarrow.flight as flight
@@ -7,6 +9,7 @@ from flight_contract_schema import (
     read_contract_schema,
     validate_contract_document,
 )
+from sqlalchemy import event as sqlalchemy_event, text
 
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -16,6 +19,8 @@ from app.flight.constants import (
     SEAL_ACTION,
     START_ACTION,
     STATUS_ACTION,
+    ErrorCode,
+    JobState,
 )
 from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
@@ -30,6 +35,102 @@ ACTION_RESULT_SCHEMAS = {
     CANCEL_ACTION: "cancel-result.schema.json",
     STATUS_ACTION: "status-result.schema.json",
 }
+
+
+def _is_job_select(statement: str) -> bool:
+    normalized = " ".join(statement.lower().split())
+    return (
+        normalized.startswith("select")
+        and "owner_subject" in normalized
+        and "jobs" in normalized
+    )
+
+
+def _wait_for_postgres_lock(
+    database,
+    backend_pid: int,
+    *,
+    operation_done,
+    timeout: float = 5.0,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if operation_done():
+            pytest.fail(
+                "concurrent operation completed before waiting for "
+                "the PostgreSQL row lock"
+            )
+        with database.engine.connect() as connection:
+            wait_event_type = connection.scalar(
+                text(
+                    "SELECT wait_event_type "
+                    "FROM pg_stat_activity WHERE pid = :pid"
+                ),
+                {"pid": backend_pid},
+            )
+        if wait_event_type == "Lock":
+            return
+        time.sleep(0.01)
+    pytest.fail("concurrent PostgreSQL operation did not wait for a row lock")
+
+
+def _thread_call(target, *, name):
+    results = []
+    errors = []
+    finished = threading.Event()
+
+    def invoke():
+        try:
+            results.append(target())
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    return (
+        threading.Thread(target=invoke, name=name),
+        results,
+        errors,
+        finished,
+    )
+
+
+def _join_thread(thread, *, timeout=5.0):
+    if thread.ident is not None:
+        thread.join(timeout=timeout)
+
+
+def _running_predict_job(ledger, digest):
+    job = ledger.create_job(
+        job_id=str(uuid.uuid4()),
+        owner_subject="inventory",
+        operation="predict",
+        requested_device="cpu",
+        prediction_column="out",
+        config_hash=digest,
+        input_model_ref="mdl_test",
+    )
+    ledger.seal_job(
+        job["job_id"],
+        manifest_hash=digest,
+        manifest=[],
+    )
+    ledger.queue_job(job["job_id"], selected_device="cpu")
+    return job, ledger.claim_next_job("cpu")
+
+
+def _prediction_output(job_id, *, rows=0):
+    return {
+        "ordinal": 0,
+        "rows": rows,
+        "batches": int(rows > 0),
+        "bytes": 100,
+        "sha256": "a" * 64,
+        "schema_fingerprint": "b" * 64,
+        "relative_path": (
+            f"spool/jobs/{job_id}/attempts/1/outputs/0.arrow"
+        ),
+    }
 
 
 def common():
@@ -399,6 +500,119 @@ def test_seal_rejects_missing_or_out_of_order_ordinal(coordinator):
             seal,
         )
     assert ledger.get_job(created["jobId"])["state"] == "UPLOADING"
+
+
+def test_seal_serializes_manifest_validation_with_input_commit(
+    coordinator,
+    monkeypatch,
+):
+    service, ledger = coordinator
+    create = create_document(idempotencyKey="create-seal-race")
+    created = service.create(
+        "inventory",
+        validate_action_request(CREATE_ACTION, create),
+        create,
+    )
+    first_payload = str(uuid.uuid4())
+    second_payload = str(uuid.uuid4())
+    commit_input(
+        ledger,
+        created["jobId"],
+        0,
+        first_payload,
+        "a" * 64,
+    )
+    ledger.reserve_input(
+        job_id=created["jobId"],
+        payload_id=second_payload,
+        ordinal=1,
+        upload_token="upload-seal-race",
+        temporary_path=(
+            f"spool/jobs/{created['jobId']}/inputs/.1.tmp"
+        ),
+    )
+    seal = {
+        **common(),
+        "idempotencyKey": "seal-race",
+        "jobId": created["jobId"],
+        "manifest": [{
+            "payloadId": first_payload,
+            "ordinal": 0,
+            "sha256": "a" * 64,
+        }],
+    }
+
+    snapshot_read = threading.Event()
+    continue_seal = threading.Event()
+    original_list_inputs = ledger.list_inputs
+
+    def paused_list_inputs(*args, **kwargs):
+        inputs = original_list_inputs(*args, **kwargs)
+        if not snapshot_read.is_set():
+            snapshot_read.set()
+            if not continue_seal.wait(timeout=5):
+                raise TimeoutError("seal race test did not resume")
+        return inputs
+
+    monkeypatch.setattr(ledger, "list_inputs", paused_list_inputs)
+    seal_errors = []
+    commit_errors = []
+
+    def seal_job():
+        try:
+            service.seal(
+                "inventory",
+                validate_action_request(SEAL_ACTION, seal),
+                seal,
+            )
+        except BaseException as exc:
+            seal_errors.append(exc)
+
+    def commit_second_input():
+        try:
+            ledger.commit_input(
+                upload_token="upload-seal-race",
+                relative_path=(
+                    f"spool/jobs/{created['jobId']}/inputs/1.arrow"
+                ),
+                schema_id="inventory.sequence.fit.v1",
+                rows=1,
+                batches=1,
+                byte_count=100,
+                sha256="b" * 64,
+                schema_fingerprint="f" * 64,
+                source_width=4,
+                feature_dim=2,
+                max_payloads=10,
+                max_job_bytes=10_000,
+            )
+        except BaseException as exc:
+            commit_errors.append(exc)
+
+    seal_thread = threading.Thread(target=seal_job)
+    commit_thread = threading.Thread(target=commit_second_input)
+    seal_thread.start()
+    try:
+        assert snapshot_read.wait(timeout=5)
+        commit_thread.start()
+        commit_thread.join(timeout=0.5)
+    finally:
+        continue_seal.set()
+        seal_thread.join(timeout=5)
+        if commit_thread.ident is not None:
+            commit_thread.join(timeout=5)
+
+    assert not seal_thread.is_alive()
+    assert not commit_thread.is_alive()
+    assert commit_errors == []
+    assert len(seal_errors) == 1
+    assert isinstance(seal_errors[0], ServiceError)
+    assert "upload in progress" in str(seal_errors[0])
+    assert ledger.get_job(created["jobId"])["state"] == "UPLOADING"
+    assert [
+        item["ordinal"]
+        for item in original_list_inputs(created["jobId"])
+    ] == [0, 1]
 
 
 @pytest.mark.parametrize(
@@ -888,18 +1102,7 @@ def test_cancel_rejects_same_idempotency_key_for_different_job(coordinator):
 
 def test_cancel_commit_before_result_publication_prevents_success(coordinator):
     service, ledger = coordinator
-    job = ledger.create_job(
-        job_id=str(uuid.uuid4()),
-        owner_subject="inventory",
-        operation="predict",
-        requested_device="cpu",
-        prediction_column="out",
-        config_hash="e" * 64,
-        input_model_ref="mdl_test",
-    )
-    ledger.seal_job(job["job_id"], manifest_hash="e" * 64, manifest=[])
-    ledger.queue_job(job["job_id"], selected_device="cpu")
-    running = ledger.claim_next_job("cpu")
+    job, running = _running_predict_job(ledger, "e" * 64)
     cancel = {
         **common(),
         "idempotencyKey": "cancel-before-publication",
@@ -917,17 +1120,8 @@ def test_cancel_commit_before_result_publication_prevents_success(coordinator):
         ledger.publish_outputs(
             job["job_id"],
             running["attempt"],
-            [{
-                "ordinal": 0,
-                "rows": 0,
-                "batches": 0,
-                "bytes": 1,
-                "sha256": "a" * 64,
-                "schema_fingerprint": "b" * 64,
-                "relative_path": (
-                    f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow"
-                ),
-            }],
+            [_prediction_output(job["job_id"])],
+            attempt_id=running["attempt_id"],
             result={"outputs": [{"ordinal": 0}]},
         )
     assert ledger.list_outputs(job["job_id"]) == []
@@ -935,32 +1129,12 @@ def test_cancel_commit_before_result_publication_prevents_success(coordinator):
 
 def test_result_publication_commit_before_cancel_remains_successful(coordinator):
     service, ledger = coordinator
-    job = ledger.create_job(
-        job_id=str(uuid.uuid4()),
-        owner_subject="inventory",
-        operation="predict",
-        requested_device="cpu",
-        prediction_column="out",
-        config_hash="f" * 64,
-        input_model_ref="mdl_test",
-    )
-    ledger.seal_job(job["job_id"], manifest_hash="f" * 64, manifest=[])
-    ledger.queue_job(job["job_id"], selected_device="cpu")
-    running = ledger.claim_next_job("cpu")
+    job, running = _running_predict_job(ledger, "f" * 64)
     succeeded = ledger.publish_outputs(
         job["job_id"],
         running["attempt"],
-        [{
-            "ordinal": 0,
-            "rows": 0,
-            "batches": 0,
-            "bytes": 1,
-            "sha256": "a" * 64,
-            "schema_fingerprint": "b" * 64,
-            "relative_path": (
-                f"spool/jobs/{job['job_id']}/attempts/1/outputs/0.arrow"
-            ),
-        }],
+        [_prediction_output(job["job_id"])],
+        attempt_id=running["attempt_id"],
         result={"outputs": [{"ordinal": 0}]},
     )
     cancel = {
@@ -979,3 +1153,248 @@ def test_result_publication_commit_before_cancel_remains_successful(coordinator)
     assert response["revision"] == succeeded["revision"]
     assert ledger.get_job(job["job_id"])["state"] == "SUCCEEDED"
     assert len(ledger.list_outputs(job["job_id"])) == 1
+
+
+def test_cancel_and_result_publication_have_one_atomic_winner(
+    coordinator,
+):
+    service, ledger = coordinator
+    job, running = _running_predict_job(ledger, "1" * 64)
+    output = _prediction_output(job["job_id"], rows=1)
+    cancel = {
+        **common(),
+        "idempotencyKey": "cancel-publication-race",
+        "jobId": job["job_id"],
+    }
+    backend_pids = set()
+    both_locks_attempted = threading.Event()
+    pid_lock = threading.Lock()
+
+    def capture_job_lock_attempt(
+        connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if (
+            not threading.current_thread().name.startswith(
+                "cancel-publication-race"
+            )
+            or not _is_job_select(statement)
+            or "FOR UPDATE" not in statement.upper()
+        ):
+            return
+        with pid_lock:
+            backend_pids.add(
+                connection.connection.driver_connection.info.backend_pid
+            )
+            if len(backend_pids) == 2:
+                both_locks_attempted.set()
+
+    sqlalchemy_event.listen(
+        ledger.database.engine,
+        "before_cursor_execute",
+        capture_job_lock_attempt,
+    )
+
+    cancel_thread, cancel_results, cancel_errors, cancel_finished = (
+        _thread_call(
+            lambda: service.cancel(
+                "inventory",
+                validate_action_request(CANCEL_ACTION, cancel),
+                cancel,
+            ),
+            name="cancel-publication-race-cancel",
+        )
+    )
+    (
+        publication_thread,
+        publication_results,
+        publication_errors,
+        publication_finished,
+    ) = _thread_call(
+        lambda: ledger.publish_outputs(
+            job["job_id"],
+            running["attempt"],
+            [output],
+            attempt_id=running["attempt_id"],
+            result={"outputs": [{"ordinal": 0}]},
+        ),
+        name="cancel-publication-race-publish",
+    )
+    try:
+        with ledger.transaction() as blocker:
+            assert ledger.get_job(
+                job["job_id"],
+                connection=blocker,
+                for_update=True,
+            )["state"] == JobState.RUNNING.value
+            cancel_thread.start()
+            publication_thread.start()
+            assert both_locks_attempted.wait(timeout=5)
+            for backend_pid in backend_pids:
+                _wait_for_postgres_lock(
+                    ledger.database,
+                    backend_pid,
+                    operation_done=lambda: (
+                        cancel_finished.is_set()
+                        or publication_finished.is_set()
+                    ),
+                )
+    finally:
+        _join_thread(cancel_thread)
+        _join_thread(publication_thread)
+        sqlalchemy_event.remove(
+            ledger.database.engine,
+            "before_cursor_execute",
+            capture_job_lock_attempt,
+        )
+
+    assert not cancel_thread.is_alive()
+    assert not publication_thread.is_alive()
+    assert cancel_errors == []
+    assert len(cancel_results) == 1
+    cancel_result = cancel_results[0]
+    final_job = ledger.get_job(job["job_id"])
+    published_outputs = ledger.list_outputs(job["job_id"])
+    if publication_results:
+        assert publication_errors == []
+        assert cancel_result["state"] == JobState.SUCCEEDED.value
+        assert final_job["state"] == JobState.SUCCEEDED.value
+        assert [item["ordinal"] for item in published_outputs] == [0]
+    else:
+        assert len(publication_errors) == 1
+        assert isinstance(publication_errors[0], ServiceError)
+        assert publication_errors[0].code == ErrorCode.FAILED_PRECONDITION
+        assert cancel_result["state"] == JobState.CANCELLING.value
+        assert final_job["state"] == JobState.CANCELLING.value
+        assert published_outputs == []
+
+
+def test_status_snapshot_is_consistent_while_result_is_published(
+    coordinator,
+):
+    service, ledger = coordinator
+    job, running = _running_predict_job(ledger, "4" * 64)
+    output = _prediction_output(job["job_id"], rows=1)
+    snapshot_job_read = threading.Event()
+    release_snapshot = threading.Event()
+    publication_lock_attempted = threading.Event()
+    publication_pid = []
+
+    def pause_status_after_job_read(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if (
+            threading.current_thread().name
+            != "status-publication-status"
+            or not _is_job_select(statement)
+            or snapshot_job_read.is_set()
+        ):
+            return
+        snapshot_job_read.set()
+        if not release_snapshot.wait(timeout=5):
+            raise TimeoutError("status snapshot query was not released")
+
+    def capture_publication_lock_attempt(
+        connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        if (
+            threading.current_thread().name
+            == "status-publication-publish"
+            and _is_job_select(statement)
+            and "FOR UPDATE" in statement.upper()
+        ):
+            publication_pid.append(
+                connection.connection.driver_connection.info.backend_pid
+            )
+            publication_lock_attempted.set()
+
+    (
+        status_thread,
+        snapshots,
+        status_errors,
+        _status_finished,
+    ) = _thread_call(
+        lambda: service.status(
+            "inventory",
+            job["job_id"],
+            str(uuid.uuid4()),
+        ),
+        name="status-publication-status",
+    )
+    (
+        publication_thread,
+        publication_results,
+        publication_errors,
+        publication_finished,
+    ) = _thread_call(
+        lambda: ledger.publish_outputs(
+            job["job_id"],
+            running["attempt"],
+            [output],
+            attempt_id=running["attempt_id"],
+            result={"outputs": [{"ordinal": 0}]},
+        ),
+        name="status-publication-publish",
+    )
+    sqlalchemy_event.listen(
+        ledger.database.engine,
+        "after_cursor_execute",
+        pause_status_after_job_read,
+    )
+    sqlalchemy_event.listen(
+        ledger.database.engine,
+        "before_cursor_execute",
+        capture_publication_lock_attempt,
+    )
+    try:
+        status_thread.start()
+        assert snapshot_job_read.wait(timeout=5)
+        publication_thread.start()
+        assert publication_lock_attempted.wait(timeout=5)
+        _wait_for_postgres_lock(
+            ledger.database,
+            publication_pid[0],
+            operation_done=publication_finished.is_set,
+        )
+    finally:
+        release_snapshot.set()
+        _join_thread(status_thread)
+        _join_thread(publication_thread)
+        sqlalchemy_event.remove(
+            ledger.database.engine,
+            "after_cursor_execute",
+            pause_status_after_job_read,
+        )
+        sqlalchemy_event.remove(
+            ledger.database.engine,
+            "before_cursor_execute",
+            capture_publication_lock_attempt,
+        )
+
+    assert not status_thread.is_alive()
+    assert not publication_thread.is_alive()
+    assert status_errors == []
+    assert publication_errors == []
+    assert len(publication_results) == 1
+    assert len(snapshots) == 1
+    assert snapshots[0]["state"] == JobState.RUNNING.value
+    assert snapshots[0]["results"]["outputs"] == []
+    assert ledger.get_job(job["job_id"])["state"] == JobState.SUCCEEDED.value
+    assert [
+        item["ordinal"]
+        for item in ledger.list_outputs(job["job_id"])
+    ] == [0]

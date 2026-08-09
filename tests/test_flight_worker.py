@@ -34,9 +34,11 @@ from app.flight.contract import validate_action_request
 from app.flight.coordinator import JobCoordinator
 from app.flight.device_inventory import CudaDeviceInventory
 from app.flight.observability import OperationalMetrics
+from app.flight.records import execution_job_from_mapping
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.worker import WorkerPool
+from app.flight.worker_plan import WorkerPlanBuilder
 from app.training.run_config import ModelConfig, TrainConfig
 
 PREDICT_HELPER = r"""
@@ -179,6 +181,16 @@ def components(tmp_path, *, config=None, **pool_options):
     ledger = _POSTGRES_LEDGER
     pool = WorkerPool(config, ledger, spool, **pool_options)
     return config, spool, ledger, pool
+
+
+def worker_plan_builder(config, ledger, spool):
+    return WorkerPlanBuilder(
+        config,
+        ledger,
+        spool,
+        python_executable=sys.executable,
+        cli_path="unused-by-worker-v1",
+    )
 
 
 def model_config(feature_dim=None):
@@ -378,6 +390,7 @@ def publish_seed_model(ledger, spool):
     ledger.publish_model(
         producer["job_id"],
         running["attempt"],
+        attempt_id=running["attempt_id"],
         model_ref=model_ref,
         label="seed",
         generation=None,
@@ -404,66 +417,75 @@ def create_predict_job(ledger, spool):
     )
 
 
-def test_fit_argv_contains_exact_immutable_config_and_server_paths(tmp_path):
-    config, spool, ledger, pool = components(tmp_path)
+def test_fit_worker_plan_contains_exact_config_and_server_paths(tmp_path):
+    config, spool, ledger, _ = components(tmp_path)
     job = create_fit_job(ledger)
     seal_and_queue(ledger, job, [])
-    queued = ledger.get_job(job["job_id"])
-    argv = pool.build_argv({**queued, "attempt": 1}, 1)
+    running = ledger.claim_next_job("cpu", worker_id="plan-test")
+    assert running is not None
+    record = execution_job_from_mapping(running)
+    plan = worker_plan_builder(config, ledger, spool).build(
+        record,
+        record.attempt,
+    )
 
-    assert argv == [
+    manifest_path = spool.attempt_manifest_path(
+        job["job_id"],
+        record.attempt,
+    )
+    assert list(plan.argv) == [
         sys.executable,
-        pool._cli_path,
-        "fit-stream",
-        "--device",
-        "cpu",
-        "--checkpoint-out",
-        spool.attempt_checkpoint_path(job["job_id"], 1),
-        "--metrics-out",
-        spool.attempt_metrics_path(job["job_id"], 1),
-        "--max-frame-bytes",
-        str(config.max_payload_bytes),
-        "--input-spool-dir",
-        spool.input_directory(job["job_id"]),
-        "--input-frame-count",
-        "0",
-        "--seq-len",
-        "2",
-        "--hidden",
-        "8",
-        "--layers",
-        "1",
-        "--dropout",
-        "0.0",
-        "--nhead",
-        "2",
-        "--mode",
-        "relaxed",
-        "--lr",
-        "0.001",
-        "--weight-decay",
-        "0.0025",
-        "--batch-size",
-        "2",
-        "--epochs",
-        "1",
-        "--loss-stage",
-        "1",
-        "--loss-schedule",
-        "none",
-        "--stage-size",
-        "1",
-        "--patience",
-        "0",
-        "--monitor",
-        "loss",
-        "--monitor-min-improvement",
-        "0.0",
-        "--seed",
-        "7",
-        "--no-save-best-checkpoint",
-        "--deterministic",
+        "-m",
+        "app.worker.bootstrap",
+        "run",
+        "--contract-version=1",
+        f"--job-id={job['job_id']}",
+        f"--attempt={record.attempt}",
+        f"--attempt-id={record.attempt_id}",
+        f"--manifest={manifest_path}",
     ]
+    assert json.loads(Path(manifest_path).read_text()) == {
+        "contract": "transformer-worker",
+        "protocolVersion": 1,
+        "jobId": job["job_id"],
+        "attempt": record.attempt,
+        "attemptId": record.attempt_id,
+        "operation": "fit",
+        "device": {"kind": "cpu"},
+        "inputs": [],
+        "workspace": {
+            "root": spool.attempt_directory(job["job_id"], record.attempt)
+        },
+        "model": {
+            "label": "returns.daily",
+            "config": {
+                "seqLen": 2,
+                "hidden": 8,
+                "layers": 1,
+                "dropout": 0.0,
+                "nhead": 2,
+                "mode": "relaxed",
+                "outDim": 6,
+                "featureDim": None,
+            },
+        },
+        "training": {
+            "lr": 0.001,
+            "batchSize": 2,
+            "epochs": 1,
+            "patience": 0,
+            "lossStage": 1,
+            "lossSchedule": "none",
+            "stageSize": 1,
+            "useAmp": False,
+            "weightDecay": 0.0025,
+            "monitor": "loss",
+            "monitorMinImprovement": 0.0,
+            "saveBestCheckpoint": False,
+            "seed": 7,
+            "deterministic": True,
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -519,13 +541,20 @@ def test_worker_plan_rejects_untrusted_committed_input(
 
 
 def test_worker_plan_rejects_noncanonical_selected_device(tmp_path):
-    _, _, ledger, pool = components(tmp_path)
+    config, spool, ledger, _ = components(tmp_path)
     job = create_fit_job(ledger)
+    seal_and_queue(ledger, job, [])
+    running = ledger.claim_next_job("cpu", worker_id="plan-test")
+    assert running is not None
+    record = replace(
+        execution_job_from_mapping(running),
+        selected_device="auto",
+    )
 
     with pytest.raises(Exception, match="queued job has no selected device") as error:
-        pool.build_argv(
-            {**job, "attempt": 1, "selected_device": "auto"},
-            1,
+        worker_plan_builder(config, ledger, spool).build(
+            record,
+            record.attempt,
         )
 
     assert error.value.code == ErrorCode.INTERNAL
@@ -544,7 +573,7 @@ def test_worker_plan_rejects_untrusted_model_generation(
     corruption,
     message,
 ):
-    _, spool, ledger, pool = components(tmp_path)
+    config, spool, ledger, _ = components(tmp_path)
     job = create_predict_job(ledger, spool)
     model = ledger.get_model_artifact(
         job["input_model_ref"],
@@ -564,11 +593,15 @@ def test_worker_plan_rejects_untrusted_model_generation(
         "get_model_artifact",
         lambda *_, **__: model,
     )
+    seal_and_queue(ledger, job, [])
+    running = ledger.claim_next_job("cpu", worker_id="plan-test")
+    assert running is not None
+    record = execution_job_from_mapping(running)
 
     with pytest.raises(Exception, match=message) as error:
-        pool.build_argv(
-            {**job, "attempt": 1, "selected_device": "cpu"},
-            1,
+        worker_plan_builder(config, ledger, spool).build(
+            record,
+            record.attempt,
         )
 
     assert error.value.code == ErrorCode.INTERNAL
@@ -621,7 +654,10 @@ def test_predict_one_process_preserves_payload_boundaries_and_ordinals(tmp_path)
     assert launch_argv[1] == os.path.join(
         Path(pool._cli_path).parents[1],
         "app",
-        "flight",
+        "service",
+        "adapters",
+        "outbound",
+        "worker_process",
         "process_supervisor.py",
     )
     assert launch_argv[2:4] == [str(os.getpid()), "--"]

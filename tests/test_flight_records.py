@@ -167,6 +167,7 @@ def test_committed_input_mapper_renames_bytes_without_changing_legacy_shape(
         CommittedInputRecord(
             job_id=job_id,
             ordinal=0,
+            schema_id=FIT_SCHEMA_ID,
             rows=255,
             byte_count=byte_count,
             sha256=DIGEST_A,
@@ -200,6 +201,7 @@ def test_model_artifact_mapper_enforces_owner_and_preserves_legacy_record(
     postgres_ledger.publish_model(
         job_id,
         running.attempt,
+        attempt_id=running.attempt_id,
         model_ref=model_ref,
         label="returns.daily",
         generation=None,
@@ -251,6 +253,7 @@ def test_recoverable_attempt_mapper_preserves_process_identity_and_legacy_shape(
     postgres_ledger.set_attempt_process(
         job_id,
         running.attempt,
+        attempt_id=running.attempt_id,
         pid=12001,
         pgid=12002,
         boot_id=boot_id,
@@ -267,6 +270,7 @@ def test_recoverable_attempt_mapper_preserves_process_identity_and_legacy_shape(
             pgid=12002,
             boot_id=boot_id,
             process_start_ticks=987654,
+            attempt_id=running.attempt_id,
         )
     ]
     _assert_frozen_slots(attempts[0])

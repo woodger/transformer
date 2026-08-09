@@ -1,4 +1,5 @@
 import threading
+import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -31,6 +32,7 @@ class _Ledger:
                 self.current,
                 state=JobState.RUNNING,
                 attempt=2,
+                attempt_id=str(uuid.uuid4()),
                 assigned_device_id="GPU-b",
             )
             return self.current
@@ -49,6 +51,19 @@ class _Ledger:
                 self.current,
                 state=JobState(target_state),
             )
+
+    def request_attempt_cancel(self, _job_id, attempt, *, attempt_id):
+        with self._lock:
+            assert self.current.attempt == attempt
+            assert self.current.attempt_id == attempt_id
+            if self.current.state == JobState.CANCELLING:
+                return False
+            assert self.current.state == JobState.RUNNING
+            self.current = replace(
+                self.current,
+                state=JobState.CANCELLING,
+            )
+            return True
 
 
 class _Runner:
@@ -91,8 +106,11 @@ class _Logger:
 
 
 class _Artifacts:
+    def __init__(self):
+        self.cleaned = []
+
     def cleanup_unpublished(self, _job):
-        pass
+        self.cleaned.append((_job.attempt, _job.attempt_id))
 
 
 def _job() -> ExecutionJobRecord:
@@ -116,6 +134,7 @@ def _job() -> ExecutionJobRecord:
         resume_generation=None,
         queued_at=1.0,
         started_at=2.0,
+        attempt_id=str(uuid.uuid4()),
     )
 
 
@@ -168,3 +187,30 @@ def test_retry_handoff_keeps_second_attempt_registered_for_cancel():
         first_thread.join(2)
         if second_thread is not None:
             second_thread.join(2)
+
+
+def test_stale_executor_cannot_mutate_a_new_attempt():
+    first = _job()
+    ledger = _Ledger(first)
+    second = ledger.mark_second_attempt_running()
+    artifacts = _Artifacts()
+
+    class UnexpectedRunner:
+        def run(self, *_args, **_kwargs):
+            raise AssertionError("stale attempt started a subprocess")
+
+    executor = WorkerAttemptExecutor(
+        ledger,
+        SimpleNamespace(
+            build=lambda *_args, **_kwargs: SimpleNamespace(inputs=())
+        ),
+        UnexpectedRunner(),
+        artifacts,
+        logger=_Logger(),
+        metrics=_Metrics(),
+    )
+
+    executor.execute(first)
+
+    assert ledger.get_execution_job(first.job_id) == second
+    assert artifacts.cleaned == [(first.attempt, first.attempt_id)]

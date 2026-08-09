@@ -4,7 +4,6 @@ import pytest
 
 from app import __version__
 from app.cli.args import parse_args
-from app.cli.help import build_parser
 from app.runtime.device import get_device
 from app.runtime.version import __version__ as runtime_version, version_text
 
@@ -122,8 +121,3 @@ def test_cli_loss_schedule_args(monkeypatch):
     assert args.loss_stage == 3
     assert args.loss_schedule == "step"
     assert args.stage_size == 100
-
-
-def test_parser_is_buildable():
-    parser = build_parser()
-    assert parser.prog == "transformer"

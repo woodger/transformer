@@ -6,6 +6,7 @@ from app.config import (
     CONTEXT_MODE,
     D_MODEL,
     DEFAULT_DEVICE,
+    DEFAULT_MAX_FRAME_BYTES,
     DETERMINISTIC,
     DROPOUT,
     EPOCHS,
@@ -24,8 +25,7 @@ from app.config import (
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
-from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
-from app.runtime.version import __version__, version_text
+from app.version import __version__, version_text
 
 _COMMAND_GROUPS = (
     (

@@ -238,6 +238,7 @@ def _seed_model(config, ledger, models_dir):
     ledger.publish_model(
         producer["job_id"],
         running["attempt"],
+        attempt_id=running["attempt_id"],
         model_ref=model_ref,
         label="integration-seed",
         generation=None,

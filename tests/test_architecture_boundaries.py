@@ -1,30 +1,11 @@
 import ast
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = PROJECT_ROOT / "app"
-
-CORE_PACKAGES = (
-    "app.data",
-    "app.metrics",
-    "app.model",
-    "app.runtime",
-    "app.storage",
-    "app.training",
-)
-OUTER_PACKAGES = (
-    "app.cli",
-    "app.commands",
-    "app.database",
-    "app.flight",
-)
-LEDGER_SLICES = (
-    "app.flight.ledger_inputs",
-    "app.flight.ledger_execution",
-    "app.flight.ledger_artifacts",
-    "app.flight.ledger_maintenance",
-)
 
 
 def _module_name(path: Path) -> str:
@@ -46,39 +27,29 @@ def _application_modules() -> dict[str, Path]:
     }
 
 
-def _application_imports(path: Path, module: str) -> set[str]:
+def _imports(path: Path, module: str) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = module if path.name == "__init__.py" else module.rpartition(".")[0]
     imports = set()
-
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imports.update(alias.name for alias in node.names)
             continue
         if not isinstance(node, ast.ImportFrom):
             continue
-
         if node.level:
-            relative_name = "." * node.level + (node.module or "")
-            imported = importlib.util.resolve_name(relative_name, package)
+            relative = "." * node.level + (node.module or "")
+            imported = importlib.util.resolve_name(relative, package)
         else:
             imported = node.module
-        if imported is None:
-            continue
-
-        imports.add(imported)
-        imports.update(
-            f"{imported}.{alias.name}"
-            for alias in node.names
-            if alias.name != "*"
-        )
-
-    return {name for name in imports if _is_within(name, "app")}
+        if imported is not None:
+            imports.add(imported)
+    return imports
 
 
 def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
     visited = set()
-    active = []
+    active: list[str] = []
     active_set = set()
 
     def visit(module: str) -> list[str] | None:
@@ -105,26 +76,100 @@ def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
     return None
 
 
-def test_documented_package_dependencies_point_inward():
+def test_service_domain_and_application_dependencies_point_inward():
     modules = _application_modules()
     violations = []
-
+    allowed_domain = ("app.service.domain", "app.contracts")
+    allowed_application = (
+        "app.service.application",
+        "app.service.domain",
+        "app.contracts",
+    )
+    forbidden_libraries = ("pyarrow", "sqlalchemy", "torch")
     for source, path in modules.items():
-        imports = _application_imports(path, source)
-        if any(_is_within(source, package) for package in CORE_PACKAGES):
-            forbidden = OUTER_PACKAGES
-        elif _is_within(source, "app.database"):
-            forbidden = ("app.flight",)
+        if _is_within(source, "app.service.domain"):
+            allowed = allowed_domain
+        elif _is_within(source, "app.service.application"):
+            allowed = allowed_application
         else:
             continue
+        for dependency in _imports(path, source):
+            if dependency.startswith("app.") and not any(
+                _is_within(dependency, package) for package in allowed
+            ):
+                violations.append(f"{source} -> {dependency}")
+            if any(_is_within(dependency, package) for package in forbidden_libraries):
+                violations.append(f"{source} -> {dependency}")
+    assert violations == [], "outward service dependency:\n" + "\n".join(
+        sorted(violations)
+    )
 
-        for dependency in imports:
+
+def test_pure_control_plane_has_no_runtime_side_effect_dependencies():
+    modules = _application_modules()
+    packages = (
+        "app.service.domain",
+        "app.service.application.commands",
+        "app.service.application.queries",
+        "app.service.application.ports",
+    )
+    forbidden = ("os", "pathlib", "subprocess", "pyarrow", "sqlalchemy", "torch")
+    violations = []
+    for source, path in modules.items():
+        if not any(_is_within(source, package) for package in packages):
+            continue
+        for dependency in _imports(path, source):
             if any(_is_within(dependency, package) for package in forbidden):
                 violations.append(f"{source} -> {dependency}")
+    assert violations == []
 
-    assert violations == [], (
-        "documented package dependency boundary was crossed:\n"
-        + "\n".join(sorted(violations))
+
+def test_service_adapters_and_processes_do_not_cross_ownership_boundaries():
+    modules = _application_modules()
+    violations = []
+    for source, path in modules.items():
+        dependencies = _imports(path, source)
+        if _is_within(source, "app.service.adapters.inbound"):
+            forbidden = (
+                "app.service.adapters.outbound",
+                "app.service.bootstrap",
+            )
+        elif _is_within(source, "app.service.adapters.outbound"):
+            forbidden = (
+                "app.service.adapters.inbound",
+                "app.service.bootstrap",
+                "app.worker",
+            )
+        elif _is_within(source, "app.worker"):
+            forbidden = (
+                "app.service",
+                "app.flight",
+                "app.database",
+                "sqlalchemy",
+            )
+        elif _is_within(source, "app.admin.cli"):
+            forbidden = (
+                "app.admin.bootstrap",
+                "app.service.adapters",
+                "app.worker",
+                "app.flight",
+                "pyarrow",
+                "torch",
+            )
+        elif _is_within(source, "app.admin"):
+            forbidden = (
+                "app.worker",
+                "app.flight",
+                "pyarrow",
+                "torch",
+            )
+        else:
+            continue
+        for dependency in dependencies:
+            if any(_is_within(dependency, package) for package in forbidden):
+                violations.append(f"{source} -> {dependency}")
+    assert violations == [], "ownership boundary crossed:\n" + "\n".join(
+        sorted(violations)
     )
 
 
@@ -133,61 +178,66 @@ def test_application_internal_import_graph_is_acyclic():
     graph = {
         source: {
             dependency
-            for dependency in _application_imports(path, source)
+            for dependency in _imports(path, source)
             if dependency in modules
         }
         for source, path in modules.items()
     }
-
     cycle = _find_cycle(graph)
-
     assert cycle is None, f"application import cycle: {' -> '.join(cycle or [])}"
 
 
-def test_flight_control_plane_slices_follow_one_way_dependencies():
-    modules = _application_modules()
-    imports = {
-        module: _application_imports(path, module)
-        for module, path in modules.items()
-    }
+def test_contracts_and_composition_roots_have_canonical_locations():
+    assert (APP_ROOT / "contracts" / "flight" / "v2").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v1").is_dir()
+    assert not (PROJECT_ROOT / "contracts").exists()
+    for path in (
+        APP_ROOT / "service" / "bootstrap" / "application.py",
+        APP_ROOT / "worker" / "bootstrap" / "__main__.py",
+        APP_ROOT / "admin" / "bootstrap" / "auth_tokens.py",
+        APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
+    ):
+        assert path.is_file()
 
-    assert set(LEDGER_SLICES) <= imports["app.flight.ledger"]
-    assert "app.flight.job_actions" in imports["app.flight.coordinator"]
 
-    forbidden_control_plane = (
-        "app.flight.application",
-        "app.flight.coordinator",
-        "app.flight.job_actions",
-        "app.flight.server",
-        "app.flight.worker",
+def test_service_and_admin_imports_do_not_initialize_worker_runtime():
+    service_program = """
+import json
+import sys
+import app.service.bootstrap.application
+print(json.dumps({
+    'torch': 'torch' in sys.modules,
+    'worker': any(name.startswith('app.worker') for name in sys.modules),
+}))
+"""
+    service = subprocess.run(
+        [sys.executable, "-c", service_program],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
-    violations = []
-    for source in LEDGER_SLICES:
-        for dependency in imports[source]:
-            if any(
-                _is_within(dependency, package)
-                for package in forbidden_control_plane
-            ):
-                violations.append(f"{source} -> {dependency}")
-            if dependency in LEDGER_SLICES and dependency != source:
-                violations.append(f"{source} -> {dependency}")
+    assert service.stdout.strip() == '{"torch": false, "worker": false}'
 
-    for dependency in imports["app.flight.job_actions"]:
-        if (
-            _is_within(dependency, "app.database")
-            or dependency
-            in {
-                "app.flight.application",
-                "app.flight.coordinator",
-                "app.flight.server",
-                "app.flight.worker",
-            }
-        ):
-            violations.append(
-                f"app.flight.job_actions -> {dependency}"
-            )
-
-    assert violations == [], (
-        "Flight control-plane slice dependency points outward:\n"
-        + "\n".join(sorted(violations))
+    admin_program = """
+import json
+import sys
+import app.admin.bootstrap.db_migrations
+print(json.dumps({
+    'torch': 'torch' in sys.modules,
+    'worker': any(name.startswith('app.worker') for name in sys.modules),
+    'flight': 'pyarrow.flight' in sys.modules,
+}))
+"""
+    admin = subprocess.run(
+        [sys.executable, "-c", admin_program],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert admin.stdout.strip() == (
+        '{"torch": false, "worker": false, "flight": false}'
     )

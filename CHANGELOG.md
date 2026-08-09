@@ -7,6 +7,64 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-09
+
+### Added
+
+- Добавлены реальные конкурентные PostgreSQL regression tests для
+  exact/conflicting idempotency, `cancel` против result publication и
+  согласованного status snapshot во время publication.
+- Добавлен единый lock-файл всех зависимостей project `.venv`.
+- Добавлена единая политика Python runtime: `.venv` создаётся от системного
+  `/usr/bin/python3`, а application dependencies устанавливаются только из
+  `requirements.txt` project interpreter.
+- Добавлен независимый worker process contract v1 с immutable manifests,
+  bounded NDJSON events, capability inspection и equality fence `attemptId`.
+- Добавлена migration `0003`, создающая UUID execution identity для каждой
+  PostgreSQL attempt.
+
+### Changed
+
+- Конфигурация Ruff, pytest и Alembic объединена в `pyproject.toml`; локальные
+  tool caches складываются в единую игнорируемую директорию `.cache/`.
+- Проект разделён на process-specific Clean Architecture boundaries:
+  `app/service`, `app/worker` и `app/admin` имеют собственные composition
+  roots, а публичный Flight v2 и внутренний worker v1 contracts находятся в
+  `app/contracts/`.
+- PostgreSQL adapter, ORM и Alembic перенесены в
+  `app/service/adapters/outbound/postgres/`; прежние `app/database` и
+  `app/flight` import paths временно сохранены совместимыми фасадами.
+- ML model, training, Arrow tensor path и checkpoint runtime перенесены под
+  `app/worker/`. Service обнаруживает Torch/CUDA только через
+  `transformer-worker inspect` и не импортирует worker implementation.
+- Каждый claimed attempt выполняется отдельным worker v1 subprocess через
+  immutable manifest; progress, recovery checkpoints и terminal result
+  принимаются как identity-bound NDJSON events, а публикация остаётся за
+  service-процессом.
+- Job lifecycle разделён на application commands/query, persistence boundary
+  возвращает immutable records и согласованный `StatusSnapshot`.
+- README сокращён до quick start и навигации; подробные CLI, Arrow stream,
+  training runtime и deployment contracts вынесены в профильные документы.
+
+### Fixed
+
+- Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:
+  project запускается из `/home/nerv/transformer`, unit напрямую использует
+  interpreter из `.venv`, а SELinux назначает тип `bin_t` только Python-ссылкам
+  виртуального окружения.
+- Seal manifest теперь проверяется под той же PostgreSQL row lock, что и
+  переход job в `SEALED`; конкурентный `DoPut` больше не может оставить
+  committed input за пределами sealed manifest.
+- Prediction выполняет model forward ограниченными `batch_size` порциями,
+  поэтому размер transport payload больше не определяет пиковый объём CUDA
+  activations.
+- Arrow input и prediction output преобразуются через векторные Arrow/NumPy
+  buffers без Python list/scalar materialization.
+- Все worker mutations, включая cancel и повтор `RETRYING`, атомарно проверяют
+  текущий `attemptId`; запоздалый executor не может изменить новый attempt.
+- Worker v1 сохраняет прежний формат fit-метрик и диагностические сообщения
+  fit/predict в `stderr`, не смешивая их с NDJSON event stream в `stdout`.
+
 ## [0.1.7] - 2026-07-25
 
 ### Added
@@ -25,7 +83,7 @@
 ### Changed
 
 - Ruff baseline расширен проверками потенциальных ошибок, безопасной
-  модернизации для Python 3.11, порядка `__all__` и регулярных выражений в
+  модернизации Python-кода, порядка `__all__` и регулярных выражений в
   `pytest.raises`.
 - Ruff также проверяет единый порядок Python import-блоков.
 - Runtime storage вычисляется из системной temporary directory и технического
@@ -251,7 +309,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/woodger/transformer/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/woodger/transformer/compare/v0.1.4...v0.1.5

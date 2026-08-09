@@ -13,7 +13,6 @@ from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
-from app.utils import MODELS_DIR, resolve_metrics_path
 
 
 @pytest.fixture(autouse=True)
@@ -210,6 +209,40 @@ def test_trainer_fit_batch_cpu():
     assert 0.0 <= metrics.complete_token_ratio <= 1.0
     assert 0.0 <= metrics.partial_token_ratio <= 1.0
     assert 0.0 <= metrics.empty_token_ratio <= 1.0
+
+
+def test_trainer_predict_limits_each_model_forward_to_batch_size():
+    class RecordingLinear(nn.Linear):
+        def __init__(self):
+            super().__init__(3, 6)
+            self.forward_batch_sizes = []
+
+        def forward(self, inputs):
+            self.forward_batch_sizes.append(inputs.size(0))
+            return super().forward(inputs)
+
+    model = RecordingLinear()
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=4,
+        epochs=1,
+        patience=1,
+        use_amp=False,
+    )
+    source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
+    expected = torch.nn.functional.linear(
+        source,
+        model.weight.detach(),
+        model.bias.detach(),
+    )
+
+    predictions = trainer.predict(source)
+
+    assert model.forward_batch_sizes == [4, 4, 2]
+    assert model.training is False
+    assert torch.allclose(predictions, expected)
 
 
 def test_trainer_stage_size_is_configurable():
@@ -551,11 +584,6 @@ def test_trainer_rejects_invalid_stage_size():
         assert "stage_size must be a positive integer" in str(exc)
     else:
         raise AssertionError("Trainer accepted invalid stage_size")
-
-
-def test_resolve_metrics_path_uses_models_dir():
-    assert resolve_metrics_path(None) is None
-    assert resolve_metrics_path("train.jsonl") == f"{MODELS_DIR}/train.jsonl"
 
 
 def test_trainer_writes_metrics_jsonl(tmp_path):

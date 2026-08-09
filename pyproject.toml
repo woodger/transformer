@@ -1,0 +1,15 @@
+[tool.ruff]
+cache-dir = ".cache/ruff"
+
+[tool.ruff.lint]
+select = ["B", "E4", "E7", "E9", "F", "I", "RUF022", "RUF043", "UP"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.pytest.ini_options]
+cache_dir = ".cache/pytest"
+
+[tool.alembic]
+script_location = "%(here)s/app/service/adapters/outbound/postgres/alembic"
+prepend_sys_path = ["."]
