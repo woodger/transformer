@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.config import PROJECT_ROOT
 from app.contracts.worker.v1 import CONTRACT_VERSION, validate_document
 
 
@@ -350,6 +351,7 @@ def _worker_inspect(environment: dict[str, str] | None = None) -> dict:
         capture_output=True,
         text=True,
         timeout=10,
+        cwd=PROJECT_ROOT,
         env=environment,
     )
     try:
