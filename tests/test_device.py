@@ -85,6 +85,9 @@ Training and inference:
   fit-stream                      Train from framed stdin.
   predict-stream                  Predict from framed stdin.
 
+Diagnostics:
+  gmark                           Stress one CUDA GPU and verify compute integrity.
+
 Metrics:
   plot-metrics                    Render SVG charts from metrics JSONL.
 

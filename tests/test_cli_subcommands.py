@@ -169,6 +169,69 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
     assert not hasattr(args, "model_name")
 
 
+def test_gmark_namespace_has_cuda_stress_options_only():
+    args = parse(
+        "gmark",
+        "--duration",
+        "15",
+        "--device",
+        "1",
+        "--matrix-size",
+        "4096",
+        "--dtype",
+        "float32",
+        "--memory-fraction",
+        "0.5",
+        "--max-temperature",
+        "75",
+        "--status-interval",
+        "1",
+        "--warmup-iterations",
+        "2",
+        "--sync-every",
+        "3",
+        "--seed",
+        "7",
+    )
+
+    assert args.action == "gmark"
+    assert args.duration == 15
+    assert args.device == 1
+    assert args.matrix_size == 4096
+    assert args.dtype == "float32"
+    assert args.memory_fraction == 0.5
+    assert args.max_temperature == 75
+    assert args.status_interval == 1
+    assert args.warmup_iterations == 2
+    assert args.sync_every == 3
+    assert args.seed == 7
+    assert args.data is None
+    assert args.metrics_name is None
+    assert not hasattr(args, "model_name")
+    assert not hasattr(args, "seq_len")
+
+
+@pytest.mark.parametrize(
+    "option",
+    (
+        ("--duration", "0"),
+        ("--device", "-1"),
+        ("--matrix-size", "0"),
+        ("--memory-fraction", "-0.1"),
+        ("--memory-fraction", "0.91"),
+        ("--memory-fraction", "nan"),
+        ("--max-temperature", "-1"),
+        ("--status-interval", "0"),
+        ("--warmup-iterations", "0"),
+        ("--sync-every", "0"),
+        ("--seed", str(2**32)),
+    ),
+)
+def test_gmark_numeric_options_are_validated_by_argparse(option):
+    with pytest.raises(SystemExit):
+        parse("gmark", *option)
+
+
 def test_access_and_database_namespaces_are_nested():
     issue = parse("auth", "tokens", "issue", "--subject", "inventory")
     listed = parse("auth", "tokens", "list")
@@ -260,6 +323,20 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--seq-len" not in plot_help
 
     with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["gmark", "--help"])
+    assert exc.value.code == 0
+
+    gmark_help = capsys.readouterr().out
+    assert "Examples:" in gmark_help
+    assert "transformer gmark --duration=300 --memory-fraction=0.7" in gmark_help
+    assert "--matrix-size" in gmark_help
+    assert "--memory-fraction" in gmark_help
+    assert "--max-temperature" in gmark_help
+    assert "--checkpoint" not in gmark_help
+    assert "--seq-len" not in gmark_help
+    assert "--host" not in gmark_help
+
+    with pytest.raises(SystemExit) as exc:
         parser.parse_args(["flight", "--help"])
     assert exc.value.code == 0
 
@@ -344,6 +421,7 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("predict", "--help"),
         ("fit-stream", "--help"),
         ("predict-stream", "--help"),
+        ("gmark", "--help"),
         ("flight", "--help"),
         ("flight", "serve", "--help"),
         ("auth", "tokens", "issue", "--help"),
@@ -370,6 +448,7 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("predict", "--help"),
         ("fit-stream", "--help"),
         ("predict-stream", "--help"),
+        ("gmark", "--help"),
         ("flight", "serve", "--help"),
         ("auth", "tokens", "issue", "--help"),
         ("auth", "tokens", "list", "--help"),

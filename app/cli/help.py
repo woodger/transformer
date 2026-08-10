@@ -50,6 +50,10 @@ _COMMAND_GROUPS = (
         ),
     ),
     (
+        "Diagnostics",
+        (("gmark", "Stress one CUDA GPU and verify compute integrity."),),
+    ),
+    (
         "Metrics",
         (("plot-metrics", "Render SVG charts from metrics JSONL."),),
     ),
@@ -73,6 +77,9 @@ _COMMAND_EXAMPLES = {
 """,
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
+""",
+    "gmark": """Examples:
+  transformer gmark --duration=300 --memory-fraction=0.7
 """,
 }
 
@@ -210,6 +217,13 @@ def _fraction(value: str) -> float:
         raise argparse.ArgumentTypeError("must be in the range [0, 1)") from exc
     if not math.isfinite(parsed) or not 0 <= parsed < 1:
         raise argparse.ArgumentTypeError("must be in the range [0, 1)")
+    return parsed
+
+
+def _gmark_memory_fraction(value: str) -> float:
+    parsed = _nonnegative_float(value)
+    if parsed > 0.9:
+        raise argparse.ArgumentTypeError("must be in the range [0, 0.9]")
     return parsed
 
 
@@ -551,6 +565,96 @@ def _add_predict_parser(subparsers, name: str, *, stream: bool):
     _add_model_arguments(parser, required_seq_len=False, training=False)
 
 
+def _add_gmark_parser(subparsers):
+    parser = subparsers.add_parser(
+        "gmark",
+        add_help=False,
+        help=_COMMAND_HELP["gmark"],
+        description=(
+            "Stress one CUDA GPU with repeated matrix multiplications and an "
+            "optional active VRAM allocation. Press Ctrl+C to stop."
+        ),
+        epilog=_COMMAND_EXAMPLES["gmark"],
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(parser)
+    parser.add_argument(
+        "--duration",
+        type=_positive_float,
+        default=60.0,
+        metavar="SECONDS",
+        help="Test duration after warm-up.",
+    )
+    parser.add_argument(
+        "--device",
+        type=_nonnegative_int,
+        default=0,
+        metavar="INDEX",
+        help="Logical CUDA device index.",
+    )
+    parser.add_argument(
+        "--matrix-size",
+        type=_positive_int,
+        default=8192,
+        metavar="N",
+        help="Multiply square N x N matrices.",
+    )
+    parser.add_argument(
+        "--dtype",
+        choices=("float16", "bfloat16", "float32"),
+        default="float16",
+        help="Matrix element type.",
+    )
+    parser.add_argument(
+        "--memory-fraction",
+        type=_gmark_memory_fraction,
+        default=0.7,
+        metavar="FRACTION",
+        help=(
+            "Fraction of VRAM free after warm-up to reserve and write; "
+            "0 disables the ballast."
+        ),
+    )
+    parser.add_argument(
+        "--max-temperature",
+        type=_nonnegative_float,
+        default=80.0,
+        metavar="CELSIUS",
+        help=(
+            "Stop at this GPU temperature; nvidia-smi is required unless "
+            "0 disables the cutoff."
+        ),
+    )
+    parser.add_argument(
+        "--status-interval",
+        type=_positive_float,
+        default=2.0,
+        metavar="SECONDS",
+        help="Status and integrity-check interval.",
+    )
+    parser.add_argument(
+        "--warmup-iterations",
+        type=_positive_int,
+        default=3,
+        metavar="COUNT",
+        help="Matrix multiplications before timing starts.",
+    )
+    parser.add_argument(
+        "--sync-every",
+        type=_positive_int,
+        default=4,
+        metavar="COUNT",
+        help="Synchronize CUDA after this many multiplications.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=_seed,
+        default=12345,
+        help="Random seed for input matrices.",
+    )
+    parser.set_defaults(data=None, metrics_name=None)
+
+
 def build_parser():
     parser = _RootArgumentParser(
         prog="transformer",
@@ -574,6 +678,7 @@ def build_parser():
     _add_predict_parser(subparsers, "predict", stream=False)
     _add_fit_parser(subparsers, "fit-stream", stream=True)
     _add_predict_parser(subparsers, "predict-stream", stream=True)
+    _add_gmark_parser(subparsers)
 
     flight = subparsers.add_parser(
         "flight",

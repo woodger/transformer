@@ -25,6 +25,7 @@ CLI help — публичный contract для точного набора opti
 | `predict INPUT` | Выполнить prediction из checkpoint в Arrow IPC file |
 | `fit-stream` | Читать framed Arrow payloads из stdin и обучать модель |
 | `predict-stream` | Читать framed Arrow payloads из stdin и писать predictions в stdout |
+| `gmark` | Нагрузить CUDA compute и VRAM с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
 | `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
@@ -106,6 +107,54 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 на отдельных frames, loss schedule и early stopping определены в
 [training reference](../training-runtime.md).
 
+## GPU stress test
+
+`gmark` выполняет повторные CUDA matrix multiplications, резервирует и
+перезаписывает заданную долю свободной VRAM и периодически проверяет выборку
+результата на `NaN`, `Inf` и неожиданные изменения. Метрики температуры,
+utilization, power и VRAM читаются через системный `nvidia-smi`.
+
+Короткая проверка:
+
+```bash
+./.venv/bin/python ./app/main.py gmark \
+  --duration=60 \
+  --memory-fraction=0.5 \
+  --max-temperature=80
+```
+
+Не запускайте `gmark` одновременно с training или prediction jobs на том же
+GPU: команда намеренно потребляет compute capacity и свободную VRAM. По
+умолчанию отсутствие показания температуры считается ошибкой, потому что
+порог нельзя гарантировать. `--max-temperature=0` отключает эту защиту и
+допустим только при внешнем мониторинге.
+
+| Аргумент | Описание | По умолчанию |
+| --- | --- | --- |
+| `--duration SECONDS` | Продолжительность после warm-up | `60` |
+| `--device INDEX` | Логический индекс CUDA-устройства | `0` |
+| `--matrix-size N` | Размер квадратных матриц | `8192` |
+| `--dtype TYPE` | `float16`, `bfloat16` или `float32` | `float16` |
+| `--memory-fraction FRACTION` | Доля свободной после warm-up VRAM, `0..0.9`; `0` отключает ballast | `0.7` |
+| `--max-temperature CELSIUS` | Температурный порог; `0` отключает | `80` |
+| `--status-interval SECONDS` | Интервал статуса и integrity check | `2` |
+| `--warmup-iterations COUNT` | Matrix multiplications до замера | `3` |
+| `--sync-every COUNT` | Multiplications между CUDA synchronizations | `4` |
+| `--seed SEED` | Seed входных матриц | `12345` |
+
+Коды завершения:
+
+| Код | Значение |
+| --- | --- |
+| `0` | Продолжительность завершена, integrity checks пройдены |
+| `1` | Ошибка CUDA, конфигурации, VRAM, monitoring или integrity |
+| `3` | Нагрузка остановлена температурным порогом |
+| `130` | Нагрузка остановлена пользователем через `Ctrl+C` |
+
+Датчики VRAM и VRM могут отсутствовать даже при доступном core-temperature
+sensor. Поэтому температурный порог по умолчанию защищает по температуре GPU
+core, но не является полной гарантией температур VRAM и power circuitry.
+
 ## Параметры
 
 Точный набор параметров всегда показывает `COMMAND --help`; таблицы ниже
@@ -115,7 +164,7 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 
 | Аргумент | Команды | Описание | По умолчанию |
 | --- | --- | --- | --- |
-| `--device` | все, кроме `plot-metrics` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
+| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
 | `--checkpoint-out` | `fit`, `fit-stream` | checkpoint output | `model_weights.pth` |
 | `--checkpoint` | `predict`, `predict-stream` | checkpoint input | `model_weights.pth` |
 | `--output` | `predict` | Arrow output file | `/tmp/preds.arrow` |

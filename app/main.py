@@ -61,6 +61,12 @@ def run_plot_metrics(args):
     return run(args)
 
 
+def run_gmark(args):
+    from app.commands.gmark import run
+
+    return run(args)
+
+
 def reset_metrics_log(path):
     from app.metrics import reset_metrics_log as implementation
 
@@ -97,6 +103,9 @@ def main():
     if args.action == "plot-metrics":
         run_plot_metrics(args)
         return
+
+    if args.action == "gmark":
+        raise SystemExit(run_gmark(args))
 
     if args.action in ("fit", "fit-stream"):
         configure_reproducibility(args.seed, args.deterministic)

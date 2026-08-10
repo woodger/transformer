@@ -52,6 +52,8 @@ user-site. Полный локальный сценарий находится �
   из Arrow files;
 - [`fit-stream` и `predict-stream`](./docs/local-arrow-protocol.md) —
   обучение и prediction через framed standard streams;
+- [`gmark`](./docs/cli/index.md#gpu-stress-test) — CUDA compute, VRAM и
+  integrity stress test;
 - [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
   training metrics JSONL;
 - [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
