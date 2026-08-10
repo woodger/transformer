@@ -14,7 +14,7 @@ from app.training.run_config import ModelConfig, TrainConfig
 from app.training.trainer import Trainer
 
 CONFIG_HASH = "a" * 64
-SEAL_HASH = "b" * 64
+MANIFEST_HASH = "b" * 64
 
 
 class InjectedInterruption(Exception):
@@ -129,7 +129,7 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
             interrupted,
             generation=interrupted.state.global_epoch,
             config_hash=CONFIG_HASH,
-            seal_hash=SEAL_HASH,
+            manifest_hash=MANIFEST_HASH,
         )
         assert event["completed_epochs"] == 1
         raise InjectedInterruption
@@ -144,7 +144,7 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
         str(checkpoint),
         torch.device("cpu"),
         expected_config_hash=CONFIG_HASH,
-        expected_seal_hash=SEAL_HASH,
+        expected_manifest_hash=MANIFEST_HASH,
     )
     resumed = _trainer(initial_state)
     resumed.load_recovery_state_dict(payload["trainer_state"])
@@ -168,7 +168,7 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     )
 
 
-def test_recovery_checkpoint_rejects_a_different_sealed_input_set(
+def test_recovery_checkpoint_rejects_a_different_closed_input_set(
     tmp_path,
 ):
     _seed()
@@ -185,13 +185,13 @@ def test_recovery_checkpoint_rejects_a_different_sealed_input_set(
         trainer,
         generation=trainer.state.global_epoch,
         config_hash=CONFIG_HASH,
-        seal_hash=SEAL_HASH,
+        manifest_hash=MANIFEST_HASH,
     )
 
-    with pytest.raises(ValueError, match="sealed job"):
+    with pytest.raises(ValueError, match="closed job"):
         load_training_recovery(
             str(checkpoint),
             torch.device("cpu"),
             expected_config_hash=CONFIG_HASH,
-            expected_seal_hash="c" * 64,
+            expected_manifest_hash="c" * 64,
         )

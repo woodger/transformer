@@ -14,9 +14,11 @@ from app.cli.help import build_parser
 from app.database.tokens import AccessTokenStore
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME, JobState
+from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
 from app.flight.process import capture_worker_process
 from app.flight.spool import RuntimeDirectoryLocked, Spool
+from app.service.domain.job import ExecutionState, InputState
+from tests.flight_v3_helpers import commit_input, create_fit
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +63,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
     client = flight.FlightClient(("localhost", application.server.port))
     body = json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 2,
+        "version": 3,
         "requestId": str(uuid.uuid4()),
     }).encode()
     try:
@@ -70,7 +72,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
             flight.Action(CAPABILITIES_ACTION, body),
             options=options(),
         ))
-        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [2]
+        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [3]
 
         with pytest.raises(RuntimeDirectoryLocked):
             FlightApplication.build(
@@ -114,14 +116,14 @@ def test_application_uses_database_token_cache_without_query_per_rpc(
         for _ in range(2):
             body = json.dumps({
                 "contract": CONTRACT_NAME,
-                "version": 2,
+                "version": 3,
                 "requestId": str(uuid.uuid4()),
             }).encode()
             result = list(client.do_action(
                 flight.Action(CAPABILITIES_ACTION, body),
                 options=options(issued.token),
             ))
-            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [2]
+            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [3]
 
         assert credential_loads == [True]
     finally:
@@ -186,6 +188,9 @@ def test_build_start_failure_stops_started_components_and_releases_lock(
             pass
 
         def notify_queued(self, job_id=None):
+            pass
+
+        def notify_input(self, job_id):
             pass
 
     class FakeMaintenance:
@@ -321,27 +326,9 @@ def test_restart_requeues_persistent_fit_and_recovers_other_states(
     ledger = postgres_ledger
     ledger.synchronize_runtime_epoch(spool.storage_epoch())
 
-    def create(label):
-        return ledger.create_job(
-            job_id=str(uuid.uuid4()),
-            owner_subject="inventory",
-            operation="fit",
-            requested_device="cpu",
-            prediction_column="out",
-            config_hash="a" * 64,
-            model_label=label,
-        )
-
-    def seal_and_queue(job):
-        ledger.seal_job(job["job_id"], manifest_hash="b" * 64, manifest=[])
-        ledger.queue_job(job["job_id"], selected_device="cpu")
-
-    uploading = create("uploading")
-    sealed = create("sealed")
-    ledger.seal_job(sealed["job_id"], manifest_hash="b" * 64, manifest=[])
-
-    interrupted = create("interrupted")
-    seal_and_queue(interrupted)
+    waiting = create_fit(ledger)
+    interrupted = create_fit(ledger)
+    commit_input(ledger, interrupted, 0)
     interrupted = ledger.claim_next_job("cpu")
     orphan = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
@@ -367,12 +354,12 @@ def test_restart_requeues_persistent_fit_and_recovers_other_states(
         boot_id=orphan_identity.boot_id,
         process_start_ticks=orphan_identity.start_ticks,
     )
-    cancelling = create("cancelling")
-    seal_and_queue(cancelling)
+    cancelling = create_fit(ledger)
+    commit_input(ledger, cancelling, 0)
     cancelling = ledger.claim_next_job("cpu")
-    ledger.transition_job(cancelling["job_id"], JobState.CANCELLING)
-    queued = create("queued")
-    seal_and_queue(queued)
+    ledger.transition_job(cancelling["job_id"], ExecutionState.CANCELLING)
+    queued = create_fit(ledger)
+    commit_input(ledger, queued, 0)
 
     for job in (interrupted, cancelling):
         spool.atomic_write_bytes(
@@ -402,6 +389,9 @@ def test_restart_requeues_persistent_fit_and_recovers_other_states(
             pass
 
         def notify_queued(self, job_id=None):
+            pass
+
+        def notify_input(self, job_id):
             pass
 
     class FakeMaintenance:
@@ -434,20 +424,21 @@ def test_restart_requeues_persistent_fit_and_recovers_other_states(
             bearer_tokens={"secret": "inventory"},
         )
         recovered = application.ledger
-        assert recovered.get_job(uploading["job_id"])["state"] == JobState.UPLOADING.value
-        assert recovered.get_job(sealed["job_id"])["state"] == JobState.SEALED.value
-        assert recovered.get_job(queued["job_id"])["state"] == JobState.QUEUED.value
+        waiting_job = recovered.get_job(waiting["job_id"])
+        assert waiting_job["input_state"] == InputState.OPEN.value
+        assert waiting_job["execution_state"] == ExecutionState.WAITING_INPUT.value
+        assert recovered.get_job(queued["job_id"])["execution_state"] == ExecutionState.QUEUED.value
         retrying = recovered.get_job(interrupted["job_id"])
-        assert retrying["state"] == JobState.RETRYING.value
+        assert retrying["execution_state"] == ExecutionState.RETRYING.value
         assert retrying["attempt"] == 1
         assert retrying["error_code"] is None
         assert orphan.wait(timeout=5) < 0
-        assert recovered.get_job(cancelling["job_id"])["state"] == JobState.CANCELLED.value
+        assert recovered.get_job(cancelling["job_id"])["execution_state"] == ExecutionState.CANCELLED.value
         assert {
             job["job_id"]
             for job in recovered.list_jobs([
-                JobState.QUEUED,
-                JobState.RETRYING,
+                ExecutionState.QUEUED,
+                ExecutionState.RETRYING,
             ])
         } == {interrupted["job_id"], queued["job_id"]}
         for job in (interrupted, cancelling):

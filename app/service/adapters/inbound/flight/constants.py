@@ -1,6 +1,7 @@
-"""Flight v2 wire constants combined with service lifecycle values."""
+"""Flight v3 wire constants combined with service lifecycle values."""
 
-from app.contracts.flight.v2.constants import (
+from app.contracts.flight.v3.constants import (
+    ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
@@ -10,22 +11,27 @@ from app.contracts.flight.v2.constants import (
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    MAX_MANIFEST_ITEMS,
+    INPUT_CLOSE_ACTION,
+    INPUTS_LIST_ACTION,
+    MAX_PAGE_ITEMS,
+    MAX_PAYLOADS_PER_JOB,
+    MODEL_DESCRIBE_ACTION,
+    OUTPUTS_LIST_ACTION,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
-    SEAL_ACTION,
-    START_ACTION,
     STATUS_ACTION,
 )
 from app.service.domain.job import (
     SUPPORTED_DEVICES,
     SUPPORTED_OPERATIONS,
-    TERMINAL_STATES,
+    TERMINAL_EXECUTION_STATES,
     ErrorCode,
-    JobState,
+    ExecutionState,
+    InputState,
 )
 
 __all__ = [
+    "ACQUIRE_ACTION",
     "ACTIONS",
     "CANCEL_ACTION",
     "CAPABILITIES_ACTION",
@@ -35,16 +41,19 @@ __all__ = [
     "CREATE_ACTION",
     "FIT_SCHEMA_ID",
     "HEALTH_ACTION",
-    "MAX_MANIFEST_ITEMS",
+    "INPUTS_LIST_ACTION",
+    "INPUT_CLOSE_ACTION",
+    "MAX_PAGE_ITEMS",
+    "MAX_PAYLOADS_PER_JOB",
+    "MODEL_DESCRIBE_ACTION",
+    "OUTPUTS_LIST_ACTION",
     "PREDICTION_SCHEMA_ID",
     "PREDICT_SCHEMA_ID",
-    "SEAL_ACTION",
-    "START_ACTION",
     "STATUS_ACTION",
     "SUPPORTED_DEVICES",
     "SUPPORTED_OPERATIONS",
-    "TERMINAL_STATES",
+    "TERMINAL_EXECUTION_STATES",
     "ErrorCode",
-    "JobState",
+    "ExecutionState",
+    "InputState",
 ]
-

@@ -110,8 +110,9 @@ tables пропускаются; если непустых frames не было,
 и модель не сохраняется. После terminator или clean EOF с хотя бы одним
 непустым frame команда атомарно сохраняет checkpoint.
 
-Flight fit использует другой внутренний режим этой команды: каждая job-wide
-эпоха читает все sealed payloads из durable spool по ordinal, с едиными loss
+Flight fit использует durable input stream: epoch 0 начинает обработку
+непрерывного префикса payloads до EOF, а последующие job-wide эпохи перечитывают
+закрытый immutable dataset по ordinal, с едиными loss
 schedule, optimizer, checkpoint selection и early stopping на весь job. Строки
 проходят через ограниченное job-wide окно перемешивания; его границы и optimizer
 batches могут пересекать payload и не зависят от транспортного разбиения.

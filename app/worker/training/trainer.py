@@ -471,6 +471,43 @@ class Trainer:
             on_epoch_committed=on_epoch_committed,
         )
 
+    def fit_streaming_payloads(
+        self,
+        first_epoch_payloads,
+        closed_payloads,
+        *,
+        on_epoch=None,
+        on_epoch_committed=None,
+    ):
+        """Train epoch zero from an open stream, then replay closed input.
+
+        The first iterable may block at the durable input frontier. Its EOF is
+        the explicit input-close boundary. Every later epoch reopens the same
+        complete ordered dataset through ``closed_payloads``.
+        """
+
+        first_epoch = True
+
+        def loaders():
+            nonlocal first_epoch
+            if first_epoch:
+                payloads = first_epoch_payloads
+                first_epoch = False
+            else:
+                payloads = closed_payloads()
+            yield self._payload_batches(
+                payloads,
+                self._payload_shuffle_generator,
+            )
+
+        return self._fit_loader_epochs(
+            loaders,
+            on_epoch=on_epoch,
+            start_epoch=self.state.global_epoch,
+            stopper=self.early_stopping,
+            on_epoch_committed=on_epoch_committed,
+        )
+
     def recovery_state_dict(self) -> dict:
         """Return the complete trusted state needed to resume a fit."""
 

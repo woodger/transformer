@@ -1,13 +1,12 @@
-# Transformer Arrow Flight service: runbook v2
+# Transformer Arrow Flight service: runbook v3
 
 This runbook covers the single-instance Transformer Flight service. Consumer
 wire details are in the
 [`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
-fixtures are in [`app/contracts/flight/v2`](../app/contracts/flight/v2/README.md), and
-the original service boundary is recorded in
-[`ADR 0001`](adr/0001-arrow-flight-job-service.md), and durable resumable
-training plus device-aware execution are fixed by
-[`ADR 0003`](adr/0003-durable-resumable-training-and-device-aware-execution.md).
+fixtures are in
+[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). The durable
+streaming lifecycle, fencing and breaking cutover are fixed by
+[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
 
 ## Runtime requirements
 
@@ -63,7 +62,7 @@ The runtime filesystem is intentionally ephemeral:
   cuda-quarantine.json
   spool/
     jobs/{jobId}/
-      inputs/{ordinal}.arrow        # prediction only
+      inputs/{ordinal}-{payloadId}-{uploadToken}.arrow  # prediction only
       attempts/{attempt}/
         metrics.jsonl
         stdout.log
@@ -77,7 +76,7 @@ Fit inputs and recoverable training state are persistent but remain internal:
 ```text
 <project-root>/recovery/
   jobs/{jobId}/
-    inputs/{ordinal}.arrow
+    inputs/{ordinal}-{payloadId}-{uploadToken}.arrow
     checkpoints/{completedEpoch}.pth
 ```
 
@@ -98,7 +97,7 @@ and commits its metadata to PostgreSQL only after the filesystem publication
 succeeds. Failed and interrupted attempts never create a model generation.
 
 One process owns both runtime and recovery directories through non-blocking
-`service.lock` files. V2 remains single-instance: PostgreSQL does not turn the
+`service.lock` files. V3 remains single-instance: PostgreSQL does not turn the
 in-memory worker queue or local stores into a multi-replica scheduler.
 
 ### Loss of `/tmp`
@@ -152,11 +151,13 @@ exactly the latest applied revision:
 The service and token-management commands refuse to start against a missing or
 outdated schema and direct the operator to `db migrations apply`.
 
-Revision `0002` is the deliberate breaking Flight v2 cutover. Applying it
-removes v1 jobs, attempts, input/output tickets and idempotency records. It
-preserves published model generations, aliases and access tokens. Stop the v1
-service before applying the revision and start only v2 code afterwards; mixed
-v1/v2 operation is unsupported.
+Revision `0004` is the deliberate breaking Flight v3 cutover. Applying it
+removes v2 jobs, inputs, attempts, tickets, idempotency and recovery state. It
+preserves access tokens and legacy model rows, but marks those models
+uncertified for v3 until explicit offline certification or retraining. Stop
+Inventory workers and Transformer v2 before applying the revision, then start
+only Inventory v3 and Transformer v3. The runtime has no v2 compatibility
+surface and the migration has no automatic downgrade.
 
 PostgreSQL stores control-plane state, not Arrow payloads and not a local cache.
 Transactions are short. Worker dispatch uses an in-process FIFO initialized
@@ -233,7 +234,7 @@ The runtime directory is derived with
 The corresponding `TRANSFORMER_*` environment variables are not read.
 TLS and mTLS have no persistent configuration defaults: they are enabled only
 by explicitly supplying certificate options to `flight serve`.
-Flight v2 derives `cudaCapacity` from the healthy physical GPUs discovered at
+Flight v3 derives `cudaCapacity` from the healthy physical GPUs discovered at
 startup; it is not an application setting.
 
 Certificate and key must be configured together. `tls-require-client-cert`
@@ -249,7 +250,7 @@ enabled; bearer authentication remains mandatory in every transport mode.
 | `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Application RecordBatch limit |
 | `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Logical DoPut and persisted IPC-file limit |
 | `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Rows in one DoPut |
-| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `400` | Logical payloads in one job |
+| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Logical payloads in one job |
 | `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Total committed input bytes per job |
 | `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Non-terminal jobs per subject |
 
@@ -267,6 +268,8 @@ copying defaults.
 | `TRANSFORMER_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Worker drain before forced cancellation |
 | `TRANSFORMER_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Hard CLI execution deadline |
 | `TRANSFORMER_MAINTENANCE_INTERVAL_SECONDS` | `60` | Maintenance interval |
+| `TRANSFORMER_INPUT_IDLE_TIMEOUT_SECONDS` | `900.0` | Confirmed contiguous-input wait before `INPUT_TIMEOUT` |
+| `TRANSFORMER_ACQUIRE_IDLE_GRACE_SECONDS` | `30.0` | Grace after a successful ownership takeover |
 
 All quotas, capacities and intervals must be positive. Only the service port
 may be zero.
@@ -329,15 +332,17 @@ Startup:
 
 A resumed fit restores the latest PostgreSQL-registered global-epoch
 checkpoint. If none exists, it restarts from epoch zero using the same
-persistent inputs and immutable job configuration. The incomplete epoch, if
-any, is deliberately repeated.
+persistent inputs and immutable job configuration. Before EOF an incomplete
+epoch zero is deliberately repeated in full. `inputIdleTimeout` runs only
+after the worker has reported that it waits for the next contiguous ordinal;
+an out-of-order commit does not extend it.
 
 ## Cancellation and shutdown
 
 Job cancellation behavior:
 
-- `UPLOADING`, `SEALED`, `QUEUED`, `RETRYING` become `CANCELLED`
-  transactionally;
+- `WAITING_INPUT`, `QUEUED` and `RETRYING` become `CANCELLED`
+  transactionally; an open input moves to `ABORTED`;
 - `RUNNING` becomes `CANCELLING`, then the complete worker process group is
   sent SIGTERM and, after the configured grace period, SIGKILL if necessary;
 - no prediction output or model is published after cancellation wins the final
@@ -353,10 +358,12 @@ PostgreSQL connection pool closes and the runtime lock is released.
 ## Retention and storage failures
 
 Maintenance periodically deletes expired output tickets and eligible terminal
-jobs. A job is retained while it has a live ticket, a recent linked idempotency
-record or immutable model provenance. Recovery inputs/checkpoints are removed
-after a fit becomes terminal; published model directories are not deleted by
-job retention, and v2 has no network action for model deletion.
+jobs. A job is retained while it has a live ticket or a recent linked
+idempotency record. Recovery inputs/checkpoints are removed after a fit becomes
+terminal. Published model directories are not deleted by job retention and
+their optional producing-job reference is cleared. A compact owner-scoped
+identity tombstone remains, so `jobId` cannot be reused and an exact lost-create
+replay remains resolvable. V3 has no network action for model deletion.
 
 The service does not apply a configured free-space admission watermark.
 Health reports current free bytes for runtime and recovery storage without
@@ -366,7 +373,7 @@ deriving readiness from them. Actual filesystem exhaustion uses stable
 ## Health and observability
 
 The service has no separate unauthenticated HTTP health endpoint. Call the
-authenticated `transformer.v2.health` Flight action.
+authenticated `transformer.v3.health` Flight action.
 
 - `live=true` means the process can answer the action.
 - `ready=true` requires a non-draining service and a successful PostgreSQL
@@ -413,16 +420,16 @@ PyArrow 24 has two confirmed binding limitations:
 Details are recorded in
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Known v2 limits
+## Known v3 limits
 
 - One Transformer service instance with one local runtime store and one
   persistent recovery store.
 - No replica scheduling or automatic failover.
 - No `DoExchange` and no `PollFlightInfo`.
-- At most 400 logical payloads per job so the seal manifest remains within the
-  action-document limit.
-- One DoPut is one semantic frame; RecordBatch chunking never changes training
-  epochs or prediction invocation boundaries.
+- At most 100000 logical payloads per job. Inputs are listed with bounded
+  revision pagination and close sends only constant-size totals plus a digest.
+- One DoPut is one semantic payload; RecordBatch chunking and payload
+  partitioning do not define optimizer batches, shuffle windows or epochs.
 - One predict job loads one checkpoint once and emits one output per input
   ordinal.
 - Fit recovery is only at a completed global-epoch boundary; an incomplete

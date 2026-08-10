@@ -1,6 +1,8 @@
 import json
 import math
+from dataclasses import asdict
 
+import numpy as np
 import pytest
 import torch
 from torch import nn
@@ -13,6 +15,7 @@ from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
+from app.worker.runtime.reproducibility import configure_reproducibility
 
 
 @pytest.fixture(autouse=True)
@@ -528,6 +531,225 @@ def test_trainer_fit_payloads_is_independent_of_payload_boundaries():
         torch.equal(single_state[name], split_state[name])
         for name in single_state
     )
+
+
+def test_streaming_and_closed_fit_have_identical_semantic_state():
+    source, targets = make_dummy_data(n=10)
+    initial_model = TransformerModel(
+        input_dim=4,
+        seq_len=5,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+    initial_state = {
+        name: value.detach().clone()
+        for name, value in initial_model.state_dict().items()
+    }
+    closed_payloads = ((source, targets),)
+    streamed_payloads = (
+        (source[:3], targets[:3]),
+        (source[3:5], targets[3:5]),
+        (source[5:], targets[5:]),
+    )
+
+    def train(*, streaming: bool):
+        model = TransformerModel(
+            input_dim=4,
+            seq_len=5,
+            hidden_dim=32,
+            layers=1,
+            dropout=0.0,
+            out_dim=6,
+            nhead=4,
+        )
+        model.load_state_dict(initial_state)
+        trainer = build_trainer(
+            TrainConfig(
+                lr=1e-3,
+                batch_size=4,
+                epochs=2,
+                patience=0,
+                loss_schedule="none",
+                monitor="loss",
+                save_best_checkpoint=False,
+                use_amp=False,
+                seed=91,
+                deterministic=True,
+            ),
+            model,
+            torch.device("cpu"),
+            ModelConfig(
+                seq_len=5,
+                hidden=32,
+                layers=1,
+                dropout=0.0,
+                nhead=4,
+                feature_dim=4,
+            ),
+        )
+        configure_reproducibility(91, deterministic=True)
+        epochs = []
+
+        def record_epoch(_epoch, metrics, _monitor, _complete):
+            metric_state = asdict(metrics)
+            metric_state.pop("elapsed_ms")
+            epochs.append((metric_state, trainer.recovery_state_dict()))
+
+        if streaming:
+            trainer.fit_streaming_payloads(
+                iter(streamed_payloads),
+                lambda: iter(closed_payloads),
+                on_epoch_committed=record_epoch,
+            )
+        else:
+            trainer.fit_payloads_resumable(
+                lambda: iter(closed_payloads),
+                on_epoch_committed=record_epoch,
+            )
+        return epochs
+
+    closed_epochs = train(streaming=False)
+    streaming_epochs = train(streaming=True)
+
+    assert len(closed_epochs) == len(streaming_epochs) == 2
+    for closed_epoch, streaming_epoch in zip(
+        closed_epochs,
+        streaming_epochs,
+        strict=True,
+    ):
+        _assert_semantically_equal(closed_epoch, streaming_epoch)
+
+
+def test_streaming_fit_trains_full_window_before_requesting_more_input():
+    source, targets = make_dummy_data(n=33, seq_len=1, feat_dim=1)
+    model = nn.Sequential(nn.Flatten(), nn.Linear(1, 6))
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        lr=1e-3,
+        batch_size=1,
+        epochs=1,
+        patience=0,
+        loss_schedule="none",
+        monitor="loss",
+        save_best_checkpoint=False,
+        use_amp=False,
+        seed=91,
+    )
+    steps_before_next_payload = []
+
+    def open_payloads():
+        yield source[:32], targets[:32]
+        steps_before_next_payload.append(trainer.train_step)
+        yield source[32:], targets[32:]
+
+    trainer.fit_streaming_payloads(
+        open_payloads(),
+        lambda: iter(((source, targets),)),
+    )
+
+    assert steps_before_next_payload == [32]
+    assert trainer.train_step == 33
+
+
+def test_open_epoch_crash_restarts_without_reusing_partial_optimizer_state():
+    source, targets = make_dummy_data(n=33, seq_len=1, feat_dim=1)
+
+    class StableLinear(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(1, 6)
+
+        def forward(self, value):
+            raw = self.linear(value.flatten(1))
+            return torch.stack(
+                (
+                    raw[:, 0],
+                    torch.nn.functional.softplus(raw[:, 1]) + 0.1,
+                    raw[:, 2],
+                    raw[:, 3],
+                    torch.nn.functional.softplus(raw[:, 4]) + 0.1,
+                    raw[:, 5],
+                ),
+                dim=1,
+            )
+
+    initial_model = StableLinear()
+    initial_state = {
+        name: value.detach().clone()
+        for name, value in initial_model.state_dict().items()
+    }
+
+    def new_trainer():
+        model = StableLinear()
+        model.load_state_dict(initial_state)
+        configure_reproducibility(91, deterministic=True)
+        return Trainer(
+            model=model,
+            device=torch.device("cpu"),
+            lr=1e-3,
+            batch_size=1,
+            epochs=1,
+            patience=0,
+            loss_schedule="none",
+            monitor="loss",
+            save_best_checkpoint=False,
+            use_amp=False,
+            seed=91,
+        )
+
+    interrupted = new_trainer()
+
+    def interrupted_stream():
+        yield source[:32], targets[:32]
+        raise RuntimeError("worker crashed before EOF")
+
+    with pytest.raises(RuntimeError, match="before EOF"):
+        interrupted.fit_streaming_payloads(
+            interrupted_stream(),
+            lambda: iter(((source, targets),)),
+        )
+    assert interrupted.train_step == 32
+
+    baseline = new_trainer()
+    baseline.fit_payloads_resumable(lambda: iter(((source, targets),)))
+    restarted = new_trainer()
+    restarted.fit_streaming_payloads(
+        iter(((source[:32], targets[:32]), (source[32:], targets[32:]))),
+        lambda: iter(((source, targets),)),
+    )
+
+    _assert_semantically_equal(
+        baseline.recovery_state_dict(),
+        restarted.recovery_state_dict(),
+    )
+
+
+def _assert_semantically_equal(left, right):
+    if isinstance(left, torch.Tensor):
+        assert isinstance(right, torch.Tensor)
+        assert torch.equal(left, right)
+        return
+    if isinstance(left, np.ndarray):
+        assert isinstance(right, np.ndarray)
+        assert np.array_equal(left, right)
+        return
+    if isinstance(left, dict):
+        assert isinstance(right, dict)
+        assert left.keys() == right.keys()
+        for key in left:
+            _assert_semantically_equal(left[key], right[key])
+        return
+    if isinstance(left, (list, tuple)):
+        assert type(left) is type(right)
+        assert len(left) == len(right)
+        for left_item, right_item in zip(left, right, strict=True):
+            _assert_semantically_equal(left_item, right_item)
+        return
+    assert left == right
 
 
 def test_trainer_fit_payloads_uses_one_early_stopper_for_the_job():

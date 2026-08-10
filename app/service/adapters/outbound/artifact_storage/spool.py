@@ -121,6 +121,21 @@ class Spool:
         _nonnegative(ordinal, "ordinal")
         return os.path.join(self.input_directory(job_id), f"{ordinal}.arrow")
 
+    def input_candidate_path(
+        self,
+        job_id: str,
+        ordinal: int,
+        payload_id: str,
+        upload_token: str,
+    ) -> str:
+        _nonnegative(ordinal, "ordinal")
+        payload_id = _uuid_component(payload_id, "payload_id")
+        upload_token = _safe_component(upload_token, "upload_token")
+        return os.path.join(
+            self.input_directory(job_id),
+            f"{ordinal}-{payload_id}-{upload_token}.arrow",
+        )
+
     def job_directory(self, job_id: str) -> str:
         return os.path.join(self.jobs_dir, _uuid_component(job_id, "job_id"))
 
@@ -252,6 +267,19 @@ class Spool:
             raise ValueError("temporary artifact must be beside its destination")
         _fsync_file(temporary_path)
         os.replace(temporary_path, destination)
+        fsync_directory(os.path.dirname(destination))
+        return destination
+
+    def durable_create(self, temporary_path: str, destination: str) -> str:
+        temporary_path, temporary_root = self._inside_managed(temporary_path)
+        destination, destination_root = self._inside_managed(destination)
+        if temporary_root != destination_root:
+            raise ValueError("temporary artifact and destination use different filesystems")
+        if os.path.dirname(temporary_path) != os.path.dirname(destination):
+            raise ValueError("temporary artifact must be beside its destination")
+        _fsync_file(temporary_path)
+        os.link(temporary_path, destination)
+        os.unlink(temporary_path)
         fsync_directory(os.path.dirname(destination))
         return destination
 

@@ -1,0 +1,16 @@
+FIT_INPUT_SCHEMA_ID = "inventory.sequence.fit.v2"
+PREDICT_INPUT_SCHEMA_ID = "inventory.sequence.predict.v2"
+PREDICTION_OUTPUT_SCHEMA_ID = "transformer.prediction.v2"
+
+ARROW_SCHEMA_IDS = (
+    FIT_INPUT_SCHEMA_ID,
+    PREDICT_INPUT_SCHEMA_ID,
+    PREDICTION_OUTPUT_SCHEMA_ID,
+)
+
+__all__ = [
+    "ARROW_SCHEMA_IDS",
+    "FIT_INPUT_SCHEMA_ID",
+    "PREDICTION_OUTPUT_SCHEMA_ID",
+    "PREDICT_INPUT_SCHEMA_ID",
+]

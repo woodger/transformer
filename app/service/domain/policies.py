@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 
 from app.service.domain.job import (
+    EXECUTION_STATE_TRANSITIONS,
     IMMEDIATE_CANCEL_STATES,
-    STATE_TRANSITIONS,
-    TERMINAL_STATES,
+    INPUT_STATE_TRANSITIONS,
+    TERMINAL_EXECUTION_STATES,
     ErrorCode,
-    JobState,
+    ExecutionState,
+    InputState,
 )
 
 _EXECUTION_INTERRUPTED_MESSAGE = (
@@ -15,20 +17,21 @@ _EXECUTION_INTERRUPTED_MESSAGE = (
 
 @dataclass(frozen=True, slots=True)
 class CancelDecision:
-    target: JobState | None
+    target: ExecutionState | None
     notify_worker: bool
+    abort_open_input: bool
 
 
 @dataclass(frozen=True, slots=True)
 class RecoveryDecision:
-    target: JobState
+    target: ExecutionState
     error_code: ErrorCode | None
     error_message: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class AttemptOutcomeDecision:
-    target: JobState
+    target: ExecutionState
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,48 +40,70 @@ class DeviceDecision:
     error_code: ErrorCode | None
 
 
-def validate_transition(current: str | JobState, target: str | JobState) -> None:
-    current_state = JobState(current)
-    target_state = JobState(target)
-    if target_state not in STATE_TRANSITIONS[current_state]:
+def validate_execution_transition(
+    current: str | ExecutionState,
+    target: str | ExecutionState,
+) -> None:
+    current_state = ExecutionState(current)
+    target_state = ExecutionState(target)
+    if target_state not in EXECUTION_STATE_TRANSITIONS[current_state]:
         raise ValueError(
-            f"invalid job state transition: {current_state.value} -> "
+            f"invalid execution state transition: {current_state.value} -> "
             f"{target_state.value}"
         )
 
 
-def is_terminal(state: str | JobState) -> bool:
-    return JobState(state) in TERMINAL_STATES
+def validate_input_transition(
+    current: str | InputState,
+    target: str | InputState,
+) -> None:
+    current_state = InputState(current)
+    target_state = InputState(target)
+    if target_state not in INPUT_STATE_TRANSITIONS[current_state]:
+        raise ValueError(
+            f"invalid input state transition: {current_state.value} -> "
+            f"{target_state.value}"
+        )
 
 
-def decide_cancel(state: str | JobState) -> CancelDecision:
-    current = JobState(state)
+def is_terminal(state: str | ExecutionState) -> bool:
+    return ExecutionState(state) in TERMINAL_EXECUTION_STATES
+
+
+def decide_cancel(state: str | ExecutionState) -> CancelDecision:
+    current = ExecutionState(state)
     if current in IMMEDIATE_CANCEL_STATES:
         return CancelDecision(
-            target=JobState.CANCELLED,
+            target=ExecutionState.CANCELLED,
             notify_worker=False,
+            abort_open_input=True,
         )
-    if current == JobState.RUNNING:
+    if current == ExecutionState.RUNNING:
         return CancelDecision(
-            target=JobState.CANCELLING,
+            target=ExecutionState.CANCELLING,
             notify_worker=True,
+            abort_open_input=True,
         )
-    return CancelDecision(target=None, notify_worker=False)
+    return CancelDecision(
+        target=None,
+        notify_worker=False,
+        abort_open_input=False,
+    )
 
 
 def decide_interrupted_attempt(
-    state: str | JobState,
+    state: str | ExecutionState,
 ) -> RecoveryDecision:
-    current = JobState(state)
-    if current == JobState.RUNNING:
+    current = ExecutionState(state)
+    if current == ExecutionState.RUNNING:
         return RecoveryDecision(
-            target=JobState.FAILED,
+            target=ExecutionState.FAILED,
             error_code=ErrorCode.EXECUTION_INTERRUPTED,
             error_message=_EXECUTION_INTERRUPTED_MESSAGE,
         )
-    if current == JobState.CANCELLING:
+    if current == ExecutionState.CANCELLING:
         return RecoveryDecision(
-            target=JobState.CANCELLED,
+            target=ExecutionState.CANCELLED,
             error_code=None,
             error_message=None,
         )
@@ -88,27 +113,31 @@ def decide_interrupted_attempt(
 
 
 def decide_attempt_outcome(
-    state: str | JobState,
+    state: str | ExecutionState,
     failure: str | ErrorCode,
     *,
     operation: str,
     resumable_fit: bool,
 ) -> AttemptOutcomeDecision:
-    current = JobState(state)
+    current = ExecutionState(state)
     error = ErrorCode(failure)
-    if current == JobState.CANCELLING or error == ErrorCode.CANCELLED:
-        return AttemptOutcomeDecision(JobState.CANCELLED)
+    if current == ExecutionState.CANCELLING or error == ErrorCode.CANCELLED:
+        return AttemptOutcomeDecision(ExecutionState.CANCELLED)
     retryable_device_loss = error == ErrorCode.DEVICE_LOST and (
         operation == "predict" or (operation == "fit" and resumable_fit)
     )
-    retryable_restart = (
-        error == ErrorCode.EXECUTION_INTERRUPTED
+    retryable_fit_process = (
+        error in {
+            ErrorCode.EXECUTION_INTERRUPTED,
+            ErrorCode.SUBPROCESS_FAILED,
+            ErrorCode.SUBPROCESS_HUNG,
+        }
         and operation == "fit"
         and resumable_fit
     )
-    if retryable_device_loss or retryable_restart:
-        return AttemptOutcomeDecision(JobState.RETRYING)
-    return AttemptOutcomeDecision(JobState.FAILED)
+    if retryable_device_loss or retryable_fit_process:
+        return AttemptOutcomeDecision(ExecutionState.RETRYING)
+    return AttemptOutcomeDecision(ExecutionState.FAILED)
 
 
 def resolve_device(requested: str, cuda_available: bool) -> DeviceDecision:

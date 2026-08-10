@@ -9,13 +9,16 @@ from app.service.adapters.inbound.flight.auth import (
     authenticated_subject,
 )
 from app.service.adapters.inbound.flight.constants import (
+    ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
     CREATE_ACTION,
     HEALTH_ACTION,
-    SEAL_ACTION,
-    START_ACTION,
+    INPUT_CLOSE_ACTION,
+    INPUTS_LIST_ACTION,
+    MODEL_DESCRIBE_ACTION,
+    OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
 )
 from app.service.adapters.inbound.flight.contract import (
@@ -30,13 +33,16 @@ from app.service.adapters.inbound.flight.errors import (
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v2 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v3 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
-    CREATE_ACTION: "Create an upload job.",
-    SEAL_ACTION: "Seal an ordered input manifest.",
-    START_ACTION: "Queue a sealed job.",
+    CREATE_ACTION: "Create a durable streaming job.",
+    ACQUIRE_ACTION: "Transfer externally fenced job ownership.",
     STATUS_ACTION: "Read durable job status.",
+    INPUTS_LIST_ACTION: "List committed inputs by revision snapshot.",
+    INPUT_CLOSE_ACTION: "Commit EOF and the immutable input manifest.",
+    OUTPUTS_LIST_ACTION: "List atomically published outputs.",
     CANCEL_ACTION: "Cancel a job.",
+    MODEL_DESCRIBE_ACTION: "Describe one immutable model generation.",
 }
 
 

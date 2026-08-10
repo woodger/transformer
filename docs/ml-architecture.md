@@ -17,7 +17,8 @@ Python
   Для `fit-stream` также нужна колонка `tgt`.
 * Python читает frames через `iter_framed_arrow()`.
 * Standalone `fit-stream` обучается на каждом непустом stdin payload. Flight
-  fit переиспользует durable sealed payloads в порядке ordinal внутри каждой
+  fit начинает epoch 0 на открытом durable stream и после EOF переиспользует
+  закрытый immutable dataset в порядке ordinal внутри каждой
   общей для job эпохи.
 * `predict-stream` загружает модель один раз, делает predict для каждого
   непустого payload и пишет framed Arrow predictions в stdout. Пустой input

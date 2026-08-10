@@ -197,7 +197,9 @@ def test_predict_stream_loads_checkpoint_once_for_all_empty_input(
     output_stream.seek(0)
     frames = list(iter_framed_arrow(output_stream))
     assert len(frames) == 1
-    assert frames[0].schema.field("out").type == pa.list_(pa.float32())
+    field = frames[0].schema.field("out")
+    assert field.type == pa.list_(pa.float32(), 6)
+    assert field.nullable is False
     assert frames[0].num_rows == 0
 
 

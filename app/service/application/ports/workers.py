@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.service.domain.records import (
-    ExecutionJobRecord,
-    StagedPredictionOutput,
-)
+from app.service.domain.records import ExecutionJobRecord
 
 
 @dataclass(frozen=True)
 class ExecutionInput:
     ordinal: int
+    commit_revision: int
     schema_id: str
+    data_contract_sha256: str
     rows: int
     byte_count: int
     sha256: str
@@ -26,20 +24,16 @@ class ExecutionInput:
 class ExecutionPlan:
     inputs: tuple[ExecutionInput, ...]
     argv: tuple[str, ...]
-    uses_spooled_fit: bool
-    uses_training_recovery: bool = False
-    resume_training_complete: bool = False
-    protocol_version: int = 0
-    manifest_path: str | None = None
-    workspace: str | None = None
+    protocol_version: int
+    manifest_path: str
+    workspace: str
 
 
 @dataclass(frozen=True)
 class ExecutionResult:
     exit_code: int
     stderr_tail: bytes
-    outputs: tuple[StagedPredictionOutput, ...] = ()
-    result_manifest: dict | None = None
+    result_manifest: dict
 
 
 class ExecutionPlanBuilder(Protocol):
@@ -49,9 +43,13 @@ class ExecutionPlanBuilder(Protocol):
         self,
         job: ExecutionJobRecord,
         attempt: int,
-        *,
-        argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
     ) -> ExecutionPlan: ...
+
+    def streaming_inputs(
+        self,
+        job: ExecutionJobRecord,
+        start_ordinal: int,
+    ) -> tuple[ExecutionInput, ...]: ...
 
 
 class AttemptProcess(Protocol):
@@ -73,6 +71,8 @@ class WorkerExecutor(Protocol):
     def execute(self, job: ExecutionJobRecord) -> None: ...
 
     def notify_cancel(self, job_id: str) -> None: ...
+
+    def notify_input(self, job_id: str) -> None: ...
 
     def interrupt_for_shutdown(self) -> None: ...
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from app.config import PROJECT_ROOT
-from app.contracts.worker.v1 import CONTRACT_VERSION, validate_document
+from app.contracts.worker.v2 import CONTRACT_VERSION, validate_document
 
 
 class CudaDeviceState(StrEnum):

@@ -89,6 +89,6 @@ loss_vol = 0.2 * mean(
 `1..5` используют stage 1, `6..10` — stage 2, `11..15` — stage 3, а с эпохи
 `16` используется stage 4. В standalone `fit-stream`, читающем stdin, epoch
 schedule начинается заново для каждого frame; step schedule продолжает
-глобальный счётчик между frames. Flight fit читает sealed payloads из durable
+глобальный счётчик между frames. Flight fit читает committed payloads из durable
 spool в каждой job-wide эпохе, поэтому оба schedule имеют одно состояние на
 весь job и не сбрасываются на границах payloads.

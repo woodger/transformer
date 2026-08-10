@@ -3,7 +3,7 @@
 ## Scope
 
 This note records two confirmed limitations of `pyarrow==24.0.0` that affect
-the Transformer Flight v2 contract. They are limitations of the Python Flight
+the Transformer Flight v3 contract. They are limitations of the Python Flight
 server binding, not defects in `arrow-flight-client@0.0.8` or Inventory.
 
 Environment used to reproduce the behavior:
@@ -74,7 +74,7 @@ resource-exhausted exception in `pyarrow.flight`.
 
 ### Expected result and migration impact
 
-Flight v2 requires the actual failing RPC to carry the normative gRPC code; an
+Flight v3 requires the actual failing RPC to carry the normative gRPC code; an
 error encoded in a successful JSON result is not acceptable. Consequently the
 pure-Python service cannot pass the exact `ALREADY_EXISTS`,
 `FAILED_PRECONDITION`, and `RESOURCE_EXHAUSTED` wire-status gate. Stable
@@ -98,7 +98,7 @@ transport statuses or a public constructor such as:
 ```python
 flight.FlightStatusError(
     code=flight.TransportStatusCode.FAILED_PRECONDITION,
-    message="job is not sealed",
+    message="job input is not closed",
     extra_info=b"",
 )
 ```

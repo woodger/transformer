@@ -1,6 +1,6 @@
 import os
 
-from app.contracts.worker.v1.config import (
+from app.contracts.worker.v2.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,

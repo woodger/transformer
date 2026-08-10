@@ -34,7 +34,7 @@ from app.service.domain.errors import (
     failed_precondition,
     not_found,
 )
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 
 
@@ -68,7 +68,8 @@ class ArtifactLedgerSlice:
                     raise not_found(f"job not found: {job_id}")
                 if (
                     job.operation != "predict"
-                    or job.state != JobState.RUNNING.value
+                    or job.execution_state != ExecutionState.RUNNING.value
+                    or job.input_state != InputState.CLOSED.value
                     or job.attempt != attempt
                 ):
                     raise failed_precondition(
@@ -81,7 +82,7 @@ class ArtifactLedgerSlice:
                 )
                 if (
                     record is None
-                    or record.status != JobState.RUNNING.value
+                    or record.status != ExecutionState.RUNNING.value
                     or record.attempt_id != attempt_id
                 ):
                     raise failed_precondition(
@@ -92,9 +93,9 @@ class ArtifactLedgerSlice:
                         _output_record(job_id, output, published_at)
                     )
                 session.flush()
-                record.status = JobState.SUCCEEDED.value
+                record.status = ExecutionState.SUCCEEDED.value
                 record.finished_at = published_at
-                job.state = JobState.SUCCEEDED.value
+                job.execution_state = ExecutionState.SUCCEEDED.value
                 job.revision += 1
                 job.result = json_value(result)
                 job.error_code = None
@@ -119,6 +120,7 @@ class ArtifactLedgerSlice:
         generation: int | None,
         checkpoint_path: str,
         metadata_path: str,
+        byte_count: int,
         sha256: str,
         metadata: dict,
         result: dict,
@@ -127,6 +129,8 @@ class ArtifactLedgerSlice:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
         validate_relative_path(metadata_path)
+        if isinstance(byte_count, bool) or byte_count <= 0:
+            raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
         published_at = timestamp_now(now)
         try:
@@ -140,7 +144,8 @@ class ArtifactLedgerSlice:
                     raise not_found(f"job not found: {job_id}")
                 if (
                     job.operation != "fit"
-                    or job.state != JobState.RUNNING.value
+                    or job.execution_state != ExecutionState.RUNNING.value
+                    or job.input_state != InputState.CLOSED.value
                     or job.attempt != attempt
                 ):
                     raise failed_precondition(
@@ -153,7 +158,7 @@ class ArtifactLedgerSlice:
                 )
                 if (
                     record is None
-                    or record.status != JobState.RUNNING.value
+                    or record.status != ExecutionState.RUNNING.value
                     or record.attempt_id != attempt_id
                 ):
                     raise failed_precondition(
@@ -195,8 +200,12 @@ class ArtifactLedgerSlice:
                     generation=generation,
                     checkpoint_path=checkpoint_path,
                     metadata_path=metadata_path,
+                    checkpoint_bytes=byte_count,
                     sha256=sha256,
                     metadata_json=json_value(metadata),
+                    data_contract=json_value(job.data_contract),
+                    data_contract_sha256=job.data_contract_sha256,
+                    certified_for_v3=True,
                     producing_job_id=job_id,
                     created_at=published_at,
                 ))
@@ -215,11 +224,15 @@ class ArtifactLedgerSlice:
                 else:
                     alias.model_ref = model_ref
                     alias.updated_at = published_at
-                record.status = JobState.SUCCEEDED.value
+                record.status = ExecutionState.SUCCEEDED.value
                 record.finished_at = published_at
-                job.state = JobState.SUCCEEDED.value
+                job.execution_state = ExecutionState.SUCCEEDED.value
                 job.revision += 1
-                job.result = json_value(result)
+                published_result = json_value(result)
+                checkpoint = published_result.get("checkpoint")
+                if isinstance(checkpoint, dict):
+                    checkpoint["generation"] = generation
+                job.result = published_result
                 job.error_code = None
                 job.error_message = None
                 job.finished_at = published_at
@@ -347,6 +360,38 @@ class ArtifactLedgerSlice:
             )
             return [decode(row) for row in rows]
 
+    def list_outputs_page(
+        self,
+        job_id: str,
+        owner_subject: str,
+        *,
+        cursor: int | None,
+        limit: int,
+    ) -> dict:
+        with self.database.session() as session:
+            job = session.scalar(select(Job.job_id).where(
+                Job.job_id == job_id,
+                Job.owner_subject == owner_subject,
+            ))
+            if job is None:
+                raise not_found("job not found")
+            statement = select(JobOutput).where(
+                JobOutput.job_id == job_id
+            )
+            if cursor is not None:
+                statement = statement.where(JobOutput.ordinal > cursor)
+            rows = list(session.scalars(
+                statement.order_by(JobOutput.ordinal).limit(limit + 1)
+            ))
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        return {
+            "cursor": cursor,
+            "items": [decode(row) for row in page],
+            "next_cursor": page[-1].ordinal if has_more else None,
+            "has_more": has_more,
+        }
+
     def issue_ticket(
         self,
         *,
@@ -373,7 +418,7 @@ class ArtifactLedgerSlice:
                     JobOutput.job_id == job_id,
                     JobOutput.ordinal == ordinal,
                     Job.owner_subject == owner_subject,
-                    Job.state == JobState.SUCCEEDED.value,
+                    Job.execution_state == ExecutionState.SUCCEEDED.value,
                 )
             )
             if output is None:
@@ -398,7 +443,7 @@ class ArtifactLedgerSlice:
         ticket_hash = hashlib.sha256(bytes(ticket)).hexdigest()
         with self.database.session() as session:
             row = session.execute(
-                select(OutputTicket, JobOutput, Job.state)
+                select(OutputTicket, JobOutput, Job.execution_state)
                 .join(
                     JobOutput,
                     and_(
@@ -419,7 +464,7 @@ class ArtifactLedgerSlice:
             )
         if record.expires_at <= timestamp_now(now):
             raise failed_precondition("output ticket has expired")
-        if state != JobState.SUCCEEDED.value:
+        if state != ExecutionState.SUCCEEDED.value:
             raise failed_precondition("job output is not available")
         result = decode(output)
         result.update({
@@ -463,7 +508,14 @@ def _model_artifact_record(
         model_ref=record.model_ref,
         owner_subject=record.owner_subject,
         checkpoint_path=record.checkpoint_path,
+        byte_count=record.checkpoint_bytes,
         sha256=record.sha256,
+        data_contract=(
+            None
+            if record.data_contract is None
+            else dict(record.data_contract)
+        ),
+        certified_for_v3=record.certified_for_v3,
     )
 
 

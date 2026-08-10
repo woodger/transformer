@@ -491,7 +491,7 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
             help=argparse.SUPPRESS,
         )
         runtime.add_argument(
-            "--recovery-seal-hash",
+            "--recovery-manifest-hash",
             default=None,
             help=argparse.SUPPRESS,
         )

@@ -6,7 +6,7 @@ from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     ErrorCode,
-    JobState,
+    InputState,
 )
 from app.service.adapters.inbound.flight.contract import (
     encode_document,
@@ -20,6 +20,7 @@ from app.service.adapters.inbound.flight.errors import (
 )
 from app.service.adapters.inbound.flight.upload_session import InputUploadSession
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.domain.policies import resolve_device
 
 
 class UploadHandler:
@@ -30,6 +31,9 @@ class UploadHandler:
         spool,
         recovery_store=None,
         *,
+        cuda_available=None,
+        queue_notifier=None,
+        input_notifier=None,
         metrics=None,
         logger=None,
     ):
@@ -37,6 +41,9 @@ class UploadHandler:
         self.ledger = ledger
         self.spool = spool
         self.recovery_store = recovery_store
+        self._cuda_available = cuda_available or (lambda: False)
+        self._queue_notifier = queue_notifier
+        self._input_notifier = input_notifier
         self.metrics = metrics or OperationalMetrics()
         self.logger = logger or JsonLogger()
 
@@ -60,8 +67,18 @@ class UploadHandler:
         job = self.ledger.get_job(job_id, owner_subject=owner)
         if job is None:
             raise not_found("job not found")
-        if job["state"] != JobState.UPLOADING.value:
+        if job["input_state"] != InputState.OPEN.value:
             raise failed_precondition("job no longer accepts inputs")
+
+        decision = resolve_device(
+            job["requested_device"],
+            bool(self._cuda_available()),
+        )
+        if decision.error_code is not None:
+            raise ServiceError(
+                decision.error_code,
+                "explicit CUDA device is unavailable",
+            )
 
         outcome = InputUploadSession(
             self.config,
@@ -86,6 +103,7 @@ class UploadHandler:
             job=job,
             ordinal=descriptor_ordinal,
             reader=reader,
+            selected_device=decision.selected,
         ).run()
         record = outcome.record
         if outcome.committed_now:
@@ -101,6 +119,13 @@ class UploadHandler:
                 batches=record["batches"],
                 bytes=record["bytes"],
             )
+            if record["queued"] and self._queue_notifier is not None:
+                self._queue_notifier(record["job_id"])
+            elif (
+                record["frontier_advanced"]
+                and self._input_notifier is not None
+            ):
+                self._input_notifier(record["job_id"])
 
         # The durable ledger commit deliberately precedes the sole PutResult.
         writer.write(pa.py_buffer(encode_document(_put_result(record))))
@@ -119,6 +144,9 @@ def _put_result(record: dict) -> dict:
         "bytes": record["bytes"],
         "sha256": record["sha256"],
         "schemaFingerprint": record["schema_fingerprint"],
+        "inputRevision": record["input_revision"],
+        "nextInputOrdinal": record["next_input_ordinal"],
+        "queued": record["queued"],
     }
 
 

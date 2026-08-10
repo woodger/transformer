@@ -231,16 +231,18 @@ def test_columns_reject_inconsistent_row_width(name):
         table_to_tensors(pa.table(columns))
 
 
-def test_prediction_tables_always_use_list_float32():
+def test_prediction_tables_always_use_fixed_size_list_float32():
     non_empty = predictions_to_table(
         torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], dtype=torch.float64),
         "predictions",
     )
     empty = empty_predictions_table("predictions")
 
-    expected_type = pa.list_(pa.float32())
-    assert non_empty.schema.field("predictions").type == expected_type
-    assert empty.schema.field("predictions").type == expected_type
+    expected_type = pa.list_(pa.float32(), 6)
+    for table in (non_empty, empty):
+        field = table.schema.field("predictions")
+        assert field.type == expected_type
+        assert field.nullable is False
 
 
 def test_predictions_require_six_finite_values():

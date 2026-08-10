@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.contracts.worker.v1 import (
+from app.contracts.worker.v2 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     validate_document,

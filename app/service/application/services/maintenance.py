@@ -11,6 +11,7 @@ class MaintenanceResult:
     now: float
     cutoff: float
     expired_tickets: int
+    expired_input_jobs: tuple[str, ...]
     deleted_jobs: tuple[str, ...]
     removed_job_directories: tuple[str, ...]
     missing_job_directories: tuple[str, ...]
@@ -29,9 +30,9 @@ class MaintenanceService:
     The in-memory pending set only closes retry gaps while this process remains
     alive; it is deliberately not treated as durable state.
 
-    Model directories are never considered here. The ledger retention primitive
-    excludes jobs that produced a model generation, preserving both the model
-    row and its producing job's immutable provenance.
+    Model directories are never considered here. Published model generations
+    outlive the producing job; PostgreSQL clears their optional provenance link
+    when that retained job is removed.
     """
 
     def __init__(
@@ -141,6 +142,10 @@ class MaintenanceService:
             )
 
         expired_tickets = self.ledger.delete_expired_tickets(now=timestamp)
+        expired_input_jobs = tuple(self.ledger.expire_input_waits(
+            timeout_seconds=self.config.input_idle_timeout_seconds,
+            now=timestamp,
+        ))
         deleted_jobs = tuple(self.ledger.delete_terminal_jobs_before(cutoff))
         with self._pending_lock:
             self._pending_job_directories.update(deleted_jobs)
@@ -168,7 +173,11 @@ class MaintenanceService:
         recovery_removed = 0
         recovery_failed = 0
         if self.recovery_store is not None:
-            for job_id in self.ledger.terminal_recovery_job_ids():
+            recovery_job_ids = set(deleted_jobs)
+            recovery_job_ids.update(
+                self.ledger.terminal_recovery_job_ids()
+            )
+            for job_id in sorted(recovery_job_ids):
                 directory = self.recovery_store.job_directory(job_id)
                 try:
                     if self.recovery_store.remove(directory):
@@ -187,6 +196,7 @@ class MaintenanceService:
             now=timestamp,
             cutoff=cutoff,
             expired_tickets=expired_tickets,
+            expired_input_jobs=expired_input_jobs,
             deleted_jobs=deleted_jobs,
             removed_job_directories=tuple(removed),
             missing_job_directories=tuple(missing),
@@ -195,6 +205,7 @@ class MaintenanceService:
         )
         log_fields = {
             "expiredTickets": expired_tickets,
+            "expiredInputJobs": len(expired_input_jobs),
             "deletedJobs": len(deleted_jobs),
             "removedJobDirectories": len(removed),
             "missingJobDirectories": len(missing),
@@ -220,6 +231,7 @@ class MaintenanceService:
         )
         self.metrics.add("maintenanceRuns")
         self.metrics.add("expiredTickets", expired_tickets)
+        self.metrics.add("inputTimeouts", len(expired_input_jobs))
         self.metrics.add("retainedJobsDeleted", len(deleted_jobs))
         return result
 

@@ -15,17 +15,14 @@ import pytest
 
 from app.config import PROJECT_ROOT
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
-    CAPABILITIES_ACTION,
-    CONTRACT_NAME,
-    JobState,
-)
+from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
 from app.flight.contract import encode_document, response_document
 from app.flight.observability import OperationalMetrics
 from app.flight.records import ExecutionJobRecord
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.service.application.services.worker_pool import WorkerPool
+from app.service.domain.job import ExecutionState, InputState
 
 
 class RecordingLogger:
@@ -53,7 +50,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 2,
+        "version": 3,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -118,17 +115,20 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         job_id=job_id,
         owner_subject="inventory",
         operation="fit",
-        state=JobState.RUNNING,
+        input_state=InputState.OPEN,
+        execution_state=ExecutionState.RUNNING,
+        input_revision=1,
         selected_device="cpu",
         model_label="model",
         input_model_ref=None,
         prediction_column="predictions",
         model_config=None,
         training_config=None,
+        data_contract={"data_contract_sha256": "d" * 64},
         config_hash="a" * 64,
-        seal_hash="b" * 64,
-        feature_dim=None,
-        input_frame_count=0,
+        manifest_sha256=None,
+        feature_dim=2,
+        input_frame_count=1,
         attempt=1,
         assigned_device_id=None,
         resume_generation=None,
@@ -137,7 +137,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     )
     queued = replace(
         claimed,
-        state=JobState.QUEUED,
+        execution_state=ExecutionState.QUEUED,
         attempt=0,
         started_at=None,
     )
@@ -170,6 +170,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     attempt_executor = SimpleNamespace(
         execute=executed.append,
         notify_cancel=lambda _job_id: None,
+        notify_input=lambda _job_id: None,
         interrupt_for_shutdown=lambda: None,
     )
     device_inventory = SimpleNamespace(

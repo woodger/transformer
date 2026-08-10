@@ -58,9 +58,9 @@ Module-level docstring добавляется, только если модул�
 Хорошо:
 
 ```python
-# A complete seal manifest must fit in the action-document limit. This bound
-# keeps every advertised job sealable through the same public action contract.
-MAX_MANIFEST_ITEMS = 400
+# Revision pagination keeps input listing below the action-document limit.
+# A fixed page bound also makes consumer traversal memory predictable.
+MAX_PAGE_ITEMS = 100
 ```
 
 Хорошо:

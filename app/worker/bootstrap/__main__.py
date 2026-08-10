@@ -5,7 +5,7 @@ import json
 import sys
 from contextlib import redirect_stdout
 
-from app.contracts.worker.v1 import CONTRACT_VERSION, WorkerContractError, load_document
+from app.contracts.worker.v2 import CONTRACT_VERSION, WorkerContractError, load_document
 from app.worker.application.events import WorkerEventEmitter
 
 
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
 
         manifest = load_document(args.manifest, "command-manifest")
         with redirect_stdout(sys.stderr):
-            WorkerApplication(emitter).run(manifest)
+            WorkerApplication(emitter, sys.stdin.buffer).run(manifest)
         return 0
     except BaseException as exc:
         code, message = _safe_error(exc)

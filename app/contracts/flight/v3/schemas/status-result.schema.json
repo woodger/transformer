@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v3/status-result.schema.json",
+  "title": "transformer.v3.job.status result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "jobId", "operation", "revision",
+    "input", "execution", "ownership", "timestamps", "device",
+    "dataContract", "resolvedModelRef", "predictionColumn", "progress",
+    "recovery", "error", "results", "pollAfterMs"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 3},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "operation": {"enum": ["fit", "predict"]},
+    "revision": {"type": "integer", "minimum": 1},
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state", "revision", "nextOrdinal", "payloadCount", "totalRows",
+        "totalBytes", "manifestSha256"
+      ],
+      "properties": {
+        "state": {"$ref": "common.schema.json#/$defs/inputState"},
+        "revision": {"type": "integer", "minimum": 0},
+        "nextOrdinal": {"type": "integer", "minimum": 0},
+        "payloadCount": {"type": "integer", "minimum": 0},
+        "totalRows": {"type": "integer", "minimum": 0},
+        "totalBytes": {"type": "integer", "minimum": 0},
+        "manifestSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "attempt"],
+      "properties": {
+        "state": {"$ref": "common.schema.json#/$defs/executionState"},
+        "attempt": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientExecutionId", "fencingToken"],
+      "properties": {
+        "clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "fencingToken": {"$ref": "common.schema.json#/$defs/fencingToken"}
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "createdAt", "updatedAt", "inputClosedAt", "queuedAt", "startedAt",
+        "cancelRequestedAt", "finishedAt"
+      ],
+      "properties": {
+        "createdAt": {"type": "string", "format": "date-time"},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "inputClosedAt": {"type": ["string", "null"], "format": "date-time"},
+        "queuedAt": {"type": ["string", "null"], "format": "date-time"},
+        "startedAt": {"type": ["string", "null"], "format": "date-time"},
+        "cancelRequestedAt": {"type": ["string", "null"], "format": "date-time"},
+        "finishedAt": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "selected"],
+      "properties": {
+        "requested": {"enum": ["cpu", "cuda", "auto"]},
+        "selected": {"type": ["string", "null"], "enum": ["cpu", "cuda", null]}
+      }
+    },
+    "dataContract": {"$ref": "common.schema.json#/$defs/dataContract"},
+    "resolvedModelRef": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "predictionColumn": {"$ref": "common.schema.json#/$defs/predictionColumn"},
+    "progress": {"type": "object"},
+    "recovery": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "latestCheckpoint", "resumedFromGeneration", "retryCount",
+        "lastRetryCode", "boundary"
+      ],
+      "properties": {
+        "latestCheckpoint": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["generation", "completedEpochs", "globalStep", "trainingComplete"],
+          "properties": {
+            "generation": {"type": "integer", "minimum": 1},
+            "completedEpochs": {"type": "integer", "minimum": 1},
+            "globalStep": {"type": "integer", "minimum": 0},
+            "trainingComplete": {"type": "boolean"}
+          }
+        },
+        "resumedFromGeneration": {"type": ["integer", "null"], "minimum": 1},
+        "retryCount": {"type": "integer", "minimum": 0},
+        "lastRetryCode": {"type": ["string", "null"]},
+        "boundary": {"const": "globalEpoch"}
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$"},
+        "message": {"type": "string", "minLength": 1, "maxLength": 1024}
+      }
+    },
+    "results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outputCount", "modelRef", "checkpoint"],
+      "properties": {
+        "outputCount": {"type": "integer", "minimum": 0},
+        "modelRef": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "checkpoint": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "common.schema.json#/$defs/checkpointSummary"}
+          ]
+        }
+      }
+    },
+    "pollAfterMs": {"type": "integer", "minimum": 0}
+  }
+}

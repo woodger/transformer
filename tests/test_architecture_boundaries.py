@@ -188,8 +188,10 @@ def test_application_internal_import_graph_is_acyclic():
 
 
 def test_contracts_and_composition_roots_have_canonical_locations():
-    assert (APP_ROOT / "contracts" / "flight" / "v2").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v1").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v3").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v2").is_dir()
+    assert not (APP_ROOT / "contracts" / "flight" / "v2").exists()
+    assert not (APP_ROOT / "contracts" / "worker" / "v1").exists()
     assert not (PROJECT_ROOT / "contracts").exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",

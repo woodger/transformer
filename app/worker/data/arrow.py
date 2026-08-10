@@ -278,24 +278,30 @@ def predictions_to_table(
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
     arr = np.ascontiguousarray(arr)
-    if arr.size > np.iinfo(np.int32).max:
-        raise ValueError("Predictions exceed Arrow list offset capacity")
-    offsets = pa.array(
-        np.arange(
-            0,
-            arr.size + 1,
-            TARGET_WIDTH,
-            dtype=np.int32,
-        )
-    )
     values = pa.array(arr.reshape(-1), type=pa.float32())
-    col = pa.ListArray.from_arrays(offsets, values)
-
-    return pa.table({col_name: col})
+    column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)
+    schema = pa.schema([
+        pa.field(
+            col_name,
+            pa.list_(pa.float32(), TARGET_WIDTH),
+            nullable=False,
+        )
+    ])
+    return pa.Table.from_arrays([column], schema=schema)
 
 
 def empty_predictions_table(col_name: str):
-    return pa.table({col_name: pa.array([], type=pa.list_(pa.float32()))})
+    schema = pa.schema([
+        pa.field(
+            col_name,
+            pa.list_(pa.float32(), TARGET_WIDTH),
+            nullable=False,
+        )
+    ])
+    return pa.Table.from_arrays(
+        [pa.array([], type=schema.field(0).type)],
+        schema=schema,
+    )
 
 
 def write_framed_arrow(stream, table):

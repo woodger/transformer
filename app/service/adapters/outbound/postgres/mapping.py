@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from app.contracts.worker.v1.config import ModelConfig, TrainConfig
+from app.contracts.worker.v2.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,
     JobOutput,
     PublishedModel,
 )
-from app.service.domain.job import JobState
+from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import (
     ExecutionJobRecord,
     InputRecord,
@@ -24,22 +24,24 @@ from app.service.domain.records import (
 def execution_job_from_mapping(
     value: Mapping[str, Any],
 ) -> ExecutionJobRecord:
-    manifest = value.get("seal_manifest")
     return ExecutionJobRecord(
         job_id=value["job_id"],
         owner_subject=value["owner_subject"],
         operation=value["operation"],
-        state=JobState(value["state"]),
+        input_state=InputState(value["input_state"]),
+        execution_state=ExecutionState(value["execution_state"]),
+        input_revision=value["input_revision"],
         selected_device=value.get("selected_device"),
         model_label=value.get("model_label"),
-        input_model_ref=value.get("input_model_ref"),
+        input_model_ref=value.get("resolved_model_ref"),
         prediction_column=value["prediction_column"],
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
+        data_contract=dict(value["data_contract"]),
         config_hash=value["config_hash"],
-        seal_hash=value.get("seal_hash"),
-        feature_dim=value.get("feature_dim"),
-        input_frame_count=len(manifest or ()),
+        manifest_sha256=value.get("manifest_sha256"),
+        feature_dim=value["feature_dim"],
+        input_frame_count=value["next_input_ordinal"],
         attempt=value["attempt"],
         assigned_device_id=value.get("device_id"),
         resume_generation=value.get("resume_generation"),
@@ -70,11 +72,22 @@ def job_record(row: Job | None) -> JobRecord | None:
         job_id=row.job_id,
         owner_subject=row.owner_subject,
         operation=row.operation,
-        state=JobState(row.state),
+        input_state=InputState(row.input_state),
+        execution_state=ExecutionState(row.execution_state),
         revision=row.revision,
+        input_revision=row.input_revision,
+        next_input_ordinal=row.next_input_ordinal,
+        payload_count=row.payload_count,
+        total_rows=row.total_rows,
+        total_bytes=row.total_bytes,
+        manifest_sha256=row.manifest_sha256,
+        client_execution_id=row.client_execution_id,
+        fencing_token=row.fencing_token,
         requested_device=row.requested_device,
         selected_device=row.selected_device,
+        resolved_model_ref=row.resolved_model_ref,
         prediction_column=row.prediction_column,
+        data_contract=dict(row.data_contract),
         progress=dict(row.progress or {}),
         attempt=row.attempt,
         error_code=row.error_code,
@@ -82,7 +95,7 @@ def job_record(row: Job | None) -> JobRecord | None:
         result=None if row.result is None else dict(row.result),
         created_at=row.created_at.timestamp(),
         updated_at=row.updated_at.timestamp(),
-        sealed_at=_timestamp(row.sealed_at),
+        input_closed_at=_timestamp(row.input_closed_at),
         queued_at=_timestamp(row.queued_at),
         started_at=_timestamp(row.started_at),
         cancel_requested_at=_timestamp(row.cancel_requested_at),
@@ -95,7 +108,9 @@ def input_record(row: JobInput) -> InputRecord:
         job_id=row.job_id,
         ordinal=row.ordinal,
         payload_id=row.payload_id,
+        commit_revision=row.commit_revision,
         schema_id=row.schema_id,
+        data_contract_sha256=row.data_contract_sha256,
         rows=row.rows,
         batches=row.batches,
         byte_count=row.bytes,
@@ -135,8 +150,13 @@ def published_model_record(
         generation=row.generation,
         checkpoint_path=row.checkpoint_path,
         metadata_path=row.metadata_path,
+        byte_count=row.checkpoint_bytes,
         sha256=row.sha256,
         metadata=dict(row.metadata_json),
+        data_contract=(
+            None if row.data_contract is None else dict(row.data_contract)
+        ),
+        certified_for_v3=row.certified_for_v3,
         producing_job_id=row.producing_job_id,
         created_at=row.created_at.timestamp(),
     )

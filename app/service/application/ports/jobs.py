@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
@@ -44,7 +44,7 @@ class JobRepository(Protocol):
         self,
         job_id: str,
         attempt: int,
-        target_state: JobState,
+        target_state: ExecutionState,
         *,
         attempt_id: str,
         error_code: ErrorCode | None = None,

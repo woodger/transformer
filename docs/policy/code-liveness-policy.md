@@ -26,8 +26,8 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/flight/v2/`, используемый внешними consumers и contract tests;
-- `app/contracts/worker/v1/`, используемый service и worker processes;
+- `app/contracts/flight/v3/`, используемый внешними consumers и contract tests;
+- `app/contracts/worker/v2/`, используемый service и worker processes;
 - `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;
 - files, найденные по dynamic string path или reflection.

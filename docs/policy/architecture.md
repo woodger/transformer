@@ -15,8 +15,8 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
 
-app/contracts/flight/v2            публичный Flight contract
-app/contracts/worker/v1            внутренний process contract
+app/contracts/flight/v3            публичный Flight contract
+app/contracts/worker/v2            внутренний process contract
 ```
 
 Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
@@ -84,8 +84,8 @@ cases, которые определяют операции с access tokens. Al
 
 ## Contracts
 
-- `app/contracts/flight/v2/` — нормативные schemas и fixtures публичного API;
-- `app/contracts/worker/v1/` — command/result manifests, capability document,
+- `app/contracts/flight/v3/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/worker/v2/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
@@ -132,7 +132,7 @@ Ownership хранения:
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v1`;
+- shared service/worker данные находятся только в `app/contracts/worker/v2`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

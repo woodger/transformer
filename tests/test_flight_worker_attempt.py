@@ -3,10 +3,11 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
-from app.flight.constants import ErrorCode, JobState
+from app.flight.constants import ErrorCode
 from app.flight.records import ExecutionJobRecord
 from app.flight.worker_attempt import WorkerAttemptExecutor
 from app.flight.worker_subprocess import WorkerSubprocessError
+from app.service.domain.job import ExecutionState, InputState
 
 
 class _Ledger:
@@ -23,14 +24,14 @@ class _Ledger:
             assert self.current.attempt == attempt
             self.current = replace(
                 self.current,
-                state=JobState.RETRYING,
+                execution_state=ExecutionState.RETRYING,
             )
 
     def mark_second_attempt_running(self):
         with self._lock:
             self.current = replace(
                 self.current,
-                state=JobState.RUNNING,
+                execution_state=ExecutionState.RUNNING,
                 attempt=2,
                 attempt_id=str(uuid.uuid4()),
                 assigned_device_id="GPU-b",
@@ -41,7 +42,7 @@ class _Ledger:
         with self._lock:
             self.current = replace(
                 self.current,
-                state=JobState.CANCELLING,
+                execution_state=ExecutionState.CANCELLING,
             )
 
     def finish_attempt(self, _job_id, attempt, target_state, **_fields):
@@ -49,19 +50,19 @@ class _Ledger:
             assert self.current.attempt == attempt
             self.current = replace(
                 self.current,
-                state=JobState(target_state),
+                execution_state=ExecutionState(target_state),
             )
 
     def request_attempt_cancel(self, _job_id, attempt, *, attempt_id):
         with self._lock:
             assert self.current.attempt == attempt
             assert self.current.attempt_id == attempt_id
-            if self.current.state == JobState.CANCELLING:
+            if self.current.execution_state == ExecutionState.CANCELLING:
                 return False
-            assert self.current.state == JobState.RUNNING
+            assert self.current.execution_state == ExecutionState.RUNNING
             self.current = replace(
                 self.current,
-                state=JobState.CANCELLING,
+                execution_state=ExecutionState.CANCELLING,
             )
             return True
 
@@ -117,16 +118,19 @@ def _job() -> ExecutionJobRecord:
     return ExecutionJobRecord(
         job_id="11111111-1111-4111-8111-111111111111",
         owner_subject="inventory",
-        operation="predict",
-        state=JobState.RUNNING,
+        operation="fit",
+        input_state=InputState.OPEN,
+        execution_state=ExecutionState.RUNNING,
+        input_revision=1,
         selected_device="cuda",
-        model_label=None,
-        input_model_ref="mdl_test",
+        model_label="daily",
+        input_model_ref=None,
         prediction_column="out",
         model_config=None,
         training_config=None,
+        data_contract={"data_contract_sha256": "d" * 64},
         config_hash="a" * 64,
-        seal_hash="b" * 64,
+        manifest_sha256=None,
         feature_dim=2,
         input_frame_count=1,
         attempt=1,
@@ -168,6 +172,7 @@ def test_retry_handoff_keeps_second_attempt_registered_for_cancel():
         metrics=_Metrics(),
         retry_notifier=retry_notifier,
         confirm_device_loss=lambda _device_id: True,
+        resumable_fit=True,
     )
     first_thread = threading.Thread(
         target=executor.execute,
@@ -181,7 +186,10 @@ def test_retry_handoff_keeps_second_attempt_registered_for_cancel():
         executor.notify_cancel(first.job_id)
         second_thread.join(2)
         assert not second_thread.is_alive()
-        assert ledger.get_execution_job(first.job_id).state == JobState.CANCELLED
+        assert (
+            ledger.get_execution_job(first.job_id).execution_state
+            == ExecutionState.CANCELLED
+        )
     finally:
         executor.interrupt_for_shutdown()
         first_thread.join(2)

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import errno
 import hashlib
 import math
 import os
 import shutil
 import uuid
 
-from app.contracts.flight.v2.arrow import validate_prediction_file
-from app.contracts.worker.v1 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v1.config import (
+from app.contracts.flight.v3.arrow import validate_prediction_file
+from app.contracts.worker.v2 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v2.config import (
     CHECKPOINT_FORMAT,
     ModelConfig,
     TrainConfig,
@@ -19,17 +18,10 @@ from app.contracts.worker.v1.config import (
 from app.service.application.ports.workers import ExecutionInput
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.errors import ServiceError
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.records import ExecutionJobRecord, StagedPredictionOutput
 
 _COPY_CHUNK_BYTES = 1024 * 1024
-_DISK_FULL_ERRNOS = {
-    value
-    for value in (errno.ENOSPC, getattr(errno, "EDQUOT", None))
-    if value is not None
-}
-
-
 class WorkerArtifactError(AttemptExecutionError):
     pass
 
@@ -45,53 +37,14 @@ class WorkerArtifactPublisher:
         logger,
         metrics,
         max_payload_bytes: int | None = None,
-        checkpoint_metadata_reader=None,
     ):
         self.ledger = ledger
         self.spool = spool
         self.logger = logger
         self.metrics = metrics
         self.max_payload_bytes = max_payload_bytes
-        self._checkpoint_metadata_reader = checkpoint_metadata_reader
 
-    def stage_prediction(
-        self,
-        stream,
-        job: ExecutionJobRecord,
-        item: ExecutionInput,
-        size: int,
-    ) -> StagedPredictionOutput:
-        destination = self.spool.attempt_output_path(
-            job.job_id,
-            job.attempt,
-            item.ordinal,
-        )
-        try:
-            return self._stage_prediction(
-                stream,
-                destination,
-                size,
-                job.prediction_column,
-                item.rows,
-                item.ordinal,
-            )
-        except OSError as exc:
-            if exc.errno in _DISK_FULL_ERRNOS:
-                raise WorkerArtifactError(
-                    ErrorCode.DISK_FULL,
-                    "prediction output could not be persisted",
-                ) from exc
-            raise WorkerArtifactError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "prediction subprocess emitted malformed Arrow output",
-            ) from exc
-        except (EOFError, ServiceError, ValueError) as exc:
-            raise WorkerArtifactError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "prediction subprocess emitted malformed Arrow output",
-            ) from exc
-
-    def publish_outputs(
+    def _publish_outputs(
         self,
         job: ExecutionJobRecord,
         inputs: tuple[ExecutionInput, ...],
@@ -199,7 +152,7 @@ class WorkerArtifactPublisher:
                 schema_fingerprint=stats.schema_fingerprint,
                 relative_path=self.spool.relative_path(path),
             ))
-        self.publish_outputs(job, inputs, tuple(outputs))
+        self._publish_outputs(job, inputs, tuple(outputs))
 
     def publish_model_from_manifest(
         self,
@@ -238,12 +191,12 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit worker artifact integrity check failed",
                 )
-        self.publish_model(job, result["checkpointMetadata"])
+        self._publish_model(job, result["checkpointMetadata"])
 
-    def publish_model(
+    def _publish_model(
         self,
         job: ExecutionJobRecord,
-        checkpoint_metadata: dict | None = None,
+        checkpoint_metadata: dict,
     ) -> None:
         attempt_path = self.spool.attempt_checkpoint_path(
             job.job_id, job.attempt
@@ -253,31 +206,13 @@ class WorkerArtifactPublisher:
                 ErrorCode.SUBPROCESS_FAILED,
                 "fit subprocess did not create a checkpoint",
             )
-        checkpoint = None
         try:
-            if checkpoint_metadata is None:
-                # Compatibility for the injected legacy worker test seam. The
-                # production worker-v1 path supplies closed metadata and does
-                # not import Torch into the service process.
-                if self._checkpoint_metadata_reader is None:
-                    raise ValueError("checkpoint metadata is required")
-                checkpoint = self._checkpoint_metadata_reader(
-                    attempt_path,
-                    "cpu",
-                )
-                actual_model = ModelConfig.from_dict(
-                    checkpoint.get("model_config")
-                )
-                actual_train = TrainConfig.from_dict(
-                    checkpoint.get("train_config")
-                )
-            else:
-                actual_model = ModelConfig.from_dict(
-                    checkpoint_metadata.get("modelConfig")
-                )
-                actual_train = TrainConfig.from_dict(
-                    checkpoint_metadata.get("trainingConfig")
-                )
+            actual_model = ModelConfig.from_dict(
+                checkpoint_metadata.get("modelConfig")
+            )
+            actual_train = TrainConfig.from_dict(
+                checkpoint_metadata.get("trainingConfig")
+            )
         except Exception as exc:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
@@ -290,11 +225,7 @@ class WorkerArtifactPublisher:
                 ErrorCode.SUBPROCESS_FAILED,
                 "fit job configuration is unavailable",
             )
-        checkpoint_format = (
-            checkpoint.get("format")
-            if checkpoint_metadata is None
-            else checkpoint_metadata.get("format")
-        )
+        checkpoint_format = checkpoint_metadata.get("format")
         if checkpoint_format != CHECKPOINT_FORMAT or actual_model is None:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
@@ -315,36 +246,27 @@ class WorkerArtifactPublisher:
         checkpoint_path = self.spool.model_checkpoint_path(model_ref)
         metadata_path = self.spool.model_metadata_path(model_ref)
         try:
-            if checkpoint_metadata is None:
-                service_version = checkpoint.get("version")
-                data_schema = _data_schema_to_api(
-                    checkpoint.get("data_schema"),
-                    actual_model,
+            service_version = checkpoint_metadata.get("serviceVersion")
+            if checkpoint_metadata.get("dataContract") != (
+                _data_contract_to_api(job.data_contract)
+            ):
+                raise WorkerArtifactError(
+                    ErrorCode.MALFORMED_OUTPUT,
+                    "fit checkpoint data contract differs from the job",
                 )
-                checkpoint_selection = _checkpoint_selection_to_api(
-                    (checkpoint.get("extra") or {}).get(
-                        "checkpoint_selection"
-                    ),
-                    actual_train,
-                )
-            else:
-                service_version = checkpoint_metadata.get("serviceVersion")
-                data_schema = _validate_worker_data_schema(
-                    checkpoint_metadata.get("dataSchema"),
-                    actual_model,
-                )
-                checkpoint_selection = _validate_worker_selection(
-                    checkpoint_metadata.get("checkpointSelection"),
-                    actual_train,
-                )
+            data_schema = _canonical_data_schema(actual_model)
+            checkpoint_selection = _validate_worker_selection(
+                checkpoint_metadata.get("checkpointSelection"),
+                actual_train,
+            )
             safe_checkpoint = {
                 "format": checkpoint_format,
                 "serviceVersion": service_version,
                 "sha256": digest,
                 "bytes": byte_count,
                 "modelConfig": model_config_to_manifest(actual_model),
-                "trainConfig": train_config_to_manifest(actual_train),
-                "dataSchema": data_schema,
+                "trainingConfig": train_config_to_manifest(actual_train),
+                "dataContract": _data_contract_to_api(job.data_contract),
                 "checkpointSelection": checkpoint_selection,
             }
         except WorkerArtifactError:
@@ -368,6 +290,8 @@ class WorkerArtifactPublisher:
             # without depending on the public status document representation.
             "model_config": actual_model.to_dict(),
             "train_config": actual_train.to_dict(),
+            "data_contract": dict(job.data_contract),
+            "data_schema": data_schema,
             "checkpoint": safe_checkpoint,
         }
         try:
@@ -384,6 +308,7 @@ class WorkerArtifactPublisher:
                 generation=None,
                 checkpoint_path=self.spool.model_relative_path(checkpoint_path),
                 metadata_path=self.spool.model_relative_path(metadata_path),
+                byte_count=byte_count,
                 sha256=digest,
                 metadata=metadata,
                 result={"modelRef": model_ref, "checkpoint": safe_checkpoint},
@@ -398,7 +323,10 @@ class WorkerArtifactPublisher:
             )
         except BaseException:
             current = self.ledger.get_execution_job(job.job_id)
-            if current is None or current.state != JobState.SUCCEEDED:
+            if (
+                current is None
+                or current.execution_state != ExecutionState.SUCCEEDED
+            ):
                 self.spool.remove(model_directory)
             raise
 
@@ -439,53 +367,15 @@ class WorkerArtifactPublisher:
                     errorType=type(exc).__name__,
                 )
 
-    def _stage_prediction(
-        self,
-        stream,
-        destination: str,
-        size: int,
-        prediction_column: str,
-        expected_rows: int,
-        ordinal: int,
-    ) -> StagedPredictionOutput:
-        target, temporary = self.spool.create_temporary(destination)
-        digest = hashlib.sha256()
-        try:
-            remaining = size
-            while remaining:
-                chunk = stream.read(min(remaining, _COPY_CHUNK_BYTES))
-                if not chunk:
-                    raise EOFError("incomplete prediction frame")
-                target.write(chunk)
-                digest.update(chunk)
-                remaining -= len(chunk)
-            target.flush()
-            os.fsync(target.fileno())
-            target.close()
-            stats = validate_prediction_file(
-                temporary,
-                prediction_column,
-                expected_rows,
-            )
-            self.spool.durable_replace(temporary, destination)
-            temporary = None
-            return StagedPredictionOutput(
-                ordinal=ordinal,
-                rows=stats.rows,
-                batches=stats.batches,
-                byte_count=size,
-                sha256=digest.hexdigest(),
-                schema_fingerprint=stats.schema_fingerprint,
-                relative_path=self.spool.relative_path(destination),
-            )
-        finally:
-            if not target.closed:
-                target.close()
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
+def _data_contract_to_api(value: dict) -> dict:
+    return {
+        "id": value["id"],
+        "version": value["version"],
+        "dataContractSha256": value["data_contract_sha256"],
+        "seqLen": value["seq_len"],
+        "featureDim": value["feature_dim"],
+        "targetSchemaId": value["target_schema_id"],
+    }
 
 
 def _sha256_file(path: str) -> str:
@@ -494,75 +384,6 @@ def _sha256_file(path: str) -> str:
         for chunk in iter(lambda: source.read(_COPY_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _data_schema_to_api(value: dict | None, model_config: ModelConfig) -> dict:
-    if not isinstance(value, dict):
-        raise WorkerArtifactError(
-            ErrorCode.SUBPROCESS_FAILED,
-            "fit checkpoint does not contain data schema metadata",
-        )
-    source = value.get("src")
-    target = value.get("tgt")
-    missing = value.get("missing")
-    if not all(isinstance(item, dict) for item in (source, target, missing)):
-        raise WorkerArtifactError(
-            ErrorCode.SUBPROCESS_FAILED,
-            "fit checkpoint contains invalid data schema metadata",
-        )
-    result = {
-        "schemaVersion": value.get("schema_version"),
-        "tensorDtype": value.get("tensor_dtype"),
-        "source": {
-            "column": source.get("column"),
-            "acceptedElementTypes": source.get("accepted_element_types"),
-            "width": source.get("width"),
-        },
-        "target": {
-            "column": target.get("column"),
-            "acceptedElementTypes": target.get("accepted_element_types"),
-            "width": target.get("width"),
-        },
-        "featureDim": value.get("feature_dim"),
-        "modelInputFeatureDim": value.get("model_input_feature_dim"),
-        "contextMode": value.get("context_mode"),
-        "normalization": value.get("normalization"),
-        "missing": {
-            "nanFill": missing.get("nan_fill"),
-            "flags": missing.get("flags"),
-        },
-    }
-    expected_types = ["float32", "float64"]
-    expected_input_dim = (
-        model_config.feature_dim * 2
-        if model_config.context_mode == "relaxed"
-        else model_config.feature_dim
-    )
-    if (
-        result["schemaVersion"] != 1
-        or result["tensorDtype"] != "float32"
-        or result["source"]["column"] != "src"
-        or result["source"]["acceptedElementTypes"] != expected_types
-        or type(result["source"]["width"]) is not int
-        or result["source"]["width"] <= 0
-        or result["target"]["column"] != "tgt"
-        or result["target"]["acceptedElementTypes"] != expected_types
-        or result["target"]["width"] != 6
-        or result["featureDim"] != model_config.feature_dim
-        or result["source"]["width"]
-        != model_config.seq_len * model_config.feature_dim
-        or result["modelInputFeatureDim"] != expected_input_dim
-        or result["contextMode"] != model_config.context_mode
-        or result["normalization"] is not None
-        or result["missing"]["nanFill"] != 0.0
-        or result["missing"]["flags"]
-        != ("per-feature" if model_config.context_mode == "relaxed" else "none")
-    ):
-        raise WorkerArtifactError(
-            ErrorCode.SUBPROCESS_FAILED,
-            "fit checkpoint contains invalid data schema metadata",
-        )
-    return result
 
 
 def _checkpoint_selection_to_api(
@@ -617,27 +438,24 @@ def _checkpoint_selection_to_api(
     return result
 
 
-def _validate_worker_data_schema(
-    value: dict | None,
-    model_config: ModelConfig,
-) -> dict:
+def _canonical_data_schema(model_config: ModelConfig) -> dict:
     feature_dim = model_config.feature_dim
     if feature_dim is None:
         raise WorkerArtifactError(
             ErrorCode.SUBPROCESS_FAILED,
             "fit worker metadata has no feature dimension",
         )
-    expected = {
+    return {
         "schemaVersion": 1,
         "tensorDtype": "float32",
         "source": {
             "column": "src",
-            "acceptedElementTypes": ["float32", "float64"],
+            "acceptedElementTypes": ["float32"],
             "width": model_config.seq_len * feature_dim,
         },
         "target": {
             "column": "tgt",
-            "acceptedElementTypes": ["float32", "float64"],
+            "acceptedElementTypes": ["float32"],
             "width": 6,
         },
         "featureDim": feature_dim,
@@ -657,14 +475,6 @@ def _validate_worker_data_schema(
             ),
         },
     }
-    if value != expected:
-        raise WorkerArtifactError(
-            ErrorCode.SUBPROCESS_FAILED,
-            "fit worker data schema differs from the checkpoint configuration",
-        )
-    return dict(value)
-
-
 def _validate_worker_selection(
     value: dict | None,
     train_config: TrainConfig,

@@ -1,0 +1,9 @@
+{
+  "contract": "transformer-flight",
+  "version": 3,
+  "requestId": "99999999-9999-4999-8999-999999999999",
+  "idempotencyKey": "inventory-cancel-20260810-1",
+  "jobId": "34343434-3434-4343-8343-343434343434",
+  "clientExecutionId": "45454545-4545-4454-8454-454545454545",
+  "fencingToken": "1"
+}

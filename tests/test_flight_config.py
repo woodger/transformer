@@ -124,10 +124,10 @@ def test_config_rejects_boolean_fractional_and_nonfinite_quotas(
         FlightServiceConfig(**values).validate()
 
 
-def test_config_rejects_payload_count_that_cannot_fit_seal_document(tmp_path):
-    with pytest.raises(ValueError, match="seal manifest"):
+def test_config_rejects_payload_count_above_protocol_limit(tmp_path):
+    with pytest.raises(ValueError, match="must not exceed"):
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "runtime"),
             allow_plaintext=True,
-            max_payloads_per_job=401,
+            max_payloads_per_job=100_001,
         ).validate()

@@ -1,11 +1,11 @@
 # Локальный Arrow и stream contract
 
 > Type: Reference. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v2 contract.
+> переопределяет public Arrow Flight v3 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v2`](../app/contracts/flight/v2/README.md); local CLI
+[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md); local CLI
 использует те же shapes там, где они пересекаются.
 
 ## Arrow IPC input
@@ -106,4 +106,3 @@ stdout, поскольку его stdout не является output data proto
 Semantics обучения на frame, schedule и early stopping находятся в
 [training reference](./training-runtime.md); команда и аргументы — в
 [справочнике CLI](./cli/index.md).
-

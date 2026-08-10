@@ -49,8 +49,8 @@ config parsing, state transitions, serialization helpers.
 
 ### Contract tests
 
-Проверяют normative schemas и golden fixtures в `app/contracts/flight/v2/` и
-process envelopes в `app/contracts/worker/v1/`.
+Проверяют normative schemas и golden fixtures в `app/contracts/flight/v3/` и
+process envelopes в `app/contracts/worker/v2/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 

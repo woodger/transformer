@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.contracts.worker.v1.config import ModelConfig, TrainConfig
-from app.service.domain.job import JobState
+from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.service.domain.job import ExecutionState, InputState
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,16 +14,19 @@ class ExecutionJobRecord:
     job_id: str
     owner_subject: str
     operation: str
-    state: JobState
+    input_state: InputState
+    execution_state: ExecutionState
+    input_revision: int
     selected_device: str | None
     model_label: str | None
     input_model_ref: str | None
     prediction_column: str
     model_config: ModelConfig | None
     training_config: TrainConfig | None
+    data_contract: dict[str, Any]
     config_hash: str
-    seal_hash: str | None
-    feature_dim: int | None
+    manifest_sha256: str | None
+    feature_dim: int
     input_frame_count: int
     attempt: int
     assigned_device_id: str | None
@@ -37,10 +40,15 @@ class ExecutionJobRecord:
 class CommittedInputRecord:
     job_id: str
     ordinal: int
+    payload_id: str
+    commit_revision: int
     schema_id: str
+    data_contract_sha256: str
     rows: int
+    batches: int
     byte_count: int
     sha256: str
+    schema_fingerprint: str
     relative_path: str
     storage_class: str
 
@@ -50,11 +58,22 @@ class JobRecord:
     job_id: str
     owner_subject: str
     operation: str
-    state: JobState
+    input_state: InputState
+    execution_state: ExecutionState
     revision: int
+    input_revision: int
+    next_input_ordinal: int
+    payload_count: int
+    total_rows: int
+    total_bytes: int
+    manifest_sha256: str | None
+    client_execution_id: str
+    fencing_token: int
     requested_device: str
     selected_device: str | None
+    resolved_model_ref: str | None
     prediction_column: str
+    data_contract: dict[str, Any]
     progress: dict[str, Any]
     attempt: int
     error_code: str | None
@@ -62,7 +81,7 @@ class JobRecord:
     result: dict[str, Any] | None
     created_at: float
     updated_at: float
-    sealed_at: float | None
+    input_closed_at: float | None
     queued_at: float | None
     started_at: float | None
     cancel_requested_at: float | None
@@ -74,7 +93,9 @@ class InputRecord:
     job_id: str
     ordinal: int
     payload_id: str
+    commit_revision: int
     schema_id: str
+    data_contract_sha256: str
     rows: int
     batches: int
     byte_count: int
@@ -82,8 +103,8 @@ class InputRecord:
     schema_fingerprint: str
     relative_path: str
     storage_class: str
-    source_width: int | None
-    feature_dim: int | None
+    source_width: int
+    feature_dim: int
     committed_at: float
 
 
@@ -147,8 +168,7 @@ class StatusRecoveryRecord:
 @dataclass(frozen=True, slots=True)
 class StatusSnapshot:
     job: JobRecord | None
-    inputs: tuple[InputRecord, ...]
-    outputs: tuple[OutputRecord, ...]
+    output_count: int
     recovery: StatusRecoveryRecord | None
 
 
@@ -157,7 +177,10 @@ class ModelArtifactRecord:
     model_ref: str
     owner_subject: str
     checkpoint_path: str
+    byte_count: int
     sha256: str
+    data_contract: dict[str, Any] | None
+    certified_for_v3: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,8 +191,11 @@ class PublishedModelRecord:
     generation: int
     checkpoint_path: str
     metadata_path: str
+    byte_count: int
     sha256: str
     metadata: dict[str, Any]
+    data_contract: dict[str, Any] | None
+    certified_for_v3: bool
     producing_job_id: str | None
     created_at: float
 

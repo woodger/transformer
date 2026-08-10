@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -30,16 +31,38 @@ class Base(DeclarativeBase):
     pass
 
 
+class JobIdentity(Base):
+    __tablename__ = "job_identities"
+    __table_args__ = (
+        Index("job_identities_owner_idx", "owner_subject", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    create_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    create_result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         CheckConstraint("operation IN ('fit', 'predict')", name="jobs_operation_ck"),
         CheckConstraint(
-            "state IN ('UPLOADING', 'SEALED', 'QUEUED', 'RUNNING', "
-            "'RETRYING', 'SUCCEEDED', 'FAILED', 'CANCELLING', 'CANCELLED')",
-            name="jobs_state_ck",
+            "input_state IN ('OPEN', 'CLOSED', 'ABORTED')",
+            name="jobs_input_state_ck",
+        ),
+        CheckConstraint(
+            "execution_state IN ('WAITING_INPUT', 'QUEUED', 'RUNNING', "
+            "'RETRYING', 'CANCELLING', 'SUCCEEDED', 'FAILED', 'CANCELLED')",
+            name="jobs_execution_state_ck",
         ),
         CheckConstraint("revision >= 1", name="jobs_revision_ck"),
+        CheckConstraint("input_revision >= 0", name="jobs_input_revision_ck"),
+        CheckConstraint("next_input_ordinal >= 0", name="jobs_next_ordinal_ck"),
+        CheckConstraint("fencing_token >= 1", name="jobs_fencing_token_ck"),
         CheckConstraint(
             "requested_device IN ('cpu', 'cuda', 'auto')",
             name="jobs_requested_device_ck",
@@ -48,60 +71,118 @@ class Job(Base):
             "selected_device IS NULL OR selected_device IN ('cpu', 'cuda')",
             name="jobs_selected_device_ck",
         ),
-        CheckConstraint("source_width IS NULL OR source_width > 0", name="jobs_source_width_ck"),
-        CheckConstraint("feature_dim IS NULL OR feature_dim > 0", name="jobs_feature_dim_ck"),
+        CheckConstraint("source_width > 0", name="jobs_source_width_ck"),
+        CheckConstraint("feature_dim > 0", name="jobs_feature_dim_ck"),
         CheckConstraint("attempt >= 0", name="jobs_attempt_ck"),
         CheckConstraint(
             "queue_sequence IS NULL OR queue_sequence > 0",
             name="jobs_queue_sequence_ck",
         ),
         CheckConstraint(
-            "(operation = 'fit' AND model_label IS NOT NULL AND input_model_ref IS NULL) "
-            "OR (operation = 'predict' AND model_label IS NULL AND input_model_ref IS NOT NULL)",
+            "payload_count >= 0 AND total_rows >= 0 AND total_bytes >= 0",
+            name="jobs_input_totals_ck",
+        ),
+        CheckConstraint(
+            "execution_state <> 'SUCCEEDED' OR input_state = 'CLOSED'",
+            name="jobs_success_requires_closed_input_ck",
+        ),
+        CheckConstraint(
+            "(input_state = 'CLOSED' AND manifest_sha256 IS NOT NULL "
+            "AND input_closed_at IS NOT NULL) OR "
+            "(input_state <> 'CLOSED' AND manifest_sha256 IS NULL "
+            "AND input_closed_at IS NULL)",
+            name="jobs_closed_manifest_ck",
+        ),
+        CheckConstraint(
+            "(waiting_for_input AND execution_state = 'RUNNING' "
+            "AND input_state = 'OPEN' AND waiting_input_ordinal IS NOT NULL "
+            "AND input_waiting_since IS NOT NULL) OR "
+            "(NOT waiting_for_input AND waiting_input_ordinal IS NULL "
+            "AND input_waiting_since IS NULL)",
+            name="jobs_input_waiting_ck",
+        ),
+        CheckConstraint(
+            "(operation = 'fit' AND model_label IS NOT NULL "
+            "AND resolved_model_ref IS NULL) OR "
+            "(operation = 'predict' AND model_label IS NULL "
+            "AND resolved_model_ref IS NOT NULL)",
             name="jobs_operation_fields_ck",
         ),
-        Index("jobs_queue_idx", "state", "selected_device", "queued_at", "job_id"),
-        Index("jobs_owner_state_idx", "owner_subject", "state"),
-        Index("jobs_queue_claim_idx", "state", "selected_device", "queue_sequence"),
+        Index(
+            "jobs_queue_idx",
+            "execution_state",
+            "selected_device",
+            "queue_sequence",
+        ),
+        Index("jobs_owner_state_idx", "owner_subject", "execution_state"),
         Index(
             "jobs_queue_sequence_idx",
             "queue_sequence",
             unique=True,
             postgresql_where=text("queue_sequence IS NOT NULL"),
         ),
+        Index(
+            "jobs_input_waiting_idx",
+            "waiting_for_input",
+            "input_waiting_since",
+            postgresql_where=text("waiting_for_input"),
+        ),
         {"schema": SCHEMA},
     )
 
-    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    job_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.job_identities.job_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     operation: Mapped[str] = mapped_column(String(16), nullable=False)
-    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    input_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    execution_state: Mapped[str] = mapped_column(String(24), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    next_input_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    client_execution_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    fencing_token: Mapped[int] = mapped_column(BigInteger, nullable=False)
     requested_device: Mapped[str] = mapped_column(String(8), nullable=False)
     selected_device: Mapped[str | None] = mapped_column(String(8))
     model_label: Mapped[str | None] = mapped_column(String(256))
-    input_model_ref: Mapped[str | None] = mapped_column(String(64))
-    prediction_column: Mapped[str] = mapped_column(String(256), nullable=False)
-    model_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
+    prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    data_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_width: Mapped[int | None] = mapped_column(Integer)
-    feature_dim: Mapped[int | None] = mapped_column(Integer)
-    seal_hash: Mapped[str | None] = mapped_column(String(64))
-    seal_manifest: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
-    seal_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    start_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    source_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    manifest_sha256: Mapped[str | None] = mapped_column(String(64))
+    payload_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     progress: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
     )
-    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     queue_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    waiting_for_input: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    waiting_input_ordinal: Mapped[int | None] = mapped_column(Integer)
+    input_waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acquire_grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    input_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -114,6 +195,7 @@ class InputUpload(Base):
         UniqueConstraint("job_id", "ordinal", name="input_uploads_job_ordinal_uq"),
         UniqueConstraint("job_id", "payload_id", name="input_uploads_job_payload_uq"),
         CheckConstraint("ordinal >= 0", name="input_uploads_ordinal_ck"),
+        CheckConstraint("fencing_token >= 1", name="input_uploads_fencing_token_ck"),
         CheckConstraint(
             "storage_class IN ('runtime', 'recovery')",
             name="input_uploads_storage_class_ck",
@@ -123,17 +205,16 @@ class InputUpload(Base):
 
     upload_token: Mapped[str] = mapped_column(String(128), primary_key=True)
     job_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE"), nullable=False
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE"),
+        nullable=False,
     )
     payload_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
-    temporary_path: Mapped[str] = mapped_column(Text, nullable=False)
-    storage_class: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        default="runtime",
-        server_default="runtime",
-    )
+    client_execution_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    fencing_token: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    candidate_path: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_class: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -142,40 +223,41 @@ class JobInput(Base):
     __table_args__ = (
         PrimaryKeyConstraint("job_id", "ordinal", name="job_inputs_pk"),
         UniqueConstraint("job_id", "payload_id", name="job_inputs_job_payload_uq"),
+        UniqueConstraint("job_id", "commit_revision", name="job_inputs_job_revision_uq"),
         UniqueConstraint("relative_path", name="job_inputs_relative_path_uq"),
         CheckConstraint("ordinal >= 0", name="job_inputs_ordinal_ck"),
+        CheckConstraint("commit_revision > 0", name="job_inputs_revision_ck"),
         CheckConstraint("rows >= 0", name="job_inputs_rows_ck"),
         CheckConstraint("batches >= 0", name="job_inputs_batches_ck"),
         CheckConstraint("bytes >= 0", name="job_inputs_bytes_ck"),
-        CheckConstraint("source_width IS NULL OR source_width > 0", name="job_inputs_source_width_ck"),
-        CheckConstraint("feature_dim IS NULL OR feature_dim > 0", name="job_inputs_feature_dim_ck"),
+        CheckConstraint("source_width > 0", name="job_inputs_source_width_ck"),
+        CheckConstraint("feature_dim > 0", name="job_inputs_feature_dim_ck"),
         CheckConstraint(
             "storage_class IN ('runtime', 'recovery')",
             name="job_inputs_storage_class_ck",
         ),
+        Index("job_inputs_revision_idx", "job_id", "commit_revision"),
         {"schema": SCHEMA},
     )
 
     job_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE")
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE"),
     )
     ordinal: Mapped[int] = mapped_column(Integer)
     payload_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    commit_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
     schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     rows: Mapped[int] = mapped_column(BigInteger, nullable=False)
     batches: Mapped[int] = mapped_column(BigInteger, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
-    storage_class: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        default="runtime",
-        server_default="runtime",
-    )
-    source_width: Mapped[int | None] = mapped_column(Integer)
-    feature_dim: Mapped[int | None] = mapped_column(Integer)
+    storage_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -207,13 +289,11 @@ class JobAttempt(Base):
     )
 
     job_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE")
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE"),
     )
     attempt: Mapped[int] = mapped_column(Integer)
-    attempt_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False),
-        nullable=False,
-    )
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     selected_device: Mapped[str] = mapped_column(String(8), nullable=False)
     device_id: Mapped[str | None] = mapped_column(String(128))
     resume_generation: Mapped[int | None] = mapped_column(Integer)
@@ -234,41 +314,19 @@ class JobAttempt(Base):
 class TrainingRecoveryCheckpoint(Base):
     __tablename__ = "training_recovery_checkpoints"
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "job_id",
-            "generation",
-            name="training_recovery_checkpoints_pk",
-        ),
+        PrimaryKeyConstraint("job_id", "generation", name="training_recovery_checkpoints_pk"),
         ForeignKeyConstraint(
             ("job_id", "attempt"),
             (f"{SCHEMA}.job_attempts.job_id", f"{SCHEMA}.job_attempts.attempt"),
             ondelete="CASCADE",
             name="training_recovery_checkpoints_attempt_fk",
         ),
-        UniqueConstraint(
-            "relative_path",
-            name="training_recovery_checkpoints_relative_path_uq",
-        ),
-        CheckConstraint(
-            "generation > 0",
-            name="training_recovery_checkpoints_generation_ck",
-        ),
-        CheckConstraint(
-            "attempt > 0",
-            name="training_recovery_checkpoints_attempt_ck",
-        ),
-        CheckConstraint(
-            "bytes > 0",
-            name="training_recovery_checkpoints_bytes_ck",
-        ),
-        CheckConstraint(
-            "completed_epochs > 0",
-            name="training_recovery_checkpoints_epochs_ck",
-        ),
-        CheckConstraint(
-            "global_step >= 0",
-            name="training_recovery_checkpoints_step_ck",
-        ),
+        UniqueConstraint("relative_path", name="training_recovery_checkpoints_relative_path_uq"),
+        CheckConstraint("generation > 0", name="training_recovery_checkpoints_generation_ck"),
+        CheckConstraint("attempt > 0", name="training_recovery_checkpoints_attempt_ck"),
+        CheckConstraint("bytes > 0", name="training_recovery_checkpoints_bytes_ck"),
+        CheckConstraint("completed_epochs > 0", name="training_recovery_checkpoints_epochs_ck"),
+        CheckConstraint("global_step >= 0", name="training_recovery_checkpoints_step_ck"),
         {"schema": SCHEMA},
     )
 
@@ -281,11 +339,8 @@ class TrainingRecoveryCheckpoint(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     completed_epochs: Mapped[int] = mapped_column(Integer, nullable=False)
     global_step: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    training_complete: Mapped[bool] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-    )
+    training_complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class JobOutput(Base):
@@ -301,7 +356,8 @@ class JobOutput(Base):
     )
 
     job_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE")
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="CASCADE"),
     )
     ordinal: Mapped[int] = mapped_column(Integer)
     rows: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -320,17 +376,32 @@ class PublishedModel(Base):
         UniqueConstraint("checkpoint_path", name="models_checkpoint_path_uq"),
         UniqueConstraint("metadata_path", name="models_metadata_path_uq"),
         CheckConstraint("generation > 0", name="models_generation_ck"),
+        CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
+        CheckConstraint(
+            "(certified_for_v3 AND data_contract IS NOT NULL "
+            "AND data_contract_sha256 IS NOT NULL) OR NOT certified_for_v3",
+            name="models_v3_certification_ck",
+        ),
         {"schema": SCHEMA},
     )
 
-    model_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model_ref: Mapped[str] = mapped_column(String(128), primary_key=True)
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     label: Mapped[str] = mapped_column(String(256), nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     checkpoint_path: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_path: Mapped[str] = mapped_column(Text, nullable=False)
+    checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
+    data_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
+    certified_for_v3: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="SET NULL"),
@@ -349,7 +420,9 @@ class ModelAlias(Base):
     owner_subject: Mapped[str] = mapped_column(String(256))
     label: Mapped[str] = mapped_column(String(256))
     model_ref: Mapped[str] = mapped_column(
-        String(64), ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"), nullable=False
+        String(128),
+        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+        nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -358,7 +431,10 @@ class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
     __table_args__ = (
         PrimaryKeyConstraint(
-            "owner_subject", "action_name", "idempotency_key", name="idempotency_records_pk"
+            "owner_subject",
+            "action_name",
+            "idempotency_key",
+            name="idempotency_records_pk",
         ),
         {"schema": SCHEMA},
     )
@@ -369,7 +445,8 @@ class IdempotencyRecord(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     job_id: Mapped[str | None] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="SET NULL")
+        Uuid(as_uuid=False),
+        ForeignKey(f"{SCHEMA}.job_identities.job_id", ondelete="SET NULL"),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -399,8 +476,15 @@ class ApiAccessToken(Base):
     __tablename__ = "api_access_tokens"
     __table_args__ = (
         UniqueConstraint("token", name="api_access_tokens_token_uq"),
-        CheckConstraint("token ~ '^a\\.[A-Za-z0-9_-]{86}$'", name="api_access_tokens_format_ck"),
-        Index("api_access_tokens_active_idx", "revoked_at", postgresql_where=text("revoked_at IS NULL")),
+        CheckConstraint(
+            "token ~ '^a\\.[A-Za-z0-9_-]{86}$'",
+            name="api_access_tokens_format_ck",
+        ),
+        Index(
+            "api_access_tokens_active_idx",
+            "revoked_at",
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
         {"schema": SCHEMA},
     )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.contracts.worker.v1.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger_support import (
     canonical_uuid,
     decode,
@@ -23,7 +23,7 @@ from app.service.domain.errors import (
     failed_precondition,
     not_found,
 )
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import TrainingRecoveryCheckpointRecord
 
 
@@ -78,7 +78,8 @@ class RecoveryLedgerSlice:
                 raise not_found(f"job not found: {job_id}")
             if (
                 job.operation != "fit"
-                or job.state != JobState.RUNNING.value
+                or job.execution_state != ExecutionState.RUNNING.value
+                or job.input_state != InputState.CLOSED.value
                 or job.attempt != attempt
             ):
                 raise failed_precondition(
@@ -91,7 +92,7 @@ class RecoveryLedgerSlice:
             )
             if (
                 attempt_record is None
-                or attempt_record.status != JobState.RUNNING.value
+                or attempt_record.status != ExecutionState.RUNNING.value
                 or attempt_record.attempt_id != attempt_id
             ):
                 raise failed_precondition(
@@ -195,10 +196,10 @@ class RecoveryLedgerSlice:
                     Job,
                     Job.job_id == TrainingRecoveryCheckpoint.job_id,
                 )
-                .where(Job.state.not_in((
-                    JobState.SUCCEEDED.value,
-                    JobState.FAILED.value,
-                    JobState.CANCELLED.value,
+                .where(Job.execution_state.not_in((
+                    ExecutionState.SUCCEEDED.value,
+                    ExecutionState.FAILED.value,
+                    ExecutionState.CANCELLED.value,
                 )))
             ))
             paths.update(session.scalars(
@@ -206,10 +207,10 @@ class RecoveryLedgerSlice:
                 .join(Job, Job.job_id == JobInput.job_id)
                 .where(
                     JobInput.storage_class == "recovery",
-                    Job.state.not_in((
-                        JobState.SUCCEEDED.value,
-                        JobState.FAILED.value,
-                        JobState.CANCELLED.value,
+                    Job.execution_state.not_in((
+                        ExecutionState.SUCCEEDED.value,
+                        ExecutionState.FAILED.value,
+                        ExecutionState.CANCELLED.value,
                     )),
                 )
             ))
@@ -220,10 +221,10 @@ class RecoveryLedgerSlice:
             return set(session.scalars(
                 select(Job.job_id).where(
                     Job.operation == "fit",
-                    Job.state.not_in((
-                        JobState.SUCCEEDED.value,
-                        JobState.FAILED.value,
-                        JobState.CANCELLED.value,
+                    Job.execution_state.not_in((
+                        ExecutionState.SUCCEEDED.value,
+                        ExecutionState.FAILED.value,
+                        ExecutionState.CANCELLED.value,
                     )),
                 )
             ))
@@ -233,10 +234,10 @@ class RecoveryLedgerSlice:
             return set(session.scalars(
                 select(Job.job_id).where(
                     Job.operation == "fit",
-                    Job.state.in_((
-                        JobState.SUCCEEDED.value,
-                        JobState.FAILED.value,
-                        JobState.CANCELLED.value,
+                    Job.execution_state.in_((
+                        ExecutionState.SUCCEEDED.value,
+                        ExecutionState.FAILED.value,
+                        ExecutionState.CANCELLED.value,
                     )),
                 )
             ))
@@ -288,6 +289,8 @@ class RecoveryLedgerSlice:
         if code not in (
             ErrorCode.DEVICE_LOST.value,
             ErrorCode.EXECUTION_INTERRUPTED.value,
+            ErrorCode.SUBPROCESS_FAILED.value,
+            ErrorCode.SUBPROCESS_HUNG.value,
         ):
             raise ValueError("error_code is not retryable")
         retried_at = timestamp_now(now)
@@ -312,16 +315,21 @@ class RecoveryLedgerSlice:
                 raise failed_precondition(
                     "job attempt is no longer active"
                 )
-            if job.state == JobState.RETRYING.value:
-                if record.status != JobState.FAILED.value:
+            if job.execution_state == ExecutionState.RETRYING.value:
+                if record.status != ExecutionState.FAILED.value:
                     raise failed_precondition(
                         "job attempt retry state is inconsistent"
                     )
                 return decode(job)
             if (
-                job.state != JobState.RUNNING.value
+                job.execution_state != ExecutionState.RUNNING.value
                 or (
-                    code == ErrorCode.EXECUTION_INTERRUPTED.value
+                    code
+                    in (
+                        ErrorCode.EXECUTION_INTERRUPTED.value,
+                        ErrorCode.SUBPROCESS_FAILED.value,
+                        ErrorCode.SUBPROCESS_HUNG.value,
+                    )
                     and job.operation != "fit"
                 )
             ):
@@ -342,7 +350,7 @@ class RecoveryLedgerSlice:
                         "fit inputs are not stored for recovery"
                     )
             if (
-                record.status != JobState.RUNNING.value
+                record.status != ExecutionState.RUNNING.value
             ):
                 raise failed_precondition(
                     "job attempt is no longer active"
@@ -354,12 +362,12 @@ class RecoveryLedgerSlice:
                 raise failed_precondition(
                     "device loss requires an active CUDA attempt"
                 )
-            record.status = JobState.FAILED.value
+            record.status = ExecutionState.FAILED.value
             record.finished_at = retried_at
             record.exit_code = exit_code
             record.error_code = code
             record.error_message = error_message
-            job.state = JobState.RETRYING.value
+            job.execution_state = ExecutionState.RETRYING.value
             job.revision += 1
             job.queue_sequence = session.scalar(
                 select(QUEUE_SEQUENCE.next_value())
@@ -369,6 +377,10 @@ class RecoveryLedgerSlice:
             job.finished_at = None
             job.error_code = None
             job.error_message = None
+            job.waiting_for_input = False
+            job.waiting_input_ordinal = None
+            job.input_waiting_since = None
+            job.acquire_grace_until = None
             session.flush()
             return decode(job)
 

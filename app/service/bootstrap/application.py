@@ -169,6 +169,11 @@ class FlightApplication:
                 ledger,
                 spool,
                 recovery_store,
+                cuda_available=lambda: (
+                    device_inventory.snapshot().cuda_capacity > 0
+                ),
+                queue_notifier=worker.notify_queued,
+                input_notifier=worker.notify_input,
                 metrics=metrics,
                 logger=logger,
             )

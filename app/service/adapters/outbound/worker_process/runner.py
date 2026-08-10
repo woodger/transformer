@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import errno
 import hashlib
-import json
-import math
 import os
 import queue
-import shutil
 import signal
 import subprocess
 import threading
@@ -16,9 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import PROJECT_ROOT
-from app.contracts.worker.v1 import (
+from app.contracts.worker.v2 import (
+    CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
+    encode_control_message,
     load_document,
     parse_event,
 )
@@ -33,10 +32,9 @@ from app.service.application.ports.workers import (
 )
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.errors import ServiceError
-from app.service.domain.job import ErrorCode, JobState
-from app.service.domain.records import ExecutionJobRecord, StagedPredictionOutput
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.records import ExecutionJobRecord
 
-_FRAME_HEADER_BYTES = 8
 _COPY_CHUNK_BYTES = 1024 * 1024
 _MAX_LOG_BYTES = 16 * 1024 * 1024
 _STDERR_TAIL_BYTES = 128 * 1024
@@ -76,8 +74,8 @@ class WorkerSubprocessRunner:
         popen_factory: Callable = subprocess.Popen,
         signal_group: Callable[[int, int], None] = os.killpg,
         python_executable: str,
-        stage_prediction: Callable,
         publish_recovery: Callable | None = None,
+        stream_inputs: Callable | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ):
         self.config = config
@@ -87,9 +85,17 @@ class WorkerSubprocessRunner:
         self._popen = popen_factory
         self._signal_group = signal_group
         self._python = python_executable
-        self._stage_prediction = stage_prediction
         self._publish_recovery = publish_recovery
+        self._stream_inputs = stream_inputs
         self._monotonic = monotonic
+        self._control_lock = threading.Lock()
+        self._control_wakes: dict[str, threading.Event] = {}
+
+    def notify_input(self, job_id: str) -> None:
+        with self._control_lock:
+            wake = self._control_wakes.get(job_id)
+        if wake is not None:
+            wake.set()
 
     def run(
         self,
@@ -99,270 +105,19 @@ class WorkerSubprocessRunner:
         cancel: threading.Event,
         force_stop: threading.Event,
     ) -> WorkerSubprocessResult:
-        if plan.protocol_version == 1:
-            return self._run_v1(
+        if plan.protocol_version == CONTRACT_VERSION:
+            return self._run_v2(
                 job,
                 plan,
                 cancel=cancel,
                 force_stop=force_stop,
             )
-        job_id = job.job_id
-        attempt = job.attempt
-        inputs = plan.inputs
-        argv = plan.argv
-        stdout_path = self.spool.attempt_stdout_path(job_id, attempt)
-        stderr_path = self.spool.attempt_stderr_path(job_id, attempt)
-        self.spool.ensure_parent(stdout_path)
-        self.spool.ensure_parent(stderr_path)
-
-        environment = os.environ.copy()
-        environment["PYTHONUNBUFFERED"] = "1"
-        if job.selected_device == "cuda":
-            if not job.assigned_device_id:
-                raise WorkerSubprocessError(
-                    ErrorCode.INTERNAL,
-                    "CUDA attempt has no assigned physical device",
-                )
-            environment["CUDA_VISIBLE_DEVICES"] = job.assigned_device_id
-        supervised_argv = [
-            self._python,
-            os.path.join(
-                PROJECT_ROOT,
-                "app",
-                "service",
-                "adapters",
-                "outbound",
-                "worker_process",
-                "process_supervisor.py",
-            ),
-            str(os.getpid()),
-            "--",
-            *argv,
-        ]
-        try:
-            process = self._popen(
-                supervised_argv,
-                cwd=PROJECT_ROOT,
-                env=environment,
-                stdin=(
-                    subprocess.DEVNULL
-                    if plan.uses_spooled_fit
-                    else subprocess.PIPE
-                ),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=False,
-                start_new_session=True,
-                close_fds=True,
-                bufsize=0,
-            )
-        except OSError as exc:
-            raise WorkerSubprocessError(
-                ErrorCode.SUBPROCESS_FAILED,
-                "worker subprocess could not be started",
-            ) from exc
-        deadline = self._monotonic() + self.config.subprocess_timeout_seconds
-        errors: queue.Queue[WorkerSubprocessError] = queue.Queue()
-        finished = threading.Event()
-        stderr_tail: list[bytes] = []
-        outputs: list[StagedPredictionOutput] = []
-        threads: list[threading.Thread] = []
-        started_threads: list[threading.Thread] = []
-        try:
-            try:
-                identity = capture_worker_process(process.pid)
-            except ProcessRecoveryError as exc:
-                raise WorkerSubprocessError(
-                    ErrorCode.INTERNAL,
-                    "worker subprocess identity could not be captured safely",
-                ) from exc
-            self.ledger.set_attempt_process(
-                job_id,
-                attempt,
-                attempt_id=job.attempt_id,
-                pid=process.pid,
-                pgid=process.pid,
-                boot_id=identity.boot_id,
-                process_start_ticks=identity.start_ticks,
-            )
-            self.logger.event(
-                "flight.worker.started",
-                jobId=job_id,
-                attempt=attempt,
-                device=job.selected_device,
-                workerPid=process.pid,
-                inputs=len(inputs),
-            )
-            threads = [
-                threading.Thread(
-                    target=self._drain_log,
-                    args=(process.stderr, stderr_path, errors),
-                    kwargs={"tail": stderr_tail},
-                    name=f"flight-stderr-{job_id}",
-                    daemon=True,
-                ),
-            ]
-            if not plan.uses_spooled_fit:
-                threads.insert(
-                    0,
-                    threading.Thread(
-                        target=self._feed_frames,
-                        args=(process.stdin, inputs, errors),
-                        name=f"flight-stdin-{job_id}",
-                        daemon=True,
-                    ),
-                )
-            if job.operation == "predict":
-                # Keep a deterministic empty text log; binary stdout is staged
-                # as Arrow.
-                Path(stdout_path).touch()
-                threads.append(threading.Thread(
-                    target=self._read_prediction_frames,
-                    args=(process.stdout, job, inputs, outputs, errors),
-                    name=f"flight-stdout-{job_id}",
-                    daemon=True,
-                ))
-            else:
-                threads.append(threading.Thread(
-                    target=self._drain_log,
-                    args=(process.stdout, stdout_path, errors),
-                    name=f"flight-stdout-{job_id}",
-                    daemon=True,
-                ))
-                if (
-                    plan.uses_training_recovery
-                    and self._publish_recovery is not None
-                ):
-                    threads.append(threading.Thread(
-                        target=self._tail_recovery_events,
-                        args=(job, finished, errors),
-                        name=f"flight-recovery-{job_id}",
-                        daemon=True,
-                    ))
-                threads.append(threading.Thread(
-                    target=self._tail_metrics,
-                    args=(
-                        job,
-                        inputs,
-                        finished,
-                        errors,
-                        plan.resume_training_complete,
-                    ),
-                    name=f"flight-metrics-{job_id}",
-                    daemon=True,
-                ))
-            for thread in threads:
-                thread.start()
-                started_threads.append(thread)
-        except BaseException:
-            finished.set()
-            self._abort_spawned_process(process, started_threads)
-            raise
-
-        failure: WorkerSubprocessError | None = None
-        term_sent_at: float | None = None
-        killed = False
-        try:
-            while process.poll() is None:
-                now = self._monotonic()
-                if failure is None and cancel.is_set():
-                    failure = _cancellation_failure(force_stop)
-                if failure is None:
-                    try:
-                        failure = errors.get_nowait()
-                    except queue.Empty:
-                        pass
-                if failure is None and now >= deadline:
-                    failure = WorkerSubprocessError(
-                        ErrorCode.SUBPROCESS_HUNG,
-                        "worker subprocess exceeded its execution timeout",
-                    )
-                if failure is not None and term_sent_at is None:
-                    self._signal_process_group(process, signal.SIGTERM)
-                    term_sent_at = now
-                elif (
-                    term_sent_at is not None
-                    and not killed
-                    and now - term_sent_at
-                    >= self.config.cancel_grace_seconds
-                ):
-                    self._signal_process_group(process, signal.SIGKILL)
-                    killed = True
-                time.sleep(0.02)
-            exit_code = process.wait()
-        finally:
-            finished.set()
-            try:
-                if process.stdin is not None and not process.stdin.closed:
-                    process.stdin.close()
-            except OSError:
-                pass
-            # A descendant can inherit stdout/stderr and keep the pipe open
-            # after the direct child exits. Continue enforcing the same
-            # execution deadline while pumps drain, and signal the whole
-            # process group even when its original leader has already exited.
-            while any(thread.is_alive() for thread in started_threads):
-                now = self._monotonic()
-                if failure is None and cancel.is_set():
-                    failure = _cancellation_failure(force_stop)
-                if failure is None:
-                    try:
-                        failure = errors.get_nowait()
-                    except queue.Empty:
-                        pass
-                if failure is None and now >= deadline:
-                    failure = WorkerSubprocessError(
-                        ErrorCode.SUBPROCESS_HUNG,
-                        "worker subprocess pipes exceeded the execution timeout",
-                    )
-                if failure is not None and term_sent_at is None:
-                    self._signal_process_group(process, signal.SIGTERM)
-                    term_sent_at = now
-                elif (
-                    term_sent_at is not None
-                    and not killed
-                    and now - term_sent_at
-                    >= self.config.cancel_grace_seconds
-                ):
-                    self._signal_process_group(process, signal.SIGKILL)
-                    killed = True
-                for thread in started_threads:
-                    thread.join(0.02)
-            for stream in (process.stdout, process.stderr):
-                try:
-                    if stream is not None and not stream.closed:
-                        stream.close()
-                except OSError:
-                    pass
-
-        while failure is None:
-            try:
-                failure = errors.get_nowait()
-            except queue.Empty:
-                break
-        tail = stderr_tail[-1] if stderr_tail else b""
-        classified_exit = (
-            self._classify_subprocess_exit(exit_code, tail)
-            if exit_code != 0
-            else None
+        raise WorkerSubprocessError(
+            ErrorCode.WORKER_PROTOCOL_VIOLATION,
+            "unsupported internal worker protocol version",
         )
-        if classified_exit is not None and classified_exit.code in (
-            ErrorCode.CUDA_OUT_OF_MEMORY,
-            ErrorCode.DEVICE_UNAVAILABLE,
-            ErrorCode.DEVICE_LOST,
-        ):
-            raise classified_exit
-        if failure is not None:
-            raise WorkerSubprocessError(
-                failure.code,
-                failure.message,
-                exit_code,
-            )
-        if classified_exit is not None:
-            raise classified_exit
-        return WorkerSubprocessResult(exit_code, tail, tuple(outputs))
 
-    def _run_v1(
+    def _run_v2(
         self,
         job: ExecutionJobRecord,
         plan: ExecutionPlan,
@@ -407,7 +162,7 @@ class WorkerSubprocessRunner:
                 supervised_argv,
                 cwd=PROJECT_ROOT,
                 env=environment,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
@@ -424,9 +179,13 @@ class WorkerSubprocessRunner:
         errors: queue.Queue[WorkerSubprocessError] = queue.Queue()
         stderr_tail: list[bytes] = []
         event_state = _WorkerEventState()
+        finished = threading.Event()
+        control_wake = threading.Event()
         threads: list[threading.Thread] = []
         started_threads: list[threading.Thread] = []
         deadline = self._monotonic() + self.config.subprocess_timeout_seconds
+        with self._control_lock:
+            self._control_wakes[job_id] = control_wake
         try:
             try:
                 identity = capture_worker_process(process.pid)
@@ -468,12 +227,29 @@ class WorkerSubprocessRunner:
                     name=f"worker-stderr-{job_id}",
                     daemon=True,
                 ),
+                threading.Thread(
+                    target=self._feed_worker_controls,
+                    args=(
+                        process.stdin,
+                        job,
+                        plan,
+                        control_wake,
+                        finished,
+                        errors,
+                    ),
+                    name=f"worker-controls-{job_id}",
+                    daemon=True,
+                ),
             ]
             for thread in threads:
                 thread.start()
                 started_threads.append(thread)
         except BaseException:
+            finished.set()
+            control_wake.set()
             self._abort_spawned_process(process, started_threads)
+            with self._control_lock:
+                self._control_wakes.pop(job_id, None)
             raise
 
         failure: WorkerSubprocessError | None = None
@@ -507,6 +283,8 @@ class WorkerSubprocessRunner:
                 time.sleep(0.02)
             exit_code = process.wait()
         finally:
+            finished.set()
+            control_wake.set()
             while any(thread.is_alive() for thread in started_threads):
                 now = self._monotonic()
                 if failure is None and cancel.is_set():
@@ -533,12 +311,15 @@ class WorkerSubprocessRunner:
                     killed = True
                 for thread in started_threads:
                     thread.join(0.02)
-            for stream in (process.stdout, process.stderr):
+            for stream in (process.stdin, process.stdout, process.stderr):
                 try:
                     if stream is not None and not stream.closed:
                         stream.close()
                 except OSError:
                     pass
+            with self._control_lock:
+                if self._control_wakes.get(job_id) is control_wake:
+                    self._control_wakes.pop(job_id, None)
 
         while failure is None:
             try:
@@ -604,6 +385,105 @@ class WorkerSubprocessRunner:
             exit_code,
         )
 
+    def _feed_worker_controls(
+        self,
+        stream,
+        job: ExecutionJobRecord,
+        plan: ExecutionPlan,
+        wake: threading.Event,
+        finished: threading.Event,
+        errors,
+    ) -> None:
+        sequence = 0
+        next_ordinal = len(plan.inputs)
+        try:
+            if self._stream_inputs is None:
+                raise WorkerSubprocessError(
+                    ErrorCode.INTERNAL,
+                    "streaming input provider is unavailable",
+                )
+            if job.input_state == InputState.CLOSED:
+                stream.close()
+                return
+            while not finished.is_set():
+                current = self.ledger.get_execution_job(job.job_id)
+                if (
+                    current is None
+                    or current.attempt != job.attempt
+                    or current.attempt_id != job.attempt_id
+                    or current.execution_state
+                    not in (
+                        ExecutionState.RUNNING,
+                        ExecutionState.CANCELLING,
+                    )
+                ):
+                    raise WorkerSubprocessError(
+                        ErrorCode.EXECUTION_INTERRUPTED,
+                        "worker attempt no longer owns the input stream",
+                    )
+                for item in self._stream_inputs(current, next_ordinal):
+                    sequence += 1
+                    stream.write(encode_control_message(
+                        job_id=job.job_id,
+                        attempt=job.attempt,
+                        attempt_id=job.attempt_id,
+                        sequence=sequence,
+                        message_type="input.committed",
+                        payload={
+                            "inputRevision": current.input_revision,
+                            "input": _worker_input_manifest(item),
+                        },
+                    ))
+                    stream.flush()
+                    next_ordinal = item.ordinal + 1
+                if current.input_state == InputState.CLOSED:
+                    row = self.ledger.get_job(job.job_id)
+                    if row is None or row["manifest_sha256"] is None:
+                        raise WorkerSubprocessError(
+                            ErrorCode.INTERNAL,
+                            "closed input summary is unavailable",
+                        )
+                    sequence += 1
+                    stream.write(encode_control_message(
+                        job_id=job.job_id,
+                        attempt=job.attempt,
+                        attempt_id=job.attempt_id,
+                        sequence=sequence,
+                        message_type="input.closed",
+                        payload={
+                            "inputRevision": row["input_revision"],
+                            "payloadCount": row["payload_count"],
+                            "totalRows": row["total_rows"],
+                            "totalBytes": row["total_bytes"],
+                            "manifestSha256": row["manifest_sha256"],
+                        },
+                    ))
+                    stream.flush()
+                    stream.close()
+                    return
+                wake.wait(0.25)
+                wake.clear()
+        except BrokenPipeError:
+            if not finished.is_set():
+                errors.put(WorkerSubprocessError(
+                    ErrorCode.WORKER_PROTOCOL_VIOLATION,
+                    "worker closed its control channel before input EOF",
+                ))
+        except AttemptExecutionError as exc:
+            errors.put(WorkerSubprocessError(exc.code, exc.message))
+        except WorkerSubprocessError as exc:
+            errors.put(exc)
+        except (OSError, ValueError, WorkerContractError) as exc:
+            errors.put(WorkerSubprocessError(
+                ErrorCode.WORKER_PROTOCOL_VIOLATION,
+                str(exc) or "worker control stream failed",
+            ))
+        except Exception:
+            errors.put(WorkerSubprocessError(
+                ErrorCode.INTERNAL,
+                "worker control processing failed internally",
+            ))
+
     def _read_worker_events(
         self,
         stream,
@@ -641,10 +521,31 @@ class WorkerSubprocessRunner:
                         raise WorkerContractError(
                             "worker ready must be the first event"
                         )
+                    if (
+                        event["payload"]["nextOrdinal"] != len(plan.inputs)
+                        or event["payload"]["inputRevision"]
+                        != job.input_revision
+                    ):
+                        raise WorkerContractError(
+                            "worker ready snapshot differs from the command manifest"
+                        )
                     state.ready = True
                     continue
                 if event_type == "ready":
                     raise WorkerContractError("worker emitted ready more than once")
+                if event_type == "input.ack":
+                    continue
+                if event_type == "input.waiting":
+                    registered = self.ledger.mark_input_waiting(
+                        job.job_id,
+                        job.attempt,
+                        attempt_id=job.attempt_id,
+                        next_ordinal=event["payload"]["nextOrdinal"],
+                        input_revision=event["payload"]["inputRevision"],
+                    )
+                    if not registered:
+                        self.notify_input(job.job_id)
+                    continue
                 if event_type == "progress":
                     try:
                         self.ledger.update_progress(
@@ -696,7 +597,7 @@ class WorkerSubprocessRunner:
         plan: ExecutionPlan,
         artifact: dict | None,
     ) -> dict:
-        if artifact is None or plan.workspace is None:
+        if artifact is None:
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
                 "worker completed event has no result manifest",
@@ -733,37 +634,18 @@ class WorkerSubprocessRunner:
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
                 "worker result identity does not match the active attempt",
             )
-        return result
-
-    def _feed_frames(
-        self,
-        stream,
-        inputs: tuple[ExecutionInput, ...],
-        errors,
-    ) -> None:
-        try:
-            for item in inputs:
-                size = item.byte_count
-                stream.write(
-                    size.to_bytes(_FRAME_HEADER_BYTES, "big", signed=False)
-                )
-                with open(item.absolute_path, "rb") as source:
-                    shutil.copyfileobj(source, stream, _COPY_CHUNK_BYTES)
-                stream.flush()
-            stream.write(
-                (0).to_bytes(_FRAME_HEADER_BYTES, "big", signed=False)
+        current = self.ledger.get_job(job.job_id)
+        if (
+            current is None
+            or current["input_state"] != InputState.CLOSED.value
+            or result["inputRevision"] != current["input_revision"]
+            or result["manifestSha256"] != current["manifest_sha256"]
+        ):
+            raise WorkerSubprocessError(
+                ErrorCode.WORKER_PROTOCOL_VIOLATION,
+                "worker result input identity differs from closed input",
             )
-            stream.flush()
-        except (BrokenPipeError, OSError, ValueError):
-            errors.put(WorkerSubprocessError(
-                ErrorCode.SUBPROCESS_FAILED,
-                "worker subprocess input stream failed",
-            ))
-        finally:
-            try:
-                stream.close()
-            except OSError:
-                pass
+        return result
 
     def _drain_log(self, stream, path: str, errors, *, tail=None) -> None:
         persisted = 0
@@ -806,168 +688,6 @@ class WorkerSubprocessRunner:
             if tail is not None:
                 tail.append(bytes(captured))
 
-    def _read_prediction_frames(
-        self,
-        stream,
-        job: ExecutionJobRecord,
-        inputs: tuple[ExecutionInput, ...],
-        outputs: list[StagedPredictionOutput],
-        errors,
-    ) -> None:
-        try:
-            for item in inputs:
-                header = _read_exact(stream, _FRAME_HEADER_BYTES)
-                size = int.from_bytes(header, "big", signed=False)
-                if size <= 0:
-                    raise WorkerSubprocessError(
-                        ErrorCode.MALFORMED_OUTPUT,
-                        "prediction subprocess emitted a zero-length frame",
-                    )
-                if size > self.config.max_payload_bytes:
-                    raise WorkerSubprocessError(
-                        ErrorCode.MALFORMED_OUTPUT,
-                        "prediction subprocess output exceeded the payload limit",
-                    )
-                output = self._stage_prediction(
-                    stream,
-                    job,
-                    item,
-                    size,
-                )
-                outputs.append(output)
-            if stream.read(1) != b"":
-                raise WorkerSubprocessError(
-                    ErrorCode.MALFORMED_OUTPUT,
-                    "prediction subprocess emitted more frames than expected",
-                )
-        except WorkerSubprocessError as exc:
-            errors.put(exc)
-        except AttemptExecutionError as exc:
-            errors.put(WorkerSubprocessError(exc.code, exc.message))
-        except OSError as exc:
-            if exc.errno in _DISK_FULL_ERRNOS:
-                errors.put(WorkerSubprocessError(
-                    ErrorCode.DISK_FULL,
-                    "prediction output could not be persisted",
-                ))
-            else:
-                errors.put(WorkerSubprocessError(
-                    ErrorCode.MALFORMED_OUTPUT,
-                    "prediction subprocess emitted malformed Arrow output",
-                ))
-        except (EOFError, ServiceError, ValueError):
-            errors.put(WorkerSubprocessError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "prediction subprocess emitted malformed Arrow output",
-            ))
-
-    def _tail_metrics(
-        self,
-        job: ExecutionJobRecord,
-        inputs: tuple[ExecutionInput, ...],
-        finished,
-        errors,
-        allow_empty: bool = False,
-    ) -> None:
-        path = self.spool.attempt_metrics_path(job.job_id, job.attempt)
-        offset = 0
-        inode = None
-        partial = b""
-        records = 0
-        try:
-            while True:
-                # A process exit makes its metrics file stable, but the waiter
-                # may set ``finished`` while this iteration is between stat()
-                # and read(). Only finalize when the process was already
-                # finished before the iteration began; otherwise perform one
-                # final pass over the now-stable file.
-                finished_at_iteration_start = finished.is_set()
-                try:
-                    stat = os.stat(path)
-                except FileNotFoundError:
-                    if finished_at_iteration_start:
-                        if allow_empty:
-                            return
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess did not produce metrics JSONL",
-                        ) from None
-                    finished.wait(0.05)
-                    continue
-                identity = (stat.st_dev, stat.st_ino)
-                if identity != inode or stat.st_size < offset:
-                    inode = identity
-                    offset = 0
-                    partial = b""
-                with open(path, "rb") as source:
-                    source.seek(offset)
-                    chunk = source.read()
-                    offset = source.tell()
-                partial += chunk
-                lines = partial.split(b"\n")
-                partial = lines.pop()
-                for line in lines:
-                    if not line:
-                        continue
-                    try:
-                        progress = json.loads(line.decode("utf-8"))
-                    except (UnicodeDecodeError, ValueError) as exc:
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess emitted malformed metrics JSONL",
-                        ) from exc
-                    if not _valid_progress(progress):
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess emitted malformed metrics JSONL",
-                        )
-                    frame = progress.get("frame")
-                    if isinstance(frame, int) and 1 <= frame <= len(inputs):
-                        progress["ordinal"] = inputs[frame - 1].ordinal
-                    self.ledger.update_progress(
-                        job.job_id,
-                        progress,
-                        attempt_id=job.attempt_id,
-                    )
-                    records += 1
-                if finished_at_iteration_start:
-                    if partial.strip():
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess left an incomplete metrics record",
-                        )
-                    if records == 0 and not allow_empty:
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess produced no metrics records",
-                        )
-                    return
-                finished.wait(0.05)
-        except WorkerSubprocessError as exc:
-            errors.put(exc)
-        except ServiceError:
-            if self._progress_rejected_by_cancel(job):
-                return
-            errors.put(WorkerSubprocessError(
-                ErrorCode.EXECUTION_INTERRUPTED,
-                "worker attempt no longer owns job progress",
-            ))
-        except OSError as exc:
-            code = (
-                ErrorCode.DISK_FULL
-                if exc.errno in _DISK_FULL_ERRNOS
-                else ErrorCode.INTERNAL
-            )
-            errors.put(WorkerSubprocessError(
-                code,
-                "fit progress could not be read",
-            ))
-        except Exception:
-            errors.put(WorkerSubprocessError(
-                ErrorCode.INTERNAL,
-                "fit progress processing failed internally",
-            ))
-
     def _progress_rejected_by_cancel(
         self,
         job: ExecutionJobRecord,
@@ -976,79 +696,9 @@ class WorkerSubprocessRunner:
         return (
             current is not None
             and current.attempt_id == job.attempt_id
-            and current.state in (JobState.CANCELLING, JobState.CANCELLED)
+            and current.execution_state
+            in (ExecutionState.CANCELLING, ExecutionState.CANCELLED)
         )
-
-    def _tail_recovery_events(
-        self,
-        job: ExecutionJobRecord,
-        finished,
-        errors,
-    ) -> None:
-        path = self.spool.attempt_recovery_events_path(
-            job.job_id,
-            job.attempt,
-        )
-        offset = 0
-        partial = b""
-        try:
-            while True:
-                finished_at_iteration_start = finished.is_set()
-                try:
-                    with open(path, "rb") as source:
-                        source.seek(offset)
-                        chunk = source.read()
-                        offset = source.tell()
-                except FileNotFoundError:
-                    if finished_at_iteration_start:
-                        return
-                    finished.wait(0.05)
-                    continue
-                partial += chunk
-                lines = partial.split(b"\n")
-                partial = lines.pop()
-                for line in lines:
-                    if not line:
-                        continue
-                    try:
-                        event = json.loads(line.decode("utf-8"))
-                    except (UnicodeDecodeError, ValueError) as exc:
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess emitted malformed recovery events",
-                        ) from exc
-                    try:
-                        self._publish_recovery(job, event)
-                    except AttemptExecutionError as exc:
-                        raise WorkerSubprocessError(
-                            exc.code,
-                            exc.message,
-                        ) from exc
-                if finished_at_iteration_start:
-                    if partial.strip():
-                        raise WorkerSubprocessError(
-                            ErrorCode.MALFORMED_OUTPUT,
-                            "fit subprocess left an incomplete recovery event",
-                        )
-                    return
-                finished.wait(0.05)
-        except WorkerSubprocessError as exc:
-            errors.put(exc)
-        except OSError as exc:
-            code = (
-                ErrorCode.DISK_FULL
-                if exc.errno in _DISK_FULL_ERRNOS
-                else ErrorCode.INTERNAL
-            )
-            errors.put(WorkerSubprocessError(
-                code,
-                "fit recovery event could not be read",
-            ))
-        except Exception:
-            errors.put(WorkerSubprocessError(
-                ErrorCode.INTERNAL,
-                "fit recovery event processing failed internally",
-            ))
 
     def _signal_process_group(self, process, signum: int) -> None:
         try:
@@ -1135,18 +785,6 @@ def _cancellation_failure(
     return WorkerSubprocessError(code, message)
 
 
-def _read_exact(stream, size: int) -> bytes:
-    chunks = []
-    remaining = size
-    while remaining:
-        chunk = stream.read(remaining)
-        if not chunk:
-            raise EOFError("incomplete subprocess frame")
-        chunks.append(chunk)
-        remaining -= len(chunk)
-    return b"".join(chunks)
-
-
 def _sha256_file(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as source:
@@ -1155,15 +793,16 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _valid_progress(value) -> bool:
-    if not isinstance(value, dict):
-        return False
-    for key, item in value.items():
-        if not isinstance(key, str):
-            return False
-        if item is None or isinstance(item, (str, bool, int)):
-            continue
-        if isinstance(item, float) and math.isfinite(item):
-            continue
-        return False
-    return True
+def _worker_input_manifest(item: ExecutionInput) -> dict:
+    return {
+        "schemaId": item.schema_id,
+        "ordinal": item.ordinal,
+        "commitRevision": item.commit_revision,
+        "dataContractSha256": item.data_contract_sha256,
+        "rows": item.rows,
+        "artifact": {
+            "path": item.absolute_path,
+            "byteCount": item.byte_count,
+            "sha256": item.sha256,
+        },
+    }

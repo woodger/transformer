@@ -34,7 +34,7 @@ CLI help — публичный contract для точного набора opti
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v2`](../../app/contracts/flight/v2/README.md).
+[`app/contracts/flight/v3`](../../app/contracts/flight/v3/README.md).
 
 ## File commands
 

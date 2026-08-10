@@ -10,7 +10,8 @@ from app.service.domain.policies import (
     decide_interrupted_attempt,
     is_terminal,
     resolve_device,
-    validate_transition,
+    validate_execution_transition,
+    validate_input_transition,
 )
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "decide_interrupted_attempt",
     "is_terminal",
     "resolve_device",
-    "validate_transition",
+    "validate_execution_transition",
+    "validate_input_transition",
 ]

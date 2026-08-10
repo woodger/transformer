@@ -4,7 +4,7 @@ from dataclasses import asdict, is_dataclass
 import torch
 
 from app.config import PROJECT_ROOT
-from app.contracts.worker.v1.config import CHECKPOINT_FORMAT
+from app.contracts.worker.v2.config import CHECKPOINT_FORMAT
 from app.worker.runtime.checkpoints.atomic import (
     atomic_output_path,
     resolve_artifact_path,
