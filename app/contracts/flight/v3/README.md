@@ -1,26 +1,29 @@
-# Transformer Arrow Flight contract v3
+# Контракт Transformer Arrow Flight v3
 
-This directory is the normative language-neutral wire contract between
-Inventory and Transformer. JSON Schemas, Arrow schemas and golden fixtures are
-versioned together. The durability and recovery rationale is recorded in
+Этот каталог содержит нормативный контракт обмена данными между Inventory и
+Transformer, не зависящий от языка реализации. JSON Schema, Arrow-схемы и
+эталонные фикстуры версионируются вместе. Обоснование решений о надёжности и
+восстановлении приведено в
 [ADR 0005](../../../../docs/adr/0005-durable-streaming-flight-v3.md).
 
-## Envelope and authentication
+## Конверт и аутентификация
 
-Every action request and result is a UTF-8 JSON object containing:
+Каждый запрос и результат action представляет собой JSON-объект в кодировке
+UTF-8, содержащий:
 
 ```json
 {"contract":"transformer-flight","version":3,"requestId":"UUID"}
 ```
 
-All RPCs require `authorization: Bearer TOKEN`. Mutations also carry an
-`idempotencyKey`. The canonical request hash is SHA-256 of compact key-sorted
-JSON after removing `requestId` and `idempotencyKey`. An exact repeat returns
-the committed result; reusing a key for a different request is rejected.
+Для каждого RPC требуется заголовок `authorization: Bearer TOKEN`. Мутации
+также содержат `idempotencyKey`. Канонический хеш запроса — SHA-256 от
+компактного JSON с отсортированными ключами после удаления `requestId` и
+`idempotencyKey`. Точный повтор возвращает зафиксированный результат;
+повторное использование ключа для другого запроса отклоняется.
 
 ## Actions
 
-The server advertises exactly:
+Сервер объявляет строго следующий список:
 
 - `transformer.v3.capabilities`
 - `transformer.v3.health`
@@ -33,16 +36,17 @@ The server advertises exactly:
 - `transformer.v3.job.cancel`
 - `transformer.v3.model.describe`
 
-The list above is the complete action surface. `job.input.close` is the EOF
-operation. DoExchange and PollFlightInfo are not part of the contract.
+Этот список полностью определяет доступную поверхность actions.
+`job.input.close` обозначает EOF. `DoExchange` и `PollFlightInfo` не входят в
+контракт.
 
-The request and result schemas are closed: unrecognized fields are rejected.
-`action-result.schema.json` is the closed union of all action results. Golden
-documents are in `fixtures/json/`.
+Схемы запросов и результатов закрыты: неизвестные поля отклоняются.
+`action-result.schema.json` содержит закрытое объединение всех результатов
+actions. Эталонные документы находятся в `fixtures/json/`.
 
-## State
+## Состояние
 
-V3 exposes two independent axes:
+V3 предоставляет две независимые оси состояния:
 
 ```text
 input.state     OPEN | CLOSED | ABORTED
@@ -50,81 +54,85 @@ execution.state WAITING_INPUT | QUEUED | RUNNING | RETRYING |
                 CANCELLING | SUCCEEDED | FAILED | CANCELLED
 ```
 
-The first committed non-empty contiguous input prefix automatically queues the
-job. A worker may run while input is open. `job.input.close` commits EOF and
-the immutable receipt manifest; it is not a start command. Success and public
-output access require closed input.
+Первый зафиксированный непустой непрерывный префикс входных данных
+автоматически ставит job в очередь. Worker может работать, пока вход остаётся
+открытым. `job.input.close` фиксирует EOF и неизменяемый манифест receipt-ов,
+но не является командой запуска. Для успешного завершения и публичного
+доступа к результатам вход должен быть закрыт.
 
-Empty fit close returns `EMPTY_INPUT` without closing input. Empty predict is
-valid: no payloads produce no outputs, while one typed-empty payload produces
-one typed-empty output.
+Попытка закрыть пустой fit возвращает `EMPTY_INPUT`, не закрывая вход. Пустой
+predict допустим: отсутствие payload-ов даёт отсутствие outputs, а один
+типизированный пустой payload — один типизированный пустой output.
 
-## Stable identity and fencing
+## Стабильная идентичность и fencing
 
-Inventory generates and persists `jobId` before create. Transformer retains a
-compact owner-scoped job identity after heavy job data is retired, so a lost
-create response is recovered by exact replay and the UUID cannot later be
-reused for a different request.
+Inventory создаёт и сохраняет `jobId` до вызова create. После удаления тяжёлых
+данных job Transformer сохраняет компактную, ограниченную owner-ом запись об
+идентичности. Благодаря этому потерянный ответ create восстанавливается точным
+повтором запроса, а UUID нельзя позднее использовать для другого запроса.
 
-Every public mutation is fenced by `clientExecutionId` and a server-issued
-monotonic `fencingToken`, encoded as a decimal string. `job.acquire` atomically
-compares the previous ownership and increments the token. A DoPut checks the
-fence before receiving data and again in the input-commit transaction. A stale
-upload can leave only its unique unreferenced candidate; it cannot replace the
-winning input artifact.
+Каждая публичная мутация защищена парой `clientExecutionId` и выданным сервером
+монотонным `fencingToken`, закодированным десятичной строкой. `job.acquire`
+атомарно сравнивает предыдущее владение и увеличивает token. DoPut проверяет
+fence перед приёмом данных и повторно — в транзакции фиксации входа. Устаревшая
+загрузка может оставить только свой уникальный candidate без ссылок на него;
+она не может заменить победивший input artifact.
 
-## Upload
+## Загрузка
 
-The input descriptor is:
+Descriptor входных данных:
 
 ```text
 pathDescriptor("transformer", "v3", "jobs", jobId, "inputs", ordinal)
 ```
 
-Metadata follows `upload-metadata.schema.json`. One DoPut is one semantic
-payload; RecordBatch boundaries are transport chunks. The server durably
-publishes an immutable candidate, commits its receipt and only then sends one
-PutResult. PutResult reports `inputRevision`, the first missing
-`nextInputOrdinal` and whether this commit caused automatic queueing.
+Metadata соответствует `upload-metadata.schema.json`. Один DoPut представляет
+один семантический payload; границы RecordBatch используются только для
+транспортного разбиения. Сервер надёжно публикует неизменяемый candidate,
+фиксирует его receipt и только после этого отправляет один PutResult. PutResult
+содержит `inputRevision`, первый отсутствующий `nextInputOrdinal` и признак
+того, привела ли эта фиксация к автоматической постановке в очередь.
 
-Out-of-order commit is allowed. Worker delivery follows only the contiguous
-ordinal prefix, so arrival timing does not change logical row order.
+Фиксация не по порядку разрешена. Worker получает только непрерывный префикс
+ordinal, поэтому время поступления не влияет на логический порядок строк.
 
-## Close and manifest digest
+## Закрытие входа и digest манифеста
 
-Close sends constant-size counts and `manifestSha256`, not a complete array.
-The digest is SHA-256 of compact key-sorted JSON for the following server
-receipt fields, sorted by ordinal:
+При закрытии передаются счётчики постоянного размера и `manifestSha256`, а не
+полный массив. Digest — SHA-256 от компактного JSON с отсортированными ключами
+для следующих полей server receipt, упорядоченных по ordinal:
 
 ```text
 payloadId, ordinal, schemaId, dataContractSha256, rows, batches, bytes,
 sha256, schemaFingerprint
 ```
 
-`commitRevision`, timestamps, queue state and arrival order are excluded. The
-server verifies contiguous ordinals, totals, one physical Arrow schema and one
-`dataContractSha256` before committing `CLOSED`.
+`commitRevision`, временные метки, состояние очереди и порядок поступления
+исключены. Перед фиксацией `CLOSED` сервер проверяет непрерывность ordinal,
+итоговые значения, единую физическую Arrow-схему и единый
+`dataContractSha256`.
 
-## Pagination
+## Пагинация
 
-Input pages are ordered by per-job `commitRevision`. A first request supplies
-`afterRevision` and fixes the returned `snapshotRevision`. Later pages reuse
-that snapshot and satisfy:
+Страницы входных данных упорядочены по `commitRevision` конкретного job. Первый
+запрос передаёт `afterRevision` и фиксирует возвращённый `snapshotRevision`.
+Следующие страницы повторно используют этот snapshot и удовлетворяют условию:
 
 ```text
 cursor < commitRevision <= snapshotRevision
 ```
 
-After completing a traversal, the next one begins with its previous
-`snapshotRevision` as `afterRevision`. A low ordinal committed late therefore
-receives a new revision and cannot be lost. Page size is at most 100.
+После завершения обхода следующий начинается с предыдущего `snapshotRevision`
+в качестве `afterRevision`. Поэтому payload с малым ordinal, зафиксированный
+позже, получает новую revision и не может потеряться. Размер страницы не
+превышает 100 записей.
 
-Status contains only bounded summaries. Input receipts and output descriptors
-are returned by their list actions.
+Status содержит только ограниченные по размеру сводные данные. Input receipts
+и output descriptors возвращаются соответствующими list actions.
 
-## Arrow schemas
+## Arrow-схемы
 
-The physical schemas are exact:
+Физические схемы заданы точно:
 
 ```text
 inventory.sequence.fit.v2
@@ -138,66 +146,70 @@ transformer.prediction.v2
   <predictionColumn>: non-null FixedSizeList<Float32>[6]
 ```
 
-Every top-level field is non-nullable. Each `FixedSizeList` has a child field
-named `item` with type `Float32` and `nullable=true`, matching the canonical
-PyArrow representation. This physical-schema property does not permit null ML
-values: ingress and output validation reject every null row or child value.
-Schema metadata is non-semantic and is excluded from exact comparison and
-`schemaFingerprint`.
+Каждое поле верхнего уровня имеет `nullable=false`. У каждого `FixedSizeList`
+есть дочернее поле `item` типа `Float32` с `nullable=true`, что соответствует
+каноническому представлению PyArrow. Это свойство физической схемы не разрешает
+null-значения в ML-данных: ingress-валидация и валидация output отклоняют любую
+строку или дочернее значение с null. Metadata схемы не имеет семантического
+значения и исключается из точного сравнения и `schemaFingerprint`.
 
-A non-canonical input schema fails the DoPut with `INVALID_ARGUMENT` before an
-input reservation, durable artifact or worker execution exists. The job input
-remains open so the same ordinal can be uploaded again with the canonical
-schema.
+Неканоническая входная схема отклоняется в DoPut с `INVALID_ARGUMENT` до
+создания input reservation, durable artifact или запуска worker. Вход job
+остаётся открытым, поэтому тот же ordinal можно загрузить повторно с
+канонической схемой.
 
-Null rows/elements and infinities are rejected. `src` may contain NaN; target
-and prediction values must be finite. Target volatility at index 4 is
-non-negative and hit probability at index 5 is in `[0, 1]`. Fixed list widths
-make a zero-batch typed-empty payload unambiguous.
+Строки и элементы с null, а также бесконечности отклоняются. `src` может
+содержать NaN; значения target и prediction должны быть конечными. Волатильность
+target с индексом 4 не может быть отрицательной, а вероятность попадания с
+индексом 5 должна находиться в диапазоне `[0, 1]`. Фиксированная ширина списков
+однозначно задаёт типизированный пустой payload без batch-ей.
 
-## ML data contract and models
+## ML-контракт данных и модели
 
-Inventory owns the semantic dataset document. Create carries its identity,
-`dataContractSha256`, `seqLen`, `featureDim` and target schema identity.
-Transformer stores and returns these fields without reconstructing Inventory
-feature semantics. Predict create is rejected with `MODEL_SCHEMA_MISMATCH`
-before upload unless the selected immutable model is certified for the same
-hash.
+Inventory владеет семантическим документом набора данных. Create передаёт его
+идентичность, `dataContractSha256`, `seqLen`, `featureDim` и идентичность схемы
+target. Transformer хранит и возвращает эти поля, не воспроизводя семантику
+features Inventory. Predict create отклоняется с `MODEL_SCHEMA_MISMATCH` до
+загрузки, если выбранная неизменяемая модель не сертифицирована для того же
+хеша.
 
-`modelAlias` is owner-scoped and is atomically resolved to
-`resolvedModelRef` during create. `model.describe` exposes immutable generation,
-checkpoint digest, model configuration and data-contract identity without a
-server path. Published models have no automatic TTL. Stable failures are
-`NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_CORRUPT` and
+`modelAlias` ограничен owner-ом и во время create атомарно разрешается в
+`resolvedModelRef`. `model.describe` возвращает неизменяемую generation, digest
+checkpoint, конфигурацию модели и идентичность контракта данных без пути на
+сервере. У опубликованных моделей нет автоматического TTL. Стабильные ошибки:
+`NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_CORRUPT` и
 `MODEL_SCHEMA_MISMATCH`.
 
-## Output access
+## Доступ к результатам
 
-Clients obtain output descriptors from `job.outputs.list`. GetFlightInfo uses:
+Клиенты получают output descriptors через `job.outputs.list`. GetFlightInfo
+использует:
 
 ```text
 pathDescriptor("transformer", "v3", "jobs", jobId, "outputs", ordinal)
 ```
 
-It is allowed only after `execution.state = SUCCEEDED`. Tickets remain random,
-opaque, owner-scoped and expiring. Prediction artifacts may be staged while
-input is open, but all outputs are published together with terminal success;
-partial success is never visible.
+Операция разрешена только после `execution.state = SUCCEEDED`. Tickets остаются
+случайными, непрозрачными, ограниченными owner-ом и сроком действия. Prediction
+artifacts могут подготавливаться при открытом входе, но все outputs публикуются
+одновременно с terminal success; частичный успех никогда не виден.
 
-## Streaming and recovery
+## Потоковая обработка и восстановление
 
-Epoch zero consumes the open contiguous stream. Optimizer batches and bounded
-shuffle windows cross both RecordBatch and payload boundaries. At the current
-frontier the worker reports that it is waiting; EOF flushes the final window
-and completes the epoch. Later epochs replay the closed durable dataset.
+Нулевая epoch читает открытый непрерывный поток. Optimizer batches и
+ограниченные shuffle windows пересекают границы RecordBatch и payload. На
+текущей границе доступных данных worker сообщает об ожидании; EOF сбрасывает
+последнее окно и завершает epoch. Последующие epochs повторно читают закрытый
+durable dataset.
 
-Failure before EOF restarts the incomplete epoch from its beginning. Recovery
-checkpoints remain complete-global-epoch snapshots. `inputIdleTimeout` runs
-only while a worker has confirmed that it waits for the next contiguous
-ordinal, and an out-of-order commit does not extend it.
+Сбой до EOF перезапускает незавершённую epoch с начала. Recovery checkpoints
+остаются снимками на границах полных global epochs. `inputIdleTimeout`
+отсчитывается только после подтверждения worker-ом ожидания следующего
+непрерывного ordinal; фиксация вне порядка не продлевает timeout.
 
-For identical ordered data, seed, deterministic configuration and
-hardware/runtime, delayed streaming and fully closed input must produce the
-same row/shuffle order, optimizer steps, per-epoch ML state, semantic
-checkpoint and final model. Wall-clock telemetry and serialized file digest
-are not equivalence criteria.
+При одинаковых упорядоченных данных, seed, deterministic-конфигурации и
+hardware/runtime отложенная потоковая подача и полностью закрытый вход должны
+давать одинаковый порядок строк и shuffle, optimizer steps, ML-state после
+каждой epoch, семантически одинаковый checkpoint и итоговую модель. Wall-clock
+telemetry и digest сериализованного файла не являются критериями
+эквивалентности.
