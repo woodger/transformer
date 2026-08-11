@@ -7,8 +7,33 @@
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-11
+
+### Added
+
+- Добавлен durable streaming Transformer Flight v3: client-generated `jobId`,
+  durable identity/tombstone, cross-system fencing через `job.acquire`,
+  revision pagination inputs/outputs, `input.close` и `model.describe`.
+- Добавлены worker process contract v2 с bounded control channel для committed
+  inputs и EOF, а также нормативный ADR атомарного перехода без v2
+  compatibility surface.
+- Добавлена локальная CLI-команда `gmark` для CUDA stress test на синтетических
+  production training steps, включая AMP, integrity checks, метрики
+  `nvidia-smi`, опциональный VRAM ballast и температурный cutoff.
+- В руководство начала работы добавлены выпуск, просмотр и отзыв API-токенов
+  без перезапуска Flight service.
+
 ### Changed
 
+- Breaking migration `0004` удаляет v2 jobs, inputs, attempts, tickets,
+  idempotency и recovery state, сохраняя API access tokens и legacy model rows
+  как uncertified; автоматического downgrade нет.
+- Fit начинает epoch 0 после первого непустого durable payload до EOF;
+  `input.state` и `execution.state` разделены, последующие эпохи перечитывают
+  закрытый immutable dataset, а model/output публикуются только после EOF.
+- Public Arrow schemas закреплены как `FixedSizeList<Float32>`, ML identity —
+  через `dataContractSha256`; legacy models требуют явной сертификации или
+  переобучения для v3.
 - Training runtime вычисляет missing mask по одному разу для NaN/token
   diagnostics и model context и не синхронизирует CUDA ради all-missing branch;
   progress/JSONL публикует host-side durations input pipeline, missing
@@ -22,15 +47,18 @@
 
 ### Fixed
 
+- CUDA inventory subprocess запускается из project root и больше не зависит от
+  рабочего каталога systemd service.
 - `--version` сделан статическим: control-plane CLI и основной Flight service
   process больше не импортируют Torch/CUDA и не открывают NVIDIA device handles;
   runtime probing остаётся в изолированном worker `inspect` subprocess.
+- `gmark --use-amp` выполняет bounded scale backoff при warm-up overflow и не
+  публикует статическое значение занятой VRAM как результат stress test.
 
-### Added
+### Removed
 
-- Добавлена локальная CLI-команда `gmark` для CUDA stress test на синтетических
-  production training steps, включая проверку AMP, integrity, метрики
-  `nvidia-smi`, опциональный VRAM ballast и температурный cutoff.
+- Удалены Flight v2 dispatcher/actions/descriptors и worker v1 contract;
+  `job.seal` и `job.start` не имеют aliases или runtime fallback.
 
 ## [0.1.8] - 2026-08-09
 
@@ -334,7 +362,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/woodger/transformer/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/woodger/transformer/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/woodger/transformer/compare/v0.1.5...v0.1.6
