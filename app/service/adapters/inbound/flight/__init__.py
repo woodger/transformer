@@ -1,2 +1,1 @@
-"""PyArrow Flight v2 inbound adapter."""
-
+"""PyArrow Flight v3 inbound adapter."""

@@ -85,6 +85,8 @@ cases, которые определяют операции с access tokens. Al
 ## Contracts
 
 - `app/contracts/flight/v3/` — нормативные schemas и fixtures публичного API;
+- Flight v3 является текущей штатной архитектурой remote API; дальнейшие
+  изменения проектируются от его lifecycle, durability и fencing semantics;
 - `app/contracts/worker/v2/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - эти contracts версионируются независимо;

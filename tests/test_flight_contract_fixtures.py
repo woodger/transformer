@@ -121,7 +121,6 @@ def test_v3_has_an_exact_closed_action_surface():
         "transformer.v3.job.cancel",
         "transformer.v3.model.describe",
     )
-    assert all(".v2." not in action for action in ACTIONS)
 
 
 def test_all_json_schemas_are_valid_closed_draft_2020_12_documents():

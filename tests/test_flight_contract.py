@@ -163,7 +163,7 @@ def test_upload_metadata_has_no_request_id_and_is_fenced():
         validate_upload_metadata(metadata)
 
 
-def test_only_v3_input_and_output_descriptor_paths_are_accepted():
+def test_v3_input_and_output_descriptor_paths_are_strict():
     input_descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v3", "jobs", JOB_ID, "inputs", "12"
     )
@@ -173,11 +173,11 @@ def test_only_v3_input_and_output_descriptor_paths_are_accepted():
     assert parse_input_descriptor(input_descriptor) == (JOB_ID, 12)
     assert parse_output_descriptor(output_descriptor) == (JOB_ID, 3)
 
-    old = flight.FlightDescriptor.for_path(
-        "transformer", "v2", "jobs", JOB_ID, "inputs", "0"
+    malformed = flight.FlightDescriptor.for_path(
+        "transformer", "jobs", JOB_ID, "inputs", "0"
     )
     with pytest.raises(ServiceError, match="invalid input"):
-        parse_input_descriptor(old)
+        parse_input_descriptor(malformed)
 
 
 def test_request_hash_ignores_transport_retry_identity_only():

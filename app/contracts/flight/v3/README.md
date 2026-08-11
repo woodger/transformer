@@ -33,8 +33,8 @@ The server advertises exactly:
 - `transformer.v3.job.cancel`
 - `transformer.v3.model.describe`
 
-There is no v2 compatibility surface. `job.seal`, `job.start`, DoExchange and
-PollFlightInfo are not part of v3.
+The list above is the complete action surface. `job.input.close` is the EOF
+operation. DoExchange and PollFlightInfo are not part of the contract.
 
 The request and result schemas are closed: unrecognized fields are rejected.
 `action-result.schema.json` is the closed union of all action results. Golden

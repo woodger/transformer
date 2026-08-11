@@ -90,8 +90,9 @@ transformer <command> --help
 ## Нормативные contracts
 
 JSON Schemas и golden fixtures в `app/contracts/flight/v3/` нормативны для wire
-format. README или operations guide не могут переопределять их. В production
-нет v2 compatibility surface.
+format. README или operations guide не могут переопределять их. Flight v3 —
+единственный текущий remote API contract и базовая точка для дальнейших
+изменений.
 
 Изменение Flight contract требует синхронно проверить:
 

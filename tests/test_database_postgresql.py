@@ -122,7 +122,7 @@ def test_postgresql_schema_is_at_alembic_head(postgres_config):
     assert status.pending is False
 
 
-def test_breaking_v3_migration_requires_backup_instead_of_downgrade(
+def test_v3_schema_migration_is_irreversible(
     postgres_config,
 ):
     schema = f"transformer_migration_test_{uuid.uuid4().hex}"
@@ -155,10 +155,10 @@ def test_breaking_v3_migration_requires_backup_instead_of_downgrade(
         cleanup_engine.dispose()
 
 
-def test_breaking_v3_migration_preserves_tokens_and_models_only(
+def test_v3_schema_migration_preserves_tokens_and_models_only(
     postgres_config,
 ):
-    schema = f"transformer_cutover_test_{uuid.uuid4().hex}"
+    schema = f"transformer_v3_schema_test_{uuid.uuid4().hex}"
     config = type(postgres_config)(
         postgres_config.host,
         postgres_config.database,
@@ -170,7 +170,7 @@ def test_breaking_v3_migration_preserves_tokens_and_models_only(
     engine = create_engine(config.url)
     job_id = str(uuid.uuid4())
     token_id = str(uuid.uuid4())
-    model_ref = "mdl_cutover"
+    model_ref = "mdl_preserved"
     quoted = f'"{schema}"'
     try:
         command.upgrade(alembic_config(config), "0003")

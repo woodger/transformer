@@ -1,6 +1,6 @@
 # Inventory handoff: Transformer Arrow Flight v3
 
-> Type: Reference. Consumer integration guide for the breaking v3 protocol.
+> Type: Reference. Consumer integration guide for the current protocol.
 
 The normative wire contract is
 [`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). JSON Schemas
@@ -9,9 +9,9 @@ deployment and recovery operations are documented in the
 [`Flight runbook`](flight-operations.md); the architectural decision is
 [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
 
-V3 has no v2 compatibility surface. Inventory must require exactly protocol
-version 3 and must not fall back to v2 action names, descriptor paths or state
-semantics.
+Transformer Flight v3 is the current remote API. Inventory must require
+`protocolVersions` equal to `[3]` and use the normative v3 actions, descriptors
+and state semantics described below.
 
 ## Transport and authentication
 
@@ -294,9 +294,6 @@ Stable lifecycle failures are:
 | `MODEL_CORRUPT` | Checkpoint size or digest is invalid |
 | `MODEL_SCHEMA_MISMATCH` | Model is uncertified or data contract differs |
 
-Models created before v3 are not implicitly compatible. They require explicit
-offline certification or retraining.
-
 ## Retry decisions
 
 | Lost or failed step | Inventory behavior |
@@ -314,16 +311,12 @@ offline certification or retraining.
 `requestId` may change between transport attempts. Stable job, payload,
 ownership and idempotency identities must not.
 
-## Cutover checklist
+## Integration verification
 
-1. Stop Inventory v2 workers and Transformer v2.
-2. Back up PostgreSQL and apply Transformer migration `0004`.
-3. Deploy Transformer advertising exactly `[3]` and verify authenticated
-   capabilities and health.
-4. Deploy Inventory requiring v3 with no fallback.
-5. Verify create replay, ownership takeover, fenced DoPut, revision pagination,
-   streaming fit, EOF close and terminal prediction download.
-6. Retrain or explicitly certify any legacy model required by v3 traffic.
-
-Do not run Inventory v2 and v3 against the same Transformer database during
-the cutover.
+1. Verify authenticated `capabilities` and `health`; require
+   `protocolVersions` equal to `[3]`.
+2. Verify idempotent create replay and ownership takeover.
+3. Verify fenced `DoPut`, revision pagination and reconciliation after a lost
+   `PutResult`.
+4. Verify streaming fit, EOF close and terminal model publication.
+5. Verify terminal prediction output listing and download.

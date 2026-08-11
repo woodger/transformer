@@ -5,7 +5,7 @@ wire details are in the
 [`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
 fixtures are in
 [`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). The durable
-streaming lifecycle, fencing and breaking cutover are fixed by
+streaming lifecycle, fencing and recovery semantics are fixed by
 [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
 
 ## Runtime requirements
@@ -141,23 +141,11 @@ migrations at startup. Inspect and update it explicitly:
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-`status` is read-only. `apply` upgrades to the current Alembic head. To revert
-exactly the latest applied revision:
-
-```bash
-./.venv/bin/python ./app/main.py db migrations rollback
-```
-
-The service and token-management commands refuse to start against a missing or
-outdated schema and direct the operator to `db migrations apply`.
-
-Revision `0004` is the deliberate breaking Flight v3 cutover. Applying it
-removes v2 jobs, inputs, attempts, tickets, idempotency and recovery state. It
-preserves access tokens and legacy model rows, but marks those models
-uncertified for v3 until explicit offline certification or retraining. Stop
-Inventory workers and Transformer v2 before applying the revision, then start
-only Inventory v3 and Transformer v3. The runtime has no v2 compatibility
-surface and the migration has no automatic downgrade.
+`status` is read-only. `apply` upgrades to the current Alembic head. The
+service and token-management commands refuse to start against a missing or
+outdated schema and direct the operator to `db migrations apply`. Flight v3 is
+the current schema and runtime contract; the service does not apply migrations
+automatically.
 
 PostgreSQL stores control-plane state, not Arrow payloads and not a local cache.
 Transactions are short. Worker dispatch uses an in-process FIFO initialized
