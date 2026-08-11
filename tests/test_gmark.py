@@ -109,7 +109,7 @@ def test_temperature_cutoff_fails_closed_before_allocating_matrices(
             pass
 
         def read(self):
-            return gmark.GpuMetrics(85.0, None, 0.0, 20.0, 0.0, 8192.0)
+            return gmark.GpuMetrics(85.0, None, 0.0, 20.0)
 
     monkeypatch.setattr(gmark, "NvidiaSmiMonitor", HotMonitor)
 
@@ -192,9 +192,9 @@ def test_temperature_cutoff_stops_an_active_workload_with_exit_three(
         OutOfMemoryError=RuntimeError,
     )
     readings = iter((
-        gmark.GpuMetrics(60.0, None, 0.0, 20.0, 0.0, 8192.0),
-        gmark.GpuMetrics(60.0, None, 0.0, 20.0, 0.0, 8192.0),
-        gmark.GpuMetrics(85.0, None, 100.0, 250.0, 1024.0, 8192.0),
+        gmark.GpuMetrics(60.0, None, 0.0, 20.0),
+        gmark.GpuMetrics(60.0, None, 0.0, 20.0),
+        gmark.GpuMetrics(85.0, None, 100.0, 250.0),
     ))
 
     class HeatingMonitor:
@@ -232,7 +232,7 @@ def test_nvidia_smi_monitor_accepts_devices_without_a_vram_sensor(
         commands.append((command, kwargs))
         if "temperature.memory" in command[2]:
             return SimpleNamespace(stdout="not supported\n")
-        return SimpleNamespace(stdout="67, 98, 245.5, 4096, 8192\n")
+        return SimpleNamespace(stdout="67, 98, 245.5\n")
 
     monkeypatch.setattr(gmark.shutil, "which", lambda _name: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(gmark.subprocess, "run", query)
@@ -244,8 +244,6 @@ def test_nvidia_smi_monitor_accepts_devices_without_a_vram_sensor(
         memory_temperature_c=None,
         utilization_percent=98.0,
         power_w=245.5,
-        memory_used_mib=4096.0,
-        memory_total_mib=8192.0,
     )
     assert len(commands) == 2
     assert commands[0][0][0] == "/usr/bin/nvidia-smi"
@@ -256,6 +254,21 @@ def test_nvidia_smi_monitor_accepts_devices_without_a_vram_sensor(
         "text": True,
         "timeout": 2,
     }
+
+
+def test_periodic_status_omits_vram_usage_and_capacity():
+    status = gmark._format_status(
+        2.0,
+        12,
+        3.5,
+        gmark.GpuMetrics(67.0, 72.0, 98.0, 245.5),
+    )
+
+    assert status == (
+        "[    2.0s] | iterations=12 | average=3.50 TFLOP/s | "
+        "gpu-temp=67 C | vram-temp=72 C | util=98% | power=245.5 W"
+    )
+    assert "vram=" not in status
 
 
 def test_vram_ballast_writes_every_allocated_byte():

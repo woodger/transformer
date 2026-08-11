@@ -24,8 +24,6 @@ class GpuMetrics:
     memory_temperature_c: float | None
     utilization_percent: float | None
     power_w: float | None
-    memory_used_mib: float | None
-    memory_total_mib: float | None
 
 
 class NvidiaSmiMonitor:
@@ -43,8 +41,8 @@ class NvidiaSmiMonitor:
             values = self._query(
                 device_identifier,
                 "temperature.gpu,temperature.memory,utilization.gpu,"
-                "power.draw,memory.used,memory.total",
-                expected_fields=6,
+                "power.draw",
+                expected_fields=4,
             )
             if values is not None:
                 return GpuMetrics(*values)
@@ -52,9 +50,8 @@ class NvidiaSmiMonitor:
             # Consumer cards and some drivers omit the optional VRAM sensor.
             values = self._query(
                 device_identifier,
-                "temperature.gpu,utilization.gpu,power.draw,"
-                "memory.used,memory.total",
-                expected_fields=5,
+                "temperature.gpu,utilization.gpu,power.draw",
+                expected_fields=3,
             )
             if values is not None:
                 return GpuMetrics(values[0], None, *values[1:])
@@ -188,15 +185,6 @@ def _format_status(
             parts.append(f"util={metrics.utilization_percent:.0f}%")
         if metrics.power_w is not None:
             parts.append(f"power={metrics.power_w:.1f} W")
-        if (
-            metrics.memory_used_mib is not None
-            and metrics.memory_total_mib is not None
-        ):
-            parts.append(
-                "vram="
-                f"{metrics.memory_used_mib / 1024:.2f}/"
-                f"{metrics.memory_total_mib / 1024:.2f} GiB"
-            )
     return " | ".join(parts)
 
 
