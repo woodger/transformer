@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Flight v3 теперь использует единое canonical определение Arrow physical
+  schema для ingress, fingerprint, fixtures, durable replay и worker output.
+  Неканоническая nested nullability отклоняется с `INVALID_ARGUMENT` до
+  reservation, durable commit и запуска worker.
+
 ## [0.1.9] - 2026-08-11
 
 ### Added

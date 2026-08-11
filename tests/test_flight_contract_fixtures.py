@@ -49,7 +49,6 @@ FIXTURE_ROOT = (
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 SCHEMA_ROOT = FIXTURE_ROOT.parent / "schemas"
-GENERATOR = FIXTURE_ROOT / "generate_arrow_fixtures.py"
 
 REQUEST_FIXTURES = {
     "capabilities.request.json": "query.schema.json",
@@ -234,6 +233,8 @@ def test_arrow_v3_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
             assert field.nullable is False
             assert pa.types.is_fixed_size_list(field.type)
             assert field.type.value_type == pa.float32()
+            assert field.type.value_field.name == "item"
+            assert field.type.value_field.nullable is True
 
     fit = ipc.open_file(ARROW_ROOT / "fit-multi-batch.arrow").schema
     predict = ipc.open_file(ARROW_ROOT / "predict-multi-batch.arrow").schema
@@ -249,7 +250,13 @@ def test_arrow_v3_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
 
 def test_arrow_golden_fixtures_are_reproducible(tmp_path):
     subprocess.run(
-        [sys.executable, str(GENERATOR), "--output-dir", str(tmp_path)],
+        [
+            sys.executable,
+            "-m",
+            "app.contracts.flight.v3.fixtures.generate_arrow_fixtures",
+            "--output-dir",
+            str(tmp_path),
+        ],
         check=True,
         timeout=30,
     )

@@ -243,6 +243,7 @@ def test_prediction_tables_always_use_fixed_size_list_float32():
         field = table.schema.field("predictions")
         assert field.type == expected_type
         assert field.nullable is False
+        assert field.type.value_field.nullable is True
 
 
 def test_predictions_require_six_finite_values():

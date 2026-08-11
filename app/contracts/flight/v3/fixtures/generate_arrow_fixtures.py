@@ -7,6 +7,11 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
+from app.contracts.flight.v3.arrow import (
+    canonical_input_schema,
+    canonical_prediction_schema,
+)
+
 FIXTURE_NAMES = (
     "fit-multi-batch.arrow",
     "predict-multi-batch.arrow",
@@ -33,10 +38,7 @@ def _batch(schema: pa.Schema, columns: list[list]) -> pa.RecordBatch:
 
 
 def generate(output_dir: Path) -> None:
-    fit_schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-        pa.field("tgt", pa.list_(pa.float32(), 6), nullable=False),
-    ])
+    fit_schema = canonical_input_schema("fit", 4)
     fit_batches = [
         _batch(
             fit_schema,
@@ -61,9 +63,7 @@ def generate(output_dir: Path) -> None:
     ]
     _write(output_dir / "fit-multi-batch.arrow", fit_schema, fit_batches)
 
-    predict_schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-    ])
+    predict_schema = canonical_input_schema("predict", 4)
     predict_batches = [
         _batch(
             predict_schema,
@@ -77,18 +77,14 @@ def generate(output_dir: Path) -> None:
         predict_batches,
     )
 
-    empty_predict_schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-    ])
+    empty_predict_schema = canonical_input_schema("predict", 4)
     _write(
         output_dir / "predict-typed-empty.arrow",
         empty_predict_schema,
         [],
     )
 
-    prediction_schema = pa.schema([
-        pa.field("out", pa.list_(pa.float32(), 6), nullable=False),
-    ])
+    prediction_schema = canonical_prediction_schema("out")
     prediction_batches = [
         _batch(
             prediction_schema,

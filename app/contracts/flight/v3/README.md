@@ -138,6 +138,18 @@ transformer.prediction.v2
   <predictionColumn>: non-null FixedSizeList<Float32>[6]
 ```
 
+Every top-level field is non-nullable. Each `FixedSizeList` has a child field
+named `item` with type `Float32` and `nullable=true`, matching the canonical
+PyArrow representation. This physical-schema property does not permit null ML
+values: ingress and output validation reject every null row or child value.
+Schema metadata is non-semantic and is excluded from exact comparison and
+`schemaFingerprint`.
+
+A non-canonical input schema fails the DoPut with `INVALID_ARGUMENT` before an
+input reservation, durable artifact or worker execution exists. The job input
+remains open so the same ordinal can be uploaded again with the canonical
+schema.
+
 Null rows/elements and infinities are rejected. `src` may contain NaN; target
 and prediction values must be finite. Target volatility at index 4 is
 non-negative and hit probability at index 5 is in `[0, 1]`. Fixed list widths

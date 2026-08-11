@@ -15,7 +15,13 @@ from sqlalchemy import func, select
 
 from app.database.models import InputUpload
 from app.flight.config import FlightServiceConfig
-from app.flight.constants import CONTRACT_NAME, FIT_SCHEMA_ID, ErrorCode
+from app.flight.constants import (
+    CONTRACT_NAME,
+    FIT_SCHEMA_ID,
+    ErrorCode,
+    ExecutionState,
+    InputState,
+)
 from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
 from app.flight.output import OutputHandler
@@ -23,6 +29,7 @@ from app.flight.recovery_store import RecoveryStore
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
+from app.worker.data.arrow import read_committed_fit_arrow
 from tests.flight_v3_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
@@ -58,6 +65,24 @@ def _fit_batch(rows, *, offset=0.0):
         [
             pa.array(source, type=schema.field("src").type),
             pa.array(target, type=schema.field("tgt").type),
+        ],
+        schema=schema,
+    )
+
+
+def _noncanonical_fit_batch(rows):
+    item = pa.field("item", pa.float32(), nullable=False)
+    schema = pa.schema([
+        pa.field("src", pa.list_(item, 4), nullable=False),
+        pa.field("tgt", pa.list_(item, 6), nullable=False),
+    ])
+    return pa.RecordBatch.from_arrays(
+        [
+            pa.array(
+                [[float(value) for value in range(4)]] * rows,
+                type=schema.field("src").type,
+            ),
+            pa.array([[0.0] * 6] * rows, type=schema.field("tgt").type),
         ],
         schema=schema,
     )
@@ -178,6 +203,89 @@ def test_one_doput_commits_one_immutable_multi_batch_payload(data_plane):
     with pa.memory_map(path, "r") as source:
         reader = ipc.RecordBatchFileReader(source)
         assert reader.num_record_batches == 2
+    source, target = read_committed_fit_arrow(
+        path,
+        expected_rows=3,
+        source_width=4,
+    )
+    assert source.shape == (3, 4)
+    assert target.shape == (3, 6)
+
+
+def test_noncanonical_schema_is_rejected_before_commit_or_queue(data_plane):
+    config, spool, recovery, ledger, _, _ = data_plane
+    job = create_fit(ledger)
+    queued = []
+    upload = UploadHandler(
+        config,
+        ledger,
+        spool,
+        recovery,
+        cuda_available=lambda: False,
+        queue_notifier=queued.append,
+    )
+
+    with pytest.raises(ServiceError) as error:
+        upload.handle(
+            OWNER,
+            _descriptor(job),
+            _Reader(
+                job,
+                str(uuid.uuid4()),
+                _noncanonical_fit_batch(1),
+            ),
+            SimpleNamespace(write=lambda _: pytest.fail("unexpected result")),
+        )
+
+    assert error.value.code is ErrorCode.INVALID_ARGUMENT
+    assert "canonical physical schema" in error.value.message
+    assert ledger.list_inputs(job["job_id"]) == []
+    assert _active_upload_count(ledger) == 0
+    assert queued == []
+    current = ledger.get_job(job["job_id"], owner_subject=OWNER)
+    assert current["input_state"] == InputState.OPEN.value
+    assert current["execution_state"] == ExecutionState.WAITING_INPUT.value
+    directory = Path(recovery.input_directory(job["job_id"]))
+    assert not directory.exists()
+
+
+def test_noncanonical_schema_returns_primary_flight_error(data_plane):
+    _, _, _, ledger, _, client = data_plane
+    job = create_fit(ledger)
+    batch = _noncanonical_fit_batch(1)
+    descriptor = _descriptor(job)
+    writer, results = client.do_put(
+        descriptor,
+        batch.schema,
+        options=_auth(),
+    )
+    writer.write_metadata(pa.py_buffer(
+        _upload_metadata(job, str(uuid.uuid4()), 0, 1)
+    ))
+    writer.write_batch(batch)
+
+    writer.done_writing()
+    assert results.read() is None
+    with pytest.raises(
+        pa.ArrowInvalid,
+        match="INVALID_ARGUMENT: fit input differs from the canonical",
+    ):
+        writer.close()
+
+    assert ledger.list_inputs(job["job_id"]) == []
+    current = ledger.get_job(job["job_id"], owner_subject=OWNER)
+    assert current["input_state"] == InputState.OPEN.value
+    assert current["execution_state"] == ExecutionState.WAITING_INPUT.value
+
+    retried = _put(
+        client,
+        job,
+        str(uuid.uuid4()),
+        0,
+        [_fit_batch(1)],
+    )
+    assert retried["status"] == "committed"
+    assert retried["queued"] is True
 
 
 def test_out_of_order_completion_does_not_advance_worker_over_gap(data_plane):

@@ -7,7 +7,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-_TARGET_WIDTH = 6
+TARGET_WIDTH = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,7 @@ def validate_prediction_file(
             if first_invalid is not None:
                 raise ValueError(
                     "prediction has non-finite or null value at row "
-                    f"{rows + first_invalid // _TARGET_WIDTH + 1}"
+                    f"{rows + first_invalid // TARGET_WIDTH + 1}"
                 )
             rows += batch.num_rows
             batches += 1
@@ -66,24 +66,85 @@ def validate_prediction_file(
 
 def schema_fingerprint(schema: pa.Schema) -> str:
     canonical = pa.schema([
-        pa.field(field.name, field.type, nullable=field.nullable)
+        pa.field(
+            field.name,
+            _type_without_metadata(field.type),
+            nullable=field.nullable,
+        )
         for field in schema
     ])
     return hashlib.sha256(canonical.serialize().to_pybytes()).hexdigest()
 
 
+def canonical_input_schema(operation: str, source_width: int) -> pa.Schema:
+    if operation not in ("fit", "predict"):
+        raise ValueError("operation must be fit or predict")
+    if type(source_width) is not int or source_width <= 0:
+        raise ValueError("source_width must be a positive integer")
+    fields = [
+        pa.field(
+            "src",
+            _fixed_size_float32(source_width),
+            nullable=False,
+        ),
+    ]
+    if operation == "fit":
+        fields.append(
+            pa.field(
+                "tgt",
+                _fixed_size_float32(TARGET_WIDTH),
+                nullable=False,
+            )
+        )
+    return pa.schema(fields)
+
+
+def canonical_prediction_schema(prediction_column: str) -> pa.Schema:
+    if not isinstance(prediction_column, str) or not prediction_column:
+        raise ValueError("prediction_column must be a non-empty string")
+    return pa.schema([
+        pa.field(
+            prediction_column,
+            _fixed_size_float32(TARGET_WIDTH),
+            nullable=False,
+        ),
+    ])
+
+
 def _validate_prediction_schema(schema: pa.Schema, column: str) -> None:
-    if schema.names != [column]:
+    expected = canonical_prediction_schema(column)
+    if schema.names != expected.names:
         raise ValueError(
             f"prediction output must contain exactly column {column!r}"
         )
     field = schema.field(column)
-    if field.type != pa.list_(pa.float32(), _TARGET_WIDTH):
+    if field.type != expected.field(column).type:
         raise ValueError(
-            f"prediction output must use FixedSizeList<float32>[{_TARGET_WIDTH}]"
+            f"prediction output must use FixedSizeList<float32>[{TARGET_WIDTH}]"
         )
     if field.nullable:
         raise ValueError("prediction output column must be non-nullable")
+
+
+def _fixed_size_float32(width: int) -> pa.FixedSizeListType:
+    return pa.list_(
+        pa.field("item", pa.float32(), nullable=True),
+        width,
+    )
+
+
+def _type_without_metadata(value_type: pa.DataType) -> pa.DataType:
+    if not pa.types.is_fixed_size_list(value_type):
+        return value_type
+    value_field = value_type.value_field
+    return pa.list_(
+        pa.field(
+            value_field.name,
+            _type_without_metadata(value_field.type),
+            nullable=value_field.nullable,
+        ),
+        value_type.list_size,
+    )
 
 
 def _first_true(values) -> int | None:
@@ -92,7 +153,10 @@ def _first_true(values) -> int | None:
 
 
 __all__ = [
+    "TARGET_WIDTH",
     "PredictionArrowStats",
+    "canonical_input_schema",
+    "canonical_prediction_schema",
     "schema_fingerprint",
     "validate_prediction_file",
 ]

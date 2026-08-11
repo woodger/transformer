@@ -275,6 +275,17 @@ transformer.prediction.v2
   <predictionColumn>: non-null FixedSizeList<Float32>[6]
 ```
 
+All top-level fields use `nullable=false`. The nested `FixedSizeList` child is
+named `item`, has type `Float32` and uses `nullable=true`. This is part of the
+exact physical schema; actual null rows and child values are still rejected by
+runtime value validation. Schema metadata is not part of the physical identity
+or `schemaFingerprint`.
+
+Transformer rejects a non-canonical input schema with `INVALID_ARGUMENT`
+before reserving or committing the payload. The job remains non-terminal with
+open input, so Inventory may correct and retry the same ordinal with a new
+transport attempt.
+
 Transformer may prepare attempt-local results while input is open, but no
 partial output becomes visible. All output receipts and `SUCCEEDED` commit in
 one terminal transaction.

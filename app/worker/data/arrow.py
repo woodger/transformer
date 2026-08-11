@@ -7,13 +7,17 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
+from app.contracts.flight.v3.arrow import (
+    TARGET_WIDTH,
+    canonical_input_schema,
+    canonical_prediction_schema,
+)
 from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 if TYPE_CHECKING:
     import torch
 
 FRAME_HEADER_BYTES = 8
-TARGET_WIDTH = 6
 FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
@@ -123,22 +127,10 @@ def _read_committed_table(
     if source_width <= 0:
         raise ValueError("committed Arrow source width must be positive")
 
-    fields = [
-        pa.field(
-            "src",
-            pa.list_(pa.float32(), source_width),
-            nullable=False,
-        ),
-    ]
-    if require_target:
-        fields.append(
-            pa.field(
-                "tgt",
-                pa.list_(pa.float32(), TARGET_WIDTH),
-                nullable=False,
-            )
-        )
-    expected_schema = pa.schema(fields)
+    expected_schema = canonical_input_schema(
+        "fit" if require_target else "predict",
+        source_width,
+    )
 
     with open(path, "rb") as source:
         reader = ipc.RecordBatchFileReader(source)
@@ -381,24 +373,12 @@ def predictions_to_table(
     arr = np.ascontiguousarray(arr)
     values = pa.array(arr.reshape(-1), type=pa.float32())
     column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)
-    schema = pa.schema([
-        pa.field(
-            col_name,
-            pa.list_(pa.float32(), TARGET_WIDTH),
-            nullable=False,
-        )
-    ])
+    schema = canonical_prediction_schema(col_name)
     return pa.Table.from_arrays([column], schema=schema)
 
 
 def empty_predictions_table(col_name: str):
-    schema = pa.schema([
-        pa.field(
-            col_name,
-            pa.list_(pa.float32(), TARGET_WIDTH),
-            nullable=False,
-        )
-    ])
+    schema = canonical_prediction_schema(col_name)
     return pa.Table.from_arrays(
         [pa.array([], type=schema.field(0).type)],
         schema=schema,
