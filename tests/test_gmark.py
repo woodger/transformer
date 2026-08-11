@@ -335,6 +335,35 @@ def test_training_workload_runs_a_production_training_step_on_cpu():
     assert result.grad_norm > 0
 
 
+def test_training_workload_recovers_from_amp_scale_overflow(monkeypatch):
+    torch.manual_seed(42)
+    workload = gmark.TrainingWorkload(torch, _args(), torch.device("cpu"))
+    workload._use_amp = True
+    workload.scaler = torch.amp.GradScaler("cpu")
+    monkeypatch.setattr(workload, "_autocast", nullcontext)
+
+    backward_attempts = 0
+
+    def overflow_first_four_attempts(gradient):
+        nonlocal backward_attempts
+        backward_attempts += 1
+        if backward_attempts <= 4:
+            return torch.full_like(gradient, torch.inf)
+        return gradient
+
+    parameter = next(workload.model.parameters())
+    parameter.register_hook(overflow_first_four_attempts)
+
+    result = workload.step()
+    workload.validate()
+
+    assert backward_attempts == 5
+    assert workload.amp_backoffs == 4
+    assert workload.amp_scale == 4096
+    assert math.isfinite(result.loss)
+    assert math.isfinite(result.grad_norm)
+
+
 def test_training_workload_detects_a_nonfinite_model_parameter():
     workload = gmark.TrainingWorkload(torch, _args(), torch.device("cpu"))
     parameter = next(workload.model.parameters())

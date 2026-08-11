@@ -23,6 +23,7 @@ from app.config import (
 MIB = 1024**2
 GIB = 1024**3
 BALLAST_CHUNK_BYTES = 256 * MIB
+MAX_AMP_SCALE_BACKOFFS = 32
 
 
 class GmarkError(RuntimeError):
@@ -55,6 +56,7 @@ class TrainingWorkload:
         self._combined_loss = combined_loss
         self._use_amp = bool(args.use_amp)
         self._batch_size = args.batch_size
+        self._amp_backoffs = 0
 
         self.model = TransformerModel(
             input_dim=args.feature_dim,
@@ -99,6 +101,16 @@ class TrainingWorkload:
     def batch_size(self) -> int:
         return self._batch_size
 
+    @property
+    def amp_scale(self) -> float | None:
+        if not self._use_amp:
+            return None
+        return float(self.scaler.get_scale())
+
+    @property
+    def amp_backoffs(self) -> int:
+        return self._amp_backoffs
+
     def _autocast(self):
         if self._use_amp:
             return self._torch.amp.autocast(
@@ -108,6 +120,16 @@ class TrainingWorkload:
         return nullcontext()
 
     def step(self) -> TrainingStep:
+        for _ in range(MAX_AMP_SCALE_BACKOFFS):
+            result = self._attempt_step()
+            if result is not None:
+                return result
+        raise GmarkError(
+            "AMP gradient overflow did not recover after "
+            f"{MAX_AMP_SCALE_BACKOFFS} scale backoffs"
+        )
+
+    def _attempt_step(self) -> TrainingStep | None:
         torch = self._torch
         source = self._source.to(self._device)
         targets = self._targets.to(self._device)
@@ -133,13 +155,27 @@ class TrainingWorkload:
             GRAD_CLIP_NORM,
         )
         grad_norm_value = float(grad_norm.detach().cpu())
-        if not math.isfinite(grad_norm_value):
+        grad_norm_is_finite = math.isfinite(grad_norm_value)
+        if not grad_norm_is_finite and not self._use_amp:
             raise GmarkError(
                 "integrity check failed: non-finite gradient norm"
             )
 
+        scale_before = self.amp_scale
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        if not grad_norm_is_finite:
+            scale_after = self.amp_scale
+            if (
+                scale_before is not None
+                and scale_after is not None
+                and scale_after < scale_before
+            ):
+                self._amp_backoffs += 1
+                return None
+            raise GmarkError(
+                "integrity check failed: non-finite gradient norm"
+            )
         return TrainingStep(loss=loss_value, grad_norm=grad_norm_value)
 
     def validate(self) -> None:
@@ -429,6 +465,13 @@ def run_stress_test(
             "not enough VRAM for the training workload; reduce --batch-size, "
             "--seq-len, --feature-dim or model dimensions"
         ) from error
+
+    amp_scale = getattr(workload, "amp_scale", None)
+    if amp_scale is not None:
+        print(
+            f"AMP warm-up: scale={amp_scale:g} | "
+            f"backoffs={getattr(workload, 'amp_backoffs', 0)}"
+        )
 
     ballast, ballast_bytes = _allocate_vram_ballast(
         torch,

@@ -117,6 +117,11 @@ loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
 Динамические метрики температуры, utilization и power читаются через системный
 `nvidia-smi`.
 
+При AMP начальные gradients могут переполниться на высоком dynamic scale.
+`gmark` допускает штатный backoff `GradScaler`, продолжает после первого
+успешного optimizer update и завершает тест ошибкой, если scale не
+стабилизируется.
+
 Короткая проверка:
 
 ```bash
