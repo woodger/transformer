@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
+import pytest
 import torch
 
 from app.contracts.worker.v2 import (
@@ -38,6 +39,7 @@ from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 from app.storage.checkpoint import save_checkpoint
 from app.training.factory import build_model
+from app.worker.application import executor as worker_executor
 
 PROJECT_ROOT = Path(__file__).parents[1]
 DATA_CONTRACT_SHA256 = "c" * 64
@@ -107,6 +109,30 @@ def test_worker_capabilities_are_reported_through_v2_process_contract():
     assert document["contract"] == "transformer-worker"
     assert document["protocolVersion"] == 2
     assert document["torchVersion"]
+
+
+def test_worker_verifies_an_immutable_input_receipt_once(tmp_path, monkeypatch):
+    input_path = tmp_path / "input.arrow"
+    _write_input(input_path, [[1.0, 2.0, 3.0, 4.0]], fit=False)
+    item = _input_manifest(input_path, 0, 1, fit=False)
+    digest_calls = []
+    sha256_file = worker_executor._sha256_file
+
+    def counted_sha256(path):
+        digest_calls.append(path)
+        return sha256_file(path)
+
+    monkeypatch.setattr(worker_executor, "_sha256_file", counted_sha256)
+    committed = worker_executor._CommittedInputArtifacts()
+
+    assert committed.path(item) == str(input_path)
+    assert committed.path(item) == str(input_path)
+    assert digest_calls == [str(input_path)]
+
+    changed = dict(item)
+    changed["commitRevision"] = 2
+    with pytest.raises(ValueError, match="receipt changed"):
+        committed.path(changed)
 
 
 def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):

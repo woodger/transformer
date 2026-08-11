@@ -117,6 +117,14 @@ schedule, optimizer, checkpoint selection и early stopping на весь job. �
 проходят через ограниченное job-wide окно перемешивания; его границы и optimizer
 batches могут пересекать payload и не зависят от транспортного разбиения.
 
+Полная schema/value validation выполняется сервисом до durable commit каждого
+Flight payload. Worker перед первым чтением в рамках attempt проверяет
+immutable receipt, размер и SHA-256; повторные эпохи сверяют physical Arrow
+schema и число строк, но не хешируют и не сканируют все значения заново.
+Для закрытых эпох CPU pipeline подготавливает не более одного следующего batch,
+пока текущий batch обрабатывается моделью. Открытая epoch 0 остаётся
+синхронной с durable input/control channel.
+
 ## Контекстные пропуски
 
 `src` может содержать `NaN` в отдельных фичах контекстного timestep. Режим
@@ -192,17 +200,21 @@ Summary показывает основной результат эпохи, с�
 - `lr` — текущий learning rate;
 - `loss_stage` — активный этап функции потерь;
 - `input_pipeline_ms` — host wall time получения batch из input pipeline,
-  включая Arrow replay, validation, streaming wait и CPU shuffle;
+  включая ожидание Arrow replay/первой receipt verification, streaming input и
+  CPU shuffle; при closed-input prefetch это время ожидания consumer-а, а не
+  суммарное CPU-время producer-а;
 - `missing_stats_ms` — host wall time расчёта NaN и token ratios;
 - `host_to_device_ms` — host wall time вызовов CPU-to-device transfer;
 - `train_step_ms` — host wall time forward, loss, backward, optimizer step и
   сбора batch metrics;
 - `elapsed_ms` — время training pass.
 
-Фазовые значения являются диагностикой host pipeline. Они не добавляют CUDA
-synchronize и поэтому не являются точным GPU kernel time; их сумма может быть
-меньше `elapsed_ms` на служебные операции между измеряемыми фазами. Как и
-`elapsed_ms`, они исключаются из deterministic equivalence ML-state.
+Фазовые таймеры являются host-side диагностикой и не добавляют отдельную CUDA
+synchronize, поэтому не являются точным GPU kernel time. CUDA scalar metrics
+loss/gradient собираются в один tensor и материализуются одной передачей на
+CPU за batch. Сумма фаз может быть меньше `elapsed_ms` на служебные операции и
+перекрытый prefetch. Как и `elapsed_ms`, фазовые значения исключаются из
+deterministic equivalence ML-state.
 
 Чтобы сохранять метрики, добавьте `--metrics-out`:
 

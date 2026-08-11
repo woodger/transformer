@@ -28,7 +28,11 @@ from app.contracts.worker.v2.config import (
 )
 from app.worker.application.events import WorkerEventEmitter
 from app.worker.application.inputs import DurableInputStream
-from app.worker.data.arrow import read_arrow, read_source_arrow, write_arrow
+from app.worker.data.arrow import (
+    read_committed_fit_arrow,
+    read_committed_source_arrow,
+    write_arrow,
+)
 from app.worker.data.tensors import (
     reshape_source,
     validate_checkpoint_feature_dim,
@@ -111,16 +115,17 @@ class WorkerApplication:
         device = get_device(manifest["device"]["kind"])
         expected_feature_dim = manifest["dataContract"]["featureDim"]
         expected_target_dim = 6
+        committed_inputs = _CommittedInputArtifacts()
 
         def read_payload(item: dict):
             if item["schemaId"] != FIT_INPUT_SCHEMA_ID:
                 raise ValueError("fit input schemaId is invalid")
-            path = _validate_artifact(item["artifact"])
-            source, target = read_arrow(path)
-            if source.size(0) != item["rows"]:
-                raise ValueError(
-                    "fit input row count differs from its manifest"
-                )
+            path = committed_inputs.path(item)
+            source, target = read_committed_fit_arrow(
+                path,
+                expected_rows=item["rows"],
+                source_width=model_config.seq_len * expected_feature_dim,
+            )
             source = reshape_source(source, model_config.seq_len)
             validate_feature_dim(source, expected_feature_dim)
             validate_target_dim(target, expected_target_dim)
@@ -301,15 +306,16 @@ class WorkerApplication:
         model = None
         trainer = None
         artifacts = []
+        committed_inputs = _CommittedInputArtifacts()
         for item in input_stream.items():
             if item["schemaId"] != PREDICT_INPUT_SCHEMA_ID:
                 raise ValueError("prediction input schemaId is invalid")
-            input_path = _validate_artifact(item["artifact"])
-            source = read_source_arrow(input_path)
-            if source.size(0) != item["rows"]:
-                raise ValueError(
-                    "prediction input row count differs from its manifest"
-                )
+            input_path = committed_inputs.path(item)
+            source = read_committed_source_arrow(
+                input_path,
+                expected_rows=item["rows"],
+                source_width=model_config.seq_len * model_config.feature_dim,
+            )
             output_path = os.path.join(
                 workspace,
                 "outputs",
@@ -364,6 +370,41 @@ class WorkerExecutionError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class _CommittedInputArtifacts:
+    """Verify each immutable input receipt exactly once per worker attempt."""
+
+    def __init__(self):
+        self._verified: dict[int, tuple[tuple, str]] = {}
+
+    def path(self, item: dict) -> str:
+        ordinal = item["ordinal"]
+        identity = _input_receipt_identity(item)
+        existing = self._verified.get(ordinal)
+        if existing is None:
+            path = _validate_artifact(item["artifact"])
+            self._verified[ordinal] = (identity, path)
+            return path
+        if existing[0] != identity:
+            raise ValueError(
+                "committed input receipt changed during the worker attempt"
+            )
+        return existing[1]
+
+
+def _input_receipt_identity(item: dict) -> tuple:
+    artifact = item["artifact"]
+    return (
+        item["schemaId"],
+        item["ordinal"],
+        item["commitRevision"],
+        item["dataContractSha256"],
+        item["rows"],
+        artifact["path"],
+        artifact["byteCount"],
+        artifact["sha256"],
+    )
 
 
 def _result_identity(manifest: dict) -> dict:

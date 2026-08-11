@@ -1,5 +1,6 @@
 import json
 import math
+import threading
 from dataclasses import asdict
 
 import numpy as np
@@ -16,6 +17,7 @@ from app.training.losses import resolve_loss_stage
 from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
 from app.training.trainer import Trainer
 from app.worker.runtime.reproducibility import configure_reproducibility
+from app.worker.training.trainer import _BatchPrefetcher
 
 
 @pytest.fixture(autouse=True)
@@ -461,6 +463,46 @@ def test_trainer_fit_payloads_runs_global_epochs_over_all_payloads():
     assert [metrics.step for metrics in metrics_rows] == [3, 6, 9]
     assert [metrics.loss_stage for metrics in metrics_rows] == [1, 2, 3]
     assert trainer.best_frame is None
+
+
+def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
+    second_started = threading.Event()
+    third_started = threading.Event()
+
+    def batches():
+        yield 0
+        second_started.set()
+        yield 1
+        third_started.set()
+        yield 2
+
+    prefetched = _BatchPrefetcher(batches())
+    try:
+        assert next(prefetched) == 0
+        assert second_started.wait(timeout=1.0)
+        assert not third_started.wait(timeout=0.05)
+
+        assert next(prefetched) == 1
+        assert third_started.wait(timeout=1.0)
+        assert next(prefetched) == 2
+        with pytest.raises(StopIteration):
+            next(prefetched)
+    finally:
+        prefetched.close()
+
+
+def test_closed_batch_prefetch_propagates_producer_failure():
+    def batches():
+        yield 0
+        raise RuntimeError("closed replay failed")
+
+    prefetched = _BatchPrefetcher(batches())
+    try:
+        assert next(prefetched) == 0
+        with pytest.raises(RuntimeError, match="closed replay failed"):
+            next(prefetched)
+    finally:
+        prefetched.close()
 
 
 def test_trainer_fit_payloads_is_independent_of_payload_boundaries():

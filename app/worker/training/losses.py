@@ -22,6 +22,48 @@ LOSS_STAGE_DEFINITIONS = (
 
 LOSS_STAGES = len(LOSS_STAGE_DEFINITIONS)
 LOSS_SCHEDULES = ("none", "epoch", "step")
+_LOSS_STATISTIC_NAMES = (
+    "loss",
+    "loss_ret",
+    "loss_prob",
+    "loss_ev",
+    "loss_vol",
+    "sigma_min",
+    "sigma_p05",
+    "sigma_mean",
+    "ret_mae",
+    "ret_mse",
+    "ret_mae_baseline",
+)
+
+
+@dataclass(frozen=True)
+class LossStatistics:
+    """Device-resident scalar statistics awaiting one host transfer."""
+
+    values: tuple[torch.Tensor, ...]
+    loss_stage: int
+
+    def materialize(
+        self,
+        grad_norm: torch.Tensor | None = None,
+    ) -> dict[str, float | int] | tuple[dict[str, float | int], float]:
+        device_values = self.values
+        if grad_norm is not None:
+            device_values = (*device_values, grad_norm.detach())
+        host_values = torch.stack(tuple(
+            value.detach().reshape(())
+            for value in device_values
+        )).cpu().tolist()
+        parts = dict(zip(
+            _LOSS_STATISTIC_NAMES,
+            host_values[:len(_LOSS_STATISTIC_NAMES)],
+            strict=True,
+        ))
+        parts["loss_stage"] = self.loss_stage
+        if grad_norm is None:
+            return parts
+        return parts, host_values[-1]
 
 
 def validate_loss_stage(loss_stage: int) -> int:
@@ -69,7 +111,12 @@ def combined_loss(
     targets,
     loss_stage: int = LOSS_STAGE,
     return_parts: bool = False,
+    return_statistics: bool = False,
 ):
+    if return_parts and return_statistics:
+        raise ValueError(
+            "return_parts and return_statistics are mutually exclusive"
+        )
     loss_stage = validate_loss_stage(loss_stage)
     components = active_loss_components(loss_stage)
 
@@ -141,7 +188,7 @@ def combined_loss(
         loss_vol = 0.2 * raw_loss_vol
         loss += loss_vol
 
-    if not return_parts:
+    if not return_parts and not return_statistics:
         return loss
 
     sigma_values = return_scale.detach().float().reshape(-1)
@@ -155,17 +202,22 @@ def combined_loss(
         target_mean_return.detach().float()
     ).reshape(-1)
 
-    return loss, {
-        "loss": float(loss.detach().cpu()),
-        "loss_ret": float(loss_ret.detach().cpu()),
-        "loss_prob": float(loss_prob.detach().cpu()),
-        "loss_ev": float(loss_ev.detach().cpu()),
-        "loss_vol": float(loss_vol.detach().cpu()),
-        "sigma_min": float(torch.min(sigma_values).cpu()),
-        "sigma_p05": float(torch.quantile(sigma_values, 0.05).cpu()),
-        "sigma_mean": float(torch.mean(sigma_values).cpu()),
-        "ret_mae": float(torch.mean(ret_abs_error).cpu()),
-        "ret_mse": float(torch.mean(ret_squared_error).cpu()),
-        "ret_mae_baseline": float(torch.mean(ret_baseline_abs_error).cpu()),
-        "loss_stage": loss_stage,
-    }
+    statistics = LossStatistics(
+        values=(
+            loss.detach(),
+            loss_ret.detach(),
+            loss_prob.detach(),
+            loss_ev.detach(),
+            loss_vol.detach(),
+            torch.min(sigma_values),
+            torch.quantile(sigma_values, 0.05),
+            torch.mean(sigma_values),
+            torch.mean(ret_abs_error),
+            torch.mean(ret_squared_error),
+            torch.mean(ret_baseline_abs_error),
+        ),
+        loss_stage=loss_stage,
+    )
+    if return_statistics:
+        return loss, statistics
+    return loss, statistics.materialize()

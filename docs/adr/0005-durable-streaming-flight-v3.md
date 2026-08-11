@@ -305,6 +305,15 @@ waits for the next ordinal. EOF flushes the last incomplete shuffle window,
 and only then completes epoch zero. Epochs one and later replay the complete
 closed immutable dataset from durable storage.
 
+The service performs complete physical and value validation before committing
+an input artifact and its immutable receipt. A worker attempt verifies receipt
+identity, byte count and SHA-256 before first use. Later reads of the same
+receipt use fast replay: the worker still parses IPC and checks the exact
+physical schema and row count, but does not repeat digest or value scans on
+every epoch. Closed-input replay prepares at most one CPU batch ahead while the
+current batch trains. This prefetch is not used for the open epoch zero, so the
+durable control-channel and EOF ordering remain synchronous.
+
 Changing payload partitioning or upload timing must not change the ML
 trajectory. The go/no-go condition is:
 

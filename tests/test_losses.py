@@ -59,3 +59,31 @@ def test_zero_residual_sigma_collapse_pressure_vanishes_below_variance_floor():
     floor_loss = 0.5 * math.log(VARIANCE_EPS)
     assert loss.item() == pytest.approx(floor_loss, abs=1e-6)
     assert abs(log_sigma.grad.item()) < 2e-6
+
+
+def test_deferred_loss_statistics_preserve_materialized_metrics():
+    mean = torch.tensor([0.1, -0.2, 0.4], dtype=torch.float64)
+    sigma = torch.tensor([0.25, 0.5, 1.5], dtype=torch.float64)
+    target_mean = torch.tensor([0.3, -0.1, -0.2], dtype=torch.float64)
+    preds, targets = make_stage_one_inputs(mean, sigma, target_mean)
+
+    _, expected = combined_loss(
+        preds,
+        targets,
+        loss_stage=1,
+        return_parts=True,
+    )
+    _, statistics = combined_loss(
+        preds,
+        targets,
+        loss_stage=1,
+        return_statistics=True,
+    )
+    actual, grad_norm = statistics.materialize(
+        torch.tensor(3.25, dtype=torch.float64)
+    )
+
+    assert actual.keys() == expected.keys()
+    for name, value in expected.items():
+        assert actual[name] == pytest.approx(value)
+    assert grad_norm == pytest.approx(3.25)

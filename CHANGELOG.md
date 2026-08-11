@@ -14,6 +14,11 @@
   progress/JSONL публикует host-side durations input pipeline, missing
   statistics, CPU-to-device transfer и training step без добавления CUDA
   synchronization.
+- Committed Flight inputs проходят полную value validation один раз до durable
+  commit; worker проверяет immutable receipt и digest один раз за attempt, а
+  закрытые эпохи используют physical-schema fast replay с bounded prefetch
+  одного следующего CPU batch. CUDA scalar metrics одного training step
+  материализуются одной компактной передачей на CPU.
 
 ### Fixed
 

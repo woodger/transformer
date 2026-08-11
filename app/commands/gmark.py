@@ -137,14 +137,13 @@ class TrainingWorkload:
         self.optimizer.zero_grad()
         with self._autocast():
             predictions = self.model(source)
-            loss, loss_parts = self._combined_loss(
+            loss = self._combined_loss(
                 predictions,
                 targets,
                 LOSS_STAGE,
-                return_parts=True,
             )
 
-        loss_value = float(loss_parts["loss"])
+        loss_value = float(loss.detach().cpu())
         if not math.isfinite(loss_value):
             raise GmarkError("integrity check failed: non-finite training loss")
 

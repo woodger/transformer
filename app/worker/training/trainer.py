@@ -1,9 +1,11 @@
 import copy
 import math
+import queue
 import random
+import threading
 import time
 from contextlib import nullcontext
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
@@ -37,6 +39,72 @@ from app.worker.utils import load_model, save_model, tree_stats
 
 _MAX_SHUFFLE_WINDOW_BATCHES = 32
 _MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024
+_PREFETCH_END = object()
+
+
+@dataclass(frozen=True)
+class _PrefetchError:
+    error: BaseException
+
+
+class _BatchPrefetcher:
+    """Prepare at most one closed-input batch ahead of the trainer."""
+
+    def __init__(self, batches):
+        self._batches = iter(batches)
+        self._queue = queue.Queue(maxsize=1)
+        self._slot = threading.Semaphore(1)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._produce,
+            name="transformer-batch-prefetch",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        message = self._queue.get()
+        self._slot.release()
+        if message is _PREFETCH_END:
+            self._thread.join()
+            raise StopIteration
+        if isinstance(message, _PrefetchError):
+            self._thread.join()
+            raise message.error
+        return message
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=0.1)
+
+    def _produce(self) -> None:
+        try:
+            while self._reserve_slot():
+                try:
+                    message = next(self._batches)
+                except StopIteration:
+                    self._queue.put(_PREFETCH_END)
+                    return
+                except BaseException as exc:
+                    self._queue.put(_PrefetchError(exc))
+                    return
+                if self._stop.is_set():
+                    self._slot.release()
+                    return
+                self._queue.put(message)
+        finally:
+            close = getattr(self._batches, "close", None)
+            if close is not None:
+                close()
+
+    def _reserve_slot(self) -> bool:
+        while not self._stop.is_set():
+            if self._slot.acquire(timeout=0.05):
+                return True
+        return False
 
 
 class Trainer:
@@ -153,65 +221,72 @@ class Trainer:
         # Phase timers stay host-side and must never force CUDA synchronization.
         for loader in loaders:
             batches = iter(loader)
-            while True:
-                phase_started = time.perf_counter()
-                try:
-                    xb_cpu, yb_cpu = next(batches)
-                except StopIteration:
-                    break
-                metrics.input_pipeline_ms += (
-                    time.perf_counter() - phase_started
-                ) * 1000
+            try:
+                while True:
+                    phase_started = time.perf_counter()
+                    try:
+                        xb_cpu, yb_cpu = next(batches)
+                    except StopIteration:
+                        break
+                    metrics.input_pipeline_ms += (
+                        time.perf_counter() - phase_started
+                    ) * 1000
 
-                loss_stage = self._loss_stage_for()
-                batch_rows = xb_cpu.size(0)
-                phase_started = time.perf_counter()
-                missingness_ratios = context_missingness_ratios(
-                    xb_cpu,
-                    self.context_mode,
-                )
-                metrics.missing_stats_ms += (
-                    time.perf_counter() - phase_started
-                ) * 1000
-
-                phase_started = time.perf_counter()
-                xb = xb_cpu.to(self.device)
-                yb = yb_cpu.to(self.device)
-                metrics.host_to_device_ms += (
-                    time.perf_counter() - phase_started
-                ) * 1000
-
-                phase_started = time.perf_counter()
-                self.optimizer.zero_grad()
-
-                with self._autocast():
-                    preds = self.model(xb)
-                    loss, loss_parts = combined_loss(
-                        preds,
-                        yb,
-                        loss_stage,
-                        return_parts=True,
+                    loss_stage = self._loss_stage_for()
+                    batch_rows = xb_cpu.size(0)
+                    phase_started = time.perf_counter()
+                    missingness_ratios = context_missingness_ratios(
+                        xb_cpu,
+                        self.context_mode,
                     )
+                    metrics.missing_stats_ms += (
+                        time.perf_counter() - phase_started
+                    ) * 1000
 
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), GRAD_CLIP_NORM
-                )
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                loss_parts["step"] = self.state.finish_step()
+                    phase_started = time.perf_counter()
+                    xb = xb_cpu.to(self.device)
+                    yb = yb_cpu.to(self.device)
+                    metrics.host_to_device_ms += (
+                        time.perf_counter() - phase_started
+                    ) * 1000
 
-                metrics.update(
-                    rows=batch_rows,
-                    loss_parts=loss_parts,
-                    grad_norm=float(grad_norm.detach().cpu()),
-                    **missingness_ratios,
-                )
-                metrics.train_step_ms += (
-                    time.perf_counter() - phase_started
-                ) * 1000
-            del loader
+                    phase_started = time.perf_counter()
+                    self.optimizer.zero_grad()
+
+                    with self._autocast():
+                        preds = self.model(xb)
+                        loss, loss_statistics = combined_loss(
+                            preds,
+                            yb,
+                            loss_stage,
+                            return_statistics=True,
+                        )
+
+                    self.scaler.scale(loss).backward()
+                    self.scaler.unscale_(self.optimizer)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), GRAD_CLIP_NORM
+                    )
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    loss_parts, grad_norm_value = (
+                        loss_statistics.materialize(grad_norm)
+                    )
+                    loss_parts["step"] = self.state.finish_step()
+
+                    metrics.update(
+                        rows=batch_rows,
+                        loss_parts=loss_parts,
+                        grad_norm=grad_norm_value,
+                        **missingness_ratios,
+                    )
+                    metrics.train_step_ms += (
+                        time.perf_counter() - phase_started
+                    ) * 1000
+            finally:
+                close = getattr(batches, "close", None)
+                if close is not None:
+                    close()
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
@@ -316,10 +391,7 @@ class Trainer:
         boundaries, so transport partitioning cannot change the trajectory.
         """
         def loaders():
-            yield self._payload_batches(
-                payloads(),
-                self._payload_shuffle_generator,
-            )
+            yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
             loaders,
@@ -398,6 +470,12 @@ class Trainer:
                 buffered_rows,
                 generator,
             )
+
+    def _prefetched_payload_batches(self, payloads):
+        return _BatchPrefetcher(self._payload_batches(
+            payloads,
+            self._payload_shuffle_generator,
+        ))
 
     def _shuffled_batches(self, source, targets, rows: int, generator):
         order = torch.randperm(
@@ -482,10 +560,7 @@ class Trainer:
         """Train job-wide epochs and expose only complete recovery boundaries."""
 
         def loaders():
-            yield self._payload_batches(
-                payloads(),
-                self._payload_shuffle_generator,
-            )
+            yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
             loaders,
@@ -517,12 +592,14 @@ class Trainer:
             if first_epoch:
                 payloads = first_epoch_payloads
                 first_epoch = False
+                batches = self._payload_batches(
+                    payloads,
+                    self._payload_shuffle_generator,
+                )
             else:
                 payloads = closed_payloads()
-            yield self._payload_batches(
-                payloads,
-                self._payload_shuffle_generator,
-            )
+                batches = self._prefetched_payload_batches(payloads)
+            yield batches
 
         return self._fit_loader_epochs(
             loaders,
