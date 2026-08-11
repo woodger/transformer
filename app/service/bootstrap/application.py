@@ -28,6 +28,12 @@ from app.service.bootstrap.worker_pool import WorkerPool
 
 
 class FlightApplication:
+    """Own service startup reconciliation, process runtime, and shutdown.
+
+    A built instance holds the spool and recovery locks until shutdown has
+    finished stopping every service-owned background component.
+    """
+
     def __init__(
         self,
         config,

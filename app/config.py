@@ -21,15 +21,9 @@ from app.contracts.worker.v2.config import (
     DEFAULT_WEIGHT_DECAY,
 )
 
-# ======================
-# System
-# ======================
 PROJECT_NAME = "transformer"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# ======================
-# Server
-# ======================
 HOST_DEFAULT = "127.0.0.1"
 PORT_DEFAULT = 8815
 ALLOW_PLAINTEXT = True
@@ -37,18 +31,12 @@ ALLOW_PLAINTEXT = True
 CPU_WORKERS = 2
 RETENTION_SECONDS = 7 * 24 * 60 * 60
 
-# ======================
-# Model
-# ======================
 D_MODEL = DEFAULT_HIDDEN
 NHEAD = DEFAULT_NHEAD
 NUM_LAYERS = DEFAULT_LAYERS
 DROPOUT = DEFAULT_DROPOUT
 CONTEXT_MODE = DEFAULT_CONTEXT_MODE
 
-# ======================
-# Training
-# ======================
 LR = DEFAULT_LR
 BATCH_SIZE = DEFAULT_BATCH_SIZE
 EPOCHS = DEFAULT_EPOCHS
@@ -64,8 +52,5 @@ SAVE_BEST_CHECKPOINT = DEFAULT_SAVE_BEST_CHECKPOINT
 SEED = DEFAULT_SEED
 DETERMINISTIC = DEFAULT_DETERMINISTIC
 
-# ======================
-# Runtime
-# ======================
-DEFAULT_DEVICE = "cpu"   # "auto" | "cpu" | "cuda"
+DEFAULT_DEVICE = "cpu"
 DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024

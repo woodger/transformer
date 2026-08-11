@@ -31,6 +31,8 @@ MONITORS = ("loss", "ret_mae", "ret_mae_skill")
 
 @dataclass(frozen=True, slots=True)
 class ModelConfig:
+    """Validated model-shape contract shared by manifests and checkpoints."""
+
     seq_len: int
     hidden: int = DEFAULT_HIDDEN
     layers: int = DEFAULT_LAYERS
@@ -90,6 +92,8 @@ class ModelConfig:
 
 @dataclass(frozen=True, slots=True)
 class TrainConfig:
+    """Validated optimization contract shared by manifests and checkpoints."""
+
     lr: float = DEFAULT_LR
     batch_size: int = DEFAULT_BATCH_SIZE
     epochs: int = DEFAULT_EPOCHS

@@ -32,7 +32,8 @@ class TradingHead(nn.Module):
         self.mean_head = nn.Linear(128, 1)
         self.sigma_head = nn.Linear(128, 1)
 
-        # combined_loss applies BCEWithLogitsLoss to these raw outputs.
+        # BCE consumes the take-profit and stop-loss heads as raw logits.
+        # hit_logit remains the contract's currently untrained sixth output.
         self.ptp_head = nn.Linear(128, 1)
         self.psl_head = nn.Linear(128, 1)
         self.hit_head = nn.Linear(128, 1)
@@ -65,6 +66,12 @@ class TradingHead(nn.Module):
 
 
 class TransformerModel(nn.Module):
+    """Map ``[batch, sequence, features]`` tensors to ``[batch, 6]`` outputs.
+
+    Context mode controls NaN masking, and the last unmasked timestep feeds
+    the trading head for each sequence.
+    """
+
     def __init__(
         self,
         input_dim,

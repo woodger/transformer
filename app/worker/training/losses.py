@@ -113,6 +113,13 @@ def combined_loss(
     return_parts: bool = False,
     return_statistics: bool = False,
 ):
+    """Evaluate the staged loss for six-column predictions and targets.
+
+    Prediction column at index 5 is contract-reserved and currently untrained.
+    ``return_parts`` materializes scalar metrics, while ``return_statistics``
+    leaves them device-resident for a later combined host transfer.
+    """
+
     if return_parts and return_statistics:
         raise ValueError(
             "return_parts and return_statistics are mutually exclusive"
@@ -135,9 +142,6 @@ def combined_loss(
     loss_ev = preds.new_tensor(0.0)
     loss_vol = preds.new_tensor(0.0)
 
-    # -------------------------
-    # Gaussian NLL
-    # -------------------------
     var = return_scale.square() + 1e-6
     loss_ret = torch.mean(
         0.5
@@ -148,9 +152,7 @@ def combined_loss(
     )
     loss += loss_ret
 
-    # -------------------------
-    # Probabilities (AMP safe)
-    # -------------------------
+    # BCE consumes raw logits to preserve numerical stability under AMP.
     if "prob" in components:
         raw_loss_prob = (
             F.binary_cross_entropy_with_logits(take_profit_logit, target_hit)
@@ -162,9 +164,6 @@ def combined_loss(
         loss_prob = 0.5 * raw_loss_prob
         loss += loss_prob
 
-    # -------------------------
-    # Bayesian EV
-    # -------------------------
     if "ev" in components:
         take_profit_probability = torch.sigmoid(take_profit_logit)
         stop_loss_probability = torch.sigmoid(stop_loss_logit)
@@ -174,9 +173,6 @@ def combined_loss(
         loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_pen)
         loss += loss_ev
 
-    # -------------------------
-    # Volatility
-    # -------------------------
     if "vol" in components:
         raw_loss_vol = torch.mean(
             (

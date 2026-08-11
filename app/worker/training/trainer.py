@@ -108,6 +108,13 @@ class _BatchPrefetcher:
 
 
 class Trainer:
+    """Own optimization, checkpoint selection, and resumable training state.
+
+    AMP is enabled only on CUDA. Recovery serialization includes model,
+    optimizer, scaler, RNG, shuffle, early-stopping, and checkpoint-selection
+    state.
+    """
+
     def __init__(
         self,
         model: torch.nn.Module,

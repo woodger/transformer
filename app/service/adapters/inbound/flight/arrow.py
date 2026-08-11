@@ -24,6 +24,12 @@ class ArrowStats:
 
 
 class InputBatchValidator:
+    """Validate and accumulate one DoPut payload before durable publication.
+
+    Construction enforces the canonical physical schema; each batch then
+    enforces the value, row, and byte limits for that same payload.
+    """
+
     def __init__(
         self,
         operation: str,

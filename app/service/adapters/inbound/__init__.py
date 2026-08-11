@@ -1,2 +1,0 @@
-"""Service entrypoint adapters."""
-

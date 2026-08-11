@@ -154,7 +154,7 @@ def test_cpu_training_disables_amp_and_updates_parameters():
         batch_size=8,
         epochs=1,
         patience=1,
-        use_amp=True,  # просим AMP, но CPU
+        use_amp=True,
     )
     before = {
         name: value.detach().clone()
