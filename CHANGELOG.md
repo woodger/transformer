@@ -9,9 +9,9 @@
 
 ### Added
 
-- Добавлена локальная CLI-команда `gmark` для CUDA compute/VRAM stress test с
-  проверкой целостности матричных вычислений, метриками `nvidia-smi` и
-  температурным cutoff.
+- Добавлена локальная CLI-команда `gmark` для CUDA stress test на синтетических
+  production training steps, включая проверку AMP, integrity, метрики
+  `nvidia-smi`, опциональный VRAM ballast и температурный cutoff.
 
 ## [0.1.8] - 2026-08-09
 

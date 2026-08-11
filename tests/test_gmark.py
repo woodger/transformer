@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -15,17 +16,35 @@ def _args(**overrides):
     values = {
         "duration": 0.01,
         "device": 0,
-        "matrix_size": 64,
-        "dtype": "float16",
+        "seq_len": 2,
+        "feature_dim": 4,
+        "batch_size": 2,
+        "hidden": 8,
+        "layers": 1,
+        "nhead": 2,
+        "use_amp": False,
         "memory_fraction": 0.0,
         "max_temperature": 0.0,
         "status_interval": 0.005,
-        "warmup_iterations": 1,
-        "sync_every": 1,
-        "seed": 12345,
+        "warmup_steps": 1,
+        "seed": 42,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+class _FakeWorkload:
+    def __init__(self, _torch, args, _device):
+        self.batch_size = args.batch_size
+        self.steps = 0
+        self.validations = 0
+
+    def step(self):
+        self.steps += 1
+        return gmark.TrainingStep(loss=0.25, grad_norm=1.5)
+
+    def validate(self):
+        self.validations += 1
 
 
 def test_gmark_reports_unavailable_cuda_without_starting_a_workload(capsys):
@@ -60,7 +79,7 @@ def test_gmark_rejects_a_nonexistent_logical_device(capsys):
     )
 
 
-def test_temperature_cutoff_fails_closed_before_allocating_matrices(
+def test_temperature_cutoff_fails_closed_before_building_the_workload(
     monkeypatch,
     capsys,
 ):
@@ -81,9 +100,6 @@ def test_temperature_cutoff_fails_closed_before_allocating_matrices(
                 minor=0,
                 uuid="GPU-test",
             )
-
-        def is_bf16_supported(self):
-            return True
 
         def manual_seed_all(self, _seed):
             pass
@@ -98,9 +114,6 @@ def test_temperature_cutoff_fails_closed_before_allocating_matrices(
         cuda=FakeCuda(),
         version=SimpleNamespace(cuda="13.0"),
         device=lambda *_args: object(),
-        float16=object(),
-        bfloat16=object(),
-        float32=object(),
         manual_seed=lambda _seed: None,
     )
 
@@ -111,11 +124,15 @@ def test_temperature_cutoff_fails_closed_before_allocating_matrices(
         def read(self):
             return gmark.GpuMetrics(85.0, None, 0.0, 20.0)
 
+    def workload_factory(*_args):
+        pytest.fail("workload must not be built")
+
     monkeypatch.setattr(gmark, "NvidiaSmiMonitor", HotMonitor)
 
     result = gmark.run(
         _args(max_temperature=80.0),
         torch_module=fake_torch,
+        workload_factory=workload_factory,
     )
 
     assert result == 1
@@ -128,13 +145,6 @@ def test_temperature_cutoff_stops_an_active_workload_with_exit_three(
     monkeypatch,
     capsys,
 ):
-    class FakeTensor:
-        def __getitem__(self, _index):
-            return self
-
-        def clone(self):
-            return self
-
     class FakeCuda:
         def is_available(self):
             return True
@@ -152,9 +162,6 @@ def test_temperature_cutoff_stops_an_active_workload_with_exit_three(
                 minor=0,
                 uuid="GPU-test",
             )
-
-        def is_bf16_supported(self):
-            return True
 
         def manual_seed_all(self, _seed):
             pass
@@ -178,17 +185,7 @@ def test_temperature_cutoff_stops_an_active_workload_with_exit_three(
         cuda=FakeCuda(),
         version=SimpleNamespace(cuda="13.0"),
         device=lambda *_args: object(),
-        float16=object(),
-        bfloat16=object(),
-        float32=object(),
         manual_seed=lambda _seed: None,
-        randn=lambda *_args, **_kwargs: FakeTensor(),
-        empty_like=lambda _tensor: FakeTensor(),
-        mm=lambda *_args, **_kwargs: None,
-        isfinite=lambda _tensor: SimpleNamespace(
-            all=lambda: SimpleNamespace(item=lambda: True)
-        ),
-        allclose=lambda *_args, **_kwargs: True,
         OutOfMemoryError=RuntimeError,
     )
     readings = iter((
@@ -215,6 +212,7 @@ def test_temperature_cutoff_stops_an_active_workload_with_exit_three(
             max_temperature=80.0,
         ),
         torch_module=fake_torch,
+        workload_factory=_FakeWorkload,
     )
 
     assert result == 3
@@ -256,19 +254,22 @@ def test_nvidia_smi_monitor_accepts_devices_without_a_vram_sensor(
     }
 
 
-def test_periodic_status_omits_vram_usage_and_capacity():
+def test_periodic_status_contains_only_dynamic_workload_values():
     status = gmark._format_status(
         2.0,
         12,
-        3.5,
+        3072,
+        gmark.TrainingStep(loss=0.25, grad_norm=1.5),
         gmark.GpuMetrics(67.0, 72.0, 98.0, 245.5),
     )
 
     assert status == (
-        "[    2.0s] | iterations=12 | average=3.50 TFLOP/s | "
+        "[    2.0s] | steps=12 | average=6.00 steps/s | "
+        "rows=1536 rows/s | loss=0.25 | grad-norm=1.5 | "
         "gpu-temp=67 C | vram-temp=72 C | util=98% | power=245.5 W"
     )
     assert "vram=" not in status
+    assert "batch=" not in status
 
 
 def test_vram_ballast_writes_every_allocated_byte():
@@ -322,20 +323,26 @@ def test_vram_ballast_writes_every_allocated_byte():
     assert cuda.synchronized == [device]
 
 
-def test_integrity_check_rejects_nonfinite_and_changed_results():
-    reference = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+def test_training_workload_runs_a_production_training_step_on_cpu():
+    torch.manual_seed(42)
+    workload = gmark.TrainingWorkload(torch, _args(), torch.device("cpu"))
 
-    gmark._validate_sample(torch, reference.clone(), reference, 1)
+    result = workload.step()
+    workload.validate()
 
-    changed = reference.clone()
-    changed[0, 0] = 5.0
-    with pytest.raises(gmark.GmarkError, match="sampled output changed"):
-        gmark._validate_sample(torch, changed, reference, 1)
+    assert math.isfinite(result.loss)
+    assert math.isfinite(result.grad_norm)
+    assert result.grad_norm > 0
 
-    nonfinite = reference.clone()
-    nonfinite[0, 0] = torch.nan
-    with pytest.raises(gmark.GmarkError, match="non-finite matrix values"):
-        gmark._validate_sample(torch, nonfinite, reference, 1)
+
+def test_training_workload_detects_a_nonfinite_model_parameter():
+    workload = gmark.TrainingWorkload(torch, _args(), torch.device("cpu"))
+    parameter = next(workload.model.parameters())
+    with torch.no_grad():
+        parameter.view(-1)[0] = torch.nan
+
+    with pytest.raises(gmark.GmarkError, match="non-finite model parameter"):
+        workload.validate()
 
 
 def test_main_preserves_gmark_exit_status_without_generic_device_resolution(
@@ -356,23 +363,33 @@ def test_main_preserves_gmark_exit_status_without_generic_device_resolution(
     assert error.value.code == 3
 
 
+@pytest.mark.parametrize("use_amp", (False, True))
 @pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA device is required for gmark integration",
 )
-def test_gmark_completes_a_small_real_cuda_workload(capsys):
-    args = build_parser().parse_args([
+def test_gmark_completes_a_small_real_cuda_training_workload(use_amp, capsys):
+    argv = [
         "gmark",
         "--duration=0.01",
-        "--matrix-size=64",
+        "--seq-len=2",
+        "--feature-dim=4",
+        "--batch-size=2",
+        "--hidden=8",
+        "--layers=1",
+        "--nhead=2",
         "--memory-fraction=0",
         "--max-temperature=0",
         "--status-interval=0.005",
-        "--warmup-iterations=1",
-        "--sync-every=1",
-    ])
+        "--warmup-steps=1",
+    ]
+    if use_amp:
+        argv.append("--use-amp")
+    args = build_parser().parse_args(argv)
 
     result = gmark.run(args)
 
     assert result == 0
-    assert "PASS: requested duration completed" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert f"amp={'on' if use_amp else 'off'}" in output
+    assert "PASS: requested duration completed" in output

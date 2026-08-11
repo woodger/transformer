@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import shutil
 import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from typing import Any
+
+from app.config import (
+    CONTEXT_MODE,
+    DROPOUT,
+    GRAD_CLIP_NORM,
+    LOSS_STAGE,
+    LR,
+    WEIGHT_DECAY,
+)
 
 MIB = 1024**2
 GIB = 1024**3
@@ -24,6 +35,129 @@ class GpuMetrics:
     memory_temperature_c: float | None
     utilization_percent: float | None
     power_w: float | None
+
+
+@dataclasses.dataclass(frozen=True)
+class TrainingStep:
+    loss: float
+    grad_norm: float
+
+
+class TrainingWorkload:
+    """Synthetic batch driven through the production training primitives."""
+
+    def __init__(self, torch: Any, args: Any, device: Any) -> None:
+        from app.worker.model.transformer import TransformerModel
+        from app.worker.training.losses import combined_loss
+
+        self._torch = torch
+        self._device = device
+        self._combined_loss = combined_loss
+        self._use_amp = bool(args.use_amp)
+        self._batch_size = args.batch_size
+
+        self.model = TransformerModel(
+            input_dim=args.feature_dim,
+            seq_len=args.seq_len,
+            hidden_dim=args.hidden,
+            layers=args.layers,
+            dropout=DROPOUT,
+            out_dim=6,
+            nhead=args.nhead,
+            context_mode=CONTEXT_MODE,
+        ).to(device)
+        self.model.train()
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=LR,
+            weight_decay=WEIGHT_DECAY,
+        )
+        self.scaler = torch.amp.GradScaler(enabled=self._use_amp)
+
+        self._source = torch.randn(
+            (args.batch_size, args.seq_len, args.feature_dim),
+            dtype=torch.float32,
+        )
+        self._targets = torch.zeros(
+            (args.batch_size, 6),
+            dtype=torch.float32,
+        )
+        self._targets[:, 0] = (
+            torch.randn(args.batch_size, dtype=torch.float32) * 0.05
+        )
+        self._targets[:, 4] = (
+            torch.rand(args.batch_size, dtype=torch.float32) * 0.2 + 1e-3
+        )
+        self._targets[:, 5] = torch.randint(
+            0,
+            2,
+            (args.batch_size,),
+            dtype=torch.int64,
+        ).to(dtype=torch.float32)
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
+    def _autocast(self):
+        if self._use_amp:
+            return self._torch.amp.autocast(
+                device_type="cuda",
+                enabled=True,
+            )
+        return nullcontext()
+
+    def step(self) -> TrainingStep:
+        torch = self._torch
+        source = self._source.to(self._device)
+        targets = self._targets.to(self._device)
+
+        self.optimizer.zero_grad()
+        with self._autocast():
+            predictions = self.model(source)
+            loss, loss_parts = self._combined_loss(
+                predictions,
+                targets,
+                LOSS_STAGE,
+                return_parts=True,
+            )
+
+        loss_value = float(loss_parts["loss"])
+        if not math.isfinite(loss_value):
+            raise GmarkError("integrity check failed: non-finite training loss")
+
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(),
+            GRAD_CLIP_NORM,
+        )
+        grad_norm_value = float(grad_norm.detach().cpu())
+        if not math.isfinite(grad_norm_value):
+            raise GmarkError(
+                "integrity check failed: non-finite gradient norm"
+            )
+
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        return TrainingStep(loss=loss_value, grad_norm=grad_norm_value)
+
+    def validate(self) -> None:
+        torch = self._torch
+        for name, parameter in self.model.named_parameters():
+            if not bool(torch.isfinite(parameter).all().item()):
+                raise GmarkError(
+                    "integrity check failed: non-finite model parameter "
+                    f"{name}"
+                )
+        for state in self.optimizer.state.values():
+            for value in state.values():
+                if torch.is_tensor(value) and not bool(
+                    torch.isfinite(value).all().item()
+                ):
+                    raise GmarkError(
+                        "integrity check failed: non-finite optimizer state"
+                    )
 
 
 class NvidiaSmiMonitor:
@@ -167,14 +301,20 @@ def _format_gib(byte_count: int) -> str:
 
 def _format_status(
     elapsed: float,
-    iterations: int,
-    tflops: float,
+    steps: int,
+    rows: int,
+    step: TrainingStep,
     metrics: GpuMetrics | None,
 ) -> str:
+    step_rate = steps / elapsed if elapsed > 0 else 0.0
+    row_rate = rows / elapsed if elapsed > 0 else 0.0
     parts = [
         f"[{elapsed:7.1f}s]",
-        f"iterations={iterations}",
-        f"average={tflops:.2f} TFLOP/s",
+        f"steps={steps}",
+        f"average={step_rate:.2f} steps/s",
+        f"rows={row_rate:.0f} rows/s",
+        f"loss={step.loss:.6g}",
+        f"grad-norm={step.grad_norm:.6g}",
     ]
     if metrics is not None:
         if metrics.temperature_c is not None:
@@ -186,25 +326,6 @@ def _format_status(
         if metrics.power_w is not None:
             parts.append(f"power={metrics.power_w:.1f} W")
     return " | ".join(parts)
-
-
-def _validate_sample(
-    torch: Any,
-    output: Any,
-    reference: Any,
-    step: int,
-) -> None:
-    current = output[::step, ::step]
-    if not bool(torch.isfinite(current).all().item()):
-        raise GmarkError("integrity check failed: non-finite matrix values")
-    if not bool(torch.allclose(current, reference, rtol=1e-3, atol=1e-3)):
-        max_error = float(
-            (current.float() - reference.float()).abs().max().item()
-        )
-        raise GmarkError(
-            "integrity check failed: sampled output changed "
-            f"(max error {max_error:g})"
-        )
 
 
 def _require_temperature(
@@ -230,7 +351,12 @@ def _update_peak(current: float | None, value: float | None) -> float | None:
     return value if current is None else max(current, value)
 
 
-def run_stress_test(torch: Any, args: Any) -> int:
+def run_stress_test(
+    torch: Any,
+    args: Any,
+    *,
+    workload_factory: Callable[[Any, Any, Any], Any] | None = None,
+) -> int:
     if not torch.cuda.is_available():
         cuda_build = getattr(torch.version, "cuda", None) or "none"
         raise GmarkError(
@@ -246,15 +372,6 @@ def run_stress_test(torch: Any, args: Any) -> int:
     torch.cuda.set_device(args.device)
     device = torch.device("cuda", args.device)
     properties = torch.cuda.get_device_properties(device)
-    dtype = {
-        "float16": torch.float16,
-        "bfloat16": torch.bfloat16,
-        "float32": torch.float32,
-    }[args.dtype]
-    if args.dtype == "bfloat16" and not torch.cuda.is_bf16_supported():
-        raise GmarkError(
-            f"{properties.name} does not support CUDA bfloat16 operations"
-        )
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
@@ -266,8 +383,11 @@ def run_stress_test(torch: Any, args: Any) -> int:
         f"VRAM: {_format_gib(total_bytes)} | free: {_format_gib(free_before)}"
     )
     print(
-        f"Workload: {args.matrix_size} x {args.matrix_size} {args.dtype} "
-        f"matrix multiplication | duration: {args.duration:g}s"
+        "Training: "
+        f"batch={args.batch_size} | seq-len={args.seq_len} | "
+        f"feature-dim={args.feature_dim} | hidden={args.hidden} | "
+        f"layers={args.layers} | nhead={args.nhead} | dtype=float32 | "
+        f"amp={'on' if args.use_amp else 'off'} | duration={args.duration:g}s"
     )
     if args.max_temperature > 0:
         print(
@@ -296,29 +416,19 @@ def run_stress_test(torch: Any, args: Any) -> int:
             f"{args.max_temperature:g} C cutoff"
         )
 
+    if workload_factory is None:
+        workload_factory = TrainingWorkload
     try:
-        matrix_a = torch.randn(
-            (args.matrix_size, args.matrix_size),
-            dtype=dtype,
-            device=device,
-        )
-        matrix_b = torch.randn(
-            (args.matrix_size, args.matrix_size),
-            dtype=dtype,
-            device=device,
-        )
-        output = torch.empty_like(matrix_a)
-        for _ in range(args.warmup_iterations):
-            torch.mm(matrix_a, matrix_b, out=output)
+        workload = workload_factory(torch, args, device)
+        for _ in range(args.warmup_steps):
+            workload.step()
+        workload.validate()
         torch.cuda.synchronize(device)
     except torch.OutOfMemoryError as error:
         raise GmarkError(
-            "not enough VRAM for the matrices; reduce --matrix-size"
+            "not enough VRAM for the training workload; reduce --batch-size, "
+            "--seq-len, --feature-dim or model dimensions"
         ) from error
-
-    sample_step = max(1, args.matrix_size // 64)
-    reference = output[::sample_step, ::sample_step].clone()
-    _validate_sample(torch, output, reference, sample_step)
 
     ballast, ballast_bytes = _allocate_vram_ballast(
         torch,
@@ -348,12 +458,12 @@ def run_stress_test(torch: Any, args: Any) -> int:
             f"{args.max_temperature:g} C cutoff"
         )
 
-    print("Stress test started. Press Ctrl+C to stop.", flush=True)
+    print("Training stress test started. Press Ctrl+C to stop.", flush=True)
     torch.cuda.reset_peak_memory_stats(device)
     started_at = time.monotonic()
     deadline = started_at + args.duration
     next_status_at = started_at + args.status_interval
-    iterations = 0
+    steps = 0
     stopped_for_temperature = False
     interrupted = False
     ballast_index = 0
@@ -362,15 +472,14 @@ def run_stress_test(torch: Any, args: Any) -> int:
         metrics.memory_temperature_c if metrics is not None else None
     )
     peak_power = metrics.power_w if metrics is not None else None
-    operations_per_iteration = 2 * args.matrix_size**3
+    latest_step: TrainingStep | None = None
 
     try:
         while time.monotonic() < deadline:
-            for _ in range(args.sync_every):
-                torch.mm(matrix_a, matrix_b, out=output)
-                iterations += 1
+            latest_step = workload.step()
+            steps += 1
             if ballast:
-                # Cycling one chunk per sync keeps reserved VRAM under load.
+                # Cycling one chunk per step keeps reserved VRAM under load.
                 ballast[ballast_index].bitwise_xor_(0xFF)
                 ballast_index = (ballast_index + 1) % len(ballast)
             torch.cuda.synchronize(device)
@@ -378,7 +487,7 @@ def run_stress_test(torch: Any, args: Any) -> int:
             now = time.monotonic()
             if now >= next_status_at or now >= deadline:
                 elapsed = now - started_at
-                _validate_sample(torch, output, reference, sample_step)
+                workload.validate()
                 metrics = monitor.read()
                 temperature = _require_temperature(
                     metrics,
@@ -395,9 +504,15 @@ def run_stress_test(torch: Any, args: Any) -> int:
                         metrics.memory_temperature_c,
                     )
                     peak_power = _update_peak(peak_power, metrics.power_w)
-                tflops = operations_per_iteration * iterations / elapsed / 1e12
+                assert latest_step is not None
                 print(
-                    _format_status(elapsed, iterations, tflops, metrics),
+                    _format_status(
+                        elapsed,
+                        steps,
+                        steps * workload.batch_size,
+                        latest_step,
+                        metrics,
+                    ),
                     flush=True,
                 )
                 next_status_at = now + args.status_interval
@@ -422,16 +537,14 @@ def run_stress_test(torch: Any, args: Any) -> int:
 
     torch.cuda.synchronize(device)
     elapsed = time.monotonic() - started_at
-    _validate_sample(torch, output, reference, sample_step)
-    average_tflops = (
-        operations_per_iteration * iterations / elapsed / 1e12
-        if elapsed > 0
-        else 0.0
-    )
+    workload.validate()
+    average_steps = steps / elapsed if elapsed > 0 else 0.0
+    average_rows = steps * workload.batch_size / elapsed if elapsed > 0 else 0.0
     peak_allocated = torch.cuda.max_memory_allocated(device)
     print(
-        f"Result: {iterations} iterations in {elapsed:.1f}s | "
-        f"average {average_tflops:.2f} TFLOP/s | "
+        f"Result: {steps} optimizer steps in {elapsed:.1f}s | "
+        f"average {average_steps:.2f} steps/s | "
+        f"{average_rows:.0f} rows/s | "
         f"PyTorch peak allocation {_format_gib(peak_allocated)}"
     )
     thermal_summary: list[str] = []
@@ -450,19 +563,28 @@ def run_stress_test(torch: Any, args: Any) -> int:
         print("FAIL: stopped by the temperature safety cutoff.")
         return 3
     if interrupted:
-        print("STOPPED: workload and sampled-output checks were clean.")
+        print("STOPPED: workload and integrity checks were clean.")
         return 130
-    print("PASS: requested duration completed and sampled-output checks were clean.")
+    print("PASS: requested duration completed and integrity checks were clean.")
     return 0
 
 
-def run(args: Any, *, torch_module: Any | None = None) -> int:
+def run(
+    args: Any,
+    *,
+    torch_module: Any | None = None,
+    workload_factory: Callable[[Any, Any, Any], Any] | None = None,
+) -> int:
     if torch_module is None:
         import torch
 
         torch_module = torch
     try:
-        return run_stress_test(torch_module, args)
+        return run_stress_test(
+            torch_module,
+            args,
+            workload_factory=workload_factory,
+        )
     except GmarkError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
@@ -475,6 +597,8 @@ __all__ = [
     "GmarkError",
     "GpuMetrics",
     "NvidiaSmiMonitor",
+    "TrainingStep",
+    "TrainingWorkload",
     "run",
     "run_stress_test",
 ]

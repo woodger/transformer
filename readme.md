@@ -52,7 +52,7 @@ user-site. Полный локальный сценарий находится �
   из Arrow files;
 - [`fit-stream` и `predict-stream`](./docs/local-arrow-protocol.md) —
   обучение и prediction через framed standard streams;
-- [`gmark`](./docs/cli/index.md#gpu-stress-test) — CUDA compute, VRAM и
+- [`gmark`](./docs/cli/index.md#gpu-stress-test) — CUDA training, AMP и
   integrity stress test;
 - [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
   training metrics JSONL;

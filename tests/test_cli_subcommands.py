@@ -169,27 +169,34 @@ def test_plot_metrics_namespace_uses_required_metrics_file():
     assert not hasattr(args, "model_name")
 
 
-def test_gmark_namespace_has_cuda_stress_options_only():
+def test_gmark_namespace_has_training_stress_options_only():
     args = parse(
         "gmark",
         "--duration",
         "15",
         "--device",
         "1",
-        "--matrix-size",
-        "4096",
-        "--dtype",
-        "float32",
+        "--seq-len",
+        "12",
+        "--feature-dim",
+        "128",
+        "--batch-size",
+        "16",
+        "--hidden",
+        "64",
+        "--layers",
+        "2",
+        "--nhead",
+        "4",
+        "--use-amp",
         "--memory-fraction",
         "0.5",
         "--max-temperature",
         "75",
         "--status-interval",
         "1",
-        "--warmup-iterations",
+        "--warmup-steps",
         "2",
-        "--sync-every",
-        "3",
         "--seed",
         "7",
     )
@@ -197,18 +204,36 @@ def test_gmark_namespace_has_cuda_stress_options_only():
     assert args.action == "gmark"
     assert args.duration == 15
     assert args.device == 1
-    assert args.matrix_size == 4096
-    assert args.dtype == "float32"
+    assert args.seq_len == 12
+    assert args.feature_dim == 128
+    assert args.batch_size == 16
+    assert args.hidden == 64
+    assert args.layers == 2
+    assert args.nhead == 4
+    assert args.use_amp is True
     assert args.memory_fraction == 0.5
     assert args.max_temperature == 75
     assert args.status_interval == 1
-    assert args.warmup_iterations == 2
-    assert args.sync_every == 3
+    assert args.warmup_steps == 2
     assert args.seed == 7
     assert args.data is None
     assert args.metrics_name is None
     assert not hasattr(args, "model_name")
-    assert not hasattr(args, "seq_len")
+    assert not hasattr(args, "dtype")
+
+
+def test_gmark_training_profile_has_production_defaults():
+    args = parse("gmark")
+
+    assert args.seq_len == 10
+    assert args.feature_dim == 891
+    assert args.batch_size == 256
+    assert args.hidden == 256
+    assert args.layers == 5
+    assert args.nhead == 8
+    assert args.use_amp is False
+    assert args.memory_fraction == 0.0
+    assert args.seed == 42
 
 
 @pytest.mark.parametrize(
@@ -216,14 +241,18 @@ def test_gmark_namespace_has_cuda_stress_options_only():
     (
         ("--duration", "0"),
         ("--device", "-1"),
-        ("--matrix-size", "0"),
+        ("--seq-len", "0"),
+        ("--feature-dim", "0"),
+        ("--batch-size", "0"),
+        ("--hidden", "0"),
+        ("--layers", "0"),
+        ("--nhead", "0"),
         ("--memory-fraction", "-0.1"),
         ("--memory-fraction", "0.91"),
         ("--memory-fraction", "nan"),
         ("--max-temperature", "-1"),
         ("--status-interval", "0"),
-        ("--warmup-iterations", "0"),
-        ("--sync-every", "0"),
+        ("--warmup-steps", "0"),
         ("--seed", str(2**32)),
     ),
 )
@@ -328,12 +357,19 @@ def test_command_help_contains_only_applicable_options(capsys):
 
     gmark_help = capsys.readouterr().out
     assert "Examples:" in gmark_help
-    assert "transformer gmark --duration=300 --memory-fraction=0.7" in gmark_help
-    assert "--matrix-size" in gmark_help
+    assert "transformer gmark --duration=300 --use-amp" in gmark_help
+    assert "--seq-len" in gmark_help
+    assert "--feature-dim" in gmark_help
+    assert "--batch-size" in gmark_help
+    assert "--hidden" in gmark_help
+    assert "--layers" in gmark_help
+    assert "--nhead" in gmark_help
+    assert "--use-amp" in gmark_help
     assert "--memory-fraction" in gmark_help
     assert "--max-temperature" in gmark_help
     assert "--checkpoint" not in gmark_help
-    assert "--seq-len" not in gmark_help
+    assert "--dtype" not in gmark_help
+    assert "--matrix-size" not in gmark_help
     assert "--host" not in gmark_help
 
     with pytest.raises(SystemExit) as exc:

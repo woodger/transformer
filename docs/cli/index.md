@@ -25,7 +25,7 @@ CLI help — публичный contract для точного набора opti
 | `predict INPUT` | Выполнить prediction из checkpoint в Arrow IPC file |
 | `fit-stream` | Читать framed Arrow payloads из stdin и обучать модель |
 | `predict-stream` | Читать framed Arrow payloads из stdin и писать predictions в stdout |
-| `gmark` | Нагрузить CUDA compute и VRAM с контролем integrity и температуры |
+| `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
 | `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
@@ -109,38 +109,46 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 
 ## GPU stress test
 
-`gmark` выполняет повторные CUDA matrix multiplications, резервирует и
-перезаписывает заданную долю свободной VRAM и периодически проверяет выборку
-результата на `NaN`, `Inf` и неожиданные изменения. Динамические метрики
-температуры, utilization и power читаются через системный `nvidia-smi`.
+`gmark` выполняет синтетические optimizer steps через production
+`TransformerModel`: forward, полный loss stage, backward, gradient clipping и
+Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
+тот же CUDA autocast и `GradScaler`, что и production worker. Команда проверяет
+loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
+Динамические метрики температуры, utilization и power читаются через системный
+`nvidia-smi`.
 
 Короткая проверка:
 
 ```bash
 ./.venv/bin/python ./app/main.py gmark \
   --duration=60 \
-  --memory-fraction=0.5 \
+  --use-amp \
   --max-temperature=80
 ```
 
 Не запускайте `gmark` одновременно с training или prediction jobs на том же
-GPU: команда намеренно потребляет compute capacity и свободную VRAM. По
-умолчанию отсутствие показания температуры считается ошибкой, потому что
-порог нельзя гарантировать. `--max-temperature=0` отключает эту защиту и
-допустим только при внешнем мониторинге.
+GPU: команда намеренно потребляет compute capacity. Дополнительный VRAM ballast
+по умолчанию отключён; его можно включить через `--memory-fraction`. Отсутствие
+показания температуры считается ошибкой, потому что порог нельзя гарантировать.
+`--max-temperature=0` отключает эту защиту и допустим только при внешнем
+мониторинге.
 
 | Аргумент | Описание | По умолчанию |
 | --- | --- | --- |
 | `--duration SECONDS` | Продолжительность после warm-up | `60` |
 | `--device INDEX` | Логический индекс CUDA-устройства | `0` |
-| `--matrix-size N` | Размер квадратных матриц | `8192` |
-| `--dtype TYPE` | `float16`, `bfloat16` или `float32` | `float16` |
-| `--memory-fraction FRACTION` | Доля свободной после warm-up VRAM, `0..0.9`; `0` отключает ballast | `0.7` |
+| `--seq-len LENGTH` | Длина входной последовательности | `10` |
+| `--feature-dim COUNT` | Число features в timestep | `891` |
+| `--batch-size COUNT` | Число строк в optimizer step | `256` |
+| `--hidden SIZE` | Hidden dimension модели | `256` |
+| `--layers COUNT` | Число Transformer encoder layers | `5` |
+| `--nhead COUNT` | Число attention heads | `8` |
+| `--use-amp` | Production CUDA autocast и `GradScaler` | выключено |
+| `--memory-fraction FRACTION` | Доля свободной после warm-up VRAM, `0..0.9`; `0` отключает ballast | `0` |
 | `--max-temperature CELSIUS` | Температурный порог; `0` отключает | `80` |
 | `--status-interval SECONDS` | Интервал статуса и integrity check | `2` |
-| `--warmup-iterations COUNT` | Matrix multiplications до замера | `3` |
-| `--sync-every COUNT` | Multiplications между CUDA synchronizations | `4` |
-| `--seed SEED` | Seed входных матриц | `12345` |
+| `--warmup-steps COUNT` | Optimizer steps до замера | `3` |
+| `--seed SEED` | Seed параметров модели и synthetic data | `42` |
 
 Коды завершения:
 
