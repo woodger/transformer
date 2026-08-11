@@ -25,7 +25,7 @@ from app.config import (
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
-from app.version import __version__, version_text
+from app.version import __version__
 
 _COMMAND_GROUPS = (
     (
@@ -105,7 +105,7 @@ def _format_root_help() -> str:
         "  transformer --version\n\n"
         "Global options:\n"
         "  --help, -h       Show help and exit\n"
-        "  --version, -v    Show package and runtime version info\n\n"
+        "  --version, -v    Show package version and exit\n\n"
         "Commands:\n\n"
         f"{command_groups}\n\n"
         "Command details:\n"
@@ -691,7 +691,7 @@ def build_parser():
         "--version",
         "-v",
         action="version",
-        version=version_text("%(prog)s"),
+        version=f"%(prog)s {__version__}",
     )
 
     subparsers = parser.add_subparsers(

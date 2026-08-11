@@ -43,10 +43,7 @@ def test_cli_version(capsys, monkeypatch, option):
     assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    assert version_text("transformer") in output
-    assert "python " in output
-    assert "torch " in output
-    assert "cuda " in output
+    assert output == f"{version_text('transformer')}\n"
 
 
 def test_cli_help(capsys, monkeypatch):
@@ -67,7 +64,7 @@ Usage:
 
 Global options:
   --help, -h       Show help and exit
-  --version, -v    Show package and runtime version info
+  --version, -v    Show package version and exit
 
 Commands:
 

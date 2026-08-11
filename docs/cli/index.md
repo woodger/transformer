@@ -17,6 +17,10 @@ CLI help — публичный contract для точного набора opti
 ./.venv/bin/python ./app/main.py --version
 ```
 
+`--version` выводит только статическую версию package и не инициализирует
+Torch, CUDA или worker runtime. Версии ML runtime публикует worker
+`inspect` через Flight capabilities.
+
 ## Карта команд
 
 | Команда | Назначение |

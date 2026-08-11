@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `--version` сделан статическим: control-plane CLI и основной Flight service
+  process больше не импортируют Torch/CUDA и не открывают NVIDIA device handles;
+  runtime probing остаётся в изолированном worker `inspect` subprocess.
+
 ### Added
 
 - Добавлена локальная CLI-команда `gmark` для CUDA stress test на синтетических

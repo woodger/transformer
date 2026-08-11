@@ -212,7 +212,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     }
 
 
-def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(
+def test_service_cli_owns_no_cuda_runtime_and_drains_cleanly(
     tmp_path,
     postgres_config,
     postgres_database,
@@ -220,27 +220,77 @@ def test_service_sigterm_drains_cleanly_after_signal_handlers_are_installed(
     runtime_dir = tmp_path / "runtime"
     models_dir = tmp_path / "models"
     service_code = """
+import json
 import os
+import sys
 from dataclasses import replace
 from app.database.config import load_database_config
-from app.flight.application import FlightApplication
+import app.service.bootstrap.application as application_module
 from app.flight.config import FlightServiceConfig
 
-database_config = replace(
-    load_database_config(),
-    schema=os.environ["TRANSFORMER_TEST_SCHEMA"],
-)
-config = FlightServiceConfig(
-    runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
-    port=0,
-    allow_plaintext=True,
-).validate()
-FlightApplication.build(
-    config,
-    database_config=database_config,
-    models_dir=os.environ["TRANSFORMER_TEST_MODELS_DIR"],
-    bearer_tokens={"secret": "inventory"},
-).serve()
+def run_from_args(args):
+    database_config = replace(
+        load_database_config(),
+        schema=os.environ["TRANSFORMER_TEST_SCHEMA"],
+    )
+    config = FlightServiceConfig(
+        runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
+        host=args.host,
+        port=args.port,
+        allow_plaintext=args.allow_plaintext,
+    ).validate()
+    application = application_module.FlightApplication.build(
+        config,
+        database_config=database_config,
+        models_dir=os.environ["TRANSFORMER_TEST_MODELS_DIR"],
+        bearer_tokens={"secret": "inventory"},
+    )
+
+    descriptors = []
+    for descriptor in os.listdir("/proc/self/fd"):
+        try:
+            target = os.readlink(f"/proc/self/fd/{descriptor}")
+        except FileNotFoundError:
+            continue
+        if target.startswith("/dev/nvidia"):
+            descriptors.append(target)
+    mapping_markers = (
+        "libtorch",
+        "libcuda",
+        "libcud",
+        "libnvidia",
+        "/site-packages/cuda/",
+    )
+    with open("/proc/self/maps", encoding="utf-8") as mappings_file:
+        mappings = sorted({
+            line.split()[-1]
+            for line in mappings_file
+            if any(marker in line.lower() for marker in mapping_markers)
+        })
+    modules = sorted(
+        name for name in sys.modules
+        if name in ("torch", "cuda")
+        or name.startswith(("torch.", "cuda."))
+    )
+    print(json.dumps({
+        "event": "test.service.process_boundary",
+        "mlModules": modules,
+        "cudaMappings": mappings,
+        "nvidiaDescriptors": sorted(descriptors),
+    }), file=sys.stderr, flush=True)
+    application.serve()
+
+application_module.run_from_args = run_from_args
+sys.argv = [
+    "transformer",
+    "flight",
+    "serve",
+    "--host=127.0.0.1",
+    "--port=0",
+    "--allow-plaintext",
+]
+from app.main import main
+main()
 """
     process = subprocess.Popen(
         [
@@ -286,6 +336,14 @@ FlightApplication.build(
         assert any(
             event.get("event") == "flight.service.serving" for event in events
         ), events
+        boundary = next(
+            event
+            for event in events
+            if event.get("event") == "test.service.process_boundary"
+        )
+        assert boundary["mlModules"] == []
+        assert boundary["cudaMappings"] == []
+        assert boundary["nvidiaDescriptors"] == []
 
         process.send_signal(signal.SIGTERM)
         try:
