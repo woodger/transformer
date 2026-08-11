@@ -191,7 +191,18 @@ Summary показывает основной результат эпохи, с�
 - `step` — глобальный номер optimizer step к концу строки метрик;
 - `lr` — текущий learning rate;
 - `loss_stage` — активный этап функции потерь;
+- `input_pipeline_ms` — host wall time получения batch из input pipeline,
+  включая Arrow replay, validation, streaming wait и CPU shuffle;
+- `missing_stats_ms` — host wall time расчёта NaN и token ratios;
+- `host_to_device_ms` — host wall time вызовов CPU-to-device transfer;
+- `train_step_ms` — host wall time forward, loss, backward, optimizer step и
+  сбора batch metrics;
 - `elapsed_ms` — время training pass.
+
+Фазовые значения являются диагностикой host pipeline. Они не добавляют CUDA
+synchronize и поэтому не являются точным GPU kernel time; их сумма может быть
+меньше `elapsed_ms` на служебные операции между измеряемыми фазами. Как и
+`elapsed_ms`, они исключаются из deterministic equivalence ML-state.
 
 Чтобы сохранять метрики, добавьте `--metrics-out`:
 
@@ -215,6 +226,7 @@ JSON `null`.
 
 `plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
 `sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
-`rows`, `batches`, `step`, `lr`, `loss_stage` и `elapsed_ms`. Output directory
+`rows`, `batches`, `step`, `lr`, `loss_stage`, фазовые durations и
+`elapsed_ms`. Output directory
 создаётся автоматически; существующие одноимённые SVG перезаписываются.
 Невалидная JSON-строка в `METRICS_FILE` прерывает команду.

@@ -32,6 +32,10 @@ PLOT_METRICS = [
     "step",
     "lr",
     "loss_stage",
+    "input_pipeline_ms",
+    "missing_stats_ms",
+    "host_to_device_ms",
+    "train_step_ms",
     "elapsed_ms",
 ]
 

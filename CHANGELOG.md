@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Training runtime вычисляет missing mask по одному разу для NaN/token
+  diagnostics и model context и не синхронизирует CUDA ради all-missing branch;
+  progress/JSONL публикует host-side durations input pipeline, missing
+  statistics, CPU-to-device transfer и training step без добавления CUDA
+  synchronization.
+
 ### Fixed
 
 - `--version` сделан статическим: control-plane CLI и основной Flight service

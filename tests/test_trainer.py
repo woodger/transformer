@@ -595,7 +595,14 @@ def test_streaming_and_closed_fit_have_identical_semantic_state():
 
         def record_epoch(_epoch, metrics, _monitor, _complete):
             metric_state = asdict(metrics)
-            metric_state.pop("elapsed_ms")
+            for field in (
+                "input_pipeline_ms",
+                "missing_stats_ms",
+                "host_to_device_ms",
+                "train_step_ms",
+                "elapsed_ms",
+            ):
+                metric_state.pop(field)
             epochs.append((metric_state, trainer.recovery_state_dict()))
 
         if streaming:
@@ -861,6 +868,19 @@ def test_trainer_writes_metrics_jsonl(tmp_path):
     assert "complete_token_ratio" in rows[0]
     assert "partial_token_ratio" in rows[0]
     assert "empty_token_ratio" in rows[0]
+    assert rows[0]["input_pipeline_ms"] >= 0.0
+    assert rows[0]["missing_stats_ms"] >= 0.0
+    assert rows[0]["host_to_device_ms"] >= 0.0
+    assert rows[0]["train_step_ms"] >= 0.0
+    assert rows[0]["elapsed_ms"] >= sum(
+        rows[0][field]
+        for field in (
+            "input_pipeline_ms",
+            "missing_stats_ms",
+            "host_to_device_ms",
+            "train_step_ms",
+        )
+    )
     assert rows[0]["context_mode"] == "relaxed"
     assert rows[0]["batch_size"] == 4
     assert rows[0]["loss_schedule"] == "epoch"
@@ -1045,8 +1065,18 @@ def test_plot_metrics_writes_svg(tmp_path):
     metrics_path = tmp_path / "metrics.jsonl"
     metrics_path.write_text(
         "\n".join([
-            json.dumps({"frame": 1, "loss": 2.0, "grad_norm": 1.5}),
-            json.dumps({"frame": 2, "loss": 1.0, "grad_norm": 1.1}),
+            json.dumps({
+                "frame": 1,
+                "loss": 2.0,
+                "grad_norm": 1.5,
+                "input_pipeline_ms": 10.0,
+            }),
+            json.dumps({
+                "frame": 2,
+                "loss": 1.0,
+                "grad_norm": 1.1,
+                "input_pipeline_ms": 8.0,
+            }),
         ])
     )
     plots_dir = tmp_path / "plots"
@@ -1055,6 +1085,7 @@ def test_plot_metrics_writes_svg(tmp_path):
 
     assert str(plots_dir / "loss.svg") in paths
     assert str(plots_dir / "grad_norm.svg") in paths
+    assert str(plots_dir / "input_pipeline_ms.svg") in paths
     assert (plots_dir / "loss.svg").read_text().startswith("<svg")
 
 

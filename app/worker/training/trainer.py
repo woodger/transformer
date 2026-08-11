@@ -22,7 +22,7 @@ from app.config import (
     WEIGHT_DECAY,
 )
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
-from app.worker.model.context import context_token_ratios
+from app.worker.model.context import context_missingness_ratios
 from app.worker.training.early_stopping import EarlyStopping
 from app.worker.training.loss_scheduler import LossScheduler
 from app.worker.training.losses import (
@@ -150,16 +150,38 @@ class Trainer:
         )
         started = time.perf_counter()
 
+        # Phase timers stay host-side and must never force CUDA synchronization.
         for loader in loaders:
-            for xb_cpu, yb_cpu in loader:
+            batches = iter(loader)
+            while True:
+                phase_started = time.perf_counter()
+                try:
+                    xb_cpu, yb_cpu = next(batches)
+                except StopIteration:
+                    break
+                metrics.input_pipeline_ms += (
+                    time.perf_counter() - phase_started
+                ) * 1000
+
                 loss_stage = self._loss_stage_for()
                 batch_rows = xb_cpu.size(0)
-                nan_ratio = float(torch.isnan(xb_cpu).float().mean())
-                token_ratios = context_token_ratios(xb_cpu, self.context_mode)
+                phase_started = time.perf_counter()
+                missingness_ratios = context_missingness_ratios(
+                    xb_cpu,
+                    self.context_mode,
+                )
+                metrics.missing_stats_ms += (
+                    time.perf_counter() - phase_started
+                ) * 1000
 
+                phase_started = time.perf_counter()
                 xb = xb_cpu.to(self.device)
                 yb = yb_cpu.to(self.device)
+                metrics.host_to_device_ms += (
+                    time.perf_counter() - phase_started
+                ) * 1000
 
+                phase_started = time.perf_counter()
                 self.optimizer.zero_grad()
 
                 with self._autocast():
@@ -184,9 +206,11 @@ class Trainer:
                     rows=batch_rows,
                     loss_parts=loss_parts,
                     grad_norm=float(grad_norm.detach().cpu()),
-                    nan_ratio=nan_ratio,
-                    **token_ratios,
+                    **missingness_ratios,
                 )
+                metrics.train_step_ms += (
+                    time.perf_counter() - phase_started
+                ) * 1000
             del loader
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
