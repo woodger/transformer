@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from datetime import datetime
+
+from sqlalchemy import delete, or_, select, update
 
 from app.service.adapters.outbound.postgres.ledger_support import (
     at,
@@ -13,19 +15,19 @@ from app.service.adapters.outbound.postgres.models import (
     InputUpload,
     Job,
     JobAttempt,
+    JobIdentity,
     JobInput,
     JobOutput,
     OutputTicket,
-    PublishedModel,
     RuntimeState,
 )
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.policies import decide_interrupted_attempt
 
 _TERMINAL_STATES = (
-    JobState.SUCCEEDED.value,
-    JobState.FAILED.value,
-    JobState.CANCELLED.value,
+    ExecutionState.SUCCEEDED.value,
+    ExecutionState.FAILED.value,
+    ExecutionState.CANCELLED.value,
 )
 
 
@@ -49,6 +51,68 @@ class MaintenanceLedgerSlice:
             )
             return result.rowcount
 
+    def expire_input_waits(
+        self,
+        *,
+        timeout_seconds: float,
+        now: float | None = None,
+    ) -> list[str]:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        expired_at = timestamp_now(now)
+        cutoff = datetime.fromtimestamp(
+            expired_at.timestamp() - timeout_seconds,
+            tz=expired_at.tzinfo,
+        )
+        expired = []
+        with self.database.transaction() as session:
+            jobs = session.scalars(
+                select(Job)
+                .where(
+                    Job.waiting_for_input.is_(True),
+                    Job.input_state == InputState.OPEN.value,
+                    Job.execution_state == ExecutionState.RUNNING.value,
+                    Job.input_waiting_since <= cutoff,
+                    or_(
+                        Job.acquire_grace_until.is_(None),
+                        Job.acquire_grace_until <= expired_at,
+                    ),
+                )
+                .order_by(Job.job_id)
+                .with_for_update(skip_locked=True)
+            )
+            for job in jobs:
+                attempt = session.get(
+                    JobAttempt,
+                    (job.job_id, job.attempt),
+                    with_for_update=True,
+                )
+                if (
+                    attempt is not None
+                    and attempt.status == ExecutionState.RUNNING.value
+                ):
+                    attempt.status = ExecutionState.FAILED.value
+                    attempt.error_code = ErrorCode.INPUT_TIMEOUT.value
+                    attempt.error_message = (
+                        "input stream timed out while waiting for the next ordinal"
+                    )
+                    attempt.finished_at = expired_at
+                job.input_state = InputState.ABORTED.value
+                job.execution_state = ExecutionState.FAILED.value
+                job.error_code = ErrorCode.INPUT_TIMEOUT.value
+                job.error_message = (
+                    "input stream timed out while waiting for the next ordinal"
+                )
+                job.waiting_for_input = False
+                job.waiting_input_ordinal = None
+                job.input_waiting_since = None
+                job.acquire_grace_until = None
+                job.finished_at = expired_at
+                job.updated_at = expired_at
+                job.revision += 1
+                expired.append(job.job_id)
+        return expired
+
     def reconcile_interrupted_jobs(
         self,
         *,
@@ -58,7 +122,7 @@ class MaintenanceLedgerSlice:
         with self.database.transaction() as session:
             uploads = session.execute(
                 select(
-                    InputUpload.temporary_path,
+                    InputUpload.candidate_path,
                     InputUpload.storage_class,
                 )
             ).all()
@@ -66,14 +130,17 @@ class MaintenanceLedgerSlice:
             retried = []
             cancelling = list(session.scalars(
                 select(Job.job_id)
-                .where(Job.state == JobState.CANCELLING.value)
+                .where(
+                    Job.execution_state
+                    == ExecutionState.CANCELLING.value
+                )
                 .order_by(Job.job_id)
             ))
             jobs = session.scalars(
                 select(Job)
-                .where(Job.state.in_((
-                    JobState.RUNNING.value,
-                    JobState.CANCELLING.value,
+                .where(Job.execution_state.in_((
+                    ExecutionState.RUNNING.value,
+                    ExecutionState.CANCELLING.value,
                 )))
                 .order_by(Job.job_id)
                 .with_for_update()
@@ -84,10 +151,12 @@ class MaintenanceLedgerSlice:
                     (job.job_id, job.attempt),
                     with_for_update=True,
                 )
-                decision = decide_interrupted_attempt(job.state)
+                decision = decide_interrupted_attempt(
+                    job.execution_state
+                )
                 resumable = False
                 if (
-                    job.state == JobState.RUNNING.value
+                    job.execution_state == ExecutionState.RUNNING.value
                     and job.operation == "fit"
                 ):
                     runtime_input = session.scalar(
@@ -102,9 +171,9 @@ class MaintenanceLedgerSlice:
                 if resumable:
                     if (
                         attempt is not None
-                        and attempt.status == JobState.RUNNING.value
+                        and attempt.status == ExecutionState.RUNNING.value
                     ):
-                        attempt.status = JobState.FAILED.value
+                        attempt.status = ExecutionState.FAILED.value
                         attempt.error_code = (
                             ErrorCode.EXECUTION_INTERRUPTED.value
                         )
@@ -112,7 +181,7 @@ class MaintenanceLedgerSlice:
                             "worker execution was interrupted by service restart"
                         )
                         attempt.finished_at = reconciled_at
-                    job.state = JobState.RETRYING.value
+                    job.execution_state = ExecutionState.RETRYING.value
                     job.queue_sequence = session.scalar(
                         select(QUEUE_SEQUENCE.next_value())
                     )
@@ -120,20 +189,30 @@ class MaintenanceLedgerSlice:
                     job.error_code = None
                     job.error_message = None
                     job.finished_at = None
+                    job.waiting_for_input = False
+                    job.waiting_input_ordinal = None
+                    job.input_waiting_since = None
+                    job.acquire_grace_until = None
                     job.revision += 1
                     job.updated_at = reconciled_at
                     retried.append(job.job_id)
                     continue
-                if job.state == JobState.RUNNING.value:
+                if job.execution_state == ExecutionState.RUNNING.value:
                     interrupted.append(job.job_id)
-                job.state = decision.target.value
+                job.execution_state = decision.target.value
+                if (
+                    decision.target
+                    in (ExecutionState.FAILED, ExecutionState.CANCELLED)
+                    and job.input_state == InputState.OPEN.value
+                ):
+                    job.input_state = InputState.ABORTED.value
                 if decision.error_code is not None:
                     job.error_code = decision.error_code.value
                     job.error_message = decision.error_message
-                if decision.target == JobState.FAILED:
+                if decision.target == ExecutionState.FAILED:
                     if (
                         attempt is not None
-                        and attempt.status == JobState.RUNNING.value
+                        and attempt.status == ExecutionState.RUNNING.value
                     ):
                         attempt.status = decision.target.value
                         attempt.error_code = job.error_code
@@ -141,7 +220,7 @@ class MaintenanceLedgerSlice:
                         attempt.finished_at = reconciled_at
                 elif (
                     attempt is not None
-                    and attempt.status == JobState.RUNNING.value
+                    and attempt.status == ExecutionState.RUNNING.value
                 ):
                     attempt.status = decision.target.value
                     attempt.finished_at = reconciled_at
@@ -185,14 +264,9 @@ class MaintenanceLedgerSlice:
             candidates = session.scalars(
                 select(Job)
                 .where(
-                    Job.state.in_(_TERMINAL_STATES),
+                    Job.execution_state.in_(_TERMINAL_STATES),
                     Job.finished_at.is_not(None),
                     Job.finished_at < cutoff_at,
-                    ~select(PublishedModel.model_ref)
-                    .where(
-                        PublishedModel.producing_job_id == Job.job_id
-                    )
-                    .exists(),
                     ~select(OutputTicket.ticket_hash)
                     .where(OutputTicket.job_id == Job.job_id)
                     .exists(),
@@ -215,6 +289,11 @@ class MaintenanceLedgerSlice:
                 )
                 session.execute(
                     delete(Job).where(Job.job_id.in_(job_ids))
+                )
+                session.execute(
+                    update(JobIdentity)
+                    .where(JobIdentity.job_id.in_(job_ids))
+                    .values(retired_at=cutoff_at)
                 )
             session.execute(
                 delete(IdempotencyRecord).where(
@@ -271,6 +350,11 @@ class MaintenanceLedgerSlice:
                     delete(Job).where(
                         Job.job_id.in_(discarded_jobs)
                     )
+                )
+                session.execute(
+                    update(JobIdentity)
+                    .where(JobIdentity.job_id.in_(discarded_jobs))
+                    .values(retired_at=synchronized_at)
                 )
             if state is None:
                 session.add(RuntimeState(

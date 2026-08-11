@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import BinaryIO
 
-from app.contracts.worker.v1 import encode_event
+from app.contracts.worker.v2 import encode_event
 
 
 class WorkerEventEmitter:
@@ -40,8 +40,31 @@ class WorkerEventEmitter:
         if event_type in ("completed", "error"):
             self._terminal = True
 
-    def ready(self) -> None:
-        self.emit("ready", {"pid": os.getpid()})
+    def ready(self, *, next_ordinal: int, input_revision: int) -> None:
+        self.emit("ready", {
+            "pid": os.getpid(),
+            "nextOrdinal": next_ordinal,
+            "inputRevision": input_revision,
+        })
+
+    def input_ack(
+        self,
+        *,
+        ordinal: int,
+        next_ordinal: int,
+        input_revision: int,
+    ) -> None:
+        self.emit("input.ack", {
+            "ordinal": ordinal,
+            "nextOrdinal": next_ordinal,
+            "inputRevision": input_revision,
+        })
+
+    def input_waiting(self, *, next_ordinal: int, input_revision: int) -> None:
+        self.emit("input.waiting", {
+            "nextOrdinal": next_ordinal,
+            "inputRevision": input_revision,
+        })
 
     def progress(self, progress: dict) -> None:
         self.emit("progress", {"progress": progress})
@@ -57,4 +80,3 @@ class WorkerEventEmitter:
 
 
 __all__ = ["WorkerEventEmitter"]
-

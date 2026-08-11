@@ -1,6 +1,6 @@
 import pytest
 
-from app.flight.constants import ErrorCode, JobState
+from app.flight.constants import ErrorCode, ExecutionState, InputState
 from app.flight.state import (
     AttemptOutcomeDecision,
     CancelDecision,
@@ -11,183 +11,154 @@ from app.flight.state import (
     decide_interrupted_attempt,
     is_terminal,
     resolve_device,
-    validate_transition,
+    validate_execution_transition,
+    validate_input_transition,
 )
-
-ALLOWED_TRANSITIONS = {
-    (JobState.UPLOADING, JobState.SEALED),
-    (JobState.UPLOADING, JobState.CANCELLED),
-    (JobState.SEALED, JobState.QUEUED),
-    (JobState.SEALED, JobState.CANCELLED),
-    (JobState.QUEUED, JobState.RUNNING),
-    (JobState.QUEUED, JobState.CANCELLED),
-    (JobState.RUNNING, JobState.SUCCEEDED),
-    (JobState.RUNNING, JobState.FAILED),
-    (JobState.RUNNING, JobState.CANCELLING),
-    (JobState.RUNNING, JobState.RETRYING),
-    (JobState.RETRYING, JobState.RUNNING),
-    (JobState.RETRYING, JobState.FAILED),
-    (JobState.RETRYING, JobState.CANCELLED),
-    (JobState.CANCELLING, JobState.CANCELLED),
-}
 
 
 @pytest.mark.parametrize(
     ("current", "target"),
     [
         (current, target)
-        for current in JobState
-        for target in JobState
+        for current in ExecutionState
+        for target in ExecutionState
     ],
 )
-def test_state_machine_transition_matrix_is_explicit(current, target):
-    if (current, target) in ALLOWED_TRANSITIONS:
-        validate_transition(current, target)
-        return
+def test_execution_transition_matrix_is_explicit(current, target):
+    allowed = {
+        ExecutionState.WAITING_INPUT: {
+            ExecutionState.QUEUED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
+        },
+        ExecutionState.QUEUED: {
+            ExecutionState.RUNNING,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
+        },
+        ExecutionState.RUNNING: {
+            ExecutionState.SUCCEEDED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLING,
+            ExecutionState.RETRYING,
+        },
+        ExecutionState.RETRYING: {
+            ExecutionState.RUNNING,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
+        },
+        ExecutionState.CANCELLING: {ExecutionState.CANCELLED},
+        ExecutionState.SUCCEEDED: set(),
+        ExecutionState.FAILED: set(),
+        ExecutionState.CANCELLED: set(),
+    }
+    if target in allowed[current]:
+        validate_execution_transition(current, target)
+    else:
+        with pytest.raises(ValueError, match="invalid execution state"):
+            validate_execution_transition(current, target)
 
-    with pytest.raises(ValueError, match="invalid job state transition"):
-        validate_transition(current, target)
 
-
-def test_state_machine_accepts_normative_flow_and_immediate_cancel():
-    validate_transition(JobState.UPLOADING, JobState.SEALED)
-    validate_transition(JobState.SEALED, JobState.QUEUED)
-    validate_transition(JobState.QUEUED, JobState.RUNNING)
-    validate_transition(JobState.RUNNING, JobState.SUCCEEDED)
-    validate_transition(JobState.UPLOADING, JobState.CANCELLED)
-    validate_transition(JobState.RUNNING, JobState.CANCELLING)
-    validate_transition(JobState.CANCELLING, JobState.CANCELLED)
-
-
-def test_terminal_states_are_immutable():
-    assert is_terminal(JobState.SUCCEEDED)
-    for state in (JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED):
-        with pytest.raises(ValueError, match="invalid job state transition"):
-            validate_transition(state, JobState.QUEUED)
-
-
-def test_cancelling_can_only_finish_as_cancelled():
-    with pytest.raises(ValueError, match="invalid job state transition"):
-        validate_transition(JobState.CANCELLING, JobState.FAILED)
+def test_input_state_is_an_independent_one_way_axis():
+    validate_input_transition(InputState.OPEN, InputState.CLOSED)
+    validate_input_transition(InputState.OPEN, InputState.ABORTED)
+    for current in (InputState.CLOSED, InputState.ABORTED):
+        for target in InputState:
+            with pytest.raises(ValueError, match="invalid input state"):
+                validate_input_transition(current, target)
 
 
 @pytest.mark.parametrize(
     ("state", "expected"),
     [
         (
-            JobState.UPLOADING,
-            CancelDecision(JobState.CANCELLED, False),
+            ExecutionState.WAITING_INPUT,
+            CancelDecision(ExecutionState.CANCELLED, False, True),
         ),
         (
-            JobState.SEALED,
-            CancelDecision(JobState.CANCELLED, False),
+            ExecutionState.QUEUED,
+            CancelDecision(ExecutionState.CANCELLED, False, True),
         ),
         (
-            JobState.QUEUED,
-            CancelDecision(JobState.CANCELLED, False),
+            ExecutionState.RUNNING,
+            CancelDecision(ExecutionState.CANCELLING, True, True),
         ),
         (
-            JobState.RUNNING,
-            CancelDecision(JobState.CANCELLING, True),
+            ExecutionState.RETRYING,
+            CancelDecision(ExecutionState.CANCELLED, False, True),
         ),
         (
-            JobState.RETRYING,
-            CancelDecision(JobState.CANCELLED, False),
+            ExecutionState.CANCELLING,
+            CancelDecision(None, False, False),
         ),
         (
-            JobState.CANCELLING,
-            CancelDecision(None, False),
+            ExecutionState.SUCCEEDED,
+            CancelDecision(None, False, False),
         ),
         (
-            JobState.SUCCEEDED,
-            CancelDecision(None, False),
+            ExecutionState.FAILED,
+            CancelDecision(None, False, False),
         ),
         (
-            JobState.FAILED,
-            CancelDecision(None, False),
-        ),
-        (
-            JobState.CANCELLED,
-            CancelDecision(None, False),
+            ExecutionState.CANCELLED,
+            CancelDecision(None, False, False),
         ),
     ],
 )
-def test_cancel_decision_is_explicit_for_every_state(state, expected):
+def test_cancel_policy_covers_every_execution_state(state, expected):
     assert decide_cancel(state) == expected
 
 
-@pytest.mark.parametrize(
-    ("state", "expected"),
-    [
-        (
-            JobState.RUNNING,
-            RecoveryDecision(
-                target=JobState.FAILED,
-                error_code=ErrorCode.EXECUTION_INTERRUPTED,
-                error_message=(
-                    "worker execution was interrupted by service restart"
-                ),
-            ),
-        ),
-        (
-            JobState.CANCELLING,
-            RecoveryDecision(
-                target=JobState.CANCELLED,
-                error_code=None,
-                error_message=None,
-            ),
-        ),
-    ],
-)
-def test_interrupted_attempt_decision_is_explicit(state, expected):
-    assert decide_interrupted_attempt(state) == expected
+def test_interrupted_attempt_policy_distinguishes_run_and_cancel():
+    assert decide_interrupted_attempt(ExecutionState.RUNNING) == RecoveryDecision(
+        ExecutionState.FAILED,
+        ErrorCode.EXECUTION_INTERRUPTED,
+        "worker execution was interrupted by service restart",
+    )
+    assert decide_interrupted_attempt(
+        ExecutionState.CANCELLING
+    ) == RecoveryDecision(ExecutionState.CANCELLED, None, None)
 
 
 @pytest.mark.parametrize(
-    "state",
+    ("failure", "operation", "resumable", "target"),
     [
-        JobState.UPLOADING,
-        JobState.SEALED,
-        JobState.QUEUED,
-        JobState.RETRYING,
-        JobState.SUCCEEDED,
-        JobState.FAILED,
-        JobState.CANCELLED,
-    ],
-)
-def test_only_active_attempt_states_can_be_reconciled(state):
-    with pytest.raises(
-        ValueError,
-        match="job state cannot be reconciled as interrupted",
-    ):
-        decide_interrupted_attempt(state)
-
-
-@pytest.mark.parametrize(
-    ("state", "failure", "operation", "resumable", "target"),
-    [
-        (JobState.CANCELLING, ErrorCode.SUBPROCESS_FAILED, "fit", True, JobState.CANCELLED),
-        (JobState.RUNNING, ErrorCode.CANCELLED, "predict", False, JobState.CANCELLED),
-        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "predict", False, JobState.RETRYING),
-        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "fit", True, JobState.RETRYING),
-        (JobState.RUNNING, ErrorCode.DEVICE_LOST, "fit", False, JobState.FAILED),
+        (ErrorCode.DEVICE_LOST, "predict", False, ExecutionState.RETRYING),
+        (ErrorCode.DEVICE_LOST, "fit", True, ExecutionState.RETRYING),
+        (ErrorCode.DEVICE_LOST, "fit", False, ExecutionState.FAILED),
         (
-            JobState.RUNNING,
             ErrorCode.EXECUTION_INTERRUPTED,
             "fit",
             True,
-            JobState.RETRYING,
+            ExecutionState.RETRYING,
         ),
-        (JobState.RUNNING, ErrorCode.SUBPROCESS_FAILED, "fit", True, JobState.FAILED),
+        (ErrorCode.SUBPROCESS_FAILED, "fit", True, ExecutionState.RETRYING),
+        (ErrorCode.SUBPROCESS_HUNG, "fit", True, ExecutionState.RETRYING),
+        (ErrorCode.SUBPROCESS_FAILED, "fit", False, ExecutionState.FAILED),
+        (ErrorCode.SUBPROCESS_FAILED, "predict", True, ExecutionState.FAILED),
     ],
 )
-def test_attempt_outcome_policy(state, failure, operation, resumable, target):
+def test_attempt_outcome_restarts_resumable_fit_from_safe_epoch_boundary(
+    failure,
+    operation,
+    resumable,
+    target,
+):
     assert decide_attempt_outcome(
-        state,
+        ExecutionState.RUNNING,
         failure,
         operation=operation,
         resumable_fit=resumable,
     ) == AttemptOutcomeDecision(target)
+
+
+def test_cancel_wins_over_worker_failure():
+    assert decide_attempt_outcome(
+        ExecutionState.CANCELLING,
+        ErrorCode.SUBPROCESS_FAILED,
+        operation="fit",
+        resumable_fit=True,
+    ) == AttemptOutcomeDecision(ExecutionState.CANCELLED)
 
 
 @pytest.mark.parametrize(
@@ -202,3 +173,11 @@ def test_attempt_outcome_policy(state, failure, operation, resumable, target):
 )
 def test_device_resolution_policy(requested, available, expected):
     assert resolve_device(requested, available) == expected
+
+
+def test_only_execution_terminal_states_are_terminal():
+    assert {state for state in ExecutionState if is_terminal(state)} == {
+        ExecutionState.SUCCEEDED,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLED,
+    }

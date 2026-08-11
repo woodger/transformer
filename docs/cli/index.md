@@ -17,6 +17,10 @@ CLI help — публичный contract для точного набора opti
 ./.venv/bin/python ./app/main.py --version
 ```
 
+`--version` выводит только статическую версию package и не инициализирует
+Torch, CUDA или worker runtime. Версии ML runtime публикует worker
+`inspect` через Flight capabilities.
+
 ## Карта команд
 
 | Команда | Назначение |
@@ -25,6 +29,7 @@ CLI help — публичный contract для точного набора opti
 | `predict INPUT` | Выполнить prediction из checkpoint в Arrow IPC file |
 | `fit-stream` | Читать framed Arrow payloads из stdin и обучать модель |
 | `predict-stream` | Читать framed Arrow payloads из stdin и писать predictions в stdout |
+| `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
 | `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
@@ -34,7 +39,7 @@ CLI help — публичный contract для точного набора opti
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v2`](../../app/contracts/flight/v2/README.md).
+[`app/contracts/flight/v3`](../../app/contracts/flight/v3/README.md).
 
 ## File commands
 
@@ -106,6 +111,67 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 на отдельных frames, loss schedule и early stopping определены в
 [training reference](../training-runtime.md).
 
+## GPU stress test
+
+`gmark` выполняет синтетические optimizer steps через production
+`TransformerModel`: forward, полный loss stage, backward, gradient clipping и
+Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
+тот же CUDA autocast и `GradScaler`, что и production worker. Команда проверяет
+loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
+Динамические метрики температуры, utilization и power читаются через системный
+`nvidia-smi`.
+
+При AMP начальные gradients могут переполниться на высоком dynamic scale.
+`gmark` допускает штатный backoff `GradScaler`, продолжает после первого
+успешного optimizer update и завершает тест ошибкой, если scale не
+стабилизируется.
+
+Короткая проверка:
+
+```bash
+./.venv/bin/python ./app/main.py gmark \
+  --duration=60 \
+  --use-amp \
+  --max-temperature=80
+```
+
+Не запускайте `gmark` одновременно с training или prediction jobs на том же
+GPU: команда намеренно потребляет compute capacity. Дополнительный VRAM ballast
+по умолчанию отключён; его можно включить через `--memory-fraction`. Отсутствие
+показания температуры считается ошибкой, потому что порог нельзя гарантировать.
+`--max-temperature=0` отключает эту защиту и допустим только при внешнем
+мониторинге.
+
+| Аргумент | Описание | По умолчанию |
+| --- | --- | --- |
+| `--duration SECONDS` | Продолжительность после warm-up | `60` |
+| `--device INDEX` | Логический индекс CUDA-устройства | `0` |
+| `--seq-len LENGTH` | Длина входной последовательности | `10` |
+| `--feature-dim COUNT` | Число features в timestep | `891` |
+| `--batch-size COUNT` | Число строк в optimizer step | `256` |
+| `--hidden SIZE` | Hidden dimension модели | `256` |
+| `--layers COUNT` | Число Transformer encoder layers | `5` |
+| `--nhead COUNT` | Число attention heads | `8` |
+| `--use-amp` | Production CUDA autocast и `GradScaler` | выключено |
+| `--memory-fraction FRACTION` | Доля свободной после warm-up VRAM, `0..0.9`; `0` отключает ballast | `0` |
+| `--max-temperature CELSIUS` | Температурный порог; `0` отключает | `80` |
+| `--status-interval SECONDS` | Интервал статуса и integrity check | `2` |
+| `--warmup-steps COUNT` | Optimizer steps до замера | `3` |
+| `--seed SEED` | Seed параметров модели и synthetic data | `42` |
+
+Коды завершения:
+
+| Код | Значение |
+| --- | --- |
+| `0` | Продолжительность завершена, integrity checks пройдены |
+| `1` | Ошибка CUDA, конфигурации, VRAM, monitoring или integrity |
+| `3` | Нагрузка остановлена температурным порогом |
+| `130` | Нагрузка остановлена пользователем через `Ctrl+C` |
+
+Датчики VRAM и VRM могут отсутствовать даже при доступном core-temperature
+sensor. Поэтому температурный порог по умолчанию защищает по температуре GPU
+core, но не является полной гарантией температур VRAM и power circuitry.
+
 ## Параметры
 
 Точный набор параметров всегда показывает `COMMAND --help`; таблицы ниже
@@ -115,7 +181,7 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 
 | Аргумент | Команды | Описание | По умолчанию |
 | --- | --- | --- | --- |
-| `--device` | все, кроме `plot-metrics` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
+| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
 | `--checkpoint-out` | `fit`, `fit-stream` | checkpoint output | `model_weights.pth` |
 | `--checkpoint` | `predict`, `predict-stream` | checkpoint input | `model_weights.pth` |
 | `--output` | `predict` | Arrow output file | `/tmp/preds.arrow` |

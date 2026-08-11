@@ -166,7 +166,7 @@ def _run_spooled(
                 recovery["resume_checkpoint"],
                 device,
                 expected_config_hash=recovery["config_hash"],
-                expected_seal_hash=recovery["seal_hash"],
+                expected_manifest_hash=recovery["manifest_hash"],
             )
             if payload["model_config"] != asdict(model_config):
                 raise ValueError(
@@ -224,7 +224,7 @@ def _run_spooled(
             trainer,
             generation=generation,
             config_hash=recovery["config_hash"],
-            seal_hash=recovery["seal_hash"],
+            manifest_hash=recovery["manifest_hash"],
         )
         _append_recovery_event(recovery["events_path"], event)
 
@@ -253,14 +253,14 @@ def _recovery_arguments(args) -> dict | None:
         ),
         "events_path": getattr(args, "recovery_events_out", None),
         "config_hash": getattr(args, "recovery_config_hash", None),
-        "seal_hash": getattr(args, "recovery_seal_hash", None),
+        "manifest_hash": getattr(args, "recovery_manifest_hash", None),
         "resume_checkpoint": getattr(args, "resume_checkpoint", None),
     }
     required = (
         "checkpoint_dir",
         "events_path",
         "config_hash",
-        "seal_hash",
+        "manifest_hash",
     )
     configured = [values[name] is not None for name in required]
     if not any(configured):

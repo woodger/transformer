@@ -1,6 +1,10 @@
+import hashlib
+import os
+
 import pyarrow
 
 from app.service.adapters.inbound.flight.constants import (
+    ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
     CONTRACT_PATH_VERSION,
@@ -8,28 +12,39 @@ from app.service.adapters.inbound.flight.constants import (
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
+    INPUT_CLOSE_ACTION,
+    INPUTS_LIST_ACTION,
+    MAX_PAGE_ITEMS,
+    MODEL_DESCRIBE_ACTION,
+    OUTPUTS_LIST_ACTION,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
-    SEAL_ACTION,
-    START_ACTION,
     STATUS_ACTION,
     ErrorCode,
 )
 from app.service.adapters.inbound.flight.contract import (
-    canonical_manifest_hash,
     canonical_request_hash,
+    data_contract_to_api,
     encode_document,
+    model_config_to_api,
     response_document,
 )
 from app.service.adapters.inbound.flight.errors import ServiceError
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.commands.jobs import (
+    AcquireJobAction,
+    CancelJobAction,
     CreateJobAction,
+    InputCloseAction,
     JobActionContract,
-    LifecycleActions,
 )
 from app.service.application.ports.devices import WorkerCapabilities
-from app.service.application.queries.status import GetJobStatus
+from app.service.application.queries.status import (
+    DescribeModel,
+    GetJobStatus,
+    ListJobInputs,
+    ListJobOutputs,
+)
 from app.version import __version__
 
 
@@ -60,44 +75,75 @@ class JobCoordinator:
         self.cancel_notifier = cancel_notifier
         self.queue_notifier = queue_notifier
         self.draining = False
-        action_contract = JobActionContract(
+        contract = JobActionContract(
             create_action=CREATE_ACTION,
-            seal_action=SEAL_ACTION,
-            start_action=START_ACTION,
+            acquire_action=ACQUIRE_ACTION,
+            input_close_action=INPUT_CLOSE_ACTION,
             cancel_action=CANCEL_ACTION,
             path_version=CONTRACT_PATH_VERSION,
             fit_schema_id=FIT_SCHEMA_ID,
             predict_schema_id=PREDICT_SCHEMA_ID,
         )
+        common = {
+            "action_contract": contract,
+            "request_hasher": canonical_request_hash,
+            "response_factory": response_document,
+        }
         self._create_action = CreateJobAction(
             config,
             ledger,
             cuda_available=lambda: self._cuda_available(),
             is_draining=lambda: self.draining,
             limits=self._limits,
-            action_contract=action_contract,
-            request_hasher=canonical_request_hash,
-            response_factory=response_document,
+            data_contract_factory=data_contract_to_api,
+            model_validator=self._validate_model_artifact,
             metrics=self.metrics,
             logger=self.logger,
+            **common,
+        )
+        self._acquire_action = AcquireJobAction(
+            config,
+            ledger,
+            cleanup_candidate=self._cleanup_candidate,
+            logger=self.logger,
+            **common,
+        )
+        self._close_action = InputCloseAction(
+            ledger,
+            cuda_available=lambda: self._cuda_available(),
+            queue_notifier=self._notify_queued,
+            metrics=self.metrics,
+            logger=self.logger,
+            **common,
+        )
+        self._cancel_action = CancelJobAction(
+            ledger,
+            cancel_notifier=self._notify_cancel,
+            cleanup_candidate=self._cleanup_candidate,
+            metrics=self.metrics,
+            logger=self.logger,
+            **common,
         )
         self._status_query = GetJobStatus(
+            ledger,
+            response_factory=response_document,
+            data_contract_factory=data_contract_to_api,
+        )
+        self._inputs_query = ListJobInputs(
+            ledger,
+            response_factory=response_document,
+        )
+        self._outputs_query = ListJobOutputs(
             ledger,
             path_version=CONTRACT_PATH_VERSION,
             response_factory=response_document,
         )
-        self._lifecycle_actions = LifecycleActions(
+        self._model_query = DescribeModel(
             ledger,
-            cuda_available=lambda: self._cuda_available(),
-            is_draining=lambda: self.draining,
-            queue_notifier=self._notify_queued,
-            cancel_notifier=self._notify_cancel,
-            action_contract=action_contract,
-            request_hasher=canonical_request_hash,
-            manifest_hasher=canonical_manifest_hash,
             response_factory=response_document,
-            metrics=self.metrics,
-            logger=self.logger,
+            data_contract_factory=data_contract_to_api,
+            model_config_factory=model_config_to_api,
+            model_artifact_validator=self._validate_model_artifact,
         )
 
     def dispatch(self, action: str, owner: str, request: dict, document: dict) -> bytes:
@@ -106,17 +152,30 @@ class JobCoordinator:
         elif action == HEALTH_ACTION:
             result = self.health(request["request_id"])
         elif action == CREATE_ACTION:
-            result = self.create(owner, request, document)
+            result = self._create_action.create(owner, request, document)
+        elif action == ACQUIRE_ACTION:
+            result = self._acquire_action.acquire(owner, request, document)
         elif action == STATUS_ACTION:
-            result = self.status(owner, request["job_id"], request["request_id"])
-        elif action == SEAL_ACTION:
-            result = self.seal(owner, request, document)
-        elif action == START_ACTION:
-            result = self.start(owner, request, document)
+            result = self._status_query.execute(
+                owner,
+                request["job_id"],
+                request["request_id"],
+            )
+        elif action == INPUTS_LIST_ACTION:
+            result = self._inputs_query.execute(owner, request)
+        elif action == INPUT_CLOSE_ACTION:
+            result = self._close_action.close(owner, request, document)
+        elif action == OUTPUTS_LIST_ACTION:
+            result = self._outputs_query.execute(owner, request)
         elif action == CANCEL_ACTION:
-            result = self.cancel(owner, request, document)
-        else:  # Contract validation normally rejects this first.
-            raise ServiceError(ErrorCode.INVALID_ARGUMENT, f"unsupported action: {action}")
+            result = self._cancel_action.cancel(owner, request, document)
+        elif action == MODEL_DESCRIBE_ACTION:
+            result = self._model_query.execute(owner, request)
+        else:
+            raise ServiceError(
+                ErrorCode.INVALID_ARGUMENT,
+                f"unsupported action: {action}",
+            )
         return encode_document(result)
 
     def capabilities(self, request_id: str) -> dict:
@@ -156,6 +215,10 @@ class JobCoordinator:
             features={
                 "doExchange": False,
                 "pollFlightInfo": False,
+                "durableStreamingInput": True,
+                "clientGeneratedJobId": True,
+                "crossSystemFencing": True,
+                "revisionPagination": True,
                 "resumableFit": True,
                 "recoveryBoundary": "globalEpoch",
                 "deviceAwareCuda": True,
@@ -181,18 +244,9 @@ class JobCoordinator:
         self.metrics.set("diskTotalBytes", runtime_usage.total)
         self.metrics.set("diskUsedBytes", runtime_usage.used)
         self.metrics.set("diskFreeBytes", runtime_usage.free)
-        self.metrics.set(
-            "recoveryDiskTotalBytes",
-            recovery_usage.total,
-        )
-        self.metrics.set(
-            "recoveryDiskUsedBytes",
-            recovery_usage.used,
-        )
-        self.metrics.set(
-            "recoveryDiskFreeBytes",
-            recovery_usage.free,
-        )
+        self.metrics.set("recoveryDiskTotalBytes", recovery_usage.total)
+        self.metrics.set("recoveryDiskUsedBytes", recovery_usage.used)
+        self.metrics.set("recoveryDiskFreeBytes", recovery_usage.free)
         return response_document(
             request_id,
             live=True,
@@ -211,37 +265,42 @@ class JobCoordinator:
             metrics=self.metrics.snapshot(),
         )
 
-    def create(self, owner: str, request: dict, document: dict) -> dict:
-        return self._create_action.create(owner, request, document)
-
-    def seal(self, owner: str, request: dict, document: dict) -> dict:
-        return self._lifecycle_actions.seal(owner, request, document)
-
-    def start(self, owner: str, request: dict, document: dict) -> dict:
-        return self._lifecycle_actions.start(owner, request, document)
-
-    def cancel(self, owner: str, request: dict, document: dict) -> dict:
-        return self._lifecycle_actions.cancel(owner, request, document)
-
-    def status(self, owner: str, job_id: str, request_id: str) -> dict:
-        return self._status_query.execute(
-            owner,
-            job_id,
-            request_id,
-        )
-
     def set_draining(self, value: bool = True) -> None:
         self.draining = bool(value)
 
     def _notify_queued(self, job_id: str) -> None:
-        notifier = self.queue_notifier
-        if notifier is not None:
-            notifier(job_id)
+        if self.queue_notifier is not None:
+            self.queue_notifier(job_id)
 
     def _notify_cancel(self, job_id: str) -> None:
-        notifier = self.cancel_notifier
-        if notifier is not None:
-            notifier(job_id)
+        if self.cancel_notifier is not None:
+            self.cancel_notifier(job_id)
+
+    def _cleanup_candidate(self, storage_class: str, relative_path: str) -> None:
+        store = self.recovery_store if storage_class == "recovery" else self.spool
+        try:
+            store.remove(store.absolute_path(relative_path))
+        except (FileNotFoundError, OSError):
+            self.logger.event(
+                "flight.input.candidate_cleanup_failed",
+                storageClass=storage_class,
+                path=os.path.basename(relative_path),
+            )
+
+    def _validate_model_artifact(self, model) -> None:
+        path = self.spool.model_absolute_path(model.checkpoint_path)
+        try:
+            byte_count = os.path.getsize(path)
+        except OSError as exc:
+            raise ServiceError(
+                ErrorCode.MODEL_UNAVAILABLE,
+                "model checkpoint is unavailable",
+            ) from exc
+        if byte_count != model.byte_count or _sha256_file(path) != model.sha256:
+            raise ServiceError(
+                ErrorCode.MODEL_CORRUPT,
+                "model checkpoint integrity validation failed",
+            )
 
     def _limits(self) -> dict:
         return {
@@ -253,9 +312,19 @@ class JobCoordinator:
             "maxPayloadsPerJob": self.config.max_payloads_per_job,
             "maxJobBytes": self.config.max_job_bytes,
             "maxActiveJobsPerSubject": self.config.max_active_jobs_per_subject,
+            "maxPageItems": MAX_PAGE_ITEMS,
+            "inputIdleTimeoutSeconds": self.config.input_idle_timeout_seconds,
             "transportMessageLimitEnforced": False,
         }
 
 
 def _storage_health(usage) -> dict:
     return {"freeBytes": usage.free}
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

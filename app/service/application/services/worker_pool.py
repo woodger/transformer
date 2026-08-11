@@ -9,7 +9,7 @@ from collections.abc import Callable
 from app.service.application.ports.devices import DeviceLeaseManager
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import WorkerExecutor
-from app.service.domain.job import JobState
+from app.service.domain.job import ExecutionState
 from app.service.domain.records import ExecutionJobRecord
 
 
@@ -126,6 +126,11 @@ class WorkerPool:
         """Cancellation callback used after RUNNING -> CANCELLING commits."""
         self._executor().notify_cancel(job_id)
 
+    def notify_input(self, job_id: str) -> None:
+        """Wake the bounded worker control channel after a durable commit."""
+
+        self._executor().notify_input(job_id)
+
     def stop_claiming(self) -> None:
         """Close the durable queue-claim boundary without cancelling work."""
         with self._claim_lock:
@@ -207,9 +212,9 @@ class WorkerPool:
     ) -> bool:
         pending = self.ledger.get_execution_job(job_id)
         from_state = (
-            JobState.QUEUED
+            ExecutionState.QUEUED
             if pending is None
-            else pending.state
+            else pending.execution_state
         )
         with self._claim_lock:
             if self._stop_claiming.is_set():
@@ -230,7 +235,7 @@ class WorkerPool:
         self.metrics.add("workerQueueWaitSeconds", queue_wait)
         self.metrics.record_transition(
             from_state.value,
-            JobState.RUNNING.value,
+            ExecutionState.RUNNING.value,
         )
         self.logger.event(
             "flight.job.transition",
@@ -239,7 +244,7 @@ class WorkerPool:
             device=device,
             deviceId=device_id,
             fromState=from_state.value,
-            toState=JobState.RUNNING.value,
+            toState=ExecutionState.RUNNING.value,
             queueWaitSeconds=queue_wait,
         )
         self._executor().execute(claimed)
@@ -302,7 +307,10 @@ class WorkerPool:
             self._enqueue(pending)
 
     def _enqueue(self, job: ExecutionJobRecord) -> None:
-        if job.state not in (JobState.QUEUED, JobState.RETRYING):
+        if job.execution_state not in (
+            ExecutionState.QUEUED,
+            ExecutionState.RETRYING,
+        ):
             return
         device = job.selected_device
         if device not in self._queues:

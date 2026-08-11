@@ -188,8 +188,8 @@ def test_application_internal_import_graph_is_acyclic():
 
 
 def test_contracts_and_composition_roots_have_canonical_locations():
-    assert (APP_ROOT / "contracts" / "flight" / "v2").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v1").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v3").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v2").is_dir()
     assert not (PROJECT_ROOT / "contracts").exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",
@@ -223,12 +223,19 @@ print(json.dumps({
     admin_program = """
 import json
 import sys
-import app.admin.bootstrap.db_migrations
-print(json.dumps({
-    'torch': 'torch' in sys.modules,
-    'worker': any(name.startswith('app.worker') for name in sys.modules),
-    'flight': 'pyarrow.flight' in sys.modules,
-}))
+import app.admin.bootstrap.db_migrations as admin_module
+
+def run(_args):
+    print(json.dumps({
+        'torch': 'torch' in sys.modules,
+        'worker': any(name.startswith('app.worker') for name in sys.modules),
+        'flight': 'pyarrow.flight' in sys.modules,
+    }))
+
+admin_module.run = run
+sys.argv = ['transformer', 'db', 'migrations', 'status']
+from app.main import main
+main()
 """
     admin = subprocess.run(
         [sys.executable, "-c", admin_program],
@@ -241,3 +248,33 @@ print(json.dumps({
     assert admin.stdout.strip() == (
         '{"torch": false, "worker": false, "flight": false}'
     )
+
+
+def test_control_plane_cli_parser_does_not_initialize_ml_runtime():
+    program = """
+import json
+import sys
+from app.cli.help import build_parser
+
+parser = build_parser()
+parser.parse_args(["flight", "serve", "--allow-plaintext"])
+parser.parse_args(["db", "migrations", "status"])
+print(json.dumps({
+    "mlModules": sorted(
+        name for name in sys.modules
+        if name in ("torch", "cuda")
+        or name.startswith(("torch.", "cuda."))
+    ),
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.stdout.strip() == '{"mlModules": [], "worker": false}'

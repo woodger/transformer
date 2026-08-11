@@ -35,6 +35,7 @@ from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.output import OutputHandler, _stream_batches
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
+from app.service.domain.input_manifest import manifest_sha256
 
 
 def _auth(token="secret"):
@@ -47,7 +48,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 2,
+        "version": 3,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -55,14 +56,24 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 2,
+        "version": 3,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
+        "jobId": str(uuid.uuid4()),
+        "clientExecutionId": str(uuid.uuid4()),
         "operation": "fit",
         "device": "cpu",
         "modelLabel": "returns.daily",
         "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
         "trainingConfig": {"epochs": 1},
+        "dataContract": {
+            "id": "inventory.learning-dataset",
+            "version": 1,
+            "dataContractSha256": "d" * 64,
+            "seqLen": 2,
+            "featureDim": 1,
+            "targetSchemaId": "inventory.target.v1",
+        },
     }
     document.update(overrides)
     return document
@@ -231,14 +242,18 @@ def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_pat
 
 
 def _write_two_batch_output(path):
-    schema = pa.schema([("out", pa.list_(pa.float32()))])
+    output_type = pa.list_(pa.float32(), 6)
+    schema = pa.schema([
+        pa.field("out", output_type, nullable=False),
+    ])
     batches = [
-        pa.record_batch({
-            "out": pa.array(
+        pa.RecordBatch.from_arrays(
+            [pa.array(
                 [[float(offset + index) for index in range(6)]],
-                type=pa.list_(pa.float32()),
-            )
-        })
+                type=output_type,
+            )],
+            schema=schema,
+        )
         for offset in (0, 10)
     ]
     with pa.OSFile(os.fspath(path), "wb") as sink:
@@ -308,11 +323,21 @@ def published_output_server(tmp_path, postgres_ledger):
     ledger.create_job(
         job_id=job_id,
         owner_subject="inventory",
+        client_execution_id=str(uuid.uuid4()),
         operation="predict",
         requested_device="cpu",
         prediction_column="out",
         config_hash="a" * 64,
-        input_model_ref="mdl_seed",
+        data_contract={
+            "id": "inventory.learning-dataset",
+            "version": 1,
+            "data_contract_sha256": "d" * 64,
+            "seq_len": 2,
+            "feature_dim": 1,
+            "target_schema_id": "inventory.target.v1",
+        },
+        create_result={"jobId": job_id},
+        resolved_model_ref="mdl_seed",
         model_config={
             "seq_len": 2,
             "hidden": 8,
@@ -324,8 +349,17 @@ def published_output_server(tmp_path, postgres_ledger):
             "feature_dim": 1,
         },
     )
-    ledger.seal_job(job_id, manifest_hash="a" * 64, manifest=[])
-    ledger.queue_job(job_id, selected_device="cpu")
+    job = ledger.get_job(job_id)
+    ledger.close_input(
+        job_id,
+        client_execution_id=job["client_execution_id"],
+        fencing_token=job["fencing_token"],
+        payload_count=0,
+        total_rows=0,
+        total_bytes=0,
+        manifest_sha256=manifest_sha256([]),
+        selected_device="cpu",
+    )
     running = ledger.claim_next_job("cpu")
     path = spool.attempt_output_path(job_id, running["attempt"], 0)
     spool.ensure_parent(path)
@@ -374,7 +408,7 @@ def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
 ):
     ledger, job_id, client = published_output_server
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v2", "jobs", job_id, "outputs", "0"
+        "transformer", "v3", "jobs", job_id, "outputs", "0"
     )
 
     with pytest.raises(pa.ArrowKeyError):
@@ -425,7 +459,7 @@ def test_client_cancellation_reaches_active_do_get_and_closes_output(
 
     monkeypatch.setattr(output_module, "_stream_batches", observable_stream)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v2", "jobs", job_id, "outputs", "0"
+        "transformer", "v3", "jobs", job_id, "outputs", "0"
     )
     ticket = client.get_flight_info(descriptor, options=_auth()).endpoints[0].ticket
     reader = client.do_get(ticket, options=_auth())
@@ -641,7 +675,12 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(
         request = validate_action_request(CREATE_ACTION, document)
 
         with pytest.raises(ServiceError) as error:
-            coordinator.create("inventory", request, document)
+            coordinator.dispatch(
+                CREATE_ACTION,
+                "inventory",
+                request,
+                document,
+            )
 
         assert error.value.code == ErrorCode.DEVICE_UNAVAILABLE
         assert ledger.list_jobs() == []

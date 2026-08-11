@@ -110,11 +110,20 @@ tables пропускаются; если непустых frames не было,
 и модель не сохраняется. После terminator или clean EOF с хотя бы одним
 непустым frame команда атомарно сохраняет checkpoint.
 
-Flight fit использует другой внутренний режим этой команды: каждая job-wide
-эпоха читает все sealed payloads из durable spool по ordinal, с едиными loss
+Flight fit использует durable input stream: epoch 0 начинает обработку
+непрерывного префикса payloads до EOF, а последующие job-wide эпохи перечитывают
+закрытый immutable dataset по ordinal, с едиными loss
 schedule, optimizer, checkpoint selection и early stopping на весь job. Строки
 проходят через ограниченное job-wide окно перемешивания; его границы и optimizer
 batches могут пересекать payload и не зависят от транспортного разбиения.
+
+Полная schema/value validation выполняется сервисом до durable commit каждого
+Flight payload. Worker перед первым чтением в рамках attempt проверяет
+immutable receipt, размер и SHA-256; повторные эпохи сверяют physical Arrow
+schema и число строк, но не хешируют и не сканируют все значения заново.
+Для закрытых эпох CPU pipeline подготавливает не более одного следующего batch,
+пока текущий batch обрабатывается моделью. Открытая epoch 0 остаётся
+синхронной с durable input/control channel.
 
 ## Контекстные пропуски
 
@@ -190,7 +199,22 @@ Summary показывает основной результат эпохи, с�
 - `step` — глобальный номер optimizer step к концу строки метрик;
 - `lr` — текущий learning rate;
 - `loss_stage` — активный этап функции потерь;
+- `input_pipeline_ms` — host wall time получения batch из input pipeline,
+  включая ожидание Arrow replay/первой receipt verification, streaming input и
+  CPU shuffle; при closed-input prefetch это время ожидания consumer-а, а не
+  суммарное CPU-время producer-а;
+- `missing_stats_ms` — host wall time расчёта NaN и token ratios;
+- `host_to_device_ms` — host wall time вызовов CPU-to-device transfer;
+- `train_step_ms` — host wall time forward, loss, backward, optimizer step и
+  сбора batch metrics;
 - `elapsed_ms` — время training pass.
+
+Фазовые таймеры являются host-side диагностикой и не добавляют отдельную CUDA
+synchronize, поэтому не являются точным GPU kernel time. CUDA scalar metrics
+loss/gradient собираются в один tensor и материализуются одной передачей на
+CPU за batch. Сумма фаз может быть меньше `elapsed_ms` на служебные операции и
+перекрытый prefetch. Как и `elapsed_ms`, фазовые значения исключаются из
+deterministic equivalence ML-state.
 
 Чтобы сохранять метрики, добавьте `--metrics-out`:
 
@@ -214,6 +238,7 @@ JSON `null`.
 
 `plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
 `sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
-`rows`, `batches`, `step`, `lr`, `loss_stage` и `elapsed_ms`. Output directory
+`rows`, `batches`, `step`, `lr`, `loss_stage`, фазовые durations и
+`elapsed_ms`. Output directory
 создаётся автоматически; существующие одноимённые SVG перезаписываются.
 Невалидная JSON-строка в `METRICS_FILE` прерывает команду.

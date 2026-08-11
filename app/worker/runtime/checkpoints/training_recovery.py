@@ -7,7 +7,7 @@ from dataclasses import asdict, is_dataclass
 
 import torch
 
-from app.contracts.worker.v1.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
 from app.worker.runtime.version import __version__
 
 _HASH_CHUNK_BYTES = 1024 * 1024
@@ -19,13 +19,13 @@ def save_training_recovery(
     *,
     generation: int,
     config_hash: str,
-    seal_hash: str,
+    manifest_hash: str,
 ) -> dict:
     """Atomically persist one complete global-epoch recovery point."""
 
     _positive(generation, "generation")
     _digest(config_hash, "config_hash")
-    _digest(seal_hash, "seal_hash")
+    _digest(manifest_hash, "manifest_hash")
     state = trainer.recovery_state_dict()
     progress = state["training_state"]
     payload = {
@@ -33,7 +33,7 @@ def save_training_recovery(
         "service_version": __version__,
         "generation": generation,
         "config_hash": config_hash,
-        "seal_hash": seal_hash,
+        "manifest_hash": manifest_hash,
         "completed_epochs": progress["global_epoch"],
         "global_step": progress["train_step"],
         "training_complete": state["training_complete"],
@@ -60,12 +60,12 @@ def load_training_recovery(
     device,
     *,
     expected_config_hash: str,
-    expected_seal_hash: str,
+    expected_manifest_hash: str,
 ) -> dict:
     """Load and validate one server-owned training recovery checkpoint."""
 
     _digest(expected_config_hash, "expected_config_hash")
-    _digest(expected_seal_hash, "expected_seal_hash")
+    _digest(expected_manifest_hash, "expected_manifest_hash")
     payload = torch.load(
         os.path.abspath(os.fspath(path)),
         map_location=device,
@@ -78,7 +78,7 @@ def load_training_recovery(
         "service_version",
         "generation",
         "config_hash",
-        "seal_hash",
+        "manifest_hash",
         "completed_epochs",
         "global_step",
         "training_complete",
@@ -96,9 +96,9 @@ def load_training_recovery(
         raise ValueError(
             "training recovery configuration does not match the job"
         )
-    if payload["seal_hash"] != expected_seal_hash:
+    if payload["manifest_hash"] != expected_manifest_hash:
         raise ValueError(
-            "training recovery inputs do not match the sealed job"
+            "training recovery inputs do not match the closed job"
         )
     _positive(payload["generation"], "generation")
     _positive(payload["completed_epochs"], "completed_epochs")

@@ -1,3 +1,5 @@
+from importlib.metadata import version as package_version
+
 import app.flight.device_inventory as device_inventory_module
 from app.flight.device_inventory import (
     CudaDeviceInventory,
@@ -153,3 +155,14 @@ def test_inventory_probe_failure_keeps_cpu_service_startable():
 
     assert inventory.snapshot().devices == ()
     assert inventory.snapshot().cuda_capacity == 0
+
+
+def test_default_probe_is_independent_of_service_working_directory(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    inventory = CudaDeviceInventory().initialize()
+
+    assert inventory.snapshot().torch_version == package_version("torch")

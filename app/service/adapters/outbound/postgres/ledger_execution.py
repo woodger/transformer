@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v1.config import ModelConfig, TrainConfig
+from app.contracts.worker.v2.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger_support import (
     canonical_uuid,
     decode,
@@ -16,14 +16,13 @@ from app.service.adapters.outbound.postgres.ledger_support import (
     timestamp,
 )
 from app.service.adapters.outbound.postgres.models import (
-    QUEUE_SEQUENCE,
     Job,
     JobAttempt,
     TrainingRecoveryCheckpoint,
 )
-from app.service.domain.errors import conflict, failed_precondition, not_found
-from app.service.domain.job import ErrorCode, JobState
-from app.service.domain.policies import validate_transition
+from app.service.domain.errors import failed_precondition, not_found
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.policies import validate_execution_transition
 from app.service.domain.records import (
     ExecutionJobRecord,
     RecoverableAttemptRecord,
@@ -79,7 +78,10 @@ class ExecutionLedgerSlice:
                 .where(Job.job_id == job_id)
                 .with_for_update()
             )
-            if job is None or job.state != JobState.RUNNING.value:
+            if (
+                job is None
+                or job.execution_state != ExecutionState.RUNNING.value
+            ):
                 raise failed_precondition("job is not running")
             record = session.get(
                 JobAttempt,
@@ -88,7 +90,7 @@ class ExecutionLedgerSlice:
             )
             if (
                 record is None
-                or record.status != JobState.RUNNING.value
+                or record.status != ExecutionState.RUNNING.value
                 or record.attempt_id != attempt_id
             ):
                 raise failed_precondition("job attempt is no longer active")
@@ -97,48 +99,6 @@ class ExecutionLedgerSlice:
             job.updated_at = timestamp_now(now)
             session.flush()
             return decode(job)
-
-    def queue_job(
-        self,
-        job_id: str,
-        *,
-        selected_device: str,
-        result: dict | None = None,
-        now: float | None = None,
-        connection: Session | None = None,
-    ) -> tuple[dict, bool]:
-        if selected_device not in ("cpu", "cuda"):
-            raise ValueError("selected_device must be cpu or cuda")
-        queued_at = timestamp_now(now)
-        with self.sessions.write(connection) as session:
-            job = session.scalar(
-                select(Job)
-                .where(Job.job_id == job_id)
-                .with_for_update()
-            )
-            if job is None:
-                raise not_found(f"job not found: {job_id}")
-            if job.queued_at is not None:
-                if job.selected_device != selected_device:
-                    raise conflict(
-                        "job was started with a different device"
-                    )
-                return decode(job), True
-            if job.state != JobState.SEALED.value:
-                raise failed_precondition(
-                    "job must be SEALED before start"
-                )
-            job.state = JobState.QUEUED.value
-            job.revision += 1
-            job.selected_device = selected_device
-            job.start_result = json_value(result)
-            job.queued_at = queued_at
-            job.updated_at = queued_at
-            job.queue_sequence = session.scalar(
-                select(QUEUE_SEQUENCE.next_value())
-            )
-            session.flush()
-            return decode(job), False
 
     def claim_job(
         self,
@@ -159,9 +119,9 @@ class ExecutionLedgerSlice:
             )
             if (
                 job is None
-                or job.state not in (
-                    JobState.QUEUED.value,
-                    JobState.RETRYING.value,
+                or job.execution_state not in (
+                    ExecutionState.QUEUED.value,
+                    ExecutionState.RETRYING.value,
                 )
                 or job.selected_device != selected_device
             ):
@@ -194,9 +154,9 @@ class ExecutionLedgerSlice:
             )
             if (
                 job is None
-                or job.state not in (
-                    JobState.QUEUED.value,
-                    JobState.RETRYING.value,
+                or job.execution_state not in (
+                    ExecutionState.QUEUED.value,
+                    ExecutionState.RETRYING.value,
                 )
                 or job.selected_device != selected_device
             ):
@@ -224,9 +184,9 @@ class ExecutionLedgerSlice:
             job = session.scalar(
                 select(Job)
                 .where(
-                    Job.state.in_((
-                        JobState.QUEUED.value,
-                        JobState.RETRYING.value,
+                    Job.execution_state.in_((
+                        ExecutionState.QUEUED.value,
+                        ExecutionState.RETRYING.value,
                     )),
                     Job.selected_device == selected_device,
                 )
@@ -274,7 +234,7 @@ class ExecutionLedgerSlice:
                 )
                 .limit(1)
             )
-        job.state = JobState.RUNNING.value
+        job.execution_state = ExecutionState.RUNNING.value
         job.revision += 1
         job.attempt += 1
         job.started_at = claimed_at
@@ -286,7 +246,7 @@ class ExecutionLedgerSlice:
             selected_device=job.selected_device,
             device_id=device_id,
             resume_generation=resume_generation,
-            status=JobState.RUNNING.value,
+            status=ExecutionState.RUNNING.value,
             worker_id=worker_id,
             claimed_at=claimed_at,
             started_at=claimed_at,
@@ -319,7 +279,7 @@ class ExecutionLedgerSlice:
             )
             if (
                 record is None
-                or record.status != JobState.RUNNING.value
+                or record.status != ExecutionState.RUNNING.value
                 or record.attempt_id != attempt_id
             ):
                 raise failed_precondition("job attempt is not running")
@@ -334,11 +294,11 @@ class ExecutionLedgerSlice:
                 select(JobAttempt)
                 .join(Job, Job.job_id == JobAttempt.job_id)
                 .where(
-                    Job.state.in_((
-                        JobState.RUNNING.value,
-                        JobState.CANCELLING.value,
+                    Job.execution_state.in_((
+                        ExecutionState.RUNNING.value,
+                        ExecutionState.CANCELLING.value,
                     )),
-                    JobAttempt.status == JobState.RUNNING.value,
+                    JobAttempt.status == ExecutionState.RUNNING.value,
                     JobAttempt.attempt == Job.attempt,
                 )
                 .order_by(JobAttempt.job_id, JobAttempt.attempt)
@@ -353,11 +313,11 @@ class ExecutionLedgerSlice:
                 select(JobAttempt)
                 .join(Job, Job.job_id == JobAttempt.job_id)
                 .where(
-                    Job.state.in_((
-                        JobState.RUNNING.value,
-                        JobState.CANCELLING.value,
+                    Job.execution_state.in_((
+                        ExecutionState.RUNNING.value,
+                        ExecutionState.CANCELLING.value,
                     )),
-                    JobAttempt.status == JobState.RUNNING.value,
+                    JobAttempt.status == ExecutionState.RUNNING.value,
                     JobAttempt.attempt == Job.attempt,
                 )
                 .order_by(JobAttempt.job_id, JobAttempt.attempt)
@@ -368,7 +328,7 @@ class ExecutionLedgerSlice:
         self,
         job_id: str,
         attempt: int,
-        target_state: str | JobState,
+        target_state: str | ExecutionState,
         *,
         attempt_id: str,
         error_code: str | ErrorCode | None = None,
@@ -376,16 +336,16 @@ class ExecutionLedgerSlice:
         exit_code: int | None = None,
         now: float | None = None,
     ) -> dict:
-        target_state = JobState(target_state)
+        target_state = ExecutionState(target_state)
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         if target_state not in (
-            JobState.FAILED,
-            JobState.CANCELLED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
         ):
             raise ValueError(
                 "worker attempt can finish only as FAILED or CANCELLED"
             )
-        if target_state == JobState.CANCELLED and (
+        if target_state == ExecutionState.CANCELLED and (
             error_code is not None or error_message is not None
         ):
             raise ValueError("cancelled attempt must not carry an error")
@@ -402,7 +362,7 @@ class ExecutionLedgerSlice:
                 raise failed_precondition(
                     "job attempt is no longer active"
                 )
-            validate_transition(job.state, target_state)
+            validate_execution_transition(job.execution_state, target_state)
             record = session.get(
                 JobAttempt,
                 (job_id, attempt),
@@ -410,7 +370,7 @@ class ExecutionLedgerSlice:
             )
             if (
                 record is None
-                or record.status != JobState.RUNNING.value
+                or record.status != ExecutionState.RUNNING.value
                 or record.attempt_id != attempt_id
             ):
                 raise failed_precondition(
@@ -426,7 +386,9 @@ class ExecutionLedgerSlice:
             record.exit_code = exit_code
             record.error_code = code
             record.error_message = error_message
-            job.state = target_state.value
+            job.execution_state = target_state.value
+            if job.input_state == InputState.OPEN.value:
+                job.input_state = InputState.ABORTED.value
             job.revision += 1
             job.error_code = code
             job.error_message = error_message
@@ -465,21 +427,85 @@ class ExecutionLedgerSlice:
             )
             if (
                 record is None
-                or record.status != JobState.RUNNING.value
+                or record.status != ExecutionState.RUNNING.value
                 or record.attempt_id != attempt_id
             ):
                 raise failed_precondition(
                     "job attempt is no longer active"
                 )
-            if job.state == JobState.CANCELLING.value:
+            if job.execution_state == ExecutionState.CANCELLING.value:
                 return False
-            if job.state != JobState.RUNNING.value:
+            if job.execution_state != ExecutionState.RUNNING.value:
                 raise failed_precondition("job attempt is not running")
-            validate_transition(job.state, JobState.CANCELLING)
-            job.state = JobState.CANCELLING.value
+            validate_execution_transition(
+                job.execution_state,
+                ExecutionState.CANCELLING,
+            )
+            job.execution_state = ExecutionState.CANCELLING.value
             job.revision += 1
             job.cancel_requested_at = requested_at
             job.updated_at = requested_at
+            session.flush()
+            return True
+
+    def mark_input_waiting(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        next_ordinal: int,
+        input_revision: int,
+        now: float | None = None,
+    ) -> bool:
+        attempt_id = canonical_uuid(attempt_id, "attempt_id")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
+            for value in (next_ordinal, input_revision)
+        ):
+            raise ValueError(
+                "input wait ordinal and revision must be non-negative"
+            )
+        waiting_at = timestamp_now(now)
+        with self.database.transaction() as session:
+            job = session.scalar(
+                select(Job)
+                .where(Job.job_id == job_id)
+                .with_for_update()
+            )
+            record = session.get(
+                JobAttempt,
+                (job_id, attempt),
+                with_for_update=True,
+            )
+            if (
+                job is None
+                or record is None
+                or job.attempt != attempt
+                or record.attempt_id != attempt_id
+                or record.status != ExecutionState.RUNNING.value
+                or job.execution_state != ExecutionState.RUNNING.value
+            ):
+                raise failed_precondition(
+                    "job attempt is no longer active"
+                )
+            if job.input_state != InputState.OPEN.value:
+                return False
+            if (
+                job.next_input_ordinal != next_ordinal
+                or job.input_revision != input_revision
+            ):
+                return False
+            job.waiting_for_input = True
+            job.waiting_input_ordinal = next_ordinal
+            job.input_waiting_since = waiting_at
+            if (
+                job.acquire_grace_until is not None
+                and job.acquire_grace_until <= waiting_at
+            ):
+                job.acquire_grace_until = None
             session.flush()
             return True
 
@@ -487,9 +513,9 @@ class ExecutionLedgerSlice:
         with self.database.session() as session:
             rows = session.scalars(
                 select(Job)
-                .where(Job.state.in_((
-                    JobState.QUEUED.value,
-                    JobState.RETRYING.value,
+                .where(Job.execution_state.in_((
+                    ExecutionState.QUEUED.value,
+                    ExecutionState.RETRYING.value,
                 )))
                 .order_by(Job.queue_sequence)
             )
@@ -499,9 +525,9 @@ class ExecutionLedgerSlice:
         with self.database.session() as session:
             rows = session.scalars(
                 select(Job)
-                .where(Job.state.in_((
-                    JobState.QUEUED.value,
-                    JobState.RETRYING.value,
+                .where(Job.execution_state.in_((
+                    ExecutionState.QUEUED.value,
+                    ExecutionState.RETRYING.value,
                 )))
                 .order_by(Job.queue_sequence)
             )
@@ -518,17 +544,20 @@ def _execution_job_record(
         job_id=record.job_id,
         owner_subject=record.owner_subject,
         operation=record.operation,
-        state=JobState(record.state),
+        input_state=InputState(record.input_state),
+        execution_state=ExecutionState(record.execution_state),
+        input_revision=record.input_revision,
         selected_device=record.selected_device,
         model_label=record.model_label,
-        input_model_ref=record.input_model_ref,
+        input_model_ref=record.resolved_model_ref,
         prediction_column=record.prediction_column,
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),
+        data_contract=dict(record.data_contract),
         config_hash=record.config_hash,
-        seal_hash=record.seal_hash,
+        manifest_sha256=record.manifest_sha256,
         feature_dim=record.feature_dim,
-        input_frame_count=len(record.seal_manifest or ()),
+        input_frame_count=record.next_input_ordinal,
         attempt=record.attempt,
         assigned_device_id=(
             None if attempt is None else attempt.device_id

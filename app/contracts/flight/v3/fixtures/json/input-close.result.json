@@ -1,0 +1,16 @@
+{
+  "contract": "transformer-flight",
+  "version": 3,
+  "requestId": "77777777-7777-4777-8777-777777777777",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "revision": 4,
+  "input": {
+    "state": "CLOSED",
+    "revision": 1,
+    "payloadCount": 1,
+    "totalRows": 3,
+    "totalBytes": 1290,
+    "manifestSha256": "fcfd39d5448966758dcbd205409ee7ac7758e6624a332651b2cce632844e84a6"
+  },
+  "execution": {"state": "RUNNING"}
+}

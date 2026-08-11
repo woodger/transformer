@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 import pyarrow.ipc as ipc
 
-from app.contracts.worker.v1.config import ModelConfig
+from app.contracts.worker.v2.config import ModelConfig
 from app.service.adapters.inbound.flight.arrow import InputBatchValidator
 from app.service.adapters.inbound.flight.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
     ErrorCode,
-    JobState,
+    InputState,
 )
 from app.service.adapters.inbound.flight.contract import validate_upload_metadata
 from app.service.adapters.inbound.flight.errors import (
@@ -45,6 +45,7 @@ class InputUploadSession:
         job,
         ordinal,
         reader,
+        selected_device,
     ):
         self.config = config
         self.ledger = ledger
@@ -58,11 +59,11 @@ class InputUploadSession:
         self.job = job
         self.ordinal = ordinal
         self.reader = reader
+        if selected_device not in ("cpu", "cuda"):
+            raise ValueError("selected_device must be cpu or cuda")
+        self.selected_device = selected_device
 
-        self.destination = self.artifact_store.input_path(
-            job["job_id"],
-            ordinal,
-        )
+        self.destination = None
         self.temporary_file = None
         self.temporary_path = None
         self.ipc_writer = None
@@ -74,6 +75,8 @@ class InputUploadSession:
 
     def run(self) -> UploadOutcome:
         model_config = ModelConfig.from_dict(self.job["model_config"])
+        if model_config is None:
+            raise failed_precondition("job model configuration is unavailable")
         validator = InputBatchValidator(
             self.job["operation"],
             self.reader.schema,
@@ -100,12 +103,9 @@ class InputUploadSession:
                 )
                 if current is None:
                     raise not_found("job not found")
-                if current["state"] == JobState.CANCELLED.value:
-                    raise ServiceError(
-                        ErrorCode.CANCELLED,
-                        "job upload was cancelled",
-                    )
-                if current["state"] != JobState.UPLOADING.value:
+                if current["input_state"] == InputState.ABORTED.value:
+                    raise ServiceError(ErrorCode.CANCELLED, "job input was aborted")
+                if current["input_state"] != InputState.OPEN.value:
                     raise failed_precondition("job no longer accepts inputs")
 
                 if chunk.app_metadata is not None:
@@ -117,6 +117,7 @@ class InputUploadSession:
                         _parse_metadata(chunk.app_metadata)
                     )
                     _match_upload(self.job, self.metadata, self.ordinal)
+                    _verify_current_fence(current, self.metadata)
                     self.existing = _find_existing(
                         self.ledger,
                         self.job["job_id"],
@@ -125,20 +126,30 @@ class InputUploadSession:
                         self.storage_class,
                     )
 
+                    self.upload_token = secrets.token_hex(24)
+                    self.destination = self.artifact_store.input_candidate_path(
+                        self.job["job_id"],
+                        self.ordinal,
+                        self.metadata["payload_id"],
+                        self.upload_token,
+                    )
                     self.temporary_file, self.temporary_path = (
                         self.artifact_store.create_temporary(
                             self.destination
                         )
                     )
                     if self.existing is None:
-                        self.upload_token = secrets.token_hex(24)
                         self.ledger.reserve_input(
                             job_id=self.job["job_id"],
                             payload_id=self.metadata["payload_id"],
                             ordinal=self.ordinal,
+                            client_execution_id=(
+                                self.metadata["client_execution_id"]
+                            ),
+                            fencing_token=self.metadata["fencing_token"],
                             upload_token=self.upload_token,
-                            temporary_path=self.artifact_store.relative_path(
-                                self.temporary_path
+                            candidate_path=self.artifact_store.relative_path(
+                                self.destination
                             ),
                             storage_class=self.storage_class,
                         )
@@ -203,18 +214,34 @@ class InputUploadSession:
                 )
                 _validate_committed_artifact(
                     self.existing,
-                    self.destination,
+                    self.artifact_store.absolute_path(
+                        self.existing["relative_path"]
+                    ),
                     self.storage_class,
                 )
                 os.unlink(self.temporary_path)
                 self.temporary_path = None
-                return UploadOutcome(self.existing, False)
+                current = self.ledger.get_job(
+                    self.job["job_id"],
+                    owner_subject=self.owner,
+                )
+                if current is None:
+                    raise not_found("job not found")
+                _verify_current_fence(current, self.metadata)
+                duplicate = dict(self.existing)
+                duplicate.update({
+                    "input_revision": current["input_revision"],
+                    "next_input_ordinal": current["next_input_ordinal"],
+                    "queued": False,
+                    "frontier_advanced": False,
+                })
+                return UploadOutcome(duplicate, False)
 
             # durable_replace may raise after os.replace while fsyncing the
             # parent directory. Mark publication before the call so the
             # failure path removes any final-named, uncommitted artifact.
             self.destination_published = True
-            self.artifact_store.durable_replace(
+            self.artifact_store.durable_create(
                 self.temporary_path,
                 self.destination,
             )
@@ -222,10 +249,16 @@ class InputUploadSession:
             try:
                 record = self.ledger.commit_input(
                     upload_token=self.upload_token,
+                    job_id=self.job["job_id"],
+                    client_execution_id=self.metadata["client_execution_id"],
+                    fencing_token=self.metadata["fencing_token"],
                     relative_path=self.artifact_store.relative_path(
                         self.destination
                     ),
                     schema_id=self.metadata["schema_id"],
+                    data_contract_sha256=(
+                        self.metadata["data_contract_sha256"]
+                    ),
                     rows=stats.rows,
                     batches=stats.batches,
                     byte_count=byte_count,
@@ -233,6 +266,7 @@ class InputUploadSession:
                     schema_fingerprint=stats.schema_fingerprint,
                     source_width=stats.src_width,
                     feature_dim=feature_dim,
+                    selected_device=self.selected_device,
                     max_payloads=self.config.max_payloads_per_job,
                     max_job_bytes=self.config.max_job_bytes,
                     storage_class=self.storage_class,
@@ -315,6 +349,22 @@ def _match_upload(job: dict, metadata: dict, descriptor_ordinal: int) -> None:
     expected = FIT_SCHEMA_ID if job["operation"] == "fit" else PREDICT_SCHEMA_ID
     if metadata["schema_id"] != expected:
         raise invalid("metadata schemaId does not match job operation")
+    if metadata["data_contract_sha256"] != job["data_contract_sha256"]:
+        raise ServiceError(
+            ErrorCode.MODEL_SCHEMA_MISMATCH,
+            "metadata dataContractSha256 does not match the job",
+        )
+
+
+def _verify_current_fence(job: dict, metadata: dict) -> None:
+    if (
+        metadata["client_execution_id"] != job["client_execution_id"]
+        or metadata["fencing_token"] != job["fencing_token"]
+    ):
+        raise ServiceError(
+            ErrorCode.STALE_FENCE,
+            "job ownership fence is stale",
+        )
 
 
 def _find_existing(
@@ -345,6 +395,8 @@ def _validate_exact_duplicate(existing, metadata, stats, byte_count, digest):
         existing["payload_id"] == metadata["payload_id"]
         and existing["ordinal"] == metadata["ordinal"]
         and existing["schema_id"] == metadata["schema_id"]
+        and existing["data_contract_sha256"]
+        == metadata["data_contract_sha256"]
         and existing["rows"] == stats.rows
         and existing["batches"] == stats.batches
         and existing["bytes"] == byte_count

@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-08-06
 - Supersedes: package-boundary decisions in ADR 0002
+- Contract versions amended by ADR 0005
 
 ## Context
 

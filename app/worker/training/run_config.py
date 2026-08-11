@@ -18,7 +18,7 @@ from app.config import (
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
-from app.contracts.worker.v1.config import ModelConfig, TrainConfig
+from app.contracts.worker.v2.config import ModelConfig, TrainConfig
 
 
 def _pick(value, default):

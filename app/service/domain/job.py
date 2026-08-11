@@ -4,50 +4,67 @@ SUPPORTED_OPERATIONS = ("fit", "predict")
 SUPPORTED_DEVICES = ("cpu", "cuda", "auto")
 
 
-class JobState(StrEnum):
-    UPLOADING = "UPLOADING"
-    SEALED = "SEALED"
+class InputState(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    ABORTED = "ABORTED"
+
+
+class ExecutionState(StrEnum):
+    WAITING_INPUT = "WAITING_INPUT"
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     RETRYING = "RETRYING"
+    CANCELLING = "CANCELLING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
-    CANCELLING = "CANCELLING"
     CANCELLED = "CANCELLED"
 
 
-TERMINAL_STATES = frozenset({
-    JobState.SUCCEEDED,
-    JobState.FAILED,
-    JobState.CANCELLED,
+TERMINAL_EXECUTION_STATES = frozenset({
+    ExecutionState.SUCCEEDED,
+    ExecutionState.FAILED,
+    ExecutionState.CANCELLED,
 })
 
 IMMEDIATE_CANCEL_STATES = frozenset({
-    JobState.UPLOADING,
-    JobState.SEALED,
-    JobState.QUEUED,
-    JobState.RETRYING,
+    ExecutionState.WAITING_INPUT,
+    ExecutionState.QUEUED,
+    ExecutionState.RETRYING,
 })
 
-STATE_TRANSITIONS = {
-    JobState.UPLOADING: frozenset({JobState.SEALED, JobState.CANCELLED}),
-    JobState.SEALED: frozenset({JobState.QUEUED, JobState.CANCELLED}),
-    JobState.QUEUED: frozenset({JobState.RUNNING, JobState.CANCELLED}),
-    JobState.RUNNING: frozenset({
-        JobState.SUCCEEDED,
-        JobState.FAILED,
-        JobState.CANCELLING,
-        JobState.RETRYING,
+EXECUTION_STATE_TRANSITIONS = {
+    ExecutionState.WAITING_INPUT: frozenset({
+        ExecutionState.QUEUED,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLED,
     }),
-    JobState.RETRYING: frozenset({
-        JobState.RUNNING,
-        JobState.FAILED,
-        JobState.CANCELLED,
+    ExecutionState.QUEUED: frozenset({
+        ExecutionState.RUNNING,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLED,
     }),
-    JobState.CANCELLING: frozenset({JobState.CANCELLED}),
-    JobState.SUCCEEDED: frozenset(),
-    JobState.FAILED: frozenset(),
-    JobState.CANCELLED: frozenset(),
+    ExecutionState.RUNNING: frozenset({
+        ExecutionState.SUCCEEDED,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLING,
+        ExecutionState.RETRYING,
+    }),
+    ExecutionState.RETRYING: frozenset({
+        ExecutionState.RUNNING,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLED,
+    }),
+    ExecutionState.CANCELLING: frozenset({ExecutionState.CANCELLED}),
+    ExecutionState.SUCCEEDED: frozenset(),
+    ExecutionState.FAILED: frozenset(),
+    ExecutionState.CANCELLED: frozenset(),
+}
+
+INPUT_STATE_TRANSITIONS = {
+    InputState.OPEN: frozenset({InputState.CLOSED, InputState.ABORTED}),
+    InputState.CLOSED: frozenset(),
+    InputState.ABORTED: frozenset(),
 }
 
 
@@ -63,6 +80,14 @@ class ErrorCode(StrEnum):
     UNAVAILABLE = "UNAVAILABLE"
     INTERNAL = "INTERNAL"
 
+    EMPTY_INPUT = "EMPTY_INPUT"
+    STALE_FENCE = "STALE_FENCE"
+    JOB_RETIRED = "JOB_RETIRED"
+    INPUT_TIMEOUT = "INPUT_TIMEOUT"
+    MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+    MODEL_CORRUPT = "MODEL_CORRUPT"
+    MODEL_SCHEMA_MISMATCH = "MODEL_SCHEMA_MISMATCH"
+
     DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
     DEVICE_LOST = "DEVICE_LOST"
     EXECUTION_INTERRUPTED = "EXECUTION_INTERRUPTED"
@@ -75,4 +100,3 @@ class ErrorCode(StrEnum):
     RECOVERY_CHECKPOINT_UNAVAILABLE = "RECOVERY_CHECKPOINT_UNAVAILABLE"
     RECOVERY_CHECKPOINT_INCOMPATIBLE = "RECOVERY_CHECKPOINT_INCOMPATIBLE"
     RECOVERY_INPUT_UNAVAILABLE = "RECOVERY_INPUT_UNAVAILABLE"
-

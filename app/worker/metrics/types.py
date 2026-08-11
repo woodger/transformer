@@ -25,6 +25,10 @@ class TrainMetrics:
     complete_token_ratio: float = 0.0
     partial_token_ratio: float = 0.0
     empty_token_ratio: float = 0.0
+    input_pipeline_ms: float = 0.0
+    missing_stats_ms: float = 0.0
+    host_to_device_ms: float = 0.0
+    train_step_ms: float = 0.0
     elapsed_ms: float = 0.0
     step: int = 0
     lr: float = 0.0
@@ -176,6 +180,10 @@ class TrainMetrics:
             "complete_token_ratio": self.complete_token_ratio,
             "partial_token_ratio": self.partial_token_ratio,
             "empty_token_ratio": self.empty_token_ratio,
+            "input_pipeline_ms": self.input_pipeline_ms,
+            "missing_stats_ms": self.missing_stats_ms,
+            "host_to_device_ms": self.host_to_device_ms,
+            "train_step_ms": self.train_step_ms,
             "elapsed_ms": self.elapsed_ms,
             "step": self.step,
             "lr": self.lr,

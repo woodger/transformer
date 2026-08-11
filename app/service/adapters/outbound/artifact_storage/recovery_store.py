@@ -16,6 +16,7 @@ from app.service.adapters.outbound.artifact_storage.spool import (
 )
 
 _CHECKPOINT_NAME = re.compile(r"^[1-9][0-9]*\.pth$")
+_SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class RecoveryStore:
@@ -60,6 +61,21 @@ class RecoveryStore:
         return os.path.join(
             self.input_directory(job_id),
             f"{ordinal}.arrow",
+        )
+
+    def input_candidate_path(
+        self,
+        job_id: str,
+        ordinal: int,
+        payload_id: str,
+        upload_token: str,
+    ) -> str:
+        _nonnegative(ordinal, "ordinal")
+        payload_id = _uuid_component(payload_id, "payload_id")
+        upload_token = _safe_component(upload_token, "upload_token")
+        return os.path.join(
+            self.input_directory(job_id),
+            f"{ordinal}-{payload_id}-{upload_token}.arrow",
         )
 
     def checkpoint_directory(self, job_id: str) -> str:
@@ -139,6 +155,23 @@ class RecoveryStore:
             )
         _fsync_file(temporary_path)
         os.replace(temporary_path, destination)
+        fsync_directory(os.path.dirname(destination))
+        return destination
+
+    def durable_create(
+        self,
+        temporary_path: str,
+        destination: str,
+    ) -> str:
+        temporary_path = self._inside_root(temporary_path)
+        destination = self._inside_root(destination)
+        if os.path.dirname(temporary_path) != os.path.dirname(destination):
+            raise ValueError(
+                "temporary recovery artifact must be beside its destination"
+            )
+        _fsync_file(temporary_path)
+        os.link(temporary_path, destination)
+        os.unlink(temporary_path)
         fsync_directory(os.path.dirname(destination))
         return destination
 
@@ -261,6 +294,12 @@ def _uuid_component(value: str, label: str) -> str:
     if str(parsed) != value.lower():
         raise ValueError(f"{label} must be a canonical UUID")
     return str(parsed)
+
+
+def _safe_component(value: str, label: str) -> str:
+    if not isinstance(value, str) or not _SAFE_COMPONENT.fullmatch(value):
+        raise ValueError(f"{label} is not a safe path component")
+    return value
 
 
 def _nonnegative(value: int, label: str) -> None:

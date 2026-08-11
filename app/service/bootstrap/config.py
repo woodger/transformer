@@ -12,7 +12,7 @@ from app.config import (
     PROJECT_ROOT,
     RETENTION_SECONDS,
 )
-from app.contracts.flight.v2.constants import MAX_MANIFEST_ITEMS
+from app.contracts.flight.v3.constants import MAX_PAYLOADS_PER_JOB
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
@@ -47,7 +47,7 @@ class FlightServiceConfig:
     max_batch_bytes: int = 16 * 1024 * 1024
     max_payload_bytes: int = 512 * 1024 * 1024
     max_rows_per_payload: int = 2_000_000
-    max_payloads_per_job: int = MAX_MANIFEST_ITEMS
+    max_payloads_per_job: int = MAX_PAYLOADS_PER_JOB
     max_job_bytes: int = 64 * 1024 * 1024 * 1024
     max_active_jobs_per_subject: int = 32
 
@@ -59,6 +59,8 @@ class FlightServiceConfig:
     retention_seconds: int = RETENTION_SECONDS
     maintenance_interval_seconds: int = 60
     subprocess_timeout_seconds: float = 24 * 60 * 60
+    input_idle_timeout_seconds: float = 15 * 60
+    acquire_idle_grace_seconds: float = 30.0
 
     @property
     def tls_enabled(self) -> bool:
@@ -138,6 +140,8 @@ class FlightServiceConfig:
             "cancel_grace_seconds",
             "shutdown_drain_seconds",
             "subprocess_timeout_seconds",
+            "input_idle_timeout_seconds",
+            "acquire_idle_grace_seconds",
         ):
             value = getattr(self, name)
             if (
@@ -153,10 +157,10 @@ class FlightServiceConfig:
             raise ValueError("max_batch_bytes must not exceed max_message_bytes")
         if self.max_message_bytes > self.max_payload_bytes:
             raise ValueError("max_message_bytes must not exceed max_payload_bytes")
-        if self.max_payloads_per_job > MAX_MANIFEST_ITEMS:
+        if self.max_payloads_per_job > MAX_PAYLOADS_PER_JOB:
             raise ValueError(
-                f"max_payloads_per_job must not exceed {MAX_MANIFEST_ITEMS} "
-                "so the seal manifest fits the action document limit"
+                "max_payloads_per_job must not exceed "
+                f"{MAX_PAYLOADS_PER_JOB}"
             )
 
         for path_name in (

@@ -144,16 +144,6 @@ def validate_prediction_file(
                     f"prediction has null row at index {rows + null_row + 1}"
                 )
 
-            lengths = np.diff(
-                array.offsets.to_numpy(zero_copy_only=False)
-            )
-            wrong_width = _first_true(lengths != TARGET_WIDTH)
-            if wrong_width is not None:
-                raise invalid(
-                    f"prediction list width must be {TARGET_WIDTH}, "
-                    f"got {int(lengths[wrong_width])}"
-                )
-
             flat = array.flatten()
             values = flat.to_numpy(zero_copy_only=False)
             invalid_value = np.logical_or(
@@ -196,12 +186,17 @@ def _validate_input_schema(schema: pa.Schema, operation: str) -> None:
             f"{operation} input columns must be exactly {', '.join(expected)}"
         )
     for name in expected:
-        field_type = schema.field(name).type
-        if not _is_supported_list(field_type):
+        field = schema.field(name)
+        field_type = field.type
+        if (
+            not pa.types.is_fixed_size_list(field_type)
+            or field_type.value_type != pa.float32()
+        ):
             raise invalid(
-                f"Arrow column '{name}' must be a list<float32> or "
-                "list<float64> column"
+                f"Arrow column '{name}' must be a FixedSizeList<float32> column"
             )
+        if field.nullable:
+            raise invalid(f"Arrow column '{name}' must be non-nullable")
 
 
 def _validate_arrow_table(table: pa.Table, *, require_target: bool) -> None:
@@ -227,17 +222,15 @@ def _validate_list_column(
     if column_index < 0:
         raise ValueError(f"Arrow table must contain '{name}' column")
     column_type = table.schema.field(column_index).type
-    if not _is_supported_list(column_type):
+    if (
+        not pa.types.is_fixed_size_list(column_type)
+        or column_type.value_type != pa.float32()
+    ):
         raise ValueError(
-            f"Arrow column '{name}' must be a list<float32> or "
-            "list<float64> column"
+            f"Arrow column '{name}' must be a FixedSizeList<float32> column"
         )
 
-    width = (
-        column_type.list_size
-        if pa.types.is_fixed_size_list(column_type)
-        else None
-    )
+    width = column_type.list_size
     chunks = []
     row_offset = 0
     for chunk in table.column(column_index).chunks:
@@ -249,16 +242,6 @@ def _validate_list_column(
                 f"Arrow column '{name}' has null row at index "
                 f"{row_offset + null_row + 1}"
             )
-        if not pa.types.is_fixed_size_list(column_type):
-            lengths = np.diff(chunk.offsets.to_numpy(zero_copy_only=False))
-            if width is None:
-                width = int(lengths[0])
-            inconsistent = _first_true(lengths != width)
-            if inconsistent is not None:
-                raise ValueError(
-                    f"Arrow column '{name}' has inconsistent list length at row "
-                    f"{row_offset + inconsistent + 1}"
-                )
         flat = chunk.flatten()
         null_value = _first_true(flat.is_null().to_numpy(zero_copy_only=False))
         if null_value is not None:
@@ -325,17 +308,14 @@ def _validate_target_values(values: np.ndarray) -> None:
 def _validate_prediction_schema(schema: pa.Schema, column: str) -> None:
     if schema.names != [column]:
         raise invalid(f"prediction output must contain exactly column {column!r}")
-    field_type = schema.field(column).type
-    if field_type != pa.list_(pa.float32()):
-        raise invalid("prediction output must use list<float32>")
-
-
-def _is_supported_list(value_type: pa.DataType) -> bool:
-    return (
-        pa.types.is_list(value_type)
-        or pa.types.is_large_list(value_type)
-        or pa.types.is_fixed_size_list(value_type)
-    ) and value_type.value_type in (pa.float32(), pa.float64())
+    field = schema.field(column)
+    field_type = field.type
+    if field_type != pa.list_(pa.float32(), TARGET_WIDTH):
+        raise invalid(
+            f"prediction output must use FixedSizeList<float32>[{TARGET_WIDTH}]"
+        )
+    if field.nullable:
+        raise invalid("prediction output column must be non-nullable")
 
 
 def _fixed_width(schema: pa.Schema, name: str) -> int | None:

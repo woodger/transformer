@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import uuid
 
@@ -5,11 +7,10 @@ import pyarrow.flight as flight
 import pytest
 
 from app.flight.constants import (
-    CONTRACT_NAME,
+    ACQUIRE_ACTION,
     CREATE_ACTION,
-    FIT_SCHEMA_ID,
-    MAX_MANIFEST_ITEMS,
-    SEAL_ACTION,
+    INPUTS_LIST_ACTION,
+    MAX_PAGE_ITEMS,
 )
 from app.flight.contract import (
     canonical_request_hash,
@@ -19,181 +20,179 @@ from app.flight.contract import (
     validate_action_request,
     validate_upload_metadata,
 )
-from app.flight.errors import ServiceError
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
+
+REQUEST_ID = "11111111-1111-4111-8111-111111111111"
+JOB_ID = "22222222-2222-4222-8222-222222222222"
+EXECUTION_ID = "33333333-3333-4333-8333-333333333333"
+SHA256 = "a" * 64
 
 
-def request_id():
-    return str(uuid.uuid4())
-
-
-def fit_create_request(**overrides):
-    document = {
-        "contract": CONTRACT_NAME,
-        "version": 2,
-        "requestId": request_id(),
-        "idempotencyKey": "fit-create-1",
-        "operation": "fit",
-        "device": "cpu",
-        "modelLabel": "returns.daily",
-        "modelConfig": {"seqLen": 10},
-        "trainingConfig": {"epochs": 2, "deterministic": True},
+def _common(**fields) -> dict:
+    return {
+        "contract": "transformer-flight",
+        "version": 3,
+        "requestId": REQUEST_ID,
+        **fields,
     }
-    document.update(overrides)
+
+
+def _fit_create(**fields) -> dict:
+    document = _common(
+        idempotencyKey="fit-create-1",
+        jobId=JOB_ID,
+        clientExecutionId=EXECUTION_ID,
+        operation="fit",
+        device="cpu",
+        modelLabel="daily",
+        modelConfig={"seqLen": 2},
+        dataContract={
+            "id": "inventory.learning-dataset",
+            "version": 1,
+            "dataContractSha256": SHA256,
+            "seqLen": 2,
+            "featureDim": 4,
+            "targetSchemaId": "inventory.target.v1",
+        },
+    )
+    document.update(fields)
     return document
 
 
-def test_fit_create_contract_normalizes_and_validates_configs():
-    parsed = validate_action_request(CREATE_ACTION, fit_create_request())
+def test_create_requires_client_identity_and_semantic_data_contract():
+    parsed = validate_action_request(CREATE_ACTION, _fit_create())
 
-    assert parsed["operation"] == "fit"
-    assert parsed["device"] == "cpu"
-    assert parsed["model_label"] == "returns.daily"
-    assert parsed["model_config"].seq_len == 10
-    assert parsed["train_config"].epochs == 2
-    assert parsed["train_config"].deterministic is True
-
-
-def test_predict_create_accepts_one_opaque_model_selector():
-    document = {
-        "contract": CONTRACT_NAME,
-        "version": 2,
-        "requestId": request_id(),
-        "idempotencyKey": "predict-create-1",
-        "operation": "predict",
-        "device": "auto",
-        "modelRef": "mdl_f4a62560",
-        "predictionColumn": "out",
+    assert parsed["job_id"] == JOB_ID
+    assert parsed["client_execution_id"] == EXECUTION_ID
+    assert parsed["data_contract"] == {
+        "id": "inventory.learning-dataset",
+        "version": 1,
+        "data_contract_sha256": SHA256,
+        "seq_len": 2,
+        "feature_dim": 4,
+        "target_schema_id": "inventory.target.v1",
     }
+    assert parsed["model_config"].feature_dim == 4
 
-    parsed = validate_action_request(CREATE_ACTION, document)
-
-    assert parsed["model_ref"] == "mdl_f4a62560"
-    assert parsed["model_selector"] == "modelRef"
-
-
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"version": 1},
-        {"device": "gpu"},
-        {"modelLabel": "../../outside"},
-        {"modelConfig": {"seqLen": 10, "argv": ["--epochs", "999"]}},
-        {"trainingConfig": {"epochs": 2, "checkpointPath": "/tmp/a"}},
-        {"unknown": True},
-    ],
-)
-def test_create_rejects_invalid_version_paths_and_arbitrary_fields(overrides):
-    with pytest.raises(ServiceError):
-        validate_action_request(CREATE_ACTION, fit_create_request(**overrides))
+    missing = _fit_create()
+    del missing["dataContract"]
+    with pytest.raises(ServiceError) as error:
+        validate_action_request(CREATE_ACTION, missing)
+    assert error.value.code is ErrorCode.INVALID_ARGUMENT
 
 
-def test_request_hash_ignores_retry_identifiers_but_detects_semantic_conflict():
-    original = fit_create_request()
-    retry = {
-        **original,
-        "requestId": request_id(),
-        "idempotencyKey": "another-key",
-    }
-    conflict = {**retry, "device": "auto"}
+def test_predict_accepts_exactly_one_owner_scoped_model_selector():
+    request = _fit_create(
+        operation="predict",
+        modelAlias="daily",
+        predictionColumn="forecast",
+    )
+    for key in ("modelLabel", "modelConfig"):
+        request.pop(key)
+    parsed = validate_action_request(CREATE_ACTION, request)
+    assert parsed["model_selector"] == "modelAlias"
+    assert parsed["model_ref"] == "daily"
 
-    assert canonical_request_hash(original) == canonical_request_hash(retry)
-    assert canonical_request_hash(original) != canonical_request_hash(conflict)
-
-
-def test_seal_manifest_is_strict_and_language_neutral():
-    payload_id = request_id()
-    document = {
-        "contract": CONTRACT_NAME,
-        "version": 2,
-        "requestId": request_id(),
-        "idempotencyKey": "seal-1",
-        "jobId": request_id(),
-        "manifest": [{
-            "payloadId": payload_id,
-            "ordinal": 0,
-            "sha256": "a" * 64,
-        }],
-    }
-
-    parsed = validate_action_request(SEAL_ACTION, document)
-
-    assert parsed["manifest"][0] == {
-        "payloadId": payload_id,
-        "ordinal": 0,
-        "sha256": "a" * 64,
-    }
+    request["modelRef"] = "mdl_generation"
+    with pytest.raises(ServiceError, match="exactly one"):
+        validate_action_request(CREATE_ACTION, request)
 
 
-def test_seal_manifest_count_is_bounded_by_action_document_capacity():
-    document = {
-        "contract": CONTRACT_NAME,
-        "version": 2,
-        "requestId": request_id(),
-        "idempotencyKey": "seal-limit",
-        "jobId": request_id(),
-        "manifest": [
-            {
-                "payloadId": request_id(),
-                "ordinal": index,
-                "sha256": "a" * 64,
-            }
-            for index in range(MAX_MANIFEST_ITEMS + 1)
-        ],
-    }
+def test_fencing_tokens_are_positive_canonical_decimal_strings():
+    request = _common(
+        idempotencyKey="acquire-1",
+        jobId=JOB_ID,
+        previousClientExecutionId=EXECUTION_ID,
+        expectedFencingToken="7",
+        clientExecutionId=str(uuid.uuid4()),
+    )
+    assert validate_action_request(ACQUIRE_ACTION, request)[
+        "expected_fencing_token"
+    ] == 7
 
-    with pytest.raises(ServiceError, match="at most 400"):
-        validate_action_request(SEAL_ACTION, document)
+    for invalid in (7, "0", "01", "+1", str(2**63)):
+        request["expectedFencingToken"] = invalid
+        with pytest.raises(ServiceError, match="FencingToken"):
+            validate_action_request(ACQUIRE_ACTION, request)
 
 
-def test_upload_metadata_and_descriptors_are_strict():
-    job_id = request_id()
-    payload_id = request_id()
+def test_revision_pagination_requires_one_stable_snapshot_pair():
+    first = _common(jobId=JOB_ID, afterRevision=4, limit=MAX_PAGE_ITEMS)
+    parsed = validate_action_request(INPUTS_LIST_ACTION, first)
+    assert parsed["snapshot_revision"] is None
+    assert parsed["cursor"] is None
+
+    later = _common(
+        jobId=JOB_ID,
+        afterRevision=4,
+        snapshotRevision=9,
+        cursor=6,
+        limit=1,
+    )
+    parsed = validate_action_request(INPUTS_LIST_ACTION, later)
+    assert (parsed["after_revision"], parsed["cursor"], parsed["snapshot_revision"]) == (
+        4,
+        6,
+        9,
+    )
+
+    del later["cursor"]
+    with pytest.raises(ServiceError, match="supplied together"):
+        validate_action_request(INPUTS_LIST_ACTION, later)
+
+
+def test_upload_metadata_has_no_request_id_and_is_fenced():
     metadata = {
-        "contract": CONTRACT_NAME,
-        "version": 2,
-        "jobId": job_id,
-        "payloadId": payload_id,
-        "ordinal": 3,
-        "schemaId": FIT_SCHEMA_ID,
-        "rows": 255,
+        "contract": "transformer-flight",
+        "version": 3,
+        "jobId": JOB_ID,
+        "clientExecutionId": EXECUTION_ID,
+        "fencingToken": "8",
+        "payloadId": str(uuid.uuid4()),
+        "ordinal": 0,
+        "schemaId": "inventory.sequence.fit.v2",
+        "dataContractSha256": SHA256,
+        "rows": 10,
     }
-
     parsed = validate_upload_metadata(metadata)
-    assert parsed["rows"] == 255
-    assert parse_input_descriptor(
-        flight.FlightDescriptor.for_path(
-            "transformer", "v2", "jobs", job_id, "inputs", "3"
-        )
-    ) == (job_id, 3)
-    assert parse_output_descriptor(
-        flight.FlightDescriptor.for_path(
-            "transformer", "v2", "jobs", job_id, "outputs", "3"
-        )
-    ) == (job_id, 3)
+    assert parsed["fencing_token"] == 8
 
-    with pytest.raises(ServiceError):
-        parse_input_descriptor(
-            flight.FlightDescriptor.for_path(
-                "transformer", "v2", "jobs", job_id, "inputs", "../3"
-            )
-        )
-    with pytest.raises(ServiceError, match="non-negative integer"):
-        parse_input_descriptor(
-            flight.FlightDescriptor.for_path(
-                "transformer", "v2", "jobs", job_id, "inputs", "9" * 5000
-            )
-        )
+    metadata["requestId"] = REQUEST_ID
+    with pytest.raises(ServiceError, match="must not contain requestId"):
+        validate_upload_metadata(metadata)
 
 
-def test_action_body_rejects_non_json_and_oversized_documents():
-    with pytest.raises(ServiceError, match="valid UTF-8 JSON"):
-        parse_action_body(b"not-json")
-    with pytest.raises(ServiceError, match="exceeds"):
-        parse_action_body(b" " * (64 * 1024 + 1))
-    with pytest.raises(ServiceError, match="valid UTF-8 JSON"):
-        parse_action_body(b'{"ordinal":' + (b"9" * 5000) + b"}")
+def test_v3_input_and_output_descriptor_paths_are_strict():
+    input_descriptor = flight.FlightDescriptor.for_path(
+        "transformer", "v3", "jobs", JOB_ID, "inputs", "12"
+    )
+    output_descriptor = flight.FlightDescriptor.for_path(
+        "transformer", "v3", "jobs", JOB_ID, "outputs", "3"
+    )
+    assert parse_input_descriptor(input_descriptor) == (JOB_ID, 12)
+    assert parse_output_descriptor(output_descriptor) == (JOB_ID, 3)
+
+    malformed = flight.FlightDescriptor.for_path(
+        "transformer", "jobs", JOB_ID, "inputs", "0"
+    )
+    with pytest.raises(ServiceError, match="invalid input"):
+        parse_input_descriptor(malformed)
 
 
-def test_action_body_accepts_utf8_json_object():
-    document = fit_create_request()
-    assert parse_action_body(json.dumps(document).encode()) == document
+def test_request_hash_ignores_transport_retry_identity_only():
+    first = _fit_create()
+    second = json.loads(json.dumps(first))
+    second["requestId"] = str(uuid.uuid4())
+    second["idempotencyKey"] = "fit-create-retry"
+    assert canonical_request_hash(first) == canonical_request_hash(second)
+
+    second["device"] = "cuda"
+    assert canonical_request_hash(first) != canonical_request_hash(second)
+
+
+def test_action_body_is_bounded_utf8_json_object():
+    assert parse_action_body(json.dumps(_common()).encode()) == _common()
+    for body in (b"[]", b"\xff", b"{" + b"x" * (64 * 1024)):
+        with pytest.raises(ServiceError):
+            parse_action_body(body)

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import torch
 
-from app.contracts.worker.v1 import (
+from app.contracts.worker.v2 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
@@ -19,7 +19,7 @@ from app.contracts.worker.v1 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v1.config import (
+from app.contracts.worker.v2.config import (
     CHECKPOINT_FORMAT,
     ModelConfig,
     TrainConfig,
@@ -27,7 +27,12 @@ from app.contracts.worker.v1.config import (
     train_config_to_manifest,
 )
 from app.worker.application.events import WorkerEventEmitter
-from app.worker.data.arrow import read_arrow, read_source_arrow, write_arrow
+from app.worker.application.inputs import DurableInputStream
+from app.worker.data.arrow import (
+    read_committed_fit_arrow,
+    read_committed_source_arrow,
+    write_arrow,
+)
 from app.worker.data.tensors import (
     reshape_source,
     validate_checkpoint_feature_dim,
@@ -49,20 +54,31 @@ _COPY_CHUNK_BYTES = 1024 * 1024
 
 
 class WorkerApplication:
-    """Execute one immutable worker-v1 command manifest."""
+    """Execute one durable-streaming worker-v2 command manifest."""
 
-    def __init__(self, emitter: WorkerEventEmitter):
+    def __init__(self, emitter: WorkerEventEmitter, input_stream=None):
         self.emitter = emitter
+        self.input_stream = input_stream
 
     def run(self, manifest: dict) -> None:
         validate_document(manifest, "command-manifest")
         self._validate_identity(manifest)
         workspace = _validate_workspace(manifest["workspace"]["root"])
-        self.emitter.ready()
+        if self.input_stream is None:
+            raise ValueError("worker control stream is unavailable")
+        inputs = DurableInputStream(
+            manifest,
+            self.input_stream,
+            self.emitter,
+        )
+        self.emitter.ready(
+            next_ordinal=inputs.next_ordinal,
+            input_revision=inputs.input_revision,
+        )
         if manifest["operation"] == "fit":
-            result = self._fit(manifest, workspace)
+            result = self._fit_streaming(manifest, workspace, inputs)
         else:
-            result = self._predict(manifest, workspace)
+            result = self._predict_streaming(manifest, workspace, inputs)
         result_path = os.path.join(workspace, "worker-result.json")
         _write_json_once(result_path, result)
         artifact = _artifact(result_path)
@@ -82,7 +98,12 @@ class WorkerApplication:
         if actual != expected:
             raise ValueError("worker command identity does not match argv")
 
-    def _fit(self, manifest: dict, workspace: str) -> dict:
+    def _fit_streaming(
+        self,
+        manifest: dict,
+        workspace: str,
+        input_stream: DurableInputStream,
+    ) -> dict:
         model_config = ModelConfig.from_dict(manifest["model"]["config"])
         train_config = TrainConfig.from_dict(manifest["training"])
         if model_config is None or train_config is None:
@@ -92,63 +113,66 @@ class WorkerApplication:
             train_config.deterministic,
         )
         device = get_device(manifest["device"]["kind"])
-        model = None
-        trainer = None
-        expected_feature_dim = None
-        expected_target_dim = None
-        input_paths: list[str] = []
+        expected_feature_dim = manifest["dataContract"]["featureDim"]
+        expected_target_dim = 6
+        committed_inputs = _CommittedInputArtifacts()
 
-        for item in manifest["inputs"]:
+        def read_payload(item: dict):
             if item["schemaId"] != FIT_INPUT_SCHEMA_ID:
                 raise ValueError("fit input schemaId is invalid")
-            path = _validate_artifact(item["artifact"])
-            X_cpu, Y_cpu = read_arrow(path)
-            if X_cpu.size(0) != item["rows"]:
-                raise ValueError("fit input row count differs from its manifest")
-            if X_cpu.size(0) == 0:
-                continue
-            X_cpu = reshape_source(X_cpu, model_config.seq_len)
-            expected_feature_dim = validate_feature_dim(
-                X_cpu,
-                expected_feature_dim,
+            path = committed_inputs.path(item)
+            source, target = read_committed_fit_arrow(
+                path,
+                expected_rows=item["rows"],
+                source_width=model_config.seq_len * expected_feature_dim,
             )
-            expected_target_dim = validate_target_dim(
-                Y_cpu,
-                expected_target_dim,
-            )
-            if model is None:
-                actual_config = replace(
-                    model_config,
-                    feature_dim=expected_feature_dim,
-                )
-                model = build_model(actual_config, X_cpu, Y_cpu, device)
-                metrics_path = os.path.join(workspace, "metrics.jsonl")
-                trainer_args = SimpleNamespace(
-                    **train_config.to_dict(),
-                    metrics_name=metrics_path,
-                )
-                trainer = build_trainer(
-                    trainer_args,
-                    model,
-                    device,
-                    actual_config,
-                )
-                reset_metrics_log(metrics_path)
-            input_paths.append(path)
-            del X_cpu, Y_cpu
+            source = reshape_source(source, model_config.seq_len)
+            validate_feature_dim(source, expected_feature_dim)
+            validate_target_dim(target, expected_target_dim)
+            return path, source, target
 
-        if trainer is None:
+        stream = iter(input_stream.items())
+        first = None
+        for item in stream:
+            path, source, target = read_payload(item)
+            if source.size(0) == 0:
+                continue
+            first = (path, source, target)
+            break
+        if first is None:
             raise ValueError("fit requires at least one non-empty input")
+
+        actual_config = replace(
+            model_config,
+            feature_dim=expected_feature_dim,
+        )
+        model = build_model(actual_config, first[1], first[2], device)
+        metrics_path = os.path.join(workspace, "metrics.jsonl")
+        trainer_args = SimpleNamespace(
+            **train_config.to_dict(),
+            metrics_name=metrics_path,
+        )
+        trainer = build_trainer(
+            trainer_args,
+            model,
+            device,
+            actual_config,
+        )
+        reset_metrics_log(metrics_path)
 
         recovery = manifest.get("recovery")
         if recovery is not None and recovery.get("checkpoint") is not None:
+            if not input_stream.closed or recovery["manifestSha256"] is None:
+                raise ValueError(
+                    "recovery checkpoint requires closed immutable input"
+                )
             checkpoint_path = _validate_artifact(recovery["checkpoint"])
             try:
                 payload = load_training_recovery(
                     checkpoint_path,
                     device,
                     expected_config_hash=recovery["configSha256"],
-                    expected_seal_hash=recovery["manifestSha256"],
+                    expected_manifest_hash=recovery["manifestSha256"],
                 )
                 if payload["model_config"] != trainer.model_config.to_dict():
                     raise ValueError("recovery model configuration differs")
@@ -161,20 +185,22 @@ class WorkerApplication:
                     "training recovery checkpoint could not be restored",
                 ) from exc
 
-        def payloads():
-            for path in input_paths:
-                X_cpu, Y_cpu = read_arrow(path)
-                X_cpu = reshape_source(X_cpu, trainer.model_config.seq_len)
-                validate_feature_dim(X_cpu, expected_feature_dim)
-                validate_target_dim(Y_cpu, expected_target_dim)
-                yield X_cpu, Y_cpu
-                del X_cpu, Y_cpu
+        def first_epoch_payloads():
+            yield first[1], first[2]
+            for item in stream:
+                _path, source, target = read_payload(item)
+                if source.size(0) != 0:
+                    yield source, target
 
-        trained_epochs = 0
+        def closed_payloads():
+            if not input_stream.closed:
+                raise ValueError("complete input is unavailable for replay")
+            for item in input_stream.inputs:
+                _path, source, target = read_payload(item)
+                if source.size(0) != 0:
+                    yield source, target
 
         def on_epoch(epoch, metrics, monitor_payload):
-            nonlocal trained_epochs
-            trained_epochs += 1
             progress = metrics.to_dict(
                 **trainer.metrics_context,
                 mode="fit-stream",
@@ -195,6 +221,13 @@ class WorkerApplication:
             _monitor_payload,
             _training_complete,
         ):
+            if recovery is None:
+                return
+            manifest_sha256 = input_stream.manifest_sha256
+            if manifest_sha256 is None:
+                raise ValueError(
+                    "recovery checkpoint cannot precede input EOF"
+                )
             generation = trainer.state.global_epoch
             checkpoint_path = os.path.join(
                 workspace,
@@ -206,7 +239,7 @@ class WorkerApplication:
                 trainer,
                 generation=generation,
                 config_hash=recovery["configSha256"],
-                seal_hash=recovery["manifestSha256"],
+                manifest_hash=manifest_sha256,
             )
             self.emitter.checkpoint({
                 "generation": event["generation"],
@@ -217,33 +250,43 @@ class WorkerApplication:
             })
 
         if not trainer.training_complete:
-            if recovery is None:
-                trainer.fit_payloads(payloads, on_epoch=on_epoch)
+            if trainer.state.global_epoch == 0:
+                trainer.fit_streaming_payloads(
+                    first_epoch_payloads(),
+                    closed_payloads,
+                    on_epoch=on_epoch,
+                    on_epoch_committed=on_epoch_committed,
+                )
             else:
                 trainer.fit_payloads_resumable(
-                    payloads,
+                    closed_payloads,
                     on_epoch=on_epoch,
                     on_epoch_committed=on_epoch_committed,
                 )
 
         checkpoint_path = os.path.join(workspace, "checkpoint.pth")
         trainer.save(checkpoint_path)
-        print(
-            f"Model saved after {len(input_paths)} trained frame(s), "
-            f"{trained_epochs} epoch(s) from "
-            f"{len(manifest['inputs'])} received frame(s)"
-        )
         result = _result_identity(manifest)
         result.update({
+            "inputRevision": input_stream.input_revision,
+            "manifestSha256": input_stream.manifest_sha256,
             "artifacts": [],
             "checkpoint": _artifact(checkpoint_path),
-            "metrics": _artifact(os.path.join(workspace, "metrics.jsonl")),
-            "checkpointMetadata": _checkpoint_metadata(trainer),
+            "metrics": _artifact(metrics_path),
+            "checkpointMetadata": _checkpoint_metadata(
+                trainer,
+                manifest["dataContract"],
+            ),
         })
         validate_document(result, "result-manifest")
         return result
 
-    def _predict(self, manifest: dict, workspace: str) -> dict:
+    def _predict_streaming(
+        self,
+        manifest: dict,
+        workspace: str,
+        input_stream: DurableInputStream,
+    ) -> dict:
         checkpoint_path = _validate_artifact(
             manifest["model"]["checkpoint"]
         )
@@ -262,40 +305,32 @@ class WorkerApplication:
         prediction_column = manifest["predictionColumn"]
         model = None
         trainer = None
-        expected_feature_dim = None
         artifacts = []
-        received_frames = 0
-        predicted_frames = 0
-        for item in manifest["inputs"]:
-            received_frames += 1
+        committed_inputs = _CommittedInputArtifacts()
+        for item in input_stream.items():
             if item["schemaId"] != PREDICT_INPUT_SCHEMA_ID:
                 raise ValueError("prediction input schemaId is invalid")
-            input_path = _validate_artifact(item["artifact"])
-            X_cpu = read_source_arrow(input_path)
-            if X_cpu.size(0) != item["rows"]:
-                raise ValueError(
-                    "prediction input row count differs from its manifest"
-                )
+            input_path = committed_inputs.path(item)
+            source = read_committed_source_arrow(
+                input_path,
+                expected_rows=item["rows"],
+                source_width=model_config.seq_len * model_config.feature_dim,
+            )
             output_path = os.path.join(
                 workspace,
                 "outputs",
                 f"{item['ordinal']}.arrow",
             )
-            empty_input = X_cpu.size(0) == 0
-            if empty_input:
+            if source.size(0) == 0:
                 predictions = torch.empty((0, 6), dtype=torch.float32)
             else:
-                X_cpu = reshape_source(X_cpu, model_config.seq_len)
+                source = reshape_source(source, model_config.seq_len)
                 validate_checkpoint_feature_dim(
-                    X_cpu,
+                    source,
                     model_config.feature_dim,
                 )
-                expected_feature_dim = validate_feature_dim(
-                    X_cpu,
-                    expected_feature_dim,
-                )
                 if model is None:
-                    model = build_model(model_config, X_cpu, None, device)
+                    model = build_model(model_config, source, None, device)
                     trainer = build_trainer(
                         train_config,
                         model,
@@ -304,28 +339,18 @@ class WorkerApplication:
                     )
                     trainer.load_payload(checkpoint)
                     checkpoint = None
-                    print("X:", X_cpu.shape)
-                    print("Model loaded")
-                predictions = trainer.predict(X_cpu)
+                predictions = trainer.predict(source)
             write_arrow(
                 output_path,
                 predictions,
                 prediction_column,
                 expected_rows=item["rows"],
             )
-            if empty_input:
-                print(
-                    f"frame {received_frames}, emitted empty predictions"
-                )
-            else:
-                predicted_frames += 1
-                print(
-                    f"frame {received_frames}, predicted "
-                    f"{predictions.shape[0]} row(s)"
-                )
             artifacts.append({
                 "schemaId": PREDICTION_OUTPUT_SCHEMA_ID,
                 "ordinal": item["ordinal"],
+                "commitRevision": item["commitRevision"],
+                "dataContractSha256": item["dataContractSha256"],
                 "rows": item["rows"],
                 "artifact": _artifact(output_path),
             })
@@ -333,21 +358,53 @@ class WorkerApplication:
                 "ordinal": item["ordinal"],
                 "rows": item["rows"],
             })
-        print(
-            f"Predicted {predicted_frames} non-empty frame(s) "
-            f"from {received_frames} received frame(s)"
-        )
         result = _result_identity(manifest)
+        result["inputRevision"] = input_stream.input_revision
+        result["manifestSha256"] = input_stream.manifest_sha256
         result["artifacts"] = artifacts
         validate_document(result, "result-manifest")
         return result
-
 
 class WorkerExecutionError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class _CommittedInputArtifacts:
+    """Verify each immutable input receipt exactly once per worker attempt."""
+
+    def __init__(self):
+        self._verified: dict[int, tuple[tuple, str]] = {}
+
+    def path(self, item: dict) -> str:
+        ordinal = item["ordinal"]
+        identity = _input_receipt_identity(item)
+        existing = self._verified.get(ordinal)
+        if existing is None:
+            path = _validate_artifact(item["artifact"])
+            self._verified[ordinal] = (identity, path)
+            return path
+        if existing[0] != identity:
+            raise ValueError(
+                "committed input receipt changed during the worker attempt"
+            )
+        return existing[1]
+
+
+def _input_receipt_identity(item: dict) -> tuple:
+    artifact = item["artifact"]
+    return (
+        item["schemaId"],
+        item["ordinal"],
+        item["commitRevision"],
+        item["dataContractSha256"],
+        item["rows"],
+        artifact["path"],
+        artifact["byteCount"],
+        artifact["sha256"],
+    )
 
 
 def _result_identity(manifest: dict) -> dict:
@@ -361,7 +418,7 @@ def _result_identity(manifest: dict) -> dict:
     }
 
 
-def _checkpoint_metadata(trainer) -> dict:
+def _checkpoint_metadata(trainer, data_contract: dict | None = None) -> dict:
     model_config = trainer.model_config
     train_config = trainer.train_config
     feature_dim = model_config.feature_dim
@@ -372,41 +429,11 @@ def _checkpoint_metadata(trainer) -> dict:
         best_monitor
     ):
         best_monitor = None
-    return {
+    result = {
         "format": CHECKPOINT_FORMAT,
         "serviceVersion": __version__,
         "modelConfig": model_config_to_manifest(model_config),
         "trainingConfig": train_config_to_manifest(train_config),
-        "dataSchema": {
-            "schemaVersion": 1,
-            "tensorDtype": "float32",
-            "source": {
-                "column": "src",
-                "acceptedElementTypes": ["float32", "float64"],
-                "width": model_config.seq_len * feature_dim,
-            },
-            "target": {
-                "column": "tgt",
-                "acceptedElementTypes": ["float32", "float64"],
-                "width": 6,
-            },
-            "featureDim": feature_dim,
-            "modelInputFeatureDim": (
-                feature_dim * 2
-                if model_config.context_mode == "relaxed"
-                else feature_dim
-            ),
-            "contextMode": model_config.context_mode,
-            "normalization": None,
-            "missing": {
-                "nanFill": 0.0,
-                "flags": (
-                    "per-feature"
-                    if model_config.context_mode == "relaxed"
-                    else "none"
-                ),
-            },
-        },
         "checkpointSelection": {
             "monitor": trainer.monitor,
             "monitorMinImprovement": trainer.monitor_min_improvement,
@@ -421,6 +448,9 @@ def _checkpoint_metadata(trainer) -> dict:
             ),
         },
     }
+    if data_contract is not None:
+        result["dataContract"] = dict(data_contract)
+    return result
 
 
 def _validate_workspace(path: str) -> str:

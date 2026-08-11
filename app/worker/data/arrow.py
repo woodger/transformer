@@ -68,6 +68,107 @@ def read_source_arrow(path):
     return table_to_source_tensor(table)
 
 
+def read_committed_fit_arrow(
+    path: str,
+    *,
+    expected_rows: int,
+    source_width: int,
+):
+    """Replay one service-validated immutable fit artifact.
+
+    The service validates values before durable commit and the worker verifies
+    the receipt digest before the first read. Replay therefore rechecks only
+    the physical Arrow contract and receipt dimensions instead of rescanning
+    every value on every epoch.
+    """
+
+    table = _read_committed_table(
+        path,
+        expected_rows=expected_rows,
+        source_width=source_width,
+        require_target=True,
+    )
+    return (
+        _committed_column_to_tensor(table, "src", source_width),
+        _committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
+    )
+
+
+def read_committed_source_arrow(
+    path: str,
+    *,
+    expected_rows: int,
+    source_width: int,
+):
+    """Read one service-validated immutable prediction input artifact."""
+
+    table = _read_committed_table(
+        path,
+        expected_rows=expected_rows,
+        source_width=source_width,
+        require_target=False,
+    )
+    return _committed_column_to_tensor(table, "src", source_width)
+
+
+def _read_committed_table(
+    path: str,
+    *,
+    expected_rows: int,
+    source_width: int,
+    require_target: bool,
+):
+    if expected_rows < 0:
+        raise ValueError("committed Arrow row count must be non-negative")
+    if source_width <= 0:
+        raise ValueError("committed Arrow source width must be positive")
+
+    fields = [
+        pa.field(
+            "src",
+            pa.list_(pa.float32(), source_width),
+            nullable=False,
+        ),
+    ]
+    if require_target:
+        fields.append(
+            pa.field(
+                "tgt",
+                pa.list_(pa.float32(), TARGET_WIDTH),
+                nullable=False,
+            )
+        )
+    expected_schema = pa.schema(fields)
+
+    with open(path, "rb") as source:
+        reader = ipc.RecordBatchFileReader(source)
+        if not reader.schema.equals(expected_schema, check_metadata=False):
+            raise ValueError(
+                "Committed Arrow physical schema differs from the worker contract"
+            )
+        table = reader.read_all()
+
+    if table.num_rows != expected_rows:
+        raise ValueError(
+            f"Committed Arrow row count {table.num_rows} does not match receipt "
+            f"row count {expected_rows}"
+        )
+    return table
+
+
+def _committed_column_to_tensor(table, name: str, width: int):
+    values = np.empty((table.num_rows, width), dtype=np.float32)
+    row_offset = 0
+    for chunk in table.column(name).chunks:
+        rows = len(chunk)
+        if rows == 0:
+            continue
+        flat_values = chunk.flatten().to_numpy(zero_copy_only=False)
+        values[row_offset:row_offset + rows] = flat_values.reshape(rows, width)
+        row_offset += rows
+    return _list_values_to_tensor(values)
+
+
 def _validate_list_column(
     table,
     name: str,
@@ -278,24 +379,30 @@ def predictions_to_table(
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
     arr = np.ascontiguousarray(arr)
-    if arr.size > np.iinfo(np.int32).max:
-        raise ValueError("Predictions exceed Arrow list offset capacity")
-    offsets = pa.array(
-        np.arange(
-            0,
-            arr.size + 1,
-            TARGET_WIDTH,
-            dtype=np.int32,
-        )
-    )
     values = pa.array(arr.reshape(-1), type=pa.float32())
-    col = pa.ListArray.from_arrays(offsets, values)
-
-    return pa.table({col_name: col})
+    column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)
+    schema = pa.schema([
+        pa.field(
+            col_name,
+            pa.list_(pa.float32(), TARGET_WIDTH),
+            nullable=False,
+        )
+    ])
+    return pa.Table.from_arrays([column], schema=schema)
 
 
 def empty_predictions_table(col_name: str):
-    return pa.table({col_name: pa.array([], type=pa.list_(pa.float32()))})
+    schema = pa.schema([
+        pa.field(
+            col_name,
+            pa.list_(pa.float32(), TARGET_WIDTH),
+            nullable=False,
+        )
+    ])
+    return pa.Table.from_arrays(
+        [pa.array([], type=schema.field(0).type)],
+        schema=schema,
+    )
 
 
 def write_framed_arrow(stream, table):

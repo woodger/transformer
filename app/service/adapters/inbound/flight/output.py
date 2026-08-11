@@ -5,8 +5,9 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 
 from app.service.adapters.inbound.flight.contract import parse_output_descriptor
-from app.service.adapters.inbound.flight.errors import not_found
+from app.service.adapters.inbound.flight.errors import failed_precondition, not_found
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.domain.job import ExecutionState
 
 
 class OutputHandler:
@@ -22,6 +23,10 @@ class OutputHandler:
         job = self.ledger.get_job(job_id, owner_subject=owner)
         if job is None:
             raise not_found("job output not found")
+        if job["execution_state"] != ExecutionState.SUCCEEDED.value:
+            raise failed_precondition(
+                "job outputs are available only after successful execution"
+            )
         output = next(
             (item for item in self.ledger.list_outputs(job_id) if item["ordinal"] == ordinal),
             None,

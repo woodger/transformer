@@ -7,8 +7,9 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 
 - local CLI для обучения и prediction из Arrow IPC files;
 - stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v2 service с durable jobs, PostgreSQL state,
-  recovery, API tokens и CUDA scheduling;
+- single-instance Arrow Flight v3 service с durable streaming jobs,
+  PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
+  scheduling;
 - versioned public Flight и internal worker contracts;
 - documentation, ADR и политики изменения в `docs/`.
 
@@ -18,7 +19,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 | --- | --- | --- | --- |
 | File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
 | Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v2 | authenticated Flight RPC | durable job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v2/README.md) |
+| Arrow Flight v3 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v3/README.md) |
 
 ## Быстрый старт
 
@@ -51,6 +52,8 @@ user-site. Полный локальный сценарий находится �
   из Arrow files;
 - [`fit-stream` и `predict-stream`](./docs/local-arrow-protocol.md) —
   обучение и prediction через framed standard streams;
+- [`gmark`](./docs/cli/index.md#gpu-stress-test) — CUDA training, AMP и
+  integrity stress test;
 - [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
   training metrics JSONL;
 - [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
@@ -68,8 +71,8 @@ user-site. Полный локальный сценарий находится �
 - [Локальный Arrow и stream contract](./docs/local-arrow-protocol.md)
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
-- [Arrow Flight v2 contract](./app/contracts/flight/v2/README.md)
-- [Worker process contract v1](./app/contracts/worker/v1/README.md)
+- [Arrow Flight v3 contract](./app/contracts/flight/v3/README.md)
+- [Worker process contract v2](./app/contracts/worker/v2/README.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Архитектурные решения](./docs/adr/)
@@ -80,7 +83,7 @@ user-site. Полный локальный сценарий находится �
 ```text
 app/main.py          # тонкий CLI entrypoint
 app/cli/             # argparse и форматированный --help/--version
-app/contracts/       # public Flight v2 и internal worker v1 contracts
+app/contracts/       # public Flight v3 и internal worker v2 contracts
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

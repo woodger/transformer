@@ -25,7 +25,7 @@ from app.config import (
     TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
-from app.version import __version__, version_text
+from app.version import __version__
 
 _COMMAND_GROUPS = (
     (
@@ -48,6 +48,10 @@ _COMMAND_GROUPS = (
             ("fit-stream", "Train from framed stdin."),
             ("predict-stream", "Predict from framed stdin."),
         ),
+    ),
+    (
+        "Diagnostics",
+        (("gmark", "Stress one CUDA GPU with synthetic training."),),
     ),
     (
         "Metrics",
@@ -74,6 +78,9 @@ _COMMAND_EXAMPLES = {
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
 """,
+    "gmark": """Examples:
+  transformer gmark --duration=300 --use-amp
+""",
 }
 
 _FLIGHT_SERVE_DESCRIPTION = (
@@ -98,7 +105,7 @@ def _format_root_help() -> str:
         "  transformer --version\n\n"
         "Global options:\n"
         "  --help, -h       Show help and exit\n"
-        "  --version, -v    Show package and runtime version info\n\n"
+        "  --version, -v    Show package version and exit\n\n"
         "Commands:\n\n"
         f"{command_groups}\n\n"
         "Command details:\n"
@@ -210,6 +217,13 @@ def _fraction(value: str) -> float:
         raise argparse.ArgumentTypeError("must be in the range [0, 1)") from exc
     if not math.isfinite(parsed) or not 0 <= parsed < 1:
         raise argparse.ArgumentTypeError("must be in the range [0, 1)")
+    return parsed
+
+
+def _gmark_memory_fraction(value: str) -> float:
+    parsed = _nonnegative_float(value)
+    if parsed > 0.9:
+        raise argparse.ArgumentTypeError("must be in the range [0, 0.9]")
     return parsed
 
 
@@ -491,7 +505,7 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
             help=argparse.SUPPRESS,
         )
         runtime.add_argument(
-            "--recovery-seal-hash",
+            "--recovery-manifest-hash",
             default=None,
             help=argparse.SUPPRESS,
         )
@@ -551,6 +565,123 @@ def _add_predict_parser(subparsers, name: str, *, stream: bool):
     _add_model_arguments(parser, required_seq_len=False, training=False)
 
 
+def _add_gmark_parser(subparsers):
+    parser = subparsers.add_parser(
+        "gmark",
+        add_help=False,
+        help=_COMMAND_HELP["gmark"],
+        description=(
+            "Stress one CUDA GPU with synthetic Transformer training and an "
+            "optional active VRAM allocation. Press Ctrl+C to stop."
+        ),
+        epilog=_COMMAND_EXAMPLES["gmark"],
+        formatter_class=_HelpFormatter,
+    )
+    _add_hidden_help_argument(parser)
+    parser.add_argument(
+        "--duration",
+        type=_positive_float,
+        default=60.0,
+        metavar="SECONDS",
+        help="Test duration after warm-up.",
+    )
+    parser.add_argument(
+        "--device",
+        type=_nonnegative_int,
+        default=0,
+        metavar="INDEX",
+        help="Logical CUDA device index.",
+    )
+    parser.add_argument(
+        "--seq-len",
+        type=_positive_int,
+        default=10,
+        metavar="LENGTH",
+        help="Input sequence length.",
+    )
+    parser.add_argument(
+        "--feature-dim",
+        type=_positive_int,
+        default=891,
+        metavar="COUNT",
+        help="Features per input timestep.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        default=BATCH_SIZE,
+        metavar="COUNT",
+        help="Rows per optimizer step.",
+    )
+    parser.add_argument(
+        "--hidden",
+        type=_positive_int,
+        default=D_MODEL,
+        metavar="SIZE",
+        help="Transformer hidden dimension.",
+    )
+    parser.add_argument(
+        "--layers",
+        type=_positive_int,
+        default=NUM_LAYERS,
+        metavar="COUNT",
+        help="Number of Transformer encoder layers.",
+    )
+    parser.add_argument(
+        "--nhead",
+        type=_positive_int,
+        default=NHEAD,
+        metavar="COUNT",
+        help="Number of attention heads; --hidden must be divisible by it.",
+    )
+    parser.add_argument(
+        "--use-amp",
+        action="store_true",
+        help="Use the production CUDA autocast and GradScaler path.",
+    )
+    parser.add_argument(
+        "--memory-fraction",
+        type=_gmark_memory_fraction,
+        default=0.0,
+        metavar="FRACTION",
+        help=(
+            "Fraction of VRAM free after warm-up to reserve and write; "
+            "0 disables the ballast."
+        ),
+    )
+    parser.add_argument(
+        "--max-temperature",
+        type=_nonnegative_float,
+        default=80.0,
+        metavar="CELSIUS",
+        help=(
+            "Stop at this GPU temperature; nvidia-smi is required unless "
+            "0 disables the cutoff."
+        ),
+    )
+    parser.add_argument(
+        "--status-interval",
+        type=_positive_float,
+        default=2.0,
+        metavar="SECONDS",
+        help="Status and integrity-check interval.",
+    )
+    parser.add_argument(
+        "--warmup-steps",
+        type=_positive_int,
+        default=3,
+        metavar="COUNT",
+        help="Optimizer steps before timing starts.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=_seed,
+        default=SEED,
+        help="Random seed for model parameters and synthetic data.",
+    )
+    parser.set_defaults(data=None, metrics_name=None)
+
+
 def build_parser():
     parser = _RootArgumentParser(
         prog="transformer",
@@ -560,7 +691,7 @@ def build_parser():
         "--version",
         "-v",
         action="version",
-        version=version_text("%(prog)s"),
+        version=f"%(prog)s {__version__}",
     )
 
     subparsers = parser.add_subparsers(
@@ -574,6 +705,7 @@ def build_parser():
     _add_predict_parser(subparsers, "predict", stream=False)
     _add_fit_parser(subparsers, "fit-stream", stream=True)
     _add_predict_parser(subparsers, "predict-stream", stream=True)
+    _add_gmark_parser(subparsers)
 
     flight = subparsers.add_parser(
         "flight",

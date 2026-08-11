@@ -4,6 +4,7 @@ import torch
 from app.model.context import (
     context_input_dim,
     context_key_padding_mask,
+    context_missingness_ratios,
     context_token_ratios,
     prepare_context_input,
 )
@@ -107,6 +108,26 @@ def test_context_token_ratios_use_selected_masking_mode():
 
     assert context_token_ratios(x, "strict")["masked_token_ratio"] == pytest.approx(2 / 3)
     assert context_token_ratios(x, "relaxed")["masked_token_ratio"] == pytest.approx(1 / 3)
+
+
+def test_context_missingness_ratios_include_values_and_tokens():
+    x = torch.tensor([
+        [
+            [1.0, 2.0, 3.0],
+            [1.0, float("nan"), 3.0],
+            [float("nan"), float("nan"), float("nan")],
+        ],
+    ])
+
+    ratios = context_missingness_ratios(x, "relaxed")
+
+    assert ratios == pytest.approx({
+        "nan_ratio": 4 / 9,
+        "masked_token_ratio": 1 / 3,
+        "complete_token_ratio": 1 / 3,
+        "partial_token_ratio": 1 / 3,
+        "empty_token_ratio": 1 / 3,
+    })
 
 
 def test_relaxed_keeps_missing_flags_after_nan_to_num():

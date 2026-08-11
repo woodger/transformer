@@ -25,8 +25,8 @@
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v2 contract | `app/contracts/flight/v2/` |
-| Нормативный worker v1 contract | `app/contracts/worker/v1/` |
+| Нормативный Flight v3 contract | `app/contracts/flight/v3/` |
+| Нормативный worker v2 contract | `app/contracts/worker/v2/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -89,8 +89,10 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v2/` нормативны для wire
-format. README или operations guide не могут переопределять их.
+JSON Schemas и golden fixtures в `app/contracts/flight/v3/` нормативны для wire
+format. README или operations guide не могут переопределять их. Flight v3 —
+единственный текущий remote API contract и базовая точка для дальнейших
+изменений.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -102,7 +104,7 @@ format. README или operations guide не могут переопределя�
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v2 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v3 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## ADR

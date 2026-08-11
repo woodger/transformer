@@ -2,6 +2,7 @@ import io
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
+import pytest
 import torch
 
 from app.data.arrow import (
@@ -11,6 +12,10 @@ from app.data.arrow import (
     table_to_source_tensor,
     table_to_tensors,
     write_arrow,
+)
+from app.worker.data.arrow import (
+    read_committed_fit_arrow,
+    read_committed_source_arrow,
 )
 
 
@@ -91,6 +96,76 @@ def test_read_source_arrow_does_not_require_target(tmp_path):
     X_t = read_source_arrow(str(path))
 
     assert X_t.tolist() == [[1.0, 2.0], [3.0, 4.0]]
+
+
+def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
+    schema = pa.schema([
+        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
+        pa.field("tgt", pa.list_(pa.float32(), 6), nullable=False),
+    ])
+    batches = [
+        pa.record_batch(
+            [
+                pa.array([[1.0, float("nan"), 3.0, 4.0]], type=schema.field(0).type),
+                pa.array([[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]], type=schema.field(1).type),
+            ],
+            schema=schema,
+        ),
+        pa.record_batch(
+            [
+                pa.array([[5.0, 6.0, 7.0, 8.0]], type=schema.field(0).type),
+                pa.array([[1.5, 0.0, 0.0, 0.0, 2.0, 0.0]], type=schema.field(1).type),
+            ],
+            schema=schema,
+        ),
+    ]
+    path = tmp_path / "committed-fit.arrow"
+    with pa.OSFile(str(path), "wb") as sink:
+        with ipc.new_file(sink, schema) as writer:
+            for batch in batches:
+                writer.write_batch(batch)
+
+    source, target = read_committed_fit_arrow(
+        str(path),
+        expected_rows=2,
+        source_width=4,
+    )
+
+    assert source.shape == (2, 4)
+    assert torch.isnan(source[0, 1])
+    assert source[1].tolist() == [5.0, 6.0, 7.0, 8.0]
+    assert target.tolist() == [
+        [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
+        [1.5, 0.0, 0.0, 0.0, 2.0, 0.0],
+    ]
+
+
+def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
+    schema = pa.schema([
+        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
+    ])
+    table = pa.Table.from_arrays(
+        [pa.array([[1.0, 2.0, 3.0, 4.0]], type=schema.field(0).type)],
+        schema=schema,
+    )
+    path = tmp_path / "committed-predict.arrow"
+    with pa.OSFile(str(path), "wb") as sink:
+        with ipc.new_file(sink, schema) as writer:
+            writer.write_table(table)
+
+    with pytest.raises(ValueError, match=r"row count 1.*receipt row count 2"):
+        read_committed_source_arrow(
+            str(path),
+            expected_rows=2,
+            source_width=4,
+        )
+
+    with pytest.raises(ValueError, match="physical schema"):
+        read_committed_source_arrow(
+            str(path),
+            expected_rows=1,
+            source_width=5,
+        )
 
 
 def test_table_to_source_tensor_rejects_inconsistent_src_width():

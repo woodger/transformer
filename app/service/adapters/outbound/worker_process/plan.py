@@ -2,26 +2,24 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Callable, Sequence
 
-from app.contracts.worker.v1 import (
+from app.contracts.worker.v2 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v1.config import (
+from app.contracts.worker.v2.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
-from app.service.domain.job import ErrorCode
+from app.service.domain.job import ErrorCode, InputState
 from app.service.domain.records import ExecutionJobRecord
 
 _COPY_CHUNK_BYTES = 1024 * 1024
-_FIT_SPOOL_OPTION = "--input-spool-dir"
 
 
 class WorkerPlanError(AttemptExecutionError):
@@ -39,22 +37,20 @@ class WorkerPlanBuilder:
         recovery_store=None,
         *,
         python_executable: str,
-        cli_path: str,
     ):
         self.config = config
         self.ledger = ledger
         self.spool = spool
         self.recovery_store = recovery_store
         self.python_executable = python_executable
-        self.cli_path = cli_path
 
     def build(
         self,
         job: ExecutionJobRecord,
         attempt: int,
-        *,
-        argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
     ) -> ExecutionPlan:
+        if not isinstance(attempt, int) or attempt <= 0:
+            raise ValueError("attempt must be a positive integer")
         inputs = self._validated_inputs(job)
         recovery_checkpoint = (
             self.ledger.latest_recovery_checkpoint(job.job_id)
@@ -64,23 +60,6 @@ class WorkerPlanBuilder:
             )
             else None
         )
-        if argv_hook is not None:
-            argv = self.build_argv(job, attempt, argv_hook=argv_hook)
-            return ExecutionPlan(
-                inputs=inputs,
-                argv=argv,
-                uses_spooled_fit=(
-                    job.operation == "fit" and _FIT_SPOOL_OPTION in argv
-                ),
-                uses_training_recovery=(
-                    job.operation == "fit" and self.recovery_store is not None
-                ),
-                resume_training_complete=bool(
-                    recovery_checkpoint is not None
-                    and recovery_checkpoint.training_complete
-                ),
-            )
-
         manifest_path, workspace = self._write_worker_manifest(
             job,
             attempt,
@@ -91,57 +70,10 @@ class WorkerPlanBuilder:
         return ExecutionPlan(
             inputs=inputs,
             argv=argv,
-            uses_spooled_fit=False,
-            uses_training_recovery=(
-                job.operation == "fit"
-                and self.recovery_store is not None
-            ),
-            resume_training_complete=bool(
-                recovery_checkpoint is not None
-                and recovery_checkpoint.training_complete
-            ),
             protocol_version=CONTRACT_VERSION,
             manifest_path=manifest_path,
             workspace=workspace,
         )
-
-    def build_argv(
-        self,
-        job: ExecutionJobRecord,
-        attempt: int,
-        *,
-        argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
-        job_mapping: dict | None = None,
-    ) -> tuple[str, ...]:
-        if not isinstance(attempt, int) or attempt <= 0:
-            raise ValueError("attempt must be a positive integer")
-        if argv_hook is None:
-            if job.attempt_id is None:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "claimed job has no attempt identity",
-                )
-            return self._worker_argv(
-                job,
-                attempt,
-                self.spool.attempt_manifest_path(job.job_id, attempt),
-            )
-        argv = self._legacy_argv(job, attempt)
-        if argv_hook is not None:
-            if job_mapping is None:
-                job_mapping = self.ledger.get_job(job.job_id)
-            if job_mapping is None:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "claimed job disappeared",
-                )
-            argv = list(argv_hook(job_mapping, tuple(argv)))
-        if not argv or any(
-            not isinstance(value, str) or "\x00" in value
-            for value in argv
-        ):
-            raise ValueError("worker argv hook returned invalid argv")
-        return tuple(argv)
 
     def _worker_argv(
         self,
@@ -214,6 +146,8 @@ class WorkerPlanBuilder:
                 {
                     "schemaId": item.schema_id,
                     "ordinal": item.ordinal,
+                    "commitRevision": item.commit_revision,
+                    "dataContractSha256": item.data_contract_sha256,
                     "rows": item.rows,
                     "artifact": {
                         "path": item.absolute_path,
@@ -223,8 +157,12 @@ class WorkerPlanBuilder:
                 }
                 for item in inputs
             ],
+            "inputRevision": job.input_revision,
+            "inputClosed": job.input_state == InputState.CLOSED,
+            "manifestSha256": job.manifest_sha256,
             "workspace": {"root": workspace},
             "model": {"config": model_config_to_manifest(model_config)},
+            "dataContract": _data_contract_manifest(job.data_contract),
         }
         if job.operation == "predict":
             model = self._validated_model(job)
@@ -245,20 +183,27 @@ class WorkerPlanBuilder:
             document["training"] = train_config_to_manifest(
                 job.training_config
             )
+            document["recovery"] = None
             if self.recovery_store is not None:
                 if any(item.storage_class != "recovery" for item in inputs):
                     raise WorkerPlanError(
                         ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
                         "resumable fit requires persistent committed inputs",
                     )
-                if job.seal_hash is None:
+                if (
+                    job.input_state == InputState.CLOSED
+                    and job.manifest_sha256 is None
+                ):
                     raise WorkerPlanError(
                         ErrorCode.INTERNAL,
-                        "sealed fit manifest hash is unavailable",
+                        "closed fit manifest hash is unavailable",
                     )
                 recovery = {
                     "configSha256": job.config_hash,
-                    "manifestSha256": job.seal_hash,
+                    "dataContractSha256": job.data_contract[
+                        "data_contract_sha256"
+                    ],
+                    "manifestSha256": job.manifest_sha256,
                 }
                 if (
                     job.resume_generation is not None
@@ -343,12 +288,20 @@ class WorkerPlanBuilder:
     def _validated_inputs(
         self,
         job: ExecutionJobRecord,
+        *,
+        start_ordinal: int = 0,
     ) -> tuple[ExecutionInput, ...]:
-        inputs = self.ledger.list_committed_inputs(job.job_id)
-        if [item.ordinal for item in inputs] != list(range(len(inputs))):
+        inputs = tuple(
+            item
+            for item in self.ledger.list_committed_inputs(job.job_id)
+            if start_ordinal <= item.ordinal < job.input_frame_count
+        )
+        if [item.ordinal for item in inputs] != list(
+            range(start_ordinal, job.input_frame_count)
+        ):
             raise WorkerPlanError(
                 ErrorCode.INTERNAL,
-                "sealed input ordinals are inconsistent",
+                "contiguous input ordinals are inconsistent",
             )
         prepared = []
         expected_schema_id = (
@@ -373,9 +326,8 @@ class WorkerPlanBuilder:
                     ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
                     "persistent fit input storage is unavailable",
                 )
-            expected = store.input_path(job.job_id, item.ordinal)
             actual = store.absolute_path(item.relative_path)
-            if actual != expected:
+            if os.path.dirname(actual) != store.input_directory(job.job_id):
                 raise WorkerPlanError(
                     ErrorCode.INTERNAL,
                     "committed input path is invalid",
@@ -411,7 +363,9 @@ class WorkerPlanBuilder:
                 )
             prepared.append(ExecutionInput(
                 ordinal=item.ordinal,
+                commit_revision=item.commit_revision,
                 schema_id=item.schema_id,
+                data_contract_sha256=item.data_contract_sha256,
                 rows=item.rows,
                 byte_count=item.byte_count,
                 sha256=item.sha256,
@@ -420,173 +374,17 @@ class WorkerPlanBuilder:
             ))
         return tuple(prepared)
 
-    def _legacy_argv(
+    def streaming_inputs(
         self,
         job: ExecutionJobRecord,
-        attempt: int,
-    ) -> list[str]:
-        device = job.selected_device
-        if device not in ("cpu", "cuda"):
-            raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "queued job has no selected device",
-            )
-        base = [self.python_executable, self.cli_path]
-        if job.operation == "predict":
-            model = self.ledger.get_model_artifact(
-                job.input_model_ref,
-                owner_subject=job.owner_subject,
-            )
-            if model is None:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "resolved model generation is unavailable",
-                )
-            checkpoint = self.spool.model_absolute_path(
-                model.checkpoint_path
-            )
-            expected = self.spool.model_checkpoint_path(model.model_ref)
-            if checkpoint != expected or not os.path.isfile(checkpoint):
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "resolved model checkpoint is unavailable",
-                )
-            if _sha256_file(checkpoint) != model.sha256:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "resolved model checkpoint digest is invalid",
-                )
-            return [
-                *base,
-                "predict-stream",
-                "--device", device,
-                "--checkpoint", checkpoint,
-                "--pred-col", job.prediction_column,
-                "--max-frame-bytes", str(self.config.max_payload_bytes),
-            ]
+        start_ordinal: int,
+    ) -> tuple[ExecutionInput, ...]:
+        """Validate the newly visible contiguous suffix for one attempt."""
 
-        model = job.model_config
-        train = job.training_config
-        if model is None or train is None:
-            raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "fit job configuration is unavailable",
-            )
-        input_directory = (
-            self.recovery_store.input_directory(job.job_id)
-            if self.recovery_store is not None
-            else self.spool.input_directory(job.job_id)
-        )
-        argv = [
-            *base,
-            "fit-stream",
-            "--device", device,
-            "--checkpoint-out", self.spool.attempt_checkpoint_path(
-                job.job_id,
-                attempt,
-            ),
-            "--metrics-out", self.spool.attempt_metrics_path(
-                job.job_id,
-                attempt,
-            ),
-            "--max-frame-bytes", str(self.config.max_payload_bytes),
-            _FIT_SPOOL_OPTION, input_directory,
-            "--input-frame-count", str(job.input_frame_count),
-            "--seq-len", str(model.seq_len),
-            "--hidden", str(model.hidden),
-            "--layers", str(model.layers),
-            "--dropout", str(model.dropout),
-            "--nhead", str(model.nhead),
-            "--mode", model.context_mode,
-            "--lr", str(train.lr),
-            "--weight-decay", str(train.weight_decay),
-            "--batch-size", str(train.batch_size),
-            "--epochs", str(train.epochs),
-            "--loss-stage", str(train.loss_stage),
-            "--loss-schedule", train.loss_schedule,
-            "--stage-size", str(train.stage_size),
-            "--patience", str(train.patience),
-            "--monitor", train.monitor,
-            "--monitor-min-improvement", str(
-                train.monitor_min_improvement
-            ),
-            "--seed", str(train.seed),
-            (
-                "--save-best-checkpoint"
-                if train.save_best_checkpoint
-                else "--no-save-best-checkpoint"
-            ),
-        ]
-        if train.use_amp:
-            argv.append("--use-amp")
-        if train.deterministic:
-            argv.append("--deterministic")
-        if self.recovery_store is not None:
-            if job.seal_hash is None:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "sealed fit manifest hash is unavailable",
-                )
-            if any(
-                item.storage_class != "recovery"
-                for item in self.ledger.list_committed_inputs(
-                    job.job_id
-                )
-            ):
-                raise WorkerPlanError(
-                    ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
-                    "fit inputs are not stored persistently",
-                )
-            argv.extend([
-                "--recovery-checkpoint-dir",
-                self.recovery_store.checkpoint_directory(job.job_id),
-                "--recovery-events-out",
-                self.spool.attempt_recovery_events_path(
-                    job.job_id,
-                    attempt,
-                ),
-                "--recovery-config-hash",
-                job.config_hash,
-                "--recovery-seal-hash",
-                job.seal_hash,
-            ])
-            checkpoint = self.ledger.latest_recovery_checkpoint(
-                job.job_id
-            )
-            checkpoint_generation = (
-                None
-                if checkpoint is None
-                else checkpoint.generation
-            )
-            if checkpoint_generation != job.resume_generation:
-                raise WorkerPlanError(
-                    ErrorCode.INTERNAL,
-                    "claimed recovery generation does not match the ledger",
-                )
-            if checkpoint is not None:
-                path = self.recovery_store.absolute_path(
-                    checkpoint.relative_path
-                )
-                expected = self.recovery_store.checkpoint_path(
-                    job.job_id,
-                    checkpoint.generation,
-                )
-                if (
-                    path != expected
-                    or not os.path.isfile(path)
-                    or os.path.getsize(path) != checkpoint.byte_count
-                ):
-                    raise WorkerPlanError(
-                        ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                        "registered training recovery checkpoint is unavailable",
-                    )
-                if _sha256_file(path) != checkpoint.sha256:
-                    raise WorkerPlanError(
-                        ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                        "registered training recovery checkpoint is corrupt",
-                    )
-                argv.extend(["--resume-checkpoint", path])
-        return argv
+        if start_ordinal < 0 or start_ordinal > job.input_frame_count:
+            raise ValueError("invalid streaming input ordinal")
+        return self._validated_inputs(job, start_ordinal=start_ordinal)
+
 
 
 def _sha256_file(path: str) -> str:
@@ -595,3 +393,14 @@ def _sha256_file(path: str) -> str:
         for chunk in iter(lambda: source.read(_COPY_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _data_contract_manifest(value: dict) -> dict:
+    return {
+        "id": value["id"],
+        "version": value["version"],
+        "dataContractSha256": value["data_contract_sha256"],
+        "seqLen": value["seq_len"],
+        "featureDim": value["feature_dim"],
+        "targetSchemaId": value["target_schema_id"],
+    }

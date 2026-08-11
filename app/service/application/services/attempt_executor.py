@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app.service.application.ports.artifacts import ArtifactPublisher
@@ -14,7 +14,7 @@ from app.service.application.ports.workers import (
 )
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.errors import ServiceError
-from app.service.domain.job import ErrorCode, JobState
+from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.policies import decide_attempt_outcome
 from app.service.domain.records import ExecutionJobRecord
 
@@ -54,7 +54,6 @@ class WorkerAttemptExecutor:
         *,
         logger,
         metrics,
-        argv_hook: Callable[[dict, tuple[str, ...]], Sequence[str]] | None = None,
         retry_notifier: Callable[[str], None] | None = None,
         confirm_device_loss: Callable[[str], bool] | None = None,
         resumable_fit: bool = False,
@@ -66,7 +65,6 @@ class WorkerAttemptExecutor:
         self.artifact_publisher = artifact_publisher
         self.logger = logger
         self.metrics = metrics
-        self.argv_hook = argv_hook
         self.retry_notifier = retry_notifier
         self.confirm_device_loss = confirm_device_loss
         self.resumable_fit = bool(resumable_fit)
@@ -84,6 +82,11 @@ class WorkerAttemptExecutor:
                 self._pending_cancellations.add(job_id)
             else:
                 active.cancel.set()
+
+    def notify_input(self, job_id: str) -> None:
+        notifier = getattr(self.subprocess_runner, "notify_input", None)
+        if notifier is not None:
+            notifier(job_id)
 
     def interrupt_for_shutdown(self) -> None:
         """Interrupt all attempts after the worker-pool drain deadline."""
@@ -120,7 +123,7 @@ class WorkerAttemptExecutor:
                     ErrorCode.EXECUTION_INTERRUPTED,
                     "worker attempt no longer owns the job",
                 )
-            if current.state == JobState.CANCELLING:
+            if current.execution_state == ExecutionState.CANCELLING:
                 active.cancel.set()
                 raise WorkerAttemptError(
                     ErrorCode.CANCELLED,
@@ -132,11 +135,7 @@ class WorkerAttemptExecutor:
                     "worker execution was interrupted by service shutdown",
                 )
             try:
-                plan = self.plan_builder.build(
-                    job,
-                    attempt,
-                    argv_hook=self.argv_hook,
-                )
+                plan = self.plan_builder.build(job, attempt)
             except AttemptExecutionError as exc:
                 raise WorkerAttemptError(exc.code, exc.message) from exc
             try:
@@ -154,32 +153,32 @@ class WorkerAttemptExecutor:
                 ) from exc
             try:
                 if job.operation == "predict":
-                    if result.result_manifest is None:
-                        self.artifact_publisher.publish_outputs(
-                            job,
-                            plan.inputs,
-                            result.outputs,
+                    closed = self.ledger.get_execution_job(job_id)
+                    if closed is None or not self._same_attempt(closed, job):
+                        raise WorkerAttemptError(
+                            ErrorCode.EXECUTION_INTERRUPTED,
+                            "worker attempt lost ownership before publication",
                         )
-                    else:
-                        self.artifact_publisher.publish_outputs_from_manifest(
-                            job,
-                            plan.inputs,
-                            result.result_manifest,
-                        )
+                    publication_inputs = self.plan_builder.streaming_inputs(
+                        closed,
+                        0,
+                    )
+                    self.artifact_publisher.publish_outputs_from_manifest(
+                        job,
+                        publication_inputs,
+                        result.result_manifest,
+                    )
                 else:
-                    if result.result_manifest is None:
-                        self.artifact_publisher.publish_model(job)
-                    else:
-                        self.artifact_publisher.publish_model_from_manifest(
-                            job,
-                            result.result_manifest,
-                        )
+                    self.artifact_publisher.publish_model_from_manifest(
+                        job,
+                        result.result_manifest,
+                    )
             except AttemptExecutionError as exc:
                 raise WorkerAttemptError(exc.code, exc.message) from exc
             self._record_transition(
                 job,
-                JobState.RUNNING.value,
-                JobState.SUCCEEDED.value,
+                ExecutionState.RUNNING.value,
+                ExecutionState.SUCCEEDED.value,
             )
             succeeded = True
             self.metrics.add("jobsSucceeded")
@@ -194,7 +193,10 @@ class WorkerAttemptExecutor:
                     attemptId=job.attempt_id,
                 )
                 return
-            if current is not None and current.state == JobState.SUCCEEDED:
+            if (
+                current is not None
+                and current.execution_state == ExecutionState.SUCCEEDED
+            ):
                 succeeded = True
             else:
                 self.artifact_publisher.cleanup_unpublished(job)
@@ -225,18 +227,18 @@ class WorkerAttemptExecutor:
                     return
                 outcome = decide_attempt_outcome(
                     (
-                        current.state
+                        current.execution_state
                         if current is not None
-                        else JobState.RUNNING
+                        else ExecutionState.RUNNING
                     ),
                     failure.code,
                     operation=job.operation,
                     resumable_fit=self.resumable_fit,
                 )
-                if outcome.target == JobState.CANCELLED:
+                if outcome.target == ExecutionState.CANCELLED:
                     self._finish_cancelled(job, failure.exit_code)
                     self.metrics.add("jobsCancelled")
-                elif outcome.target == JobState.RETRYING:
+                elif outcome.target == ExecutionState.RETRYING:
                     if self._finish_retrying(job, failure):
                         self.metrics.add("jobsRetried")
                     elif (
@@ -244,7 +246,7 @@ class WorkerAttemptExecutor:
                             latest := self.ledger.get_execution_job(job_id)
                         )
                         is not None
-                        and latest.state == JobState.CANCELLED
+                        and latest.execution_state == ExecutionState.CANCELLED
                     ):
                         self.metrics.add("jobsCancelled")
                 else:
@@ -310,10 +312,10 @@ class WorkerAttemptExecutor:
         current = self.ledger.get_execution_job(job.job_id)
         if current is None or not self._same_attempt(current, job):
             return
-        if current.state in (
-            JobState.CANCELLED,
-            JobState.SUCCEEDED,
-            JobState.FAILED,
+        if current.execution_state in (
+            ExecutionState.CANCELLED,
+            ExecutionState.SUCCEEDED,
+            ExecutionState.FAILED,
         ):
             return
         transitioned = self.ledger.request_attempt_cancel(
@@ -324,20 +326,20 @@ class WorkerAttemptExecutor:
         if transitioned:
             self._record_transition(
                 job,
-                JobState.RUNNING.value,
-                JobState.CANCELLING.value,
+                ExecutionState.RUNNING.value,
+                ExecutionState.CANCELLING.value,
             )
         self.ledger.finish_attempt(
             job.job_id,
             job.attempt,
-            JobState.CANCELLED,
+            ExecutionState.CANCELLED,
             attempt_id=job.attempt_id,
             exit_code=exit_code,
         )
         self._record_transition(
             job,
-            JobState.CANCELLING.value,
-            JobState.CANCELLED.value,
+            ExecutionState.CANCELLING.value,
+            ExecutionState.CANCELLED.value,
         )
 
     @staticmethod
@@ -359,20 +361,20 @@ class WorkerAttemptExecutor:
         current = self.ledger.get_execution_job(job.job_id)
         if current is None or not self._same_attempt(current, job):
             return
-        if current.state in (
-            JobState.SUCCEEDED,
-            JobState.FAILED,
-            JobState.CANCELLED,
+        if current.execution_state in (
+            ExecutionState.SUCCEEDED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
         ):
             return
-        if current.state == JobState.CANCELLING:
+        if current.execution_state == ExecutionState.CANCELLING:
             self._finish_cancelled(job, failure.exit_code)
             return
         try:
             self.ledger.finish_attempt(
                 job.job_id,
                 job.attempt,
-                JobState.FAILED,
+                ExecutionState.FAILED,
                 attempt_id=job.attempt_id,
                 error_code=failure.code,
                 error_message=failure.message,
@@ -380,8 +382,8 @@ class WorkerAttemptExecutor:
             )
             self._record_transition(
                 job,
-                JobState.RUNNING.value,
-                JobState.FAILED.value,
+                ExecutionState.RUNNING.value,
+                ExecutionState.FAILED.value,
                 code=failure.code.value,
             )
         except (ServiceError, ValueError):
@@ -392,14 +394,14 @@ class WorkerAttemptExecutor:
             if (
                 latest is not None
                 and self._same_attempt(latest, job)
-                and latest.state == JobState.CANCELLING
+                and latest.execution_state == ExecutionState.CANCELLING
             ):
                 self._finish_cancelled(job, failure.exit_code)
                 return
-            if latest is not None and latest.state in (
-                JobState.SUCCEEDED,
-                JobState.FAILED,
-                JobState.CANCELLED,
+            if latest is not None and latest.execution_state in (
+                ExecutionState.SUCCEEDED,
+                ExecutionState.FAILED,
+                ExecutionState.CANCELLED,
             ):
                 return
             raise
@@ -412,13 +414,13 @@ class WorkerAttemptExecutor:
         current = self.ledger.get_execution_job(job.job_id)
         if current is None or not self._same_attempt(current, job):
             return False
-        if current.state in (
-            JobState.SUCCEEDED,
-            JobState.FAILED,
-            JobState.CANCELLED,
+        if current.execution_state in (
+            ExecutionState.SUCCEEDED,
+            ExecutionState.FAILED,
+            ExecutionState.CANCELLED,
         ):
             return False
-        if current.state == JobState.CANCELLING:
+        if current.execution_state == ExecutionState.CANCELLING:
             self._finish_cancelled(job, failure.exit_code)
             return False
         try:
@@ -435,25 +437,25 @@ class WorkerAttemptExecutor:
             if (
                 latest is not None
                 and self._same_attempt(latest, job)
-                and latest.state == JobState.CANCELLING
+                and latest.execution_state == ExecutionState.CANCELLING
             ):
                 self._finish_cancelled(job, failure.exit_code)
                 return False
-            if latest is not None and latest.state in (
-                JobState.RETRYING,
-                JobState.SUCCEEDED,
-                JobState.FAILED,
-                JobState.CANCELLED,
+            if latest is not None and latest.execution_state in (
+                ExecutionState.RETRYING,
+                ExecutionState.SUCCEEDED,
+                ExecutionState.FAILED,
+                ExecutionState.CANCELLED,
             ):
                 return (
                     self._same_attempt(latest, job)
-                    and latest.state == JobState.RETRYING
+                    and latest.execution_state == ExecutionState.RETRYING
                 )
             raise
         self._record_transition(
             job,
-            JobState.RUNNING.value,
-            JobState.RETRYING.value,
+            ExecutionState.RUNNING.value,
+            ExecutionState.RETRYING.value,
             code=failure.code.value,
         )
         if self.retry_notifier is not None:

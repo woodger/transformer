@@ -4,9 +4,9 @@ import hashlib
 import os
 import shutil
 
-from app.contracts.worker.v1.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
 from app.service.application.services.errors import AttemptExecutionError
-from app.service.domain.job import ErrorCode
+from app.service.domain.job import ErrorCode, InputState
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 
@@ -65,10 +65,17 @@ class RecoveryCheckpointPublisher:
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit subprocess emitted an invalid recovery generation",
             )
-        if job.seal_hash is None:
+        current = self.ledger.get_execution_job(job.job_id)
+        if (
+            current is None
+            or current.attempt != job.attempt
+            or current.attempt_id != job.attempt_id
+            or current.input_state is not InputState.CLOSED
+            or current.manifest_sha256 is None
+        ):
             raise WorkerRecoveryError(
                 ErrorCode.INTERNAL,
-                "fit job seal hash is unavailable",
+                "closed fit input manifest is unavailable",
             )
         path = self.recovery_store.checkpoint_path(
             job.job_id,

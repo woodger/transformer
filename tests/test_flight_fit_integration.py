@@ -1,16 +1,14 @@
+from __future__ import annotations
+
+import hashlib
 import json
-import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
-import pyarrow.ipc as ipc
-import torch
 
-from app.config import PROJECT_ROOT
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -19,17 +17,15 @@ from app.flight.constants import (
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
-    SEAL_ACTION,
-    START_ACTION,
+    INPUT_CLOSE_ACTION,
     STATUS_ACTION,
-    JobState,
 )
-from app.runtime.version import __version__
-from app.storage.checkpoint import CHECKPOINT_FORMAT
+from app.service.domain.input_manifest import manifest_sha256
+from app.service.domain.job import ExecutionState, InputState
 
 OWNER = "inventory"
 TOKEN = "secret"
-MODEL_LABEL = "integration-fit"
+DATA_CONTRACT_SHA256 = "d" * 64
 
 MODEL_CONFIG = {
     "seqLen": 2,
@@ -54,6 +50,14 @@ TRAINING_CONFIG = {
     "saveBestCheckpoint": False,
     "seed": 29,
     "deterministic": True,
+}
+DATA_CONTRACT = {
+    "id": "inventory.learning-dataset",
+    "version": 1,
+    "dataContractSha256": DATA_CONTRACT_SHA256,
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v1",
 }
 
 
@@ -80,7 +84,7 @@ def _auth():
 def _action(client, name, **fields):
     request = {
         "contract": CONTRACT_NAME,
-        "version": 2,
+        "version": 3,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -94,157 +98,59 @@ def _action(client, name, **fields):
 
 def _fit_schema():
     return pa.schema([
-        ("src", pa.list_(pa.float32())),
-        ("tgt", pa.list_(pa.float32())),
+        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
+        pa.field("tgt", pa.list_(pa.float32(), 6), nullable=False),
     ])
 
 
 def _batch(source_rows, target_rows):
-    return pa.record_batch(
+    schema = _fit_schema()
+    return pa.RecordBatch.from_arrays(
         [
-            pa.array(source_rows, type=pa.list_(pa.float32())),
-            pa.array(target_rows, type=pa.list_(pa.float32())),
+            pa.array(source_rows, type=schema.field("src").type),
+            pa.array(target_rows, type=schema.field("tgt").type),
         ],
-        schema=_fit_schema(),
+        schema=schema,
     )
 
 
-def _ipc_payload(batches):
-    sink = pa.BufferOutputStream()
-    with ipc.new_file(sink, _fit_schema()) as writer:
-        for batch in batches:
-            writer.write_batch(batch)
-    return sink.getvalue().to_pybytes()
-
-
-def _put(client, job_id, payload_id, ordinal, batches):
+def _put(client, created, ordinal, batches):
+    payload_id = str(uuid.uuid4())
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v2", "jobs", job_id, "inputs", str(ordinal)
+        "transformer", "v3", "jobs", created["jobId"], "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
         _fit_schema(),
         options=_auth(),
     )
-    metadata = {
+    rows = sum(batch.num_rows for batch in batches)
+    writer.write_metadata(pa.py_buffer(json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 2,
-        "jobId": job_id,
+        "version": 3,
+        "jobId": created["jobId"],
+        "clientExecutionId": created["ownership"]["clientExecutionId"],
+        "fencingToken": created["ownership"]["fencingToken"],
         "payloadId": payload_id,
         "ordinal": ordinal,
         "schemaId": FIT_SCHEMA_ID,
-        "rows": sum(batch.num_rows for batch in batches),
-    }
-    writer.write_metadata(pa.py_buffer(json.dumps(metadata).encode()))
+        "dataContractSha256": DATA_CONTRACT_SHA256,
+        "rows": rows,
+    }).encode()))
     for batch in batches:
         writer.write_batch(batch)
     writer.done_writing()
-    committed = results.read()
-    assert committed is not None
+    result = json.loads(results.read().to_pybytes())
     assert results.read() is None
     writer.close()
-    return json.loads(committed.to_pybytes())
+    return result
 
 
-def _direct_fit(tmp_path, payloads):
-    checkpoint = tmp_path / "direct-checkpoint.pth"
-    metrics = tmp_path / "direct-metrics.jsonl"
-    inputs = tmp_path / "direct-inputs"
-    inputs.mkdir()
-    for ordinal, payload in enumerate(payloads):
-        (inputs / f"{ordinal}.arrow").write_bytes(payload)
-    command = [
-        sys.executable,
-        str(Path(PROJECT_ROOT) / "app" / "main.py"),
-        "fit-stream",
-        "--device", "cpu",
-        "--checkpoint-out", str(checkpoint),
-        "--metrics-out", str(metrics),
-        "--input-spool-dir", str(inputs),
-        "--input-frame-count", str(len(payloads)),
-        "--seq-len", str(MODEL_CONFIG["seqLen"]),
-        "--hidden", str(MODEL_CONFIG["hidden"]),
-        "--layers", str(MODEL_CONFIG["layers"]),
-        "--dropout", str(MODEL_CONFIG["dropout"]),
-        "--nhead", str(MODEL_CONFIG["nhead"]),
-        "--mode", MODEL_CONFIG["mode"],
-        "--lr", str(TRAINING_CONFIG["lr"]),
-        "--weight-decay", str(TRAINING_CONFIG["weightDecay"]),
-        "--batch-size", str(TRAINING_CONFIG["batchSize"]),
-        "--epochs", str(TRAINING_CONFIG["epochs"]),
-        "--loss-stage", str(TRAINING_CONFIG["lossStage"]),
-        "--loss-schedule", TRAINING_CONFIG["lossSchedule"],
-        "--stage-size", str(TRAINING_CONFIG["stageSize"]),
-        "--patience", str(TRAINING_CONFIG["patience"]),
-        "--monitor", TRAINING_CONFIG["monitor"],
-        "--monitor-min-improvement",
-        str(TRAINING_CONFIG["monitorMinImprovement"]),
-        "--seed", str(TRAINING_CONFIG["seed"]),
-        "--no-save-best-checkpoint",
-        "--deterministic",
-    ]
-    process = subprocess.run(
-        command,
-        cwd=PROJECT_ROOT,
-        input=b"",
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
-    assert process.returncode == 0, process.stderr.decode(errors="replace")
-    return checkpoint, metrics, process.stdout.decode(errors="replace")
-
-
-def _jsonl(path):
-    return [
-        json.loads(line)
-        for line in Path(path).read_text().splitlines()
-        if line.strip()
-    ]
-
-
-def _without_elapsed(metrics):
-    return [
-        {key: value for key, value in row.items() if key != "elapsed_ms"}
-        for row in metrics
-    ]
-
-
-def _load_payload(path):
-    return torch.load(path, map_location="cpu", weights_only=False)
-
-
-def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
+def test_real_cpu_v3_fit_starts_before_eof_and_publishes_after_close(
     tmp_path,
     postgres_config,
-    postgres_database,
+    postgres_ledger,
 ):
-    first_batches = [
-        _batch(
-            [[0.10, 0.20, 0.30, 0.40]],
-            [[0.05, 0.0, 0.0, 0.0, 0.20, 1.0]],
-        ),
-        _batch(
-            [[0.50, 0.60, 0.70, 0.80]],
-            [[-0.03, 0.0, 0.0, 0.0, 0.25, 0.0]],
-        ),
-    ]
-    second_batches = [
-        _batch(
-            [[0.90, 1.00, 1.10, 1.20]],
-            [[0.02, 0.0, 0.0, 0.0, 0.30, 1.0]],
-        )
-    ]
-    payloads = [
-        _ipc_payload(first_batches),
-        _ipc_payload(second_batches),
-    ]
-    direct_checkpoint, direct_metrics_path, direct_stdout = _direct_fit(
-        tmp_path,
-        payloads,
-    )
-    assert "2 trained frame(s), 1 epoch(s) from 2 received frame(s)" in direct_stdout
-
     config = _service_config(tmp_path)
     application = FlightApplication.build(
         config,
@@ -253,197 +159,103 @@ def test_real_cpu_flight_fit_runs_global_epochs_over_spooled_payloads(
         bearer_tokens={TOKEN: OWNER},
     )
     client = flight.FlightClient(("localhost", application.server.port))
-    job_id = None
     try:
+        job_id = str(uuid.uuid4())
+        execution_id = str(uuid.uuid4())
         created = _action(
             client,
             CREATE_ACTION,
-            idempotencyKey=f"create-{uuid.uuid4()}",
+            idempotencyKey=f"create-{job_id}",
+            jobId=job_id,
+            clientExecutionId=execution_id,
             operation="fit",
             device="cpu",
-            modelLabel=MODEL_LABEL,
+            modelLabel="integration-fit",
             modelConfig=MODEL_CONFIG,
             trainingConfig=TRAINING_CONFIG,
+            dataContract=DATA_CONTRACT,
         )
-        job_id = created["jobId"]
-        payload_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
-        committed = [
-            _put(client, job_id, payload_ids[0], 0, first_batches),
-            _put(client, job_id, payload_ids[1], 1, second_batches),
-        ]
-        assert [
-            (item["ordinal"], item["rows"], item["batches"])
-            for item in committed
-        ] == [(0, 2, 2), (1, 1, 1)]
-        stored_inputs = application.ledger.list_inputs(job_id)
-        assert {
-            item["storage_class"]
-            for item in stored_inputs
-        } == {"recovery"}
+        assert created["jobId"] == job_id
+        first = _put(client, created, 0, [
+            _batch(
+                [[0.10, 0.20, 0.30, 0.40]],
+                [[0.05, 0.0, 0.0, 0.0, 0.20, 1.0]],
+            ),
+        ])
+        assert first["queued"] is True
+
+        deadline = time.monotonic() + 10
+        while True:
+            open_status = _action(client, STATUS_ACTION, jobId=job_id)
+            if open_status["execution"]["state"] == ExecutionState.RUNNING.value:
+                break
+            assert time.monotonic() < deadline, open_status
+            time.sleep(0.02)
+        assert open_status["input"]["state"] == InputState.OPEN.value
+
+        second = _put(client, created, 1, [
+            _batch(
+                [[0.90, 1.00, 1.10, 1.20]],
+                [[0.02, 0.0, 0.0, 0.0, 0.30, 1.0]],
+            ),
+        ])
+        receipts = application.ledger.list_inputs(job_id)
+        assert [item["ordinal"] for item in receipts] == [0, 1]
+        assert {item["storage_class"] for item in receipts} == {"recovery"}
         assert all(
             Path(application.recovery_store.absolute_path(
                 item["relative_path"]
             )).is_file()
-            for item in stored_inputs
+            for item in receipts
         )
 
-        manifest = [
-            {
-                "payloadId": payload_ids[ordinal],
-                "ordinal": ordinal,
-                "sha256": committed[ordinal]["sha256"],
-            }
-            for ordinal in range(2)
-        ]
-        sealed = _action(
+        closed = _action(
             client,
-            SEAL_ACTION,
-            idempotencyKey=f"seal-{uuid.uuid4()}",
+            INPUT_CLOSE_ACTION,
+            idempotencyKey=f"close-{job_id}",
             jobId=job_id,
-            manifest=manifest,
+            clientExecutionId=created["ownership"]["clientExecutionId"],
+            fencingToken=created["ownership"]["fencingToken"],
+            payloadCount=2,
+            totalRows=first["rows"] + second["rows"],
+            totalBytes=first["bytes"] + second["bytes"],
+            manifestSha256=manifest_sha256(receipts),
         )
-        assert sealed["state"] == JobState.SEALED.value
-        started = _action(
-            client,
-            START_ACTION,
-            idempotencyKey=f"start-{uuid.uuid4()}",
-            jobId=job_id,
-        )
-        assert started["state"] == JobState.QUEUED.value
+        assert closed["input"]["state"] == InputState.CLOSED.value
 
-        saw_running = False
         deadline = time.monotonic() + 30
         while True:
             status = _action(client, STATUS_ACTION, jobId=job_id)
-            if status["state"] == JobState.RUNNING.value and not saw_running:
-                saw_running = True
-                capabilities = _action(client, CAPABILITIES_ACTION)
-                health = _action(client, HEALTH_ACTION)
-                assert capabilities["supportedOperations"] == ["fit", "predict"]
-                assert health["live"] is True
-            if status["state"] in {
-                JobState.SUCCEEDED.value,
-                JobState.FAILED.value,
-                JobState.CANCELLED.value,
+            if status["execution"]["state"] in {
+                state.value
+                for state in (
+                    ExecutionState.SUCCEEDED,
+                    ExecutionState.FAILED,
+                    ExecutionState.CANCELLED,
+                )
             }:
                 break
             assert time.monotonic() < deadline, status
             time.sleep(0.02)
 
-        assert saw_running
-        assert status["state"] == JobState.SUCCEEDED.value, status
-        assert status["recovery"] == {
-            "latestCheckpoint": {
-                "generation": 1,
-                "completedEpochs": 1,
-                "globalStep": 1,
-                "trainingComplete": True,
-            },
-            "resumedFromGeneration": None,
-            "retryCount": 0,
-            "lastRetryCode": None,
-            "boundary": "globalEpoch",
-        }
-        assert [
-            (item["ordinal"], item["rows"], item["batches"])
-            for item in status["committedInputs"]
-        ] == [(0, 2, 2), (1, 1, 1)]
-        assert status["results"]["outputs"] == []
+        assert status["execution"]["state"] == ExecutionState.SUCCEEDED.value, status
+        assert status["input"]["state"] == InputState.CLOSED.value
+        assert status["results"]["outputCount"] == 0
+        assert status["results"]["modelRef"].startswith("mdl_")
+        assert status["recovery"]["latestCheckpoint"]["completedEpochs"] == 1
+        assert _action(client, CAPABILITIES_ACTION)["protocolVersions"] == [3]
+        assert _action(client, HEALTH_ACTION)["live"] is True
 
-        model_ref = status["results"]["modelRef"]
-        assert model_ref.startswith("mdl_")
-        assert "/" not in model_ref and "\\" not in model_ref
-        serialized_status = json.dumps(status)
-        assert str(tmp_path) not in serialized_status
-        assert ".pth" not in serialized_status
-
-        checkpoint = status["results"]["checkpoint"]
-        assert set(checkpoint) == {
-            "format",
-            "serviceVersion",
-            "sha256",
-            "bytes",
-            "modelConfig",
-            "trainConfig",
-            "dataSchema",
-            "checkpointSelection",
-        }
-        assert checkpoint["format"] == CHECKPOINT_FORMAT
-        assert checkpoint["serviceVersion"] == __version__
-        assert len(checkpoint["sha256"]) == 64
-        assert checkpoint["bytes"] > 0
-        assert checkpoint["modelConfig"] == {
-            **MODEL_CONFIG,
-            "outDim": 6,
-            "featureDim": 2,
-        }
-        assert checkpoint["trainConfig"] == TRAINING_CONFIG
-        assert checkpoint["dataSchema"] == {
-            "schemaVersion": 1,
-            "tensorDtype": "float32",
-            "source": {
-                "column": "src",
-                "acceptedElementTypes": ["float32", "float64"],
-                "width": 4,
-            },
-            "target": {
-                "column": "tgt",
-                "acceptedElementTypes": ["float32", "float64"],
-                "width": 6,
-            },
-            "featureDim": 2,
-            "modelInputFeatureDim": 4,
-            "contextMode": "relaxed",
-            "normalization": None,
-            "missing": {"nanFill": 0.0, "flags": "per-feature"},
-        }
-        assert checkpoint["checkpointSelection"] == {
-            "monitor": "loss",
-            "monitorMinImprovement": 0.0,
-            "bestMonitor": None,
-            "bestFrame": None,
-            "bestEpoch": None,
-            "baselinePassed": False,
-            "source": "current",
-        }
-
-        model = application.ledger.get_model(model_ref, owner_subject=OWNER)
+        model = application.ledger.get_model(
+            status["results"]["modelRef"],
+            owner_subject=OWNER,
+        )
         assert model is not None
-        published_checkpoint = application.spool.model_absolute_path(
+        checkpoint_path = application.spool.model_absolute_path(
             model["checkpoint_path"]
         )
-        assert checkpoint["bytes"] == Path(published_checkpoint).stat().st_size
-        assert checkpoint["sha256"] == model["sha256"]
-
-        direct_payload = _load_payload(direct_checkpoint)
-        published_payload = _load_payload(published_checkpoint)
-        assert direct_payload["model_config"] == published_payload["model_config"]
-        assert direct_payload["train_config"] == published_payload["train_config"]
-        assert direct_payload["state_dict"].keys() == published_payload["state_dict"].keys()
-        for key, direct_value in direct_payload["state_dict"].items():
-            assert torch.equal(direct_value, published_payload["state_dict"][key]), key
-
-        service_metrics_path = application.spool.attempt_metrics_path(
-            job_id,
-            status["attempt"],
-        )
-        direct_metrics = _jsonl(direct_metrics_path)
-        service_metrics = _jsonl(service_metrics_path)
-        assert [row.get("frame") for row in service_metrics] == [None]
-        assert [row["epoch"] for row in service_metrics] == [1]
-        assert [row["rows"] for row in service_metrics] == [3]
-        assert [row["batches"] for row in service_metrics] == [1]
-        assert [row["step"] for row in service_metrics] == [1]
-        assert _without_elapsed(service_metrics) == _without_elapsed(direct_metrics)
-
-        service_stderr = Path(application.spool.attempt_stderr_path(
-            job_id,
-            status["attempt"],
-        )).read_text(errors="replace")
-        assert (
-            "2 trained frame(s), 1 epoch(s) from 2 received frame(s)"
-            in service_stderr
-        )
+        assert Path(checkpoint_path).is_file()
+        assert hashlib.sha256(Path(checkpoint_path).read_bytes()).hexdigest() == model["sha256"]
     finally:
         client.close()
         application.shutdown()

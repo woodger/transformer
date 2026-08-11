@@ -4,7 +4,8 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
+from alembic import command
+from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropSchema
 
 from app.database.migrations import (
@@ -13,8 +14,10 @@ from app.database.migrations import (
     rollback_migration,
 )
 from app.database.tokens import AccessTokenStore
+from app.flight.constants import FIT_SCHEMA_ID
 from app.flight.ledger import Ledger
 from app.flight.token_cache import AccessTokenCache, AccessTokenCacheService
+from app.service.adapters.outbound.postgres.migrations import alembic_config
 
 
 class _SilentLogger:
@@ -36,29 +39,92 @@ def _fit_job(ledger, label):
     return ledger.create_job(
         job_id=job_id,
         owner_subject="inventory",
+        client_execution_id=str(uuid.uuid4()),
         operation="fit",
         requested_device="cpu",
         prediction_column="out",
         config_hash="a" * 64,
+        data_contract=_data_contract(),
+        create_result={"jobId": job_id},
         model_label=label,
+        model_config=_model_config(),
+        training_config={},
     )
 
 
-def _run(ledger, job):
-    ledger.seal_job(job["job_id"], manifest_hash="b" * 64, manifest=[])
-    ledger.queue_job(job["job_id"], selected_device="cpu")
-    return ledger.claim_next_job("cpu")
+def _data_contract():
+    return {
+        "id": "inventory.learning-dataset",
+        "version": 1,
+        "data_contract_sha256": "d" * 64,
+        "seq_len": 2,
+        "feature_dim": 1,
+        "target_schema_id": "inventory.target.v1",
+    }
+
+
+def _model_config():
+    return {
+        "seq_len": 2,
+        "hidden": 8,
+        "layers": 1,
+        "dropout": 0.0,
+        "nhead": 2,
+        "context_mode": "relaxed",
+        "out_dim": 6,
+        "feature_dim": 1,
+    }
+
+
+def _commit_input(ledger, job, *, storage_class):
+    payload_id = str(uuid.uuid4())
+    upload_token = uuid.uuid4().hex
+    relative_path = (
+        f"jobs/{job['job_id']}/inputs/0-{payload_id}.arrow"
+    )
+    ledger.reserve_input(
+        job_id=job["job_id"],
+        payload_id=payload_id,
+        ordinal=0,
+        client_execution_id=job["client_execution_id"],
+        fencing_token=job["fencing_token"],
+        upload_token=upload_token,
+        candidate_path=relative_path,
+        storage_class=storage_class,
+    )
+    ledger.commit_input(
+        upload_token=upload_token,
+        job_id=job["job_id"],
+        client_execution_id=job["client_execution_id"],
+        fencing_token=job["fencing_token"],
+        relative_path=relative_path,
+        schema_id=FIT_SCHEMA_ID,
+        data_contract_sha256="d" * 64,
+        rows=1,
+        batches=1,
+        byte_count=1,
+        sha256="1" * 64,
+        schema_fingerprint="2" * 64,
+        source_width=2,
+        feature_dim=1,
+        selected_device="cpu",
+        max_payloads=10,
+        max_job_bytes=10,
+        storage_class=storage_class,
+    )
 
 
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0003",)
-    assert status.heads == ("0003",)
+    assert status.current == ("0004",)
+    assert status.heads == ("0004",)
     assert status.pending is False
 
 
-def test_alembic_upgrade_and_single_revision_rollback(postgres_config):
+def test_v3_schema_migration_is_irreversible(
+    postgres_config,
+):
     schema = f"transformer_migration_test_{uuid.uuid4().hex}"
     config = type(postgres_config)(
         postgres_config.host,
@@ -72,19 +138,176 @@ def test_alembic_upgrade_and_single_revision_rollback(postgres_config):
     try:
         initial = migration_status(config)
         applied = apply_migrations(config)
-        rolled_back = rollback_migration(config)
+        with pytest.raises(RuntimeError, match="cannot be downgraded"):
+            rollback_migration(config)
+        after_failed_rollback = migration_status(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0003",)
+        assert initial.heads == ("0004",)
         assert initial.pending is True
-        assert applied.current == ("0003",)
+        assert applied.current == ("0004",)
         assert applied.pending is False
-        assert rolled_back.current == ("0002",)
-        assert rolled_back.pending is True
+        assert after_failed_rollback.current == ("0004",)
+        assert after_failed_rollback.pending is False
     finally:
         with cleanup_engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))
         cleanup_engine.dispose()
+
+
+def test_v3_schema_migration_preserves_tokens_and_models_only(
+    postgres_config,
+):
+    schema = f"transformer_v3_schema_test_{uuid.uuid4().hex}"
+    config = type(postgres_config)(
+        postgres_config.host,
+        postgres_config.database,
+        postgres_config.user,
+        postgres_config.password,
+        postgres_config.port,
+        schema,
+    )
+    engine = create_engine(config.url)
+    job_id = str(uuid.uuid4())
+    token_id = str(uuid.uuid4())
+    model_ref = "mdl_preserved"
+    quoted = f'"{schema}"'
+    try:
+        command.upgrade(alembic_config(config), "0003")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.jobs (
+                        job_id, owner_subject, operation, state, revision,
+                        requested_device, model_label, prediction_column,
+                        config_hash, created_at, updated_at
+                    ) VALUES (
+                        :job_id, 'inventory', 'fit', 'UPLOADING', 1,
+                        'cpu', 'daily', 'out', :config_hash, now(), now()
+                    )
+                    """
+                ),
+                {"job_id": job_id, "config_hash": "c" * 64},
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.models (
+                        model_ref, owner_subject, label, generation,
+                        checkpoint_path, metadata_path, sha256, metadata,
+                        producing_job_id, created_at
+                    ) VALUES (
+                        :model_ref, 'inventory', 'daily', 1,
+                        'models/daily/1/checkpoint.pth',
+                        'models/daily/1/metadata.json', :sha256,
+                        '{{}}'::jsonb, :job_id, now()
+                    )
+                    """
+                ),
+                {
+                    "model_ref": model_ref,
+                    "sha256": "m" * 64,
+                    "job_id": job_id,
+                },
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.model_aliases (
+                        owner_subject, label, model_ref, updated_at
+                    ) VALUES ('inventory', 'daily', :model_ref, now())
+                    """
+                ),
+                {"model_ref": model_ref},
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.api_access_tokens (
+                        token_id, token, subject, created_at
+                    ) VALUES (:token_id, :token, 'inventory', now())
+                    """
+                ),
+                {"token_id": token_id, "token": "a." + "A" * 86},
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.idempotency_records (
+                        owner_subject, action_name, idempotency_key,
+                        request_hash, response, job_id, created_at
+                    ) VALUES (
+                        'inventory', 'transformer.v2.job.create', 'create:1',
+                        :request_hash, '{{}}'::jsonb, :job_id, now()
+                    )
+                    """
+                ),
+                {"request_hash": "i" * 64, "job_id": job_id},
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.runtime_state (key, value, updated_at)
+                    VALUES ('storage_epoch', 'v2-runtime', now())
+                    """
+                )
+            )
+
+        command.upgrade(alembic_config(config), "head")
+
+        with engine.connect() as connection:
+            jobs = connection.scalar(text(f"SELECT count(*) FROM {quoted}.jobs"))
+            identities = connection.scalar(
+                text(f"SELECT count(*) FROM {quoted}.job_identities")
+            )
+            idempotency = connection.scalar(
+                text(f"SELECT count(*) FROM {quoted}.idempotency_records")
+            )
+            storage_epoch = connection.scalar(
+                text(
+                    f"SELECT count(*) FROM {quoted}.runtime_state "
+                    "WHERE key = 'storage_epoch'"
+                )
+            )
+            token = connection.execute(
+                text(
+                    f"SELECT token_id, subject FROM {quoted}.api_access_tokens"
+                )
+            ).one()
+            model = connection.execute(
+                text(
+                    f"""
+                    SELECT producing_job_id, checkpoint_bytes,
+                           data_contract, data_contract_sha256,
+                           certified_for_v3
+                    FROM {quoted}.models
+                    WHERE model_ref = :model_ref
+                    """
+                ),
+                {"model_ref": model_ref},
+            ).one()
+            alias = connection.scalar(
+                text(
+                    f"""
+                    SELECT model_ref FROM {quoted}.model_aliases
+                    WHERE owner_subject = 'inventory' AND label = 'daily'
+                    """
+                )
+            )
+
+        assert jobs == 0
+        assert identities == 0
+        assert idempotency == 0
+        assert storage_epoch == 0
+        assert token == (uuid.UUID(token_id), "inventory")
+        assert model == (None, 1, None, None, False)
+        assert alias == model_ref
+        assert migration_status(config).current == ("0004",)
+    finally:
+        with engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True, if_exists=True))
+        engine.dispose()
 
 
 def test_access_tokens_use_required_format_and_list_omits_credentials(
@@ -142,70 +365,23 @@ def test_runtime_epoch_reset_discards_runtime_jobs_and_preserves_recovery_fits(
     token_store = AccessTokenStore(postgres_database)
     token = token_store.issue("inventory")
 
-    producer = _fit_job(ledger, "daily")
-    running = _run(ledger, producer)
-    model_ref = f"mdl_{uuid.uuid4().hex}"
-    ledger.publish_model(
-        producer["job_id"],
-        running["attempt"],
-        attempt_id=running["attempt_id"],
-        model_ref=model_ref,
-        label="daily",
-        generation=None,
-        checkpoint_path=f"{model_ref}/checkpoint.pth",
-        metadata_path=f"{model_ref}/metadata.json",
-        sha256="c" * 64,
-        metadata={"modelRef": model_ref},
-        result={"modelRef": model_ref},
-    )
-    queued = _fit_job(ledger, "next")
-    ledger.seal_job(queued["job_id"], manifest_hash="d" * 64, manifest=[])
-    ledger.queue_job(queued["job_id"], selected_device="cpu")
+    persistent_fit = _fit_job(ledger, "daily")
+    _commit_input(ledger, persistent_fit, storage_class="recovery")
     prediction = ledger.create_job(
         job_id=str(uuid.uuid4()),
         owner_subject="inventory",
+        client_execution_id=str(uuid.uuid4()),
         operation="predict",
         requested_device="cpu",
         prediction_column="out",
         config_hash="e" * 64,
-        input_model_ref=model_ref,
+        data_contract=_data_contract(),
+        create_result={"jobId": "predict"},
+        resolved_model_ref="mdl_seed",
+        model_config=_model_config(),
     )
-    ledger.seal_job(
-        prediction["job_id"],
-        manifest_hash="f" * 64,
-        manifest=[],
-    )
-    ledger.queue_job(
-        prediction["job_id"],
-        selected_device="cpu",
-    )
-    runtime_fit = _fit_job(ledger, "legacy-runtime")
-    payload_id = str(uuid.uuid4())
-    ledger.reserve_input(
-        job_id=runtime_fit["job_id"],
-        payload_id=payload_id,
-        ordinal=0,
-        upload_token="runtime-input",
-        temporary_path=(
-            f"spool/jobs/{runtime_fit['job_id']}/inputs/.0.tmp"
-        ),
-    )
-    ledger.commit_input(
-        upload_token="runtime-input",
-        relative_path=(
-            f"spool/jobs/{runtime_fit['job_id']}/inputs/0.arrow"
-        ),
-        schema_id="inventory.sequence.fit.v1",
-        rows=1,
-        batches=1,
-        byte_count=1,
-        sha256="1" * 64,
-        schema_fingerprint="2" * 64,
-        source_width=2,
-        feature_dim=1,
-        max_payloads=1,
-        max_job_bytes=1,
-    )
+    runtime_fit = _fit_job(ledger, "runtime")
+    _commit_input(ledger, runtime_fit, storage_class="runtime")
 
     reset = ledger.synchronize_runtime_epoch(str(uuid.uuid4()))
 
@@ -217,11 +393,9 @@ def test_runtime_epoch_reset_discards_runtime_jobs_and_preserves_recovery_fits(
     assert {
         job["job_id"]
         for job in ledger.list_jobs()
-    } == {producer["job_id"], queued["job_id"]}
-    model = ledger.get_model(model_ref, owner_subject="inventory")
-    assert model is not None
-    assert model["producing_job_id"] == producer["job_id"]
-    assert ledger.resolve_model_alias("inventory", "daily")["model_ref"] == model_ref
+    } == {persistent_fit["job_id"]}
+    assert ledger.get_job_identity(prediction["job_id"])["retired_at"] is not None
+    assert ledger.get_job_identity(runtime_fit["job_id"])["retired_at"] is not None
     assert token_store.list()[0].token_id == token.token_id
     assert token_store.active_credentials()[0][0] == token.token
 
