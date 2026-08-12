@@ -288,15 +288,28 @@ class JobCoordinator:
             )
 
     def _validate_model_artifact(self, model) -> None:
-        path = self.spool.model_absolute_path(model.checkpoint_path)
+        try:
+            path = self.spool.model_absolute_path(model.checkpoint_path)
+            expected = self.spool.model_checkpoint_path(model.model_ref)
+        except ValueError as exc:
+            raise ServiceError(
+                ErrorCode.MODEL_CORRUPT,
+                "model checkpoint identity is invalid",
+            ) from exc
+        if path != expected:
+            raise ServiceError(
+                ErrorCode.MODEL_CORRUPT,
+                "model checkpoint identity is invalid",
+            )
         try:
             byte_count = os.path.getsize(path)
+            checkpoint_sha256 = _sha256_file(path)
         except OSError as exc:
             raise ServiceError(
                 ErrorCode.MODEL_UNAVAILABLE,
                 "model checkpoint is unavailable",
             ) from exc
-        if byte_count != model.byte_count or _sha256_file(path) != model.sha256:
+        if byte_count != model.byte_count or checkpoint_sha256 != model.sha256:
             raise ServiceError(
                 ErrorCode.MODEL_CORRUPT,
                 "model checkpoint integrity validation failed",

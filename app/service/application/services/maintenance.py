@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -20,7 +21,7 @@ class MaintenanceResult:
 
 
 class MaintenanceService:
-    """Periodically expire tickets and retained terminal jobs.
+    """Reconcile durable queues and expire tickets and retained terminal jobs.
 
     Terminal ledger rows are deleted before their server-owned job directories.
     Reversing that order could leave live ledger references to missing artifacts.
@@ -43,6 +44,7 @@ class MaintenanceService:
         recovery_store=None,
         *,
         interval_seconds: float = 60.0,
+        queue_reconciler: Callable[[], None] | None = None,
         logger,
         metrics,
     ):
@@ -61,6 +63,7 @@ class MaintenanceService:
         self.spool = spool
         self.recovery_store = recovery_store
         self.interval_seconds = float(interval_seconds)
+        self._queue_reconciler = queue_reconciler
         self.logger = logger
         self.metrics = metrics
 
@@ -118,6 +121,8 @@ class MaintenanceService:
             raise ValueError("now must be a finite number")
         timestamp = float(timestamp)
         cutoff = timestamp - self.config.retention_seconds
+        if self._queue_reconciler is not None:
+            self._queue_reconciler()
         usage = None
         disk_usage = getattr(self.spool, "disk_usage", None)
         if disk_usage is not None:

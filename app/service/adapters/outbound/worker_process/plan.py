@@ -170,7 +170,7 @@ class WorkerPlanBuilder:
             document["predictionColumn"] = job.prediction_column
             document["model"]["checkpoint"] = {
                 "path": checkpoint,
-                "byteCount": os.path.getsize(checkpoint),
+                "byteCount": model.byte_count,
                 "sha256": model.sha256,
             }
         else:
@@ -241,20 +241,36 @@ class WorkerPlanBuilder:
         )
         if model is None:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "resolved model generation is unavailable",
+                ErrorCode.NOT_FOUND,
+                "resolved model generation was not found",
             )
-        checkpoint = self.spool.model_absolute_path(model.checkpoint_path)
-        expected = self.spool.model_checkpoint_path(model.model_ref)
-        if checkpoint != expected or not os.path.isfile(checkpoint):
+        try:
+            checkpoint = self.spool.model_absolute_path(
+                model.checkpoint_path,
+            )
+            expected = self.spool.model_checkpoint_path(model.model_ref)
+        except ValueError as exc:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint identity is invalid",
+            ) from exc
+        if checkpoint != expected:
+            raise WorkerPlanError(
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint identity is invalid",
+            )
+        try:
+            byte_count = os.path.getsize(checkpoint)
+            checkpoint_sha256 = _sha256_file(checkpoint)
+        except OSError as exc:
+            raise WorkerPlanError(
+                ErrorCode.MODEL_UNAVAILABLE,
                 "resolved model checkpoint is unavailable",
-            )
-        if _sha256_file(checkpoint) != model.sha256:
+            ) from exc
+        if byte_count != model.byte_count or checkpoint_sha256 != model.sha256:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "resolved model checkpoint digest is invalid",
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint integrity validation failed",
             )
         return model
 

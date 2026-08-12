@@ -1,9 +1,9 @@
-# ADR 0002: Clean Architecture-light для Flight control plane
+# ADR 0002: Clean Architecture-light для control plane Flight
 
-- Status: accepted
-- Date: 2026-07-23
+- Статус: принято
+- Дата: 2026-07-23
 
-## Context
+## Контекст
 
 Flight control plane вырос вокруг рабочих и проверенных границ:
 `TransformerFlightServer`, `JobCoordinator`, `Ledger`, `UploadHandler`,
@@ -23,7 +23,7 @@ subprocess уже задают production-семантику сервиса.
 устраняет текущие риски само по себе и создало бы широкое изменение вокруг уже
 стабильных внешних и durable contracts.
 
-## Decision
+## Решение
 
 Flight control plane рефакторится постепенно в стиле Clean
 Architecture-light внутри существующей package-oriented архитектуры.
@@ -48,7 +48,7 @@ Torch execution не переносится в Flight RPC handler или в serv
 Изменение внутренней структуры само по себе не является основанием менять
 Flight, persistence, spool или CLI contract.
 
-## Extraction sequence
+## Последовательность выделения компонентов
 
 Рефакторинг выполняется следующими независимыми шагами:
 
@@ -88,7 +88,7 @@ Flight, persistence, spool или CLI contract.
 ledger. Один extraction step не должен одновременно менять observable
 behavior другого.
 
-## Change discipline
+## Дисциплина изменений
 
 Каждый commit должен быть самостоятельно deployable и revertible:
 
@@ -109,7 +109,7 @@ layer не вводятся. Интерфейс или локальный adapte
 реальным consumer и конкретной инфраструктурной границей; он не должен
 зеркалировать целиком существующий `Ledger` или `Spool`.
 
-## Consequences
+## Последствия
 
 - Риск рефакторинга ограничивается одной ответственностью и одним change set.
 - Flight clients, operators и существующие CLI workflows не требуют
@@ -124,7 +124,7 @@ layer не вводятся. Интерфейс или локальный adapte
   реализацию; это сознательный выбор в пользу явного контракта без
   преждевременной взаимозаменяемости.
 
-## Rejected alternatives
+## Отклонённые альтернативы
 
 - **Полная Clean Architecture миграция одним изменением.** Слишком широкий
   blast radius для contract-, persistence- и process-sensitive сервиса.

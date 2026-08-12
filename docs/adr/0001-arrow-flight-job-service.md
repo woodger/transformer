@@ -1,76 +1,78 @@
-# ADR 0001: Arrow Flight job service boundary
+# ADR 0001: граница job-сервиса Arrow Flight
 
-- Status: accepted
-- Date: 2026-07-18
+- Статус: принято
+- Дата: 2026-07-18
 
-## Context
+## Контекст
 
-Inventory and Transformer must run on different physical servers. The existing
-Transformer interface is a pair of local framed Arrow subprocess protocols:
-`fit-stream` and `predict-stream`. Training mutates optimizer/model state, so a
-network retry after execution has begun is not safe.
+Inventory и Transformer должны работать на разных физических серверах.
+Существующий интерфейс Transformer состоит из двух локальных framed Arrow
+протоколов subprocess: `fit-stream` и `predict-stream`. Обучение изменяет
+состояние optimizer/model, поэтому сетевой retry после начала execution
+небезопасен.
 
-## Decision
+## Решение
 
-Transformer owns a single-instance Arrow Flight v1 service, a PostgreSQL job
-ledger, an ephemeral filesystem spool and a worker scheduler. Flight RPC
-handlers only authenticate, validate, stage inputs and mutate job state. They
-do not execute Torch. A worker launches the existing CLI with `shell=False` in
-a separate process group.
+Transformer владеет single-instance сервисом Arrow Flight v1, ledger jobs в
+PostgreSQL, временным spool filesystem и scheduler worker-ов. Flight RPC
+handlers только выполняют authentication и validation, размещают inputs и
+изменяют состояние job. Они не выполняют Torch. Worker запускает существующий
+CLI с `shell=False` в отдельной группе процессов.
 
-One successful DoPut is one logical Inventory payload and is persisted as one
-Arrow IPC file. RecordBatch boundaries within that DoPut are transport
-chunking. For prediction, the worker wraps each persisted file in exactly one
-legacy 8-byte length-prefixed frame, ordered by `ordinal`. For fit, the worker
-passes the durable input directory to the CLI so it can reopen each ordinal in
-every job-wide epoch.
+Один успешный DoPut соответствует одному логическому payload Inventory и
+сохраняется как один файл Arrow IPC. Границы RecordBatch внутри этого DoPut
+являются только transport chunking. Для prediction worker оборачивает каждый
+сохранённый файл ровно в один прежний frame с 8-байтовым префиксом длины,
+упорядочивая frames по `ordinal`. Для fit worker передаёт CLI долговечный
+каталог inputs, чтобы тот мог повторно открывать каждый ordinal на каждой общей
+для job epoch.
 
-PostgreSQL is authoritative for control-plane state, API access tokens and
-published-model metadata. Runtime Arrow payloads, attempt output and logs live
-under `/tmp/transformer`. A storage epoch binds these database rows to one
-runtime filesystem generation. If that generation is lost, all jobs and their
-runtime metadata are discarded instead of being resumed against missing data.
-Interrupted `RUNNING` jobs fail with `EXECUTION_INTERRUPTED`; they are never
-automatically retried.
+PostgreSQL является авторитетным источником состояния control plane, API
+access tokens и metadata опубликованных моделей. Runtime Arrow payload-ы,
+output attempts и logs находятся в `/tmp/transformer`. Storage epoch связывает
+эти строки БД с одной generation runtime filesystem. При потере generation все
+jobs и их runtime metadata удаляются вместо попытки восстановления без данных.
+Прерванные `RUNNING` jobs завершаются с `EXECUTION_INTERRUPTED` и никогда не
+запускаются повторно автоматически.
 
-Transformer owns checkpoint files. Only a successful fit atomically publishes
-an immutable checkpoint and metadata below the persistent project `models/`
-directory, records its opaque `modelRef` in PostgreSQL and optionally advances
-an owner-scoped logical alias. Network requests never contain filesystem paths
-or arbitrary CLI arguments.
+Transformer владеет файлами checkpoint. Только успешный fit атомарно публикует
+неизменяемые checkpoint и metadata в постоянном каталоге project `models/`,
+записывает его opaque `modelRef` в PostgreSQL и при необходимости продвигает
+owner-scoped logical alias. Сетевые запросы никогда не содержат paths
+filesystem или произвольные CLI arguments.
 
-API access tokens are issued and revoked through the Transformer CLI. The
-Flight process loads active token digests into RAM and refreshes that cache via
-PostgreSQL `LISTEN/NOTIFY`; request authentication does not query PostgreSQL.
-The worker queue is likewise maintained in process memory after startup rather
-than implemented as periodic database polling.
+API access tokens выпускаются и отзываются через CLI Transformer. Flight-
+процесс загружает digests активных tokens в RAM и обновляет cache через
+PostgreSQL `LISTEN/NOTIFY`; authentication запроса не обращается к PostgreSQL.
+После запуска worker queue также хранится в памяти процесса, а не реализуется
+периодическим опросом БД.
 
-TLS and job device selection are independent. Explicit `cuda` is checked at
-create and start and never falls back to CPU. Plaintext must be enabled
-explicitly.
+TLS и выбор device для job независимы. Явный `cuda` проверяется при create и
+start и никогда не заменяется CPU. Plaintext необходимо включать явно.
 
-V1 is deliberately single-instance: it has no multi-replica scheduler or
-shared storage. It does not use DoExchange or PollFlightInfo.
+V1 намеренно является single-instance: нет scheduler нескольких replicas и
+общего storage. `DoExchange` и `PollFlightInfo` не используются.
 
-## Consequences
+## Последствия
 
-- Upload/start retries are safe through canonical idempotency records.
-- A lost response can be replayed without replaying Torch execution.
-- Prediction uses one subprocess and one model load for all sealed inputs.
-- Fit uses the durable spool as an epoch-replayable dataset: each job epoch
-  visits every non-empty input by ordinal under one optimizer, loss schedule,
-  checkpoint selector and early-stopping instance.
-- CUDA jobs use a FIFO lane of capacity one; CPU capacity is configurable.
-- PostgreSQL is the single durable source of truth; there is no second local
-  database to coordinate or back up.
-- Loss of `/tmp/transformer` invalidates every job, input, output ticket and
-  idempotency record associated with that runtime generation. Work, including
-  long-running fit, starts again as a new job.
-- Published models and API tokens survive runtime loss. A `modelRef` exists
-  only after its checkpoint has reached the persistent model directory and the
-  corresponding PostgreSQL transaction commits.
-- One process owns a runtime directory through a process-level lock. V1 remains
-  single-instance even though PostgreSQL is remote.
-- PyArrow 24's Python server binding cannot express every desired gRPC status
-  or configure a server receive-message limit. The v1 dependency note records
-  the exact mapping and the application-level quota fallback.
+- Retry upload/start безопасны благодаря canonical idempotency records.
+- Потерянный response можно повторить без повторного Torch execution.
+- Prediction использует один subprocess и однократно загружает модель для всех
+  sealed inputs.
+- Fit использует долговечный spool как dataset, повторно читаемый между
+  epochs: каждая epoch job посещает все непустые inputs по ordinal в рамках
+  единых optimizer, loss schedule, checkpoint selector и early-stopping.
+- CUDA jobs используют FIFO lane с capacity один; CPU capacity настраивается.
+- PostgreSQL является единственным долговечным источником истины; второй
+  локальной БД для координации или резервного копирования нет.
+- Потеря `/tmp/transformer` делает недействительными все jobs, inputs, output
+  tickets и idempotency records, связанные с этой generation runtime. Работа,
+  включая долгий fit, начинается заново как новая job.
+- Опубликованные модели и API tokens сохраняются при потере runtime. `modelRef`
+  появляется только после записи checkpoint в постоянный каталог моделей и
+  commit соответствующей transaction PostgreSQL.
+- Один процесс владеет каталогом runtime через process-level lock. V1 остаётся
+  single-instance, хотя PostgreSQL находится удалённо.
+- Python binding server-а PyArrow 24 не может выразить все требуемые gRPC
+  statuses или настроить лимит принимаемого server message. Заметка о
+  зависимости v1 фиксирует точный mapping и fallback на application quotas.

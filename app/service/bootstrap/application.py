@@ -205,6 +205,7 @@ class FlightApplication:
                 spool,
                 recovery_store,
                 interval_seconds=config.maintenance_interval_seconds,
+                queue_reconciler=worker.notify_queued,
                 logger=logger,
                 metrics=metrics,
             )

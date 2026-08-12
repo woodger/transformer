@@ -1,13 +1,14 @@
-# Transformer worker process contract v2
+# Контракт процесса Transformer worker v2
 
-This directory is the normative internal contract between the Transformer
-service and one short-lived ML worker attempt. It is independent of the public
-Flight contract, although this revision maps the Flight v3 Arrow schema IDs.
+Этот каталог содержит нормативный внутренний контракт между сервисом
+Transformer и одной короткоживущей попыткой ML worker-а. Контракт не зависит от
+публичного Flight-контракта, хотя эта версия использует идентификаторы Arrow
+schema из Flight v3.
 
-## Invocation and identity
+## Запуск и идентификация
 
-The service creates and durably closes one immutable startup manifest before
-spawning without shell interpretation:
+Перед запуском процесса без shell-интерпретации сервис создаёт и надёжно
+закрывает один неизменяемый стартовый manifest:
 
 ```text
 transformer-worker run
@@ -18,70 +19,76 @@ transformer-worker run
   --manifest=<service-controlled-path>
 ```
 
-The worker validates argv, the complete manifest and each referenced artifact.
-`attemptId` is the internal equality fence and is never transferred. Recovery
-creates a new attempt and a new `attemptId`; no second internal fence exists.
+Worker проверяет argv, весь manifest и каждый указанный в нём artifact.
+`attemptId` служит внутренним equality fence и не передаётся наружу. При
+восстановлении создаются новая attempt и новый `attemptId`; второго внутреннего
+fence не существует.
 
-Capabilities are inspected through the same executable:
+Возможности проверяются через тот же executable:
 
 ```text
 transformer-worker inspect --contract-version=2
 ```
 
-## Channels
+## Каналы
 
-| Channel | Contract |
+| Канал | Контракт |
 | --- | --- |
-| startup | immutable `command-manifest.schema.json` |
-| new input and EOF | bounded NDJSON `control-message.schema.json` on stdin |
-| progress and lifecycle | bounded NDJSON `event.schema.json` on stdout |
-| bulk data | immutable Arrow IPC artifacts referenced by manifests |
-| diagnostics | stderr |
-| terminal transport | process exit status |
+| запуск | неизменяемый `command-manifest.schema.json` |
+| новый input и EOF | ограниченный NDJSON `control-message.schema.json` через stdin |
+| progress и lifecycle | ограниченный NDJSON `event.schema.json` через stdout |
+| объёмные данные | неизменяемые Arrow IPC artifacts, указанные в manifests |
+| диагностика | stderr |
+| завершение transport-а | код завершения процесса |
 
-The worker never queries PostgreSQL and never watches a directory. The startup
-manifest contains the current contiguous input snapshot and `inputClosed`.
-The service sends later contiguous inputs and explicit EOF through the control
-channel. PostgreSQL remains authoritative; a replacement attempt receives a
-fresh snapshot, so notification loss cannot lose committed data.
+Worker никогда не обращается к PostgreSQL и не следит за каталогом. Стартовый
+manifest содержит текущий непрерывный snapshot входных данных и
+`inputClosed`. Следующие непрерывные inputs и явный EOF сервис передаёт через
+control channel. Источником истины остаётся PostgreSQL; новая attempt получает
+свежий snapshot, поэтому потеря notification не приводит к потере committed
+данных.
 
-Control and event messages carry `jobId`, numeric `attempt`, `attemptId` and a
-strict per-direction sequence. The worker tracks the next ordinal and emits
-`input.ack` after accepting an exact input. Repeated messages are validated as
-exact duplicates and do not make training or prediction consume data twice.
-At the current open frontier it emits `input.waiting`; that event is the only
-condition which activates the service input-idle timer.
+Control- и event-сообщения содержат `jobId`, числовой `attempt`, `attemptId` и
+строго последовательный номер отдельно для каждого направления. Worker хранит
+следующий ordinal и после принятия точного input отправляет `input.ack`.
+Повторные сообщения проверяются как точные дубликаты и не приводят к повторному
+использованию данных при обучении или прогнозировании. На текущей открытой
+границе worker отправляет `input.waiting`; только это событие включает
+input-idle timer сервиса.
 
-## Streaming semantics
+## Семантика потоковой обработки
 
-For fit, epoch zero reads the startup inputs and later control messages as one
-ordered stream. RecordBatch and payload boundaries are not optimizer-batch,
-shuffle-window or epoch boundaries. EOF flushes the final incomplete shuffle
-window and completes epoch zero. Later epochs reread the complete immutable
-input set.
+При fit нулевая epoch читает стартовые inputs и последующие control-сообщения
+как единый упорядоченный поток. Границы RecordBatch и payload не являются
+границами optimizer batch, shuffle window или epoch. EOF сбрасывает последнее
+неполное shuffle window и завершает нулевую epoch. Последующие epochs повторно
+читают полный неизменяемый набор входных данных.
 
-The worker does not publish an epoch-zero recovery checkpoint before EOF. If it
-fails while input is open, a new attempt repeats that incomplete epoch from its
-beginning. After EOF, checkpoints remain complete-global-epoch snapshots.
+До EOF worker не публикует recovery checkpoint нулевой epoch. Если worker
+падает при открытом input, новая attempt повторяет эту незавершённую epoch с
+начала. После EOF checkpoints остаются snapshots полных global epochs.
 
-Predict may build attempt-local outputs as inputs arrive, including typed-empty
-outputs. Its result manifest is emitted only after EOF. The service publishes
-all outputs in one terminal transaction.
+Predict может формировать локальные для attempt outputs по мере поступления
+inputs, включая typed-empty outputs. Result manifest публикуется только после
+EOF. Сервис публикует все outputs в одной terminal transaction.
 
-## Artifact lifecycle and exit semantics
+## Жизненный цикл artifacts и семантика завершения
 
-The worker writes only inside its attempt workspace. It closes and fsyncs every
-artifact before referring to it in an event or result manifest. It cannot
-publish public output, recovery generation, model generation or `modelRef`.
+Worker пишет только внутри workspace своей attempt. Перед упоминанием artifact
+в событии или result manifest он закрывает файл и выполняет fsync. Worker не
+может публиковать публичный output, recovery generation, model generation или
+`modelRef`.
 
-The service validates, durably publishes and then records each service-owned
-artifact. A crash may leave an unreferenced staged file, never a PostgreSQL
-record pointing to a partial file.
+Сервис проверяет каждый принадлежащий ему artifact, надёжно публикует его и
+только затем создаёт запись. После сбоя может остаться неуказанный staged file,
+но запись PostgreSQL никогда не ссылается на частичный файл.
 
-- `completed`, a valid result manifest and exit `0` are all required for
-  publication;
-- exit `0` without exactly one `completed` event is a protocol violation;
-- `completed` followed by non-zero exit is a protocol violation;
-- non-zero exit without a valid safe error is `SUBPROCESS_FAILED`;
-- failure to stop by the service deadline is `SUBPROCESS_HUNG`;
-- late messages are rejected by `attemptId` and permitted execution state.
+- для публикации одновременно требуются `completed`, корректный result
+  manifest и код завершения `0`;
+- код `0` без ровно одного события `completed` является нарушением протокола;
+- `completed` с последующим ненулевым кодом является нарушением протокола;
+- ненулевой код без корректной безопасной ошибки преобразуется в
+  `SUBPROCESS_FAILED`;
+- невозможность остановить процесс до установленного сервисом срока
+  преобразуется в `SUBPROCESS_HUNG`;
+- поздние сообщения отклоняются по `attemptId` и допустимому execution state.

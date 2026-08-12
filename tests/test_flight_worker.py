@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+import threading
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ import pytest
 
 from app.flight.arrow import schema_fingerprint
 from app.flight.config import FlightServiceConfig
+from app.flight.maintenance import MaintenanceService
 from app.flight.observability import OperationalMetrics
 from app.flight.spool import Spool
 from app.flight.worker_plan import WorkerPlanBuilder, WorkerPlanError
@@ -21,9 +23,13 @@ from app.service.adapters.outbound.artifact_storage.recovery_store import (
 )
 from app.service.application.services.worker_pool import WorkerPool
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.records import ModelArtifactRecord
 from tests.flight_v3_helpers import (
     DATA_CONTRACT_SHA256,
+    close_input,
     create_fit,
+    create_predict,
+    internal_data_contract,
 )
 
 
@@ -242,3 +248,110 @@ def test_worker_pool_claims_fifo_and_forwards_input_notifications(
     assert input_notifications == [jobs[0]["job_id"]]
     assert [job.job_id for job in executed] == [job["job_id"] for job in jobs]
     assert all(job.execution_state is ExecutionState.RUNNING for job in executed)
+
+
+def test_worker_pool_recovers_a_lost_queue_notification(
+    tmp_path,
+    postgres_ledger,
+):
+    config, spool, recovery, _ = _stores(tmp_path, postgres_ledger)
+    executed = threading.Event()
+    executor = SimpleNamespace(
+        execute=lambda _job: executed.set(),
+        notify_cancel=lambda _job_id: None,
+        notify_input=lambda _job_id: None,
+        interrupt_for_shutdown=lambda: None,
+    )
+    inventory = SimpleNamespace(
+        schedulable_devices=lambda: (),
+        snapshot=lambda: SimpleNamespace(devices=()),
+    )
+    pool = WorkerPool(
+        config,
+        postgres_ledger,
+        logger=RecordingLogger(),
+        metrics=OperationalMetrics(),
+        device_inventory=inventory,
+        attempt_executor=executor,
+    ).start()
+    maintenance = MaintenanceService(
+        config,
+        postgres_ledger,
+        spool,
+        interval_seconds=60,
+        queue_reconciler=pool.notify_queued,
+        logger=RecordingLogger(),
+        metrics=OperationalMetrics(),
+    )
+    try:
+        job = create_fit(postgres_ledger)
+        _commit_real_input(postgres_ledger, recovery, job, 0)
+        maintenance.run_once()
+
+        assert executed.wait(0.5)
+    finally:
+        pool.shutdown(timeout=0.1)
+
+
+class _ModelArtifactLedger:
+    def __init__(self, ledger, artifact):
+        self._ledger = ledger
+        self._artifact = artifact
+
+    def __getattr__(self, name):
+        return getattr(self._ledger, name)
+
+    def get_model_artifact(self, *_args, **_kwargs):
+        return self._artifact
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected_code"),
+    [
+        ("unknown", ErrorCode.NOT_FOUND),
+        ("unavailable", ErrorCode.MODEL_UNAVAILABLE),
+        ("corrupt", ErrorCode.MODEL_CORRUPT),
+    ],
+)
+def test_predict_plan_preserves_stable_model_lifecycle_errors(
+    tmp_path,
+    postgres_ledger,
+    condition,
+    expected_code,
+):
+    config, spool, recovery, _ = _stores(tmp_path, postgres_ledger)
+    job = create_predict(postgres_ledger)
+    close_input(postgres_ledger, job)
+    running = postgres_ledger.claim_execution_job(job["job_id"], "cpu")
+    assert running is not None
+
+    artifact = None
+    if condition != "unknown":
+        checkpoint = spool.model_checkpoint_path("mdl_seed")
+        if condition == "corrupt":
+            spool.atomic_write_bytes(checkpoint, b"corrupt checkpoint")
+        artifact = ModelArtifactRecord(
+            model_ref="mdl_seed",
+            owner_subject=running.owner_subject,
+            checkpoint_path=spool.model_relative_path(checkpoint),
+            byte_count=(
+                len(b"corrupt checkpoint")
+                if condition == "corrupt"
+                else 1
+            ),
+            sha256="0" * 64,
+            data_contract=internal_data_contract(),
+            certified_for_v3=True,
+        )
+    builder = WorkerPlanBuilder(
+        config,
+        _ModelArtifactLedger(postgres_ledger, artifact),
+        spool,
+        recovery,
+        python_executable=sys.executable,
+    )
+
+    with pytest.raises(WorkerPlanError) as error:
+        builder.build(running, running.attempt)
+
+    assert error.value.code is expected_code

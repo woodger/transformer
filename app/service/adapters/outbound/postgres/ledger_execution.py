@@ -495,7 +495,7 @@ class ExecutionLedgerSlice:
                 return False
             if (
                 job.next_input_ordinal != next_ordinal
-                or job.input_revision != input_revision
+                or input_revision > job.input_revision
             ):
                 return False
             job.waiting_for_input = True

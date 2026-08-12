@@ -117,8 +117,8 @@ def _commit_input(ledger, job, *, storage_class):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0004",)
-    assert status.heads == ("0004",)
+    assert status.current == ("0005",)
+    assert status.heads == ("0005",)
     assert status.pending is False
 
 
@@ -138,17 +138,20 @@ def test_v3_schema_migration_is_irreversible(
     try:
         initial = migration_status(config)
         applied = apply_migrations(config)
+        rolled_back = rollback_migration(config)
         with pytest.raises(RuntimeError, match="cannot be downgraded"):
             rollback_migration(config)
         after_failed_rollback = migration_status(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0004",)
+        assert initial.heads == ("0005",)
         assert initial.pending is True
-        assert applied.current == ("0004",)
+        assert applied.current == ("0005",)
         assert applied.pending is False
+        assert rolled_back.current == ("0004",)
+        assert rolled_back.pending is True
         assert after_failed_rollback.current == ("0004",)
-        assert after_failed_rollback.pending is False
+        assert after_failed_rollback.pending is True
     finally:
         with cleanup_engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))
@@ -295,6 +298,19 @@ def test_v3_schema_migration_preserves_tokens_and_models_only(
                     """
                 )
             )
+            model_ref_lengths = connection.execute(
+                text(
+                    """
+                    SELECT table_name, character_maximum_length
+                    FROM information_schema.columns
+                    WHERE table_schema = :schema
+                      AND column_name = 'model_ref'
+                      AND table_name IN ('models', 'model_aliases')
+                    ORDER BY table_name
+                    """
+                ),
+                {"schema": schema},
+            ).all()
 
         assert jobs == 0
         assert identities == 0
@@ -303,7 +319,11 @@ def test_v3_schema_migration_preserves_tokens_and_models_only(
         assert token == (uuid.UUID(token_id), "inventory")
         assert model == (None, 1, None, None, False)
         assert alias == model_ref
-        assert migration_status(config).current == ("0004",)
+        assert model_ref_lengths == [
+            ("model_aliases", 128),
+            ("models", 128),
+        ]
+        assert migration_status(config).current == ("0005",)
     finally:
         with engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))

@@ -13,6 +13,17 @@
   schema для ingress, fingerprint, fixtures, durable replay и worker output.
   Неканоническая nested nullability отклоняется с `INVALID_ARGUMENT` до
   reservation, durable commit и запуска worker.
+- Потеря in-process уведомления после durable commit больше не оставляет
+  `QUEUED`/`RETRYING` job без исполнения: единый maintenance cycle периодически
+  сверяет локальные очереди с PostgreSQL, не опрашивая БД из idle worker lanes.
+- Ожидание следующего contiguous input корректно регистрируется при уже
+  committed out-of-order payload; idle timeout не теряется из-за устаревшего
+  `inputRevision` worker-а.
+- Model lifecycle errors сохраняют стабильные коды `NOT_FOUND`,
+  `MODEL_UNAVAILABLE` и `MODEL_CORRUPT` на service и worker boundaries.
+- Пустой fit возвращает `EMPTY_INPUT` до повторной проверки доступности CUDA.
+- Миграция `0005` приводит длину `models.model_ref` и
+  `model_aliases.model_ref` к ORM-контракту `VARCHAR(128)`.
 
 ## [0.1.9] - 2026-08-11
 

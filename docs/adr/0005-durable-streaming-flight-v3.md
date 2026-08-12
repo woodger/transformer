@@ -1,67 +1,70 @@
-# ADR 0005: Durable streaming Flight v3
+# ADR 0005: долговечный потоковый Flight v3
 
-- Status: accepted
-- Date: 2026-08-10
-- Supersedes: Flight v2 lifecycle decisions in ADR 0003 and the worker v1
-  process contract in ADR 0004
+- Статус: принято
+- Дата: 2026-08-10
+- Заменяет: решения о lifecycle Flight v2 из ADR 0003 и контракт процесса
+  worker v1 из ADR 0004
 
-## Context
+## Контекст
 
-Flight v2 accepts a set of durable `DoPut` payloads, seals their complete
-manifest and starts one worker only after the whole input is known. This closes
-transport retry windows, but it leaves two system-level gaps for Inventory:
+Flight v2 принимает набор долговечных payload-ов `DoPut`, фиксирует их полный
+manifest и запускает worker только после получения всех входных данных. Это
+закрывает окна повторной передачи transport-а, но оставляет для Inventory две
+системные проблемы:
 
-- a create response can be lost after Transformer commits a server-generated
-  `jobId` and before Inventory persists it;
-- an Inventory PostgreSQL lease does not fence a late mutation from the former
-  owner at the Transformer boundary.
+- ответ create может потеряться после фиксации созданного Transformer-ом
+  `jobId`, но до его сохранения в Inventory;
+- lease в PostgreSQL Inventory не защищает границу Transformer от поздней
+  мутации прежнего владельца.
 
-The sealed worker manifest also makes training strictly batch-oriented. It
-cannot start epoch zero after the first durable payload while later payloads
-continue to arrive. A durable streaming protocol must not bind a job to one
-Flight connection: every `DoPut` is an independently committed application
-payload, and a worker can be replaced without losing committed inputs.
+Запечатанный worker manifest также делает обучение строго пакетным. Нулевая
+epoch не может начаться после первого долговечного payload, пока продолжают
+поступать следующие payload-ы. Долговечный потоковый протокол не должен
+привязывать job к одному Flight-соединению: каждый `DoPut` независимо фиксирует
+прикладной payload, а worker может быть заменён без потери committed inputs.
 
-The protocol is a breaking boundary. Keeping any v2 compatibility surface in
-the v3 production runtime would make state, recovery and ownership semantics
-ambiguous.
+Протокол образует breaking boundary. Любой v2 compatibility surface в
+production runtime v3 сделал бы неоднозначными семантику состояния,
+восстановления и владения.
 
-## Decision
+## Решение
 
-Transformer Flight v3 is a durable application-level streaming job protocol.
-It does not use `DoExchange`, and a job is not owned by one network connection.
-Each successful `DoPut` durably publishes one immutable semantic payload and
-commits its receipt in PostgreSQL before the server returns `PutResult`.
+Transformer Flight v3 является долговечным потоковым job-протоколом
+прикладного уровня. Он не использует `DoExchange`, а job не принадлежит одному
+сетевому соединению. Каждый успешный `DoPut` надёжно публикует один
+неизменяемый semantic payload и фиксирует его receipt в PostgreSQL до возврата
+`PutResult` сервером.
 
-The target fit flow is:
+Целевой flow fit:
 
 ```text
 job.create
 -> input OPEN / execution WAITING_INPUT
--> first non-empty contiguous committed input
+-> первый непустой непрерывный committed input
 -> execution QUEUED
--> worker RUNNING while input remains OPEN
--> input.close commits EOF and an immutable manifest
--> worker completes epoch 0
--> later epochs replay the complete durable dataset
--> SUCCEEDED atomically publishes modelRef
+-> worker RUNNING при по-прежнему OPEN input
+-> input.close фиксирует EOF и неизменяемый manifest
+-> worker завершает epoch 0
+-> последующие epochs перечитывают полный долговечный dataset
+-> SUCCEEDED атомарно публикует modelRef
 ```
 
-The implementation may be delivered as a sequence of reviewable changes in a
-development branch. Production is upgraded at one breaking boundary:
+Реализация могла поставляться серией проверяемых изменений в ветке разработки.
+Production обновлялся одной breaking-границей:
 
 ```text
 Inventory v2 + Transformer v2
-             -> atomic cutover
+             -> атомарное переключение
 Inventory v3 + Transformer v3
 ```
 
-The v3 runtime has no v2 compatibility surface: no v2 dispatcher, action
-names, descriptor paths, schema aliases, fallback or dual protocol support.
+Runtime v3 не имеет v2 compatibility surface: отсутствуют v2 dispatcher,
+имена actions, descriptor paths, aliases схем, fallback и одновременная
+поддержка двух протоколов.
 
-## Public state
+## Публичные состояния
 
-Input and execution are independent axes:
+Input и execution являются независимыми осями:
 
 ```text
 input.state:
@@ -78,26 +81,25 @@ execution.state:
   CANCELLED
 ```
 
-The following coupling rules are normative:
+Следующие связующие правила являются нормативными:
 
-- `OPEN` moves once to `CLOSED` or `ABORTED`;
-- `CLOSED` and `ABORTED` reject new uploads;
-- `SUCCEEDED` requires `CLOSED` and terminal publication checks that fact in
-  the same PostgreSQL transaction;
-- cancellation or a non-retryable failure while input is `OPEN` moves input to
-  `ABORTED`;
-- a retryable failure preserves `OPEN` or `CLOSED`;
-- `OPEN + RUNNING` is valid and is the normal streaming state;
-- the first committed non-empty contiguous prefix moves execution from
-  `WAITING_INPUT` to `QUEUED` automatically;
-- `job.input.close` commits EOF; it does not start execution;
-- empty fit close is rejected with `EMPTY_INPUT` and input remains `OPEN`;
-- empty predict is valid. Zero payloads produce zero outputs, while a
-  typed-empty input payload produces the corresponding typed-empty output.
+- `OPEN` однократно переходит в `CLOSED` или `ABORTED`;
+- `CLOSED` и `ABORTED` запрещают новые uploads;
+- `SUCCEEDED` требует `CLOSED`, и terminal publication проверяет это в той же
+  transaction PostgreSQL;
+- отмена или ошибка без retry при `OPEN` переводит input в `ABORTED`;
+- ошибка с retry сохраняет `OPEN` или `CLOSED`;
+- `OPEN + RUNNING` допустимо и является штатным потоковым состоянием;
+- первый committed непустой непрерывный prefix автоматически переводит
+  execution из `WAITING_INPUT` в `QUEUED`;
+- `job.input.close` фиксирует EOF, но не запускает execution;
+- закрытие пустого fit отклоняется с `EMPTY_INPUT`, а input остаётся `OPEN`;
+- пустой predict допустим. Ноль payload-ов даёт ноль outputs, а typed-empty
+  input payload даёт соответствующий typed-empty output.
 
-## Public actions and output access
+## Публичные actions и доступ к output
 
-The closed v3 action set is:
+Закрытый набор actions v3:
 
 ```text
 transformer.v3.capabilities
@@ -112,16 +114,16 @@ transformer.v3.job.cancel
 transformer.v3.model.describe
 ```
 
-`job.seal` and `job.start` do not exist. `GetFlightInfo` is permitted only
-after `execution.state = SUCCEEDED`; closing input is necessary but is not a
-sufficient publication condition. Prediction outputs may be prepared in an
-attempt workspace while input is open, but all outputs become visible in one
-terminal transaction. Partial successful results are never exposed.
+`job.seal` и `job.start` не существуют. `GetFlightInfo` разрешён только после
+`execution.state = SUCCEEDED`: закрытие input необходимо, но недостаточно для
+публикации. Пока input открыт, prediction outputs могут готовиться в workspace
+attempt, однако все outputs становятся видимыми в одной terminal transaction.
+Частичный успешный результат никогда не публикуется.
 
-## Stable job identity and tombstones
+## Стабильная идентификация job и tombstones
 
-Inventory creates a UUID `jobId` and commits it locally before the first
-network call. `job.create` carries:
+Inventory создаёт UUID `jobId` и фиксирует его локально до первого сетевого
+вызова. `job.create` содержит:
 
 ```json
 {
@@ -135,19 +137,20 @@ network call. `job.create` carries:
 }
 ```
 
-Transformer atomically stores the owner, canonical create-request hash,
-initial external ownership and the idempotent result. The compact identity is
-retained after large job artifacts and mutable job rows are retired. A repeat
-with the same owner and request hash resolves to the retained identity; a
-different create request cannot reuse the `jobId`. Responses for another owner
-do not disclose whether the identity exists.
+Transformer атомарно сохраняет owner, canonical hash create-запроса, начальное
+внешнее владение и idempotent result. Компактная identity сохраняется после
+удаления тяжёлых job artifacts и изменяемой строки job. Повтор с теми же owner
+и hash запроса разрешается через сохранённую identity; другой create-запрос не
+может повторно использовать `jobId`. Ответ другому owner не раскрывает
+существование identity.
 
-This retained identity closes both the lost-create-response window and future
-identity reuse. A separate `job.resolve` action is not introduced.
+Сохранённая identity закрывает окно потерянного create-response и исключает
+повторное использование идентификатора. Отдельный action `job.resolve` не
+вводится.
 
-## Cross-system fencing
+## Межсистемный fencing
 
-External ownership consists of:
+Внешнее владение состоит из:
 
 ```json
 {
@@ -156,40 +159,40 @@ External ownership consists of:
 }
 ```
 
-`fencingToken` is a positive monotonic server-issued integer encoded as a
-canonical decimal string. A takeover calls `job.acquire` with the previous
-owner identity, expected token and a new `clientExecutionId`. Transformer
-atomically compares the current pair, increments the token and returns it.
-Exact idempotent replay, including replay after a lost acquire response,
-returns the already committed new ownership without incrementing again.
+`fencingToken` — положительное монотонное целое число, выданное сервером и
+закодированное canonical decimal string. Для takeover вызывается `job.acquire`
+с прежней identity владельца, ожидаемым token и новым `clientExecutionId`.
+Transformer атомарно сравнивает текущую пару, увеличивает token и возвращает
+его. Точный idempotent replay, включая повтор после потери acquire-response,
+возвращает уже зафиксированное новое владение без нового увеличения.
 
-The current external fence is checked:
+Текущий внешний fence проверяется:
 
-- before accepting `DoPut` data;
-- again in the PostgreSQL transaction immediately before committing a
-  `DoPut` receipt;
-- by `job.input.close` and `job.cancel`;
-- by every other public mutation.
+- до приёма данных `DoPut`;
+- повторно в transaction PostgreSQL непосредственно перед фиксацией receipt
+  `DoPut`;
+- в `job.input.close` и `job.cancel`;
+- в каждой другой публичной мутации.
 
-A `DoPut` which starts before takeover but loses the second check deletes only
-its own temporary or unreferenced candidate artifact and returns
-`STALE_FENCE`. Read-only status, input listing, output listing and model
-description do not require a fence.
+`DoPut`, начатый до takeover, но не прошедший вторую проверку, удаляет только
+свой temporary или unreferenced candidate artifact и возвращает
+`STALE_FENCE`. Read-only status, списки inputs и outputs, а также описание
+модели не требуют fence.
 
-The existing UUID `attemptId` remains the internal worker equality fence.
-Internal attempt ownership is never transferred, so no additional internal
-`attemptFence` is added. The monotonic fence exists only at the
-Inventory-to-Transformer boundary.
+Существующий UUID `attemptId` остаётся внутренним equality fence worker-а.
+Владение внутренней attempt никогда не передаётся, поэтому дополнительный
+`attemptFence` не вводится. Монотонный fence существует только на границе
+Inventory → Transformer.
 
-## Durable upload and ordering
+## Долговечный upload и порядок
 
-The descriptor is:
+Descriptor имеет вид:
 
 ```text
 pathDescriptor("transformer", "v3", "jobs", jobId, "inputs", ordinal)
 ```
 
-Metadata contains the external fence and semantic identity:
+Metadata содержит внешний fence и semantic identity:
 
 ```json
 {
@@ -206,24 +209,24 @@ Metadata contains the external fence and semantic identity:
 }
 ```
 
-One `DoPut` is one semantic payload. RecordBatch boundaries are transport
-chunking only. Out-of-order completion is allowed, but workers receive only
-the contiguous ordinal prefix. Logical order is ordinal and then row within
-the payload; arrival timing never changes it.
+Один `DoPut` соответствует одному semantic payload. Границы RecordBatch нужны
+только для transport chunking. Завершение не по порядку разрешено, но workers
+получают только непрерывный prefix ordinals. Логический порядок задаётся
+ordinal, затем номером строки внутри payload; время поступления его не меняет.
 
-Each upload writes a unique immutable candidate path, for example:
+Каждый upload записывает уникальный неизменяемый candidate path, например:
 
 ```text
 recovery/jobs/{jobId}/inputs/{ordinal}-{payloadId}-{uploadToken}.arrow
 ```
 
-No upload overwrites one shared final path for an ordinal. PostgreSQL selects
-the one winning artifact reference after checking ordinal, payload identity,
-the current external fence, limits and job state. A losing candidate is an
-orphan eligible for reconciliation; it can never replace the winner selected
-by a later owner.
+Uploads не перезаписывают один общий конечный path для ordinal. После проверки
+ordinal, payload identity, текущего внешнего fence, лимитов и состояния job
+PostgreSQL выбирает единственную победившую ссылку на artifact. Проигравший
+candidate является orphan, доступным для reconciliation; он не может заменить
+победителя, выбранного последующим owner.
 
-`PutResult` includes the receipt plus:
+`PutResult` содержит receipt и дополнительные поля:
 
 ```text
 inputRevision
@@ -231,13 +234,14 @@ nextInputOrdinal
 queued
 ```
 
-`inputRevision` is a per-job monotonic commit revision. `nextInputOrdinal` is
-the first missing ordinal. Duplicate worker notifications and repeated
-`PutResult` recovery must not cause one ordinal to be consumed twice.
+`inputRevision` — монотонная commit revision в пределах job.
+`nextInputOrdinal` — первый отсутствующий ordinal. Дублирующиеся worker
+notifications и повторное восстановление `PutResult` не должны приводить к
+двукратному использованию одного ordinal.
 
-## Input close and manifest digest
+## Закрытие input и digest manifest
 
-`job.input.close` carries summary values instead of the complete manifest:
+`job.input.close` передаёт итоговые значения вместо полного manifest:
 
 ```json
 {
@@ -251,34 +255,36 @@ the first missing ordinal. Duplicate worker notifications and repeated
 }
 ```
 
-Transformer verifies ordinals `0..payloadCount-1`, no gaps, counts, rows,
-bytes, one physical Arrow schema and one `dataContractSha256`. The digest is
-SHA-256 over the contract-defined canonical ordered list of server receipts.
-Receipts are sorted by ordinal. The digest excludes arrival order, timestamps,
-`commitRevision`, queue/execution state and all wall-clock data, so it is
-stable for the same committed dataset.
+Transformer проверяет ordinals `0..payloadCount-1`, отсутствие пропусков,
+количество payload-ов, rows и bytes, единую physical Arrow schema и единый
+`dataContractSha256`. Digest является SHA-256 от определённого контрактом
+canonical упорядоченного списка server receipts. Receipts сортируются по
+ordinal. Digest не включает порядок поступления, timestamps,
+`commitRevision`, состояние queue/execution и любые wall-clock данные, поэтому
+для одного committed dataset он стабилен.
 
-The successful close transaction records the summary and moves input to
-`CLOSED`. A repeated identical close is idempotent; a different summary is a
-conflict.
+Успешная close transaction сохраняет итоговые значения и переводит input в
+`CLOSED`. Повторное закрытие с теми же данными idempotent; отличающиеся данные
+считаются конфликтом.
 
-## Stable pagination
+## Стабильная pagination
 
-`job.inputs.list` and `job.outputs.list` are paginated. Input traversal is by
-monotonic `commitRevision`, not ordinal. The first request fixes the current
-`inputRevision` as `snapshotRevision`; every page uses:
+`job.inputs.list` и `job.outputs.list` используют pagination. Inputs обходятся
+по монотонному `commitRevision`, а не по ordinal. Первый запрос фиксирует
+текущий `inputRevision` как `snapshotRevision`; каждая страница использует:
 
 ```text
 cursor < commitRevision <= snapshotRevision
 ```
 
-The field meanings are:
+Значения полей:
 
-- `afterRevision`: watermark of the completed previous traversal;
-- `snapshotRevision`: inclusive upper bound frozen for this traversal;
-- `cursor`: last read `commitRevision` within this traversal.
+- `afterRevision` — watermark завершённого предыдущего обхода;
+- `snapshotRevision` — включительная верхняя граница, зафиксированная для
+  текущего обхода;
+- `cursor` — последний прочитанный `commitRevision` текущего обхода.
 
-A new traversal starts with:
+Новый обход начинается с:
 
 ```text
 afterRevision = previousSnapshotRevision
@@ -286,77 +292,80 @@ snapshotRevision = currentInputRevision
 cursor = afterRevision
 ```
 
-Consequently an input with a low ordinal committed late is assigned a higher
-`commitRevision` and cannot be skipped. Page size is bounded by the contract;
-status and terminal results do not embed unbounded input or output arrays.
+Поэтому input с малым ordinal, зафиксированный позднее, получает больший
+`commitRevision` и не может быть пропущен. Размер страницы ограничен
+контрактом; status и terminal results не содержат неограниченные массивы
+inputs или outputs.
 
-## Streaming fit semantics
+## Семантика потокового fit
 
-The logical data order is:
+Логический порядок данных:
 
 ```text
-ordinal -> row within payload -> bounded shuffle window -> optimizer batch
+ordinal -> строка внутри payload -> ограниченное shuffle window -> optimizer batch
 ```
 
-Payload and RecordBatch boundaries are not optimizer-batch, shuffle-window or
-epoch boundaries. Epoch zero consumes the open contiguous stream. A full
-shuffle window trains immediately; at the current input frontier the worker
-waits for the next ordinal. EOF flushes the last incomplete shuffle window,
-and only then completes epoch zero. Epochs one and later replay the complete
-closed immutable dataset from durable storage.
+Границы payload и RecordBatch не являются границами optimizer batch, shuffle
+window или epoch. Нулевая epoch читает открытый непрерывный поток. Полное
+shuffle window немедленно поступает в обучение; на текущем input frontier
+worker ожидает следующий ordinal. EOF сбрасывает последнее неполное shuffle
+window, и только после этого нулевая epoch считается завершённой. Первая и
+последующие epochs повторно читают полный закрытый неизменяемый dataset из
+долговечного хранилища.
 
-The service performs complete physical and value validation before committing
-an input artifact and its immutable receipt. A worker attempt verifies receipt
-identity, byte count and SHA-256 before first use. Later reads of the same
-receipt use fast replay: the worker still parses IPC and checks the exact
-physical schema and row count, but does not repeat digest or value scans on
-every epoch. Closed-input replay prepares at most one CPU batch ahead while the
-current batch trains. This prefetch is not used for the open epoch zero, so the
-durable control-channel and EOF ordering remain synchronous.
+До commit input artifact и его неизменяемого receipt сервис выполняет полную
+проверку physical schema и значений. Перед первым использованием worker
+attempt проверяет identity receipt, byte count и SHA-256. Последующие чтения
+того же receipt используют fast replay: worker по-прежнему разбирает IPC и
+проверяет точную physical schema и число строк, но не повторяет digest и value
+scans на каждой epoch. При закрытом input replay заранее готовит не более
+одного следующего CPU batch, пока текущий batch обучается. Для открытой нулевой
+epoch prefetch не используется, поэтому порядок долговечного control channel
+и EOF остаётся синхронным.
 
-Changing payload partitioning or upload timing must not change the ML
-trajectory. The go/no-go condition is:
+Изменение разбиения payload-ов или времени upload не должно менять ML
+trajectory. Критерий go/no-go:
 
 ```text
-same ordered dataset
+одинаковый ordered dataset
 + seed
-+ deterministic=true configuration
-+ same hardware/runtime
--> same row and shuffle order
--> same optimizer steps
--> same ML state after every epoch
--> semantically equivalent checkpoint
--> same final model
++ конфигурация с deterministic=true
++ одинаковые hardware/runtime
+-> одинаковый порядок rows и shuffle
+-> одинаковые optimizer steps
+-> одинаковое ML-state после каждой epoch
+-> семантически эквивалентный checkpoint
+-> одинаковая итоговая модель
 ```
 
-ML metrics and optimizer steps are compared; wall-clock telemetry such as
-timestamps, elapsed time and latency is excluded. Checkpoint comparison occurs
-after deserialization and covers model, optimizer, scaler, training state,
-RNG state, shuffle state, early-stopping state and checkpoint selection. Raw
-checkpoint-file SHA-256 is not an equivalence criterion because serialization
-is not required to be canonical.
+Сравниваются ML-метрики и optimizer steps; wall-clock telemetry, включая
+timestamps, elapsed time и latency, исключается. Checkpoint сравнивается после
+десериализации: model, optimizer, scaler, training state, RNG state, shuffle
+state, early-stopping state и checkpoint selection. SHA-256 файла checkpoint
+не является критерием эквивалентности, поскольку сериализация не обязана быть
+canonical.
 
-## Recovery and idle timeout
+## Восстановление и idle timeout
 
-There is no safe checkpoint boundary inside an open global epoch. If a worker
-fails before EOF, the entire incomplete epoch zero is repeated from its start.
-Committed input artifacts remain durable. Model, optimizer and random state
-are restored to the beginning of the incomplete epoch, so no optimizer step is
-applied twice. Once input is closed, recovery remains at complete global-epoch
-boundaries.
+Внутри открытой global epoch нет безопасной границы checkpoint. Если worker
+падает до EOF, незавершённая нулевая epoch целиком повторяется с начала.
+Committed input artifacts сохраняются. Model, optimizer и random state
+восстанавливаются к началу незавершённой epoch, поэтому optimizer step не
+применяется дважды. После закрытия input восстановление выполняется на
+границах полных global epochs.
 
-`inputIdleTimeout` protects a GPU from an abandoned open stream. It is active
-only while the worker has explicitly confirmed that it is waiting for the
-next contiguous ordinal. It is reset only when that contiguous frontier
-advances. An out-of-order commit does not extend it. Successful ownership
-takeover provides a bounded grace period but does not turn unrelated mutations
-into input activity. This timeout is independent of the hard subprocess
-execution and cancellation deadlines.
+`inputIdleTimeout` защищает GPU от заброшенного открытого потока. Он активен
+только когда worker явно подтвердил ожидание следующего непрерывного ordinal.
+Timer сбрасывается только при продвижении этого непрерывного frontier.
+Out-of-order commit не продлевает timeout. Успешный takeover владения даёт
+ограниченный grace period, но не превращает посторонние мутации в input
+activity. Этот timeout не зависит от жёстких сроков выполнения subprocess и
+отмены.
 
-## ML data contract and Arrow schemas
+## ML-контракт данных и схемы Arrow
 
-Inventory owns the semantic data-contract document. Create carries its stable
-identity:
+Inventory владеет документом semantic data contract. Create передаёт его
+стабильную identity:
 
 ```json
 {
@@ -371,14 +380,14 @@ identity:
 }
 ```
 
-The canonical Inventory document includes ordered feature identities, target
-semantics, normalization, missing-value policy and profile version.
-Transformer stores and returns the identity and hash, but does not recreate or
-interpret Inventory feature semantics. The term `dataContractSha256` is used
-everywhere. Predict must present the hash certified by the selected model;
-otherwise create fails with `MODEL_SCHEMA_MISMATCH` before upload.
+Canonical документ Inventory включает упорядоченные identities features,
+семантику targets, normalization, missing-value policy и версию профиля.
+Transformer хранит и возвращает identity и hash, но не воспроизводит и не
+интерпретирует семантику features Inventory. Везде используется термин
+`dataContractSha256`. Predict обязан передать hash, сертифицированный выбранной
+моделью; иначе create до upload завершается с `MODEL_SCHEMA_MISMATCH`.
 
-The breaking Arrow schemas are:
+Breaking Arrow schemas:
 
 ```text
 inventory.sequence.fit.v2
@@ -392,107 +401,112 @@ transformer.prediction.v2
   <predictionColumn>: FixedSizeList<Float32>[6]
 ```
 
-The fixed types define dimensions even for typed-empty payloads.
+Фиксированные типы определяют dimensions даже для typed-empty payload-ов.
 
-## Model lifecycle
+## Жизненный цикл модели
 
-Published `modelRef` and generation are immutable and have no automatic TTL.
-`modelAlias` remains owner-scoped and is resolved atomically to one
-`resolvedModelRef` during `job.create`. `predictionColumn` is a job parameter,
-not a model property.
+Опубликованные `modelRef` и generation неизменяемы и не имеют автоматического
+TTL. `modelAlias` остаётся owner-scoped и во время `job.create` атомарно
+разрешается в один `resolvedModelRef`. `predictionColumn` является параметром
+job, а не свойством модели.
 
-`model.describe` returns immutable model identity, generation, checkpoint
-digest, model configuration and certified data-contract identity. Stable model
-errors are:
+`model.describe` возвращает неизменяемую identity модели, generation, digest
+checkpoint, конфигурацию модели и identity сертифицированного data contract.
+Стабильные model errors:
 
-- unknown owner-visible identity: `NOT_FOUND`;
-- model row exists but checkpoint is absent: `MODEL_UNAVAILABLE`;
-- digest or checkpoint is invalid: `MODEL_CORRUPT`;
-- incompatible or uncertified data contract: `MODEL_SCHEMA_MISMATCH`.
+- неизвестная видимая owner identity: `NOT_FOUND`;
+- строка модели существует, но checkpoint отсутствует: `MODEL_UNAVAILABLE`;
+- digest или checkpoint некорректен: `MODEL_CORRUPT`;
+- несовместимый или несертифицированный data contract:
+  `MODEL_SCHEMA_MISMATCH`.
 
-Models created before v3 are not implicitly compatible because they do not
-have a certified `dataContractSha256`. They must be retrained or certified by
-an explicit auditable offline migration. Certification does not silently
-rewrite historical immutable model metadata.
+Модели, созданные до v3, не считаются совместимыми автоматически, поскольку у
+них нет сертифицированного `dataContractSha256`. Они должны быть переобучены
+или сертифицированы отдельной аудируемой offline migration. Сертификация не
+переписывает незаметно исторические неизменяемые metadata модели.
 
-## Worker process contract v2
+## Контракт процесса worker v2
 
-Worker v2 receives an immutable base manifest containing job, attempt, model,
-training and data-contract identity plus a snapshot of the already committed
-contiguous inputs. New contiguous inputs and explicit EOF are sent over a
-bounded service-to-worker control channel. The worker does not query
-PostgreSQL and does not watch a directory.
+Worker v2 получает неизменяемый base manifest с identity job, attempt, model,
+training и data contract, а также snapshot уже committed непрерывных inputs.
+Новые непрерывные inputs и явный EOF передаются через ограниченный control
+channel service → worker. Worker не обращается к PostgreSQL и не следит за
+каталогом.
 
-Every control message identifies `jobId`, numeric `attempt`, `attemptId`, a
-strictly increasing message sequence and input ordinal when applicable. The
-worker acknowledges the highest contiguous ordinal. Repeated control messages
-are safe: already accepted inputs are validated as exact duplicates and never
-applied twice. After service or worker recovery a fresh attempt receives a new
-snapshot built from PostgreSQL, including `inputClosed`; notification delivery
-is an optimization, not a source of truth.
+Каждое control-сообщение содержит `jobId`, числовой `attempt`, `attemptId`,
+строго возрастающий номер сообщения и, когда применимо, ordinal input. Worker
+подтверждает наибольший непрерывный ordinal. Повторные control-сообщения
+безопасны: уже принятые inputs проверяются как точные дубликаты и никогда не
+используются дважды. После восстановления service или worker новая attempt
+получает построенный по PostgreSQL свежий snapshot, включая `inputClosed`;
+notification delivery является оптимизацией, а не источником истины.
 
-All progress, checkpoint, output and terminal events continue to carry
-`attempt`, `attemptId` and a per-process sequence. `attemptId` is enough to
-reject late messages because ownership is never transferred within an attempt.
+Все progress, checkpoint, output и terminal events продолжают содержать
+`attempt`, `attemptId` и sequence отдельного процесса. `attemptId` достаточно
+для отклонения поздних сообщений, поскольку владение внутри attempt никогда не
+передаётся.
 
-## Required acceptance tests
+## Обязательные acceptance tests
 
-The cutover is not accepted until automated tests cover:
+Автоматические тесты должны покрывать:
 
-- first committed non-empty payload queues a worker while input remains open;
-- upload timing, out-of-order completion and payload partitioning preserve
-  logical row order;
-- optimizer batches and shuffle windows cross payload boundaries;
-- input close completes epoch zero;
-- crash before EOF repeats the incomplete epoch without double optimizer
-  application;
-- takeover rejects late `DoPut`, close and cancel from the previous owner;
-- stale `DoPut` cannot overwrite the later owner's input artifact;
-- lost create and acquire responses replay to the committed identity;
-- close rejects a gap, incorrect totals or incorrect digest;
-- model schema mismatch is rejected before upload;
-- output and model publication are impossible before input is closed;
-- `GetFlightInfo` is unavailable until execution succeeds;
-- pagination returns a late low ordinal in the next revision traversal;
-- an out-of-order commit does not extend input idle timeout;
-- a tombstoned `jobId` cannot be reused;
-- notification loss after input commit and after close is recovered from
+- первый committed непустой payload ставит worker в queue при открытом input;
+- время upload, out-of-order completion и разбиение payload-ов сохраняют
+  логический порядок строк;
+- optimizer batches и shuffle windows пересекают границы payload-ов;
+- закрытие input завершает нулевую epoch;
+- сбой до EOF повторяет незавершённую epoch без двойного применения optimizer;
+- takeover отклоняет поздние `DoPut`, close и cancel прежнего owner;
+- stale `DoPut` не может перезаписать input artifact следующего owner;
+- потерянные create- и acquire-responses повторно возвращают committed
+  identity;
+- close отклоняет пропуск, неверные итоги и неверный digest;
+- несовпадение model schema отклоняется до upload;
+- output и model нельзя опубликовать до закрытия input;
+- `GetFlightInfo` недоступен до успешного завершения execution;
+- pagination возвращает поздний малый ordinal в следующем revision traversal;
+- out-of-order commit не продлевает input idle timeout;
+- tombstoned `jobId` нельзя использовать повторно;
+- потеря notification после commit input и после close восстанавливается из
   PostgreSQL;
-- duplicate worker control messages do not consume data twice;
-- deterministic closed-input and delayed-streaming runs meet the semantic ML
-  equivalence condition above.
+- дубли worker control-сообщений не приводят к повторному использованию
+  данных;
+- deterministic запуски с закрытым input и задержанным потоком удовлетворяют
+  указанному выше условию семантической ML-эквивалентности.
 
-Race tests use explicit synchronization at reserve, artifact publication,
-fence recheck, input commit, notification and terminal publication boundaries;
-wall-clock sleeps are not the arbitration mechanism.
+Race tests используют явную синхронизацию на границах reserve, publication
+artifact, повторной проверки fence, commit input, notification и terminal
+publication; wall-clock sleeps не являются механизмом арбитража.
 
-## Cutover
+## Переключение
 
-The operational cutover is:
+Операционное переключение выполнялось так:
 
-1. stop Inventory workers and Transformer v2;
-2. apply the breaking Transformer PostgreSQL migration;
-3. remove v2 jobs, inputs, attempts, tickets, idempotency and recovery state;
-4. preserve API access tokens;
-5. retain legacy model records only as uncertified until explicit offline
-   certification, or retrain them;
-6. deploy only Flight v3 and worker v2;
-7. advertise exactly `protocolVersions: [3]`;
-8. start Inventory configured to require v3 without fallback;
-9. verify health, create/acquire fencing, streaming fit and terminal output
-   access before restoring traffic.
+1. остановить workers Inventory и Transformer v2;
+2. применить breaking migration PostgreSQL Transformer;
+3. удалить v2 jobs, inputs, attempts, tickets, idempotency и recovery state;
+4. сохранить API access tokens;
+5. оставить записи прежних моделей несертифицированными до явной offline
+   certification либо переобучить модели;
+6. развернуть только Flight v3 и worker v2;
+7. рекламировать ровно `protocolVersions: [3]`;
+8. запустить Inventory с обязательным v3 без fallback;
+9. до восстановления traffic проверить health, fencing create/acquire,
+   streaming fit и доступ к terminal output.
 
-Filesystem cleanup is reconciliation after the database boundary, not part of
-the PostgreSQL transaction. Old and failed candidate artifacts may remain as
-orphans temporarily, but PostgreSQL never references a partial file.
+Очистка filesystem выполняется как reconciliation после database boundary, а
+не внутри transaction PostgreSQL. Старые и неуспешные candidate artifacts
+могут временно оставаться orphan, но PostgreSQL никогда не ссылается на
+частичный файл.
 
-## Consequences
+## Последствия
 
-- Training can overlap durable upload without tying recovery to a network
-  session.
-- External ownership becomes safe for multiple Inventory workers.
-- State, pagination and model compatibility become explicit public contracts.
-- Worker supervision gains a bounded bidirectional application protocol and
-  must recover notification loss from PostgreSQL snapshots.
-- The implementation and cutover are substantially more complex than v2, and
-  semantic deterministic equivalence becomes the release gate.
+- Обучение может перекрываться с долговечным upload без привязки
+  восстановления к сетевой сессии.
+- Внешнее владение становится безопасным для нескольких workers Inventory.
+- Состояния, pagination и совместимость моделей становятся явными публичными
+  контрактами.
+- Supervision worker получает ограниченный двунаправленный прикладной протокол
+  и обязан восстанавливать потерянные notifications из snapshots PostgreSQL.
+- Реализация существенно сложнее v2, а semantic deterministic equivalence
+  становится release gate.

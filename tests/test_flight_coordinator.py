@@ -5,6 +5,7 @@ import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -254,6 +255,51 @@ def test_input_close_is_eof_not_a_start_action(coordinator_components):
     assert status["execution"]["state"] == "QUEUED"
 
 
+def test_empty_fit_reports_empty_input_before_device_revalidation(
+    tmp_path,
+    postgres_ledger,
+):
+    config = FlightServiceConfig(
+        runtime_dir=str(tmp_path / "runtime"),
+        allow_plaintext=True,
+    ).validate()
+    spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
+    available = {"cuda": True}
+    inventory = SimpleNamespace(
+        snapshot=lambda: SimpleNamespace(
+            cuda_capacity=1 if available["cuda"] else 0,
+        ),
+    )
+    coordinator = JobCoordinator(
+        config,
+        postgres_ledger,
+        spool,
+        device_inventory=inventory,
+    )
+    create = {**_fit_create(), "device": "cuda"}
+    _dispatch(coordinator, CREATE_ACTION, create)
+    available["cuda"] = False
+    close = {
+        **_common(),
+        "idempotencyKey": "close-empty-fit",
+        "jobId": create["jobId"],
+        "clientExecutionId": create["clientExecutionId"],
+        "fencingToken": "1",
+        "payloadCount": 0,
+        "totalRows": 0,
+        "totalBytes": 0,
+        "manifestSha256": manifest_sha256([]),
+    }
+
+    with pytest.raises(ServiceError) as error:
+        _dispatch(coordinator, INPUT_CLOSE_ACTION, close)
+
+    assert error.value.code is ErrorCode.EMPTY_INPUT
+    job = postgres_ledger.get_job(create["jobId"])
+    assert job["input_state"] == "OPEN"
+    assert job["execution_state"] == "WAITING_INPUT"
+
+
 def test_close_replay_from_previous_owner_is_fenced_after_takeover(
     coordinator_components,
 ):
@@ -377,6 +423,11 @@ def test_model_describe_has_stable_lifecycle_errors(coordinator_components):
     with pytest.raises(ServiceError) as missing:
         _dispatch(coordinator, MODEL_DESCRIBE_ACTION, describe)
     assert missing.value.code is ErrorCode.MODEL_UNAVAILABLE
+
+    Path(spool.model_checkpoint_path(model_ref)).write_bytes(b"corrupt")
+    with pytest.raises(ServiceError) as corrupt:
+        _dispatch(coordinator, MODEL_DESCRIBE_ACTION, describe)
+    assert corrupt.value.code is ErrorCode.MODEL_CORRUPT
 
 
 def test_predict_contract_mismatch_is_rejected_before_job_creation(

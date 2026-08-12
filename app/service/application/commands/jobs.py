@@ -324,10 +324,13 @@ class InputCloseAction:
             )
             if current is None:
                 raise not_found("job not found")
-            selected = current["selected_device"] or _select_device(
-                current["requested_device"],
-                self._cuda_available(),
-            )
+            if current["operation"] == "fit" and request["total_rows"] == 0:
+                selected = current["selected_device"] or "cpu"
+            else:
+                selected = current["selected_device"] or _select_device(
+                    current["requested_device"],
+                    self._cuda_available(),
+                )
             job, repeated = self.ledger.close_input(
                 request["job_id"],
                 client_execution_id=request["client_execution_id"],
