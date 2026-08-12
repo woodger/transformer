@@ -5,7 +5,7 @@ import re
 import shutil
 import tempfile
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
@@ -14,6 +14,7 @@ from app.service.adapters.outbound.artifact_storage.spool import (
     RuntimeDirectoryLock,
     fsync_directory,
 )
+from app.service.application.ports.operations import DiskUsage
 
 _CHECKPOINT_NAME = re.compile(r"^[1-9][0-9]*\.pth$")
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -22,7 +23,7 @@ _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 class RecoveryStore:
     """Persistent, server-owned fit inputs and training checkpoints."""
 
-    def __init__(self, root_dir: str):
+    def __init__(self, root_dir: str) -> None:
         self.root_dir = os.path.abspath(os.fspath(root_dir))
         self.jobs_dir = os.path.join(self.root_dir, "jobs")
         self.lock = RuntimeDirectoryLock(
@@ -30,7 +31,7 @@ class RecoveryStore:
         )
 
     def initialize(self) -> RecoveryStore:
-        created = []
+        created: list[str] = []
         for directory in (self.root_dir, self.jobs_dir):
             if not os.path.isdir(directory):
                 os.makedirs(directory, exist_ok=True)
@@ -98,7 +99,7 @@ class RecoveryStore:
             self.root_dir,
         ).replace(os.sep, "/")
 
-    def absolute_path(self, relative_path: str) -> str:
+    def absolute_path(self, relative_path: object) -> str:
         if (
             not isinstance(relative_path, str)
             or not relative_path
@@ -117,7 +118,7 @@ class RecoveryStore:
     def ensure_parent(self, path: str) -> None:
         path = self._inside_root(path)
         parent = os.path.dirname(path)
-        missing = []
+        missing: list[str] = []
         current = parent
         while (
             current != self.root_dir
@@ -179,7 +180,7 @@ class RecoveryStore:
     def staged_file(
         self,
         destination: str,
-    ) -> Iterator[tuple[BinaryIO, str]]:
+    ) -> Generator[tuple[BinaryIO, str], None, None]:
         file, temporary = self.create_temporary(destination)
         try:
             yield file, temporary
@@ -206,11 +207,11 @@ class RecoveryStore:
         fsync_directory(os.path.dirname(path))
         return True
 
-    def disk_usage(self) -> shutil._ntuple_diskusage:
+    def disk_usage(self) -> DiskUsage:
         return shutil.disk_usage(self.root_dir)
 
     def cleanup_temporary_files(self) -> tuple[str, ...]:
-        removed = []
+        removed: list[str] = []
         for root, _, files in os.walk(self.root_dir):
             for name in files:
                 if not name.endswith(".tmp"):
@@ -235,7 +236,7 @@ class RecoveryStore:
             _uuid_component(job_id, "job_id")
             for job_id in known_job_ids
         }
-        removed = []
+        removed: list[str] = []
         for relative_path in temporary_paths:
             try:
                 candidate = self.absolute_path(relative_path)
@@ -286,7 +287,9 @@ class RecoveryStore:
         return candidate
 
 
-def _uuid_component(value: str, label: str) -> str:
+def _uuid_component(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a canonical UUID")
     try:
         parsed = uuid.UUID(value)
     except (AttributeError, ValueError) as exc:
@@ -296,18 +299,18 @@ def _uuid_component(value: str, label: str) -> str:
     return str(parsed)
 
 
-def _safe_component(value: str, label: str) -> str:
+def _safe_component(value: object, label: str) -> str:
     if not isinstance(value, str) or not _SAFE_COMPONENT.fullmatch(value):
         raise ValueError(f"{label} is not a safe path component")
     return value
 
 
-def _nonnegative(value: int, label: str) -> None:
+def _nonnegative(value: object, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{label} must be a non-negative integer")
 
 
-def _positive(value: int, label: str) -> None:
+def _positive(value: object, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{label} must be a positive integer")
 

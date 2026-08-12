@@ -1,28 +1,70 @@
 import json
 import os
 import sys
-from dataclasses import asdict, replace
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Protocol, cast
 
+import torch
+
+from app.config import DEFAULT_MAX_FRAME_BYTES
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v3.config import ModelConfig
 from app.contracts.worker.v3.objective import objective_config_sha256
-from app.data.arrow import (
-    DEFAULT_MAX_FRAME_BYTES,
+from app.worker.data.arrow import (
     iter_framed_arrow,
     read_arrow,
     table_to_tensors,
 )
-from app.data.tensors import reshape_source, validate_feature_dim, validate_target_dim
-from app.storage.training_recovery import (
+from app.worker.data.tensors import (
+    reshape_source,
+    validate_feature_dim,
+    validate_target_dim,
+)
+from app.worker.metrics import TrainMetrics
+from app.worker.runtime.checkpoints.training_recovery import (
     load_training_recovery,
     save_training_recovery,
 )
-from app.training.factory import build_model, build_trainer
-from app.training.run_config import model_config_from_args
+from app.worker.training.factory import build_model, build_trainer
+from app.worker.training.run_config import model_config_from_args
+from app.worker.training.trainer import SelectionPayload, Trainer
+
+ModelBuilder = Callable[
+    [object, torch.Tensor, torch.Tensor | None, torch.device],
+    torch.nn.Module,
+]
+TrainerBuilder = Callable[
+    [object, torch.nn.Module, torch.device, ModelConfig | None],
+    Trainer,
+]
 
 
-def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer):
-    input_spool_dir = getattr(args, "input_spool_dir", None)
-    input_frame_count = getattr(args, "input_frame_count", None)
+class FitStreamArguments(Protocol):
+    model_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryArguments:
+    checkpoint_dir: str
+    events_path: str
+    config_hash: str
+    manifest_hash: str
+    resume_checkpoint: str | None
+
+
+def run(
+    args: FitStreamArguments,
+    device: torch.device,
+    build_model_fn: ModelBuilder = build_model,
+    build_trainer_fn: TrainerBuilder = build_trainer,
+) -> None:
+    input_spool_dir = _optional_string_argument(args, "input_spool_dir")
+    input_frame_count = _optional_integer_argument(
+        args,
+        "input_frame_count",
+    )
     if input_spool_dir is not None or input_frame_count is not None:
         return _run_spooled(
             args,
@@ -44,56 +86,80 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
 
     for table in iter_framed_arrow(
         sys.stdin.buffer,
-        max_frame_bytes=getattr(
-            args,
-            "max_frame_bytes",
-            DEFAULT_MAX_FRAME_BYTES,
-        ),
+        max_frame_bytes=_max_frame_bytes(args),
     ):
         received_frames += 1
         if table.num_rows == 0:
             print(f"frame {received_frames}, skipped empty payload")
             continue
 
-        X_cpu, Y_cpu = table_to_tensors(table)
-        X_cpu = reshape_source(X_cpu, model_config.seq_len)
-        expected_feat_dim = validate_feature_dim(X_cpu, expected_feat_dim)
-        expected_target_dim = validate_target_dim(Y_cpu, expected_target_dim)
+        features_cpu, targets_cpu = table_to_tensors(table)
+        features_cpu = reshape_source(features_cpu, model_config.seq_len)
+        expected_feat_dim = validate_feature_dim(
+            features_cpu,
+            expected_feat_dim,
+        )
+        expected_target_dim = validate_target_dim(
+            targets_cpu,
+            expected_target_dim,
+        )
 
         if model is None:
             model_config = replace(model_config, feature_dim=expected_feat_dim)
-            model = build_model_fn(model_config, X_cpu, Y_cpu, device)
+            model = build_model_fn(
+                model_config,
+                features_cpu,
+                targets_cpu,
+                device,
+            )
             trainer = build_trainer_fn(args, model, device, model_config)
-            config_line = getattr(trainer, "config_line", None)
-            if config_line is not None:
-                print(config_line())
-            print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
+            _print_config_line(trainer)
+            print("X:", features_cpu.shape, "Y:", targets_cpu.shape)
+
+        if trainer is None:
+            raise AssertionError("streaming trainer was not initialized")
+        active_trainer = trainer
+        frame = received_frames
 
         def on_epoch(
-            epoch,
-            metrics,
-            monitor_payload,
-            *,
-            frame=received_frames,
-            active_trainer=trainer,
-        ):
+            epoch: int,
+            metrics: TrainMetrics,
+            monitor_payload: SelectionPayload,
+            current_frame: int = frame,
+            current_trainer: Trainer = active_trainer,
+        ) -> None:
             nonlocal trained_epochs
             trained_epochs += 1
             print(metrics.console_line(
-                frame=frame,
+                frame=current_frame,
                 epoch=epoch + 1,
-                **getattr(active_trainer, "metrics_context", {}),
-                **monitor_payload,
+                **_metrics_context(current_trainer),
+                selection_score=monitor_payload["selection_score"],
+                checkpoint_best=monitor_payload["checkpoint_best"],
+                should_stop=monitor_payload["should_stop"],
+                best_selection_score=monitor_payload[
+                    "best_selection_score"
+                ],
             ))
-            active_trainer.record_metrics(
+            current_trainer.record_metrics(
                 metrics,
                 mode="fit-stream",
-                frame=frame,
+                frame=current_frame,
                 epoch=epoch + 1,
-                **monitor_payload,
+                selection_score=monitor_payload["selection_score"],
+                checkpoint_best=monitor_payload["checkpoint_best"],
+                should_stop=monitor_payload["should_stop"],
+                best_selection_score=monitor_payload[
+                    "best_selection_score"
+                ],
             )
 
-        trainer.fit_epochs(X_cpu, Y_cpu, on_epoch=on_epoch, frame=received_frames)
+        active_trainer.fit_epochs(
+            features_cpu,
+            targets_cpu,
+            on_epoch=on_epoch,
+            frame=received_frames,
+        )
         trained_frames += 1
 
     if trainer is None:
@@ -108,18 +174,18 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
 
 
 def _run_spooled(
-    args,
-    device,
-    build_model_fn,
-    build_trainer_fn,
-    input_spool_dir,
-    input_frame_count,
-):
+    args: FitStreamArguments,
+    device: torch.device,
+    build_model_fn: ModelBuilder,
+    build_trainer_fn: TrainerBuilder,
+    input_spool_dir: str | None,
+    input_frame_count: int | None,
+) -> None:
     if input_spool_dir is None or input_frame_count is None:
         raise ValueError(
             "input_spool_dir and input_frame_count must be provided together"
         )
-    if type(input_frame_count) is not int or input_frame_count < 0:
+    if input_frame_count < 0:
         raise ValueError("input_frame_count must be a non-negative integer")
 
     model_config = model_config_from_args(args)
@@ -128,7 +194,7 @@ def _run_spooled(
     trainer = None
     expected_feat_dim = None
     expected_target_dim = None
-    trained_inputs = []
+    trained_inputs: list[Path] = []
     input_directory = Path(input_spool_dir)
 
     # Preflight one durable payload at a time so shape errors are reported
@@ -136,103 +202,132 @@ def _run_spooled(
     for ordinal in range(input_frame_count):
         frame = ordinal + 1
         path = input_directory / f"{ordinal}.arrow"
-        X_cpu, Y_cpu = read_arrow(str(path))
-        if X_cpu.size(0) == 0:
+        features_cpu, targets_cpu = read_arrow(str(path))
+        if features_cpu.size(0) == 0:
             print(f"frame {frame}, skipped empty payload")
-            del X_cpu, Y_cpu
+            del features_cpu, targets_cpu
             continue
 
-        X_cpu = reshape_source(X_cpu, model_config.seq_len)
-        expected_feat_dim = validate_feature_dim(X_cpu, expected_feat_dim)
-        expected_target_dim = validate_target_dim(Y_cpu, expected_target_dim)
+        features_cpu = reshape_source(features_cpu, model_config.seq_len)
+        expected_feat_dim = validate_feature_dim(
+            features_cpu,
+            expected_feat_dim,
+        )
+        expected_target_dim = validate_target_dim(
+            targets_cpu,
+            expected_target_dim,
+        )
 
         if model is None:
             model_config = replace(model_config, feature_dim=expected_feat_dim)
-            model = build_model_fn(model_config, X_cpu, Y_cpu, device)
+            model = build_model_fn(
+                model_config,
+                features_cpu,
+                targets_cpu,
+                device,
+            )
             trainer = build_trainer_fn(args, model, device, model_config)
-            config_line = getattr(trainer, "config_line", None)
-            if config_line is not None:
-                print(config_line())
-            print("X:", X_cpu.shape, "Y:", Y_cpu.shape)
+            _print_config_line(trainer)
+            print("X:", features_cpu.shape, "Y:", targets_cpu.shape)
 
         trained_inputs.append(path)
-        del X_cpu, Y_cpu
+        del features_cpu, targets_cpu
 
     if trainer is None:
         raise ValueError("No non-empty frames received in input spool")
 
-    if recovery is not None and recovery["resume_checkpoint"] is not None:
+    if recovery is not None and recovery.resume_checkpoint is not None:
+        train_config = trainer.train_config
+        if train_config is None:
+            raise ValueError("training recovery configuration is unavailable")
         try:
             payload = load_training_recovery(
-                recovery["resume_checkpoint"],
+                recovery.resume_checkpoint,
                 device,
-                expected_config_hash=recovery["config_hash"],
-                expected_manifest_hash=recovery["manifest_hash"],
+                expected_config_hash=recovery.config_hash,
+                expected_manifest_hash=recovery.manifest_hash,
                 expected_objective_config_sha256=objective_config_sha256(
-                    trainer.train_config
+                    train_config
                 ),
             )
             if payload["model_config"] != asdict(model_config):
                 raise ValueError(
                     "training recovery model configuration does not match"
                 )
-            if payload["train_config"] != asdict(trainer.train_config):
+            if payload["train_config"] != asdict(train_config):
                 raise ValueError(
                     "training recovery train configuration does not match"
                 )
-            trainer.load_recovery_state_dict(payload["trainer_state"])
+            trainer.load_recovery_state_dict(
+                _object_mapping(
+                    payload["trainer_state"],
+                    "training recovery trainer state",
+                )
+            )
         except Exception as exc:
             raise ValueError(
                 "training recovery checkpoint could not be restored"
             ) from exc
 
-    def payloads():
+    def payloads() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         for path in trained_inputs:
-            X_cpu, Y_cpu = read_arrow(str(path))
-            X_cpu = reshape_source(X_cpu, model_config.seq_len)
-            validate_feature_dim(X_cpu, expected_feat_dim)
-            validate_target_dim(Y_cpu, expected_target_dim)
-            yield X_cpu, Y_cpu
-            del X_cpu, Y_cpu
+            features_cpu, targets_cpu = read_arrow(str(path))
+            features_cpu = reshape_source(features_cpu, model_config.seq_len)
+            validate_feature_dim(features_cpu, expected_feat_dim)
+            validate_target_dim(targets_cpu, expected_target_dim)
+            yield features_cpu, targets_cpu
+            del features_cpu, targets_cpu
 
     trained_epochs = 0
 
-    def on_epoch(epoch, metrics, monitor_payload):
+    def on_epoch(
+        epoch: int,
+        metrics: TrainMetrics,
+        monitor_payload: SelectionPayload,
+    ) -> None:
         nonlocal trained_epochs
         trained_epochs += 1
         print(metrics.console_line(
             epoch=epoch + 1,
-            **getattr(trainer, "metrics_context", {}),
-            **monitor_payload,
+            **_metrics_context(trainer),
+            selection_score=monitor_payload["selection_score"],
+            checkpoint_best=monitor_payload["checkpoint_best"],
+            should_stop=monitor_payload["should_stop"],
+            best_selection_score=monitor_payload["best_selection_score"],
         ))
         trainer.record_metrics(
             metrics,
             mode="fit-stream",
             epoch=epoch + 1,
-            **monitor_payload,
+            selection_score=monitor_payload["selection_score"],
+            checkpoint_best=monitor_payload["checkpoint_best"],
+            should_stop=monitor_payload["should_stop"],
+            best_selection_score=monitor_payload["best_selection_score"],
         )
 
     def on_epoch_committed(
-        _epoch,
-        _metrics,
-        _monitor_payload,
-        _training_complete,
-    ):
+        _epoch: int,
+        _metrics: TrainMetrics,
+        _monitor_payload: SelectionPayload,
+        _training_complete: bool,
+    ) -> None:
+        if recovery is None:
+            raise AssertionError("training recovery is not configured")
         generation = trainer.state.global_epoch
         checkpoint_path = os.path.join(
-            recovery["checkpoint_dir"],
+            recovery.checkpoint_dir,
             f"{generation}.pth",
         )
         event = save_training_recovery(
             checkpoint_path,
             trainer,
             generation=generation,
-            config_hash=recovery["config_hash"],
-            manifest_hash=recovery["manifest_hash"],
+            config_hash=recovery.config_hash,
+            manifest_hash=recovery.manifest_hash,
         )
-        _append_recovery_event(recovery["events_path"], event)
+        _append_recovery_event(recovery.events_path, event)
 
-    if not getattr(trainer, "training_complete", False):
+    if not _training_complete(trainer):
         if recovery is None:
             trainer.fit_payloads(payloads, on_epoch=on_epoch)
         else:
@@ -248,27 +343,22 @@ def _run_spooled(
     )
 
 
-def _recovery_arguments(args) -> dict | None:
-    values = {
-        "checkpoint_dir": getattr(
-            args,
-            "recovery_checkpoint_dir",
-            None,
-        ),
-        "events_path": getattr(args, "recovery_events_out", None),
-        "config_hash": getattr(args, "recovery_config_hash", None),
-        "manifest_hash": getattr(args, "recovery_manifest_hash", None),
-        "resume_checkpoint": getattr(args, "resume_checkpoint", None),
-    }
-    required = (
-        "checkpoint_dir",
-        "events_path",
-        "config_hash",
-        "manifest_hash",
+def _recovery_arguments(args: object) -> RecoveryArguments | None:
+    checkpoint_dir = _optional_string_argument(
+        args,
+        "recovery_checkpoint_dir",
     )
-    configured = [values[name] is not None for name in required]
+    events_path = _optional_string_argument(args, "recovery_events_out")
+    config_hash = _optional_string_argument(args, "recovery_config_hash")
+    manifest_hash = _optional_string_argument(
+        args,
+        "recovery_manifest_hash",
+    )
+    resume_checkpoint = _optional_string_argument(args, "resume_checkpoint")
+    required = (checkpoint_dir, events_path, config_hash, manifest_hash)
+    configured = [value is not None for value in required]
     if not any(configured):
-        if values["resume_checkpoint"] is not None:
+        if resume_checkpoint is not None:
             raise ValueError(
                 "resume_checkpoint requires training recovery outputs"
             )
@@ -277,10 +367,23 @@ def _recovery_arguments(args) -> dict | None:
         raise ValueError(
             "training recovery arguments must be provided together"
         )
-    return values
+    if (
+        checkpoint_dir is None
+        or events_path is None
+        or config_hash is None
+        or manifest_hash is None
+    ):
+        raise AssertionError("training recovery arguments were not narrowed")
+    return RecoveryArguments(
+        checkpoint_dir=checkpoint_dir,
+        events_path=events_path,
+        config_hash=config_hash,
+        manifest_hash=manifest_hash,
+        resume_checkpoint=resume_checkpoint,
+    )
 
 
-def _append_recovery_event(path: str, event: dict) -> None:
+def _append_recovery_event(path: str, event: JsonObject) -> None:
     destination = os.path.abspath(os.fspath(path))
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     line = json.dumps(
@@ -293,3 +396,61 @@ def _append_recovery_event(path: str, event: dict) -> None:
     with open(destination, "ab", buffering=0) as target:
         target.write(line)
         os.fsync(target.fileno())
+
+
+def _max_frame_bytes(args: object) -> int:
+    value = cast(
+        object,
+        getattr(args, "max_frame_bytes", DEFAULT_MAX_FRAME_BYTES),
+    )
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("max_frame_bytes must be an integer")
+    return value
+
+
+def _optional_string_argument(args: object, name: str) -> str | None:
+    value = cast(object, getattr(args, name, None))
+    if value is None or isinstance(value, str):
+        return value
+    raise ValueError(f"{name} must be a string")
+
+
+def _optional_integer_argument(args: object, name: str) -> int | None:
+    value = cast(object, getattr(args, name, None))
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
+def _print_config_line(trainer: object) -> None:
+    value = cast(object, getattr(trainer, "config_line", None))
+    if value is None:
+        return
+    if not callable(value):
+        raise ValueError("trainer config_line must be callable")
+    print(cast(Callable[[], object], value)())
+
+
+def _training_complete(trainer: object) -> bool:
+    return bool(cast(object, getattr(trainer, "training_complete", False)))
+
+
+def _metrics_context(trainer: object) -> JsonObject:
+    value = cast(object, getattr(trainer, "metrics_context", {}))
+    if not isinstance(value, Mapping):
+        raise ValueError("trainer metrics context must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError("trainer metrics context keys must be strings")
+    return cast(JsonObject, dict(mapping))
+
+
+def _object_mapping(value: object, label: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError(f"{label} keys must be strings")
+    return cast(Mapping[str, object], mapping)

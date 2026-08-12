@@ -5,11 +5,22 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 from app.service.application.ports.maintenance import (
     MaintenanceRepository,
     RetentionArtifactStore,
 )
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
+from app.service.application.ports.operations import DiskUsage
+
+
+class MaintenanceConfig(Protocol):
+    retention_seconds: float
+    input_idle_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -43,19 +54,18 @@ class MaintenanceService:
 
     def __init__(
         self,
-        config,
+        config: MaintenanceConfig,
         ledger: MaintenanceRepository,
         spool: RetentionArtifactStore,
         recovery_store: RetentionArtifactStore | None = None,
         *,
         interval_seconds: float = 60.0,
         queue_reconciler: Callable[[], None] | None = None,
-        logger,
-        metrics,
-    ):
+        logger: EventLogger,
+        metrics: OperationalMetricSink,
+    ) -> None:
         if (
             isinstance(interval_seconds, bool)
-            or not isinstance(interval_seconds, (int, float))
             or not math.isfinite(interval_seconds)
             or interval_seconds <= 0
         ):
@@ -120,7 +130,6 @@ class MaintenanceService:
         timestamp = time.time() if now is None else now
         if (
             isinstance(timestamp, bool)
-            or not isinstance(timestamp, (int, float))
             or not math.isfinite(timestamp)
         ):
             raise ValueError("now must be a finite number")
@@ -128,10 +137,8 @@ class MaintenanceService:
         cutoff = timestamp - self.config.retention_seconds
         if self._queue_reconciler is not None:
             self._queue_reconciler()
-        usage = None
-        disk_usage = getattr(self.spool, "disk_usage", None)
-        if disk_usage is not None:
-            usage = disk_usage()
+        usage = _optional_disk_usage(self.spool)
+        if usage is not None:
             self.metrics.set("diskTotalBytes", usage.total)
             self.metrics.set("diskUsedBytes", usage.used)
             self.metrics.set("diskFreeBytes", usage.free)
@@ -255,6 +262,15 @@ class MaintenanceService:
                     errorType=type(exc).__name__,
                 )
             self._stop.wait(self.interval_seconds)
+
+
+def _optional_disk_usage(store: object) -> DiskUsage | None:
+    reader = cast(object, getattr(store, "disk_usage", None))
+    if reader is None:
+        return None
+    if not callable(reader):
+        raise TypeError("artifact disk_usage must be callable")
+    return cast(Callable[[], DiskUsage], reader)()
 
 
 __all__ = ["MaintenanceResult", "MaintenanceService"]

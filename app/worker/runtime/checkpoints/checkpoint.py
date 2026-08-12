@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, is_dataclass
+from collections.abc import Mapping
+from typing import cast
 
 import torch
 
 from app.config import PROJECT_ROOT
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.contracts.worker.v3.objective import (
     CHECKPOINT_FORMAT,
@@ -36,18 +38,18 @@ def model_path(model_name: str) -> str:
 
 def save_checkpoint(
     model_name: str,
-    model,
-    model_config=None,
-    train_config=None,
-    data_contract: dict | None = None,
-    extra: dict | None = None,
-):
+    model: torch.nn.Module,
+    model_config: object = None,
+    train_config: object = None,
+    data_contract: Mapping[str, object] | None = None,
+    extra: Mapping[str, object] | None = None,
+) -> None:
     model_config = _model_config(model_config)
     train_config = _train_config(train_config)
     if model_config.feature_dim is None:
         raise ValueError("checkpoint feature dimension is unavailable")
     full_path = model_path(model_name)
-    payload = {
+    payload: dict[str, object] = {
         "format": CHECKPOINT_FORMAT,
         "version": __version__,
         "state_dict": model.state_dict(),
@@ -64,14 +66,21 @@ def save_checkpoint(
         torch.save(payload, temporary_path)
 
 
-def load_checkpoint(model_name: str, device):
+def load_checkpoint(
+    model_name: str,
+    device: str | torch.device,
+) -> dict[str, object]:
     try:
-        payload = torch.load(model_path(model_name), map_location=device)
+        loaded: object = torch.load(
+            model_path(model_name),
+            map_location=device,
+        )
     except Exception as exc:
         raise CheckpointCorrupt("Checkpoint could not be deserialized") from exc
 
-    if not isinstance(payload, dict):
+    if not isinstance(loaded, dict):
         raise CheckpointFormatMismatch("Unsupported checkpoint format")
+    payload = _object_dict(cast(object, loaded), "checkpoint")
     checkpoint_format = payload.get("format")
     if checkpoint_format != CHECKPOINT_FORMAT:
         raise CheckpointFormatMismatch(
@@ -81,7 +90,10 @@ def load_checkpoint(model_name: str, device):
     return payload
 
 
-def load_checkpoint_metadata(model_name: str, device="cpu") -> dict:
+def load_checkpoint_metadata(
+    model_name: str,
+    device: str | torch.device = "cpu",
+) -> dict[str, object]:
     payload = load_checkpoint(model_name, device)
     return {
         "format": payload["format"],
@@ -96,7 +108,7 @@ def load_checkpoint_metadata(model_name: str, device="cpu") -> dict:
     }
 
 
-def _validate_current_checkpoint(payload: dict) -> None:
+def _validate_current_checkpoint(payload: dict[str, object]) -> None:
     required = {
         "format",
         "version",
@@ -130,17 +142,21 @@ def _validate_current_checkpoint(payload: dict) -> None:
         raise CheckpointCorrupt("Checkpoint ML contract is inconsistent")
     if payload["objective_config"] != objective_config(train_config):
         raise CheckpointCorrupt("Checkpoint objective configuration is inconsistent")
-    data_contract = payload["data_contract"]
+    data_contract_value = payload["data_contract"]
+    data_contract = (
+        None
+        if data_contract_value is None
+        else _object_dict(data_contract_value, "checkpoint data contract")
+    )
     if data_contract is not None and (
-        not isinstance(data_contract, dict)
-        or data_contract.get("targetSchemaId") != TARGET_SCHEMA_ID
+        data_contract.get("targetSchemaId") != TARGET_SCHEMA_ID
         or data_contract.get("seqLen") != model_config.seq_len
         or data_contract.get("featureDim") != model_config.feature_dim
     ):
         raise CheckpointCorrupt("Checkpoint data contract is inconsistent")
 
 
-def _data_schema(model_config: ModelConfig) -> dict:
+def _data_schema(model_config: ModelConfig) -> JsonObject:
     seq_len = model_config.seq_len
     feature_dim = model_config.feature_dim
     context_mode = model_config.context_mode
@@ -178,34 +194,31 @@ def _data_schema(model_config: ModelConfig) -> dict:
     }
 
 
-def _model_config(value) -> ModelConfig:
+def _model_config(value: object) -> ModelConfig:
     if isinstance(value, ModelConfig):
         return value
-    config = ModelConfig.from_dict(_to_dict(value))
+    config = ModelConfig.from_dict(value)
     if config is None:
         raise ValueError("model configuration is required")
     return config
 
 
-def _train_config(value) -> TrainConfig:
+def _train_config(value: object) -> TrainConfig:
     if isinstance(value, TrainConfig):
         return value
-    config = TrainConfig.from_dict(_to_dict(value))
+    config = TrainConfig.from_dict(value)
     if config is None:
         raise ValueError("training configuration is required")
     return config
 
 
-def _to_dict(value):
-    if value is None:
-        return None
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, dict):
-        return dict(value)
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    return dict(value)
+def _object_dict(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError(f"{label} field names must be strings")
+    return {cast(str, key): item for key, item in mapping.items()}
 
 
 __all__ = [

@@ -286,7 +286,11 @@ def test_file_predict_writes_typed_empty_output_without_building_model(monkeypat
     monkeypatch.setattr(
         predict_module,
         "write_arrow",
-        lambda path, preds, col: written.update(path=path, preds=preds, col=col),
+        lambda path, predictions, col: written.update(
+            path=path,
+            predictions=predictions,
+            col=col,
+        ),
     )
 
     predict_module.run(
@@ -297,8 +301,8 @@ def test_file_predict_writes_typed_empty_output_without_building_model(monkeypat
 
     assert written["path"] == "predictions.arrow"
     assert written["col"] == "out"
-    assert written["preds"].shape == (0, 6)
-    assert written["preds"].dtype == torch.float32
+    assert written["predictions"].shape == (0, 6)
+    assert written["predictions"].dtype == torch.float32
 
 
 def test_stream_predict_rejects_checkpoint_feature_dim_mismatch(monkeypatch):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from app.admin.cli.db_migrations import print_status
 from app.service.adapters.outbound.postgres.config import load_database_config
 from app.service.adapters.outbound.postgres.migrations import (
@@ -9,7 +11,11 @@ from app.service.adapters.outbound.postgres.migrations import (
 )
 
 
-def run(args) -> None:
+class MigrationArguments(Protocol):
+    migrations_action: str
+
+
+def run(args: MigrationArguments) -> None:
     config = load_database_config()
     if args.migrations_action == "status":
         status = migration_status(config)

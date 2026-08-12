@@ -3,6 +3,8 @@
 
 from argparse import ArgumentParser
 from pathlib import Path
+from types import TracebackType
+from typing import Protocol, Self, cast
 
 import pyarrow as pa
 import pyarrow.ipc as ipc
@@ -21,15 +23,36 @@ FIXTURE_NAMES = (
 )
 
 
+class _RecordBatchWriter(Protocol):
+    def __enter__(self) -> Self: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
+
+    def write_batch(self, batch: pa.RecordBatch) -> None: ...
+
+
 def _write(path: Path, schema: pa.Schema, batches: list[pa.RecordBatch]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with pa.OSFile(str(path), "wb") as sink:
-        with ipc.new_file(sink, schema) as writer:
+        # PyArrow does not publish a complete type for the IPC factory. The
+        # local protocol captures the only writer operation used here.
+        with cast(
+            _RecordBatchWriter,
+            ipc.new_file(sink, schema),  # pyright: ignore[reportUnknownMemberType]
+        ) as writer:
             for batch in batches:
                 writer.write_batch(batch)
 
 
-def _batch(schema: pa.Schema, columns: list[list]) -> pa.RecordBatch:
+def _batch(
+    schema: pa.Schema,
+    columns: list[list[list[float]]],
+) -> pa.RecordBatch:
     arrays = [
         pa.array(values, type=field.type)
         for field, values in zip(schema, columns, strict=True)

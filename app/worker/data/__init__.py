@@ -21,10 +21,11 @@ _EXPORTS = {
     "write_framed_arrow": ("app.worker.data.arrow", "write_framed_arrow"),
 }
 
-__all__ = sorted(_EXPORTS)
+# Lazy exports intentionally derive from the compatibility registry.
+__all__ = sorted(_EXPORTS)  # pyright: ignore[reportUnsupportedDunderAll]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     try:
         module_name, attribute = _EXPORTS[name]
     except KeyError as exc:

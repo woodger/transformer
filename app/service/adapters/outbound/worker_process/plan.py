@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+from typing import Protocol
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -14,10 +16,15 @@ from app.contracts.worker.v3.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
+from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.job import ErrorCode, InputState
-from app.service.domain.records import ExecutionJobRecord
+from app.service.domain.records import (
+    ExecutionJobRecord,
+    ModelArtifactRecord,
+    TrainingRecoveryCheckpointRecord,
+)
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 
@@ -26,18 +33,59 @@ class WorkerPlanError(AttemptExecutionError):
     pass
 
 
+class _PlanConfig(Protocol):
+    max_payload_bytes: int
+
+
+class _PlanLedger(JobRepository, Protocol):
+    def get_model_artifact(
+        self,
+        model_ref: str | None,
+        *,
+        owner_subject: str,
+    ) -> ModelArtifactRecord | None: ...
+
+
+class _InputStore(Protocol):
+    def absolute_path(self, relative_path: object) -> str: ...
+
+    def input_directory(self, job_id: str) -> str: ...
+
+
+class _PlanSpool(_InputStore, Protocol):
+    def attempt_directory(self, job_id: str, attempt: int) -> str: ...
+
+    def attempt_manifest_path(self, job_id: str, attempt: int) -> str: ...
+
+    def ensure_parent(self, path: str) -> None: ...
+
+    def model_absolute_path(self, relative_path: object) -> str: ...
+
+    def model_checkpoint_path(self, model_ref: str) -> str: ...
+
+    def write_json_once(
+        self,
+        destination: str,
+        document: JsonObject,
+    ) -> str: ...
+
+
+class _RecoveryStore(_InputStore, Protocol):
+    def checkpoint_path(self, job_id: str, generation: int) -> str: ...
+
+
 class WorkerPlanBuilder:
     """Validate durable artifacts and render one trusted CLI execution plan."""
 
     def __init__(
         self,
-        config,
-        ledger,
-        spool,
-        recovery_store=None,
+        config: _PlanConfig,
+        ledger: _PlanLedger,
+        spool: _PlanSpool,
+        recovery_store: _RecoveryStore | None = None,
         *,
         python_executable: str,
-    ):
+    ) -> None:
         self.config = config
         self.ledger = ledger
         self.spool = spool
@@ -49,7 +97,7 @@ class WorkerPlanBuilder:
         job: ExecutionJobRecord,
         attempt: int,
     ) -> ExecutionPlan:
-        if not isinstance(attempt, int) or attempt <= 0:
+        if attempt <= 0:
             raise ValueError("attempt must be a positive integer")
         inputs = self._validated_inputs(job)
         recovery_checkpoint = (
@@ -103,7 +151,7 @@ class WorkerPlanBuilder:
         job: ExecutionJobRecord,
         attempt: int,
         inputs: tuple[ExecutionInput, ...],
-        recovery_checkpoint,
+        recovery_checkpoint: TrainingRecoveryCheckpointRecord | None,
     ) -> tuple[str, str]:
         if job.attempt_id is None:
             raise WorkerPlanError(
@@ -130,7 +178,10 @@ class WorkerPlanBuilder:
                 ErrorCode.INTERNAL,
                 "worker model configuration is unavailable",
             )
-        document = {
+        model_manifest: JsonObject = {
+            "config": model_config_to_manifest(model_config),
+        }
+        document: JsonObject = {
             "contract": CONTRACT_NAME,
             "protocolVersion": CONTRACT_VERSION,
             "jobId": job.job_id,
@@ -161,7 +212,7 @@ class WorkerPlanBuilder:
             "inputClosed": job.input_state == InputState.CLOSED,
             "manifestSha256": job.manifest_sha256,
             "workspace": {"root": workspace},
-            "model": {"config": model_config_to_manifest(model_config)},
+            "model": model_manifest,
             "dataContract": _data_contract_manifest(job.data_contract),
             "mlContract": dict(job.ml_contract),
         }
@@ -169,7 +220,7 @@ class WorkerPlanBuilder:
             model = self._validated_model(job)
             checkpoint = self.spool.model_absolute_path(model.checkpoint_path)
             document["predictionColumn"] = job.prediction_column
-            document["model"]["checkpoint"] = {
+            model_manifest["checkpoint"] = {
                 "path": checkpoint,
                 "byteCount": model.byte_count,
                 "sha256": model.sha256,
@@ -180,7 +231,7 @@ class WorkerPlanBuilder:
                     ErrorCode.INTERNAL,
                     "fit job configuration is unavailable",
                 )
-            document["model"]["label"] = job.model_label
+            model_manifest["label"] = job.model_label
             document["training"] = train_config_to_manifest(
                 job.training_config
             )
@@ -199,7 +250,7 @@ class WorkerPlanBuilder:
                         ErrorCode.INTERNAL,
                         "closed fit manifest hash is unavailable",
                     )
-                recovery = {
+                recovery: JsonObject = {
                     "configSha256": job.config_hash,
                     "dataContractSha256": job.data_contract[
                         "data_contract_sha256"
@@ -238,7 +289,10 @@ class WorkerPlanBuilder:
             ) from exc
         return manifest_path, workspace
 
-    def _validated_model(self, job: ExecutionJobRecord):
+    def _validated_model(
+        self,
+        job: ExecutionJobRecord,
+    ) -> ModelArtifactRecord:
         model = self.ledger.get_model_artifact(
             job.input_model_ref,
             owner_subject=job.owner_subject,
@@ -278,14 +332,24 @@ class WorkerPlanBuilder:
             )
         return model
 
-    def _validated_recovery_checkpoint(self, job, checkpoint) -> str:
+    def _validated_recovery_checkpoint(
+        self,
+        job: ExecutionJobRecord,
+        checkpoint: TrainingRecoveryCheckpointRecord,
+    ) -> str:
         if checkpoint.generation != job.resume_generation:
             raise WorkerPlanError(
                 ErrorCode.INTERNAL,
                 "claimed recovery generation does not match the ledger",
             )
-        path = self.recovery_store.absolute_path(checkpoint.relative_path)
-        expected = self.recovery_store.checkpoint_path(
+        recovery_store = self.recovery_store
+        if recovery_store is None:
+            raise WorkerPlanError(
+                ErrorCode.INTERNAL,
+                "recovery storage is unavailable",
+            )
+        path = recovery_store.absolute_path(checkpoint.relative_path)
+        expected = recovery_store.checkpoint_path(
             job.job_id,
             checkpoint.generation,
         )
@@ -323,7 +387,7 @@ class WorkerPlanBuilder:
                 ErrorCode.INTERNAL,
                 "contiguous input ordinals are inconsistent",
             )
-        prepared = []
+        prepared: list[ExecutionInput] = []
         expected_schema_id = (
             FIT_INPUT_SCHEMA_ID
             if job.operation == "fit"
@@ -415,7 +479,7 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _data_contract_manifest(value: dict) -> dict:
+def _data_contract_manifest(value: JsonObject) -> JsonObject:
     return {
         "id": value["id"],
         "version": value["version"],

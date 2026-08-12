@@ -1,5 +1,7 @@
 import argparse
 import math
+from collections.abc import Iterable
+from typing import Any, Protocol, TypeVar, overload
 
 from app.config import (
     BATCH_SIZE,
@@ -22,6 +24,8 @@ from app.config import (
     WEIGHT_DECAY,
 )
 from app.version import __version__
+
+_NamespaceT = TypeVar("_NamespaceT")
 
 _COMMAND_GROUPS = (
     (
@@ -113,10 +117,26 @@ class _HelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
     argparse.RawDescriptionHelpFormatter,
 ):
-    def _get_help_string(self, action):
+    def _get_help_string(self, action: argparse.Action) -> str:
         if action.default is None:
-            return action.help
-        return super()._get_help_string(action)
+            return action.help or ""
+        return super()._get_help_string(action) or ""
+
+
+class _ArgumentTarget(Protocol):
+    def add_argument(
+        self,
+        *name_or_flags: str,
+        **options: Any,
+    ) -> argparse.Action: ...
+
+
+class _SubparserTarget(Protocol):
+    def add_parser(
+        self,
+        name: str,
+        **options: Any,
+    ) -> argparse.ArgumentParser: ...
 
 
 class _FlightServiceHelpFormatter(argparse.RawTextHelpFormatter):
@@ -124,8 +144,35 @@ class _FlightServiceHelpFormatter(argparse.RawTextHelpFormatter):
 
 
 class _ArgumentParser(argparse.ArgumentParser):
-    def parse_args(self, args=None, namespace=None):
+    @overload
+    def parse_args(
+        self,
+        args: Iterable[str] | None = None,
+        namespace: None = None,
+    ) -> argparse.Namespace: ...
+
+    @overload
+    def parse_args(
+        self,
+        args: Iterable[str] | None,
+        namespace: _NamespaceT,
+    ) -> _NamespaceT: ...
+
+    @overload
+    def parse_args(
+        self,
+        *,
+        namespace: _NamespaceT,
+    ) -> _NamespaceT: ...
+
+    def parse_args(
+        self,
+        args: Iterable[str] | None = None,
+        namespace: _NamespaceT | None = None,
+    ) -> argparse.Namespace | _NamespaceT:
         parsed = super().parse_args(args, namespace)
+        if parsed is None:
+            raise AssertionError("argument parser returned no namespace")
         hidden = getattr(parsed, "hidden", None)
         nhead = getattr(parsed, "nhead", None)
         if hidden is not None and nhead is not None and hidden % nhead != 0:
@@ -136,11 +183,11 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 class _RootArgumentParser(_ArgumentParser):
-    def format_help(self):
+    def format_help(self) -> str:
         return _format_root_help()
 
 
-def _add_hidden_help_argument(parser):
+def _add_hidden_help_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-h",
         "--help",
@@ -206,16 +253,6 @@ def _dropout(value: str) -> float:
     return parsed
 
 
-def _fraction(value: str) -> float:
-    try:
-        parsed = float(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("must be in the range [0, 1)") from exc
-    if not math.isfinite(parsed) or not 0 <= parsed < 1:
-        raise argparse.ArgumentTypeError("must be in the range [0, 1)")
-    return parsed
-
-
 def _six_positive_floats(value: str) -> tuple[float, ...]:
     try:
         parsed = tuple(float(item) for item in value.split(","))
@@ -240,7 +277,7 @@ def _gmark_memory_fraction(value: str) -> float:
     return parsed
 
 
-def _add_device_argument(group):
+def _add_device_argument(group: _ArgumentTarget) -> None:
     group.add_argument(
         "--device",
         choices=["auto", "cpu", "cuda"],
@@ -249,7 +286,9 @@ def _add_device_argument(group):
     )
 
 
-def _add_max_frame_bytes_argument(group):
+def _add_max_frame_bytes_argument(
+    group: _ArgumentTarget,
+) -> None:
     group.add_argument(
         "--max-frame-bytes",
         type=_positive_int,
@@ -258,7 +297,12 @@ def _add_max_frame_bytes_argument(group):
     )
 
 
-def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
+def _add_model_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    required_seq_len: bool,
+    training: bool,
+) -> None:
     model = parser.add_argument_group("Model")
     if required_seq_len:
         model.add_argument(
@@ -358,7 +402,7 @@ def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
     )
 
 
-def _add_training_arguments(parser):
+def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
     train = parser.add_argument_group("Training")
     train.add_argument("--lr", type=_positive_float, default=LR, help="Learning rate.")
     train.add_argument(
@@ -449,7 +493,12 @@ def _add_training_arguments(parser):
     )
 
 
-def _add_fit_parser(subparsers, name: str, *, stream: bool):
+def _add_fit_parser(
+    subparsers: _SubparserTarget,
+    name: str,
+    *,
+    stream: bool,
+) -> None:
     parser = subparsers.add_parser(
         name,
         add_help=False,
@@ -524,7 +573,12 @@ def _add_fit_parser(subparsers, name: str, *, stream: bool):
     _add_training_arguments(parser)
 
 
-def _add_predict_parser(subparsers, name: str, *, stream: bool):
+def _add_predict_parser(
+    subparsers: _SubparserTarget,
+    name: str,
+    *,
+    stream: bool,
+) -> None:
     parser = subparsers.add_parser(
         name,
         add_help=False,
@@ -576,7 +630,9 @@ def _add_predict_parser(subparsers, name: str, *, stream: bool):
     _add_model_arguments(parser, required_seq_len=False, training=False)
 
 
-def _add_gmark_parser(subparsers):
+def _add_gmark_parser(
+    subparsers: _SubparserTarget,
+) -> None:
     parser = subparsers.add_parser(
         "gmark",
         add_help=False,
@@ -693,7 +749,7 @@ def _add_gmark_parser(subparsers):
     parser.set_defaults(data=None, metrics_name=None)
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = _RootArgumentParser(
         prog="transformer",
         formatter_class=_HelpFormatter,

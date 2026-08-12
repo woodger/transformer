@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+from types import FrameType
 
 _PR_SET_PDEATHSIG = 1
 _PARENT_DEATH_SIGNAL = signal.SIGUSR1
@@ -59,7 +60,10 @@ def main(argv: list[str] | None = None) -> int:
     return return_code if return_code >= 0 else 128 - return_code
 
 
-def _kill_own_group(_signum=None, _frame=None) -> None:
+def _kill_own_group(
+    _signum: int = 0,
+    _frame: FrameType | None = None,
+) -> None:
     os.killpg(os.getpgrp(), signal.SIGKILL)
     os._exit(128 + signal.SIGKILL)
 

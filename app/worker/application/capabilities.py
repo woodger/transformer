@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
+
+from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -7,23 +10,32 @@ from app.contracts.worker.v3 import (
 )
 
 
-def inspect_capabilities() -> dict:
+class _CudaDeviceProperties(Protocol):
+    name: str
+
+
+def inspect_capabilities() -> JsonObject:
     """Inspect Torch/CUDA inside the worker process boundary."""
 
     import torch
 
-    devices = []
+    devices: list[JsonValue] = []
     if torch.cuda.is_available():
         for ordinal in range(torch.cuda.device_count()):
-            properties = torch.cuda.get_device_properties(ordinal)
+            properties = cast(
+                _CudaDeviceProperties,
+                torch.cuda.get_device_properties(  # pyright: ignore[reportUnknownMemberType]
+                    ordinal
+                ),
+            )
             devices.append({
                 "ordinal": ordinal,
                 "name": properties.name,
             })
-    document = {
+    document: JsonObject = {
         "contract": CONTRACT_NAME,
         "protocolVersion": CONTRACT_VERSION,
-        "torchVersion": torch.__version__,
+        "torchVersion": str(torch.__version__),
         "cudaRuntimeVersion": torch.version.cuda,
         "devices": devices,
     }

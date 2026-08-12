@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import BinaryIO
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3 import encode_event
 
 
@@ -16,7 +17,7 @@ class WorkerEventEmitter:
         attempt: int,
         attempt_id: str,
         stream: BinaryIO,
-    ):
+    ) -> None:
         self.job_id = job_id
         self.attempt = attempt
         self.attempt_id = attempt_id
@@ -24,7 +25,7 @@ class WorkerEventEmitter:
         self._sequence = 0
         self._terminal = False
 
-    def emit(self, event_type: str, payload: dict) -> None:
+    def emit(self, event_type: str, payload: JsonObject) -> None:
         if self._terminal:
             raise RuntimeError("worker event stream is already terminal")
         self._sequence += 1
@@ -66,13 +67,13 @@ class WorkerEventEmitter:
             "inputRevision": input_revision,
         })
 
-    def progress(self, progress: dict) -> None:
+    def progress(self, progress: JsonObject) -> None:
         self.emit("progress", {"progress": progress})
 
-    def checkpoint(self, payload: dict) -> None:
+    def checkpoint(self, payload: JsonObject) -> None:
         self.emit("checkpoint", payload)
 
-    def completed(self, result_manifest: dict) -> None:
+    def completed(self, result_manifest: JsonObject) -> None:
         self.emit("completed", {"resultManifest": result_manifest})
 
     def error(self, code: str, message: str) -> None:

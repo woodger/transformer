@@ -10,9 +10,12 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import cast
 
 from app.config import PROJECT_ROOT
+from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3 import CONTRACT_VERSION, validate_document
+from app.service.application.ports.observability import EventLogger
 
 
 class CudaDeviceState(StrEnum):
@@ -60,10 +63,10 @@ class CudaDeviceInventory:
     def __init__(
         self,
         *,
-        probe: Callable[[], dict] | None = None,
-        logger=None,
+        probe: Callable[[], JsonObject] | None = None,
+        logger: EventLogger | None = None,
         quarantine_path: str | None = None,
-    ):
+    ) -> None:
         self._probe = probe or _probe_cuda
         self._logger = logger
         self._quarantine_path = (
@@ -233,7 +236,7 @@ class CudaDeviceInventory:
 def static_cuda_inventory(
     available: Callable[[], bool],
 ) -> CudaDeviceInventory:
-    def probe():
+    def probe() -> JsonObject:
         if not available():
             return {
                 "devices": [],
@@ -253,11 +256,17 @@ def static_cuda_inventory(
     return CudaDeviceInventory(probe=probe).initialize()
 
 
-def _probe_cuda() -> dict:
+def _probe_cuda() -> JsonObject:
     capabilities = _worker_inspect()
-    metadata = {
-        "runtimeVersion": capabilities["cudaRuntimeVersion"],
-        "torchVersion": capabilities["torchVersion"],
+    metadata: JsonObject = {
+        "runtimeVersion": _optional_string(
+            capabilities["cudaRuntimeVersion"],
+            "worker CUDA runtime version",
+        ),
+        "torchVersion": _required_string(
+            capabilities["torchVersion"],
+            "worker Torch version",
+        ),
     }
     try:
         result = subprocess.run(
@@ -282,7 +291,7 @@ def _probe_cuda() -> dict:
             **metadata,
         }
 
-    physical_devices = []
+    physical_devices: list[tuple[int, str, str]] = []
     for line in result.stdout.splitlines():
         parts = [part.strip() for part in line.split(",", 2)]
         if len(parts) != 3:
@@ -308,16 +317,21 @@ def _probe_cuda() -> dict:
             )
         ]
 
-    devices = []
+    devices: list[JsonValue] = []
     for ordinal, identifier, reported_name in physical_devices:
         environment = os.environ.copy()
         environment["CUDA_VISIBLE_DEVICES"] = identifier
         try:
             document = _worker_inspect(environment)
             visible_devices = document["devices"]
+            if not isinstance(visible_devices, list):
+                raise ValueError("worker CUDA devices must be an array")
             if len(visible_devices) != 1:
                 continue
-            name = visible_devices[0]["name"]
+            visible_device = visible_devices[0]
+            if not isinstance(visible_device, dict):
+                raise ValueError("worker CUDA device must be an object")
+            name = visible_device.get("name")
             if not isinstance(name, str) or not name:
                 name = reported_name
         except (
@@ -338,7 +352,9 @@ def _probe_cuda() -> dict:
     }
 
 
-def _worker_inspect(environment: dict[str, str] | None = None) -> dict:
+def _worker_inspect(
+    environment: dict[str, str] | None = None,
+) -> JsonObject:
     result = subprocess.run(
         [
             sys.executable,
@@ -355,7 +371,7 @@ def _worker_inspect(environment: dict[str, str] | None = None) -> dict:
         env=environment,
     )
     try:
-        document = json.loads(result.stdout)
+        document: object = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise ValueError(
             "worker capability response is not valid JSON"
@@ -364,10 +380,8 @@ def _worker_inspect(environment: dict[str, str] | None = None) -> dict:
 
 
 def _parse_probe(
-    document: dict,
+    document: JsonObject,
 ) -> tuple[tuple[CudaDevice, ...], str | None, str]:
-    if not isinstance(document, dict):
-        raise ValueError("CUDA probe result must be an object")
     raw_devices = document.get("devices")
     runtime_version = document.get("runtimeVersion")
     torch_version = document.get("torchVersion")
@@ -380,9 +394,9 @@ def _parse_probe(
         raise ValueError("CUDA runtime version must be a string or null")
     if not isinstance(torch_version, str) or not torch_version:
         raise ValueError("Torch version must be a non-empty string")
-    devices = []
-    identifiers = set()
-    ordinals = set()
+    devices: list[CudaDevice] = []
+    identifiers: set[str] = set()
+    ordinals: set[int] = set()
     for value in raw_devices:
         if not isinstance(value, dict) or set(value) != {
             "id",
@@ -390,9 +404,10 @@ def _parse_probe(
             "name",
         }:
             raise ValueError("CUDA probe device is invalid")
-        identifier = value["id"]
-        ordinal = value["ordinal"]
-        name = value["name"]
+        typed_value = cast(JsonObject, value)
+        identifier = typed_value["id"]
+        ordinal = typed_value["ordinal"]
+        name = typed_value["name"]
         if (
             not isinstance(identifier, str)
             or not identifier
@@ -437,28 +452,31 @@ def _load_quarantine(
 ) -> tuple[CudaDevice, ...]:
     try:
         with open(path, encoding="utf-8") as source:
-            document = json.load(source)
+            document: object = json.load(source)
     except FileNotFoundError:
         return ()
-    if (
-        not isinstance(document, dict)
-        or set(document) != {"bootId", "devices"}
-    ):
+    if not isinstance(document, dict):
         raise ValueError("CUDA quarantine document is invalid")
+    typed_document = cast(JsonObject, document)
+    if set(typed_document) != {"bootId", "devices"}:
+        raise ValueError("CUDA quarantine document is invalid")
+    raw_boot_id = typed_document["bootId"]
+    if not isinstance(raw_boot_id, str):
+        raise ValueError("CUDA quarantine boot ID is invalid")
     try:
-        document_boot_id = str(uuid.UUID(document["bootId"]))
+        document_boot_id = str(uuid.UUID(raw_boot_id))
     except (AttributeError, ValueError) as exc:
         raise ValueError(
             "CUDA quarantine boot ID is invalid"
         ) from exc
-    if document_boot_id != document["bootId"].lower():
+    if document_boot_id != raw_boot_id.lower():
         raise ValueError("CUDA quarantine boot ID is not canonical")
     if document_boot_id != boot_id:
         return ()
-    devices = document["devices"]
+    devices = typed_document["devices"]
     if not isinstance(devices, list):
         raise ValueError("CUDA quarantine devices must be an array")
-    parsed = []
+    parsed: list[CudaDevice] = []
     for value in devices:
         if not isinstance(value, dict) or set(value) != {
             "id",
@@ -466,9 +484,10 @@ def _load_quarantine(
             "name",
         }:
             raise ValueError("CUDA quarantine device is invalid")
-        identifier = value["id"]
-        ordinal = value["ordinal"]
-        name = value["name"]
+        typed_value = cast(JsonObject, value)
+        identifier = typed_value["id"]
+        ordinal = typed_value["ordinal"]
+        name = typed_value["name"]
         if (
             not isinstance(identifier, str)
             or not identifier
@@ -491,6 +510,18 @@ def _load_quarantine(
     ):
         raise ValueError("CUDA quarantine devices are not unique")
     return tuple(parsed)
+
+
+def _required_string(value: JsonValue, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _optional_string(value: JsonValue, label: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{label} must be a string or null")
+    return value
 
 
 def _merge_quarantine(

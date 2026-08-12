@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.service.domain.json_types import JsonObject
 from app.service.domain.records import ExecutionJobRecord
 
 
@@ -33,7 +34,7 @@ class ExecutionPlan:
 class ExecutionResult:
     exit_code: int
     stderr_tail: bytes
-    result_manifest: dict
+    result_manifest: JsonObject
 
 
 class ExecutionPlanBuilder(Protocol):

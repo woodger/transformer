@@ -4,10 +4,13 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
+from referencing.jsonschema import Schema, SchemaRegistry
+
+from app.contracts.json_types import JsonObject
 
 CONTRACT_NAME = "transformer-worker"
 CONTRACT_VERSION = 3
@@ -28,11 +31,12 @@ class WorkerContractError(ValueError):
     """A worker document does not satisfy the neutral process contract."""
 
 
-def validate_document(document: Any, schema_name: str) -> dict[str, Any]:
+def validate_document(document: object, schema_name: str) -> JsonObject:
     if schema_name not in _SCHEMA_NAMES:
         raise ValueError(f"unknown worker contract schema: {schema_name}")
     if not isinstance(document, dict):
         raise WorkerContractError("worker contract document must be a JSON object")
+    typed_document = cast(JsonObject, document)
 
     schema = _load_schema(schema_name)
     registry = _schema_registry()
@@ -41,8 +45,12 @@ def validate_document(document: Any, schema_name: str) -> dict[str, Any]:
         registry=registry,
         format_checker=FormatChecker(),
     )
+    # jsonschema's public validator overload exposes its yielded validation
+    # errors as Any; schema validation below is the runtime trust boundary.
     errors = sorted(
-        validator.iter_errors(document),
+        validator.iter_errors(  # pyright: ignore[reportUnknownMemberType]
+            typed_document
+        ),
         key=lambda error: tuple(str(part) for part in error.absolute_path),
     )
     if errors:
@@ -50,10 +58,10 @@ def validate_document(document: Any, schema_name: str) -> dict[str, Any]:
         location = ".".join(str(part) for part in error.absolute_path)
         prefix = f"{location}: " if location else ""
         raise WorkerContractError(f"{prefix}{error.message}")
-    return document
+    return typed_document
 
 
-def load_document(path: str | os.PathLike[str], schema_name: str) -> dict[str, Any]:
+def load_document(path: str | os.PathLike[str], schema_name: str) -> JsonObject:
     try:
         with open(path, encoding="utf-8") as source:
             document = json.load(source)
@@ -71,7 +79,7 @@ def encode_event(
     attempt_id: str,
     sequence: int,
     event_type: str,
-    payload: dict[str, Any],
+    payload: JsonObject,
 ) -> bytes:
     document = {
         "contract": CONTRACT_NAME,
@@ -96,7 +104,7 @@ def encode_event(
     return encoded + b"\n"
 
 
-def parse_event(line: bytes) -> dict[str, Any]:
+def parse_event(line: bytes) -> JsonObject:
     if not line.endswith(b"\n"):
         raise WorkerContractError("worker event is not newline terminated")
     if len(line) > MAX_EVENT_BYTES + 1:
@@ -115,7 +123,7 @@ def encode_control_message(
     attempt_id: str,
     sequence: int,
     message_type: str,
-    payload: dict[str, Any],
+    payload: JsonObject,
 ) -> bytes:
     document = {
         "contract": CONTRACT_NAME,
@@ -140,7 +148,7 @@ def encode_control_message(
     return encoded + b"\n"
 
 
-def parse_control_message(line: bytes) -> dict[str, Any]:
+def parse_control_message(line: bytes) -> JsonObject:
     if not line.endswith(b"\n"):
         raise WorkerContractError("worker control message is not newline terminated")
     if len(line) > MAX_EVENT_BYTES + 1:
@@ -164,18 +172,29 @@ def _canonical_uuid(value: str, label: str) -> str:
     return str(parsed)
 
 
-def _load_schema(name: str) -> dict[str, Any]:
+def _load_schema(name: str) -> Schema:
     with open(_SCHEMA_DIRECTORY / f"{name}.schema.json", encoding="utf-8") as source:
-        return json.load(source)
+        document: object = json.load(source)
+    if not isinstance(document, dict):
+        raise WorkerContractError("worker schema must be a JSON object")
+    return cast(Schema, document)
 
 
-def _schema_registry() -> Registry:
-    registry = Registry()
+def _schema_registry() -> SchemaRegistry:
+    registry: SchemaRegistry = Registry()
     for path in sorted(_SCHEMA_DIRECTORY.glob("*.schema.json")):
         with open(path, encoding="utf-8") as source:
-            contents = json.load(source)
+            document: object = json.load(source)
+        if not isinstance(document, dict):
+            raise WorkerContractError("worker schema must be a JSON object")
+        contents = cast(Schema, document)
+        if isinstance(contents, bool):
+            raise WorkerContractError("worker schema must be a JSON object")
+        schema_id = contents.get("$id")
+        if not isinstance(schema_id, str):
+            raise WorkerContractError("worker schema must define a string $id")
         registry = registry.with_resource(
-            contents["$id"],
+            schema_id,
             Resource.from_contents(contents),
         )
     return registry

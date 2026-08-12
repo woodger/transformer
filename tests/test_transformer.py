@@ -34,11 +34,11 @@ def test_transformer_forward_shape():
         nhead=4,
     )
 
-    x = torch.randn(batch, seq_len, feat_dim)
-    y = model(x)
+    features = torch.randn(batch, seq_len, feat_dim)
+    model_output = model(features)
 
-    assert y.shape == (batch, out_dim + 1)
-    assert public_predictions(y).shape == (batch, out_dim)
+    assert model_output.shape == (batch, out_dim + 1)
+    assert public_predictions(model_output).shape == (batch, out_dim)
 
 
 @pytest.mark.parametrize(
@@ -106,19 +106,19 @@ def test_transformer_input_dim_matches_context_mode():
 
 
 def test_context_mask_depends_on_context_mode():
-    x = torch.tensor([
+    features = torch.tensor([
         [
             [1.0, float("nan"), 3.0],
             [float("nan"), float("nan"), float("nan")],
         ],
     ])
 
-    assert context_key_padding_mask(x, "strict").tolist() == [[True, True]]
-    assert context_key_padding_mask(x, "relaxed").tolist() == [[False, True]]
+    assert context_key_padding_mask(features, "strict").tolist() == [[True, True]]
+    assert context_key_padding_mask(features, "relaxed").tolist() == [[False, True]]
 
 
 def test_context_token_ratios_split_complete_partial_and_empty_tokens():
-    x = torch.tensor([
+    features = torch.tensor([
         [
             [1.0, 2.0, 3.0],
             [1.0, float("nan"), 3.0],
@@ -127,7 +127,7 @@ def test_context_token_ratios_split_complete_partial_and_empty_tokens():
         ],
     ])
 
-    ratios = context_token_ratios(x)
+    ratios = context_token_ratios(features)
 
     assert ratios["masked_token_ratio"] == 0.25
     assert ratios["complete_token_ratio"] == 0.5
@@ -136,7 +136,7 @@ def test_context_token_ratios_split_complete_partial_and_empty_tokens():
 
 
 def test_context_token_ratios_use_selected_masking_mode():
-    x = torch.tensor([
+    features = torch.tensor([
         [
             [1.0, 2.0, 3.0],
             [1.0, float("nan"), 3.0],
@@ -144,12 +144,12 @@ def test_context_token_ratios_use_selected_masking_mode():
         ],
     ])
 
-    assert context_token_ratios(x, "strict")["masked_token_ratio"] == pytest.approx(2 / 3)
-    assert context_token_ratios(x, "relaxed")["masked_token_ratio"] == pytest.approx(1 / 3)
+    assert context_token_ratios(features, "strict")["masked_token_ratio"] == pytest.approx(2 / 3)
+    assert context_token_ratios(features, "relaxed")["masked_token_ratio"] == pytest.approx(1 / 3)
 
 
 def test_context_missingness_ratios_include_values_and_tokens():
-    x = torch.tensor([
+    features = torch.tensor([
         [
             [1.0, 2.0, 3.0],
             [1.0, float("nan"), 3.0],
@@ -157,7 +157,7 @@ def test_context_missingness_ratios_include_values_and_tokens():
         ],
     ])
 
-    ratios = context_missingness_ratios(x, "relaxed")
+    ratios = context_missingness_ratios(features, "relaxed")
 
     assert ratios == pytest.approx({
         "nan_ratio": 4 / 9,
@@ -169,14 +169,14 @@ def test_context_missingness_ratios_include_values_and_tokens():
 
 
 def test_relaxed_keeps_missing_flags_after_nan_to_num():
-    x = torch.tensor([
+    features = torch.tensor([
         [
             [1.0, float("nan"), 3.0],
             [float("nan"), float("nan"), float("nan")],
         ],
     ])
 
-    values, mask = prepare_context_input(x, "relaxed")
+    values, mask = prepare_context_input(features, "relaxed")
 
     assert mask.tolist() == [[False, True]]
     assert values.tolist() == [
@@ -199,15 +199,15 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
         context_mode="relaxed",
     )
 
-    x = torch.randn(2, 3, 3)
-    x[0, 1, 2] = float("nan")
-    x[0, 2, :] = float("nan")
-    x[1, :, :] = float("nan")
+    features = torch.randn(2, 3, 3)
+    features[0, 1, 2] = float("nan")
+    features[0, 2, :] = float("nan")
+    features[1, :, :] = float("nan")
 
-    y = model(x)
+    model_output = model(features)
 
-    assert y.shape == (2, 7)
-    assert torch.isfinite(y).all()
+    assert model_output.shape == (2, 7)
+    assert torch.isfinite(model_output).all()
 
 
 def test_public_predictions_are_target_aligned_and_bounded():

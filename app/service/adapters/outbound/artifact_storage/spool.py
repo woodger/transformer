@@ -7,12 +7,15 @@ import re
 import shutil
 import tempfile
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from types import TracebackType
 from typing import BinaryIO
 
 from app.config import PROJECT_ROOT
+from app.contracts.json_types import JsonObject, JsonValue
+from app.service.application.ports.operations import DiskUsage
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -24,7 +27,7 @@ class RuntimeDirectoryLocked(RuntimeError):
 class RuntimeDirectoryLock:
     """Exclusive process-lifetime ownership of the Flight runtime directory."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self.path = os.path.abspath(os.fspath(path))
         self._file: BinaryIO | None = None
 
@@ -59,7 +62,12 @@ class RuntimeDirectoryLock:
     def __enter__(self) -> RuntimeDirectoryLock:
         return self.acquire()
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.release()
 
 
@@ -70,7 +78,11 @@ class Spool:
     model generations are copied and atomically published below ``models_dir``.
     """
 
-    def __init__(self, runtime_dir: str, models_dir: str | None = None):
+    def __init__(
+        self,
+        runtime_dir: str,
+        models_dir: str | None = None,
+    ) -> None:
         self.runtime_dir = os.path.abspath(os.fspath(runtime_dir))
         self.models_dir = os.path.abspath(
             os.fspath(models_dir or os.path.join(PROJECT_ROOT, "models"))
@@ -86,7 +98,7 @@ class Spool:
         self.lock = RuntimeDirectoryLock(os.path.join(self.runtime_dir, "service.lock"))
 
     def initialize(self) -> Spool:
-        created = []
+        created: list[str] = []
         for directory in (self.runtime_dir, self.spool_dir, self.jobs_dir, self.models_dir):
             if not os.path.isdir(directory):
                 os.makedirs(directory, exist_ok=True)
@@ -215,7 +227,7 @@ class Spool:
         resolved = self._inside_runtime(absolute_path)
         return os.path.relpath(resolved, self.runtime_dir).replace(os.sep, "/")
 
-    def absolute_path(self, relative_path: str) -> str:
+    def absolute_path(self, relative_path: object) -> str:
         if not isinstance(relative_path, str) or not relative_path:
             raise ValueError("artifact path must be a non-empty relative path")
         if os.path.isabs(relative_path):
@@ -233,7 +245,7 @@ class Spool:
         resolved = self._inside_models(absolute_path)
         return os.path.relpath(resolved, self.models_dir).replace(os.sep, "/")
 
-    def model_absolute_path(self, relative_path: str) -> str:
+    def model_absolute_path(self, relative_path: object) -> str:
         if not isinstance(relative_path, str) or not relative_path or os.path.isabs(relative_path):
             raise ValueError("model path must be a non-empty relative path")
         normalized = relative_path.replace("\\", "/")
@@ -284,7 +296,10 @@ class Spool:
         return destination
 
     @contextmanager
-    def staged_file(self, destination: str) -> Iterator[tuple[BinaryIO, str]]:
+    def staged_file(
+        self,
+        destination: str,
+    ) -> Generator[tuple[BinaryIO, str], None, None]:
         file, temporary_path = self.create_temporary(destination)
         try:
             yield file, temporary_path
@@ -304,7 +319,11 @@ class Spool:
             target.write(data)
         return destination
 
-    def atomic_write_json(self, destination: str, document: dict) -> str:
+    def atomic_write_json(
+        self,
+        destination: str,
+        document: JsonObject,
+    ) -> str:
         data = json.dumps(
             document,
             ensure_ascii=False,
@@ -314,7 +333,11 @@ class Spool:
         ).encode("utf-8")
         return self.atomic_write_bytes(destination, data)
 
-    def write_json_once(self, destination: str, document: dict) -> str:
+    def write_json_once(
+        self,
+        destination: str,
+        document: JsonObject,
+    ) -> str:
         """Durably create one immutable service-owned JSON document."""
 
         destination, _ = self._inside_managed(destination)
@@ -325,7 +348,8 @@ class Spool:
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        target, temporary = self.create_temporary(destination)
+        target, temporary_path = self.create_temporary(destination)
+        temporary: str | None = temporary_path
         try:
             target.write(data)
             target.flush()
@@ -359,7 +383,7 @@ class Spool:
         fsync_directory(os.path.dirname(path))
         return True
 
-    def disk_usage(self) -> shutil._ntuple_diskusage:
+    def disk_usage(self) -> DiskUsage:
         return shutil.disk_usage(self.runtime_dir)
 
     def cleanup_temporary_files(self) -> tuple[str, ...]:
@@ -391,7 +415,7 @@ class Spool:
         *,
         temporary_paths: Sequence[str] = (),
         known_job_ids: Sequence[str] | set[str] | None = None,
-    ) -> dict:
+    ) -> JsonObject:
         """Remove startup leftovers without touching ledger-referenced data."""
         referenced = {self.absolute_path(path) for path in referenced_paths}
         removed: list[str] = []
@@ -452,11 +476,14 @@ class Spool:
                 if name.endswith(".tmp") and self.remove(candidate):
                     removed.append(self.relative_path(candidate))
 
-        return {"removed": sorted(set(removed))}
+        removed_json: list[JsonValue] = [
+            item for item in sorted(set(removed))
+        ]
+        return {"removed": removed_json}
 
     def reconcile_model_directories(self, model_refs: Sequence[str] | set[str]) -> tuple[str, ...]:
         known = {_safe_component(value, "model_ref") for value in model_refs}
-        removed = []
+        removed: list[str] = []
         for name in os.listdir(self.models_dir):
             if not name.startswith("mdl_") or name in known:
                 continue
@@ -508,7 +535,7 @@ def _fsync_file(path: str) -> None:
 
 
 def _make_directories_durable(path: str, *, stop_at: str) -> None:
-    missing = []
+    missing: list[str] = []
     current = path
     while current != stop_at and not os.path.exists(current):
         missing.append(current)
@@ -546,7 +573,9 @@ def _is_attempt_checkpoint(path: str, jobs_dir: str) -> bool:
     )
 
 
-def _uuid_component(value: str, label: str) -> str:
+def _uuid_component(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a canonical UUID")
     try:
         parsed = uuid.UUID(value)
     except (AttributeError, ValueError) as exc:
@@ -556,7 +585,7 @@ def _uuid_component(value: str, label: str) -> str:
     return str(parsed)
 
 
-def _safe_component(value: str, label: str) -> str:
+def _safe_component(value: object, label: str) -> str:
     if not isinstance(value, str) or not _SAFE_COMPONENT.fullmatch(value):
         raise ValueError(f"{label} contains unsafe characters")
     if value in (".", ".."):
@@ -564,11 +593,11 @@ def _safe_component(value: str, label: str) -> str:
     return value
 
 
-def _nonnegative(value: int, label: str) -> None:
+def _nonnegative(value: object, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{label} must be a non-negative integer")
 
 
-def _positive(value: int, label: str) -> None:
+def _positive(value: object, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{label} must be a positive integer")

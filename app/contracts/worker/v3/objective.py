@@ -4,6 +4,9 @@ import hashlib
 
 import rfc8785
 
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v3.config import TrainConfig
+
 TARGET_SCHEMA_ID = "inventory.target.v1"
 PREDICTION_SCHEMA_ID = "transformer.prediction.target-aligned.v1"
 OBJECTIVE_ID = "transformer.objective.target-aligned.v1"
@@ -21,7 +24,7 @@ DIRECT_LOSSES = (
 )
 
 
-def objective_config(config) -> dict:
+def objective_config(config: TrainConfig) -> JsonObject:
     selection = config.selection
     return {
         "schemaVersion": 1,
@@ -89,12 +92,12 @@ def objective_config(config) -> dict:
     }
 
 
-def objective_config_sha256(config) -> str:
+def objective_config_sha256(config: TrainConfig) -> str:
     payload = rfc8785.dumps(objective_config(config))
     return hashlib.sha256(payload).hexdigest()
 
 
-def ml_contract(config) -> dict:
+def ml_contract(config: TrainConfig) -> JsonObject:
     return {
         "targetSchemaId": TARGET_SCHEMA_ID,
         "predictionSchemaId": PREDICTION_SCHEMA_ID,

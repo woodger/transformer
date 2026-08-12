@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-from dataclasses import asdict, is_dataclass
+from collections.abc import Mapping
+from typing import Protocol, cast
 
 import torch
 
-from app.contracts.worker.v3.config import TrainConfig
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.contracts.worker.v3.objective import (
     TRAINING_RECOVERY_FORMAT,
     ml_contract,
@@ -19,41 +21,70 @@ from app.worker.runtime.version import __version__
 _HASH_CHUNK_BYTES = 1024 * 1024
 
 
+class RecoveryTrainer(Protocol):
+    @property
+    def model_config(self) -> ModelConfig | None: ...
+
+    @property
+    def train_config(self) -> TrainConfig | None: ...
+
+    @property
+    def data_contract(self) -> Mapping[str, object] | None: ...
+
+    def recovery_state_dict(self) -> dict[str, object]: ...
+
+
 def save_training_recovery(
     path: str,
-    trainer,
+    trainer: RecoveryTrainer,
     *,
     generation: int,
     config_hash: str,
     manifest_hash: str,
-) -> dict:
+) -> JsonObject:
     """Atomically persist one complete global-epoch recovery point."""
 
     _positive(generation, "generation")
     _digest(config_hash, "config_hash")
     _digest(manifest_hash, "manifest_hash")
+    model_config = trainer.model_config
+    train_config = trainer.train_config
+    if model_config is None or train_config is None:
+        raise ValueError("training recovery configuration is unavailable")
     state = trainer.recovery_state_dict()
-    progress = state["training_state"]
-    payload = {
+    progress = _object_dict(
+        state.get("training_state"),
+        "training recovery progress",
+    )
+    completed_epochs = _positive(
+        progress.get("global_epoch"),
+        "completed_epochs",
+    )
+    global_step = _nonnegative(progress.get("train_step"), "global_step")
+    training_complete = _boolean(
+        state.get("training_complete"),
+        "training_complete",
+    )
+    payload: dict[str, object] = {
         "format": TRAINING_RECOVERY_FORMAT,
         "service_version": __version__,
         "generation": generation,
         "config_hash": config_hash,
         "manifest_hash": manifest_hash,
-        "completed_epochs": progress["global_epoch"],
-        "global_step": progress["train_step"],
-        "training_complete": state["training_complete"],
-        "model_config": _to_dict(trainer.model_config),
-        "train_config": _to_dict(trainer.train_config),
+        "completed_epochs": completed_epochs,
+        "global_step": global_step,
+        "training_complete": training_complete,
+        "model_config": model_config.to_dict(),
+        "train_config": train_config.to_dict(),
         "data_contract": (
             None
             if trainer.data_contract is None
             else dict(trainer.data_contract)
         ),
-        "ml_contract": ml_contract(trainer.train_config),
-        "objective_config": objective_config(trainer.train_config),
+        "ml_contract": ml_contract(train_config),
+        "objective_config": objective_config(train_config),
         "objective_config_sha256": objective_config_sha256(
-            trainer.train_config
+            train_config
         ),
         "trainer_state": state,
     }
@@ -63,9 +94,9 @@ def save_training_recovery(
     return {
         "format": TRAINING_RECOVERY_FORMAT,
         "generation": generation,
-        "completed_epochs": progress["global_epoch"],
-        "global_step": progress["train_step"],
-        "training_complete": state["training_complete"],
+        "completed_epochs": completed_epochs,
+        "global_step": global_step,
+        "training_complete": training_complete,
         "bytes": byte_count,
         "sha256": sha256_file(target),
     }
@@ -73,13 +104,13 @@ def save_training_recovery(
 
 def load_training_recovery(
     path: str,
-    device,
+    device: str | torch.device,
     *,
     expected_config_hash: str,
     expected_manifest_hash: str,
     expected_objective_config_sha256: str,
     expected_data_contract_sha256: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Load and validate one server-owned training recovery checkpoint."""
 
     _digest(expected_config_hash, "expected_config_hash")
@@ -93,13 +124,14 @@ def load_training_recovery(
             expected_data_contract_sha256,
             "expected_data_contract_sha256",
         )
-    payload = torch.load(
+    loaded: object = torch.load(
         os.path.abspath(os.fspath(path)),
         map_location=device,
         weights_only=False,
     )
-    if not isinstance(payload, dict):
+    if not isinstance(loaded, dict):
         raise ValueError("training recovery checkpoint must be an object")
+    payload = _object_dict(cast(object, loaded), "training recovery checkpoint")
     required = {
         "format",
         "service_version",
@@ -148,18 +180,25 @@ def load_training_recovery(
         raise ValueError(
             "training recovery objective configuration does not match the job"
         )
-    if expected_data_contract_sha256 is not None and (
-        not isinstance(payload["data_contract"], dict)
-        or payload["data_contract"].get("dataContractSha256")
-        != expected_data_contract_sha256
-    ):
-        raise ValueError(
-            "training recovery data contract does not match the job"
+    if expected_data_contract_sha256 is not None:
+        data_contract = _object_dict(
+            payload["data_contract"],
+            "training recovery data contract",
         )
-    _positive(payload["generation"], "generation")
-    _positive(payload["completed_epochs"], "completed_epochs")
+        if (
+            data_contract.get("dataContractSha256")
+            != expected_data_contract_sha256
+        ):
+            raise ValueError(
+                "training recovery data contract does not match the job"
+            )
+    generation = _positive(payload["generation"], "generation")
+    completed_epochs = _positive(
+        payload["completed_epochs"],
+        "completed_epochs",
+    )
     _nonnegative(payload["global_step"], "global_step")
-    if payload["generation"] != payload["completed_epochs"]:
+    if generation != completed_epochs:
         raise ValueError(
             "training recovery generation must equal completed epochs"
         )
@@ -167,11 +206,15 @@ def load_training_recovery(
         raise ValueError(
             "training recovery completion marker must be a boolean"
         )
-    state = payload["trainer_state"]
-    if not isinstance(state, dict):
-        raise ValueError("training recovery trainer state is invalid")
-    progress = state.get("training_state")
-    if not isinstance(progress, dict) or (
+    state = _object_dict(
+        payload["trainer_state"],
+        "training recovery trainer state",
+    )
+    progress = _object_dict(
+        state.get("training_state"),
+        "training recovery progress",
+    )
+    if (
         progress.get("global_epoch") != payload["completed_epochs"]
         or progress.get("train_step") != payload["global_step"]
     ):
@@ -196,7 +239,7 @@ def sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _atomic_torch_save(path: str, payload: dict) -> None:
+def _atomic_torch_save(path: str, payload: dict[str, object]) -> None:
     parent = os.path.dirname(path) or os.curdir
     os.makedirs(parent, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
@@ -237,35 +280,41 @@ def _fsync_directory(path: str) -> None:
         os.close(descriptor)
 
 
-def _digest(value: str, label: str) -> None:
+def _digest(value: object, label: str) -> str:
     if (
         not isinstance(value, str)
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+    return value
 
 
-def _positive(value: int, label: str) -> None:
+def _positive(value: object, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{label} must be a positive integer")
+    return value
 
 
-def _nonnegative(value: int, label: str) -> None:
+def _nonnegative(value: object, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{label} must be a non-negative integer")
+    return value
 
 
-def _to_dict(value):
-    if value is None:
-        return None
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, dict):
-        return dict(value)
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    return dict(value)
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be a boolean")
+    return value
+
+
+def _object_dict(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError(f"{label} field names must be strings")
+    return {cast(str, key): item for key, item in mapping.items()}
 
 
 __all__ = [

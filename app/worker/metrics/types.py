@@ -1,6 +1,8 @@
 import math
 from dataclasses import dataclass
 
+from app.contracts.json_types import JsonObject, JsonValue
+
 _LOSS_FIELDS = tuple(f"loss_l{index}" for index in range(6))
 _SEMANTICS = (
     "mean_return",
@@ -65,7 +67,7 @@ class TrainMetrics:
         complete_token_ratio: float = 0.0,
         partial_token_ratio: float = 0.0,
         empty_token_ratio: float = 0.0,
-    ):
+    ) -> None:
         total_rows = self.rows + rows
         if total_rows <= 0:
             return
@@ -131,8 +133,8 @@ class TrainMetrics:
             raise ValueError("selection score contains a non-finite component")
         return values
 
-    def log_line(self, **extra) -> str:
-        fields = {
+    def log_line(self, **extra: object) -> str:
+        fields: dict[str, object] = {
             **extra,
             "loss": f"{self.loss:.6f}",
             **{
@@ -158,8 +160,8 @@ class TrainMetrics:
         }
         return " ".join(f"{key}={value}" for key, value in fields.items())
 
-    def console_line(self, **extra) -> str:
-        fields = []
+    def console_line(self, **extra: object) -> str:
+        fields: list[str] = []
         for key in ("frame", "epoch"):
             if key in extra and extra[key] is not None:
                 fields.append(f"{key}={extra[key]}")
@@ -189,7 +191,7 @@ class TrainMetrics:
         ])
         return " ".join(fields)
 
-    def to_dict(self, **extra) -> dict:
+    def to_dict(self, **extra: JsonValue) -> JsonObject:
         return {
             **extra,
             "rows": self.rows,
@@ -231,5 +233,5 @@ class TrainMetrics:
     def __format__(self, format_spec: str) -> str:
         return format(self.loss, format_spec)
 
-    def __gt__(self, other) -> bool:
+    def __gt__(self, other: float | int) -> bool:
         return self.loss > float(other)

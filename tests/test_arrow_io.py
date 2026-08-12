@@ -20,37 +20,40 @@ from app.worker.data.arrow import (
 
 
 def test_arrow_file_io_preserves_tensor_values(tmp_path):
-    X = [[1.0, 2.0], [3.0, 4.0]]
-    Y = [
+    source_rows = [[1.0, 2.0], [3.0, 4.0]]
+    target_rows = [
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
         [-0.5, 0.1, 0.2, 0.3, 0.4, 0.5],
     ]
 
-    table = pa.table({"src": X, "tgt": Y})
+    table = pa.table({"src": source_rows, "tgt": target_rows})
     path = tmp_path / "data.arrow"
 
     with pa.OSFile(str(path), "wb") as sink:
         with ipc.new_file(sink, table.schema) as writer:
             writer.write_table(table)
 
-    X_t, Y_t = read_arrow(str(path))
+    features, targets = read_arrow(str(path))
 
-    assert isinstance(X_t, torch.Tensor)
-    assert isinstance(Y_t, torch.Tensor)
-    assert X_t.tolist() == X
-    assert torch.allclose(Y_t, torch.tensor(Y, dtype=torch.float32))
+    assert isinstance(features, torch.Tensor)
+    assert isinstance(targets, torch.Tensor)
+    assert features.tolist() == source_rows
+    assert torch.allclose(
+        targets,
+        torch.tensor(target_rows, dtype=torch.float32),
+    )
 
-    preds = torch.tensor([
+    predictions = torch.tensor([
         [1.0, 0.2, 0.3, 0.4, 0.5, 0.6],
         [-1.0, 0.5, 0.4, 0.3, 0.2, 0.25],
     ])
     out_path = tmp_path / "preds.arrow"
 
-    write_arrow(str(out_path), preds, "out")
+    write_arrow(str(out_path), predictions, "out")
 
     with pa.memory_map(str(out_path), "r") as source:
         written = ipc.RecordBatchFileReader(source).read_all()
-    assert written.column("out").to_pylist() == preds.tolist()
+    assert written.column("out").to_pylist() == predictions.tolist()
 
 
 def test_iter_framed_arrow_reads_multiple_payloads():

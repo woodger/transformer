@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import Callable
 from dataclasses import replace
 
 from app.service.application.input_models import (
@@ -36,8 +37,8 @@ class InputUploadLifecycle:
         max_payloads: int,
         max_job_bytes: int,
         recovery_enabled: bool,
-        cuda_available,
-    ):
+        cuda_available: Callable[[], bool],
+    ) -> None:
         self.store = store
         self.max_payloads = max_payloads
         self.max_job_bytes = max_job_bytes

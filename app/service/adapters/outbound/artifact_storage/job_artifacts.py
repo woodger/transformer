@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import hashlib
 import os
+from typing import Protocol
 
 from app.service.application.ports.job_lifecycle import ArtifactLocation
+from app.service.application.ports.observability import EventLogger
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
+from app.service.domain.records import PublishedModelRecord
+
+
+class _ModelStore(Protocol):
+    def model_absolute_path(self, relative_path: object) -> str: ...
+
+    def model_checkpoint_path(self, model_ref: str) -> str: ...
+
+
+class _ArtifactStore(Protocol):
+    def absolute_path(self, relative_path: object) -> str: ...
+
+    def remove(self, path: str) -> bool: ...
 
 
 class ModelArtifactVerifier:
-    def __init__(self, model_store):
+    def __init__(self, model_store: _ModelStore) -> None:
         self.model_store = model_store
 
-    def verify(self, model) -> None:
+    def verify(self, model: PublishedModelRecord) -> None:
         try:
             path = self.model_store.model_absolute_path(
                 model.checkpoint_path
@@ -46,7 +61,13 @@ class ModelArtifactVerifier:
 
 
 class CandidateArtifactCleaner:
-    def __init__(self, runtime_store, recovery_store, *, logger):
+    def __init__(
+        self,
+        runtime_store: _ArtifactStore,
+        recovery_store: _ArtifactStore,
+        *,
+        logger: EventLogger,
+    ) -> None:
         self.runtime_store = runtime_store
         self.recovery_store = recovery_store
         self.logger = logger

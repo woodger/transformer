@@ -25,14 +25,14 @@ def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
     model.encoder = PassThroughEncoder()
     model.head = nn.Identity()
     missing = [float("nan"), float("nan")]
-    x = torch.tensor([
+    features = torch.tensor([
         [missing, [10.0, 11.0], [20.0, 21.0], missing],
         [[30.0, 31.0], missing, [40.0, 41.0], missing],
         [missing, [50.0, 51.0], missing, missing],
         [missing, missing, missing, missing],
     ])
 
-    output = model(x)
+    output = model(features)
 
     assert output.tolist() == [
         [20.0, 21.0],
@@ -53,12 +53,12 @@ def test_transformer_forward_with_missing_tokens_is_finite():
         nhead=4,
         context_mode="relaxed",
     )
-    x = torch.arange(24, dtype=torch.float32).reshape(3, 4, 2)
-    x[0, 0, :] = float("nan")
-    x[1, 1, :] = float("nan")
-    x[2, :, :] = float("nan")
+    features = torch.arange(24, dtype=torch.float32).reshape(3, 4, 2)
+    features[0, 0, :] = float("nan")
+    features[1, 1, :] = float("nan")
+    features[2, :, :] = float("nan")
 
-    output = model(x)
+    output = model(features)
 
     assert output.shape == (3, 7)
     assert torch.isfinite(output).all()

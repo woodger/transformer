@@ -16,18 +16,36 @@ markers = [
 
 [tool.pyright]
 include = [
-  "app/contracts/worker/v3/config.py",
-  "app/worker/data/tensors.py",
-  "app/worker/model/context.py",
-  "app/worker/model/positional_encoding.py",
-  "app/worker/model/transformer.py",
-  "app/worker/training/losses.py",
+  "app/admin",
+  "app/cli",
+  "app/commands",
+  "app/config.py",
+  "app/contracts",
+  "app/main.py",
+  "app/service/adapters/observability.py",
+  "app/service/adapters/outbound/artifact_storage",
+  "app/service/adapters/outbound/worker_probe",
+  "app/service/adapters/outbound/worker_process",
+  "app/service/application",
+  "app/service/domain",
+  "app/version.py",
+  "app/worker",
 ]
 strict = [
-  "app/worker/data/tensors.py",
-  "app/worker/model/context.py",
-  "app/worker/model/positional_encoding.py",
-  "app/worker/model/transformer.py",
+  "app/admin",
+  "app/cli",
+  "app/commands",
+  "app/config.py",
+  "app/contracts",
+  "app/main.py",
+  "app/service/adapters/observability.py",
+  "app/service/adapters/outbound/artifact_storage",
+  "app/service/adapters/outbound/worker_probe",
+  "app/service/adapters/outbound/worker_process",
+  "app/service/application",
+  "app/service/domain",
+  "app/version.py",
+  "app/worker",
 ]
 typeCheckingMode = "basic"
 venvPath = "."

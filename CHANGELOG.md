@@ -10,7 +10,8 @@
 ### Added
 
 - Добавлены политика Python types и tensor runtime contracts и поэтапный
-  Pyright strict baseline для model/context/tensor boundary.
+  Pyright strict baseline для admin/CLI, contracts, service domain/application,
+  worker и типизированных outbound process/artifact boundaries.
 - Pytest tests размечаются по внешним ресурсам `gpu` и `postgres`; быстрый
   CPU-набор не требует CUDA или PostgreSQL.
 
@@ -19,6 +20,8 @@
 - Model input явно проверяет форму `[batch, sequence, features]`, immutable
   `seq_len`/`feature_dim` и `float32`; mask semantics и семь внутренних heads
   закреплены в типизированных сигнатурах и docstrings.
+- В orchestration и boundary code безымянные `X`/`Y`/`x`/`pred` заменены на
+  `features`, `targets` и `predictions`; wire fields и CLI options сохранены.
 
 ## [0.1.10] - 2026-08-12
 

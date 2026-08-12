@@ -5,12 +5,23 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from typing import Protocol
 
 from app.service.application.ports.devices import DeviceLeaseManager
 from app.service.application.ports.jobs import JobRepository
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
 from app.service.application.ports.workers import WorkerExecutor
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import ExecutionJobRecord
+
+
+class WorkerPoolConfig(Protocol):
+    cpu_capacity: int
+    shutdown_drain_seconds: float
+    cancel_grace_seconds: float
 
 
 class WorkerPool:
@@ -24,15 +35,15 @@ class WorkerPool:
 
     def __init__(
         self,
-        config,
+        config: WorkerPoolConfig,
         ledger: JobRepository,
         *,
-        logger,
-        metrics,
+        logger: EventLogger,
+        metrics: OperationalMetricSink,
         device_inventory: DeviceLeaseManager,
         attempt_executor: WorkerExecutor | None = None,
         monotonic: Callable[[], float] = time.monotonic,
-    ):
+    ) -> None:
         if config.cpu_capacity <= 0:
             raise ValueError("cpu_capacity must be greater than zero")
         self.config = config
@@ -228,9 +239,11 @@ class WorkerPool:
             )
         if claimed is None:
             return False
+        if claimed.started_at is None or claimed.queued_at is None:
+            raise RuntimeError("claimed job has incomplete queue timing")
         queue_wait = max(
             0.0,
-            float(claimed.started_at) - float(claimed.queued_at),
+            claimed.started_at - claimed.queued_at,
         )
         self.metrics.add("jobsStarted")
         self.metrics.add("workerQueueWaitSeconds", queue_wait)

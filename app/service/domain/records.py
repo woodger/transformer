@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
+from app.service.domain.json_types import JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +23,8 @@ class ExecutionJobRecord:
     prediction_column: str
     model_config: ModelConfig | None
     training_config: TrainConfig | None
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
     config_hash: str
     manifest_sha256: str | None
     feature_dim: int
@@ -74,13 +74,13 @@ class JobRecord:
     selected_device: str | None
     resolved_model_ref: str | None
     prediction_column: str
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
-    progress: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
+    progress: JsonObject
     attempt: int
     error_code: str | None
     error_message: str | None
-    result: dict[str, Any] | None
+    result: JsonObject | None
     created_at: float
     updated_at: float
     input_closed_at: float | None
@@ -133,7 +133,7 @@ class StagedPredictionOutput:
     schema_fingerprint: str
     relative_path: str
 
-    def ledger_record(self) -> dict:
+    def ledger_record(self) -> JsonObject:
         return {
             "ordinal": self.ordinal,
             "rows": self.rows,
@@ -181,8 +181,8 @@ class ModelArtifactRecord:
     checkpoint_path: str
     byte_count: int
     sha256: str
-    data_contract: dict[str, Any] | None
-    ml_contract: dict[str, Any] | None
+    data_contract: JsonObject | None
+    ml_contract: JsonObject | None
     objective_config_sha256: str | None
 
 
@@ -196,9 +196,9 @@ class PublishedModelRecord:
     metadata_path: str
     byte_count: int
     sha256: str
-    metadata: dict[str, Any]
-    data_contract: dict[str, Any] | None
-    ml_contract: dict[str, Any] | None
+    metadata: JsonObject
+    data_contract: JsonObject | None
+    ml_contract: JsonObject | None
     objective_config_sha256: str | None
     producing_job_id: str | None
     created_at: float

@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
+from app.service.application.ports.observability import EventLogger
 from app.service.domain.records import RecoverableAttemptRecord
 
 _BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
@@ -54,7 +55,7 @@ def read_process_identity(
     boot_id: str | None = None,
     proc_root: str = _PROC_ROOT,
 ) -> ProcessIdentity | None:
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+    if isinstance(pid, bool) or pid <= 0:
         raise ValueError("pid must be a positive integer")
     try:
         with open(os.path.join(proc_root, str(pid), "stat"), "rb") as source:
@@ -97,10 +98,10 @@ def capture_worker_process(pid: int) -> ProcessIdentity:
 
 
 def recover_process_groups(
-    attempts: Iterable[RecoverableAttemptRecord | Mapping],
+    attempts: Iterable[RecoverableAttemptRecord | Mapping[str, object]],
     *,
     grace_seconds: float,
-    logger=None,
+    logger: EventLogger | None = None,
     signal_group: Callable[[int, int], None] = os.killpg,
     monotonic: Callable[[], float] = time.monotonic,
     wait: Callable[[float], None] = time.sleep,
@@ -113,7 +114,7 @@ def recover_process_groups(
     if not attempts:
         return ()
     current_boot_id = read_boot_id(path=boot_id_path)
-    results = []
+    results: list[ProcessRecoveryResult] = []
     for attempt in attempts:
         result = _recover_process_group(
             attempt,
@@ -138,25 +139,17 @@ def recover_process_groups(
 
 
 def _recover_process_group(
-    attempt: RecoverableAttemptRecord | Mapping,
+    attempt: RecoverableAttemptRecord | Mapping[str, object],
     *,
     current_boot_id: str,
     grace_seconds: float,
-    signal_group,
-    monotonic,
-    wait,
+    signal_group: Callable[[int, int], None],
+    monotonic: Callable[[], float],
+    wait: Callable[[float], None],
     proc_root: str,
 ) -> ProcessRecoveryResult:
     if not isinstance(attempt, RecoverableAttemptRecord):
-        attempt = RecoverableAttemptRecord(
-            job_id=attempt["job_id"],
-            attempt=attempt["attempt"],
-            pid=attempt.get("pid"),
-            pgid=attempt.get("pgid"),
-            boot_id=attempt.get("boot_id"),
-            process_start_ticks=attempt.get("process_start_ticks"),
-            attempt_id=attempt.get("attempt_id"),
-        )
+        attempt = _attempt_record(attempt)
     job_id = attempt.job_id
     attempt_number = attempt.attempt
     pid = attempt.pid
@@ -234,7 +227,7 @@ def _live_group_members(
         entries = os.listdir(proc_root)
     except OSError as exc:
         raise ProcessRecoveryError("Linux process table is unavailable") from exc
-    members = []
+    members: list[ProcessIdentity] = []
     for entry in entries:
         if not entry.isdigit():
             continue
@@ -262,7 +255,11 @@ def _live_group_members(
     return tuple(members)
 
 
-def _signal(signal_group, pgid: int, signum: int) -> None:
+def _signal(
+    signal_group: Callable[[int, int], None],
+    pgid: int,
+    signum: int,
+) -> None:
     try:
         signal_group(pgid, signum)
     except ProcessLookupError:
@@ -271,6 +268,50 @@ def _signal(signal_group, pgid: int, signum: int) -> None:
         raise ProcessRecoveryError(
             f"permission denied signalling orphan process group {pgid}"
         ) from exc
+
+
+def _attempt_record(
+    value: Mapping[str, object],
+) -> RecoverableAttemptRecord:
+    return RecoverableAttemptRecord(
+        job_id=_required_string(value.get("job_id"), "job_id"),
+        attempt=_required_int(value.get("attempt"), "attempt"),
+        pid=_optional_int(value.get("pid"), "pid"),
+        pgid=_optional_int(value.get("pgid"), "pgid"),
+        boot_id=_optional_string(value.get("boot_id"), "boot_id"),
+        process_start_ticks=_optional_int(
+            value.get("process_start_ticks"),
+            "process_start_ticks",
+        ),
+        attempt_id=_optional_string(
+            value.get("attempt_id"),
+            "attempt_id",
+        ),
+    )
+
+
+def _required_string(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ProcessRecoveryError(f"{label} must be a non-empty string")
+    return value
+
+
+def _optional_string(value: object, label: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise ProcessRecoveryError(f"{label} must be a string or null")
+    return value
+
+
+def _required_int(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ProcessRecoveryError(f"{label} must be an integer")
+    return value
+
+
+def _optional_int(value: object, label: str) -> int | None:
+    if value is None:
+        return None
+    return _required_int(value, label)
 
 
 __all__ = [

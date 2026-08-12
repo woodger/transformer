@@ -2,10 +2,11 @@ import html
 import math
 import os
 
+from app.contracts.json_types import JsonObject
 from app.worker.metrics.io import load_metrics_jsonl
 from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
-PLOT_METRICS = [
+PLOT_METRICS = (
     "loss",
     "loss_l0",
     "loss_l1",
@@ -46,7 +47,7 @@ PLOT_METRICS = [
     "host_to_device_ms",
     "train_step_ms",
     "elapsed_ms",
-]
+)
 
 
 def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
@@ -55,7 +56,7 @@ def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
         raise ValueError("metrics JSONL is empty")
 
     os.makedirs(output_dir, exist_ok=True)
-    paths = []
+    paths: list[str] = []
     for metric in PLOT_METRICS:
         points = _series(rows, metric)
         if not points:
@@ -68,8 +69,11 @@ def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
     return paths
 
 
-def _series(rows: list[dict], metric: str) -> list[tuple[float, float]]:
-    points = []
+def _series(
+    rows: list[JsonObject],
+    metric: str,
+) -> list[tuple[float, float]]:
+    points: list[tuple[float, float]] = []
     for index, row in enumerate(rows, start=1):
         value = row.get(metric)
         if not isinstance(value, (int, float)):
@@ -90,7 +94,11 @@ def _series(rows: list[dict], metric: str) -> list[tuple[float, float]]:
     return points
 
 
-def _write_svg(path: str, points: list[tuple[float, float]], title: str):
+def _write_svg(
+    path: str,
+    points: list[tuple[float, float]],
+    title: str,
+) -> None:
     width = 960
     height = 420
     left = 68

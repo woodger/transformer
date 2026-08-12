@@ -1,6 +1,7 @@
 import os
 import signal
 import threading
+from typing import Protocol
 
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
@@ -27,6 +28,16 @@ from app.service.bootstrap.data_plane import (
 from app.service.bootstrap.job_control import build_job_coordinator
 from app.service.bootstrap.maintenance import MaintenanceService
 from app.service.bootstrap.worker_pool import WorkerPool
+
+
+class FlightServiceArguments(Protocol):
+    host: str | None
+    port: int | None
+    allow_plaintext: bool | None
+    tls_cert_file: str | None
+    tls_key_file: str | None
+    tls_ca_file: str | None
+    tls_require_client_cert: bool | None
 
 
 class FlightApplication:
@@ -416,7 +427,7 @@ class FlightApplication:
             raise errors[0]
 
 
-def run_from_args(args):
+def run_from_args(args: FlightServiceArguments) -> None:
     overrides = {
         "host": args.host,
         "port": args.port,

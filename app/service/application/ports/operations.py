@@ -7,8 +7,19 @@ class ServiceHealthRepository(Protocol):
     def healthcheck(self) -> bool: ...
 
 
+class DiskUsage(Protocol):
+    @property
+    def total(self) -> int: ...
+
+    @property
+    def used(self) -> int: ...
+
+    @property
+    def free(self) -> int: ...
+
+
 class StorageUsageReader(Protocol):
-    def disk_usage(self): ...
+    def disk_usage(self) -> DiskUsage: ...
 
 
-__all__ = ["ServiceHealthRepository", "StorageUsageReader"]
+__all__ = ["DiskUsage", "ServiceHealthRepository", "StorageUsageReader"]

@@ -1,8 +1,16 @@
-from app.metrics import plot_metrics
-from app.utils import resolve_metrics_path
+from typing import Protocol
+
+from app.worker.metrics import plot_metrics
+from app.worker.utils import resolve_metrics_path
 
 
-def run(args):
+class PlotMetricsArguments(Protocol):
+    data: str | None
+    metrics_name: str | None
+    plots_dir: str
+
+
+def run(args: PlotMetricsArguments) -> None:
     metrics_name = args.data or args.metrics_name
     metrics_path = resolve_metrics_path(metrics_name)
     if metrics_path is None:

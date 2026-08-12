@@ -71,8 +71,8 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
             self.calls = []
             self.saved_as = None
 
-        def fit_epochs(self, X, Y, on_epoch=None, frame=None):
-            self.calls.append((X.shape, Y.shape))
+        def fit_epochs(self, features, targets, on_epoch=None, frame=None):
+            self.calls.append((features.shape, targets.shape))
             metrics_rows = [
                 TrainMetrics(rows=1, batches=1, loss=1.25, loss_stage=1),
                 TrainMetrics(rows=1, batches=1, loss=1.10, loss_stage=2),
@@ -159,11 +159,11 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
             for epoch in range(2):
                 loaded = list(payloads())
                 self.payload_passes.append([
-                    (X.shape, Y.shape)
-                    for X, Y in loaded
+                    (features.shape, targets.shape)
+                    for features, targets in loaded
                 ])
                 metrics = TrainMetrics(
-                    rows=sum(X.size(0) for X, _ in loaded),
+                    rows=sum(features.size(0) for features, _ in loaded),
                     batches=len(loaded),
                     loss=1.0 - epoch * 0.1,
                     loss_stage=epoch + 1,

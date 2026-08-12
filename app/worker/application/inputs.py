@@ -3,24 +3,42 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import BinaryIO
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3 import WorkerContractError, parse_control_message
+from app.worker.application.documents import (
+    boolean_field as _boolean_field,
+    integer_field as _integer_field,
+    object_field as _object_field,
+    object_list as _object_list,
+    optional_string_field as _optional_string_field,
+    string_field as _string_field,
+)
+from app.worker.application.events import WorkerEventEmitter
 
 
 class DurableInputStream:
     """Consume the immutable startup snapshot and ordered control channel."""
 
-    def __init__(self, manifest: dict, stream: BinaryIO, emitter):
+    def __init__(
+        self,
+        manifest: JsonObject,
+        stream: BinaryIO,
+        emitter: WorkerEventEmitter,
+    ) -> None:
         self.manifest = manifest
         self.stream = stream
         self.emitter = emitter
-        self.job_id = manifest["jobId"]
-        self.attempt = manifest["attempt"]
-        self.attempt_id = manifest["attemptId"]
-        self.input_revision = manifest["inputRevision"]
-        self.closed = manifest["inputClosed"]
-        self.manifest_sha256 = manifest["manifestSha256"]
+        self.job_id = _string_field(manifest, "jobId")
+        self.attempt = _integer_field(manifest, "attempt")
+        self.attempt_id = _string_field(manifest, "attemptId")
+        self.input_revision = _integer_field(manifest, "inputRevision")
+        self.closed = _boolean_field(manifest, "inputClosed")
+        self.manifest_sha256 = _optional_string_field(
+            manifest,
+            "manifestSha256",
+        )
         self._expected_sequence = 1
-        self._inputs = list(manifest["inputs"])
+        self._inputs = _object_list(manifest.get("inputs"), "inputs")
         self._validate_snapshot()
 
     @property
@@ -28,10 +46,10 @@ class DurableInputStream:
         return len(self._inputs)
 
     @property
-    def inputs(self) -> tuple[dict, ...]:
+    def inputs(self) -> tuple[JsonObject, ...]:
         return tuple(self._inputs)
 
-    def items(self) -> Iterator[dict]:
+    def items(self) -> Iterator[JsonObject]:
         for item in tuple(self._inputs):
             yield item
         while not self.closed:
@@ -46,10 +64,11 @@ class DurableInputStream:
                 )
             message = parse_control_message(line)
             self._validate_envelope(message)
-            if message["type"] == "input.committed":
-                item = message["payload"]["input"]
-                revision = message["payload"]["inputRevision"]
-                ordinal = item["ordinal"]
+            payload = _object_field(message, "payload")
+            if _string_field(message, "type") == "input.committed":
+                item = _object_field(payload, "input")
+                revision = _integer_field(payload, "inputRevision")
+                ordinal = _integer_field(item, "ordinal")
                 if ordinal < self.next_ordinal:
                     if item != self._inputs[ordinal]:
                         raise WorkerContractError(
@@ -67,7 +86,7 @@ class DurableInputStream:
                         "input control ordinal is not contiguous"
                     )
                 self._validate_input(item)
-                if revision < item["commitRevision"]:
+                if revision < _integer_field(item, "commitRevision"):
                     raise WorkerContractError(
                         "input control revision precedes its receipt"
                     )
@@ -80,10 +99,10 @@ class DurableInputStream:
                 )
                 yield item
                 continue
-            self._close(message["payload"])
+            self._close(payload)
 
     def _validate_snapshot(self) -> None:
-        if [item["ordinal"] for item in self._inputs] != list(
+        if [_integer_field(item, "ordinal") for item in self._inputs] != list(
             range(len(self._inputs))
         ):
             raise WorkerContractError(
@@ -91,7 +110,7 @@ class DurableInputStream:
             )
         for item in self._inputs:
             self._validate_input(item)
-            if item["commitRevision"] > self.input_revision:
+            if _integer_field(item, "commitRevision") > self.input_revision:
                 raise WorkerContractError(
                     "startup input receipt exceeds inputRevision"
                 )
@@ -100,53 +119,54 @@ class DurableInputStream:
                 "closed startup input has no manifestSha256"
             )
 
-    def _validate_input(self, item: dict) -> None:
-        expected = self.manifest["dataContract"]["dataContractSha256"]
-        if item["dataContractSha256"] != expected:
+    def _validate_input(self, item: JsonObject) -> None:
+        data_contract = _object_field(self.manifest, "dataContract")
+        expected = _string_field(data_contract, "dataContractSha256")
+        if _string_field(item, "dataContractSha256") != expected:
             raise WorkerContractError(
                 "input data contract differs from the job"
             )
 
-    def _validate_envelope(self, message: dict) -> None:
+    def _validate_envelope(self, message: JsonObject) -> None:
         identity = (
-            message["jobId"],
-            message["attempt"],
-            message["attemptId"],
+            _string_field(message, "jobId"),
+            _integer_field(message, "attempt"),
+            _string_field(message, "attemptId"),
         )
         if identity != (self.job_id, self.attempt, self.attempt_id):
             raise WorkerContractError(
                 "worker control identity differs from the active attempt"
             )
-        if message["sequence"] != self._expected_sequence:
+        if _integer_field(message, "sequence") != self._expected_sequence:
             raise WorkerContractError(
                 "worker control sequence is not contiguous"
             )
         self._expected_sequence += 1
 
-    def _close(self, payload: dict) -> None:
-        if payload["inputRevision"] < self.input_revision:
+    def _close(self, payload: JsonObject) -> None:
+        input_revision = _integer_field(payload, "inputRevision")
+        if input_revision < self.input_revision:
             raise WorkerContractError(
                 "input.closed revision precedes accepted inputs"
             )
-        if payload["payloadCount"] != len(self._inputs):
+        if _integer_field(payload, "payloadCount") != len(self._inputs):
             raise WorkerContractError(
                 "input.closed payload count differs from accepted inputs"
             )
-        if payload["totalRows"] != sum(
-            item["rows"] for item in self._inputs
+        if _integer_field(payload, "totalRows") != sum(
+            _integer_field(item, "rows") for item in self._inputs
         ):
             raise WorkerContractError(
                 "input.closed row count differs from accepted inputs"
             )
-        if payload["totalBytes"] != sum(
-            item["artifact"]["byteCount"] for item in self._inputs
+        if _integer_field(payload, "totalBytes") != sum(
+            _integer_field(_object_field(item, "artifact"), "byteCount")
+            for item in self._inputs
         ):
             raise WorkerContractError(
                 "input.closed byte count differs from accepted inputs"
             )
-        self.input_revision = payload["inputRevision"]
-        self.manifest_sha256 = payload["manifestSha256"]
+        self.input_revision = input_revision
+        self.manifest_sha256 = _string_field(payload, "manifestSha256")
         self.closed = True
-
-
 __all__ = ["DurableInputStream"]

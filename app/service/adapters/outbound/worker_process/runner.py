@@ -8,11 +8,13 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO, Protocol, cast
 
 from app.config import PROJECT_ROOT
+from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
@@ -25,6 +27,8 @@ from app.service.adapters.outbound.worker_process.process import (
     ProcessRecoveryError,
     capture_worker_process,
 )
+from app.service.application.ports.jobs import JobRepository
+from app.service.application.ports.observability import EventLogger
 from app.service.application.ports.workers import (
     ExecutionInput,
     ExecutionPlan,
@@ -57,8 +61,61 @@ class _WorkerEventState:
     expected_sequence: int = 1
     ready: bool = False
     terminal: str | None = None
-    completed_artifact: dict | None = None
+    completed_artifact: JsonObject | None = None
     error: tuple[str, str] | None = None
+
+
+class _RunnerConfig(Protocol):
+    subprocess_timeout_seconds: float
+    cancel_grace_seconds: float
+
+
+class _RunnerLedger(JobRepository, Protocol):
+    def set_attempt_process(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        pid: int,
+        pgid: int,
+        boot_id: str,
+        process_start_ticks: int,
+    ) -> None: ...
+
+    def get_job(self, job_id: str) -> JsonObject | None: ...
+
+    def mark_input_waiting(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        next_ordinal: int,
+        input_revision: int,
+    ) -> bool: ...
+
+
+class _RunnerSpool(Protocol):
+    def attempt_stdout_path(self, job_id: str, attempt: int) -> str: ...
+
+    def attempt_stderr_path(self, job_id: str, attempt: int) -> str: ...
+
+    def attempt_result_manifest_path(
+        self,
+        job_id: str,
+        attempt: int,
+    ) -> str: ...
+
+    def ensure_parent(self, path: str) -> None: ...
+
+
+PopenFactory = Callable[..., subprocess.Popen[bytes]]
+RecoveryPublisher = Callable[[ExecutionJobRecord, JsonObject], None]
+StreamingInputProvider = Callable[
+    [ExecutionJobRecord, int],
+    tuple[ExecutionInput, ...],
+]
 
 
 class WorkerSubprocessRunner:
@@ -66,18 +123,18 @@ class WorkerSubprocessRunner:
 
     def __init__(
         self,
-        config,
-        ledger,
-        spool,
+        config: _RunnerConfig,
+        ledger: _RunnerLedger,
+        spool: _RunnerSpool,
         *,
-        logger,
-        popen_factory: Callable = subprocess.Popen,
+        logger: EventLogger,
+        popen_factory: PopenFactory = subprocess.Popen,
         signal_group: Callable[[int, int], None] = os.killpg,
         python_executable: str,
-        publish_recovery: Callable | None = None,
-        stream_inputs: Callable | None = None,
+        publish_recovery: RecoveryPublisher | None = None,
+        stream_inputs: StreamingInputProvider | None = None,
         monotonic: Callable[[], float] = time.monotonic,
-    ):
+    ) -> None:
         self.config = config
         self.ledger = ledger
         self.spool = spool
@@ -127,6 +184,7 @@ class WorkerSubprocessRunner:
     ) -> WorkerSubprocessResult:
         job_id = job.job_id
         attempt = job.attempt
+        attempt_id = _active_attempt_id(job)
         stdout_path = self.spool.attempt_stdout_path(job_id, attempt)
         stderr_path = self.spool.attempt_stderr_path(job_id, attempt)
         self.spool.ensure_parent(stdout_path)
@@ -197,7 +255,7 @@ class WorkerSubprocessRunner:
             self.ledger.set_attempt_process(
                 job_id,
                 attempt,
-                attempt_id=job.attempt_id,
+                attempt_id=attempt_id,
                 pid=process.pid,
                 pgid=process.pid,
                 boot_id=identity.boot_id,
@@ -207,7 +265,7 @@ class WorkerSubprocessRunner:
                 "flight.worker.started",
                 jobId=job_id,
                 attempt=attempt,
-                attemptId=job.attempt_id,
+                attemptId=attempt_id,
                 device=job.selected_device,
                 workerPid=process.pid,
                 inputs=len(plan.inputs),
@@ -387,13 +445,14 @@ class WorkerSubprocessRunner:
 
     def _feed_worker_controls(
         self,
-        stream,
+        stream: BinaryIO,
         job: ExecutionJobRecord,
         plan: ExecutionPlan,
         wake: threading.Event,
         finished: threading.Event,
-        errors,
+        errors: queue.Queue[WorkerSubprocessError],
     ) -> None:
+        attempt_id = _active_attempt_id(job)
         sequence = 0
         next_ordinal = len(plan.inputs)
         try:
@@ -410,7 +469,7 @@ class WorkerSubprocessRunner:
                 if (
                     current is None
                     or current.attempt != job.attempt
-                    or current.attempt_id != job.attempt_id
+                    or current.attempt_id != attempt_id
                     or current.execution_state
                     not in (
                         ExecutionState.RUNNING,
@@ -426,7 +485,7 @@ class WorkerSubprocessRunner:
                     stream.write(encode_control_message(
                         job_id=job.job_id,
                         attempt=job.attempt,
-                        attempt_id=job.attempt_id,
+                        attempt_id=attempt_id,
                         sequence=sequence,
                         message_type="input.committed",
                         payload={
@@ -438,7 +497,16 @@ class WorkerSubprocessRunner:
                     next_ordinal = item.ordinal + 1
                 if current.input_state == InputState.CLOSED:
                     row = self.ledger.get_job(job.job_id)
-                    if row is None or row["manifest_sha256"] is None:
+                    if row is None:
+                        raise WorkerSubprocessError(
+                            ErrorCode.INTERNAL,
+                            "closed input summary is unavailable",
+                        )
+                    manifest_sha256 = _optional_string(
+                        row.get("manifest_sha256"),
+                        "closed input manifestSha256",
+                    )
+                    if manifest_sha256 is None:
                         raise WorkerSubprocessError(
                             ErrorCode.INTERNAL,
                             "closed input summary is unavailable",
@@ -447,15 +515,27 @@ class WorkerSubprocessRunner:
                     stream.write(encode_control_message(
                         job_id=job.job_id,
                         attempt=job.attempt,
-                        attempt_id=job.attempt_id,
+                        attempt_id=attempt_id,
                         sequence=sequence,
                         message_type="input.closed",
                         payload={
-                            "inputRevision": row["input_revision"],
-                            "payloadCount": row["payload_count"],
-                            "totalRows": row["total_rows"],
-                            "totalBytes": row["total_bytes"],
-                            "manifestSha256": row["manifest_sha256"],
+                            "inputRevision": _integer(
+                                row.get("input_revision"),
+                                "closed input revision",
+                            ),
+                            "payloadCount": _integer(
+                                row.get("payload_count"),
+                                "closed input payload count",
+                            ),
+                            "totalRows": _integer(
+                                row.get("total_rows"),
+                                "closed input row count",
+                            ),
+                            "totalBytes": _integer(
+                                row.get("total_bytes"),
+                                "closed input byte count",
+                            ),
+                            "manifestSha256": manifest_sha256,
                         },
                     ))
                     stream.flush()
@@ -471,8 +551,6 @@ class WorkerSubprocessRunner:
                 ))
         except AttemptExecutionError as exc:
             errors.put(WorkerSubprocessError(exc.code, exc.message))
-        except WorkerSubprocessError as exc:
-            errors.put(exc)
         except (OSError, ValueError, WorkerContractError) as exc:
             errors.put(WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -486,12 +564,13 @@ class WorkerSubprocessRunner:
 
     def _read_worker_events(
         self,
-        stream,
+        stream: BinaryIO,
         job: ExecutionJobRecord,
         plan: ExecutionPlan,
         state: _WorkerEventState,
-        errors,
+        errors: queue.Queue[WorkerSubprocessError],
     ) -> None:
+        attempt_id = _active_attempt_id(job)
         try:
             while True:
                 line = stream.readline(MAX_EVENT_BYTES + 2)
@@ -499,19 +578,25 @@ class WorkerSubprocessRunner:
                     return
                 event = parse_event(line)
                 if (
-                    event["jobId"] != job.job_id
-                    or event["attempt"] != job.attempt
-                    or event["attemptId"] != job.attempt_id
+                    _string(event["jobId"], "event jobId") != job.job_id
+                    or _integer(event["attempt"], "event attempt")
+                    != job.attempt
+                    or _string(event["attemptId"], "event attemptId")
+                    != attempt_id
                 ):
                     raise WorkerContractError(
                         "worker event identity does not match the active attempt"
                     )
-                if event["sequence"] != state.expected_sequence:
+                if (
+                    _integer(event["sequence"], "event sequence")
+                    != state.expected_sequence
+                ):
                     raise WorkerContractError(
                         "worker event sequence is not contiguous"
                     )
                 state.expected_sequence += 1
-                event_type = event["type"]
+                event_type = _string(event["type"], "event type")
+                payload = _object(event["payload"], "event payload")
                 if state.terminal is not None:
                     raise WorkerContractError(
                         "worker emitted an event after its terminal event"
@@ -522,8 +607,15 @@ class WorkerSubprocessRunner:
                             "worker ready must be the first event"
                         )
                     if (
-                        event["payload"]["nextOrdinal"] != len(plan.inputs)
-                        or event["payload"]["inputRevision"]
+                        _integer(
+                            payload.get("nextOrdinal"),
+                            "ready nextOrdinal",
+                        )
+                        != len(plan.inputs)
+                        or _integer(
+                            payload.get("inputRevision"),
+                            "ready inputRevision",
+                        )
                         != job.input_revision
                     ):
                         raise WorkerContractError(
@@ -539,9 +631,15 @@ class WorkerSubprocessRunner:
                     registered = self.ledger.mark_input_waiting(
                         job.job_id,
                         job.attempt,
-                        attempt_id=job.attempt_id,
-                        next_ordinal=event["payload"]["nextOrdinal"],
-                        input_revision=event["payload"]["inputRevision"],
+                        attempt_id=attempt_id,
+                        next_ordinal=_integer(
+                            payload.get("nextOrdinal"),
+                            "waiting nextOrdinal",
+                        ),
+                        input_revision=_integer(
+                            payload.get("inputRevision"),
+                            "waiting inputRevision",
+                        ),
                     )
                     if not registered:
                         self.notify_input(job.job_id)
@@ -550,8 +648,11 @@ class WorkerSubprocessRunner:
                     try:
                         self.ledger.update_progress(
                             job.job_id,
-                            event["payload"]["progress"],
-                            attempt_id=job.attempt_id,
+                            _object(
+                                payload.get("progress"),
+                                "progress payload",
+                            ),
+                            attempt_id=attempt_id,
                         )
                     except ServiceError as exc:
                         if self._progress_rejected_by_cancel(job):
@@ -568,15 +669,21 @@ class WorkerSubprocessRunner:
                         raise WorkerContractError(
                             "worker emitted an unexpected checkpoint"
                         )
-                    self._publish_recovery(job, event["payload"])
+                    self._publish_recovery(job, payload)
                 elif event_type == "completed":
                     state.terminal = event_type
-                    state.completed_artifact = event["payload"]["resultManifest"]
+                    state.completed_artifact = _object(
+                        payload.get("resultManifest"),
+                        "completed resultManifest",
+                    )
                 elif event_type == "error":
                     state.terminal = event_type
                     state.error = (
-                        event["payload"]["code"],
-                        event["payload"]["message"],
+                        _string(payload.get("code"), "worker error code"),
+                        _string(
+                            payload.get("message"),
+                            "worker error message",
+                        ),
                     )
         except AttemptExecutionError as exc:
             errors.put(WorkerSubprocessError(exc.code, exc.message))
@@ -595,8 +702,8 @@ class WorkerSubprocessRunner:
         self,
         job: ExecutionJobRecord,
         plan: ExecutionPlan,
-        artifact: dict | None,
-    ) -> dict:
+        artifact: JsonObject | None,
+    ) -> JsonObject:
         if artifact is None:
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -606,7 +713,9 @@ class WorkerSubprocessRunner:
             job.job_id,
             job.attempt,
         )
-        path = os.path.abspath(os.fspath(artifact["path"]))
+        path = os.path.abspath(
+            _string(artifact.get("path"), "result manifest path")
+        )
         if path != expected:
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -614,8 +723,16 @@ class WorkerSubprocessRunner:
             )
         try:
             if (
-                os.path.getsize(path) != artifact["byteCount"]
-                or _sha256_file(path) != artifact["sha256"]
+                os.path.getsize(path)
+                != _integer(
+                    artifact.get("byteCount"),
+                    "result manifest byte count",
+                )
+                or _sha256_file(path)
+                != _string(
+                    artifact.get("sha256"),
+                    "result manifest sha256",
+                )
             ):
                 raise ValueError("result manifest integrity check failed")
             result = load_document(path, "result-manifest")
@@ -625,10 +742,12 @@ class WorkerSubprocessRunner:
                 "worker result manifest is invalid",
             ) from exc
         if (
-            result["jobId"] != job.job_id
-            or result["attempt"] != job.attempt
-            or result["attemptId"] != job.attempt_id
-            or result["operation"] != job.operation
+            _string(result["jobId"], "result jobId") != job.job_id
+            or _integer(result["attempt"], "result attempt") != job.attempt
+            or _string(result["attemptId"], "result attemptId")
+            != _active_attempt_id(job)
+            or _string(result["operation"], "result operation")
+            != job.operation
         ):
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -637,9 +756,21 @@ class WorkerSubprocessRunner:
         current = self.ledger.get_job(job.job_id)
         if (
             current is None
-            or current["input_state"] != InputState.CLOSED.value
-            or result["inputRevision"] != current["input_revision"]
-            or result["manifestSha256"] != current["manifest_sha256"]
+            or _string(
+                current.get("input_state") if current else None,
+                "current input state",
+            )
+            != InputState.CLOSED.value
+            or _integer(result["inputRevision"], "result inputRevision")
+            != _integer(
+                current.get("input_revision") if current else None,
+                "current input revision",
+            )
+            or _string(result["manifestSha256"], "result manifestSha256")
+            != _string(
+                current.get("manifest_sha256") if current else None,
+                "current manifest sha256",
+            )
         ):
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -647,10 +778,17 @@ class WorkerSubprocessRunner:
             )
         return result
 
-    def _drain_log(self, stream, path: str, errors, *, tail=None) -> None:
+    def _drain_log(
+        self,
+        stream: BinaryIO,
+        path: str,
+        errors: queue.Queue[WorkerSubprocessError],
+        *,
+        tail: list[bytes] | None = None,
+    ) -> None:
         persisted = 0
         captured = bytearray()
-        target = None
+        target: BinaryIO | None = None
         try:
             target = open(path, "wb")
             while True:
@@ -695,18 +833,26 @@ class WorkerSubprocessRunner:
         current = self.ledger.get_execution_job(job.job_id)
         return (
             current is not None
-            and current.attempt_id == job.attempt_id
+            and current.attempt_id == _active_attempt_id(job)
             and current.execution_state
             in (ExecutionState.CANCELLING, ExecutionState.CANCELLED)
         )
 
-    def _signal_process_group(self, process, signum: int) -> None:
+    def _signal_process_group(
+        self,
+        process: subprocess.Popen[bytes],
+        signum: int,
+    ) -> None:
         try:
             self._signal_group(process.pid, signum)
         except ProcessLookupError:
             pass
 
-    def _abort_spawned_process(self, process, threads) -> None:
+    def _abort_spawned_process(
+        self,
+        process: subprocess.Popen[bytes],
+        threads: Sequence[threading.Thread],
+    ) -> None:
         """Kill and reap a child if worker setup fails after Popen."""
         self._signal_process_group(process, signal.SIGKILL)
         for stream in (process.stdin, process.stdout, process.stderr):
@@ -793,7 +939,7 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _worker_input_manifest(item: ExecutionInput) -> dict:
+def _worker_input_manifest(item: ExecutionInput) -> JsonObject:
     return {
         "schemaId": item.schema_id,
         "ordinal": item.ordinal,
@@ -806,3 +952,36 @@ def _worker_input_manifest(item: ExecutionInput) -> dict:
             "sha256": item.sha256,
         },
     }
+
+
+def _active_attempt_id(job: ExecutionJobRecord) -> str:
+    if job.attempt_id is None:
+        raise WorkerSubprocessError(
+            ErrorCode.INTERNAL,
+            "claimed job has no attempt identity",
+        )
+    return job.attempt_id
+
+
+def _object(value: JsonValue, label: str) -> JsonObject:
+    if not isinstance(value, dict):
+        raise WorkerContractError(f"{label} must be an object")
+    return cast(JsonObject, value)
+
+
+def _string(value: JsonValue, label: str) -> str:
+    if not isinstance(value, str):
+        raise WorkerContractError(f"{label} must be a string")
+    return value
+
+
+def _optional_string(value: JsonValue, label: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise WorkerContractError(f"{label} must be a string or null")
+    return value
+
+
+def _integer(value: JsonValue, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise WorkerContractError(f"{label} must be an integer")
+    return value

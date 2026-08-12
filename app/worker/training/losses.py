@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, cast, overload
 
 import torch
 import torch.nn.functional as F
@@ -63,6 +64,15 @@ class LossStatistics:
     values: tuple[torch.Tensor, ...]
     loss_stage: int
 
+    @overload
+    def materialize(self, grad_norm: None = None) -> dict[str, float | int]: ...
+
+    @overload
+    def materialize(
+        self,
+        grad_norm: torch.Tensor,
+    ) -> tuple[dict[str, float | int], float]: ...
+
     def materialize(
         self,
         grad_norm: torch.Tensor | None = None,
@@ -70,11 +80,16 @@ class LossStatistics:
         device_values = self.values
         if grad_norm is not None:
             device_values = (*device_values, grad_norm.detach())
-        host_values = torch.stack(tuple(
-            value.detach().reshape(())
-            for value in device_values
-        )).cpu().tolist()
-        parts = dict(zip(
+        # PyTorch types ``Tensor.tolist`` as a list of unknown depth. The
+        # stacked tensor is one-dimensional by construction here.
+        host_values = cast(
+            list[float],
+            torch.stack(tuple(
+                value.detach().reshape(())
+                for value in device_values
+            )).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
+        )
+        parts: dict[str, float | int] = dict(zip(
             _LOSS_STATISTIC_NAMES,
             host_values[:len(_LOSS_STATISTIC_NAMES)],
             strict=True,
@@ -123,6 +138,39 @@ def active_loss_components(loss_stage: int) -> tuple[str, ...]:
     return LOSS_STAGE_DEFINITIONS[loss_stage - 1].components
 
 
+@overload
+def combined_loss(
+    output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int = LOSS_STAGE,
+    direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
+    return_parts: Literal[False] = False,
+    return_statistics: Literal[False] = False,
+) -> torch.Tensor: ...
+
+
+@overload
+def combined_loss(
+    output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int,
+    direct_loss_weights: tuple[float, ...],
+    return_parts: Literal[True],
+    return_statistics: Literal[False] = False,
+) -> tuple[torch.Tensor, dict[str, float | int]]: ...
+
+
+@overload
+def combined_loss(
+    output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int,
+    direct_loss_weights: tuple[float, ...],
+    return_parts: Literal[False] = False,
+    return_statistics: Literal[True] = True,
+) -> tuple[torch.Tensor, LossStatistics]: ...
+
+
 def combined_loss(
     output: torch.Tensor,
     targets: torch.Tensor,
@@ -130,6 +178,10 @@ def combined_loss(
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
     return_parts: bool = False,
     return_statistics: bool = False,
+) -> (
+    torch.Tensor
+    | tuple[torch.Tensor, dict[str, float | int]]
+    | tuple[torch.Tensor, LossStatistics]
 ):
     """Evaluate the target-aligned staged objective.
 

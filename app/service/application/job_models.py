@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
+from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
     InputRecord,
     OutputRecord,
@@ -38,8 +38,8 @@ class CreateJobCommand:
     operation: str
     requested_device: str
     prediction_column: str
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
     model_label: str | None = None
     model_selector: str | None = None
     model_ref: str | None = None
@@ -135,8 +135,8 @@ class JobCreated:
     requested_device: str
     selected_device: str | None
     resolved_model_ref: str | None
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
     limits: ServiceLimits
 
 

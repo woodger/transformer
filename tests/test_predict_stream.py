@@ -91,9 +91,9 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
             print("accidental load stdout")
             self.loaded.append(checkpoint)
 
-        def predict(self, X):
+        def predict(self, features):
             print("accidental predict stdout")
-            self.calls.append(X.shape)
+            self.calls.append(features.shape)
             value = float(len(self.calls)) / 10.0
             return torch.tensor(
                 [[value, 0.2, 0.3, 0.4, 0.5, 0.6]],

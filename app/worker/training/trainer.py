@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import copy
 import math
 import queue
 import random
 import threading
 import time
-from contextlib import nullcontext
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass
+from typing import Protocol, TypedDict, cast, runtime_checkable
 
 import numpy as np
 import torch
@@ -20,9 +24,12 @@ from app.config import (
     STAGE_SIZE,
     WEIGHT_DECAY,
 )
+from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3.config import (
     DEFAULT_DIRECT_LOSS_WEIGHTS,
     CheckpointSelectionConfig,
+    ModelConfig,
+    TrainConfig,
 )
 from app.contracts.worker.v3.objective import objective_config_sha256
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
@@ -41,7 +48,37 @@ from app.worker.utils import load_model, save_model, tree_stats
 
 _MAX_SHUFFLE_WINDOW_BATCHES = 32
 _MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024
-_PREFETCH_END = object()
+
+TensorBatch = tuple[torch.Tensor, torch.Tensor]
+Payloads = Iterable[TensorBatch]
+PayloadFactory = Callable[[], Payloads]
+
+
+class SelectionPayload(TypedDict):
+    selection_score: float | None
+    checkpoint_best: bool
+    should_stop: bool
+    best_selection_score: float | None
+
+
+EpochCallback = Callable[[int, TrainMetrics, SelectionPayload], None]
+EpochCommittedCallback = Callable[
+    [int, TrainMetrics, SelectionPayload, bool],
+    None,
+]
+
+
+@runtime_checkable
+class _Closable(Protocol):
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class _PrefetchEnd:
+    pass
+
+
+_PREFETCH_END = _PrefetchEnd()
 
 
 @dataclass(frozen=True)
@@ -52,9 +89,11 @@ class _PrefetchError:
 class _BatchPrefetcher:
     """Prepare at most one closed-input batch ahead of the trainer."""
 
-    def __init__(self, batches):
+    def __init__(self, batches: Iterable[TensorBatch]) -> None:
         self._batches = iter(batches)
-        self._queue = queue.Queue(maxsize=1)
+        self._queue: queue.Queue[
+            TensorBatch | _PrefetchError | _PrefetchEnd
+        ] = queue.Queue(maxsize=1)
         self._slot = threading.Semaphore(1)
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -64,13 +103,13 @@ class _BatchPrefetcher:
         )
         self._thread.start()
 
-    def __iter__(self):
+    def __iter__(self) -> _BatchPrefetcher:
         return self
 
-    def __next__(self):
+    def __next__(self) -> TensorBatch:
         message = self._queue.get()
         self._slot.release()
-        if message is _PREFETCH_END:
+        if isinstance(message, _PrefetchEnd):
             self._thread.join()
             raise StopIteration
         if isinstance(message, _PrefetchError):
@@ -98,9 +137,8 @@ class _BatchPrefetcher:
                     return
                 self._queue.put(message)
         finally:
-            close = getattr(self._batches, "close", None)
-            if close is not None:
-                close()
+            if isinstance(self._batches, _Closable):
+                self._batches.close()
 
     def _reserve_slot(self) -> bool:
         while not self._stop.is_set():
@@ -133,12 +171,12 @@ class Trainer:
         selection: CheckpointSelectionConfig | None = None,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
-        metrics_context: dict | None = None,
-        model_config=None,
-        train_config=None,
-        data_contract: dict | None = None,
+        metrics_context: Mapping[str, JsonValue] | None = None,
+        model_config: ModelConfig | None = None,
+        train_config: TrainConfig | None = None,
+        data_contract: Mapping[str, object] | None = None,
         seed: int = SEED,
-    ):
+    ) -> None:
         self.model = model
         self.device = device
         self.batch_size = batch_size
@@ -161,11 +199,11 @@ class Trainer:
             None if data_contract is None else dict(data_contract)
         )
         self.seed = seed
-        self.best_selection_score = float("inf")
-        self.best_state_dict = None
-        self.best_metrics = None
-        self.best_frame = None
-        self.best_epoch = None
+        self.best_selection_score: float = float("inf")
+        self.best_state_dict: dict[str, torch.Tensor] | None = None
+        self.best_metrics: JsonObject | None = None
+        self.best_frame: int | None = None
+        self.best_epoch: int | None = None
         self.state = TrainingState()
         self.selection_state = (
             None
@@ -181,7 +219,7 @@ class Trainer:
             stage_size=self.stage_size,
             max_stage=self.loss_stage,
         )
-        self.metrics_context = {
+        self.metrics_context: dict[str, JsonValue] = {
             "batch_size": self.batch_size,
             "loss_schedule": self.loss_schedule,
             "stage_size": self.stage_size,
@@ -193,7 +231,7 @@ class Trainer:
             self.metrics_context.update(metrics_context)
 
         self.use_amp = bool(use_amp and device.type == "cuda")
-        self.scaler = torch.amp.GradScaler(enabled=self.use_amp)
+        self.scaler = torch.GradScaler("cuda", enabled=self.use_amp)
 
         self.optimizer = torch.optim.Adam(
             model.parameters(),
@@ -209,16 +247,19 @@ class Trainer:
         return self.state.train_step
 
     @train_step.setter
-    def train_step(self, value: int):
+    def train_step(self, value: int) -> None:
         self.state.train_step = value
 
-    def _autocast(self):
+    def _autocast(self) -> AbstractContextManager[object]:
         if self.use_amp:
-            return torch.amp.autocast(device_type="cuda", enabled=True)
+            return torch.autocast(device_type="cuda", enabled=True)
         else:
             return nullcontext()
 
-    def _train_loaders(self, loaders) -> TrainMetrics:
+    def _train_loaders(
+        self,
+        loaders: Iterable[Iterable[TensorBatch]],
+    ) -> TrainMetrics:
         self.model.train()
         metrics = TrainMetrics(
             lr=self.optimizer.param_groups[0]["lr"],
@@ -234,7 +275,7 @@ class Trainer:
                 while True:
                     phase_started = time.perf_counter()
                     try:
-                        xb_cpu, yb_cpu = next(batches)
+                        batch_features_cpu, batch_targets_cpu = next(batches)
                     except StopIteration:
                         break
                     metrics.input_pipeline_ms += (
@@ -242,10 +283,10 @@ class Trainer:
                     ) * 1000
 
                     loss_stage = self._loss_stage_for()
-                    batch_rows = xb_cpu.size(0)
+                    batch_rows = batch_features_cpu.size(0)
                     phase_started = time.perf_counter()
                     missingness_ratios = context_missingness_ratios(
-                        xb_cpu,
+                        batch_features_cpu,
                         self.context_mode,
                     )
                     metrics.missing_stats_ms += (
@@ -253,8 +294,8 @@ class Trainer:
                     ) * 1000
 
                     phase_started = time.perf_counter()
-                    xb = xb_cpu.to(self.device)
-                    yb = yb_cpu.to(self.device)
+                    batch_features = batch_features_cpu.to(self.device)
+                    batch_targets = batch_targets_cpu.to(self.device)
                     metrics.host_to_device_ms += (
                         time.perf_counter() - phase_started
                     ) * 1000
@@ -263,16 +304,18 @@ class Trainer:
                     self.optimizer.zero_grad()
 
                     with self._autocast():
-                        preds = self.model(xb)
+                        model_output = self.model(batch_features)
                         loss, loss_statistics = combined_loss(
-                            preds,
-                            yb,
+                            model_output,
+                            batch_targets,
                             loss_stage,
                             self.direct_loss_weights,
                             return_statistics=True,
                         )
 
-                    self.scaler.scale(loss).backward()
+                    self.scaler.scale(
+                        loss
+                    ).backward()  # pyright: ignore[reportUnknownMemberType]
                     self.scaler.unscale_(self.optimizer)
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), GRAD_CLIP_NORM
@@ -294,14 +337,13 @@ class Trainer:
                         time.perf_counter() - phase_started
                     ) * 1000
             finally:
-                close = getattr(batches, "close", None)
-                if close is not None:
-                    close()
+                if isinstance(batches, _Closable):
+                    batches.close()
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
 
-    def _train_loader(self, loader) -> TrainMetrics:
+    def _train_loader(self, loader: Iterable[TensorBatch]) -> TrainMetrics:
         return self._train_loaders((loader,))
 
     def _observe_metrics(
@@ -309,7 +351,7 @@ class Trainer:
         metrics: TrainMetrics,
         frame: int | None = None,
         epoch: int | None = None,
-    ) -> dict:
+    ) -> SelectionPayload:
         checkpoint_best = False
         should_stop = False
         selection_score = None
@@ -365,13 +407,13 @@ class Trainer:
         self.best_frame = None
         self.best_epoch = None
 
-    def _snapshot_state_dict(self) -> dict:
+    def _snapshot_state_dict(self) -> dict[str, torch.Tensor]:
         return {
             key: value.detach().cpu().clone()
             for key, value in self.model.state_dict().items()
         }
 
-    def _restore_best_state_dict(self):
+    def _restore_best_state_dict(self) -> None:
         if self.best_state_dict is None:
             return
 
@@ -386,31 +428,41 @@ class Trainer:
 
     def fit_batch(
         self,
-        X: torch.Tensor,
-        Y: torch.Tensor,
+        features: torch.Tensor,
+        targets: torch.Tensor,
         epoch: int = 0,
     ) -> TrainMetrics:
-        loader = self._data_loader(X, Y)
+        loader = self._data_loader(features, targets)
 
         self.state.begin_epoch(epoch)
         return self._train_loader(loader)
 
-    def fit_epochs(self, X: torch.Tensor, Y: torch.Tensor, on_epoch=None, frame: int | None = None):
-        loader = self._data_loader(X, Y)
+    def fit_epochs(
+        self,
+        features: torch.Tensor,
+        targets: torch.Tensor,
+        on_epoch: EpochCallback | None = None,
+        frame: int | None = None,
+    ) -> list[TrainMetrics]:
+        loader = self._data_loader(features, targets)
         return self._fit_loader_epochs(
             lambda: (loader,),
             on_epoch=on_epoch,
             frame=frame,
         )
 
-    def fit_payloads(self, payloads, on_epoch=None):
+    def fit_payloads(
+        self,
+        payloads: PayloadFactory,
+        on_epoch: EpochCallback | None = None,
+    ) -> list[TrainMetrics]:
         """Train global epochs over a payload-independent row stream.
 
         ``payloads`` is a callable so durable inputs can be reopened for every
         epoch. Optimizer batches and bounded shuffle windows may cross payload
         boundaries, so transport partitioning cannot change the trajectory.
         """
-        def loaders():
+        def loaders() -> Iterator[Iterable[TensorBatch]]:
             yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
@@ -419,10 +471,14 @@ class Trainer:
             start_epoch=self.state.global_epoch,
         )
 
-    def _payload_batches(self, payloads, generator):
-        window_rows = None
-        source_buffer = None
-        target_buffer = None
+    def _payload_batches(
+        self,
+        payloads: Payloads,
+        generator: torch.Generator,
+    ) -> Iterator[TensorBatch]:
+        window_rows: int | None = None
+        source_buffer: torch.Tensor | None = None
+        target_buffer: torch.Tensor | None = None
         buffered_rows = 0
 
         for source, targets in payloads:
@@ -454,6 +510,9 @@ class Trainer:
                     device=targets.device,
                 )
 
+            if window_rows is None or target_buffer is None:
+                raise AssertionError("shuffle buffers were not initialized")
+
             offset = 0
             while offset < payload_rows:
                 copied_rows = min(
@@ -483,6 +542,8 @@ class Trainer:
             del source, targets
 
         if buffered_rows:
+            if source_buffer is None or target_buffer is None:
+                raise AssertionError("shuffle buffers were not initialized")
             yield from self._shuffled_batches(
                 source_buffer,
                 target_buffer,
@@ -490,13 +551,22 @@ class Trainer:
                 generator,
             )
 
-    def _prefetched_payload_batches(self, payloads):
+    def _prefetched_payload_batches(
+        self,
+        payloads: Payloads,
+    ) -> _BatchPrefetcher:
         return _BatchPrefetcher(self._payload_batches(
             payloads,
             self._payload_shuffle_generator,
         ))
 
-    def _shuffled_batches(self, source, targets, rows: int, generator):
+    def _shuffled_batches(
+        self,
+        source: torch.Tensor,
+        targets: torch.Tensor,
+        rows: int,
+        generator: torch.Generator,
+    ) -> Iterator[TensorBatch]:
         order = torch.randperm(
             rows,
             generator=generator,
@@ -509,8 +579,12 @@ class Trainer:
                 targets.index_select(0, indices),
             )
 
-    def _data_loader(self, X: torch.Tensor, Y: torch.Tensor):
-        dataset = TensorDataset(X, Y)
+    def _data_loader(
+        self,
+        features: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> Iterable[TensorBatch]:
+        dataset = TensorDataset(features, targets)
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -520,14 +594,14 @@ class Trainer:
 
     def _fit_loader_epochs(
         self,
-        loaders,
-        on_epoch=None,
+        loaders: Callable[[], Iterable[Iterable[TensorBatch]]],
+        on_epoch: EpochCallback | None = None,
         frame: int | None = None,
         *,
         start_epoch: int = 0,
-        on_epoch_committed=None,
-    ):
-        metrics_rows = []
+        on_epoch_committed: EpochCommittedCallback | None = None,
+    ) -> list[TrainMetrics]:
+        metrics_rows: list[TrainMetrics] = []
         self.state.begin_frame(frame)
         self.training_complete = False
 
@@ -567,14 +641,14 @@ class Trainer:
 
     def fit_payloads_resumable(
         self,
-        payloads,
+        payloads: PayloadFactory,
         *,
-        on_epoch=None,
-        on_epoch_committed=None,
-    ):
+        on_epoch: EpochCallback | None = None,
+        on_epoch_committed: EpochCommittedCallback | None = None,
+    ) -> list[TrainMetrics]:
         """Train job-wide epochs and expose only complete recovery boundaries."""
 
-        def loaders():
+        def loaders() -> Iterator[Iterable[TensorBatch]]:
             yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
@@ -586,12 +660,12 @@ class Trainer:
 
     def fit_streaming_payloads(
         self,
-        first_epoch_payloads,
-        closed_payloads,
+        first_epoch_payloads: Payloads,
+        closed_payloads: PayloadFactory,
         *,
-        on_epoch=None,
-        on_epoch_committed=None,
-    ):
+        on_epoch: EpochCallback | None = None,
+        on_epoch_committed: EpochCommittedCallback | None = None,
+    ) -> list[TrainMetrics]:
         """Train epoch zero from an open stream, then replay closed input.
 
         The first iterable may block at the durable input frontier. Its EOF is
@@ -601,7 +675,7 @@ class Trainer:
 
         first_epoch = True
 
-        def loaders():
+        def loaders() -> Iterator[Iterable[TensorBatch]]:
             nonlocal first_epoch
             if first_epoch:
                 payloads = first_epoch_payloads
@@ -622,7 +696,7 @@ class Trainer:
             on_epoch_committed=on_epoch_committed,
         )
 
-    def recovery_state_dict(self) -> dict:
+    def recovery_state_dict(self) -> dict[str, object]:
         """Return the complete trusted state needed to resume a fit."""
 
         cuda_rng_state = None
@@ -668,11 +742,12 @@ class Trainer:
             "maximum_stage_completed": self.maximum_stage_completed,
         }
 
-    def load_recovery_state_dict(self, payload: dict) -> None:
+    def load_recovery_state_dict(
+        self,
+        payload: Mapping[str, object],
+    ) -> None:
         """Restore a state produced by :meth:`recovery_state_dict`."""
 
-        if not isinstance(payload, dict):
-            raise ValueError("training recovery state must be an object")
         required = {
             "model_state_dict",
             "optimizer_state_dict",
@@ -689,11 +764,17 @@ class Trainer:
         if set(payload) != required:
             raise ValueError("training recovery state has invalid fields")
 
-        training_state = payload["training_state"]
-        selection_state = payload["selection_state"]
-        selection = payload["selection"]
-        rng = payload["rng"]
-        if not isinstance(training_state, dict) or set(training_state) != {
+        training_state = _object_dict(
+            payload["training_state"],
+            "training recovery progress",
+        )
+        selection_state_value = payload["selection_state"]
+        selection = _object_dict(
+            payload["selection"],
+            "training recovery checkpoint selection",
+        )
+        rng = _object_dict(payload["rng"], "training recovery random state")
+        if set(training_state) != {
             "frame",
             "frame_epoch",
             "global_epoch",
@@ -703,17 +784,23 @@ class Trainer:
         if payload["objective_config_sha256"] != self._objective_config_sha256():
             raise ValueError("training recovery objective configuration differs")
         if self.selection is None:
-            if selection_state is not None:
+            if selection_state_value is not None:
                 raise ValueError("training recovery selection state is invalid")
-        elif not isinstance(selection_state, dict) or set(selection_state) != {
-            "min_delta",
-            "patience",
-            "active",
-            "best_score",
-            "wait",
-        }:
-            raise ValueError("training recovery selection state is invalid")
-        if not isinstance(selection, dict) or set(selection) != {
+            selection_state = None
+        else:
+            selection_state = _object_dict(
+                selection_state_value,
+                "training recovery selection state",
+            )
+            if set(selection_state) != {
+                "min_delta",
+                "patience",
+                "active",
+                "best_score",
+                "wait",
+            }:
+                raise ValueError("training recovery selection state is invalid")
+        if set(selection) != {
             "best_selection_score",
             "best_state_dict",
             "best_metrics",
@@ -721,52 +808,147 @@ class Trainer:
             "best_epoch",
         }:
             raise ValueError("training recovery checkpoint selection is invalid")
-        if not isinstance(rng, dict) or set(rng) != {
+        if set(rng) != {
             "python",
             "numpy",
             "torch",
             "cuda",
         }:
             raise ValueError("training recovery random state is invalid")
-        if self.selection is not None and (
-            selection_state["min_delta"] != self.selection.min_delta
-            or selection_state["patience"] != self.selection.patience
-        ):
-            raise ValueError("training recovery selection policy differs")
+        if self.selection is not None:
+            if selection_state is None:
+                raise AssertionError("selection state was not initialized")
+            if (
+                _number(selection_state["min_delta"], "selection min_delta")
+                != self.selection.min_delta
+                or _integer(selection_state["patience"], "selection patience")
+                != self.selection.patience
+            ):
+                raise ValueError("training recovery selection policy differs")
 
-        self.model.load_state_dict(payload["model_state_dict"])
-        self.optimizer.load_state_dict(payload["optimizer_state_dict"])
+        self.model.load_state_dict(
+            _tensor_state_dict(
+                payload["model_state_dict"],
+                "training recovery model state",
+            )
+        )
+        optimizer_state = _object_dict(
+            payload["optimizer_state_dict"],
+            "training recovery optimizer state",
+        )
+        self.optimizer.load_state_dict(optimizer_state)
         _optimizer_to(self.optimizer, self.device)
-        self.scaler.load_state_dict(payload["scaler_state_dict"])
-        self.state = TrainingState(**training_state)
+        scaler_state = _object_dict(
+            payload["scaler_state_dict"],
+            "training recovery scaler state",
+        )
+        self.scaler.load_state_dict(scaler_state)
+        self.state = TrainingState(
+            frame=_integer(training_state["frame"], "training frame"),
+            frame_epoch=_integer(
+                training_state["frame_epoch"],
+                "training frame epoch",
+            ),
+            global_epoch=_integer(
+                training_state["global_epoch"],
+                "training global epoch",
+            ),
+            train_step=_integer(
+                training_state["train_step"],
+                "training step",
+            ),
+        )
         self.selection_state = (
             None
             if selection_state is None
-            else SelectionState(**selection_state)
+            else SelectionState(
+                min_delta=_number(
+                    selection_state["min_delta"],
+                    "selection min_delta",
+                ),
+                patience=_integer(
+                    selection_state["patience"],
+                    "selection patience",
+                ),
+                active=_boolean(
+                    selection_state["active"],
+                    "selection active",
+                ),
+                best_score=_number(
+                    selection_state["best_score"],
+                    "selection best score",
+                ),
+                wait=_integer(selection_state["wait"], "selection wait"),
+            )
         )
-        self.best_selection_score = selection["best_selection_score"]
-        self.best_state_dict = selection["best_state_dict"]
-        self.best_metrics = selection["best_metrics"]
-        self.best_frame = selection["best_frame"]
-        self.best_epoch = selection["best_epoch"]
+        self.best_selection_score = _number(
+            selection["best_selection_score"],
+            "best selection score",
+        )
+        self.best_state_dict = _optional_tensor_state_dict(
+            selection["best_state_dict"],
+            "best model state",
+        )
+        self.best_metrics = _optional_json_object(selection["best_metrics"])
+        self.best_frame = _optional_integer(
+            selection["best_frame"],
+            "best frame",
+        )
+        self.best_epoch = _optional_integer(
+            selection["best_epoch"],
+            "best epoch",
+        )
+        shuffle_state = payload["payload_shuffle_generator_state"]
+        if not isinstance(shuffle_state, torch.Tensor):
+            raise ValueError("training recovery shuffle state is invalid")
         self._payload_shuffle_generator.set_state(
-            payload["payload_shuffle_generator_state"]
+            shuffle_state
         )
-        random.setstate(rng["python"])
-        np.random.set_state(rng["numpy"])
-        torch.set_rng_state(rng["torch"])
+        random.setstate(cast(tuple[object, ...], rng["python"]))
+        np.random.set_state(
+            cast(
+                tuple[str, np.ndarray, int, int, float],
+                rng["numpy"],
+            )
+        )
+        torch_rng_state = rng["torch"]
+        if not isinstance(torch_rng_state, torch.Tensor):
+            raise ValueError("training recovery Torch RNG state is invalid")
+        torch.set_rng_state(torch_rng_state)
         cuda_rng_state = rng["cuda"]
         if cuda_rng_state is not None:
             if self.device.type != "cuda" or not torch.cuda.is_available():
                 raise ValueError(
                     "CUDA training recovery requires an available CUDA device"
                 )
-            torch.cuda.set_rng_state_all(cuda_rng_state)
-        self.training_complete = bool(payload["training_complete"])
-        self.maximum_stage_completed = bool(payload["maximum_stage_completed"])
+            if not isinstance(cuda_rng_state, list):
+                raise ValueError("training recovery CUDA RNG state is invalid")
+            cuda_states = cast(list[object], cuda_rng_state)
+            if not all(isinstance(state, torch.Tensor) for state in cuda_states):
+                raise ValueError("training recovery CUDA RNG state is invalid")
+            torch.cuda.set_rng_state_all(
+                cast(list[torch.Tensor], cuda_states)
+            )
+        self.training_complete = _boolean(
+            payload["training_complete"],
+            "training completion marker",
+        )
+        self.maximum_stage_completed = _boolean(
+            payload["maximum_stage_completed"],
+            "maximum stage completion marker",
+        )
 
-    def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
-        def on_epoch(epoch: int, metrics: TrainMetrics, selection_payload: dict):
+    def fit(
+        self,
+        features: torch.Tensor,
+        targets: torch.Tensor,
+        model_name: str,
+    ) -> None:
+        def on_epoch(
+            epoch: int,
+            metrics: TrainMetrics,
+            selection_payload: SelectionPayload,
+        ) -> None:
             stats = tree_stats(self.model.parameters())
 
             print(metrics.console_line(
@@ -780,42 +962,51 @@ class Trainer:
                 mode="fit",
                 epoch=epoch + 1,
                 norm=stats["norm"],
-                **selection_payload,
+                selection_score=selection_payload["selection_score"],
+                checkpoint_best=selection_payload["checkpoint_best"],
+                should_stop=selection_payload["should_stop"],
+                best_selection_score=selection_payload[
+                    "best_selection_score"
+                ],
             )
 
         print(self.config_line())
-        self.fit_epochs(X, Y, on_epoch=on_epoch)
+        self.fit_epochs(features, targets, on_epoch=on_epoch)
 
         self.save(model_name)
         print("Model saved")
 
-    def predict(self, X: torch.Tensor) -> torch.Tensor:
+    def predict(self, features: torch.Tensor) -> torch.Tensor:
         self.model.eval()
         with torch.no_grad(), self._autocast():
-            if X.size(0) == 0:
-                return public_predictions(self.model(X.to(self.device)))
+            if features.size(0) == 0:
+                return public_predictions(self.model(features.to(self.device)))
 
             predictions = None
-            for offset in range(0, X.size(0), self.batch_size):
-                batch = X[offset:offset + self.batch_size].to(self.device)
+            for offset in range(0, features.size(0), self.batch_size):
+                batch = features[offset:offset + self.batch_size].to(self.device)
                 output = public_predictions(self.model(batch))
                 if predictions is None:
                     predictions = torch.empty(
-                        (X.size(0), *output.shape[1:]),
+                        (features.size(0), *output.shape[1:]),
                         dtype=output.dtype,
                         device=output.device,
                     )
                 predictions[offset:offset + output.size(0)].copy_(output)
 
+            if predictions is None:
+                raise AssertionError("prediction buffer was not initialized")
             return predictions
 
-    def load(self, model_name: str):
+    def load(self, model_name: str) -> None:
         load_model(model_name, self.model, self.device)
 
-    def load_payload(self, checkpoint: dict):
-        self.model.load_state_dict(checkpoint["state_dict"])
+    def load_payload(self, checkpoint: dict[str, object]) -> None:
+        self.model.load_state_dict(
+            _tensor_state_dict(checkpoint.get("state_dict"), "checkpoint state")
+        )
 
-    def save(self, model_name: str):
+    def save(self, model_name: str) -> None:
         if self.selection is not None and self.best_state_dict is not None:
             self._restore_best_state_dict()
 
@@ -872,29 +1063,105 @@ class Trainer:
             raise ValueError("training configuration is unavailable")
         return objective_config_sha256(self.train_config)
 
-    def record_metrics(self, metrics: TrainMetrics, **extra):
-        payload = {**self.metrics_context, **extra}
+    def record_metrics(
+        self,
+        metrics: TrainMetrics,
+        **extra: JsonValue,
+    ) -> None:
+        payload: dict[str, JsonValue] = {
+            **self.metrics_context,
+            **extra,
+        }
         payload.setdefault("context_mode", self.context_mode)
         append_metrics_jsonl(self.metrics_path, metrics, **payload)
 
 
-def _tree_to_cpu(value):
+def _object_dict(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    mapping = cast(Mapping[object, object], value)
+    if not all(isinstance(key, str) for key in mapping):
+        raise ValueError(f"{label} field names must be strings")
+    return {cast(str, key): item for key, item in mapping.items()}
+
+
+def _tensor_state_dict(
+    value: object,
+    label: str,
+) -> dict[str, torch.Tensor]:
+    mapping = _object_dict(value, label)
+    if not all(isinstance(item, torch.Tensor) for item in mapping.values()):
+        raise ValueError(f"{label} must contain only tensors")
+    return cast(dict[str, torch.Tensor], mapping)
+
+
+def _optional_tensor_state_dict(
+    value: object,
+    label: str,
+) -> dict[str, torch.Tensor] | None:
+    if value is None:
+        return None
+    return _tensor_state_dict(value, label)
+
+
+def _optional_json_object(value: object) -> JsonObject | None:
+    if value is None:
+        return None
+    return cast(JsonObject, _object_dict(value, "best metrics"))
+
+
+def _integer(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{label} must be an integer")
+    return value
+
+
+def _optional_integer(value: object, label: str) -> int | None:
+    if value is None:
+        return None
+    return _integer(value, label)
+
+
+def _number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number")
+    return float(value)
+
+
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be a boolean")
+    return value
+
+
+def _tree_to_cpu(value: object) -> object:
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().clone()
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
         return {
             key: _tree_to_cpu(item)
-            for key, item in value.items()
+            for key, item in mapping.items()
         }
     if isinstance(value, list):
-        return [_tree_to_cpu(item) for item in value]
+        return [_tree_to_cpu(item) for item in cast(list[object], value)]
     if isinstance(value, tuple):
-        return tuple(_tree_to_cpu(item) for item in value)
+        return tuple(
+            _tree_to_cpu(item)
+            for item in cast(tuple[object, ...], value)
+        )
     return copy.deepcopy(value)
 
 
-def _optimizer_to(optimizer, device) -> None:
-    for state in optimizer.state.values():
+def _optimizer_to(
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+) -> None:
+    states = cast(
+        Mapping[object, dict[object, object]],
+        optimizer.state,
+    )
+    for state in states.values():
         for key, value in state.items():
             if isinstance(value, torch.Tensor):
                 state[key] = value.to(device)
