@@ -1,60 +1,60 @@
-# ADR 0003: Durable resumable training and device-aware execution
+# ADR 0003: долговечное возобновляемое обучение и device-aware execution
 
-- Status: accepted
-- Date: 2026-07-24
-- Supersedes: recovery, runtime-storage and CUDA scheduling decisions in ADR 0001
+- Статус: принято
+- Дата: 2026-07-24
+- Заменяет: решения о recovery, runtime storage и CUDA scheduling из ADR 0001
 
-## Context
+## Контекст
 
-Flight v1 intentionally tied jobs and Arrow inputs to the ephemeral
-`/tmp/transformer` storage epoch. A service or host restart therefore failed an
-active fit even when many hours of training had already completed. The worker
-also exposed one logical CUDA lane and did not bind a claimed attempt to a
-specific physical GPU.
+Flight v1 намеренно связывал jobs и Arrow inputs с временной storage epoch
+`/tmp/transformer`. Поэтому restart сервиса или хоста завершал активный fit
+ошибкой, даже если обучение уже выполнялось много часов. Worker также
+предоставлял одну логическую CUDA lane и не привязывал claimed attempt к
+конкретному физическому GPU.
 
-The training path already owns one optimizer, loss schedule, checkpoint
-selector and early-stopping lifecycle across all payloads. That state can be
-captured at a completed global-epoch boundary without loading the complete
-dataset into memory.
+Training path уже владеет едиными для всех payload-ов optimizer, loss schedule,
+checkpoint selector и lifecycle early stopping. Это состояние можно сохранить
+на границе завершённой global epoch, не загружая весь dataset в память.
 
-## Decision
+## Решение
 
-Flight v2 replaces v1. Runtime compatibility with v1 actions, descriptors and
-job records is not provided.
+Flight v2 заменяет v1. Runtime compatibility с actions, descriptors и job
+records v1 не предоставляется.
 
-Committed fit inputs and internal training-recovery checkpoints live in the
-persistent project `recovery/` directory. PostgreSQL remains authoritative for
-their visibility and for job, attempt and retry state. A file which has not
-been registered by an atomic Ledger operation is an orphan. PostgreSQL does
-not store Arrow payloads or checkpoint blobs.
+Committed fit inputs и внутренние training-recovery checkpoints находятся в
+постоянном каталоге project `recovery/`. PostgreSQL остаётся авторитетным
+источником их видимости и состояния job, attempt и retry. Файл, не
+зарегистрированный атомарной операцией Ledger, является orphan. PostgreSQL не
+хранит Arrow payload-ы или blobs checkpoints.
 
-The first recovery format captures state only after a complete global epoch.
-It contains current model, optimizer, AMP scaler, training progress,
-early-stopping state, best-checkpoint selection and random-generator state.
-Resume therefore loses at most the incomplete epoch. Recovery checkpoints are
-internal artifacts and never receive a `modelRef`; only a successful fit
-publishes an immutable model below `models/`.
+Первый recovery format сохраняет состояние только после полной global epoch.
+Он содержит текущие model, optimizer, AMP scaler, training progress,
+early-stopping state, выбор best checkpoint и состояние random generator.
+Поэтому при resume теряется не более незавершённой epoch. Recovery checkpoints
+являются внутренними artifacts и никогда не получают `modelRef`; только
+успешный fit публикует неизменяемую модель в `models/`.
 
-An interrupted or device-lost fit closes its active attempt and moves to
-`RETRYING`. A later attempt starts from the latest valid checkpoint registered
-in PostgreSQL, or from epoch zero when no checkpoint has ever been registered.
-A registered checkpoint which is missing, corrupt or incompatible is an
-explicit recovery failure rather than permission to silently restart training.
+Прерванный fit или fit с потерянным device закрывает активную attempt и
+переходит в `RETRYING`. Следующая attempt запускается с последнего корректного
+checkpoint, зарегистрированного в PostgreSQL, либо с нулевой epoch, если ни
+один checkpoint не регистрировался. Отсутствующий, повреждённый или
+несовместимый зарегистрированный checkpoint приводит к явной recovery error,
+а не разрешает незаметно перезапустить обучение.
 
-CUDA scheduling uses a boot-scoped inventory of physical devices. A CUDA
-attempt receives one server-owned device lease and its subprocess is bound
-through `CUDA_VISIBLE_DEVICES`. A confirmed device loss quarantines that
-device for the remainder of the current boot. The running process is never
-moved between devices: it is reaped and a new attempt is created. A fit remains
-`RETRYING` when no healthy CUDA device remains and can continue after a reboot
-rebuilds the inventory.
+CUDA scheduling использует привязанный к boot inventory физических devices.
+CUDA attempt получает принадлежащий серверу lease одного device, а её
+subprocess привязывается через `CUDA_VISIBLE_DEVICES`. Подтверждённая потеря
+device помещает его в quarantine до конца текущей загрузки. Running process не
+переносится между devices: он завершается, и создаётся новая attempt. Fit
+остаётся в `RETRYING`, если не осталось исправных CUDA devices, и может
+продолжиться после reboot, заново сформировавшего inventory.
 
-Retry is allowed only for service or host interruption and confirmed device
-loss. Cancellation, invalid input, incompatible recovery data, CUDA
-out-of-memory, ordinary subprocess failure, malformed output and disk
-exhaustion are not retried automatically.
+Retry разрешён только после прерывания service/host и подтверждённой потери
+device. Cancellation, invalid input, несовместимые recovery data, CUDA
+out-of-memory, обычная ошибка subprocess, malformed output и заполнение disk не
+приводят к автоматическому retry.
 
-## Storage layout
+## Структура хранилища
 
 ```text
 <project-root>/recovery/
@@ -74,37 +74,39 @@ exhaustion are not retried automatically.
     metadata.json
 ```
 
-Persistent inputs are read directly. The operating-system page cache is the
-initial RAM acceleration mechanism; v2 does not add a second tmpfs copy or a
-cache-coherency protocol.
+Постоянные inputs читаются напрямую. Начальным механизмом ускорения RAM служит
+page cache операционной системы; v2 не добавляет вторую копию tmpfs или
+протокол cache coherency.
 
-## Public contract
+## Публичный контракт
 
-Flight v2 adds the `RETRYING` state, safe recovery progress, dynamic CUDA
-capacity and quarantine counts. It does not expose filesystem paths, worker
-arguments or physical GPU identifiers. Fit is always resumable and has no
-client-controlled recovery switch.
+Flight v2 добавляет состояние `RETRYING`, безопасный recovery progress,
+динамическую CUDA capacity и количество devices в quarantine. Paths
+filesystem, arguments worker-а и физические идентификаторы GPU наружу не
+передаются. Fit всегда допускает resume и не имеет управляемого клиентом
+переключателя recovery.
 
-## Non-goals
+## Что не входит в решение
 
-- runtime compatibility with Flight v1;
-- mid-epoch or individual-batch resume;
-- one job distributed over multiple GPUs;
-- a generic storage or repository abstraction;
-- CUDA initialization in the Flight service process;
-- automatic CPU fallback for a CUDA attempt;
-- storing payloads or checkpoints in PostgreSQL;
-- returning a quarantined GPU to service before reboot.
+- runtime compatibility с Flight v1;
+- resume в середине epoch или отдельного batch;
+- распределение одной job между несколькими GPU;
+- универсальная abstraction storage или repository;
+- инициализация CUDA в процессе Flight service;
+- автоматический CPU fallback для CUDA attempt;
+- хранение payload-ов или checkpoints в PostgreSQL;
+- возврат quarantined GPU в service до reboot.
 
-## Consequences
+## Последствия
 
-- A complete loss of `/tmp/transformer` no longer invalidates resumable fit
-  jobs whose persistent inputs and registered checkpoint remain valid.
-- Recovery storage needs explicit capacity monitoring and cleanup.
-- Checkpoint files are larger because optimizer, best-model and random state
-  are part of recovery.
-- Resuming on a different GPU preserves logical training state but does not
-  promise bit-for-bit equality for nondeterministic CUDA kernels.
-- The v2 cutover invalidates v1 runtime jobs, attempts, tickets and
-  idempotency records while preserving published models, aliases and access
+- Полная потеря `/tmp/transformer` больше не делает недействительными
+  возобновляемые fit jobs с корректными постоянными inputs и
+  зарегистрированным checkpoint.
+- Recovery storage требует явного мониторинга capacity и очистки.
+- Файлы checkpoints становятся больше, поскольку recovery включает optimizer,
+  best model и random state.
+- Resume на другом GPU сохраняет логическое training state, но не обещает
+  побитового равенства для nondeterministic CUDA kernels.
+- Переключение на v2 делает недействительными runtime jobs, attempts, tickets и
+  idempotency records v1, сохраняя опубликованные models, aliases и access
   tokens.

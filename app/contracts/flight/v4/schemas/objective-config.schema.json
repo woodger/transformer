@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v4/objective-config.schema.json",
+  "title": "Transformer target-aligned objective configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "objectiveId", "directLosses", "auxiliaryLosses",
+    "stagePolicy", "selection"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "objectiveId": {"const": "transformer.objective.target-aligned.v1"},
+    "directLosses": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/l0"},
+        {"$ref": "#/$defs/l1"},
+        {"$ref": "#/$defs/l2"},
+        {"$ref": "#/$defs/l3"},
+        {"$ref": "#/$defs/l4"},
+        {"$ref": "#/$defs/l5"}
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "auxiliaryLosses": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "privateHead", "weight"],
+          "properties": {
+            "id": {"const": "gaussianNll"},
+            "type": {"const": "gaussian_nll"},
+            "privateHead": {"const": "returnScale"},
+            "weight": {"const": 1.0}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "type", "weight", "riskPenalty"],
+          "properties": {
+            "id": {"const": "expectedValue"},
+            "type": {"const": "take_profit_minus_stop_loss"},
+            "weight": {"const": 0.3},
+            "riskPenalty": {"const": 0.1}
+          }
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "stagePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schedule", "stageSize", "maximumStage", "stages"],
+      "properties": {
+        "schedule": {"enum": ["none", "epoch", "step"]},
+        "stageSize": {"type": "integer", "minimum": 1},
+        "maximumStage": {"const": 4},
+        "stages": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["1", "2", "3", "4"],
+          "properties": {
+            "1": {"const": ["L0", "L1", "gaussianNll"]},
+            "2": {"const": ["L0", "L1", "L2", "L3", "L5", "gaussianNll"]},
+            "3": {"const": ["L0", "L1", "L2", "L3", "L5", "gaussianNll", "expectedValue"]},
+            "4": {"const": ["L0", "L1", "L2", "L3", "L4", "L5", "gaussianNll", "expectedValue"]}
+          }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "aggregation", "weights", "minDelta", "patience",
+        "stagePolicy", "tiePolicy", "baselinePolicy", "invalidScorePolicy",
+        "fallbackPolicy"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "aggregation": {"const": "global_row_mean"},
+        "weights": {
+          "type": "array",
+          "items": {"type": "number", "exclusiveMinimum": 0},
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "minDelta": {"type": "number", "minimum": 0},
+        "patience": {"type": "integer", "minimum": 0},
+        "stagePolicy": {"const": "maximum_only_reset"},
+        "tiePolicy": {"const": "earliest"},
+        "baselinePolicy": {"const": "none"},
+        "invalidScorePolicy": {"const": "fail_training"},
+        "fallbackPolicy": {
+          "enum": ["best_selection_score", "last_maximum_stage_checkpoint"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": true}}},
+          "then": {
+            "properties": {"fallbackPolicy": {"const": "best_selection_score"}}
+          },
+          "else": {
+            "properties": {
+              "minDelta": {"const": 0.0},
+              "patience": {"const": 0},
+              "fallbackPolicy": {"const": "last_maximum_stage_checkpoint"}
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "directLoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "targetIndex", "semantic", "type", "normalization", "weight"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "targetIndex": {"type": "integer", "minimum": 0, "maximum": 5},
+        "semantic": {"type": "string"},
+        "type": {"type": "string"},
+        "normalization": {"const": "global_row_mean"},
+        "weight": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "l0": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L0"}, "targetIndex": {"const": 0},
+        "semantic": {"const": "meanReturn"}, "type": {"const": "smooth_l1"}
+      }
+    },
+    "l1": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L1"}, "targetIndex": {"const": 1},
+        "semantic": {"const": "sigmaReturn"}, "type": {"const": "smooth_l1"}
+      }
+    },
+    "l2": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L2"}, "targetIndex": {"const": 2},
+        "semantic": {"const": "probTP"},
+        "type": {"const": "binary_cross_entropy_with_logits"}
+      }
+    },
+    "l3": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L3"}, "targetIndex": {"const": 3},
+        "semantic": {"const": "probSL"},
+        "type": {"const": "binary_cross_entropy_with_logits"}
+      }
+    },
+    "l4": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L4"}, "targetIndex": {"const": 4},
+        "semantic": {"const": "volatilityNext"}, "type": {"const": "log_mse"}
+      }
+    },
+    "l5": {
+      "$ref": "#/$defs/directLoss",
+      "properties": {
+        "id": {"const": "L5"}, "targetIndex": {"const": 5},
+        "semantic": {"const": "hittingProbTP"},
+        "type": {"const": "binary_cross_entropy_with_logits"}
+      }
+    }
+  }
+}

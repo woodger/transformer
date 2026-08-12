@@ -1,91 +1,70 @@
 import hashlib
 import json
 import os
-import secrets
 from dataclasses import dataclass
 
 import pyarrow.ipc as ipc
 
-from app.contracts.worker.v2.config import ModelConfig
 from app.service.adapters.inbound.flight.arrow import InputBatchValidator
-from app.service.adapters.inbound.flight.constants import (
-    FIT_SCHEMA_ID,
-    PREDICT_SCHEMA_ID,
-    ErrorCode,
-    InputState,
-)
 from app.service.adapters.inbound.flight.contract import validate_upload_metadata
-from app.service.adapters.inbound.flight.errors import (
+from app.service.application.input_models import (
+    CommittedInput,
+    InputPayloadReceipt,
+    InputUploadMetadata,
+)
+from app.service.application.ports.input_uploads import InputArtifactStore
+from app.service.application.services.input_upload import (
+    InputKindMismatch,
+    InputUploadLifecycle,
+)
+from app.service.domain.errors import (
     ServiceError,
     conflict,
-    failed_precondition,
     invalid,
-    not_found,
     resource_exhausted,
 )
+from app.service.domain.job import ErrorCode
 
 
 @dataclass(frozen=True)
 class UploadOutcome:
-    record: dict
+    record: CommittedInput
     committed_now: bool
 
 
 class InputUploadSession:
-    """Own the temporary and durable state of exactly one DoPut."""
+    """Own the transport staging of exactly one authorized DoPut."""
 
     def __init__(
         self,
         config,
-        ledger,
-        artifact_store,
+        lifecycle: InputUploadLifecycle,
+        artifact_stores: dict[str, InputArtifactStore],
         *,
-        storage_class,
         owner,
-        job,
+        job_id,
         ordinal,
         reader,
-        selected_device,
     ):
         self.config = config
-        self.ledger = ledger
-        if storage_class not in ("runtime", "recovery"):
-            raise ValueError(
-                "storage_class must be runtime or recovery"
-            )
-        self.artifact_store = artifact_store
-        self.storage_class = storage_class
+        self.lifecycle = lifecycle
+        self.artifact_stores = artifact_stores
         self.owner = owner
-        self.job = job
+        self.job_id = job_id
         self.ordinal = ordinal
         self.reader = reader
-        if selected_device not in ("cpu", "cuda"):
-            raise ValueError("selected_device must be cpu or cuda")
-        self.selected_device = selected_device
 
+        self.authorization = None
+        self.artifact_store = None
         self.destination = None
         self.temporary_file = None
         self.temporary_path = None
         self.ipc_writer = None
-        self.upload_token = None
-        self.metadata = None
-        self.existing = None
+        self.validator = None
         self.committed = False
         self.destination_published = False
 
     def run(self) -> UploadOutcome:
-        model_config = ModelConfig.from_dict(self.job["model_config"])
-        if model_config is None:
-            raise failed_precondition("job model configuration is unavailable")
-        validator = InputBatchValidator(
-            self.job["operation"],
-            self.reader.schema,
-            seq_len=model_config.seq_len,
-            expected_feature_dim=model_config.feature_dim,
-            max_batch_bytes=self.config.max_batch_bytes,
-            max_payload_bytes=self.config.max_payload_bytes,
-            max_rows=self.config.max_rows_per_payload,
-        )
         try:
             while True:
                 try:
@@ -93,65 +72,73 @@ class InputUploadSession:
                 except StopIteration:
                     break
 
-                # Cancellation is a concurrent control-plane transaction. Do
-                # not continue validating or staging transport chunks after it
-                # commits; the final commit check remains the authoritative
-                # guard for a race after the last chunk.
-                current = self.ledger.get_job(
-                    self.job["job_id"],
-                    owner_subject=self.owner,
-                )
-                if current is None:
-                    raise not_found("job not found")
-                if current["input_state"] == InputState.ABORTED.value:
-                    raise ServiceError(ErrorCode.CANCELLED, "job input was aborted")
-                if current["input_state"] != InputState.OPEN.value:
-                    raise failed_precondition("job no longer accepts inputs")
+                if self.authorization is not None:
+                    # Cancellation can commit while a transport stream is
+                    # still delivering chunks. The final commit remains the
+                    # authoritative fence for the race after the last chunk.
+                    self.lifecycle.assert_accepting(self.authorization)
 
                 if chunk.app_metadata is not None:
-                    if self.metadata is not None:
+                    if self.authorization is not None:
                         raise invalid(
                             "DoPut application metadata must be sent exactly once"
                         )
-                    self.metadata = validate_upload_metadata(
+                    metadata = InputUploadMetadata(**validate_upload_metadata(
                         _parse_metadata(chunk.app_metadata)
+                    ))
+                    if metadata.job_id != self.job_id:
+                        raise invalid(
+                            "metadata jobId does not match descriptor"
+                        )
+                    if metadata.ordinal != self.ordinal:
+                        raise invalid(
+                            "metadata ordinal does not match descriptor"
+                        )
+                    try:
+                        self.authorization = self.lifecycle.authorize(
+                            self.owner,
+                            self.job_id,
+                            metadata,
+                        )
+                    except InputKindMismatch as exc:
+                        raise invalid(
+                            "metadata schemaId does not match job operation"
+                        ) from exc
+                    self.artifact_store = self.artifact_stores[
+                        self.authorization.storage_class
+                    ]
+                    self.validator = InputBatchValidator(
+                        self.authorization.job.operation,
+                        self.reader.schema,
+                        seq_len=(
+                            self.authorization.job.model_config.seq_len
+                        ),
+                        expected_feature_dim=(
+                            self.authorization.job.model_config.feature_dim
+                        ),
+                        max_batch_bytes=self.config.max_batch_bytes,
+                        max_payload_bytes=self.config.max_payload_bytes,
+                        max_rows=self.config.max_rows_per_payload,
                     )
-                    _match_upload(self.job, self.metadata, self.ordinal)
-                    _verify_current_fence(current, self.metadata)
-                    self.existing = _find_existing(
-                        self.ledger,
-                        self.job["job_id"],
-                        self.ordinal,
-                        self.metadata["payload_id"],
-                        self.storage_class,
-                    )
-
-                    self.upload_token = secrets.token_hex(24)
-                    self.destination = self.artifact_store.input_candidate_path(
-                        self.job["job_id"],
-                        self.ordinal,
-                        self.metadata["payload_id"],
-                        self.upload_token,
+                    self.destination = (
+                        self.artifact_store.input_candidate_path(
+                            self.job_id,
+                            self.ordinal,
+                            metadata.payload_id,
+                            self.authorization.upload_token,
+                        )
                     )
                     self.temporary_file, self.temporary_path = (
                         self.artifact_store.create_temporary(
                             self.destination
                         )
                     )
-                    if self.existing is None:
-                        self.ledger.reserve_input(
-                            job_id=self.job["job_id"],
-                            payload_id=self.metadata["payload_id"],
-                            ordinal=self.ordinal,
-                            client_execution_id=(
-                                self.metadata["client_execution_id"]
-                            ),
-                            fencing_token=self.metadata["fencing_token"],
-                            upload_token=self.upload_token,
-                            candidate_path=self.artifact_store.relative_path(
+                    if self.authorization.existing is None:
+                        self.lifecycle.reserve(
+                            self.authorization,
+                            self.artifact_store.relative_path(
                                 self.destination
                             ),
-                            storage_class=self.storage_class,
                         )
                     self.ipc_writer = ipc.new_file(
                         self.temporary_file,
@@ -163,24 +150,25 @@ class InputUploadSession:
                     )
 
                 if chunk.data is not None:
-                    if self.metadata is None:
+                    if self.authorization is None:
                         raise invalid(
                             "DoPut application metadata must precede RecordBatch data"
                         )
-                    validator.validate_batch(chunk.data)
+                    self.validator.validate_batch(chunk.data)
                     self.ipc_writer.write_batch(chunk.data)
                     _enforce_staged_size(
                         self.temporary_file,
                         self.config.max_payload_bytes,
                     )
 
-            if self.metadata is None:
+            if self.authorization is None:
                 raise invalid("DoPut application metadata is required")
 
-            stats = validator.stats()
-            if stats.rows != self.metadata["rows"]:
+            stats = self.validator.stats()
+            metadata = self.authorization.metadata
+            if stats.rows != metadata.rows:
                 raise invalid(
-                    f"metadata rows {self.metadata['rows']} does not match uploaded "
+                    f"metadata rows {metadata.rows} does not match uploaded "
                     f"row count {stats.rows}"
                 )
 
@@ -201,85 +189,64 @@ class InputUploadSession:
             feature_dim = (
                 None
                 if stats.src_width is None
-                else stats.src_width // model_config.seq_len
+                else stats.src_width
+                // self.authorization.job.model_config.seq_len
             )
+            if stats.src_width is None or feature_dim is None:
+                raise invalid("input source width is unavailable")
 
-            if self.existing is not None:
+            existing = self.authorization.existing
+            if existing is not None:
                 _validate_exact_duplicate(
-                    self.existing,
-                    self.metadata,
+                    existing,
+                    metadata,
                     stats,
                     byte_count,
                     digest,
                 )
                 _validate_committed_artifact(
-                    self.existing,
+                    existing,
                     self.artifact_store.absolute_path(
-                        self.existing["relative_path"]
+                        existing.relative_path
                     ),
-                    self.storage_class,
                 )
                 os.unlink(self.temporary_path)
                 self.temporary_path = None
-                current = self.ledger.get_job(
-                    self.job["job_id"],
-                    owner_subject=self.owner,
+                return UploadOutcome(
+                    self.lifecycle.replay(self.authorization),
+                    False,
                 )
-                if current is None:
-                    raise not_found("job not found")
-                _verify_current_fence(current, self.metadata)
-                duplicate = dict(self.existing)
-                duplicate.update({
-                    "input_revision": current["input_revision"],
-                    "next_input_ordinal": current["next_input_ordinal"],
-                    "queued": False,
-                    "frontier_advanced": False,
-                })
-                return UploadOutcome(duplicate, False)
 
-            # durable_replace may raise after os.replace while fsyncing the
-            # parent directory. Mark publication before the call so the
-            # failure path removes any final-named, uncommitted artifact.
+            # durable_create can raise after publication while fsyncing the
+            # parent directory. Mark it first so cleanup treats the final name
+            # as a candidate whose ledger ownership must be checked.
             self.destination_published = True
             self.artifact_store.durable_create(
                 self.temporary_path,
                 self.destination,
             )
             self.temporary_path = None
+            receipt = InputPayloadReceipt(
+                relative_path=self.artifact_store.relative_path(
+                    self.destination
+                ),
+                rows=stats.rows,
+                batches=stats.batches,
+                byte_count=byte_count,
+                sha256=digest,
+                schema_fingerprint=stats.schema_fingerprint,
+                source_width=stats.src_width,
+                feature_dim=feature_dim,
+            )
             try:
-                record = self.ledger.commit_input(
-                    upload_token=self.upload_token,
-                    job_id=self.job["job_id"],
-                    client_execution_id=self.metadata["client_execution_id"],
-                    fencing_token=self.metadata["fencing_token"],
-                    relative_path=self.artifact_store.relative_path(
-                        self.destination
-                    ),
-                    schema_id=self.metadata["schema_id"],
-                    data_contract_sha256=(
-                        self.metadata["data_contract_sha256"]
-                    ),
-                    rows=stats.rows,
-                    batches=stats.batches,
-                    byte_count=byte_count,
-                    sha256=digest,
-                    schema_fingerprint=stats.schema_fingerprint,
-                    source_width=stats.src_width,
-                    feature_dim=feature_dim,
-                    selected_device=self.selected_device,
-                    max_payloads=self.config.max_payloads_per_job,
-                    max_job_bytes=self.config.max_job_bytes,
-                    storage_class=self.storage_class,
+                record = self.lifecycle.commit(
+                    self.authorization,
+                    receipt,
                 )
             except BaseException:
-                # A failure can happen before the transaction commits, or
-                # after commit while returning to this session. Never delete a
-                # file that the ledger may already reference.
                 durable = _committed_record(
-                    self.ledger,
-                    self.job["job_id"],
-                    self.ordinal,
-                    self.metadata["payload_id"],
+                    self.lifecycle,
+                    self.authorization,
                 )
                 if durable is not None:
                     self.committed = True
@@ -295,37 +262,28 @@ class InputUploadSession:
             self._cleanup()
 
     def _cleanup(self) -> None:
-        # Cleanup operations are deliberately independent. In particular,
-        # ENOSPC from IPC writer finalization must not strand a reservation and
-        # permanently block seal until restart.
         if self.ipc_writer is not None:
             _best_effort_close(self.ipc_writer)
         if self.temporary_file is not None and not self.temporary_file.closed:
             _best_effort_close(self.temporary_file)
         if self.temporary_path is not None:
             _best_effort_unlink(self.temporary_path)
-        if self.upload_token is not None and not self.committed:
-            # If commit raised after PostgreSQL committed, preserve the final
-            # file and record. If the reconciliation query itself cannot run,
-            # preserving the file is safer than corrupting a possible
-            # committed input; startup reconciliation will decide later.
-            durable = _committed_record(
-                self.ledger,
-                self.job["job_id"],
-                self.ordinal,
-                (
-                    self.metadata["payload_id"]
-                    if self.metadata is not None
-                    else None
-                ),
+        if self.authorization is None or self.committed:
+            return
+        durable = _committed_record(
+            self.lifecycle,
+            self.authorization,
+        )
+        if durable is None:
+            if self.destination_published:
+                _best_effort_remove(
+                    self.artifact_store,
+                    self.destination,
+                )
+            _best_effort_abort(
+                self.lifecycle,
+                self.authorization.upload_token,
             )
-            if durable is None:
-                if self.destination_published:
-                    _best_effort_remove(
-                        self.artifact_store,
-                        self.destination,
-                    )
-                _best_effort_abort(self.ledger, self.upload_token)
 
 
 def _parse_metadata(buffer) -> dict:
@@ -335,94 +293,45 @@ def _parse_metadata(buffer) -> dict:
     try:
         document = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
-        raise invalid("DoPut application metadata must be valid UTF-8 JSON") from exc
+        raise invalid(
+            "DoPut application metadata must be valid UTF-8 JSON"
+        ) from exc
     if not isinstance(document, dict):
         raise invalid("DoPut application metadata must be a JSON object")
     return document
 
 
-def _match_upload(job: dict, metadata: dict, descriptor_ordinal: int) -> None:
-    if metadata["job_id"] != job["job_id"]:
-        raise invalid("metadata jobId does not match descriptor")
-    if metadata["ordinal"] != descriptor_ordinal:
-        raise invalid("metadata ordinal does not match descriptor")
-    expected = FIT_SCHEMA_ID if job["operation"] == "fit" else PREDICT_SCHEMA_ID
-    if metadata["schema_id"] != expected:
-        raise invalid("metadata schemaId does not match job operation")
-    if metadata["data_contract_sha256"] != job["data_contract_sha256"]:
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "metadata dataContractSha256 does not match the job",
-        )
-
-
-def _verify_current_fence(job: dict, metadata: dict) -> None:
-    if (
-        metadata["client_execution_id"] != job["client_execution_id"]
-        or metadata["fencing_token"] != job["fencing_token"]
-    ):
-        raise ServiceError(
-            ErrorCode.STALE_FENCE,
-            "job ownership fence is stale",
-        )
-
-
-def _find_existing(
-    ledger,
-    job_id: str,
-    ordinal: int,
-    payload_id: str,
-    storage_class: str,
-):
-    by_ordinal = ledger.find_input(job_id, ordinal=ordinal)
-    by_payload = ledger.find_input(job_id, payload_id=payload_id)
-    if by_ordinal is None and by_payload is None:
-        return None
-    if by_ordinal is None or by_payload is None:
-        raise conflict("input ordinal or payloadId is already committed")
-    if by_ordinal["ordinal"] != by_payload["ordinal"]:
-        raise conflict("input ordinal and payloadId refer to different inputs")
-    if (
-        by_ordinal.get("storage_class") != storage_class
-        or by_payload.get("storage_class") != storage_class
-    ):
-        raise conflict("input is committed in a different storage class")
-    return by_ordinal
-
-
 def _validate_exact_duplicate(existing, metadata, stats, byte_count, digest):
     matches = (
-        existing["payload_id"] == metadata["payload_id"]
-        and existing["ordinal"] == metadata["ordinal"]
-        and existing["schema_id"] == metadata["schema_id"]
-        and existing["data_contract_sha256"]
-        == metadata["data_contract_sha256"]
-        and existing["rows"] == stats.rows
-        and existing["batches"] == stats.batches
-        and existing["bytes"] == byte_count
-        and existing["sha256"] == digest
-        and existing["schema_fingerprint"] == stats.schema_fingerprint
-        and existing["source_width"] == stats.src_width
+        existing.payload_id == metadata.payload_id
+        and existing.ordinal == metadata.ordinal
+        and existing.schema_id == metadata.schema_id
+        and existing.data_contract_sha256
+        == metadata.data_contract_sha256
+        and existing.rows == stats.rows
+        and existing.batches == stats.batches
+        and existing.byte_count == byte_count
+        and existing.sha256 == digest
+        and existing.schema_fingerprint == stats.schema_fingerprint
+        and existing.source_width == stats.src_width
     )
     if not matches:
-        raise conflict("input ordinal or payloadId conflicts with committed input")
+        raise conflict(
+            "input ordinal or payloadId conflicts with committed input"
+        )
 
 
-def _validate_committed_artifact(
-    existing,
-    destination: str,
-    storage_class: str,
-) -> None:
+def _validate_committed_artifact(existing, destination: str) -> None:
     code = (
         ErrorCode.RECOVERY_INPUT_UNAVAILABLE
-        if storage_class == "recovery"
+        if existing.storage_class == "recovery"
         else ErrorCode.INTERNAL
     )
     try:
         valid = (
             os.path.isfile(destination)
-            and os.path.getsize(destination) == existing["bytes"]
-            and _sha256_file(destination) == existing["sha256"]
+            and os.path.getsize(destination) == existing.byte_count
+            and _sha256_file(destination) == existing.sha256
         )
     except OSError as exc:
         raise ServiceError(
@@ -452,22 +361,13 @@ def _enforce_staged_size(file, maximum: int) -> None:
         )
 
 
-def _committed_record(ledger, job_id: str, ordinal: int, payload_id: str | None):
-    if payload_id is None:
-        return None
+def _committed_record(lifecycle, authorization):
     try:
-        by_ordinal = ledger.find_input(job_id, ordinal=ordinal)
-        by_payload = ledger.find_input(job_id, payload_id=payload_id)
+        return lifecycle.find_committed(authorization)
     except Exception:
-        # Unknown is intentionally distinct from a confirmed missing record.
-        # Returning a sentinel preserves the final artifact until startup
-        # reconciliation can consult a healthy ledger.
+        # Unknown is distinct from a confirmed missing record. The sentinel
+        # preserves the final artifact for startup reconciliation.
         return {"reconciliation": "deferred"}
-    if by_ordinal is None or by_payload is None:
-        return None
-    if by_ordinal["payload_id"] != payload_id or by_payload["ordinal"] != ordinal:
-        return None
-    return by_ordinal
 
 
 def _best_effort_close(resource) -> None:
@@ -484,15 +384,15 @@ def _best_effort_unlink(path: str) -> None:
         pass
 
 
-def _best_effort_remove(spool, path: str) -> None:
+def _best_effort_remove(store, path: str) -> None:
     try:
-        spool.remove(path)
+        store.remove(path)
     except (FileNotFoundError, OSError):
         pass
 
 
-def _best_effort_abort(ledger, upload_token: str) -> None:
+def _best_effort_abort(lifecycle, upload_token: str) -> None:
     try:
-        ledger.abort_input(upload_token)
+        lifecycle.abort(upload_token)
     except Exception:
         pass

@@ -18,7 +18,7 @@ from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
 from app.flight.process import capture_worker_process
 from app.flight.spool import RuntimeDirectoryLocked, Spool
 from app.service.domain.job import ExecutionState, InputState
-from tests.flight_v3_helpers import commit_input, create_fit
+from tests.flight_v4_helpers import commit_input, create_fit
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
     client = flight.FlightClient(("localhost", application.server.port))
     body = json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
     }).encode()
     try:
@@ -72,7 +72,7 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
             flight.Action(CAPABILITIES_ACTION, body),
             options=options(),
         ))
-        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [3]
+        assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [4]
 
         with pytest.raises(RuntimeDirectoryLocked):
             FlightApplication.build(
@@ -116,14 +116,14 @@ def test_application_uses_database_token_cache_without_query_per_rpc(
         for _ in range(2):
             body = json.dumps({
                 "contract": CONTRACT_NAME,
-                "version": 3,
+                "version": 4,
                 "requestId": str(uuid.uuid4()),
             }).encode()
             result = list(client.do_action(
                 flight.Action(CAPABILITIES_ACTION, body),
                 options=options(issued.token),
             ))
-            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [3]
+            assert json.loads(result[0].body.to_pybytes())["protocolVersions"] == [4]
 
         assert credential_loads == [True]
     finally:

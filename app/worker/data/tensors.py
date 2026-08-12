@@ -26,8 +26,10 @@ def validate_checkpoint_feature_dim(
     X_cpu: torch.Tensor,
     checkpoint_feature_dim: int | None,
 ) -> int:
+    if checkpoint_feature_dim is None:
+        raise ValueError("Checkpoint feature_dim is unavailable")
     feature_dim = X_cpu.shape[2]
-    if checkpoint_feature_dim is not None and feature_dim != checkpoint_feature_dim:
+    if feature_dim != checkpoint_feature_dim:
         raise ValueError(
             f"Feature dim {feature_dim} does not match checkpoint feature_dim "
             f"{checkpoint_feature_dim}"

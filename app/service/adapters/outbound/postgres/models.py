@@ -153,6 +153,7 @@ class Job(Base):
     training_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     data_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ml_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_width: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -378,9 +379,10 @@ class PublishedModel(Base):
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
-            "(certified_for_v3 AND data_contract IS NOT NULL "
-            "AND data_contract_sha256 IS NOT NULL) OR NOT certified_for_v3",
-            name="models_v3_certification_ck",
+            "(ml_contract IS NULL AND objective_config_sha256 IS NULL) OR "
+            "(ml_contract IS NOT NULL AND objective_config_sha256 IS NOT NULL "
+            "AND data_contract IS NOT NULL AND data_contract_sha256 IS NOT NULL)",
+            name="models_ml_contract_ck",
         ),
         {"schema": SCHEMA},
     )
@@ -396,12 +398,8 @@ class PublishedModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
     data_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
-    certified_for_v3: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=text("false"),
-    )
+    ml_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    objective_config_sha256: Mapped[str | None] = mapped_column(String(64))
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="SET NULL"),

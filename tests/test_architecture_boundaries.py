@@ -1,5 +1,6 @@
 import ast
 import importlib.util
+import inspect
 import subprocess
 import sys
 from pathlib import Path
@@ -79,11 +80,14 @@ def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
 def test_service_domain_and_application_dependencies_point_inward():
     modules = _application_modules()
     violations = []
-    allowed_domain = ("app.service.domain", "app.contracts")
+    allowed_domain = (
+        "app.service.domain",
+        "app.contracts.worker",
+    )
     allowed_application = (
         "app.service.application",
         "app.service.domain",
-        "app.contracts",
+        "app.contracts.worker",
     )
     forbidden_libraries = ("pyarrow", "sqlalchemy", "torch")
     for source, path in modules.items():
@@ -188,16 +192,92 @@ def test_application_internal_import_graph_is_acyclic():
 
 
 def test_contracts_and_composition_roots_have_canonical_locations():
-    assert (APP_ROOT / "contracts" / "flight" / "v3").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v2").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v4").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v3").is_dir()
+    assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
+    assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
     assert not (PROJECT_ROOT / "contracts").exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",
+        APP_ROOT / "service" / "bootstrap" / "data_plane.py",
+        APP_ROOT / "service" / "bootstrap" / "job_control.py",
         APP_ROOT / "worker" / "bootstrap" / "__main__.py",
         APP_ROOT / "admin" / "bootstrap" / "auth_tokens.py",
         APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
     ):
         assert path.is_file()
+
+
+def test_service_application_job_api_is_transport_neutral():
+    forbidden_symbols = {
+        "ACQUIRE_ACTION",
+        "CANCEL_ACTION",
+        "CONTRACT_PATH_VERSION",
+        "CREATE_ACTION",
+        "FIT_SCHEMA_ID",
+        "INPUT_CLOSE_ACTION",
+        "PREDICT_SCHEMA_ID",
+        "JobActionContract",
+        "encode_document",
+        "response_factory",
+        "response_document",
+    }
+    forbidden_wire_values = {"descriptorPath", "schemaId"}
+    violations = []
+    for relative in (
+        "application/commands/jobs.py",
+        "application/queries/status.py",
+        "application/services/input_upload.py",
+        "application/queries/outputs.py",
+    ):
+        path = APP_ROOT / "service" / relative
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        used = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+        }
+        used.update(
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+        )
+        for symbol in sorted(used & forbidden_symbols):
+            violations.append(f"{relative}: {symbol}")
+        strings = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+        }
+        for value in sorted(strings & forbidden_wire_values):
+            violations.append(f"{relative}: {value}")
+        for value in sorted(
+            item for item in strings if item.startswith("transformer.v4.")
+        ):
+            violations.append(f"{relative}: {value}")
+    assert violations == [], "Flight presentation leaked into application:\n" + (
+        "\n".join(violations)
+    )
+
+
+def test_flight_handlers_receive_use_cases_instead_of_raw_ledger():
+    from app.service.adapters.inbound.flight.coordinator import JobCoordinator
+    from app.service.adapters.inbound.flight.output import OutputHandler
+    from app.service.adapters.inbound.flight.upload import UploadHandler
+
+    signatures = {
+        "JobCoordinator": JobCoordinator.__init__,
+        "OutputHandler": OutputHandler.__init__,
+        "UploadHandler": UploadHandler.__init__,
+    }
+    forbidden_parameters = {"ledger", "spool", "recovery_store"}
+    violations = []
+    for name, constructor in signatures.items():
+        parameters = set(inspect.signature(constructor).parameters)
+        for parameter in sorted(parameters & forbidden_parameters):
+            violations.append(f"{name}.{parameter}")
+    assert violations == []
 
 
 def test_service_and_admin_imports_do_not_initialize_worker_runtime():

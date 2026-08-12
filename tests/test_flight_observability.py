@@ -50,7 +50,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -125,6 +125,9 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         model_config=None,
         training_config=None,
         data_contract={"data_contract_sha256": "d" * 64},
+        ml_contract={
+            "objectiveId": "transformer.objective.target-aligned.v1",
+        },
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

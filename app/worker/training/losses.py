@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
 
 from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
+from app.contracts.worker.v3.config import DEFAULT_DIRECT_LOSS_WEIGHTS
+from app.worker.model.transformer import public_predictions
 
 
 @dataclass(frozen=True)
@@ -14,32 +18,47 @@ class LossStageDefinition:
 
 
 LOSS_STAGE_DEFINITIONS = (
-    LossStageDefinition(1, "returns", ("ret",)),
-    LossStageDefinition(2, "probabilities", ("ret", "prob")),
-    LossStageDefinition(3, "bayesian-ev", ("ret", "prob", "ev")),
-    LossStageDefinition(4, "volatility", ("ret", "prob", "ev", "vol")),
+    LossStageDefinition(1, "returns", ("L0", "L1", "nll")),
+    LossStageDefinition(
+        2,
+        "probabilities",
+        ("L0", "L1", "L2", "L3", "L5", "nll"),
+    ),
+    LossStageDefinition(
+        3,
+        "bayesian-ev",
+        ("L0", "L1", "L2", "L3", "L5", "nll", "ev"),
+    ),
+    LossStageDefinition(
+        4,
+        "volatility",
+        ("L0", "L1", "L2", "L3", "L4", "L5", "nll", "ev"),
+    ),
 )
 
 LOSS_STAGES = len(LOSS_STAGE_DEFINITIONS)
 LOSS_SCHEDULES = ("none", "epoch", "step")
+_SEMANTIC_NAMES = (
+    "mean_return",
+    "sigma_return",
+    "prob_tp",
+    "prob_sl",
+    "volatility_next",
+    "hitting_prob_tp",
+)
 _LOSS_STATISTIC_NAMES = (
     "loss",
-    "loss_ret",
-    "loss_prob",
+    *(f"loss_l{index}" for index in range(6)),
+    "loss_nll",
     "loss_ev",
-    "loss_vol",
-    "sigma_min",
-    "sigma_p05",
-    "sigma_mean",
-    "ret_mae",
-    "ret_mse",
-    "ret_mae_baseline",
+    *(f"{name}_mae" for name in _SEMANTIC_NAMES),
+    *(f"{name}_mse" for name in _SEMANTIC_NAMES),
 )
 
 
 @dataclass(frozen=True)
 class LossStatistics:
-    """Device-resident scalar statistics awaiting one host transfer."""
+    """Device-resident row-normalized statistics awaiting one host transfer."""
 
     values: tuple[torch.Tensor, ...]
     loss_stage: int
@@ -93,10 +112,8 @@ def resolve_loss_stage(
 ) -> int:
     max_stage = validate_loss_stage(max_stage)
     loss_schedule = validate_loss_schedule(loss_schedule)
-
     if loss_schedule == "none":
         return max_stage
-
     stage_size = validate_stage_size(stage_size)
     return min(max_stage, progress // stage_size + 1)
 
@@ -107,114 +124,101 @@ def active_loss_components(loss_stage: int) -> tuple[str, ...]:
 
 
 def combined_loss(
-    preds,
-    targets,
+    output: torch.Tensor,
+    targets: torch.Tensor,
     loss_stage: int = LOSS_STAGE,
+    direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
     return_parts: bool = False,
     return_statistics: bool = False,
 ):
+    """Evaluate the target-aligned staged objective.
+
+    The first six model heads represent public target coordinates. Probability
+    heads remain logits here for stable BCE; the seventh head is the private
+    Gaussian return scale. Every public coordinate has its own direct loss.
+    """
+
     if return_parts and return_statistics:
         raise ValueError(
             "return_parts and return_statistics are mutually exclusive"
         )
+    if output.ndim != 2 or output.shape[1] != 7:
+        raise ValueError("model output must have shape [rows, 7]")
+    if targets.ndim != 2 or targets.shape != (output.shape[0], 6):
+        raise ValueError("targets must have shape [rows, 6]")
+    if len(direct_loss_weights) != 6:
+        raise ValueError("direct_loss_weights must contain six values")
+
     loss_stage = validate_loss_stage(loss_stage)
-    components = active_loss_components(loss_stage)
+    active = frozenset(active_loss_components(loss_stage))
+    mean_return = output[:, 0]
+    sigma_return = output[:, 1]
+    take_profit_logit = output[:, 2]
+    stop_loss_logit = output[:, 3]
+    next_volatility = output[:, 4]
+    hitting_probability_logit = output[:, 5]
+    return_scale = output[:, 6]
 
-    (
-        mean_return,
-        return_scale,
-        take_profit_logit,
-        stop_loss_logit,
-        next_volatility,
-        _hit_logit,
-    ) = preds.T
-    target_mean_return, _, _, _, target_next_volatility, target_hit = targets.T
-
-    loss = preds.new_tensor(0.0)
-    loss_prob = preds.new_tensor(0.0)
-    loss_ev = preds.new_tensor(0.0)
-    loss_vol = preds.new_tensor(0.0)
-
-    # -------------------------
-    # Gaussian NLL
-    # -------------------------
-    var = return_scale.square() + 1e-6
-    loss_ret = torch.mean(
-        0.5
-        * (
-            (target_mean_return - mean_return).square() / var
-            + torch.log(var)
-        )
+    direct_rows = (
+        F.smooth_l1_loss(mean_return, targets[:, 0], reduction="none"),
+        F.smooth_l1_loss(sigma_return, targets[:, 1], reduction="none"),
+        F.binary_cross_entropy_with_logits(
+            take_profit_logit,
+            targets[:, 2],
+            reduction="none",
+        ),
+        F.binary_cross_entropy_with_logits(
+            stop_loss_logit,
+            targets[:, 3],
+            reduction="none",
+        ),
+        (
+            torch.log(next_volatility + 1e-6)
+            - torch.log(targets[:, 4] + 1e-6)
+        ).square(),
+        F.binary_cross_entropy_with_logits(
+            hitting_probability_logit,
+            targets[:, 5],
+            reduction="none",
+        ),
     )
-    loss += loss_ret
+    direct_means = tuple(values.mean() for values in direct_rows)
 
-    # -------------------------
-    # Probabilities (AMP safe)
-    # -------------------------
-    if "prob" in components:
-        raw_loss_prob = (
-            F.binary_cross_entropy_with_logits(take_profit_logit, target_hit)
-            + F.binary_cross_entropy_with_logits(
-                stop_loss_logit,
-                1 - target_hit,
-            )
-        )
-        loss_prob = 0.5 * raw_loss_prob
-        loss += loss_prob
+    loss = output.new_tensor(0.0)
+    for index, direct in enumerate(direct_means):
+        if f"L{index}" in active:
+            loss = loss + float(direct_loss_weights[index]) * direct
 
-    # -------------------------
-    # Bayesian EV
-    # -------------------------
-    if "ev" in components:
-        take_profit_probability = torch.sigmoid(take_profit_logit)
-        stop_loss_probability = torch.sigmoid(stop_loss_logit)
+    variance = return_scale.square() + 1e-6
+    nll_rows = 0.5 * (
+        (targets[:, 0] - mean_return).square() / variance
+        + torch.log(variance)
+    )
+    loss_nll = nll_rows.mean()
+    if "nll" in active:
+        loss = loss + loss_nll
 
-        ev = take_profit_probability - stop_loss_probability
-        risk_pen = return_scale.detach() * torch.abs(ev)
-        loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_pen)
-        loss += loss_ev
-
-    # -------------------------
-    # Volatility
-    # -------------------------
-    if "vol" in components:
-        raw_loss_vol = torch.mean(
-            (
-                torch.log(next_volatility + 1e-6)
-                - torch.log(target_next_volatility + 1e-6)
-            )
-            ** 2
-        )
-        loss_vol = 0.2 * raw_loss_vol
-        loss += loss_vol
+    predictions = public_predictions(output)
+    ev = predictions[:, 2] - predictions[:, 3]
+    risk_penalty = return_scale.detach() * torch.abs(ev)
+    loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_penalty)
+    if "ev" in active:
+        loss = loss + loss_ev
 
     if not return_parts and not return_statistics:
         return loss
 
-    sigma_values = return_scale.detach().float().reshape(-1)
-    ret_error = (
-        mean_return.detach().float()
-        - target_mean_return.detach().float()
-    ).reshape(-1)
-    ret_abs_error = torch.abs(ret_error)
-    ret_squared_error = ret_error ** 2
-    ret_baseline_abs_error = torch.abs(
-        target_mean_return.detach().float()
-    ).reshape(-1)
-
+    errors = predictions.detach().float() - targets.detach().float()
+    absolute_errors = errors.abs()
+    squared_errors = errors.square()
     statistics = LossStatistics(
         values=(
             loss.detach(),
-            loss_ret.detach(),
-            loss_prob.detach(),
+            *(value.detach() for value in direct_means),
+            loss_nll.detach(),
             loss_ev.detach(),
-            loss_vol.detach(),
-            torch.min(sigma_values),
-            torch.quantile(sigma_values, 0.05),
-            torch.mean(sigma_values),
-            torch.mean(ret_abs_error),
-            torch.mean(ret_squared_error),
-            torch.mean(ret_baseline_abs_error),
+            *(absolute_errors[:, index].mean() for index in range(6)),
+            *(squared_errors[:, index].mean() for index in range(6)),
         ),
         loss_stage=loss_stage,
     )

@@ -5,59 +5,49 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 
 from app.service.adapters.inbound.flight.contract import parse_output_descriptor
-from app.service.adapters.inbound.flight.errors import failed_precondition, not_found
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.domain.job import ExecutionState
+from app.service.application.ports.output_access import OutputArtifactStore
+from app.service.application.queries.outputs import OutputAccess
+from app.service.domain.errors import not_found
 
 
 class OutputHandler:
-    def __init__(self, config, ledger, spool, *, metrics=None, logger=None):
-        self.config = config
-        self.ledger = ledger
-        self.spool = spool
+    def __init__(
+        self,
+        access: OutputAccess,
+        artifact_store: OutputArtifactStore,
+        *,
+        metrics=None,
+        logger=None,
+    ):
+        self.access = access
+        self.artifact_store = artifact_store
         self.metrics = metrics or OperationalMetrics()
         self.logger = logger or JsonLogger()
 
     def get_flight_info(self, owner, descriptor):
         job_id, ordinal = parse_output_descriptor(descriptor)
-        job = self.ledger.get_job(job_id, owner_subject=owner)
-        if job is None:
-            raise not_found("job output not found")
-        if job["execution_state"] != ExecutionState.SUCCEEDED.value:
-            raise failed_precondition(
-                "job outputs are available only after successful execution"
-            )
-        output = next(
-            (item for item in self.ledger.list_outputs(job_id) if item["ordinal"] == ordinal),
-            None,
-        )
-        if output is None:
-            raise not_found("job output not found")
-        path = self.spool.absolute_path(output["relative_path"])
+        output = self.access.locate(owner, job_id, ordinal)
+        path = self.artifact_store.absolute_path(output.relative_path)
         with pa.memory_map(path, "r") as source:
             schema = ipc.RecordBatchFileReader(source).schema
 
-        token, expires_at = self.ledger.issue_ticket(
-            job_id=job_id,
-            ordinal=ordinal,
-            owner_subject=owner,
-            ttl_seconds=self.config.ticket_ttl_seconds,
-        )
+        grant = self.access.issue(owner, job_id, ordinal)
         self.metrics.add("outputTicketsIssued")
         self.logger.event(
             "flight.output.ticket_issued",
             jobId=job_id,
             ordinal=ordinal,
-            rows=output["rows"],
-            bytes=output["bytes"],
-            expiresAt=expires_at,
+            rows=output.rows,
+            bytes=output.byte_count,
+            expiresAt=grant.expires_at,
         )
         expiry = pa.scalar(
-            datetime.fromtimestamp(expires_at, tz=UTC),
+            datetime.fromtimestamp(grant.expires_at, tz=UTC),
             type=pa.timestamp("s", tz="UTC"),
         )
         endpoint = flight.FlightEndpoint(
-            flight.Ticket(token),
+            flight.Ticket(grant.token),
             [],
             expiration_time=expiry,
         )
@@ -65,8 +55,8 @@ class OutputHandler:
             schema,
             descriptor,
             [endpoint],
-            total_records=output["rows"],
-            total_bytes=output["bytes"],
+            total_records=output.rows,
+            total_bytes=output.byte_count,
             ordered=True,
         )
 
@@ -78,8 +68,8 @@ class OutputHandler:
         ):
             raise not_found("output ticket not found")
         token = bytes(token)
-        output = self.ledger.resolve_ticket(token, owner_subject=owner)
-        path = self.spool.absolute_path(output["relative_path"])
+        output = self.access.resolve(owner, token)
+        path = self.artifact_store.absolute_path(output.relative_path)
         source = pa.memory_map(path, "r")
         try:
             reader = ipc.RecordBatchFileReader(source)
@@ -153,10 +143,8 @@ class OutputHandler:
             "batches": batches,
             "bytes": byte_count,
         }
-        if output.get("job_id") is not None:
-            fields["jobId"] = output["job_id"]
-        if output.get("ordinal") is not None:
-            fields["ordinal"] = output["ordinal"]
+        fields["jobId"] = output.job_id
+        fields["ordinal"] = output.ordinal
         self.logger.event("flight.output.download_completed", **fields)
 
 

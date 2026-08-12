@@ -1,0 +1,29 @@
+{
+  "contract": "transformer-flight",
+  "version": 4,
+  "requestId": "23232323-2323-4232-8232-232323232323",
+  "idempotencyKey": "inventory-predict-20260810-1",
+  "jobId": "34343434-3434-4343-8343-343434343434",
+  "clientExecutionId": "45454545-4545-4454-8454-454545454545",
+  "operation": "predict",
+  "device": "auto",
+  "modelAlias": "returns.daily",
+  "predictionColumn": "forecast",
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 1,
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v1"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v1",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+    "objectiveConfigSha256": "2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c",
+    "checkpointFormat": "transformer-checkpoint-v3",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  }
+}

@@ -4,11 +4,13 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
+from app.contracts.flight.v4.arrow import canonical_input_schema
 from app.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
     validate_prediction_file,
 )
+from app.flight.constants import ErrorCode
 from app.flight.errors import ServiceError
 
 
@@ -78,6 +80,46 @@ def test_record_batch_must_keep_the_doput_fixed_schema():
         )
 
 
+@pytest.mark.parametrize(
+    ("operation", "column"),
+    [
+        ("fit", "src"),
+        ("fit", "tgt"),
+        ("predict", "src"),
+    ],
+)
+def test_input_schema_rejects_noncanonical_nested_nullability(
+    operation,
+    column,
+):
+    schema = canonical_input_schema(operation, 4)
+    fields = list(schema)
+    index = schema.get_field_index(column)
+    width = schema.field(index).type.list_size
+    fields[index] = pa.field(
+        column,
+        pa.list_(
+            pa.field("item", pa.float32(), nullable=False),
+            width,
+        ),
+        nullable=False,
+    )
+
+    with pytest.raises(ServiceError) as error:
+        InputBatchValidator(
+            operation,
+            pa.schema(fields),
+            seq_len=2,
+            expected_feature_dim=2,
+            max_batch_bytes=1024,
+            max_payload_bytes=2048,
+            max_rows=10,
+        )
+
+    assert error.value.code is ErrorCode.INVALID_ARGUMENT
+    assert "canonical physical schema" in error.value.message
+
+
 def test_payload_quota_is_enforced_across_batches_before_full_staging():
     first = fit_batch([[1.0, 2.0, 3.0, 4.0]])
     validator = InputBatchValidator(
@@ -145,6 +187,24 @@ def test_prediction_file_stream_validation_supports_typed_empty(tmp_path):
     assert stats.batches == 0
 
 
+def test_prediction_file_rejects_noncanonical_nested_nullability(tmp_path):
+    path = tmp_path / "nested-nonnullable.arrow"
+    output_type = pa.list_(
+        pa.field("item", pa.float32(), nullable=False),
+        6,
+    )
+    table = pa.Table.from_arrays(
+        [pa.array([], type=output_type)],
+        schema=pa.schema([
+            pa.field("out", output_type, nullable=False),
+        ]),
+    )
+    write_table(path, table)
+
+    with pytest.raises(ServiceError, match="FixedSizeList<float32>"):
+        validate_prediction_file(str(path), "out", expected_rows=0)
+
+
 def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
     path = tmp_path / "bad.arrow"
     table = pa.table({
@@ -208,8 +268,22 @@ def test_prediction_file_rejects_invalid_list_structure(
 
 
 def test_schema_fingerprint_ignores_nonsemantic_metadata():
-    plain = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-    ])
+    plain = canonical_input_schema("predict", 4)
     annotated = plain.with_metadata({b"producer": b"inventory"})
+    nested_annotated = pa.schema([
+        pa.field(
+            "src",
+            pa.list_(
+                pa.field(
+                    "item",
+                    pa.float32(),
+                    nullable=True,
+                    metadata={b"producer": b"inventory"},
+                ),
+                4,
+            ),
+            nullable=False,
+        ),
+    ])
     assert schema_fingerprint(plain) == schema_fingerprint(annotated)
+    assert schema_fingerprint(plain) == schema_fingerprint(nested_annotated)

@@ -26,7 +26,7 @@ from app.service.application.services.worker_pool import WorkerPool as WorkerSch
 
 
 class WorkerPool(WorkerScheduler):
-    """Compose the durable scheduler with worker-process v2 adapters."""
+    """Compose the durable scheduler with worker-process v3 adapters."""
 
     def __init__(
         self,

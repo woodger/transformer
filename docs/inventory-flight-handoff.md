@@ -1,84 +1,91 @@
-# Inventory handoff: Transformer Arrow Flight v3
+# Интеграция Inventory с Transformer Arrow Flight v4
 
-> Type: Reference. Consumer integration guide for the current protocol.
+> Тип: справочник. Руководство по интеграции Consumer-а с текущим протоколом.
 
-The normative wire contract is
-[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). JSON Schemas
-and golden fixtures in that directory take precedence over this guide. Service
-deployment and recovery operations are documented in the
-[`Flight runbook`](flight-operations.md); the architectural decision is
-[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
+Нормативный wire-контракт находится в
+[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md). JSON Schema и
+эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
+Эксплуатация сервиса и восстановление описаны в
+[`руководстве по эксплуатации Flight`](flight-operations.md), а архитектурное
+решения — в [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md) и
+[`ADR 0007`](adr/0007-target-aligned-flight-v4.md).
 
-Transformer Flight v3 is the current remote API. Inventory must require
-`protocolVersions` equal to `[3]` and use the normative v3 actions, descriptors
-and state semantics described below.
+Transformer Flight v4 — единственный текущий удалённый API. Inventory должен
+требовать `protocolVersions`, равный `[4]`, и использовать нормативные actions,
+descriptors и семантику состояний v4, описанные ниже. V3 actions, descriptors,
+aliases и fallback отсутствуют.
 
-## Transport and authentication
+## Транспорт и аутентификация
 
-Use Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` and `DoGet`. V3 does not
-use `DoExchange` or `PollFlightInfo`. Every RPC carries:
+Используйте Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. V4 не
+использует `DoExchange` и `PollFlightInfo`. Каждый RPC содержит:
 
 ```text
 authorization: Bearer a.<base64url>
 ```
 
-The credential represents one owner subject. Jobs, model aliases, model
-references, status, receipts, tickets and outputs are owner-scoped. Never log
-the bearer credential or an opaque output ticket.
+Credential представляет одного owner subject. Jobs, model aliases, model
+references, status, receipts, tickets и outputs ограничены owner-ом. Никогда не
+записывайте bearer credential или непрозрачный output ticket в логи.
 
-Every action document begins with:
+Каждый документ action начинается с:
 
 ```json
 {
   "contract": "transformer-flight",
-  "version": 3,
+  "version": 4,
   "requestId": "UUID"
 }
 ```
 
-Mutations additionally require a stable action-specific `idempotencyKey`.
-Repeating the same canonical request is safe; reusing a key for a different
-request is rejected. A failed operation is a failed Flight RPC. Stable
-application codes are included in safe error text and in terminal status.
+Для мутаций дополнительно требуется стабильный `idempotencyKey`, специфичный
+для action. Повтор одного канонического запроса безопасен; повторное
+использование ключа для другого запроса отклоняется. Неуспешная операция
+представляет собой ошибку Flight RPC. Стабильные application codes входят в
+безопасный текст ошибки и terminal status.
 
 ## Actions
 
-The server advertises exactly:
+Сервер объявляет строго следующий список:
 
-| Action | Purpose | Fenced mutation |
+| Action | Назначение | Мутация с fencing |
 | --- | --- | --- |
-| `transformer.v3.capabilities` | Versions, schemas, limits and capacity | No |
-| `transformer.v3.health` | Authenticated liveness/readiness | No |
-| `transformer.v3.job.create` | Create a client-identified fit or predict job | Initial ownership |
-| `transformer.v3.job.acquire` | Transfer Inventory ownership and advance its fence | Compare-and-swap |
-| `transformer.v3.job.status` | Read bounded job state and result summary | No |
-| `transformer.v3.job.inputs.list` | Reconcile committed inputs by revision | No |
-| `transformer.v3.job.input.close` | Commit EOF and the immutable input summary | Yes |
-| `transformer.v3.job.outputs.list` | List terminal output receipts | No |
-| `transformer.v3.job.cancel` | Cancel a non-terminal job | Yes |
-| `transformer.v3.model.describe` | Resolve and describe an immutable model | No |
+| `transformer.v4.capabilities` | Версии, схемы, ML-контракт, лимиты и доступная ёмкость | Нет |
+| `transformer.v4.health` | Аутентифицированная проверка liveness/readiness | Нет |
+| `transformer.v4.job.create` | Создать fit- или predict-job с заданной клиентом идентичностью | Начальное владение |
+| `transformer.v4.job.acquire` | Передать владение Inventory и увеличить fence | Compare-and-swap |
+| `transformer.v4.job.status` | Получить ограниченное состояние job и сводку результата | Нет |
+| `transformer.v4.job.inputs.list` | Сверить зафиксированные inputs по revision | Нет |
+| `transformer.v4.job.input.close` | Зафиксировать EOF и неизменяемую сводку входа | Да |
+| `transformer.v4.job.outputs.list` | Получить terminal output receipts | Нет |
+| `transformer.v4.job.cancel` | Отменить нетерминальный job | Да |
+| `transformer.v4.model.describe` | Разрешить ссылку и описать неизменяемую модель | Нет |
 
-At startup, call `capabilities` and fail closed unless
-`protocolVersions` equals `[3]`. Effective limits in that response are the
-runtime authority; do not copy repository defaults into Inventory.
+При запуске вызовите `capabilities` и завершитесь с ошибкой, если
+`protocolVersions` не равен `[4]`. Одновременно проверьте объявленный
+`mlContract`; несовпадение semantic IDs является ошибкой совместимости до
+создания job. Эффективные лимиты из ответа являются
+нормативными для текущего runtime; не копируйте значения по умолчанию из
+репозитория в Inventory.
 
-## Persist identity before create
+## Сохранение идентичности до create
 
-Inventory generates and commits these values in its PostgreSQL transaction
-before the first network request:
+До первого сетевого запроса Inventory создаёт и фиксирует в своей транзакции
+PostgreSQL следующие значения:
 
-- `jobId`: stable remote identity for this logical job;
-- `clientExecutionId`: identity of the current Inventory claim;
-- create `idempotencyKey` and the immutable create document.
+- `jobId` — стабильная удалённая идентичность логического job;
+- `clientExecutionId` — идентичность текущего claim Inventory;
+- `idempotencyKey` для create и неизменяемый документ create.
 
-Fit create follows the
-[`create-fit.request.json`](../app/contracts/flight/v3/fixtures/json/create-fit.request.json)
-fixture. Predict create follows
-[`create-predict.request.json`](../app/contracts/flight/v3/fixtures/json/create-predict.request.json).
-Predict supplies exactly one `modelRef` or owner-scoped `modelAlias`. Transformer
-atomically resolves an alias and returns the immutable `resolvedModelRef`.
+Fit create соответствует фикстуре
+[`create-fit.request.json`](../app/contracts/flight/v4/fixtures/json/create-fit.request.json).
+Predict create соответствует
+[`create-predict.request.json`](../app/contracts/flight/v4/fixtures/json/create-predict.request.json).
+Predict передаёт ровно один `modelRef` или ограниченный owner-ом `modelAlias`.
+Transformer атомарно разрешает alias и возвращает неизменяемый
+`resolvedModelRef`.
 
-The create result starts with:
+Начальный результат create:
 
 ```text
 input.state     = OPEN
@@ -86,14 +93,14 @@ execution.state = WAITING_INPUT
 fencingToken    = "1"
 ```
 
-Persist the whole result, especially `resolvedModelRef`, ownership and upload
-limits. If the response is lost, replay the same logical create. `jobId` is
-client-generated and Transformer retains its compact identity after heavy job
-data is retired, so no separate resolve call is needed.
+Сохраните результат целиком, особенно `resolvedModelRef`, сведения о владении
+и лимиты загрузки. Если ответ потерян, повторите тот же логический create.
+`jobId` создаётся клиентом, а Transformer сохраняет его компактную идентичность
+после удаления тяжёлых данных job, поэтому отдельный resolve-вызов не нужен.
 
-## ML data contract
+## Контракты данных и objective
 
-Every create carries an Inventory-owned semantic identity:
+Каждый create содержит принадлежащую Inventory семантическую идентичность:
 
 ```json
 {
@@ -108,15 +115,63 @@ Every create carries an Inventory-owned semantic identity:
 }
 ```
 
-Inventory owns the canonical document behind this digest, including ordered
-feature identities, target semantics, normalization, missing-value policy and
-profile version. Transformer stores the identity but does not recreate those
-semantics. Predict create must use the digest certified by the resolved model;
-a mismatch fails before upload with `MODEL_SCHEMA_MISMATCH`.
+Inventory владеет каноническим документом, digest которого указан здесь. В
+документ входят упорядоченные идентичности features, семантика target,
+нормализация, политика missing values и версия профиля. Transformer хранит
+идентичность, но не воспроизводит эту семантику. Predict create должен
+использовать digest, для которого сертифицирована разрешённая модель;
+несовпадение отклоняется до загрузки с `MODEL_SCHEMA_MISMATCH`.
 
-## Cross-system fencing and takeover
+Кроме `dataContract`, каждый create содержит target-aligned `mlContract`:
 
-Every upload, close and cancel carries the current pair:
+```json
+{
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v1",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+    "objectiveConfigSha256": "64 lowercase hex characters",
+    "checkpointFormat": "transformer-checkpoint-v3",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  }
+}
+```
+
+Для fit `objectiveConfigSha256` вычисляется по фактической `trainingConfig`.
+Точная форма документа задана
+[`objective-config.schema.json`](../app/contracts/flight/v4/schemas/objective-config.schema.json),
+а нормативная cross-language пара документ/digest — фикстурами
+[`objective-config.fit.json`](../app/contracts/flight/v4/fixtures/json/objective-config.fit.json)
+и create-fit. Документ канонизируется строго по
+[RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), после чего SHA-256
+вычисляется над полученными UTF-8 bytes. В частности, JCS использует
+ECMAScript-сериализацию чисел, поэтому `1.0` и `1` дают одинаковое
+представление. `NaN`, `Infinity` и другие значения вне I-JSON запрещены.
+Нормативный digest fit fixture:
+`2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c`.
+Node.js-проверка находится в
+[`objective_config_sha256.mjs`](../app/contracts/flight/v4/fixtures/objective_config_sha256.mjs).
+Transformer независимо строит тот же документ и отклоняет несовпадение до
+создания job.
+
+На максимальном loss stage каждая из шести координат имеет прямой supervised
+loss. `directLossWeights` содержит шесть положительных весов. Поле `selection`
+имеет два режима:
+
+- object `{minDelta, patience}` — best-checkpoint и early stopping работают
+  только по полным stage-4 epochs и только по глобально агрегированным
+  `L0…L5`;
+- `null` или отсутствие поля — выполняется заданное число epochs и публикуется
+  последний checkpoint максимального stage.
+
+Predict должен передать точный `mlContract`, возвращённый `model.describe` для
+выбранной модели. Нельзя подставлять только IDs из capabilities: конкретный
+`objectiveConfigSha256` является свойством обученной модели.
+
+## Межсистемное fencing и перехват владения
+
+Каждая загрузка, close и cancel содержит текущую пару:
 
 ```json
 {
@@ -125,31 +180,32 @@ Every upload, close and cancel carries the current pair:
 }
 ```
 
-The token is a canonical positive decimal string, not a JSON integer. On
-Inventory lease takeover, call `transformer.v3.job.acquire` with the previous
-execution ID, expected token and the new execution ID. Transformer compares
-the old pair atomically and returns the next token. Persist that response before
-issuing mutations from the new claim.
+Token представляет собой каноническую положительную десятичную строку, а не
+JSON integer. При перехвате lease Inventory вызовите
+`transformer.v4.job.acquire` с предыдущим execution ID, ожидаемым token и новым
+execution ID. Transformer атомарно сравнивает старую пару и возвращает
+следующий token. Сохраните этот ответ до выполнения мутаций от нового claim.
 
-A stale owner receives `STALE_FENCE`. The fence is checked before DoPut data is
-accepted and again immediately before its durable receipt commit, so a request
-that overlaps takeover cannot overwrite the new owner's input.
+Устаревший owner получает `STALE_FENCE`. Fence проверяется до начала приёма
+данных DoPut и повторно непосредственно перед надёжной фиксацией receipt,
+поэтому запрос, пересёкшийся по времени с перехватом владения, не может
+перезаписать вход нового owner-а.
 
-## Upload
+## Загрузка
 
-One DoPut is one semantic payload. RecordBatch boundaries are transport
-chunking only. Use:
+Один DoPut представляет один семантический payload. Границы RecordBatch нужны
+только для транспортного разбиения. Используйте:
 
 ```text
-pathDescriptor("transformer", "v3", "jobs", jobId, "inputs", ordinal)
+pathDescriptor("transformer", "v4", "jobs", jobId, "inputs", ordinal)
 ```
 
-Write one application-metadata message before RecordBatches:
+До RecordBatch запишите одно сообщение application metadata:
 
 ```json
 {
   "contract": "transformer-flight",
-  "version": 3,
+  "version": 4,
   "jobId": "UUID",
   "clientExecutionId": "UUID",
   "fencingToken": "7",
@@ -161,7 +217,7 @@ Write one application-metadata message before RecordBatches:
 }
 ```
 
-The exact physical schema is fixed:
+Физическая схема задана точно:
 
 ```text
 inventory.sequence.fit.v2
@@ -172,46 +228,51 @@ inventory.sequence.predict.v2
   src: non-null FixedSizeList<Float32>[seqLen * featureDim]
 ```
 
-Out-of-order DoPut completion is allowed. The server returns one PutResult only
-after the immutable artifact and PostgreSQL receipt are durable. Persist the
-complete PutResult. `nextInputOrdinal` is the first missing ordinal;
-`inputRevision` is a per-job monotonic commit revision; `queued=true` means this
-commit caused automatic execution queueing.
+Завершение DoPut не по порядку разрешено. Сервер возвращает один PutResult
+только после надёжной фиксации неизменяемого artifact и PostgreSQL receipt.
+Сохраните PutResult целиком. `nextInputOrdinal` — первый отсутствующий ordinal;
+`inputRevision` — монотонная commit revision конкретного job; `queued=true`
+означает, что эта фиксация автоматически поставила execution в очередь.
 
-The first non-empty contiguous prefix queues the job. A fit worker may therefore
-be `RUNNING` while input remains `OPEN`. Arrival order and timing do not change
-the worker's logical order: ordinal, then row within the payload.
+Первый непустой непрерывный префикс ставит job в очередь. Поэтому fit worker
+может находиться в состоянии `RUNNING`, пока input остаётся `OPEN`. Порядок и
+время поступления не меняют логический порядок worker-а: сначала ordinal, затем
+строка внутри payload.
 
-## Reconcile inputs by revision
+## Сверка входных данных по revision
 
-If a PutResult is lost, do not infer failure from the transport. Reconcile with
-`transformer.v3.job.inputs.list`. The first page supplies `afterRevision` and
-freezes the returned `snapshotRevision`. Continue with the same snapshot and
-the returned cursor while:
+Если PutResult потерян, не считайте транспортную ошибку доказательством
+неуспешной фиксации. Выполните сверку через
+`transformer.v4.job.inputs.list`. Первая страница передаёт `afterRevision` и
+фиксирует возвращённый `snapshotRevision`. Продолжайте с тем же snapshot и
+возвращённым cursor, пока выполняется:
 
 ```text
 cursor < commitRevision <= snapshotRevision
 ```
 
-After the traversal, persist its `snapshotRevision` as the next
-`afterRevision`. A low ordinal committed late receives a higher revision and is
-therefore visible in the next traversal. Page size is at most 100.
+После обхода сохраните его `snapshotRevision` как следующий `afterRevision`.
+Payload с малым ordinal, зафиксированный позднее, получает более высокую
+revision и поэтому появляется при следующем обходе. Размер страницы не
+превышает 100 записей.
 
-An absent receipt may be retried with the same `payloadId`, ordinal, schema,
-rows and data. An exact committed duplicate returns the existing receipt;
-different content for an occupied identity or ordinal is a conflict.
+Если receipt отсутствует, payload можно повторить с теми же `payloadId`,
+ordinal, schema, rows и данными. Точный дубликат зафиксированного payload
+возвращает существующий receipt; другое содержимое для занятой identity или
+ordinal является конфликтом.
 
-## Close input
+## Закрытие входа
 
-Close is EOF, not a start command. Build the canonical digest over all server
-receipts sorted by ordinal. The fields are:
+Close обозначает EOF, а не команду запуска. Рассчитайте канонический digest по
+всем server receipts, отсортированным по ordinal. Используются поля:
 
 ```text
 payloadId, ordinal, schemaId, dataContractSha256, rows, batches, bytes,
 sha256, schemaFingerprint
 ```
 
-Exclude `commitRevision`, timestamps and arrival order. Send only the summary:
+Исключите `commitRevision`, временные метки и порядок поступления. Передайте
+только сводку:
 
 ```json
 {
@@ -225,17 +286,18 @@ Exclude `commitRevision`, timestamps and arrival order. Send only the summary:
 }
 ```
 
-Transformer verifies contiguous ordinals `0..payloadCount-1`, totals, digest,
-one physical Arrow schema and one data-contract digest before committing
-`input.state=CLOSED`. New uploads are then rejected.
+До фиксации `input.state=CLOSED` Transformer проверяет непрерывность ordinal
+`0..payloadCount-1`, итоговые значения, digest, единую физическую Arrow-схему и
+единый digest контракта данных. После этого новые загрузки отклоняются.
 
-An empty fit close fails with `EMPTY_INPUT` and leaves input `OPEN`. Empty
-predict is valid: zero payloads produce zero outputs. A typed-empty predict
-payload produces one typed-empty output with the requested prediction column.
+Закрытие пустого fit завершается с `EMPTY_INPUT` и оставляет input в состоянии
+`OPEN`. Пустой predict допустим: ноль payload-ов даёт ноль outputs.
+Типизированный пустой predict payload даёт один типизированный пустой output с
+запрошенной колонкой prediction.
 
-## State and polling
+## Состояния и polling
 
-Status exposes two independent state axes:
+Status предоставляет две независимые оси состояния:
 
 ```text
 input.state:
@@ -246,77 +308,110 @@ execution.state:
   SUCCEEDED | FAILED | CANCELLED
 ```
 
-`OPEN + RUNNING` is normal. Terminal success requires closed input and atomic
-publication. Poll no faster than `pollAfterMs`. Status is bounded and reports
-counts rather than embedding all input/output receipts.
+Сочетание `OPEN + RUNNING` является нормальным. Для terminal success требуется
+закрытый input и атомарная публикация. Выполняйте polling не чаще, чем указано
+в `pollAfterMs`. Размер status ограничен; он содержит счётчики, а не все input
+или output receipts.
 
-Before EOF, a failed fit attempt repeats incomplete epoch zero from its start;
-durably committed inputs are retained. After EOF, recovery checkpoints are at
-complete global-epoch boundaries. Inventory must tolerate `RETRYING` without
-resending already committed payloads.
+До EOF после сбоя fit attempt незавершённая нулевая epoch повторяется с начала;
+надёжно зафиксированные inputs сохраняются. После EOF recovery checkpoints
+находятся на границах полных global epochs. Inventory должен корректно
+обрабатывать `RETRYING`, не отправляя уже зафиксированные payloads повторно.
 
-## Prediction output
+## Результаты prediction
 
-Output discovery is available only after `execution.state=SUCCEEDED`:
+Результаты доступны только после `execution.state=SUCCEEDED`:
 
-1. Page through `transformer.v3.job.outputs.list`.
-2. For each ordinal, call `GetFlightInfo` with:
+1. Получите все страницы `transformer.v4.job.outputs.list`.
+2. Для каждого ordinal вызовите `GetFlightInfo` с:
 
    ```text
-   pathDescriptor("transformer", "v3", "jobs", jobId, "outputs", ordinal)
+   pathDescriptor("transformer", "v4", "jobs", jobId, "outputs", ordinal)
    ```
 
-3. Use the returned opaque ticket in `DoGet` before it expires.
+3. До истечения срока действия используйте возвращённый непрозрачный ticket в
+   `DoGet`.
 
-The output schema is:
+Схема output:
 
 ```text
-transformer.prediction.v2
+transformer.prediction.target-aligned.v1
   <predictionColumn>: non-null FixedSizeList<Float32>[6]
 ```
 
-Transformer may prepare attempt-local results while input is open, but no
-partial output becomes visible. All output receipts and `SUCCEEDED` commit in
-one terminal transaction.
+Значения уже находятся в target-space и сопоставляются target по индексу:
 
-## Models
+| Индекс | Семантика | Диапазон |
+| --- | --- | --- |
+| `0` | `meanReturn` | `[-1, 1]` |
+| `1` | `sigmaReturn` | `[0, 1]` |
+| `2` | `probTP` | `[0, 1]` |
+| `3` | `probSL` | `[0, 1]` |
+| `4` | `volatilityNext` | `[0, 1]` |
+| `5` | `hittingProbTP` | `[0, 1]` |
 
-`transformer.v3.model.describe` accepts one `modelRef` or owner-scoped
-`modelAlias`. A published `modelRef` and generation are immutable and have no
-automatic TTL. `predictionColumn` belongs to the prediction job, not the model.
+Все значения конечны. Координаты `probTP` и `probSL` независимы и не обязаны
+давать сумму `1`. Raw logits и private uncertainty scale в output отсутствуют.
+Поэтому Inventory вычисляет per-target метрики напрямую, но не использует
+общую MAE/MSE по шести разнородным координатам как quality score.
 
-Stable lifecycle failures are:
+Все поля верхнего уровня используют `nullable=false`. Вложенное дочернее поле
+`FixedSizeList` называется `item`, имеет тип `Float32` и использует
+`nullable=true`. Это часть точной физической схемы; фактические строки и
+дочерние значения с null по-прежнему отклоняются runtime-валидацией значений.
+Metadata схемы не входит в физическую identity или `schemaFingerprint`.
 
-| Code | Meaning |
+Transformer отклоняет неканоническую входную схему с `INVALID_ARGUMENT` до
+резервирования или фиксации payload. Job остаётся нетерминальным с открытым
+входом, поэтому Inventory может исправить схему и повторить тот же ordinal в
+новой транспортной попытке.
+
+Transformer может готовить результаты локально для attempt при открытом входе,
+но частичный output не становится видимым. Все output receipts и `SUCCEEDED`
+фиксируются одной terminal transaction.
+
+## Модели
+
+`transformer.v4.model.describe` принимает один `modelRef` или ограниченный
+owner-ом `modelAlias`. Опубликованные `modelRef` и generation неизменяемы и не
+имеют автоматического TTL. `predictionColumn` относится к prediction job, а не
+к модели.
+
+Стабильные ошибки lifecycle:
+
+| Код | Значение |
 | --- | --- |
-| `NOT_FOUND` | No owner-visible model identity |
-| `MODEL_UNAVAILABLE` | Metadata exists but checkpoint is absent |
-| `MODEL_CORRUPT` | Checkpoint size or digest is invalid |
-| `MODEL_SCHEMA_MISMATCH` | Model is uncertified or data contract differs |
+| `NOT_FOUND` | Нет видимой owner-у идентичности модели |
+| `MODEL_UNAVAILABLE` | Metadata существует, но checkpoint отсутствует |
+| `MODEL_CORRUPT` | Неверны checkpoint или заявленная current semantic metadata |
+| `MODEL_SCHEMA_MISMATCH` | Контракт данных/ML не совпадает либо модель относится к прежнему контракту |
 
-## Retry decisions
+## Решения о повторных запросах
 
-| Lost or failed step | Inventory behavior |
+| Потерянный или неуспешный шаг | Поведение Inventory |
 | --- | --- |
-| Create response | Replay the same logical create; `jobId` is already known |
-| Acquire response | Replay the same acquire idempotency key |
-| DoPut response | Reconcile input receipts, then retry the exact payload only if absent |
-| Close response | Replay the same close idempotency key and summary |
-| Cancel response | Replay the same cancel idempotency key and current fence |
-| Status/list/model describe | Retry as a read-only request |
-| GetFlightInfo/ticket expiry | Obtain a new ticket after terminal success |
-| DoGet interruption | Obtain a fresh ticket and restart that output download |
-| `STALE_FENCE` | Stop mutations from the old claim; acquire only through lease takeover |
+| Ответ create | Повторить тот же логический create; `jobId` уже известен |
+| Ответ acquire | Повторить acquire с тем же idempotency key |
+| Ответ DoPut | Сверить input receipts и повторить точный payload, только если он отсутствует |
+| Ответ close | Повторить close с тем же idempotency key и сводкой |
+| Ответ cancel | Повторить cancel с тем же idempotency key и текущим fence |
+| Status/list/model describe | Повторить как read-only запрос |
+| Истечение GetFlightInfo/ticket | Получить новый ticket после terminal success |
+| Прерывание DoGet | Получить новый ticket и начать загрузку данного output заново |
+| `STALE_FENCE` | Прекратить мутации старого claim; выполнять acquire только при перехвате lease |
 
-`requestId` may change between transport attempts. Stable job, payload,
-ownership and idempotency identities must not.
+`requestId` может меняться между транспортными попытками. Стабильные
+идентичности job, payload, ownership и idempotency меняться не должны.
 
-## Integration verification
+## Проверка интеграции
 
-1. Verify authenticated `capabilities` and `health`; require
-   `protocolVersions` equal to `[3]`.
-2. Verify idempotent create replay and ownership takeover.
-3. Verify fenced `DoPut`, revision pagination and reconciliation after a lost
+1. Проверьте аутентифицированные `capabilities` и `health`; требуйте
+   `protocolVersions`, равный `[4]`, и точные semantic IDs `mlContract`.
+2. Проверьте идемпотентный повтор create и перехват владения.
+3. Проверьте DoPut с fencing, пагинацию по revision и сверку после потери
    `PutResult`.
-4. Verify streaming fit, EOF close and terminal model publication.
-5. Verify terminal prediction output listing and download.
+4. Проверьте, что неверный `objectiveConfigSha256` отклоняется до создания fit.
+5. Проверьте streaming fit, закрытие EOF и terminal-публикацию модели.
+6. Проверьте получение target-aligned outputs и прямой расчёт всех шести
+   per-target metrics.
+7. Проверьте, что модель прежнего objective не принимается для predict.

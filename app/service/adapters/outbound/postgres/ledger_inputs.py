@@ -4,7 +4,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.flight.v3.constants import FIT_SCHEMA_ID, PREDICT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger_support import (
     canonical_uuid,
     decode,
@@ -208,15 +207,6 @@ class InputLedgerSlice:
                     )
                 if job.input_state != InputState.OPEN.value:
                     raise failed_precondition("job no longer accepts inputs")
-                expected_schema_id = (
-                    FIT_SCHEMA_ID
-                    if job.operation == "fit"
-                    else PREDICT_SCHEMA_ID
-                )
-                if schema_id != expected_schema_id:
-                    raise failed_precondition(
-                        f"schemaId {schema_id!r} does not match job operation"
-                    )
                 if data_contract_sha256 != job.data_contract_sha256:
                     raise ServiceError(
                         ErrorCode.MODEL_SCHEMA_MISMATCH,

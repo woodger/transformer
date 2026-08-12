@@ -7,13 +7,18 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
+from app.contracts.flight.v4.arrow import (
+    TARGET_WIDTH,
+    canonical_input_schema,
+    canonical_prediction_schema,
+    validate_target_space_values,
+)
 from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 if TYPE_CHECKING:
     import torch
 
 FRAME_HEADER_BYTES = 8
-TARGET_WIDTH = 6
 FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
@@ -123,22 +128,10 @@ def _read_committed_table(
     if source_width <= 0:
         raise ValueError("committed Arrow source width must be positive")
 
-    fields = [
-        pa.field(
-            "src",
-            pa.list_(pa.float32(), source_width),
-            nullable=False,
-        ),
-    ]
-    if require_target:
-        fields.append(
-            pa.field(
-                "tgt",
-                pa.list_(pa.float32(), TARGET_WIDTH),
-                nullable=False,
-            )
-        )
-    expected_schema = pa.schema(fields)
+    expected_schema = canonical_input_schema(
+        "fit" if require_target else "predict",
+        source_width,
+    )
 
     with open(path, "rb") as source:
         reader = ipc.RecordBatchFileReader(source)
@@ -264,7 +257,8 @@ def _validate_list_column(
         raise ValueError("Arrow column 'src' must have a positive list length")
 
     if table.num_rows == 0:
-        return np.empty((0, 0), dtype=np.float32)
+        empty_width = width if width is not None else expected_width
+        return np.empty((0, empty_width or 0), dtype=np.float32)
 
     values = np.empty((table.num_rows, width), dtype=np.float32)
     for offset, rows, flat_values in chunks:
@@ -279,21 +273,7 @@ def _list_values_to_tensor(values):
 
 
 def _validate_target_values(values):
-    if values.shape[0] == 0:
-        return
-    invalid_volatility = values[:, 4] < 0.0
-    invalid_probability = (values[:, 5] < 0.0) | (values[:, 5] > 1.0)
-    invalid_row = _first_true(invalid_volatility | invalid_probability)
-    if invalid_row is None:
-        return
-    if invalid_volatility[invalid_row]:
-        raise ValueError(
-            f"Arrow column 'tgt' has negative volatility at row {invalid_row + 1}"
-        )
-    raise ValueError(
-        f"Arrow column 'tgt' has hit probability outside [0, 1] "
-        f"at row {invalid_row + 1}"
-    )
+    validate_target_space_values(values)
 
 
 def _first_true(values) -> int | None:
@@ -378,27 +358,16 @@ def predictions_to_table(
     arr = preds.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
+    validate_target_space_values(arr)
     arr = np.ascontiguousarray(arr)
     values = pa.array(arr.reshape(-1), type=pa.float32())
     column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)
-    schema = pa.schema([
-        pa.field(
-            col_name,
-            pa.list_(pa.float32(), TARGET_WIDTH),
-            nullable=False,
-        )
-    ])
+    schema = canonical_prediction_schema(col_name)
     return pa.Table.from_arrays([column], schema=schema)
 
 
 def empty_predictions_table(col_name: str):
-    schema = pa.schema([
-        pa.field(
-            col_name,
-            pa.list_(pa.float32(), TARGET_WIDTH),
-            nullable=False,
-        )
-    ])
+    schema = canonical_prediction_schema(col_name)
     return pa.Table.from_arrays(
         [pa.array([], type=schema.field(0).type)],
         schema=schema,

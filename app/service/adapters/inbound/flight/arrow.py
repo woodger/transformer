@@ -1,13 +1,17 @@
-import hashlib
 from dataclasses import dataclass
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.ipc as ipc
 
+from app.contracts.flight.v4.arrow import (
+    TARGET_WIDTH,
+    canonical_input_schema,
+    schema_fingerprint,
+    validate_prediction_file as validate_contract_prediction_file,
+    validate_target_space_values,
+)
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted
 
-TARGET_WIDTH = 6
 _FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
@@ -21,6 +25,12 @@ class ArrowStats:
 
 
 class InputBatchValidator:
+    """Validate and accumulate one DoPut payload before durable publication.
+
+    Construction enforces the canonical physical schema; each batch then
+    enforces the value, row, and byte limits for that same payload.
+    """
+
     def __init__(
         self,
         operation: str,
@@ -50,6 +60,11 @@ class InputBatchValidator:
         self._validate_source_width(self.src_width)
         if self.tgt_width is not None and self.tgt_width != TARGET_WIDTH:
             raise invalid(f"tgt list width must be {TARGET_WIDTH}")
+        expected_schema = canonical_input_schema(operation, self.src_width)
+        if not schema.equals(expected_schema, check_metadata=False):
+            raise invalid(
+                f"{operation} input differs from the canonical physical schema"
+            )
 
     @property
     def fingerprint(self) -> str:
@@ -127,56 +142,20 @@ def validate_prediction_file(
     prediction_column: str,
     expected_rows: int,
 ) -> ArrowStats:
-    rows = 0
-    batches = 0
-    with pa.memory_map(path, "r") as source:
-        reader = ipc.RecordBatchFileReader(source)
-        schema = reader.schema
-        _validate_prediction_schema(schema, prediction_column)
-        for index in range(reader.num_record_batches):
-            batch = reader.get_batch(index)
-            array = batch.column(0)
-            null_row = _first_true(
-                array.is_null().to_numpy(zero_copy_only=False)
-            )
-            if null_row is not None:
-                raise invalid(
-                    f"prediction has null row at index {rows + null_row + 1}"
-                )
-
-            flat = array.flatten()
-            values = flat.to_numpy(zero_copy_only=False)
-            invalid_value = np.logical_or(
-                flat.is_null().to_numpy(zero_copy_only=False),
-                ~np.isfinite(values),
-            )
-            first_invalid = _first_true(invalid_value)
-            if first_invalid is not None:
-                raise invalid(
-                    "prediction has non-finite or null value at row "
-                    f"{rows + first_invalid // TARGET_WIDTH + 1}"
-                )
-            rows += batch.num_rows
-            batches += 1
-    if rows != expected_rows:
-        raise invalid(
-            f"prediction row count {rows} does not match input row count "
-            f"{expected_rows}"
+    try:
+        stats = validate_contract_prediction_file(
+            path,
+            prediction_column,
+            expected_rows,
         )
+    except ValueError as exc:
+        raise invalid(str(exc)) from exc
     return ArrowStats(
-        rows=rows,
-        batches=batches,
-        schema_fingerprint=schema_fingerprint(schema),
+        rows=stats.rows,
+        batches=stats.batches,
+        schema_fingerprint=stats.schema_fingerprint,
         src_width=TARGET_WIDTH,
     )
-
-
-def schema_fingerprint(schema: pa.Schema) -> str:
-    canonical = pa.schema([
-        pa.field(field.name, field.type, nullable=field.nullable)
-        for field in schema
-    ])
-    return hashlib.sha256(canonical.serialize().to_pybytes()).hexdigest()
 
 
 def _validate_input_schema(schema: pa.Schema, operation: str) -> None:
@@ -288,34 +267,7 @@ def _validate_list_column(
 
 
 def _validate_target_values(values: np.ndarray) -> None:
-    if values.shape[0] == 0:
-        return
-    invalid_volatility = values[:, 4] < 0.0
-    invalid_probability = (values[:, 5] < 0.0) | (values[:, 5] > 1.0)
-    invalid_row = _first_true(invalid_volatility | invalid_probability)
-    if invalid_row is None:
-        return
-    if invalid_volatility[invalid_row]:
-        raise ValueError(
-            f"Arrow column 'tgt' has negative volatility at row {invalid_row + 1}"
-        )
-    raise ValueError(
-        "Arrow column 'tgt' has hit probability outside [0, 1] "
-        f"at row {invalid_row + 1}"
-    )
-
-
-def _validate_prediction_schema(schema: pa.Schema, column: str) -> None:
-    if schema.names != [column]:
-        raise invalid(f"prediction output must contain exactly column {column!r}")
-    field = schema.field(column)
-    field_type = field.type
-    if field_type != pa.list_(pa.float32(), TARGET_WIDTH):
-        raise invalid(
-            f"prediction output must use FixedSizeList<float32>[{TARGET_WIDTH}]"
-        )
-    if field.nullable:
-        raise invalid("prediction output column must be non-nullable")
+    validate_target_space_values(values)
 
 
 def _fixed_width(schema: pa.Schema, name: str) -> int | None:

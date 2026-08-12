@@ -1,0 +1,54 @@
+{
+  "contract": "transformer-flight",
+  "version": 4,
+  "requestId": "22222222-2222-4222-8222-222222222222",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "operation": "fit",
+  "revision": 1,
+  "input": {"state": "OPEN", "revision": 0, "nextOrdinal": 0},
+  "execution": {"state": "WAITING_INPUT"},
+  "ownership": {
+    "clientExecutionId": "44444444-4444-4444-8444-444444444444",
+    "fencingToken": "1"
+  },
+  "device": {"requested": "cpu", "selected": null},
+  "resolvedModelRef": null,
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 1,
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v1"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v1",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+    "objectiveConfigSha256": "2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c",
+    "checkpointFormat": "transformer-checkpoint-v3",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  },
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "targetBatchBytes": 8388608,
+    "maxBatchBytes": 16777216,
+    "maxPayloadBytes": 536870912,
+    "maxRowsPerPayload": 2000000,
+    "maxPayloadsPerJob": 100000,
+    "maxJobBytes": 68719476736,
+    "maxActiveJobsPerSubject": 32,
+    "maxPageItems": 100,
+    "inputIdleTimeoutSeconds": 900.0,
+    "transportMessageLimitEnforced": false
+  },
+  "upload": {
+    "descriptorPath": [
+      "transformer", "v4", "jobs",
+      "33333333-3333-4333-8333-333333333333", "inputs", "{ordinal}"
+    ],
+    "schemaId": "inventory.sequence.fit.v2",
+    "oneDoPutIsOneSemanticPayload": true
+  }
+}

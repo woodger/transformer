@@ -9,6 +9,7 @@ import torch
 
 import app.main as main_module
 import app.storage.checkpoint as checkpoint_module
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.data.arrow import iter_framed_arrow
 
 predict_stream_module = importlib.import_module("app.commands.predict_stream")
@@ -42,7 +43,6 @@ def make_args(**overrides):
         "lr": 1e-3,
         "batch_size": 8,
         "epochs": 1,
-        "patience": 1,
         "use_amp": False,
         "hidden": 32,
         "layers": 1,
@@ -51,6 +51,20 @@ def make_args(**overrides):
     }
     args.update(overrides)
     return SimpleNamespace(**args)
+
+
+def checkpoint_payload():
+    return {
+        "model_config": ModelConfig(
+            seq_len=2,
+            feature_dim=2,
+            hidden=32,
+            layers=1,
+            dropout=0.0,
+            nhead=4,
+        ).to_dict(),
+        "state_dict": {},
+    }
 
 
 def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
@@ -80,14 +94,14 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
         def predict(self, X):
             print("accidental predict stdout")
             self.calls.append(X.shape)
-            value = float(len(self.calls))
+            value = float(len(self.calls)) / 10.0
             return torch.tensor(
-                [[value, value + 1.0, 0.0, 0.0, 1.0, 0.5]],
+                [[value, 0.2, 0.3, 0.4, 0.5, 0.6]],
                 dtype=torch.float32,
             )
 
     trainer = FakeTrainer()
-    checkpoint = {"model_config": None, "state_dict": {}}
+    checkpoint = checkpoint_payload()
     checkpoint_loads = []
 
     def load_checkpoint_once(*args):
@@ -120,8 +134,12 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
 
     assert len(frames) == 3
     assert frames[0].column("out").to_pylist() == []
-    assert frames[1].column("out").to_pylist() == [[1.0, 2.0, 0.0, 0.0, 1.0, 0.5]]
-    assert frames[2].column("out").to_pylist() == [[2.0, 3.0, 0.0, 0.0, 1.0, 0.5]]
+    assert frames[1].column("out").to_pylist() == [
+        pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    ]
+    assert frames[2].column("out").to_pylist() == [
+        pytest.approx([0.2, 0.2, 0.3, 0.4, 0.5, 0.6])
+    ]
     diagnostics = capsys.readouterr().err
     assert "accidental build stdout" in diagnostics
     assert "accidental load stdout" in diagnostics
@@ -136,7 +154,7 @@ def test_predict_stream_applies_max_frame_bytes_without_writing_stdout(monkeypat
     monkeypatch.setattr(
         predict_stream_module,
         "load_checkpoint",
-        lambda *args: {"model_config": None, "state_dict": {}},
+        lambda *args: checkpoint_payload(),
     )
 
     with pytest.raises(ValueError, match="exceeds maximum 10 bytes"):
@@ -153,13 +171,18 @@ def test_predict_stream_loads_checkpoint_once_for_all_empty_input(
     tmp_path,
 ):
     checkpoint_path = tmp_path / "model.pth"
-    torch.save(
-        {
-            "format": "transformer-checkpoint-v2",
-            "model_config": None,
-            "state_dict": {},
-        },
+    checkpoint_module.save_checkpoint(
         checkpoint_path,
+        torch.nn.Linear(1, 1),
+        model_config=ModelConfig(
+            seq_len=2,
+            feature_dim=2,
+            hidden=32,
+            layers=1,
+            dropout=0.0,
+            nhead=4,
+        ),
+        train_config=TrainConfig(),
     )
     empty = pa.table({
         "src": pa.array([], type=pa.list_(pa.float32())),

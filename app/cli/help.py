@@ -16,13 +16,9 @@ from app.config import (
     LR,
     NHEAD,
     NUM_LAYERS,
-    PATIENCE,
     PORT_DEFAULT,
-    SAVE_BEST_CHECKPOINT,
     SEED,
     STAGE_SIZE,
-    TRAIN_MONITOR,
-    TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
 from app.version import __version__
@@ -220,6 +216,23 @@ def _fraction(value: str) -> float:
     return parsed
 
 
+def _six_positive_floats(value: str) -> tuple[float, ...]:
+    try:
+        parsed = tuple(float(item) for item in value.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "expected six comma-separated positive numbers"
+        ) from exc
+    if len(parsed) != 6 or any(
+        not math.isfinite(item) or item <= 0
+        for item in parsed
+    ):
+        raise argparse.ArgumentTypeError(
+            "expected six comma-separated positive numbers"
+        )
+    return parsed
+
+
 def _gmark_memory_fraction(value: str) -> float:
     parsed = _nonnegative_float(value)
     if parsed > 0.9:
@@ -261,8 +274,8 @@ def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
             type=_positive_int,
             default=None,
             help=(
-                "Sequence length; read from the checkpoint, but required for "
-                "legacy checkpoints."
+                "Sequence length; read from the checkpoint. If specified, "
+                "it must match."
             ),
         )
 
@@ -291,24 +304,24 @@ def _add_model_arguments(parser, *, required_seq_len: bool, training: bool):
         }
         argument_help = {
             "hidden": (
-                "Transformer hidden dimension; read from the checkpoint, "
-                f"or {D_MODEL} for legacy checkpoints."
+                "Transformer hidden dimension; read from the checkpoint. "
+                "If specified, it must match."
             ),
             "layers": (
-                "Number of Transformer encoder layers; read from the checkpoint, "
-                f"or {NUM_LAYERS} for legacy checkpoints."
+                "Number of Transformer encoder layers; read from the checkpoint. "
+                "If specified, it must match."
             ),
             "dropout": (
-                "Dropout probability; read from the checkpoint, "
-                f"or {DROPOUT} for legacy checkpoints."
+                "Dropout probability; read from the checkpoint. If specified, "
+                "it must match."
             ),
             "nhead": (
-                "Number of attention heads; read from the checkpoint, "
-                f"or {NHEAD} for legacy checkpoints."
+                "Number of attention heads; read from the checkpoint. "
+                "If specified, it must match."
             ),
             "context_mode": (
-                "NaN handling mode; read from the checkpoint, "
-                f"or {CONTEXT_MODE} for legacy checkpoints."
+                "NaN handling mode; read from the checkpoint. If specified, "
+                "it must match."
             ),
         }
 
@@ -370,11 +383,8 @@ def _add_training_arguments(parser):
         "--loss-stage",
         type=int,
         default=LOSS_STAGE,
-        choices=[1, 2, 3, 4],
-        help=(
-            "Maximum loss stage: 1=return, 2=+probabilities, "
-            "3=+Bayesian EV, 4=+volatility."
-        ),
+        choices=[4],
+        help="Target-aligned objective maximum stage (fixed at 4).",
     )
     train.add_argument(
         "--loss-schedule",
@@ -392,25 +402,32 @@ def _add_training_arguments(parser):
         help="Epoch/step count per loss stage.",
     )
     train.add_argument(
-        "--patience",
-        type=_nonnegative_int,
-        default=PATIENCE,
+        "--direct-loss-weights",
+        type=_six_positive_floats,
+        default=None,
+        metavar="W0,W1,W2,W3,W4,W5",
+        help="Positive weights for the six target-aligned direct losses.",
+    )
+    train.add_argument(
+        "--select-best-checkpoint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
-            "Non-improving training epochs allowed at the final active loss "
-            "stage; 0 disables early stopping."
+            "Select the best maximum-stage checkpoint. Disabled by default; "
+            "the last maximum-stage checkpoint is then published."
         ),
     )
     train.add_argument(
-        "--monitor",
-        choices=["loss", "ret_mae", "ret_mae_skill"],
-        default=TRAIN_MONITOR,
-        help="Training-pass metric used for early stopping and checkpoint selection.",
+        "--selection-min-delta",
+        type=_nonnegative_float,
+        default=None,
+        help="Minimum checkpoint-selection score improvement.",
     )
     train.add_argument(
-        "--monitor-min-improvement",
-        type=_fraction,
-        default=TRAIN_MONITOR_MIN_IMPROVEMENT,
-        help="For MAE monitors, required fractional improvement over the zero-return baseline.",
+        "--selection-patience",
+        type=_nonnegative_int,
+        default=None,
+        help="Non-improving maximum-stage epochs before early stopping.",
     )
     train.add_argument(
         "--use-amp",
@@ -429,12 +446,6 @@ def _add_training_arguments(parser):
         action="store_true",
         default=DETERMINISTIC,
         help="Request deterministic PyTorch algorithms (unsupported ops may fail).",
-    )
-    train.add_argument(
-        "--save-best-checkpoint",
-        action=argparse.BooleanOptionalAction,
-        default=SAVE_BEST_CHECKPOINT,
-        help="Publish the best monitored checkpoint instead of the final weights.",
     )
 
 

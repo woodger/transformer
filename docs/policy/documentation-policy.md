@@ -1,10 +1,15 @@
 # Политика ведения документации
 
-> Type: Policy. Этот документ задаёт роли документов и правила их обновления.
+> Тип: политика. Этот документ задаёт роли документов и правила их обновления.
 
 Документация должна помогать запустить Transformer, понять его contracts и
 безопасно изменить систему. Один факт должен иметь один основной источник
 правды; в остальных местах используется краткое резюме и ссылка.
+
+Документация проекта ведётся на русском языке. Имена API, wire fields, code
+identifiers, команды, пути, значения enum и другие элементы машинного
+контракта сохраняются в исходной форме. Английский текст допустим внутри
+дословных примеров и там, где перевод изменил бы значение внешнего термина.
 
 ## Текущая структура
 
@@ -25,8 +30,8 @@
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v3 contract | `app/contracts/flight/v3/` |
-| Нормативный worker v2 contract | `app/contracts/worker/v2/` |
+| Нормативный Flight v4 contract | `app/contracts/flight/v4/` |
+| Нормативный worker v3 contract | `app/contracts/worker/v3/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -89,8 +94,8 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v3/` нормативны для wire
-format. README или operations guide не могут переопределять их. Flight v3 —
+JSON Schemas и golden fixtures в `app/contracts/flight/v4/` нормативны для wire
+format. README или operations guide не могут переопределять их. Flight v4 —
 единственный текущий remote API contract и базовая точка для дальнейших
 изменений.
 
@@ -104,7 +109,7 @@ format. README или operations guide не могут переопределя�
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v3 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v4 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## ADR
@@ -139,7 +144,7 @@ reference-инструкцию не добавляются.
 
 - постоянные filenames — английский `kebab-case`, если путь уже не закреплён;
 - H1 — понятный русский заголовок;
-- metadata `> Type: Policy|Reference` рекомендуется для policy/reference;
+- metadata `> Тип: политика|справочник` рекомендуется для policy/reference;
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.

@@ -6,14 +6,19 @@ import os
 import shutil
 import uuid
 
-from app.contracts.flight.v3.arrow import validate_prediction_file
-from app.contracts.worker.v2 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v2.config import (
-    CHECKPOINT_FORMAT,
+from app.contracts.flight.v4.arrow import validate_prediction_file
+from app.contracts.worker.v3 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v3.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
+)
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    ml_contract,
+    objective_config,
+    objective_config_sha256,
 )
 from app.service.application.ports.workers import ExecutionInput
 from app.service.application.services.errors import AttemptExecutionError
@@ -22,6 +27,8 @@ from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.records import ExecutionJobRecord, StagedPredictionOutput
 
 _COPY_CHUNK_BYTES = 1024 * 1024
+
+
 class WorkerArtifactError(AttemptExecutionError):
     pass
 
@@ -254,6 +261,18 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit checkpoint data contract differs from the job",
                 )
+            expected_ml_contract = ml_contract(actual_train)
+            if checkpoint_metadata.get("mlContract") != expected_ml_contract:
+                raise WorkerArtifactError(
+                    ErrorCode.MALFORMED_OUTPUT,
+                    "fit checkpoint ML contract differs from the job",
+                )
+            expected_objective = objective_config(actual_train)
+            if checkpoint_metadata.get("objectiveConfig") != expected_objective:
+                raise WorkerArtifactError(
+                    ErrorCode.MALFORMED_OUTPUT,
+                    "fit checkpoint objective configuration differs from the job",
+                )
             data_schema = _canonical_data_schema(actual_model)
             checkpoint_selection = _validate_worker_selection(
                 checkpoint_metadata.get("checkpointSelection"),
@@ -267,6 +286,7 @@ class WorkerArtifactPublisher:
                 "modelConfig": model_config_to_manifest(actual_model),
                 "trainingConfig": train_config_to_manifest(actual_train),
                 "dataContract": _data_contract_to_api(job.data_contract),
+                "mlContract": expected_ml_contract,
                 "checkpointSelection": checkpoint_selection,
             }
         except WorkerArtifactError:
@@ -291,6 +311,8 @@ class WorkerArtifactPublisher:
             "model_config": actual_model.to_dict(),
             "train_config": actual_train.to_dict(),
             "data_contract": dict(job.data_contract),
+            "ml_contract": expected_ml_contract,
+            "objective_config": expected_objective,
             "data_schema": data_schema,
             "checkpoint": safe_checkpoint,
         }
@@ -390,52 +412,54 @@ def _checkpoint_selection_to_api(
     value: dict | None,
     train_config: TrainConfig,
 ) -> dict:
-    value = value if isinstance(value, dict) else {}
-    result = {
-        "monitor": value.get("monitor", train_config.monitor),
-        "monitorMinImprovement": value.get(
-            "monitor_min_improvement",
-            train_config.monitor_min_improvement,
-        ),
-        "bestMonitor": value.get("best_monitor"),
-        "bestFrame": value.get("best_frame"),
-        "bestEpoch": value.get("best_epoch"),
-        "baselinePassed": bool(value.get("baseline_passed", False)),
-        "source": value.get("source", "current"),
-    }
-    best_monitor = result["bestMonitor"]
-    best_frame = result["bestFrame"]
-    best_epoch = result["bestEpoch"]
+    if not isinstance(value, dict):
+        raise WorkerArtifactError(
+            ErrorCode.SUBPROCESS_FAILED,
+            "fit checkpoint contains invalid checkpoint selection metadata",
+        )
+    enabled = train_config.selection is not None
+    score = value.get("bestSelectionScore")
+    frame = value.get("bestFrame")
+    epoch = value.get("bestEpoch")
+    valid_frame = frame is None or (type(frame) is int and frame >= 0)
+    valid_epoch = epoch is None or (type(epoch) is int and epoch >= 1)
+    if enabled:
+        valid_selection = (
+            isinstance(score, (int, float))
+            and not isinstance(score, bool)
+            and math.isfinite(score)
+            and epoch is not None
+            and value.get("source") == "best_selection_score"
+        )
+    else:
+        valid_selection = (
+            score is None
+            and frame is None
+            and epoch is None
+            and value.get("source") == "last_maximum_stage"
+        )
     if (
-        result["monitor"] != train_config.monitor
-        or result["monitorMinImprovement"] != train_config.monitor_min_improvement
-        or (
-            best_monitor is not None
-            and (
-                isinstance(best_monitor, bool)
-                or not isinstance(best_monitor, (int, float))
-                or not math.isfinite(best_monitor)
-            )
-        )
-        or (
-            best_frame is not None
-            and (type(best_frame) is not int or best_frame < 0)
-        )
-        or (
-            best_epoch is not None
-            and (type(best_epoch) is not int or best_epoch < 0)
-        )
-        or (
-            "baseline_passed" in value
-            and not isinstance(value["baseline_passed"], bool)
-        )
-        or result["source"] not in ("best_monitor", "current")
+        set(value)
+        != {
+            "enabled",
+            "objectiveConfigSha256",
+            "bestSelectionScore",
+            "bestFrame",
+            "bestEpoch",
+            "source",
+        }
+        or value.get("enabled") is not enabled
+        or value.get("objectiveConfigSha256")
+        != objective_config_sha256(train_config)
+        or not valid_frame
+        or not valid_epoch
+        or not valid_selection
     ):
         raise WorkerArtifactError(
             ErrorCode.SUBPROCESS_FAILED,
             "fit checkpoint contains invalid checkpoint selection metadata",
         )
-    return result
+    return dict(value)
 
 
 def _canonical_data_schema(model_config: ModelConfig) -> dict:
@@ -446,7 +470,7 @@ def _canonical_data_schema(model_config: ModelConfig) -> dict:
             "fit worker metadata has no feature dimension",
         )
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "tensorDtype": "float32",
         "source": {
             "column": "src",
@@ -457,6 +481,7 @@ def _canonical_data_schema(model_config: ModelConfig) -> dict:
             "column": "tgt",
             "acceptedElementTypes": ["float32"],
             "width": 6,
+            "targetSchemaId": "inventory.target.v1",
         },
         "featureDim": feature_dim,
         "modelInputFeatureDim": (
@@ -475,6 +500,8 @@ def _canonical_data_schema(model_config: ModelConfig) -> dict:
             ),
         },
     }
+
+
 def _validate_worker_selection(
     value: dict | None,
     train_config: TrainConfig,
@@ -484,16 +511,7 @@ def _validate_worker_selection(
             ErrorCode.SUBPROCESS_FAILED,
             "fit worker checkpoint selection metadata is invalid",
         )
-    legacy = {
-        "monitor": value.get("monitor"),
-        "monitor_min_improvement": value.get("monitorMinImprovement"),
-        "best_monitor": value.get("bestMonitor"),
-        "best_frame": value.get("bestFrame"),
-        "best_epoch": value.get("bestEpoch"),
-        "baseline_passed": value.get("baselinePassed"),
-        "source": value.get("source"),
-    }
-    result = _checkpoint_selection_to_api(legacy, train_config)
+    result = _checkpoint_selection_to_api(value, train_config)
     if result != value:
         raise WorkerArtifactError(
             ErrorCode.SUBPROCESS_FAILED,

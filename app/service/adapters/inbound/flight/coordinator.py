@@ -1,150 +1,84 @@
-import hashlib
-import os
-
 import pyarrow
 
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    OBJECTIVE_ID,
+    PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
+    TARGET_SCHEMA_ID,
+    TARGET_WIDTH,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    CONTRACT_PATH_VERSION,
     CONTRACT_VERSION,
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
-    MAX_PAGE_ITEMS,
     MODEL_DESCRIBE_ACTION,
     OUTPUTS_LIST_ACTION,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
-    ErrorCode,
 )
 from app.service.adapters.inbound.flight.contract import (
     canonical_request_hash,
-    data_contract_to_api,
     encode_document,
-    model_config_to_api,
     response_document,
 )
-from app.service.adapters.inbound.flight.errors import ServiceError
-from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.application.commands.jobs import (
-    AcquireJobAction,
-    CancelJobAction,
-    CreateJobAction,
-    InputCloseAction,
-    JobActionContract,
+from app.service.adapters.inbound.flight.presentation import (
+    limits_to_api,
+    present_input_closed,
+    present_job_acquired,
+    present_job_cancelled,
+    present_job_created,
+    present_job_inputs,
+    present_job_outputs,
+    present_job_status,
+    present_model_description,
 )
-from app.service.application.ports.devices import WorkerCapabilities
-from app.service.application.queries.status import (
-    DescribeModel,
-    GetJobStatus,
-    ListJobInputs,
-    ListJobOutputs,
+from app.service.application.job_models import (
+    AcquireJobCommand,
+    CancelJobCommand,
+    CloseInputCommand,
+    CreateJobCommand,
+    DescribeModelQuery,
+    GetJobStatusQuery,
+    ListJobInputsQuery,
+    ListJobOutputsQuery,
 )
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
 from app.version import __version__
 
 
 class JobCoordinator:
     def __init__(
         self,
-        config,
-        ledger,
-        spool,
         *,
-        device_inventory: WorkerCapabilities,
-        recovery_store=None,
-        metrics: OperationalMetrics | None = None,
-        logger: JsonLogger | None = None,
-        cancel_notifier=None,
-        queue_notifier=None,
+        create_job,
+        acquire_job,
+        close_input,
+        cancel_job,
+        get_status,
+        list_inputs,
+        list_outputs,
+        describe_model,
+        service_status,
+        availability,
     ):
-        self.config = config
-        self.ledger = ledger
-        self.spool = spool
-        self.recovery_store = recovery_store or spool
-        self.device_inventory = device_inventory
-        self._cuda_available = lambda: (
-            self.device_inventory.snapshot().cuda_capacity > 0
-        )
-        self.metrics = metrics or OperationalMetrics()
-        self.logger = logger or JsonLogger()
-        self.cancel_notifier = cancel_notifier
-        self.queue_notifier = queue_notifier
-        self.draining = False
-        contract = JobActionContract(
-            create_action=CREATE_ACTION,
-            acquire_action=ACQUIRE_ACTION,
-            input_close_action=INPUT_CLOSE_ACTION,
-            cancel_action=CANCEL_ACTION,
-            path_version=CONTRACT_PATH_VERSION,
-            fit_schema_id=FIT_SCHEMA_ID,
-            predict_schema_id=PREDICT_SCHEMA_ID,
-        )
-        common = {
-            "action_contract": contract,
-            "request_hasher": canonical_request_hash,
-            "response_factory": response_document,
-        }
-        self._create_action = CreateJobAction(
-            config,
-            ledger,
-            cuda_available=lambda: self._cuda_available(),
-            is_draining=lambda: self.draining,
-            limits=self._limits,
-            data_contract_factory=data_contract_to_api,
-            model_validator=self._validate_model_artifact,
-            metrics=self.metrics,
-            logger=self.logger,
-            **common,
-        )
-        self._acquire_action = AcquireJobAction(
-            config,
-            ledger,
-            cleanup_candidate=self._cleanup_candidate,
-            logger=self.logger,
-            **common,
-        )
-        self._close_action = InputCloseAction(
-            ledger,
-            cuda_available=lambda: self._cuda_available(),
-            queue_notifier=self._notify_queued,
-            metrics=self.metrics,
-            logger=self.logger,
-            **common,
-        )
-        self._cancel_action = CancelJobAction(
-            ledger,
-            cancel_notifier=self._notify_cancel,
-            cleanup_candidate=self._cleanup_candidate,
-            metrics=self.metrics,
-            logger=self.logger,
-            **common,
-        )
-        self._status_query = GetJobStatus(
-            ledger,
-            response_factory=response_document,
-            data_contract_factory=data_contract_to_api,
-        )
-        self._inputs_query = ListJobInputs(
-            ledger,
-            response_factory=response_document,
-        )
-        self._outputs_query = ListJobOutputs(
-            ledger,
-            path_version=CONTRACT_PATH_VERSION,
-            response_factory=response_document,
-        )
-        self._model_query = DescribeModel(
-            ledger,
-            response_factory=response_document,
-            data_contract_factory=data_contract_to_api,
-            model_config_factory=model_config_to_api,
-            model_artifact_validator=self._validate_model_artifact,
-        )
+        self._create_job = create_job
+        self._acquire_job = acquire_job
+        self._close_input = close_input
+        self._cancel_job = cancel_job
+        self._get_status = get_status
+        self._list_inputs = list_inputs
+        self._list_outputs = list_outputs
+        self._describe_model = describe_model
+        self._service_status = service_status
+        self._availability = availability
 
     def dispatch(self, action: str, owner: str, request: dict, document: dict) -> bytes:
         if action == CAPABILITIES_ACTION:
@@ -152,25 +86,80 @@ class JobCoordinator:
         elif action == HEALTH_ACTION:
             result = self.health(request["request_id"])
         elif action == CREATE_ACTION:
-            result = self._create_action.create(owner, request, document)
+            result = present_job_created(
+                self._create_job.create(
+                    _create_command(owner, request, document)
+                )
+            )
         elif action == ACQUIRE_ACTION:
-            result = self._acquire_action.acquire(owner, request, document)
+            result = present_job_acquired(
+                self._acquire_job.acquire(
+                    _acquire_command(owner, request, document)
+                )
+            )
         elif action == STATUS_ACTION:
-            result = self._status_query.execute(
-                owner,
-                request["job_id"],
-                request["request_id"],
+            result = present_job_status(
+                self._get_status.execute(
+                    GetJobStatusQuery(
+                        owner_subject=owner,
+                        request_id=request["request_id"],
+                        job_id=request["job_id"],
+                    )
+                )
             )
         elif action == INPUTS_LIST_ACTION:
-            result = self._inputs_query.execute(owner, request)
+            result = present_job_inputs(
+                self._list_inputs.execute(
+                    ListJobInputsQuery(
+                        owner_subject=owner,
+                        request_id=request["request_id"],
+                        job_id=request["job_id"],
+                        after_revision=request["after_revision"],
+                        snapshot_revision=request["snapshot_revision"],
+                        cursor=request["cursor"],
+                        limit=request["limit"],
+                    )
+                )
+            )
         elif action == INPUT_CLOSE_ACTION:
-            result = self._close_action.close(owner, request, document)
+            result = present_input_closed(
+                self._close_input.close(
+                    _close_command(owner, request, document)
+                )
+            )
         elif action == OUTPUTS_LIST_ACTION:
-            result = self._outputs_query.execute(owner, request)
+            result = present_job_outputs(
+                self._list_outputs.execute(
+                    ListJobOutputsQuery(
+                        owner_subject=owner,
+                        request_id=request["request_id"],
+                        job_id=request["job_id"],
+                        cursor=request["cursor"],
+                        limit=request["limit"],
+                    )
+                )
+            )
         elif action == CANCEL_ACTION:
-            result = self._cancel_action.cancel(owner, request, document)
+            result = present_job_cancelled(
+                self._cancel_job.cancel(
+                    _cancel_command(owner, request, document)
+                )
+            )
         elif action == MODEL_DESCRIBE_ACTION:
-            result = self._model_query.execute(owner, request)
+            result = present_model_description(
+                self._describe_model.execute(
+                    DescribeModelQuery(
+                        owner_subject=owner,
+                        request_id=request["request_id"],
+                        model_selector=(
+                            "alias"
+                            if request["model_selector"] == "modelAlias"
+                            else "reference"
+                        ),
+                        model_ref=request["model_ref"],
+                    )
+                )
+            )
         else:
             raise ServiceError(
                 ErrorCode.INVALID_ARGUMENT,
@@ -179,9 +168,8 @@ class JobCoordinator:
         return encode_document(result)
 
     def capabilities(self, request_id: str) -> dict:
-        inventory = self.device_inventory.snapshot()
-        cuda_available = inventory.cuda_capacity > 0
-        self.metrics.set("cudaAvailable", cuda_available)
+        capabilities = self._service_status.capabilities()
+        inventory = capabilities.device_inventory
         return response_document(
             request_id,
             protocolVersions=[CONTRACT_VERSION],
@@ -196,18 +184,27 @@ class JobCoordinator:
                 "predictInput": PREDICT_SCHEMA_ID,
                 "predictionOutput": PREDICTION_SCHEMA_ID,
             },
-            limits=self._limits(),
+            mlContract={
+                "targetSchemaId": TARGET_SCHEMA_ID,
+                "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
+                "objectiveId": OBJECTIVE_ID,
+                "checkpointFormat": CHECKPOINT_FORMAT,
+                "targetWidth": TARGET_WIDTH,
+                "predictionSpace": "target",
+                "objectiveConfigSchemaVersion": 1,
+            },
+            limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
                 "cuda": {
-                    "available": cuda_available,
+                    "available": inventory.cuda_capacity > 0,
                     "deviceCount": inventory.device_count,
                     "quarantinedCount": inventory.quarantined_count,
                     "runtimeVersion": inventory.runtime_version,
                 },
             },
             queue={
-                "cpuCapacity": self.config.cpu_capacity,
+                "cpuCapacity": capabilities.cpu_capacity,
                 "cudaCapacity": inventory.cuda_capacity,
                 "singleInstance": True,
             },
@@ -226,105 +223,98 @@ class JobCoordinator:
         )
 
     def health(self, request_id: str) -> dict:
-        runtime_usage = self.spool.disk_usage()
-        recovery_usage = self.recovery_store.disk_usage()
-        try:
-            ledger_ready = bool(self.ledger.healthcheck())
-        except Exception as exc:
-            ledger_ready = False
-            self.logger.event(
-                "flight.ledger.health_failed",
-                errorType=type(exc).__name__,
-            )
-        ready = not self.draining and ledger_ready
-        inventory = self.device_inventory.snapshot()
-        cuda_available = inventory.cuda_capacity > 0
-        self.metrics.set("cudaAvailable", cuda_available)
-        self.metrics.set("ready", ready)
-        self.metrics.set("diskTotalBytes", runtime_usage.total)
-        self.metrics.set("diskUsedBytes", runtime_usage.used)
-        self.metrics.set("diskFreeBytes", runtime_usage.free)
-        self.metrics.set("recoveryDiskTotalBytes", recovery_usage.total)
-        self.metrics.set("recoveryDiskUsedBytes", recovery_usage.used)
-        self.metrics.set("recoveryDiskFreeBytes", recovery_usage.free)
+        health = self._service_status.health()
+        inventory = health.device_inventory
         return response_document(
             request_id,
             live=True,
-            ready=ready,
-            draining=self.draining,
-            ledger={"available": ledger_ready},
+            ready=health.ready,
+            draining=health.draining,
+            ledger={"available": health.ledger_available},
             cuda={
-                "available": cuda_available,
+                "available": inventory.cuda_capacity > 0,
                 "deviceCount": inventory.device_count,
                 "quarantinedCount": inventory.quarantined_count,
             },
             storage={
-                "runtime": _storage_health(runtime_usage),
-                "recovery": _storage_health(recovery_usage),
+                "runtime": {"freeBytes": health.runtime_storage.free},
+                "recovery": {"freeBytes": health.recovery_storage.free},
             },
-            metrics=self.metrics.snapshot(),
+            metrics=health.metrics,
         )
 
     def set_draining(self, value: bool = True) -> None:
-        self.draining = bool(value)
+        self._availability.set_draining(value)
 
-    def _notify_queued(self, job_id: str) -> None:
-        if self.queue_notifier is not None:
-            self.queue_notifier(job_id)
 
-    def _notify_cancel(self, job_id: str) -> None:
-        if self.cancel_notifier is not None:
-            self.cancel_notifier(job_id)
-
-    def _cleanup_candidate(self, storage_class: str, relative_path: str) -> None:
-        store = self.recovery_store if storage_class == "recovery" else self.spool
-        try:
-            store.remove(store.absolute_path(relative_path))
-        except (FileNotFoundError, OSError):
-            self.logger.event(
-                "flight.input.candidate_cleanup_failed",
-                storageClass=storage_class,
-                path=os.path.basename(relative_path),
+def _create_command(owner: str, request: dict, document: dict) -> CreateJobCommand:
+    return CreateJobCommand(
+        owner_subject=owner,
+        request_id=request["request_id"],
+        idempotency_key=request["idempotency_key"],
+        request_hash=canonical_request_hash(document),
+        job_id=request["job_id"],
+        client_execution_id=request["client_execution_id"],
+        operation=request["operation"],
+        requested_device=request["device"],
+        prediction_column=request["prediction_column"],
+        data_contract=request["data_contract"],
+        ml_contract=request["ml_contract"],
+        model_label=request.get("model_label"),
+        model_selector=(
+            None
+            if request.get("model_selector") is None
+            else (
+                "alias"
+                if request["model_selector"] == "modelAlias"
+                else "reference"
             )
-
-    def _validate_model_artifact(self, model) -> None:
-        path = self.spool.model_absolute_path(model.checkpoint_path)
-        try:
-            byte_count = os.path.getsize(path)
-        except OSError as exc:
-            raise ServiceError(
-                ErrorCode.MODEL_UNAVAILABLE,
-                "model checkpoint is unavailable",
-            ) from exc
-        if byte_count != model.byte_count or _sha256_file(path) != model.sha256:
-            raise ServiceError(
-                ErrorCode.MODEL_CORRUPT,
-                "model checkpoint integrity validation failed",
-            )
-
-    def _limits(self) -> dict:
-        return {
-            "maxMessageBytes": self.config.max_message_bytes,
-            "targetBatchBytes": self.config.target_batch_bytes,
-            "maxBatchBytes": self.config.max_batch_bytes,
-            "maxPayloadBytes": self.config.max_payload_bytes,
-            "maxRowsPerPayload": self.config.max_rows_per_payload,
-            "maxPayloadsPerJob": self.config.max_payloads_per_job,
-            "maxJobBytes": self.config.max_job_bytes,
-            "maxActiveJobsPerSubject": self.config.max_active_jobs_per_subject,
-            "maxPageItems": MAX_PAGE_ITEMS,
-            "inputIdleTimeoutSeconds": self.config.input_idle_timeout_seconds,
-            "transportMessageLimitEnforced": False,
-        }
+        ),
+        model_ref=request.get("model_ref"),
+        model_config=request.get("model_config"),
+        training_config=request.get("train_config"),
+    )
 
 
-def _storage_health(usage) -> dict:
-    return {"freeBytes": usage.free}
+def _acquire_command(owner: str, request: dict, document: dict) -> AcquireJobCommand:
+    return AcquireJobCommand(
+        owner_subject=owner,
+        request_id=request["request_id"],
+        idempotency_key=request["idempotency_key"],
+        request_hash=canonical_request_hash(document),
+        job_id=request["job_id"],
+        previous_client_execution_id=request["previous_client_execution_id"],
+        expected_fencing_token=request["expected_fencing_token"],
+        client_execution_id=request["client_execution_id"],
+    )
 
 
-def _sha256_file(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _close_command(owner: str, request: dict, document: dict) -> CloseInputCommand:
+    return CloseInputCommand(
+        owner_subject=owner,
+        request_id=request["request_id"],
+        idempotency_key=request["idempotency_key"],
+        request_hash=canonical_request_hash(document),
+        job_id=request["job_id"],
+        client_execution_id=request["client_execution_id"],
+        fencing_token=request["fencing_token"],
+        payload_count=request["payload_count"],
+        total_rows=request["total_rows"],
+        total_bytes=request["total_bytes"],
+        manifest_sha256=request["manifest_sha256"],
+    )
+
+
+def _cancel_command(owner: str, request: dict, document: dict) -> CancelJobCommand:
+    return CancelJobCommand(
+        owner_subject=owner,
+        request_id=request["request_id"],
+        idempotency_key=request["idempotency_key"],
+        request_hash=canonical_request_hash(document),
+        job_id=request["job_id"],
+        client_execution_id=request["client_execution_id"],
+        fencing_token=request["fencing_token"],
+    )
+
+
+__all__ = ["JobCoordinator"]

@@ -7,7 +7,6 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.schema import DropSchema
 
-# add project root to PYTHONPATH
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "app"))

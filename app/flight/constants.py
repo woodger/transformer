@@ -1,6 +1,6 @@
-"""Stable imports for the Flight v3 adapter and domain lifecycle."""
+"""Stable imports for the Flight v4 adapter and domain lifecycle."""
 
-from app.contracts.flight.v3.constants import (
+from app.contracts.flight.v4.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,

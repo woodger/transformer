@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger_support import (
     canonical_uuid,
     decode,
@@ -495,7 +495,7 @@ class ExecutionLedgerSlice:
                 return False
             if (
                 job.next_input_ordinal != next_ordinal
-                or job.input_revision != input_revision
+                or input_revision > job.input_revision
             ):
                 return False
             job.waiting_for_input = True
@@ -554,6 +554,7 @@ def _execution_job_record(
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),
         data_contract=dict(record.data_contract),
+        ml_contract=dict(record.ml_contract),
         config_hash=record.config_hash,
         manifest_sha256=record.manifest_sha256,
         feature_dim=record.feature_dim,

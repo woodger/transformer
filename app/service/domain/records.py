@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 
 
@@ -24,6 +24,7 @@ class ExecutionJobRecord:
     model_config: ModelConfig | None
     training_config: TrainConfig | None
     data_contract: dict[str, Any]
+    ml_contract: dict[str, Any]
     config_hash: str
     manifest_sha256: str | None
     feature_dim: int
@@ -74,6 +75,7 @@ class JobRecord:
     resolved_model_ref: str | None
     prediction_column: str
     data_contract: dict[str, Any]
+    ml_contract: dict[str, Any]
     progress: dict[str, Any]
     attempt: int
     error_code: str | None
@@ -180,7 +182,8 @@ class ModelArtifactRecord:
     byte_count: int
     sha256: str
     data_contract: dict[str, Any] | None
-    certified_for_v3: bool
+    ml_contract: dict[str, Any] | None
+    objective_config_sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +198,8 @@ class PublishedModelRecord:
     sha256: str
     metadata: dict[str, Any]
     data_contract: dict[str, Any] | None
-    certified_for_v3: bool
+    ml_contract: dict[str, Any] | None
+    objective_config_sha256: str | None
     producing_job_id: str | None
     created_at: float
 

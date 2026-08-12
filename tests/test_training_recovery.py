@@ -6,6 +6,8 @@ import pytest
 import torch
 from torch import nn
 
+from app.contracts.worker.v3.config import CheckpointSelectionConfig
+from app.contracts.worker.v3.objective import objective_config_sha256
 from app.storage.training_recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -22,13 +24,30 @@ class InjectedInterruption(Exception):
 
 
 def _model() -> nn.Module:
-    return nn.Sequential(
-        nn.Flatten(),
-        nn.Linear(4, 12),
-        nn.ReLU(),
-        nn.Dropout(0.2),
-        nn.Linear(12, 6),
-    )
+    class TargetAlignedLinear(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(4, 12),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(12, 7),
+            )
+
+        def forward(self, value):
+            raw = self.layers(value)
+            return torch.stack((
+                torch.tanh(raw[:, 0]),
+                torch.sigmoid(raw[:, 1]),
+                raw[:, 2],
+                raw[:, 3],
+                torch.sigmoid(raw[:, 4]),
+                raw[:, 5],
+                torch.nn.functional.softplus(raw[:, 6]) + 1e-6,
+            ), dim=1)
+
+    return TargetAlignedLinear()
 
 
 def _trainer(initial_state: dict) -> Trainer:
@@ -46,12 +65,10 @@ def _trainer(initial_state: dict) -> Trainer:
         lr=0.001,
         batch_size=3,
         epochs=3,
-        patience=0,
-        loss_stage=2,
-        loss_schedule="step",
+        loss_stage=4,
+        loss_schedule="none",
         stage_size=2,
-        monitor="loss",
-        save_best_checkpoint=True,
+        selection=CheckpointSelectionConfig(min_delta=0.0, patience=0),
         seed=919,
         deterministic=True,
     )
@@ -61,13 +78,12 @@ def _trainer(initial_state: dict) -> Trainer:
         lr=train_config.lr,
         batch_size=train_config.batch_size,
         epochs=train_config.epochs,
-        patience=train_config.patience,
         loss_stage=train_config.loss_stage,
         loss_schedule=train_config.loss_schedule,
         stage_size=train_config.stage_size,
         weight_decay=train_config.weight_decay,
-        monitor=train_config.monitor,
-        save_best_checkpoint=train_config.save_best_checkpoint,
+        direct_loss_weights=train_config.direct_loss_weights,
+        selection=train_config.selection,
         model_config=model_config,
         train_config=train_config,
         seed=train_config.seed,
@@ -109,9 +125,8 @@ def _assert_tree_equal(left, right) -> None:
 def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     _seed()
     source = torch.randn(11, 2, 2)
-    target = torch.randn(11, 6)
-    target[:, 4] = torch.rand(11) + 0.1
-    target[:, 5] = torch.randint(0, 2, (11,), dtype=target.dtype)
+    target = torch.rand(11, 6)
+    target[:, 0] = torch.rand(11) * 2 - 1
     initial_state = copy.deepcopy(_model().state_dict())
     payloads = _payloads(source, target)
 
@@ -145,15 +160,18 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
         torch.device("cpu"),
         expected_config_hash=CONFIG_HASH,
         expected_manifest_hash=MANIFEST_HASH,
+        expected_objective_config_sha256=objective_config_sha256(
+            interrupted.train_config
+        ),
     )
     resumed = _trainer(initial_state)
     resumed.load_recovery_state_dict(payload["trainer_state"])
     resumed.fit_payloads_resumable(payloads)
 
     assert resumed.state == uninterrupted.state
-    assert resumed.early_stopping == uninterrupted.early_stopping
+    assert resumed.selection_state == uninterrupted.selection_state
     assert resumed.best_epoch == uninterrupted.best_epoch
-    assert resumed.best_monitor == uninterrupted.best_monitor
+    assert resumed.best_selection_score == uninterrupted.best_selection_score
     _assert_tree_equal(
         resumed.model.state_dict(),
         uninterrupted.model.state_dict(),
@@ -173,9 +191,8 @@ def test_recovery_checkpoint_rejects_a_different_closed_input_set(
 ):
     _seed()
     source = torch.randn(3, 2, 2)
-    target = torch.randn(3, 6)
-    target[:, 4] = torch.rand(3) + 0.1
-    target[:, 5] = torch.randint(0, 2, (3,), dtype=target.dtype)
+    target = torch.rand(3, 6)
+    target[:, 0] = torch.rand(3) * 2 - 1
     initial_state = copy.deepcopy(_model().state_dict())
     trainer = _trainer(initial_state)
     trainer.fit_payloads_resumable(_payloads(source, target))
@@ -194,4 +211,7 @@ def test_recovery_checkpoint_rejects_a_different_closed_input_set(
             torch.device("cpu"),
             expected_config_hash=CONFIG_HASH,
             expected_manifest_hash="c" * 64,
+            expected_objective_config_sha256=objective_config_sha256(
+                trainer.train_config
+            ),
         )

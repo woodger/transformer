@@ -1,94 +1,106 @@
 # Функция потерь
 
-Текущая модель всегда возвращает шесть значений на строку:
+Нормативное решение описано в
+[ADR 0007](./adr/0007-target-aligned-flight-v4.md). Внутри worker модель
+возвращает семь значений: шесть public heads и один private Gaussian scale.
+Flight boundary публикует только первые шесть в target-space.
 
-| Позиция | Выход модели | Семантика |
-| --- | --- | --- |
-| `0` | `meanR` | ожидаемый return, `tanh`, диапазон `[-1, 1]` |
-| `1` | `sigmaR` | положительный масштаб return distribution |
-| `2` | `logitTP` | логит вероятности take-profit |
-| `3` | `logitSL` | логит вероятности stop-loss |
-| `4` | `volNext` | положительный прогноз следующей volatility |
-| `5` | `logitHit` | дополнительный логит; текущий loss его не использует |
+| Индекс | Public semantic | Внутреннее представление | Диапазон prediction |
+| --- | --- | --- | --- |
+| `0` | `meanReturn` | `tanh(meanHead)` | `[-1, 1]` |
+| `1` | `sigmaReturn` | `sigmoid(sigmaHead)` | `[0, 1]` |
+| `2` | `probTP` | logit; при публикации `sigmoid` | `[0, 1]` |
+| `3` | `probSL` | logit; при публикации `sigmoid` | `[0, 1]` |
+| `4` | `volatilityNext` | `sigmoid(volatilityHead)` | `[0, 1]` |
+| `5` | `hittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
+| private | `returnScale` | `softplus(scaleHead) + 1e-6` | не публикуется |
 
-Training target также имеет ширину ровно `6`. Текущая функция потерь использует
-только следующие позиции:
+`sigmaReturn` — нормализованный target Inventory, а не Gaussian scale.
+`probTP` и `probSL` независимы и не обязаны давать сумму `1`.
 
-- `tgt[:, 0]` — target return;
-- `tgt[:, 4]` — target volatility;
-- `tgt[:, 5]` — hit probability в диапазоне `[0, 1]`.
+## Прямые компоненты
 
-Позиции `tgt[:, 1:4]` принимаются как часть формата, но текущим loss не
-используются.
+Каждая target-координата непосредственно обучает одноимённую public head:
+
+```text
+L0 = mean(SmoothL1(meanReturn, target[0]))
+L1 = mean(SmoothL1(sigmaReturn, target[1]))
+L2 = mean(BCEWithLogits(probTpLogit, target[2]))
+L3 = mean(BCEWithLogits(probSlLogit, target[3]))
+L4 = mean((log(volatilityNext + 1e-6)
+           - log(target[4] + 1e-6))²)
+L5 = mean(BCEWithLogits(hittingProbTpLogit, target[5]))
+```
+
+На максимальном stage все шесть весов `w0…w5` строго положительны:
+
+```text
+directLoss = Σ wi × Li
+```
+
+`--direct-loss-weights` задаёт веса в порядке target vector.
+
+## Вспомогательные компоненты
+
+Private Gaussian NLL использует только `meanReturn`, `target[0]` и отдельный
+`returnScale`:
+
+```text
+variance = returnScale² + 1e-6
+gaussianNll = mean(0.5 × (
+  (target[0] - meanReturn)² / variance + log(variance)
+))
+```
+
+Значение Gaussian NLL может быть отрицательным при малой дисперсии. Это само по
+себе не означает ошибку.
+
+EV/risk regularizer использует независимые вероятности TP и SL:
+
+```text
+ev = sigmoid(probTpLogit) - sigmoid(probSlLogit)
+risk = detach(returnScale) × abs(ev)
+expectedValueLoss = -0.3 × mean(ev - 0.1 × risk)
+```
+
+Auxiliary losses влияют на `trainingLoss`, но не входят в checkpoint selection
+score и не меняют публичную семантику.
 
 ## Этапы
 
-Loss накапливает компоненты по четырём этапам:
+`--loss-stage` зафиксирован в `4`. `--loss-schedule` управляет переходом к
+максимальному stage:
 
-| Stage | Имя | Активные компоненты |
-| --- | --- | --- |
-| `1` | `returns` | `ret` |
-| `2` | `probabilities` | `ret + prob` |
-| `3` | `bayesian-ev` | `ret + prob + ev` |
-| `4` | `volatility` | `ret + prob + ev + vol` |
+| Stage | Активные компоненты |
+| --- | --- |
+| `1` | `L0`, `L1`, Gaussian NLL |
+| `2` | stage 1 + `L2`, `L3`, `L5` |
+| `3` | stage 2 + EV/risk |
+| `4` | stage 3 + `L4` |
 
-### Stage 1: return
+- `none` — сразу использовать stage 4;
+- `epoch` — повышать stage каждые `--stage-size` epochs;
+- `step` — повышать stage каждые `--stage-size` optimizer steps.
 
-Используется Gaussian NLL с согласованной дисперсией:
+При defaults `--loss-schedule=epoch --stage-size=5` epochs `1..5` используют
+stage 1, `6..10` — stage 2, `11..15` — stage 3, с epoch 16 — stage 4.
+Обучение обязано завершить хотя бы одну полную epoch stage 4.
 
-```text
-var = sigmaR² + 1e-6
-loss_ret = mean(0.5 * ((target_meanR - meanR)² / var + log(var)))
-```
+## Выбор checkpoint
 
-Gaussian NLL может быть отрицательным при малой дисперсии; само по себе
-отрицательное значение не означает ошибку вычисления.
-
-### Stage 2: probabilities
-
-К return-компоненту добавляются две BCE-with-logits цели:
+Если включён `--select-best-checkpoint`, score вычисляется только для полной
+epoch stage 4:
 
 ```text
-loss_prob = 0.5 * (
-    BCE(logitTP, target_hit_probability)
-    + BCE(logitSL, 1 - target_hit_probability)
-)
+selectionScore = Σ wi × globalRowMean(Li)
 ```
 
-### Stage 3: Bayesian EV
+`globalRowMean` означает взвешивание batch-значений числом строк. Границы
+payload и batch не меняют score. Auxiliary losses исключены. Нефинитный или
+неполный score завершает обучение ошибкой.
 
-```text
-pTP = sigmoid(logitTP)
-pSL = sigmoid(logitSL)
-ev = pTP - pSL
-risk = detach(sigmaR) * abs(ev)
-loss_ev = -0.3 * mean(ev - 0.1 * risk)
-```
-
-`detach(sigmaR)` означает, что EV-компонент не изменяет `sigmaR` своим
-градиентом.
-
-### Stage 4: volatility
-
-```text
-loss_vol = 0.2 * mean(
-    (log(volNext + 1e-6) - log(target_volNext + 1e-6))²
-)
-```
-
-## Schedule
-
-`--loss-stage` задаёт максимальный stage, а `--loss-schedule` — способ перехода:
-
-- `none` — сразу и постоянно используется `--loss-stage`;
-- `epoch` — stage повышается каждые `--stage-size` эпох внутри текущего frame;
-- `step` — stage повышается каждые `--stage-size` глобальных optimizer steps и
-  может смениться посреди epoch.
-
-При defaults `--loss-stage=4 --loss-schedule=epoch --stage-size=5` эпохи
-`1..5` используют stage 1, `6..10` — stage 2, `11..15` — stage 3, а с эпохи
-`16` используется stage 4. В standalone `fit-stream`, читающем stdin, epoch
-schedule начинается заново для каждого frame; step schedule продолжает
-глобальный счётчик между frames. Flight fit читает committed payloads из durable
-spool в каждой job-wide эпохе, поэтому оба schedule имеют одно состояние на
-весь job и не сбрасываются на границах payloads.
+Candidate заменяет best только при
+`score < best - selectionMinDelta`; равенство сохраняет более ранний
+checkpoint. `--selection-patience=0` отключает early stopping, но оставляет
+выбор best. Если selection выключен, публикуется последний checkpoint
+максимального stage.

@@ -12,7 +12,6 @@ from app.data.arrow import (
 from app.data.tensors import (
     reshape_source,
     validate_checkpoint_feature_dim,
-    validate_feature_dim,
 )
 from app.storage.checkpoint import load_checkpoint
 from app.training.factory import build_model, build_trainer
@@ -29,7 +28,6 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
     )
     model = None
     trainer = None
-    expected_feat_dim = None
     received_frames = 0
     predicted_frames = 0
 
@@ -56,7 +54,6 @@ def run(args, device, build_model_fn=build_model, build_trainer_fn=build_trainer
         X_cpu = table_to_source_tensor(table)
         X_cpu = reshape_source(X_cpu, model_config.seq_len)
         validate_checkpoint_feature_dim(X_cpu, model_config.feature_dim)
-        expected_feat_dim = validate_feature_dim(X_cpu, expected_feat_dim)
 
         if model is None:
             with redirect_stdout(sys.stderr):

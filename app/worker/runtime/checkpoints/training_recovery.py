@@ -7,7 +7,13 @@ from dataclasses import asdict, is_dataclass
 
 import torch
 
-from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v3.config import TrainConfig
+from app.contracts.worker.v3.objective import (
+    TRAINING_RECOVERY_FORMAT,
+    ml_contract,
+    objective_config,
+    objective_config_sha256,
+)
 from app.worker.runtime.version import __version__
 
 _HASH_CHUNK_BYTES = 1024 * 1024
@@ -39,6 +45,16 @@ def save_training_recovery(
         "training_complete": state["training_complete"],
         "model_config": _to_dict(trainer.model_config),
         "train_config": _to_dict(trainer.train_config),
+        "data_contract": (
+            None
+            if trainer.data_contract is None
+            else dict(trainer.data_contract)
+        ),
+        "ml_contract": ml_contract(trainer.train_config),
+        "objective_config": objective_config(trainer.train_config),
+        "objective_config_sha256": objective_config_sha256(
+            trainer.train_config
+        ),
         "trainer_state": state,
     }
     target = os.path.abspath(os.fspath(path))
@@ -61,11 +77,22 @@ def load_training_recovery(
     *,
     expected_config_hash: str,
     expected_manifest_hash: str,
+    expected_objective_config_sha256: str,
+    expected_data_contract_sha256: str | None = None,
 ) -> dict:
     """Load and validate one server-owned training recovery checkpoint."""
 
     _digest(expected_config_hash, "expected_config_hash")
     _digest(expected_manifest_hash, "expected_manifest_hash")
+    _digest(
+        expected_objective_config_sha256,
+        "expected_objective_config_sha256",
+    )
+    if expected_data_contract_sha256 is not None:
+        _digest(
+            expected_data_contract_sha256,
+            "expected_data_contract_sha256",
+        )
     payload = torch.load(
         os.path.abspath(os.fspath(path)),
         map_location=device,
@@ -84,6 +111,10 @@ def load_training_recovery(
         "training_complete",
         "model_config",
         "train_config",
+        "data_contract",
+        "ml_contract",
+        "objective_config",
+        "objective_config_sha256",
         "trainer_state",
     }
     if set(payload) != required:
@@ -99,6 +130,31 @@ def load_training_recovery(
     if payload["manifest_hash"] != expected_manifest_hash:
         raise ValueError(
             "training recovery inputs do not match the closed job"
+        )
+    try:
+        train_config = TrainConfig.from_dict(payload["train_config"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "training recovery objective configuration is invalid"
+        ) from exc
+    if train_config is None or (
+        payload["objective_config_sha256"]
+        != expected_objective_config_sha256
+        or payload["objective_config_sha256"]
+        != objective_config_sha256(train_config)
+        or payload["objective_config"] != objective_config(train_config)
+        or payload["ml_contract"] != ml_contract(train_config)
+    ):
+        raise ValueError(
+            "training recovery objective configuration does not match the job"
+        )
+    if expected_data_contract_sha256 is not None and (
+        not isinstance(payload["data_contract"], dict)
+        or payload["data_contract"].get("dataContractSha256")
+        != expected_data_contract_sha256
+    ):
+        raise ValueError(
+            "training recovery data contract does not match the job"
         )
     _positive(payload["generation"], "generation")
     _positive(payload["completed_epochs"], "completed_epochs")

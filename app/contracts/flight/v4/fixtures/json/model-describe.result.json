@@ -1,0 +1,41 @@
+{
+  "contract": "transformer-flight",
+  "version": 4,
+  "requestId": "abababab-abab-4aba-8aba-abababababab",
+  "modelRef": "mdl_01j2x5f4x6h7k8m9n0p1q2r3s4",
+  "label": "returns.daily",
+  "generation": 1,
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 1,
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v1"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v1",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+    "objectiveConfigSha256": "2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c",
+    "checkpointFormat": "transformer-checkpoint-v3",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  },
+  "modelConfig": {
+    "seqLen": 2,
+    "hidden": 256,
+    "layers": 5,
+    "dropout": 0.1,
+    "nhead": 8,
+    "mode": "relaxed",
+    "outDim": 6,
+    "featureDim": 2
+  },
+  "checkpoint": {
+    "format": "transformer-checkpoint-v3",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 123456
+  },
+  "createdAt": "2026-08-10T12:05:00Z"
+}

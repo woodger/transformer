@@ -6,6 +6,8 @@ import uuid
 import pyarrow.flight as flight
 import pytest
 
+from app.contracts.worker.v3.config import TrainConfig
+from app.contracts.worker.v3.objective import ml_contract
 from app.flight.constants import (
     ACQUIRE_ACTION,
     CREATE_ACTION,
@@ -32,7 +34,7 @@ SHA256 = "a" * 64
 def _common(**fields) -> dict:
     return {
         "contract": "transformer-flight",
-        "version": 3,
+        "version": 4,
         "requestId": REQUEST_ID,
         **fields,
     }
@@ -55,6 +57,7 @@ def _fit_create(**fields) -> dict:
             "featureDim": 4,
             "targetSchemaId": "inventory.target.v1",
         },
+        mlContract=ml_contract(TrainConfig()),
     )
     document.update(fields)
     return document
@@ -145,7 +148,7 @@ def test_revision_pagination_requires_one_stable_snapshot_pair():
 def test_upload_metadata_has_no_request_id_and_is_fenced():
     metadata = {
         "contract": "transformer-flight",
-        "version": 3,
+        "version": 4,
         "jobId": JOB_ID,
         "clientExecutionId": EXECUTION_ID,
         "fencingToken": "8",
@@ -163,12 +166,12 @@ def test_upload_metadata_has_no_request_id_and_is_fenced():
         validate_upload_metadata(metadata)
 
 
-def test_v3_input_and_output_descriptor_paths_are_strict():
+def test_v4_input_and_output_descriptor_paths_are_strict():
     input_descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", JOB_ID, "inputs", "12"
+        "transformer", "v4", "jobs", JOB_ID, "inputs", "12"
     )
     output_descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", JOB_ID, "outputs", "3"
+        "transformer", "v4", "jobs", JOB_ID, "outputs", "3"
     )
     assert parse_input_descriptor(input_descriptor) == (JOB_ID, 12)
     assert parse_output_descriptor(output_descriptor) == (JOB_ID, 3)
@@ -178,6 +181,12 @@ def test_v3_input_and_output_descriptor_paths_are_strict():
     )
     with pytest.raises(ServiceError, match="invalid input"):
         parse_input_descriptor(malformed)
+
+    v3 = flight.FlightDescriptor.for_path(
+        "transformer", "v3", "jobs", JOB_ID, "inputs", "0"
+    )
+    with pytest.raises(ServiceError, match="invalid input"):
+        parse_input_descriptor(v3)
 
 
 def test_request_hash_ignores_transport_retry_identity_only():

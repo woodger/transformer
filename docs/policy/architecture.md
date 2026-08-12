@@ -4,8 +4,10 @@
 > и ownership данных Transformer Arrow Flight service.
 
 Проект использует Clean Architecture отдельно для каждого исполняемого
-процесса. Нормативное решение и его причины зафиксированы в
-[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md).
+процесса. Нормативные решения и их причины зафиксированы в
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md) и
+[ADR 0006](../adr/0006-service-application-boundaries.md) и текущем
+[ADR 0007](../adr/0007-target-aligned-flight-v4.md).
 
 ## Процессы и composition roots
 
@@ -15,8 +17,8 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
 
-app/contracts/flight/v3            публичный Flight contract
-app/contracts/worker/v2            внутренний process contract
+app/contracts/flight/v4            публичный Flight contract
+app/contracts/worker/v3            внутренний process contract
 ```
 
 Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
@@ -42,21 +44,24 @@ service/adapters/outbound/{postgres,artifact_storage,worker_process,worker_probe
 - `service/domain` содержит job states, error codes, immutable records и pure
   lifecycle policies. Он не знает о Flight, SQLAlchemy, PyArrow, filesystem,
   subprocess и Torch.
-- `service/application` содержит use cases, scheduler orchestration и
-  capability-oriented ports. Он зависит только от domain и нейтральных
-  contracts.
+- `service/application` содержит типизированные commands, queries, нейтральные
+  results, scheduler orchestration и capability-oriented ports. Он зависит
+  только от domain и внутреннего worker contract.
 - inbound Flight adapter валидирует wire DTO, выполняет mapping и преобразует
-  application errors в Flight/Arrow status.
+  application results и errors в Flight documents и Arrow status. Action names,
+  descriptor paths, schema IDs и wire casing не попадают в application.
 - outbound adapters реализуют PostgreSQL, artifact storage, worker process и
-  worker capability boundaries. Inbound и outbound adapters не импортируют
-  друг друга.
+  worker capability boundaries. PostgreSQL adapter владеет транзакциями,
+  idempotency, row locks и mapping database projections. Inbound и outbound
+  adapters не импортируют друг друга.
 - `service/bootstrap` — единственное место сборки конкретных service adapters.
 
-Ports называются по возможностям: `JobRepository`, `ArtifactPublisher`,
-`ExecutionPlanBuilder`, `AttemptProcess`, `WorkerExecutor`,
-`WorkerCapabilities`, `DeviceLeaseManager`. Имена технологий в application
-ports и generic `Repository[T]` не допускаются. Каждый port имеет текущего
-runtime consumer и adapter; интерфейсы «на будущее» не создаются.
+Ports называются по возможностям: `JobLifecycleStore`, `JobQueryStore`,
+`InputUploadStore`, `OutputAccessStore`, `JobRepository`,
+`ArtifactPublisher`, `ExecutionPlanBuilder`, `AttemptProcess`,
+`WorkerExecutor`, `WorkerCapabilities`, `DeviceLeaseManager`. Имена технологий
+в application ports и generic `Repository[T]` не допускаются. Каждый port имеет
+текущего runtime consumer и adapter; интерфейсы «на будущее» не создаются.
 
 ## Worker
 
@@ -71,6 +76,12 @@ device/reproducibility runtime и checkpoint staging. Один процесс о
   public job state или `modelRef`;
 - не публикует output, recovery generation или model generation.
 
+Worker является осознанным исключением из внутреннего послойного разделения:
+его executor может напрямую использовать PyArrow, Torch и filesystem как части
+одного принадлежащего worker runtime. Ports вокруг tensors, Arrow replay и
+checkpoint storage не вводятся без измеримой проблемы или второго
+implementation.
+
 `app/data`, `app/model`, `app/training`, `app/storage`, `app/runtime` и
 `app/metrics` временно сохраняются только как compatibility import facades.
 Новый production-код размещается непосредственно в `app/worker/`.
@@ -84,10 +95,10 @@ cases, которые определяют операции с access tokens. Al
 
 ## Contracts
 
-- `app/contracts/flight/v3/` — нормативные schemas и fixtures публичного API;
-- Flight v3 является текущей штатной архитектурой remote API; дальнейшие
+- `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
+- Flight v4 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v2/` — command/result manifests, capability document,
+- `app/contracts/worker/v3/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
@@ -129,12 +140,13 @@ Ownership хранения:
 
 - domain не зависит от application, adapters или bootstrap;
 - application не зависит от adapters или bootstrap;
+- application не зависит от публичного Flight contract;
 - adapters зависят от application/domain, но не от другого направления
   transport-а;
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v2`;
+- shared service/worker данные находятся только в `app/contracts/worker/v3`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

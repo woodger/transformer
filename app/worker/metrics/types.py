@@ -1,24 +1,43 @@
 import math
 from dataclasses import dataclass
 
+_LOSS_FIELDS = tuple(f"loss_l{index}" for index in range(6))
+_SEMANTICS = (
+    "mean_return",
+    "sigma_return",
+    "prob_tp",
+    "prob_sl",
+    "volatility_next",
+    "hitting_prob_tp",
+)
+
 
 @dataclass
 class TrainMetrics:
     rows: int = 0
     batches: int = 0
     loss: float = 0.0
-    loss_ret: float = 0.0
-    loss_prob: float = 0.0
+    loss_l0: float = 0.0
+    loss_l1: float = 0.0
+    loss_l2: float = 0.0
+    loss_l3: float = 0.0
+    loss_l4: float = 0.0
+    loss_l5: float = 0.0
+    loss_nll: float = 0.0
     loss_ev: float = 0.0
-    loss_vol: float = 0.0
-    sigma_min: float = 0.0
-    sigma_p05: float = 0.0
-    sigma_mean: float = 0.0
-    ret_mae: float = 0.0
-    ret_rmse: float = 0.0
-    ret_mae_baseline: float = 0.0
-    ret_mae_skill: float = 0.0
-    ret_mae_improvement: float = 0.0
+    mean_return_mae: float = 0.0
+    sigma_return_mae: float = 0.0
+    prob_tp_mae: float = 0.0
+    prob_sl_mae: float = 0.0
+    volatility_next_mae: float = 0.0
+    hitting_prob_tp_mae: float = 0.0
+    mean_return_rmse: float = 0.0
+    sigma_return_rmse: float = 0.0
+    prob_tp_rmse: float = 0.0
+    prob_sl_rmse: float = 0.0
+    volatility_next_rmse: float = 0.0
+    hitting_prob_tp_rmse: float = 0.0
+    selection_score: float | None = None
     grad_norm: float = 0.0
     nan_ratio: float = 0.0
     masked_token_ratio: float = 0.0
@@ -33,6 +52,8 @@ class TrainMetrics:
     step: int = 0
     lr: float = 0.0
     loss_stage: int = 0
+    minimum_loss_stage: int = 0
+    maximum_loss_stage: int = 0
 
     def update(
         self,
@@ -49,60 +70,77 @@ class TrainMetrics:
         if total_rows <= 0:
             return
 
-        def avg(current: float, value: float) -> float:
-            return ((current * self.rows) + (value * rows)) / total_rows
+        def average(current: float, value: float) -> float:
+            return math.fsum((current * self.rows, value * rows)) / total_rows
 
-        self.loss = avg(self.loss, loss_parts["loss"])
-        self.loss_ret = avg(self.loss_ret, loss_parts["loss_ret"])
-        self.loss_prob = avg(self.loss_prob, loss_parts["loss_prob"])
-        self.loss_ev = avg(self.loss_ev, loss_parts["loss_ev"])
-        self.loss_vol = avg(self.loss_vol, loss_parts["loss_vol"])
-        self.sigma_min = avg(self.sigma_min, loss_parts.get("sigma_min", 0.0))
-        self.sigma_p05 = avg(self.sigma_p05, loss_parts.get("sigma_p05", 0.0))
-        self.sigma_mean = avg(self.sigma_mean, loss_parts.get("sigma_mean", 0.0))
-        self.ret_mae = avg(self.ret_mae, loss_parts.get("ret_mae", 0.0))
-        ret_mse = (
-            (self.ret_rmse ** 2) * self.rows
-            + loss_parts.get("ret_mse", 0.0) * rows
-        ) / total_rows
-        self.ret_rmse = math.sqrt(ret_mse)
-        self.ret_mae_baseline = avg(
-            self.ret_mae_baseline,
-            loss_parts.get("ret_mae_baseline", 0.0),
+        for name in (
+            "loss",
+            *_LOSS_FIELDS,
+            "loss_nll",
+            "loss_ev",
+            *(f"{semantic}_mae" for semantic in _SEMANTICS),
+        ):
+            setattr(self, name, average(getattr(self, name), loss_parts[name]))
+
+        for semantic in _SEMANTICS:
+            rmse_name = f"{semantic}_rmse"
+            mse_name = f"{semantic}_mse"
+            mse = math.fsum((
+                getattr(self, rmse_name) ** 2 * self.rows,
+                loss_parts[mse_name] * rows,
+            )) / total_rows
+            setattr(self, rmse_name, math.sqrt(max(0.0, mse)))
+
+        self.grad_norm = average(self.grad_norm, grad_norm)
+        self.nan_ratio = average(self.nan_ratio, nan_ratio)
+        self.masked_token_ratio = average(
+            self.masked_token_ratio,
+            masked_token_ratio,
         )
-        if self.ret_mae_baseline > 0:
-            self.ret_mae_skill = self.ret_mae / self.ret_mae_baseline
-            self.ret_mae_improvement = 1.0 - self.ret_mae_skill
-        else:
-            self.ret_mae_skill = math.inf
-            self.ret_mae_improvement = -math.inf
-        self.grad_norm = avg(self.grad_norm, grad_norm)
-        self.nan_ratio = avg(self.nan_ratio, nan_ratio)
-        self.masked_token_ratio = avg(self.masked_token_ratio, masked_token_ratio)
-        self.complete_token_ratio = avg(self.complete_token_ratio, complete_token_ratio)
-        self.partial_token_ratio = avg(self.partial_token_ratio, partial_token_ratio)
-        self.empty_token_ratio = avg(self.empty_token_ratio, empty_token_ratio)
+        self.complete_token_ratio = average(
+            self.complete_token_ratio,
+            complete_token_ratio,
+        )
+        self.partial_token_ratio = average(
+            self.partial_token_ratio,
+            partial_token_ratio,
+        )
+        self.empty_token_ratio = average(
+            self.empty_token_ratio,
+            empty_token_ratio,
+        )
         self.rows = total_rows
         self.batches += 1
         self.step = int(loss_parts.get("step", self.step))
-        self.loss_stage = int(loss_parts.get("loss_stage", self.loss_stage))
+        observed_stage = int(loss_parts.get("loss_stage", self.loss_stage))
+        self.loss_stage = observed_stage
+        if self.minimum_loss_stage == 0:
+            self.minimum_loss_stage = observed_stage
+        else:
+            self.minimum_loss_stage = min(
+                self.minimum_loss_stage,
+                observed_stage,
+            )
+        self.maximum_loss_stage = max(self.maximum_loss_stage, observed_stage)
+
+    def direct_losses(self) -> tuple[float, ...]:
+        if self.rows <= 0:
+            raise ValueError("selection score is incomplete: epoch has no rows")
+        values = tuple(getattr(self, name) for name in _LOSS_FIELDS)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("selection score contains a non-finite component")
+        return values
 
     def log_line(self, **extra) -> str:
         fields = {
             **extra,
             "loss": f"{self.loss:.6f}",
-            "ret": f"{self.loss_ret:.6f}",
-            "prob": f"{self.loss_prob:.6f}",
+            **{
+                name: f"{getattr(self, name):.6f}"
+                for name in _LOSS_FIELDS
+            },
+            "nll": f"{self.loss_nll:.6f}",
             "ev": f"{self.loss_ev:.6f}",
-            "vol": f"{self.loss_vol:.6f}",
-            "sigma_min": f"{self.sigma_min:.6g}",
-            "sigma_p05": f"{self.sigma_p05:.6g}",
-            "sigma_mean": f"{self.sigma_mean:.6g}",
-            "ret_mae": f"{self.ret_mae:.6g}",
-            "ret_rmse": f"{self.ret_rmse:.6g}",
-            "ret_mae_baseline": f"{self.ret_mae_baseline:.6g}",
-            "ret_mae_skill": f"{self.ret_mae_skill:.6g}",
-            "ret_mae_improvement": f"{self.ret_mae_improvement:.6g}",
             "grad": f"{self.grad_norm:.3f}",
             "rows": self.rows,
             "batches": self.batches,
@@ -114,9 +152,10 @@ class TrainMetrics:
             "step": self.step,
             "lr": f"{self.lr:.6g}",
             "loss_stage": self.loss_stage,
+            "minimum_loss_stage": self.minimum_loss_stage,
+            "maximum_loss_stage": self.maximum_loss_stage,
             "ms": f"{self.elapsed_ms:.0f}",
         }
-
         return " ".join(f"{key}={value}" for key, value in fields.items())
 
     def console_line(self, **extra) -> str:
@@ -125,35 +164,29 @@ class TrainMetrics:
             if key in extra and extra[key] is not None:
                 fields.append(f"{key}={extra[key]}")
 
-        monitor_value = extra.get("monitor_value")
-        if isinstance(monitor_value, (int, float)) and math.isfinite(monitor_value):
-            monitor = f"{monitor_value:.6g}"
-        else:
-            monitor = "n/a"
-
-        if self.ret_mae_baseline > 0.0 and math.isfinite(self.ret_mae_skill):
-            skill = f"{self.ret_mae_skill:.6g}x"
-            status = "BETTER" if self.ret_mae_skill < 1.0 else "WORSE"
-        else:
-            skill = "n/a"
-            status = "N/A"
-
+        selection_score = extra.get("selection_score")
+        selection_text = (
+            f"{selection_score:.6g}"
+            if isinstance(selection_score, (int, float))
+            and math.isfinite(selection_score)
+            else "n/a"
+        )
         max_loss_stage = extra.get("max_loss_stage", self.loss_stage)
         fields.extend([
-            f"monitor_value={monitor}",
+            f"selection={selection_text}",
             f"loss={self.loss:.6f}",
-            f"mae={self.ret_mae:.6g}",
-            f"baseline={self.ret_mae_baseline:.6g}",
-            f"skill={skill}",
-            f"status={status}",
-            f"sigma={self.sigma_mean:.6g}",
+            f"mean_mae={self.mean_return_mae:.6g}",
+            f"sigma_mae={self.sigma_return_mae:.6g}",
+            f"tp_mae={self.prob_tp_mae:.6g}",
+            f"sl_mae={self.prob_sl_mae:.6g}",
+            f"vol_mae={self.volatility_next_mae:.6g}",
+            f"hit_mae={self.hitting_prob_tp_mae:.6g}",
             f"grad={self.grad_norm:.3f}",
             f"rows={self.rows}",
             f"batches={self.batches}",
             f"time={self.elapsed_ms / 1000.0:.1f}s",
             f"stage={self.loss_stage}/{max_loss_stage}",
         ])
-
         return " ".join(fields)
 
     def to_dict(self, **extra) -> dict:
@@ -162,18 +195,18 @@ class TrainMetrics:
             "rows": self.rows,
             "batches": self.batches,
             "loss": self.loss,
-            "loss_ret": self.loss_ret,
-            "loss_prob": self.loss_prob,
+            **{name: getattr(self, name) for name in _LOSS_FIELDS},
+            "loss_nll": self.loss_nll,
             "loss_ev": self.loss_ev,
-            "loss_vol": self.loss_vol,
-            "sigma_min": self.sigma_min,
-            "sigma_p05": self.sigma_p05,
-            "sigma_mean": self.sigma_mean,
-            "ret_mae": self.ret_mae,
-            "ret_rmse": self.ret_rmse,
-            "ret_mae_baseline": self.ret_mae_baseline,
-            "ret_mae_skill": self.ret_mae_skill,
-            "ret_mae_improvement": self.ret_mae_improvement,
+            **{
+                f"{semantic}_mae": getattr(self, f"{semantic}_mae")
+                for semantic in _SEMANTICS
+            },
+            **{
+                f"{semantic}_rmse": getattr(self, f"{semantic}_rmse")
+                for semantic in _SEMANTICS
+            },
+            "selection_score": self.selection_score,
             "grad_norm": self.grad_norm,
             "nan_ratio": self.nan_ratio,
             "masked_token_ratio": self.masked_token_ratio,
@@ -188,6 +221,8 @@ class TrainMetrics:
             "step": self.step,
             "lr": self.lr,
             "loss_stage": self.loss_stage,
+            "minimum_loss_stage": self.minimum_loss_stage,
+            "maximum_loss_stage": self.maximum_loss_stage,
         }
 
     def __float__(self) -> float:

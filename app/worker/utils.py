@@ -8,12 +8,20 @@ from app.worker.runtime.checkpoints.checkpoint import (
 )
 
 
-def save_model(model_name: str, model, model_config=None, train_config=None, extra=None):
+def save_model(
+    model_name: str,
+    model,
+    model_config=None,
+    train_config=None,
+    data_contract=None,
+    extra=None,
+):
     save_checkpoint(
         model_name,
         model,
         model_config=model_config,
         train_config=train_config,
+        data_contract=data_contract,
         extra=extra,
     )
 

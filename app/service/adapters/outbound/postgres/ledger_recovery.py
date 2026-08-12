@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v3.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger_support import (
     canonical_uuid,
     decode,

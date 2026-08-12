@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from copy import deepcopy
@@ -17,6 +18,14 @@ from flight_contract_schema import (
 )
 from jsonschema.exceptions import ValidationError
 
+from app.contracts.worker.v3.config import (
+    CheckpointSelectionConfig,
+    TrainConfig,
+)
+from app.contracts.worker.v3.objective import (
+    objective_config,
+    objective_config_sha256,
+)
 from app.flight.arrow import schema_fingerprint
 from app.flight.constants import (
     ACQUIRE_ACTION,
@@ -43,13 +52,13 @@ FIXTURE_ROOT = (
     / "app"
     / "contracts"
     / "flight"
-    / "v3"
+    / "v4"
     / "fixtures"
 )
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 SCHEMA_ROOT = FIXTURE_ROOT.parent / "schemas"
-GENERATOR = FIXTURE_ROOT / "generate_arrow_fixtures.py"
+NODE_OBJECTIVE_DIGEST = FIXTURE_ROOT / "objective_config_sha256.mjs"
 
 REQUEST_FIXTURES = {
     "capabilities.request.json": "query.schema.json",
@@ -108,18 +117,18 @@ def _read_json(name: str) -> dict:
     return parse_action_body((JSON_ROOT / name).read_bytes())
 
 
-def test_v3_has_an_exact_closed_action_surface():
+def test_v4_has_an_exact_closed_action_surface():
     assert ACTIONS == (
-        "transformer.v3.capabilities",
-        "transformer.v3.health",
-        "transformer.v3.job.create",
-        "transformer.v3.job.acquire",
-        "transformer.v3.job.status",
-        "transformer.v3.job.inputs.list",
-        "transformer.v3.job.input.close",
-        "transformer.v3.job.outputs.list",
-        "transformer.v3.job.cancel",
-        "transformer.v3.model.describe",
+        "transformer.v4.capabilities",
+        "transformer.v4.health",
+        "transformer.v4.job.create",
+        "transformer.v4.job.acquire",
+        "transformer.v4.job.status",
+        "transformer.v4.job.inputs.list",
+        "transformer.v4.job.input.close",
+        "transformer.v4.job.outputs.list",
+        "transformer.v4.job.cancel",
+        "transformer.v4.model.describe",
     )
 
 
@@ -142,6 +151,7 @@ def test_all_json_schemas_are_valid_closed_draft_2020_12_documents():
         "inputs-list.schema.json",
         "model-describe-result.schema.json",
         "model-describe.schema.json",
+        "objective-config.schema.json",
         "outputs-list-result.schema.json",
         "outputs-list.schema.json",
         "put-result.schema.json",
@@ -162,7 +172,11 @@ def test_all_json_schemas_are_valid_closed_draft_2020_12_documents():
 
 
 def test_golden_json_documents_match_schemas_and_runtime_parser():
-    expected_files = set(REQUEST_FIXTURES) | set(RESULT_FIXTURES)
+    expected_files = (
+        set(REQUEST_FIXTURES)
+        | set(RESULT_FIXTURES)
+        | {"objective-config.fit.json"}
+    )
     assert {path.name for path in JSON_ROOT.glob("*.json")} == expected_files
 
     for fixture_name, schema_name in REQUEST_FIXTURES.items():
@@ -184,6 +198,78 @@ def test_golden_json_documents_match_schemas_and_runtime_parser():
     upload = validate_upload_metadata(_read_json("upload-fit.metadata.json"))
     assert upload["fencing_token"] == 2
     assert upload["data_contract_sha256"] == "a" * 64
+
+
+def test_fit_objective_fixture_pins_the_cross_language_digest():
+    fixture = _read_json("objective-config.fit.json")
+    validate_contract_document(
+        fixture,
+        read_contract_schema("objective-config.schema.json"),
+    )
+    config = TrainConfig(
+        lr=0.0005,
+        batch_size=256,
+        epochs=25,
+        loss_stage=4,
+        loss_schedule="epoch",
+        stage_size=5,
+        use_amp=False,
+        weight_decay=0.00001,
+        direct_loss_weights=(1, 1, 1, 1, 1, 1),
+        selection=CheckpointSelectionConfig(min_delta=0, patience=5),
+        seed=42,
+        deterministic=True,
+    )
+
+    assert fixture == objective_config(config)
+    assert objective_config_sha256(config) == _read_json(
+        "create-fit.request.json"
+    )["mlContract"]["objectiveConfigSha256"]
+
+
+def test_node_jcs_matches_the_normative_objective_digest():
+    node = shutil.which("node")
+    assert node is not None, (
+        "Node.js is required for the cross-language contract test"
+    )
+
+    result = subprocess.run(
+        [
+            node,
+            str(NODE_OBJECTIVE_DIGEST),
+            str(JSON_ROOT / "objective-config.fit.json"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.stderr == ""
+    assert result.stdout.strip() == _read_json(
+        "create-fit.request.json"
+    )["mlContract"]["objectiveConfigSha256"]
+
+
+def test_objective_contract_supports_fixed_epoch_selection_mode():
+    document = objective_config(TrainConfig())
+
+    validate_contract_document(
+        document,
+        read_contract_schema("objective-config.schema.json"),
+    )
+    assert document["selection"] == {
+        "enabled": False,
+        "aggregation": "global_row_mean",
+        "weights": [1.0] * 6,
+        "minDelta": 0.0,
+        "patience": 0,
+        "stagePolicy": "maximum_only_reset",
+        "tiePolicy": "earliest",
+        "baselinePolicy": "none",
+        "invalidScorePolicy": "fail_training",
+        "fallbackPolicy": "last_maximum_stage_checkpoint",
+    }
 
 
 def test_fixture_relationships_pin_identity_fence_and_manifest_digest():
@@ -219,7 +305,7 @@ def test_result_schemas_reject_missing_and_extra_fields():
             validate_contract_document({**document, "internalPath": "/tmp/x"}, schema)
 
 
-def test_arrow_v3_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
+def test_arrow_v4_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
     assert {path.name for path in ARROW_ROOT.glob("*.arrow")} == set(
         ARROW_FIXTURES
     )
@@ -234,6 +320,8 @@ def test_arrow_v3_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
             assert field.nullable is False
             assert pa.types.is_fixed_size_list(field.type)
             assert field.type.value_type == pa.float32()
+            assert field.type.value_field.name == "item"
+            assert field.type.value_field.nullable is True
 
     fit = ipc.open_file(ARROW_ROOT / "fit-multi-batch.arrow").schema
     predict = ipc.open_file(ARROW_ROOT / "predict-multi-batch.arrow").schema
@@ -249,7 +337,13 @@ def test_arrow_v3_fixtures_use_exact_nonnullable_fixed_size_float32_schemas():
 
 def test_arrow_golden_fixtures_are_reproducible(tmp_path):
     subprocess.run(
-        [sys.executable, str(GENERATOR), "--output-dir", str(tmp_path)],
+        [
+            sys.executable,
+            "-m",
+            "app.contracts.flight.v4.fixtures.generate_arrow_fixtures",
+            "--output-dir",
+            str(tmp_path),
+        ],
         check=True,
         timeout=30,
     )

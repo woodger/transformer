@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,
@@ -38,6 +38,7 @@ def execution_job_from_mapping(
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
         data_contract=dict(value["data_contract"]),
+        ml_contract=dict(value["ml_contract"]),
         config_hash=value["config_hash"],
         manifest_sha256=value.get("manifest_sha256"),
         feature_dim=value["feature_dim"],
@@ -88,6 +89,7 @@ def job_record(row: Job | None) -> JobRecord | None:
         resolved_model_ref=row.resolved_model_ref,
         prediction_column=row.prediction_column,
         data_contract=dict(row.data_contract),
+        ml_contract=dict(row.ml_contract),
         progress=dict(row.progress or {}),
         attempt=row.attempt,
         error_code=row.error_code,
@@ -156,7 +158,10 @@ def published_model_record(
         data_contract=(
             None if row.data_contract is None else dict(row.data_contract)
         ),
-        certified_for_v3=row.certified_for_v3,
+        ml_contract=(
+            None if row.ml_contract is None else dict(row.ml_contract)
+        ),
+        objective_config_sha256=row.objective_config_sha256,
         producing_job_id=row.producing_job_id,
         created_at=row.created_at.timestamp(),
     )

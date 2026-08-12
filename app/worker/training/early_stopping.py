@@ -3,24 +3,32 @@ from dataclasses import dataclass
 
 
 @dataclass
-class EarlyStopping:
+class SelectionState:
+    min_delta: float
     patience: int
-    min_stage: int
-
+    active: bool = False
     best_score: float = float("inf")
     wait: int = 0
-    current_stage: int | None = None
 
-    def update(self, score: float, stage: int) -> bool:
-        if stage != self.current_stage:
-            self.current_stage = stage
-            self.best_score = float("inf")
-            self.wait = 0
+    def begin(self) -> None:
+        self.active = True
+        self.best_score = float("inf")
+        self.wait = 0
 
-        if math.isfinite(score) and score < self.best_score:
+    def update(self, score: float) -> tuple[bool, bool]:
+        if not self.active:
+            raise ValueError("checkpoint selection has not started")
+        if not math.isfinite(score):
+            raise ValueError("checkpoint selection score must be finite")
+
+        improved = score < self.best_score - self.min_delta
+        if improved:
             self.best_score = score
             self.wait = 0
         else:
             self.wait += 1
+        should_stop = self.patience > 0 and self.wait >= self.patience
+        return improved, should_stop
 
-        return self.patience > 0 and stage >= self.min_stage and self.wait >= self.patience
+
+__all__ = ["SelectionState"]

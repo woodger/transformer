@@ -12,7 +12,7 @@ from app.config import (
     PROJECT_ROOT,
     RETENTION_SECONDS,
 )
-from app.contracts.flight.v3.constants import MAX_PAYLOADS_PER_JOB
+from app.contracts.flight.v4.constants import MAX_PAYLOADS_PER_JOB
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from app.model.transformer import TransformerModel
+from app.model.transformer import TransformerModel, public_predictions
 
 
 class PassThroughEncoder(nn.Module):
@@ -60,5 +60,8 @@ def test_transformer_forward_with_missing_tokens_is_finite():
 
     output = model(x)
 
-    assert output.shape == (3, 6)
+    assert output.shape == (3, 7)
     assert torch.isfinite(output).all()
+    predictions = public_predictions(output)
+    assert predictions.shape == (3, 6)
+    assert torch.isfinite(predictions).all()

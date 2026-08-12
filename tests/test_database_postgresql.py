@@ -8,6 +8,8 @@ from alembic import command
 from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropSchema
 
+from app.contracts.worker.v3.config import TrainConfig
+from app.contracts.worker.v3.objective import ml_contract
 from app.database.migrations import (
     apply_migrations,
     migration_status,
@@ -45,6 +47,7 @@ def _fit_job(ledger, label):
         prediction_column="out",
         config_hash="a" * 64,
         data_contract=_data_contract(),
+        ml_contract=ml_contract(TrainConfig()),
         create_result={"jobId": job_id},
         model_label=label,
         model_config=_model_config(),
@@ -117,12 +120,12 @@ def _commit_input(ledger, job, *, storage_class):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0004",)
-    assert status.heads == ("0004",)
+    assert status.current == ("0006",)
+    assert status.heads == ("0006",)
     assert status.pending is False
 
 
-def test_v3_schema_migration_is_irreversible(
+def test_v4_schema_migration_is_irreversible(
     postgres_config,
 ):
     schema = f"transformer_migration_test_{uuid.uuid4().hex}"
@@ -143,11 +146,11 @@ def test_v3_schema_migration_is_irreversible(
         after_failed_rollback = migration_status(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0004",)
+        assert initial.heads == ("0006",)
         assert initial.pending is True
-        assert applied.current == ("0004",)
+        assert applied.current == ("0006",)
         assert applied.pending is False
-        assert after_failed_rollback.current == ("0004",)
+        assert after_failed_rollback.current == ("0006",)
         assert after_failed_rollback.pending is False
     finally:
         with cleanup_engine.begin() as connection:
@@ -155,10 +158,10 @@ def test_v3_schema_migration_is_irreversible(
         cleanup_engine.dispose()
 
 
-def test_v3_schema_migration_preserves_tokens_and_models_only(
+def test_v4_schema_migration_preserves_tokens_and_model_identities_only(
     postgres_config,
 ):
-    schema = f"transformer_v3_schema_test_{uuid.uuid4().hex}"
+    schema = f"transformer_v4_schema_test_{uuid.uuid4().hex}"
     config = type(postgres_config)(
         postgres_config.host,
         postgres_config.database,
@@ -280,7 +283,7 @@ def test_v3_schema_migration_preserves_tokens_and_models_only(
                     f"""
                     SELECT producing_job_id, checkpoint_bytes,
                            data_contract, data_contract_sha256,
-                           certified_for_v3
+                           ml_contract, objective_config_sha256
                     FROM {quoted}.models
                     WHERE model_ref = :model_ref
                     """
@@ -295,15 +298,32 @@ def test_v3_schema_migration_preserves_tokens_and_models_only(
                     """
                 )
             )
+            model_ref_lengths = connection.execute(
+                text(
+                    """
+                    SELECT table_name, character_maximum_length
+                    FROM information_schema.columns
+                    WHERE table_schema = :schema
+                      AND column_name = 'model_ref'
+                      AND table_name IN ('models', 'model_aliases')
+                    ORDER BY table_name
+                    """
+                ),
+                {"schema": schema},
+            ).all()
 
         assert jobs == 0
         assert identities == 0
         assert idempotency == 0
         assert storage_epoch == 0
         assert token == (uuid.UUID(token_id), "inventory")
-        assert model == (None, 1, None, None, False)
+        assert model == (None, 1, None, None, None, None)
         assert alias == model_ref
-        assert migration_status(config).current == ("0004",)
+        assert model_ref_lengths == [
+            ("model_aliases", 128),
+            ("models", 128),
+        ]
+        assert migration_status(config).current == ("0006",)
     finally:
         with engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))
@@ -376,6 +396,7 @@ def test_runtime_epoch_reset_discards_runtime_jobs_and_preserves_recovery_fits(
         prediction_column="out",
         config_hash="e" * 64,
         data_contract=_data_contract(),
+        ml_contract=ml_contract(TrainConfig()),
         create_result={"jobId": "predict"},
         resolved_model_ref="mdl_seed",
         model_config=_model_config(),

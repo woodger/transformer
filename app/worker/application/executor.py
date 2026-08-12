@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import torch
 
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
@@ -19,12 +19,16 @@ from app.contracts.worker.v2 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v2.config import (
-    CHECKPOINT_FORMAT,
+from app.contracts.worker.v3.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
+)
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    ml_contract,
+    objective_config,
 )
 from app.worker.application.events import WorkerEventEmitter
 from app.worker.application.inputs import DurableInputStream
@@ -40,7 +44,11 @@ from app.worker.data.tensors import (
     validate_target_dim,
 )
 from app.worker.metrics import reset_metrics_log
-from app.worker.runtime.checkpoints.checkpoint import load_checkpoint
+from app.worker.runtime.checkpoints.checkpoint import (
+    CheckpointCorrupt,
+    CheckpointFormatMismatch,
+    load_checkpoint,
+)
 from app.worker.runtime.checkpoints.training_recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -54,7 +62,7 @@ _COPY_CHUNK_BYTES = 1024 * 1024
 
 
 class WorkerApplication:
-    """Execute one durable-streaming worker-v2 command manifest."""
+    """Execute one durable-streaming worker-v3 command manifest."""
 
     def __init__(self, emitter: WorkerEventEmitter, input_stream=None):
         self.emitter = emitter
@@ -108,6 +116,8 @@ class WorkerApplication:
         train_config = TrainConfig.from_dict(manifest["training"])
         if model_config is None or train_config is None:
             raise ValueError("fit configuration is unavailable")
+        if manifest["mlContract"] != ml_contract(train_config):
+            raise ValueError("fit ML contract differs from training configuration")
         configure_reproducibility(
             train_config.seed,
             train_config.deterministic,
@@ -157,6 +167,7 @@ class WorkerApplication:
             model,
             device,
             actual_config,
+            data_contract=manifest["dataContract"],
         )
         reset_metrics_log(metrics_path)
 
@@ -173,6 +184,12 @@ class WorkerApplication:
                     device,
                     expected_config_hash=recovery["configSha256"],
                     expected_manifest_hash=recovery["manifestSha256"],
+                    expected_objective_config_sha256=recovery[
+                        "objectiveConfigSha256"
+                    ],
+                    expected_data_contract_sha256=recovery[
+                        "dataContractSha256"
+                    ],
                 )
                 if payload["model_config"] != trainer.model_config.to_dict():
                     raise ValueError("recovery model configuration differs")
@@ -291,17 +308,44 @@ class WorkerApplication:
             manifest["model"]["checkpoint"]
         )
         device = get_device(manifest["device"]["kind"])
-        checkpoint = load_checkpoint(checkpoint_path, device)
-        if checkpoint.get("format") != CHECKPOINT_FORMAT:
-            raise ValueError("prediction checkpoint format is unsupported")
+        try:
+            checkpoint = load_checkpoint(checkpoint_path, device)
+        except CheckpointFormatMismatch as exc:
+            raise WorkerExecutionError(
+                "MODEL_SCHEMA_MISMATCH",
+                "prediction checkpoint belongs to another ML contract",
+            ) from exc
+        except CheckpointCorrupt as exc:
+            raise WorkerExecutionError(
+                "MODEL_CORRUPT",
+                "prediction checkpoint semantic metadata is invalid",
+            ) from exc
         model_config = ModelConfig.from_dict(checkpoint.get("model_config"))
         expected_config = ModelConfig.from_dict(manifest["model"]["config"])
         if model_config is None or model_config != expected_config:
             raise ValueError(
                 "prediction checkpoint configuration differs from its manifest"
             )
-        train_config = TrainConfig.from_dict(checkpoint.get("train_config"))
-        train_config = train_config or TrainConfig()
+        train_config = TrainConfig.from_dict(checkpoint["train_config"])
+        if train_config is None:
+            raise WorkerExecutionError(
+                "MODEL_CORRUPT",
+                "prediction checkpoint has no training configuration",
+            )
+        if checkpoint["data_contract"] is None:
+            raise WorkerExecutionError(
+                "MODEL_CORRUPT",
+                "prediction checkpoint has no data contract",
+            )
+        if (
+            checkpoint["data_contract"] != manifest["dataContract"]
+            or checkpoint["ml_contract"] != manifest["mlContract"]
+            or checkpoint["ml_contract"] != ml_contract(train_config)
+        ):
+            raise WorkerExecutionError(
+                "MODEL_SCHEMA_MISMATCH",
+                "prediction checkpoint contract differs from the job",
+            )
         prediction_column = manifest["predictionColumn"]
         model = None
         trainer = None
@@ -336,6 +380,7 @@ class WorkerApplication:
                         model,
                         device,
                         model_config,
+                        data_contract=manifest["dataContract"],
                     )
                     trainer.load_payload(checkpoint)
                     checkpoint = None
@@ -424,32 +469,35 @@ def _checkpoint_metadata(trainer, data_contract: dict | None = None) -> dict:
     feature_dim = model_config.feature_dim
     if feature_dim is None:
         raise ValueError("fit checkpoint feature dimension is unavailable")
-    best_monitor = trainer.best_monitor
-    if not isinstance(best_monitor, (int, float)) or not math.isfinite(
-        best_monitor
-    ):
-        best_monitor = None
+    if data_contract is None:
+        raise ValueError("fit checkpoint data contract is unavailable")
+    best_selection_score = trainer.best_selection_score
+    if not math.isfinite(best_selection_score):
+        best_selection_score = None
+    selection_enabled = trainer.selection is not None
     result = {
         "format": CHECKPOINT_FORMAT,
         "serviceVersion": __version__,
         "modelConfig": model_config_to_manifest(model_config),
         "trainingConfig": train_config_to_manifest(train_config),
+        "dataContract": dict(data_contract),
+        "mlContract": ml_contract(train_config),
+        "objectiveConfig": objective_config(train_config),
         "checkpointSelection": {
-            "monitor": trainer.monitor,
-            "monitorMinImprovement": trainer.monitor_min_improvement,
-            "bestMonitor": best_monitor,
+            "enabled": selection_enabled,
+            "objectiveConfigSha256": ml_contract(train_config)[
+                "objectiveConfigSha256"
+            ],
+            "bestSelectionScore": best_selection_score,
             "bestFrame": trainer.best_frame,
             "bestEpoch": trainer.best_epoch,
-            "baselinePassed": trainer.best_state_dict is not None,
             "source": (
-                "best_monitor"
-                if trainer.best_state_dict is not None
-                else "current"
+                "best_selection_score"
+                if selection_enabled
+                else "last_maximum_stage"
             ),
         },
     }
-    if data_contract is not None:
-        result["dataContract"] = dict(data_contract)
     return result
 
 

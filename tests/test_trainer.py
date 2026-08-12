@@ -1,22 +1,32 @@
+import copy
 import json
-import math
 import threading
 from dataclasses import asdict
 
-import numpy as np
 import pytest
 import torch
 from torch import nn
 
+from app.contracts.worker.v3.config import (
+    CheckpointSelectionConfig,
+    ModelConfig,
+    TrainConfig,
+)
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    ml_contract,
+    objective_config,
+)
 from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
-from app.model.transformer import TransformerModel
-from app.storage.checkpoint import CHECKPOINT_FORMAT, load_checkpoint
-from app.training.early_stopping import EarlyStopping
+from app.model.transformer import TransformerModel, public_predictions
+from app.storage.checkpoint import load_checkpoint
+from app.training.early_stopping import SelectionState
 from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
-from app.training.run_config import ModelConfig, TrainConfig, model_config_from_args
+from app.training.run_config import model_config_from_args
 from app.training.trainer import Trainer
 from app.worker.runtime.reproducibility import configure_reproducibility
+from app.worker.training import trainer as trainer_module
 from app.worker.training.trainer import _BatchPrefetcher
 
 
@@ -27,19 +37,37 @@ def torch_rng():
         yield
 
 
-def make_dummy_data(n=32, seq_len=5, feat_dim=4, out_dim=6):
-    X = torch.randn(n, seq_len, feat_dim)
-    Y = torch.randn(n, out_dim)
-    if out_dim >= 6:
-        Y[:, 4] = torch.rand(n) + 0.1
-        Y[:, 5] = torch.randint(0, 2, (n,), dtype=Y.dtype)
-    return X, Y
+def make_dummy_data(n=32, seq_len=5, feat_dim=4):
+    source = torch.randn(n, seq_len, feat_dim)
+    targets = torch.rand(n, 6)
+    targets[:, 0] = torch.rand(n) * 2 - 1
+    return source, targets
 
 
-def test_trainer_fit_cpu(tmp_path):
-    X, Y = make_dummy_data()
+def model_config(*, seq_len=5, feature_dim=4):
+    return ModelConfig(
+        seq_len=seq_len,
+        hidden=32,
+        layers=1,
+        dropout=0.0,
+        nhead=4,
+        feature_dim=feature_dim,
+    )
 
-    model = TransformerModel(
+
+def data_contract(*, seq_len=5, feature_dim=4):
+    return {
+        "id": "inventory.learning-dataset",
+        "version": 1,
+        "dataContractSha256": "d" * 64,
+        "seqLen": seq_len,
+        "featureDim": feature_dim,
+        "targetSchemaId": "inventory.target.v1",
+    }
+
+
+def new_model():
+    return TransformerModel(
         input_dim=4,
         seq_len=5,
         hidden_dim=32,
@@ -49,63 +77,33 @@ def test_trainer_fit_cpu(tmp_path):
         nhead=4,
     )
 
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=8,
-        epochs=2,
-        patience=1,
+
+def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
+    source, targets = make_dummy_data(n=8)
+    config = TrainConfig(
+        batch_size=4,
+        epochs=1,
+        loss_schedule="none",
         use_amp=False,
     )
+    trainer = build_trainer(
+        config,
+        new_model(),
+        torch.device("cpu"),
+        model_config(),
+        data_contract=data_contract(),
+    )
 
-    model_path = tmp_path / "model.pth"
-    trainer.fit(X, Y, str(model_path))
+    path = tmp_path / "model.pth"
+    trainer.fit(source, targets, str(path))
 
-    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
+    checkpoint = load_checkpoint(str(path), torch.device("cpu"))
     assert checkpoint["format"] == CHECKPOINT_FORMAT
-    assert set(checkpoint["state_dict"]) == set(model.state_dict())
-    assert all(
-        torch.isfinite(value).all()
-        for value in checkpoint["state_dict"].values()
-    )
-
-
-def test_trainer_checkpoint_stores_run_config(tmp_path):
-    X, Y = make_dummy_data(n=8)
-    model_config = ModelConfig(seq_len=5, hidden=32, layers=1, dropout=0.0, nhead=4)
-    train_config = TrainConfig(batch_size=4, epochs=1, patience=1, use_amp=False)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=train_config.lr,
-        batch_size=train_config.batch_size,
-        epochs=train_config.epochs,
-        patience=train_config.patience,
-        use_amp=False,
-        model_config=model_config,
-        train_config=train_config,
-    )
-
-    model_path = tmp_path / "model.pth"
-    trainer.fit(X, Y, str(model_path))
-
-    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
-    assert checkpoint["format"] == CHECKPOINT_FORMAT
-    assert checkpoint["model_config"]["seq_len"] == 5
-    assert checkpoint["model_config"]["hidden"] == 32
-    assert checkpoint["train_config"]["batch_size"] == 4
-    assert checkpoint["train_config"]["monitor"] == "ret_mae_skill"
+    assert checkpoint["model_config"]["feature_dim"] == 4
+    assert checkpoint["train_config"] == config.to_dict()
+    assert checkpoint["data_contract"] == data_contract()
+    assert checkpoint["ml_contract"] == ml_contract(config)
+    assert checkpoint["objective_config"] == objective_config(config)
 
 
 def test_model_config_can_be_loaded_from_checkpoint_defaults():
@@ -135,33 +133,23 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
 
 
 def test_cpu_training_disables_amp_and_updates_parameters():
-    X, Y = make_dummy_data(n=4)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-
+    source, targets = make_dummy_data(n=4)
+    model = new_model()
     trainer = Trainer(
         model=model,
         device=torch.device("cpu"),
         lr=1e-3,
-        batch_size=8,
+        batch_size=4,
         epochs=1,
-        patience=1,
-        use_amp=True,  # просим AMP, но CPU
+        loss_schedule="none",
+        use_amp=True,
     )
     before = {
         name: value.detach().clone()
         for name, value in model.state_dict().items()
     }
 
-    metrics = trainer.fit_batch(X, Y)
+    metrics = trainer.fit_batch(source, targets)
 
     assert metrics.rows == 4
     assert trainer.use_amp is False
@@ -171,55 +159,38 @@ def test_cpu_training_disables_amp_and_updates_parameters():
     )
 
 
-def test_trainer_fit_batch_cpu():
-    X, Y = make_dummy_data()
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-
+def test_fit_batch_reports_six_target_metrics():
+    source, targets = make_dummy_data()
     trainer = Trainer(
-        model=model,
+        model=new_model(),
         device=torch.device("cpu"),
         lr=1e-3,
         batch_size=8,
         epochs=1,
-        patience=1,
-        use_amp=False,
+        loss_schedule="none",
     )
 
-    metrics = trainer.fit_batch(X, Y)
+    metrics = trainer.fit_batch(source, targets)
 
-    assert isinstance(metrics, TrainMetrics)
-    assert metrics > 0
-    assert metrics.rows == X.size(0)
+    assert metrics.rows == source.size(0)
     assert metrics.batches == 4
-    assert metrics.step == 4
-    assert metrics.loss_stage == 1
-    assert metrics.lr == 1e-3
-    assert metrics.sigma_min > 0.0
-    assert metrics.sigma_p05 > 0.0
-    assert metrics.sigma_mean > 0.0
-    assert metrics.ret_mae >= 0.0
-    assert metrics.ret_rmse >= 0.0
-    assert metrics.ret_mae_baseline >= 0.0
-    assert 0.0 <= metrics.nan_ratio <= 1.0
-    assert 0.0 <= metrics.masked_token_ratio <= 1.0
-    assert 0.0 <= metrics.complete_token_ratio <= 1.0
-    assert 0.0 <= metrics.partial_token_ratio <= 1.0
-    assert 0.0 <= metrics.empty_token_ratio <= 1.0
+    assert metrics.loss_stage == 4
+    for semantic in (
+        "mean_return",
+        "sigma_return",
+        "prob_tp",
+        "prob_sl",
+        "volatility_next",
+        "hitting_prob_tp",
+    ):
+        assert getattr(metrics, f"{semantic}_mae") >= 0
+        assert getattr(metrics, f"{semantic}_rmse") >= 0
 
 
-def test_trainer_predict_limits_each_model_forward_to_batch_size():
+def test_predict_batches_model_and_returns_only_public_target_space():
     class RecordingLinear(nn.Linear):
         def __init__(self):
-            super().__init__(3, 6)
+            super().__init__(3, 7)
             self.forward_batch_sizes = []
 
         def forward(self, inputs):
@@ -233,11 +204,10 @@ def test_trainer_predict_limits_each_model_forward_to_batch_size():
         lr=1e-3,
         batch_size=4,
         epochs=1,
-        patience=1,
-        use_amp=False,
+        loss_schedule="none",
     )
     source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
-    expected = torch.nn.functional.linear(
+    internal = torch.nn.functional.linear(
         source,
         model.weight.detach(),
         model.bias.detach(),
@@ -246,223 +216,105 @@ def test_trainer_predict_limits_each_model_forward_to_batch_size():
     predictions = trainer.predict(source)
 
     assert model.forward_batch_sizes == [4, 4, 2]
-    assert model.training is False
-    assert torch.allclose(predictions, expected)
+    assert torch.allclose(predictions, public_predictions(internal))
+    assert predictions.shape == (10, 6)
 
 
-def test_trainer_stage_size_is_configurable():
-    model = nn.Linear(2, 6)
-
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        stage_size=3,
-        use_amp=False,
-    )
-
-    assert trainer.stage_size == 3
-
-
-def test_trainer_loss_schedule_advances_by_epoch():
-    X, Y = make_dummy_data(n=5)
-    Y[:, 4] = torch.rand(5) + 0.1
-    Y[:, 5] = torch.randint(0, 2, (5,), dtype=Y.dtype)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        loss_schedule="epoch",
+@pytest.mark.parametrize(
+    ("schedule", "progress", "expected"),
+    [
+        ("epoch", 0, 1),
+        ("epoch", 3, 4),
+        ("step", 2, 3),
+        ("none", 99, 4),
+    ],
+)
+def test_loss_schedule_reaches_target_aligned_maximum_stage(
+    schedule,
+    progress,
+    expected,
+):
+    assert resolve_loss_stage(
+        progress,
+        schedule,
         stage_size=1,
-        use_amp=False,
-    )
-
-    metrics = trainer.fit_batch(X, Y, epoch=3)
-
-    assert metrics.batches == 5
-    assert metrics.step == 5
-    assert metrics.loss_stage == 4
-    assert metrics.loss_prob != 0.0
-    assert metrics.loss_ev != 0.0
-    assert metrics.loss_vol != 0.0
+        max_stage=4,
+    ) == expected
 
 
-def test_trainer_loss_schedule_advances_by_optimizer_step():
-    X, Y = make_dummy_data(n=5)
-    Y[:, 4] = torch.rand(5) + 0.1
-    Y[:, 5] = torch.randint(0, 2, (5,), dtype=Y.dtype)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
+def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
+    source, targets = make_dummy_data(n=4)
+    selection = CheckpointSelectionConfig(min_delta=0.0, patience=1)
     trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        loss_schedule="step",
-        stage_size=1,
-        use_amp=False,
-    )
-
-    metrics = trainer.fit_batch(X, Y)
-
-    assert metrics.batches == 5
-    assert metrics.step == 5
-    assert metrics.loss_stage == 4
-    assert metrics.loss_prob != 0.0
-    assert metrics.loss_ev != 0.0
-    assert metrics.loss_vol != 0.0
-
-
-def test_trainer_loss_schedule_none_uses_fixed_stage():
-    X, Y = make_dummy_data(n=4)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=2,
-        epochs=1,
-        patience=1,
-        loss_stage=1,
-        loss_schedule="none",
-        stage_size=1,
-        use_amp=False,
-    )
-
-    metrics = trainer.fit_batch(X, Y, epoch=10)
-
-    assert metrics.loss_stage == 1
-    assert metrics.loss_prob == 0.0
-    assert metrics.loss_ev == 0.0
-    assert metrics.loss_vol == 0.0
-
-
-def test_resolve_loss_stage_caps_at_configured_max_stage():
-    assert resolve_loss_stage(99, "epoch", stage_size=1, max_stage=3) == 3
-
-
-def test_trainer_fit_epochs_runs_until_patience_after_full_schedule():
-    X, Y = make_dummy_data(n=4)
-    Y[:, 4] = torch.rand(4) + 0.1
-    Y[:, 5] = torch.randint(0, 2, (4,), dtype=Y.dtype)
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
+        model=new_model(),
         device=torch.device("cpu"),
         lr=0.0,
         batch_size=4,
-        epochs=8,
-        patience=1,
-        loss_schedule="epoch",
-        stage_size=2,
-        monitor="loss",
-        use_amp=False,
-    )
-
-    seen = []
-    metrics_rows = trainer.fit_epochs(
-        X,
-        Y,
-        on_epoch=lambda epoch, metrics, monitor: seen.append((epoch + 1, metrics.loss_stage)),
-    )
-
-    assert len(metrics_rows) >= 7
-    assert seen[:6] == [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (6, 3)]
-    assert seen[-1][1] == 4
-
-
-def test_trainer_fit_payloads_runs_global_epochs_over_all_payloads():
-    first = make_dummy_data(n=3)
-    second = make_dummy_data(n=2)
-    for _, targets in (first, second):
-        targets[:, 4] = torch.rand(targets.size(0)) + 0.1
-        targets[:, 5] = torch.randint(
-            0,
-            2,
-            (targets.size(0),),
-            dtype=targets.dtype,
-        )
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=2,
-        epochs=3,
-        patience=0,
+        epochs=10,
         loss_schedule="epoch",
         stage_size=1,
-        monitor="loss",
-        use_amp=False,
+        selection=selection,
     )
-    payload_passes = 0
 
-    def payloads():
-        nonlocal payload_passes
-        payload_passes += 1
-        return iter((first, second))
+    metrics = trainer.fit_epochs(source, targets)
 
-    metrics_rows = trainer.fit_payloads(payloads)
+    assert [item.loss_stage for item in metrics] == [1, 2, 3, 4, 4]
+    assert trainer.best_epoch == 4
+    assert trainer.selection_state.active is True
+    assert trainer.selection_state.wait == 1
 
-    assert payload_passes == 3
-    assert [metrics.rows for metrics in metrics_rows] == [5, 5, 5]
-    assert [metrics.batches for metrics in metrics_rows] == [3, 3, 3]
-    assert [metrics.step for metrics in metrics_rows] == [3, 6, 9]
-    assert [metrics.loss_stage for metrics in metrics_rows] == [1, 2, 3]
-    assert trainer.best_frame is None
+
+def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
+    source, targets = make_dummy_data(n=4)
+    trainer = Trainer(
+        model=new_model(),
+        device=torch.device("cpu"),
+        lr=0.0,
+        batch_size=4,
+        epochs=3,
+        loss_schedule="none",
+    )
+
+    metrics = trainer.fit_epochs(source, targets)
+
+    assert len(metrics) == 3
+    assert trainer.best_state_dict is None
+    assert trainer.maximum_stage_completed is True
+
+
+def test_selection_tie_keeps_the_earlier_candidate():
+    state = SelectionState(min_delta=0.1, patience=2)
+    state.begin()
+
+    assert state.update(1.0) == (True, False)
+    assert state.update(0.9) == (False, False)
+    assert state.update(0.89) == (True, False)
+
+
+def test_selection_rejects_nonfinite_score():
+    state = SelectionState(min_delta=0.0, patience=1)
+    state.begin()
+
+    with pytest.raises(ValueError, match="finite"):
+        state.update(float("nan"))
+
+
+def test_train_metrics_uses_global_row_weighted_direct_losses():
+    first = TrainMetrics()
+    first.update(
+        rows=1,
+        loss_parts=_loss_parts(1.0),
+        grad_norm=1.0,
+        nan_ratio=0.0,
+    )
+    first.update(
+        rows=3,
+        loss_parts=_loss_parts(3.0),
+        grad_norm=1.0,
+        nan_ratio=0.0,
+    )
+
+    assert first.direct_losses() == pytest.approx((2.5,) * 6)
 
 
 def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
@@ -481,7 +333,6 @@ def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
         assert next(prefetched) == 0
         assert second_started.wait(timeout=1.0)
         assert not third_started.wait(timeout=0.05)
-
         assert next(prefetched) == 1
         assert third_started.wait(timeout=1.0)
         assert next(prefetched) == 2
@@ -505,671 +356,160 @@ def test_closed_batch_prefetch_propagates_producer_failure():
         prefetched.close()
 
 
-def test_trainer_fit_payloads_is_independent_of_payload_boundaries():
-    X, Y = make_dummy_data(n=10)
-    initial_model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    initial_state = {
-        name: value.detach().clone()
-        for name, value in initial_model.state_dict().items()
-    }
+def test_payload_partitioning_does_not_change_training_state():
+    source, targets = make_dummy_data(n=10)
+    initial = new_model().state_dict()
 
     def train(payloads):
-        model = TransformerModel(
-            input_dim=4,
-            seq_len=5,
-            hidden_dim=32,
-            layers=1,
-            dropout=0.0,
-            out_dim=6,
-            nhead=4,
+        configure_reproducibility(91, deterministic=True)
+        model = new_model()
+        model.load_state_dict(initial)
+        config = TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=2,
+            loss_schedule="none",
+            seed=91,
+            deterministic=True,
         )
-        model.load_state_dict(initial_state)
         trainer = build_trainer(
-            TrainConfig(
-                lr=1e-3,
-                batch_size=4,
-                epochs=2,
-                patience=0,
-                loss_schedule="none",
-                monitor="loss",
-                save_best_checkpoint=False,
-                use_amp=False,
-                seed=91,
-            ),
+            config,
             model,
             torch.device("cpu"),
-            ModelConfig(
-                seq_len=5,
-                hidden=32,
-                layers=1,
-                dropout=0.0,
-                nhead=4,
-                feature_dim=4,
-            ),
+            model_config(),
         )
-        metrics_rows = trainer.fit_payloads(lambda: iter(payloads))
-        return model.state_dict(), metrics_rows
+        metrics = trainer.fit_payloads(lambda: iter(payloads))
+        return model.state_dict(), [
+            _semantic_metrics(item) for item in metrics
+        ]
 
-    single_state, single_metrics = train(((X, Y),))
+    single_state, single_metrics = train(((source, targets),))
     split_state, split_metrics = train((
-        (X[:3], Y[:3]),
-        (X[3:5], Y[3:5]),
-        (X[5:], Y[5:]),
+        (source[:3], targets[:3]),
+        (source[3:5], targets[3:5]),
+        (source[5:], targets[5:]),
     ))
 
-    assert [metrics.batches for metrics in single_metrics] == [3, 3]
-    assert [metrics.step for metrics in single_metrics] == [3, 6]
-    assert [metrics.batches for metrics in split_metrics] == [3, 3]
-    assert [metrics.step for metrics in split_metrics] == [3, 6]
+    assert single_metrics == split_metrics
     assert all(
         torch.equal(single_state[name], split_state[name])
         for name in single_state
     )
 
 
-def test_streaming_and_closed_fit_have_identical_semantic_state():
-    source, targets = make_dummy_data(n=10)
-    initial_model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    initial_state = {
-        name: value.detach().clone()
-        for name, value in initial_model.state_dict().items()
-    }
-    closed_payloads = ((source, targets),)
-    streamed_payloads = (
-        (source[:3], targets[:3]),
-        (source[3:5], targets[3:5]),
-        (source[5:], targets[5:]),
-    )
+def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
+    monkeypatch,
+):
+    monkeypatch.setattr(trainer_module, "_MAX_SHUFFLE_WINDOW_BATCHES", 2)
+    source, targets = make_dummy_data(n=14)
+    initial = copy.deepcopy(new_model().state_dict())
 
     def train(*, streaming: bool):
-        model = TransformerModel(
-            input_dim=4,
-            seq_len=5,
-            hidden_dim=32,
-            layers=1,
-            dropout=0.0,
-            out_dim=6,
-            nhead=4,
+        configure_reproducibility(137, deterministic=True)
+        model = new_model()
+        model.load_state_dict(initial)
+        config = TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=2,
+            loss_schedule="none",
+            seed=137,
+            deterministic=True,
         )
-        model.load_state_dict(initial_state)
         trainer = build_trainer(
-            TrainConfig(
-                lr=1e-3,
-                batch_size=4,
-                epochs=2,
-                patience=0,
-                loss_schedule="none",
-                monitor="loss",
-                save_best_checkpoint=False,
-                use_amp=False,
-                seed=91,
-                deterministic=True,
-            ),
+            config,
             model,
             torch.device("cpu"),
-            ModelConfig(
-                seq_len=5,
-                hidden=32,
-                layers=1,
-                dropout=0.0,
-                nhead=4,
-                feature_dim=4,
-            ),
+            model_config(),
         )
-        configure_reproducibility(91, deterministic=True)
         epochs = []
 
-        def record_epoch(_epoch, metrics, _monitor, _complete):
-            metric_state = asdict(metrics)
-            for field in (
-                "input_pipeline_ms",
-                "missing_stats_ms",
-                "host_to_device_ms",
-                "train_step_ms",
-                "elapsed_ms",
-            ):
-                metric_state.pop(field)
-            epochs.append((metric_state, trainer.recovery_state_dict()))
+        def on_epoch(_epoch, metrics, _selection):
+            epochs.append({
+                "model": copy.deepcopy(model.state_dict()),
+                "optimizer": copy.deepcopy(trainer.optimizer.state_dict()),
+                "metrics": _semantic_metrics(metrics),
+            })
 
         if streaming:
-            trainer.fit_streaming_payloads(
-                iter(streamed_payloads),
-                lambda: iter(closed_payloads),
-                on_epoch_committed=record_epoch,
+            training_started = threading.Event()
+            hook = model.register_forward_pre_hook(
+                lambda *_args: training_started.set()
             )
+
+            def delayed_first_epoch():
+                yield source[:9], targets[:9]
+                assert training_started.is_set()
+                yield source[9:11], targets[9:11]
+                yield source[11:], targets[11:]
+
+            try:
+                trainer.fit_streaming_payloads(
+                    delayed_first_epoch(),
+                    lambda: iter(((source, targets),)),
+                    on_epoch=on_epoch,
+                )
+            finally:
+                hook.remove()
         else:
-            trainer.fit_payloads_resumable(
-                lambda: iter(closed_payloads),
-                on_epoch_committed=record_epoch,
+            trainer.fit_payloads(
+                lambda: iter(((source, targets),)),
+                on_epoch=on_epoch,
             )
-        return epochs
+        return epochs, trainer.state
 
-    closed_epochs = train(streaming=False)
-    streaming_epochs = train(streaming=True)
+    closed_epochs, closed_state = train(streaming=False)
+    streaming_epochs, streaming_state = train(streaming=True)
 
-    assert len(closed_epochs) == len(streaming_epochs) == 2
-    for closed_epoch, streaming_epoch in zip(
-        closed_epochs,
-        streaming_epochs,
-        strict=True,
+    _assert_nested_equal(closed_epochs, streaming_epochs)
+    assert closed_state == streaming_state
+
+
+def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
+    path = tmp_path / "metrics.jsonl"
+    metrics = TrainMetrics(rows=4, batches=1, loss_l0=0.2)
+    append_metrics_jsonl(str(path), metrics, mode="fit")
+
+    row = json.loads(path.read_text().strip())
+
+    assert row["loss_l0"] == pytest.approx(0.2)
+    for semantic in (
+        "mean_return",
+        "sigma_return",
+        "prob_tp",
+        "prob_sl",
+        "volatility_next",
+        "hitting_prob_tp",
     ):
-        _assert_semantically_equal(closed_epoch, streaming_epoch)
+        assert f"{semantic}_mae" in row
+        assert f"{semantic}_rmse" in row
+    assert "ret_mae_skill" not in row
 
 
-def test_streaming_fit_trains_full_window_before_requesting_more_input():
-    source, targets = make_dummy_data(n=33, seq_len=1, feat_dim=1)
-    model = nn.Sequential(nn.Flatten(), nn.Linear(1, 6))
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=0,
-        loss_schedule="none",
-        monitor="loss",
-        save_best_checkpoint=False,
-        use_amp=False,
-        seed=91,
-    )
-    steps_before_next_payload = []
+def test_plot_metrics_writes_target_metric_svg(tmp_path):
+    path = tmp_path / "metrics.jsonl"
+    output = tmp_path / "plots"
+    metrics = TrainMetrics(rows=2, mean_return_mae=0.25)
+    append_metrics_jsonl(str(path), metrics, mode="fit")
 
-    def open_payloads():
-        yield source[:32], targets[:32]
-        steps_before_next_payload.append(trainer.train_step)
-        yield source[32:], targets[32:]
+    paths = plot_metrics(str(path), str(output))
 
-    trainer.fit_streaming_payloads(
-        open_payloads(),
-        lambda: iter(((source, targets),)),
-    )
+    expected = output / "mean_return_mae.svg"
+    assert str(expected) in paths
+    assert "<svg" in expected.read_text()
 
-    assert steps_before_next_payload == [32]
-    assert trainer.train_step == 33
 
-
-def test_open_epoch_crash_restarts_without_reusing_partial_optimizer_state():
-    source, targets = make_dummy_data(n=33, seq_len=1, feat_dim=1)
-
-    class StableLinear(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.linear = nn.Linear(1, 6)
-
-        def forward(self, value):
-            raw = self.linear(value.flatten(1))
-            return torch.stack(
-                (
-                    raw[:, 0],
-                    torch.nn.functional.softplus(raw[:, 1]) + 0.1,
-                    raw[:, 2],
-                    raw[:, 3],
-                    torch.nn.functional.softplus(raw[:, 4]) + 0.1,
-                    raw[:, 5],
-                ),
-                dim=1,
-            )
-
-    initial_model = StableLinear()
-    initial_state = {
-        name: value.detach().clone()
-        for name, value in initial_model.state_dict().items()
-    }
-
-    def new_trainer():
-        model = StableLinear()
-        model.load_state_dict(initial_state)
-        configure_reproducibility(91, deterministic=True)
-        return Trainer(
-            model=model,
-            device=torch.device("cpu"),
-            lr=1e-3,
-            batch_size=1,
-            epochs=1,
-            patience=0,
-            loss_schedule="none",
-            monitor="loss",
-            save_best_checkpoint=False,
-            use_amp=False,
-            seed=91,
-        )
-
-    interrupted = new_trainer()
-
-    def interrupted_stream():
-        yield source[:32], targets[:32]
-        raise RuntimeError("worker crashed before EOF")
-
-    with pytest.raises(RuntimeError, match="before EOF"):
-        interrupted.fit_streaming_payloads(
-            interrupted_stream(),
-            lambda: iter(((source, targets),)),
-        )
-    assert interrupted.train_step == 32
-
-    baseline = new_trainer()
-    baseline.fit_payloads_resumable(lambda: iter(((source, targets),)))
-    restarted = new_trainer()
-    restarted.fit_streaming_payloads(
-        iter(((source[:32], targets[:32]), (source[32:], targets[32:]))),
-        lambda: iter(((source, targets),)),
-    )
-
-    _assert_semantically_equal(
-        baseline.recovery_state_dict(),
-        restarted.recovery_state_dict(),
-    )
-
-
-def _assert_semantically_equal(left, right):
-    if isinstance(left, torch.Tensor):
-        assert isinstance(right, torch.Tensor)
-        assert torch.equal(left, right)
-        return
-    if isinstance(left, np.ndarray):
-        assert isinstance(right, np.ndarray)
-        assert np.array_equal(left, right)
-        return
-    if isinstance(left, dict):
-        assert isinstance(right, dict)
-        assert left.keys() == right.keys()
-        for key in left:
-            _assert_semantically_equal(left[key], right[key])
-        return
-    if isinstance(left, (list, tuple)):
-        assert type(left) is type(right)
-        assert len(left) == len(right)
-        for left_item, right_item in zip(left, right, strict=True):
-            _assert_semantically_equal(left_item, right_item)
-        return
-    assert left == right
-
-
-def test_trainer_fit_payloads_uses_one_early_stopper_for_the_job():
-    X = torch.zeros(2, 5, 4)
-    Y = torch.tensor([
-        [0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
-        [0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
-    ])
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=0.0,
-        batch_size=1,
-        epochs=5,
-        patience=1,
-        loss_schedule="none",
-        monitor="loss",
-        use_amp=False,
-    )
-
-    metrics_rows = trainer.fit_payloads(
-        lambda: iter(((X[:1], Y[:1]), (X[1:], Y[1:])))
-    )
-
-    assert len(metrics_rows) == 2
-    assert [metrics.rows for metrics in metrics_rows] == [2, 2]
-    assert [metrics.step for metrics in metrics_rows] == [2, 4]
-
-
-def test_trainer_rejects_invalid_stage_size():
-    model = nn.Linear(2, 6)
-
-    try:
-        Trainer(
-            model=model,
-            device=torch.device("cpu"),
-            lr=1e-3,
-            batch_size=1,
-            epochs=1,
-            patience=1,
-            stage_size=0,
-            use_amp=False,
-        )
-    except ValueError as exc:
-        assert "stage_size must be a positive integer" in str(exc)
-    else:
-        raise AssertionError("Trainer accepted invalid stage_size")
-
-
-def test_trainer_writes_metrics_jsonl(tmp_path):
-    X, Y = make_dummy_data(n=8)
-    metrics_path = tmp_path / "models" / "metrics.jsonl"
-
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=4,
-        epochs=1,
-        patience=1,
-        use_amp=False,
-        metrics_path=str(metrics_path),
-        metrics_context={
-            "hidden": 32,
-            "layers": 1,
-            "seq_len": 5,
-        },
-    )
-
-    metrics = trainer.fit_batch(X, Y)
-    trainer.record_metrics(metrics, frame=3)
-
-    rows = [json.loads(line) for line in metrics_path.read_text().splitlines()]
-
-    assert len(rows) == 1
-    assert rows[0]["frame"] == 3
-    assert rows[0]["rows"] == 8
-    assert isinstance(rows[0]["loss"], float)
-    assert "grad_norm" in rows[0]
-    assert rows[0]["step"] == 2
-    assert "loss_stage" in rows[0]
-    assert "sigma_min" in rows[0]
-    assert "sigma_p05" in rows[0]
-    assert "sigma_mean" in rows[0]
-    assert "ret_mae" in rows[0]
-    assert "ret_rmse" in rows[0]
-    assert "ret_mae_baseline" in rows[0]
-    assert "ret_mae_skill" in rows[0]
-    assert "ret_mae_improvement" in rows[0]
-    assert "masked_token_ratio" in rows[0]
-    assert "complete_token_ratio" in rows[0]
-    assert "partial_token_ratio" in rows[0]
-    assert "empty_token_ratio" in rows[0]
-    assert rows[0]["input_pipeline_ms"] >= 0.0
-    assert rows[0]["missing_stats_ms"] >= 0.0
-    assert rows[0]["host_to_device_ms"] >= 0.0
-    assert rows[0]["train_step_ms"] >= 0.0
-    assert rows[0]["elapsed_ms"] >= sum(
-        rows[0][field]
-        for field in (
-            "input_pipeline_ms",
-            "missing_stats_ms",
-            "host_to_device_ms",
-            "train_step_ms",
-        )
-    )
-    assert rows[0]["context_mode"] == "relaxed"
-    assert rows[0]["batch_size"] == 4
-    assert rows[0]["loss_schedule"] == "epoch"
-    assert rows[0]["stage_size"] == 5
-    assert rows[0]["max_loss_stage"] == 4
-    assert rows[0]["hidden"] == 32
-    assert rows[0]["layers"] == 1
-    assert rows[0]["seq_len"] == 5
-    assert rows[0]["device"] == "cpu"
-    assert rows[0]["monitor"] == "ret_mae_skill"
-    assert rows[0]["monitor_min_improvement"] == 0.0
-
-
-def test_trainer_log_line_includes_run_config():
-    X, Y = make_dummy_data(n=4)
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    )
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=4,
-        epochs=1,
-        patience=1,
-        use_amp=False,
-        metrics_context={
-            "hidden": 32,
-            "layers": 1,
-            "seq_len": 5,
-        },
-    )
-
-    metrics = trainer.fit_batch(X, Y)
-    output = metrics.log_line(epoch=1, **trainer.metrics_context)
-
-    assert "batch_size=4" in output
-    assert "loss_schedule=epoch" in output
-    assert "stage_size=5" in output
-    assert "max_loss_stage=4" in output
-    assert "hidden=32" in output
-    assert "layers=1" in output
-    assert "seq_len=5" in output
-    assert "device=cpu" in output
-    assert "ret_mae=" in output
-    assert "ret_rmse=" in output
-    assert "ret_mae_baseline=" in output
-    assert "ret_mae_skill=" in output
-    assert "ret_mae_improvement=" in output
-
-
-def test_metrics_jsonl_serializes_nonfinite_as_null(tmp_path):
-    metrics_path = tmp_path / "metrics.jsonl"
-    metrics = TrainMetrics(
-        rows=1,
-        batches=1,
-        loss=math.inf,
-        grad_norm=math.nan,
-    )
-
-    append_metrics_jsonl(str(metrics_path), metrics, frame=1)
-
-    row = json.loads(metrics_path.read_text())
-    assert row["loss"] is None
-    assert row["grad_norm"] is None
-
-
-def test_train_metrics_aggregates_return_errors():
-    metrics = TrainMetrics()
-
-    metrics.update(
-        rows=1,
-        loss_parts={
-            "loss": 0.0,
-            "loss_ret": 0.0,
-            "loss_prob": 0.0,
-            "loss_ev": 0.0,
-            "loss_vol": 0.0,
-            "ret_mae": 1.0,
-            "ret_mse": 1.0,
-            "ret_mae_baseline": 2.0,
-        },
-        grad_norm=0.0,
-        nan_ratio=0.0,
-    )
-    metrics.update(
-        rows=3,
-        loss_parts={
-            "loss": 0.0,
-            "loss_ret": 0.0,
-            "loss_prob": 0.0,
-            "loss_ev": 0.0,
-            "loss_vol": 0.0,
-            "ret_mae": 3.0,
-            "ret_mse": 9.0,
-            "ret_mae_baseline": 4.0,
-        },
-        grad_norm=0.0,
-        nan_ratio=0.0,
-    )
-
-    assert metrics.ret_mae == 2.5
-    assert metrics.ret_rmse == math.sqrt(7.0)
-    assert metrics.ret_mae_baseline == 3.5
-    assert metrics.ret_mae_skill == 2.5 / 3.5
-    assert metrics.ret_mae_improvement == 1.0 - (2.5 / 3.5)
-
-
-def test_trainer_monitor_requires_baseline_improvement():
-    trainer = Trainer(
-        model=nn.Linear(1, 6),
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        monitor="ret_mae_skill",
-        monitor_min_improvement=0.01,
-        use_amp=False,
-    )
-
-    worse = TrainMetrics(ret_mae=1.0, ret_mae_baseline=1.0, ret_mae_skill=1.0)
-    better = TrainMetrics(ret_mae=0.98, ret_mae_baseline=1.0, ret_mae_skill=0.98)
-
-    assert trainer._baseline_passed(worse) is False
-    assert trainer._baseline_passed(better) is True
-
-
-def test_early_stopping_tracks_monitor_before_baseline_passes():
-    stopper = EarlyStopping(patience=2, min_stage=1)
-
-    assert stopper.update(1.50, stage=1) is False
-    assert stopper.update(1.40, stage=1) is False
-    assert stopper.update(1.30, stage=1) is False
-    assert stopper.wait == 0
-
-    assert stopper.update(1.31, stage=1) is False
-    assert stopper.update(1.32, stage=1) is True
-
-
-def test_trainer_save_restores_best_monitored_checkpoint(tmp_path):
-    model = nn.Linear(1, 6)
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=1,
-        epochs=1,
-        patience=1,
-        monitor="ret_mae_skill",
-        use_amp=False,
-    )
-
-    with torch.no_grad():
-        model.weight.fill_(1.0)
-        model.bias.fill_(1.0)
-
-    best = TrainMetrics(ret_mae=0.5, ret_mae_baseline=1.0, ret_mae_skill=0.5)
-    payload = trainer._observe_metrics(best, frame=1, epoch=1)
-    assert payload["checkpoint_best"] is True
-
-    with torch.no_grad():
-        model.weight.fill_(2.0)
-        model.bias.fill_(2.0)
-
-    model_path = tmp_path / "best.pth"
-    trainer.save(str(model_path))
-
-    checkpoint = load_checkpoint(str(model_path), torch.device("cpu"))
-    assert checkpoint["extra"]["checkpoint_selection"]["source"] == "best_monitor"
-    assert torch.all(checkpoint["state_dict"]["weight"] == 1.0)
-    assert torch.all(checkpoint["state_dict"]["bias"] == 1.0)
-
-
-def test_plot_metrics_writes_svg(tmp_path):
-    metrics_path = tmp_path / "metrics.jsonl"
-    metrics_path.write_text(
-        "\n".join([
-            json.dumps({
-                "frame": 1,
-                "loss": 2.0,
-                "grad_norm": 1.5,
-                "input_pipeline_ms": 10.0,
-            }),
-            json.dumps({
-                "frame": 2,
-                "loss": 1.0,
-                "grad_norm": 1.1,
-                "input_pipeline_ms": 8.0,
-            }),
-        ])
-    )
-    plots_dir = tmp_path / "plots"
-
-    paths = plot_metrics(str(metrics_path), str(plots_dir))
-
-    assert str(plots_dir / "loss.svg") in paths
-    assert str(plots_dir / "grad_norm.svg") in paths
-    assert str(plots_dir / "input_pipeline_ms.svg") in paths
-    assert (plots_dir / "loss.svg").read_text().startswith("<svg")
-
-
-def test_plot_metrics_skips_nonfinite_values(tmp_path):
-    metrics_path = tmp_path / "metrics.jsonl"
-    metrics_path.write_text(
-        "\n".join([
-            json.dumps({"frame": 1, "loss": None, "grad_norm": None}),
-            json.dumps({"frame": 2, "loss": 1.0, "grad_norm": 1.1}),
-        ])
-    )
-    plots_dir = tmp_path / "plots"
-
-    paths = plot_metrics(str(metrics_path), str(plots_dir))
-
-    assert str(plots_dir / "loss.svg") in paths
-    assert str(plots_dir / "grad_norm.svg") in paths
-
-
-@pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="CUDA device is required for AMP training integration",
-)
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_cuda_amp_training_updates_parameters():
-    device = torch.device("cuda")
-    X, Y = make_dummy_data(n=4)
-    model = TransformerModel(
-        input_dim=4,
-        seq_len=5,
-        hidden_dim=32,
-        layers=1,
-        dropout=0.0,
-        out_dim=6,
-        nhead=4,
-    ).to(device)
+    source, targets = make_dummy_data(n=4)
+    model = new_model().to("cuda")
     trainer = Trainer(
         model=model,
-        device=device,
+        device=torch.device("cuda"),
         lr=1e-3,
         batch_size=4,
         epochs=1,
-        patience=1,
+        loss_schedule="none",
         use_amp=True,
     )
     before = {
@@ -1177,11 +517,75 @@ def test_cuda_amp_training_updates_parameters():
         for name, value in model.state_dict().items()
     }
 
-    metrics = trainer.fit_batch(X, Y)
+    metrics = trainer.fit_batch(source, targets)
 
     assert metrics.rows == 4
-    assert trainer.use_amp is True
     assert any(
         not torch.equal(before[name], value)
         for name, value in model.state_dict().items()
     )
+
+
+def _loss_parts(value: float) -> dict:
+    return {
+        "loss": value,
+        **{f"loss_l{index}": value for index in range(6)},
+        "loss_nll": value,
+        "loss_ev": value,
+        **{
+            f"{semantic}_mae": value
+            for semantic in (
+                "mean_return",
+                "sigma_return",
+                "prob_tp",
+                "prob_sl",
+                "volatility_next",
+                "hitting_prob_tp",
+            )
+        },
+        **{
+            f"{semantic}_mse": value * value
+            for semantic in (
+                "mean_return",
+                "sigma_return",
+                "prob_tp",
+                "prob_sl",
+                "volatility_next",
+                "hitting_prob_tp",
+            )
+        },
+        "loss_stage": 4,
+    }
+
+
+def _semantic_metrics(metrics: TrainMetrics) -> dict:
+    result = asdict(metrics)
+    for field in (
+        "input_pipeline_ms",
+        "missing_stats_ms",
+        "host_to_device_ms",
+        "train_step_ms",
+        "elapsed_ms",
+    ):
+        result.pop(field)
+    return result
+
+
+def _assert_nested_equal(left, right) -> None:
+    if isinstance(left, torch.Tensor):
+        assert isinstance(right, torch.Tensor)
+        assert torch.equal(left, right)
+        return
+    if isinstance(left, dict):
+        assert isinstance(right, dict)
+        assert left.keys() == right.keys()
+        for key in left:
+            _assert_nested_equal(left[key], right[key])
+        return
+    if isinstance(left, (list, tuple)):
+        assert isinstance(right, type(left))
+        assert len(left) == len(right)
+        for left_item, right_item in zip(left, right, strict=True):
+            _assert_nested_equal(left_item, right_item)
+        return
+    assert left == right

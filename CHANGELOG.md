@@ -7,6 +7,60 @@
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-12
+
+### Added
+
+- Добавлен target-aligned ML-контракт Flight v4: шесть public predictions
+  совпадают с target Inventory по индексу, имеют прямой supervision и
+  проверяются по finite/range-инвариантам до публикации.
+- Добавлены каноническая objective configuration, cross-language JSON fixture
+  и `objectiveConfigSha256`; checkpoint selection учитывает только глобально
+  агрегированные `L0…L5` полной epoch максимального stage.
+
+### Changed
+
+- Flight v4, worker process v3, `transformer-checkpoint-v3` и
+  `transformer-training-recovery-v3` образуют одну breaking-границу. Private
+  Gaussian scale отделён от public `sigmaReturn`; probability logits не
+  пересекают prediction boundary.
+- Миграция `0006` удаляет jobs, idempotency и recovery state прежнего
+  objective, сохраняя access tokens, model identities и aliases. Прежние
+  модели требуют полного переобучения и нового `modelRef`.
+- Service boundary доведена до полноценной Clean Architecture: application
+  commands/queries используют нейтральные DTO и capability ports, Flight
+  presentation находится во inbound adapter, а PostgreSQL transactions,
+  idempotency и projection mapping — в outbound adapters. Composition roots
+  отдельно собирают job control и data plane; worker остаётся осознанным
+  изолированным runtime-исключением без дополнительного слоения.
+
+### Fixed
+
+- `objectiveConfigSha256` теперь вычисляется по RFC 8785/JCS, поэтому Python и
+  Node.js одинаково канонизируют JSON numbers, включая пары `1.0`/`1` и
+  `0.0`/`0`. Golden digest и cross-language contract test обновлены.
+- Flight v4 использует единое canonical определение Arrow physical
+  schema для ingress, fingerprint, fixtures, durable replay и worker output.
+  Неканоническая nested nullability отклоняется с `INVALID_ARGUMENT` до
+  reservation, durable commit и запуска worker.
+- Потеря in-process уведомления после durable commit больше не оставляет
+  `QUEUED`/`RETRYING` job без исполнения: единый maintenance cycle периодически
+  сверяет локальные очереди с PostgreSQL, не опрашивая БД из idle worker lanes.
+- Ожидание следующего contiguous input корректно регистрируется при уже
+  committed out-of-order payload; idle timeout не теряется из-за устаревшего
+  `inputRevision` worker-а.
+- Model lifecycle errors сохраняют стабильные коды `NOT_FOUND`,
+  `MODEL_UNAVAILABLE` и `MODEL_CORRUPT` на service и worker boundaries.
+- Пустой fit возвращает `EMPTY_INPUT` до повторной проверки доступности CUDA.
+- Миграция `0005` приводит длину `models.model_ref` и
+  `model_aliases.model_ref` к ORM-контракту `VARCHAR(128)`.
+
+### Removed
+
+- Удалены Flight v3 actions/descriptors/fixtures и worker v2 contract; runtime
+  не содержит v3 compatibility surface или fallback.
+- Удалено чтение прежних checkpoint formats и raw `state_dict` локальным CLI.
+
 ## [0.1.9] - 2026-08-11
 
 ### Added
@@ -362,7 +416,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/woodger/transformer/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/woodger/transformer/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/woodger/transformer/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/woodger/transformer/compare/v0.1.6...v0.1.7

@@ -31,8 +31,10 @@ class TradingHead(nn.Module):
 
         self.mean_head = nn.Linear(128, 1)
         self.sigma_head = nn.Linear(128, 1)
+        self.return_scale_head = nn.Linear(128, 1)
 
-        # combined_loss applies BCEWithLogitsLoss to these raw outputs.
+        # Probability heads stay as logits inside the worker. The prediction
+        # boundary converts them to target-space probabilities.
         self.ptp_head = nn.Linear(128, 1)
         self.psl_head = nn.Linear(128, 1)
         self.hit_head = nn.Linear(128, 1)
@@ -43,28 +45,36 @@ class TradingHead(nn.Module):
         h = self.shared(x)
 
         mean_return = torch.tanh(self.mean_head(h))
-        return_scale = F.softplus(self.sigma_head(h)) + 1e-6
+        sigma_return = torch.sigmoid(self.sigma_head(h))
+        return_scale = F.softplus(self.return_scale_head(h)) + 1e-6
 
         take_profit_logit = self.ptp_head(h)
         stop_loss_logit = self.psl_head(h)
         hit_logit = self.hit_head(h)
 
-        next_volatility = F.softplus(self.vol_head(h)) + 1e-6
+        next_volatility = torch.sigmoid(self.vol_head(h))
 
         return torch.cat(
             [
                 mean_return,
-                return_scale,
+                sigma_return,
                 take_profit_logit,
                 stop_loss_logit,
                 next_volatility,
                 hit_logit,
+                return_scale,
             ],
             dim=1
         )
 
 
 class TransformerModel(nn.Module):
+    """Map inputs to six public heads and one private uncertainty head.
+
+    Context mode controls NaN masking, and the last unmasked timestep feeds
+    the trading head for each sequence.
+    """
+
     def __init__(
         self,
         input_dim,
@@ -120,3 +130,21 @@ class TransformerModel(nn.Module):
         last_valid = enc[batch_idx, last_unmasked_indices]
 
         return self.head(last_valid)
+
+
+def public_predictions(output: torch.Tensor) -> torch.Tensor:
+    """Convert the worker's seven-head output to the six target-space values."""
+
+    if output.ndim != 2 or output.shape[1] != 7:
+        raise ValueError("model output must have shape [rows, 7]")
+    return torch.stack(
+        (
+            output[:, 0],
+            output[:, 1],
+            torch.sigmoid(output[:, 2]),
+            torch.sigmoid(output[:, 3]),
+            output[:, 4],
+            torch.sigmoid(output[:, 5]),
+        ),
+        dim=1,
+    )

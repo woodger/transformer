@@ -3,14 +3,14 @@ from __future__ import annotations
 import hashlib
 import os
 
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v2.config import (
+from app.contracts.worker.v3.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -163,6 +163,7 @@ class WorkerPlanBuilder:
             "workspace": {"root": workspace},
             "model": {"config": model_config_to_manifest(model_config)},
             "dataContract": _data_contract_manifest(job.data_contract),
+            "mlContract": dict(job.ml_contract),
         }
         if job.operation == "predict":
             model = self._validated_model(job)
@@ -170,7 +171,7 @@ class WorkerPlanBuilder:
             document["predictionColumn"] = job.prediction_column
             document["model"]["checkpoint"] = {
                 "path": checkpoint,
-                "byteCount": os.path.getsize(checkpoint),
+                "byteCount": model.byte_count,
                 "sha256": model.sha256,
             }
         else:
@@ -202,6 +203,9 @@ class WorkerPlanBuilder:
                     "configSha256": job.config_hash,
                     "dataContractSha256": job.data_contract[
                         "data_contract_sha256"
+                    ],
+                    "objectiveConfigSha256": job.ml_contract[
+                        "objectiveConfigSha256"
                     ],
                     "manifestSha256": job.manifest_sha256,
                 }
@@ -241,20 +245,36 @@ class WorkerPlanBuilder:
         )
         if model is None:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "resolved model generation is unavailable",
+                ErrorCode.NOT_FOUND,
+                "resolved model generation was not found",
             )
-        checkpoint = self.spool.model_absolute_path(model.checkpoint_path)
-        expected = self.spool.model_checkpoint_path(model.model_ref)
-        if checkpoint != expected or not os.path.isfile(checkpoint):
+        try:
+            checkpoint = self.spool.model_absolute_path(
+                model.checkpoint_path,
+            )
+            expected = self.spool.model_checkpoint_path(model.model_ref)
+        except ValueError as exc:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint identity is invalid",
+            ) from exc
+        if checkpoint != expected:
+            raise WorkerPlanError(
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint identity is invalid",
+            )
+        try:
+            byte_count = os.path.getsize(checkpoint)
+            checkpoint_sha256 = _sha256_file(checkpoint)
+        except OSError as exc:
+            raise WorkerPlanError(
+                ErrorCode.MODEL_UNAVAILABLE,
                 "resolved model checkpoint is unavailable",
-            )
-        if _sha256_file(checkpoint) != model.sha256:
+            ) from exc
+        if byte_count != model.byte_count or checkpoint_sha256 != model.sha256:
             raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "resolved model checkpoint digest is invalid",
+                ErrorCode.MODEL_CORRUPT,
+                "resolved model checkpoint integrity validation failed",
             )
         return model
 

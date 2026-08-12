@@ -39,7 +39,7 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v3`](../../app/contracts/flight/v3/README.md).
+[`app/contracts/flight/v4`](../../app/contracts/flight/v4/README.md).
 
 ## File commands
 
@@ -65,16 +65,14 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v2 содержит model config и `feature_dim`, поэтому при prediction
+Checkpoint v3 содержит model config и `feature_dim`, поэтому при prediction
 model options передавать не требуется. Явно переданные `--seq-len`, `--hidden`,
 `--layers`, `--dropout`, `--nhead` и `--mode` — это проверка: значение должно
 совпасть с checkpoint, иначе команда завершится, например, ошибкой
 `--seq-len=30 conflicts with checkpoint value 20`.
 
-Wrapped checkpoint v1 и raw legacy `state_dict` по-прежнему читаются. Если
-legacy checkpoint не содержит model config, `--seq-len` обязателен, а
-отличающиеся от defaults model options нужно передать вручную. Полный формат
-checkpoint определяет [training reference](../training-runtime.md).
+Предыдущие checkpoint formats и raw `state_dict` не интерпретируются. Полный
+текущий формат определяет [training reference](../training-runtime.md).
 
 ## Stream commands
 
@@ -207,9 +205,10 @@ core, но не является полной гарантией темпера�
 | `--dropout` | Dropout | `0.1` |
 | `--mode` | Как обрабатывать `NaN` в context timesteps: `strict`, `relaxed` | `relaxed` |
 
-Для prediction эти options являются legacy/checkpoint overrides и по умолчанию
-не заданы. Положительные размеры и `--dropout` в диапазоне `[0, 1)` проверяются
-parser; `hidden` должен делиться на `nhead`.
+Для prediction эти options по умолчанию не заданы и читаются из checkpoint.
+Если option передан явно, он должен совпасть с checkpoint. Положительные
+размеры и `--dropout` в диапазоне `[0, 1)` проверяются parser; `hidden` должен
+делиться на `nhead`.
 
 ### Обучение
 
@@ -219,15 +218,15 @@ parser; `hidden` должен делиться на `nhead`.
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Эпохи для file fit / максимум на stdin frame / эпохи всего Flight job | `25` |
-| `--loss-stage` | Максимальный этап loss: `1..4` | `4` |
+| `--loss-stage` | Максимальный этап target-aligned objective; зафиксирован в `4` | `4` |
 | `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
 | `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
-| `--patience` | Early stopping patience | `5` |
-| `--monitor` | Training-pass monitor: `loss`, `ret_mae`, `ret_mae_skill` | `ret_mae_skill` |
-| `--monitor-min-improvement` | Доля улучшения `[0, 1)` относительно zero-return baseline | `0.0` |
+| `--direct-loss-weights` | Шесть положительных весов `L0…L5` через запятую | `1,1,1,1,1,1` |
+| `--[no-]select-best-checkpoint` | Выбирать best checkpoint только по direct losses полной epoch stage 4 | выключено |
+| `--selection-min-delta` | Минимальное улучшение selection score | `0.0` |
+| `--selection-patience` | Число неулучшающихся stage-4 epochs; `0` не останавливает обучение | `0` |
 | `--seed` | Seed `0..4294967295` для Python, NumPy, PyTorch и CUDA | `42` |
 | `--deterministic` | Включить deterministic PyTorch algorithms | выключено |
-| `--[no-]save-best-checkpoint` | Сохранить лучший checkpoint по monitor вместо последних весов | включено |
 
 Training options доступны только у `fit` и `fit-stream`. `--use-amp` на CPU
 явно отключается и для training, и для prediction; `--device=cuda` завершается
@@ -249,6 +248,6 @@ Checkpoint и file prediction записываются через временн
 
 ## Metrics charts
 
-`--metrics-out` записывает одну JSONL-строку на training pass. Состав метрик,
-значение monitor и пример `plot-metrics` описаны в
+`--metrics-out` записывает одну JSONL-строку на training pass. Per-target
+метрики, selection score и пример `plot-metrics` описаны в
 [training reference](../training-runtime.md).

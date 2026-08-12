@@ -16,9 +16,10 @@ from app.service.domain.records import ExecutionJobRecord
 class WorkerPool:
     """Durable single-instance worker pool for queued Flight jobs.
 
-    PostgreSQL records lifecycle transitions; in-process FIFO queues wake the
-    CPU and CUDA lanes without polling the database. Each claimed attempt gets
-    exactly one trusted CLI subprocess.
+    PostgreSQL records lifecycle transitions. In-process FIFO notifications
+    wake CPU and CUDA lanes; the maintenance service periodically calls
+    ``notify_queued()`` to recover a notification lost after commit. Each
+    claimed attempt gets exactly one trusted CLI subprocess.
     """
 
     def __init__(

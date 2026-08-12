@@ -2,6 +2,8 @@ from dataclasses import replace
 
 import pytest
 
+from app.service.adapters.inbound.flight.presentation import present_job_status
+from app.service.application.job_models import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
@@ -43,6 +45,10 @@ def _job(**overrides):
             "feature_dim": 2,
             "target_schema_id": "inventory.target.v1",
         },
+        ml_contract={
+            "targetSchemaId": "inventory.target.v1",
+            "objectiveId": "transformer.objective.target-aligned.v1",
+        },
         progress={"epoch": 2},
         attempt=2,
         error_code=None,
@@ -68,32 +74,34 @@ class Ledger:
         assert (job_id, owner) == (JOB_ID, "inventory")
         return self.snapshot
 
-    def get_job_identity(self, job_id, *, owner_subject):
+    def is_job_retired(self, job_id, *, owner_subject):
         assert (job_id, owner_subject) == (JOB_ID, "inventory")
-        return self.identity
+        return self.identity is not None
 
 
 def _query(snapshot, identity=None):
-    return GetJobStatus(
-        Ledger(snapshot, identity),
-        response_factory=lambda request_id, **body: {
-            "requestId": request_id,
-            **body,
-        },
-        data_contract_factory=lambda value: {
-            "id": value["id"],
-            "dataContractSha256": value["data_contract_sha256"],
-        },
+    return GetJobStatus(Ledger(snapshot, identity))
+
+
+def _execute(query, request_id):
+    return present_job_status(
+        query.execute(
+            GetJobStatusQuery(
+                owner_subject="inventory",
+                request_id=request_id,
+                job_id=JOB_ID,
+            )
+        )
     )
 
 
-def test_status_exposes_bounded_v3_state_without_artifact_paths():
+def test_status_exposes_bounded_v4_state_without_artifact_paths():
     recovery = StatusRecoveryRecord(
         checkpoint=TrainingRecoveryCheckpointRecord(
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v1",
+            format="transformer-training-recovery-v3",
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,
@@ -111,7 +119,7 @@ def test_status_exposes_bounded_v3_state_without_artifact_paths():
         recovery=recovery,
     )
 
-    result = _query(snapshot).execute("inventory", JOB_ID, "request-1")
+    result = _execute(_query(snapshot), "request-1")
 
     assert result["input"] == {
         "state": "CLOSED",
@@ -145,7 +153,7 @@ def test_failed_status_has_stable_error_and_nonterminal_status_polls():
         output_count=0,
         recovery=None,
     )
-    failure = _query(failed).execute("inventory", JOB_ID, "request-2")
+    failure = _execute(_query(failed), "request-2")
     assert failure["error"] == {
         "code": "INPUT_TIMEOUT",
         "message": "input timed out",
@@ -163,7 +171,7 @@ def test_failed_status_has_stable_error_and_nonterminal_status_polls():
         output_count=0,
         recovery=None,
     )
-    active = _query(running).execute("inventory", JOB_ID, "request-3")
+    active = _execute(_query(running), "request-3")
     assert active["input"]["state"] == "OPEN"
     assert active["execution"]["state"] == "RUNNING"
     assert active["pollAfterMs"] == 500
@@ -174,6 +182,10 @@ def test_retired_identity_returns_stable_job_retired_error():
     query = _query(snapshot, {"retired_at": 10.0})
 
     with pytest.raises(ServiceError) as error:
-        query.execute("inventory", JOB_ID, "request-4")
+        query.execute(GetJobStatusQuery(
+            owner_subject="inventory",
+            request_id="request-4",
+            job_id=JOB_ID,
+        ))
 
     assert error.value.code is ErrorCode.JOB_RETIRED

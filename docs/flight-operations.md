@@ -1,59 +1,61 @@
-# Transformer Arrow Flight service: runbook v3
+# Сервис Transformer Arrow Flight: операционное руководство v4
 
-This runbook covers the single-instance Transformer Flight service. Consumer
-wire details are in the
-[`Inventory handoff`](inventory-flight-handoff.md), normative schemas and
-fixtures are in
-[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). The durable
-streaming lifecycle, fencing and recovery semantics are fixed by
-[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
+Это руководство описывает единственный экземпляр сервиса Transformer Flight.
+Детали wire-контракта для Consumer находятся в
+[`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
+нормативные schemas и fixtures — в
+[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md). Lifecycle
+долговечного потока, fencing и семантика восстановления закреплены в
+[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md), а текущий ML-контракт и
+breaking cutover — в
+[`ADR 0007`](adr/0007-target-aligned-flight-v4.md).
 
-## Runtime requirements
+## Требования к runtime
 
 - Linux с `/usr/bin/python3`; подходящую версию system Python обеспечивает
   владелец deployment-среды, а зависимости приложения находятся только в
   project `.venv`.
-- PyTorch, NumPy and PyArrow for training and Flight.
-- SQLAlchemy 2, Psycopg 3, Alembic and python-dotenv for PostgreSQL access.
-- PostgreSQL reachable on the private network.
-- A persistent project `models/` directory for successfully published models.
-- A persistent project `recovery/` directory for fit inputs and internal
-  global-epoch checkpoints.
-- A RAM-backed `/tmp` large enough for prediction inputs and active attempt
-  artifacts.
-- A visible Linux `/proc`, libc `prctl(PR_SET_PDEATHSIG)` support and permission
-  to signal worker-owned process groups.
-- For CUDA scheduling, `nvidia-smi` with stable GPU UUID output. Each visible
-  GPU must be usable by the service user.
+- PyTorch, NumPy и PyArrow для обучения и Flight.
+- SQLAlchemy 2, Psycopg 3, Alembic и python-dotenv для доступа к PostgreSQL.
+- PostgreSQL, доступный в частной сети.
+- Постоянный каталог project `models/` для успешно опубликованных моделей.
+- Постоянный каталог project `recovery/` для fit inputs и внутренних
+  checkpoints global epochs.
+- Каталог `/tmp` в RAM, достаточный для prediction inputs и artifacts активных
+  attempts.
+- Доступный Linux `/proc`, поддержка libc `prctl(PR_SET_PDEATHSIG)` и право
+  отправлять сигналы группам процессов, принадлежащим worker-у.
+- Для планирования CUDA — `nvidia-smi` со стабильным выводом UUID GPU. Каждый
+  видимый GPU должен быть доступен пользователю сервиса.
 
-Production Python package versions are fixed only in
-[`requirements.txt`](../requirements.txt). The environment is created on the
-target host according to
-[`deployment/systemd.md`](deployment/systemd.md). Commands in this runbook are
-executed from `/home/nerv/transformer` through
-`./.venv/bin/python`.
+Production-версии Python packages зафиксированы только в
+[`requirements.txt`](../requirements.txt). Окружение создаётся на целевом
+хосте по инструкции
+[`deployment/systemd.md`](deployment/systemd.md). Команды этого руководства
+выполняются из `/home/nerv/transformer` через `./.venv/bin/python`.
 
 ```bash
 cd /home/nerv/transformer
 ```
 
-Each training or prediction subprocess starts in an isolated process group.
-Startup recovery compares the recorded PID, process group, boot ID and process
-start ticks before signalling an interrupted group. If identity cannot be
-proved safely, startup fails instead of risking a signal to a reused PID.
+Каждый subprocess обучения или прогнозирования запускается в отдельной группе
+процессов. При старте recovery сравнивает сохранённые PID, process group, boot
+ID и start ticks процесса до отправки сигнала прерванной группе. Если identity
+нельзя доказать безопасно, запуск завершается ошибкой вместо риска отправить
+сигнал процессу с повторно использованным PID.
 
-## Storage and source-of-truth boundaries
+## Границы хранения и источники истины
 
-PostgreSQL is the single durable source of truth for:
+PostgreSQL является единственным долговечным источником истины для:
 
-- jobs, attempts and state transitions;
-- input/output metadata, idempotency records and output tickets;
-- registered training-recovery generations and retry history;
-- published-model metadata and owner-scoped model aliases;
+- jobs, attempts и переходов состояний;
+- metadata inputs/outputs, idempotency records и output tickets;
+- зарегистрированных generations training recovery и истории retry;
+- metadata опубликованных моделей и owner-scoped aliases моделей;
 - API access tokens;
-- the current runtime storage epoch.
+- текущей storage epoch runtime.
 
-The runtime filesystem is intentionally ephemeral:
+Filesystem runtime намеренно является временным:
 
 ```text
 /tmp/transformer/
@@ -62,7 +64,7 @@ The runtime filesystem is intentionally ephemeral:
   cuda-quarantine.json
   spool/
     jobs/{jobId}/
-      inputs/{ordinal}-{payloadId}-{uploadToken}.arrow  # prediction only
+      inputs/{ordinal}-{payloadId}-{uploadToken}.arrow  # только prediction
       attempts/{attempt}/
         metrics.jsonl
         stdout.log
@@ -71,7 +73,8 @@ The runtime filesystem is intentionally ephemeral:
         checkpoint.pth
 ```
 
-Fit inputs and recoverable training state are persistent but remain internal:
+Fit inputs и восстанавливаемое состояние обучения постоянны, но остаются
+внутренними:
 
 ```text
 <project-root>/recovery/
@@ -80,7 +83,7 @@ Fit inputs and recoverable training state are persistent but remain internal:
     checkpoints/{completedEpoch}.pth
 ```
 
-Only successfully trained models receive a persistent public identity:
+Постоянную публичную identity получают только успешно обученные модели:
 
 ```text
 <project-root>/models/
@@ -89,37 +92,37 @@ Only successfully trained models receive a persistent public identity:
     metadata.json
 ```
 
-Files are staged beside their destination, fsynced, atomically renamed and
-followed by a directory fsync. A recovery checkpoint becomes visible only
-after the file is durable and its generation is registered in PostgreSQL.
-Model publication copies a successful attempt checkpoint into `models/` first
-and commits its metadata to PostgreSQL only after the filesystem publication
-succeeds. Failed and interrupted attempts never create a model generation.
+Файлы сначала записываются рядом с конечным расположением, синхронизируются
+через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
+Recovery checkpoint становится видимым только после надёжной записи файла и
+регистрации его generation в PostgreSQL. При публикации модели checkpoint
+успешной attempt сначала копируется в `models/`, а metadata фиксируются в
+PostgreSQL только после успешной публикации в filesystem. Неуспешные и
+прерванные attempts не создают generation модели.
 
-One process owns both runtime and recovery directories through non-blocking
-`service.lock` files. V3 remains single-instance: PostgreSQL does not turn the
-in-memory worker queue or local stores into a multi-replica scheduler.
+Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
+`service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
+in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
-### Loss of `/tmp`
+### Потеря `/tmp`
 
-`storage-epoch` identifies the current runtime filesystem generation. If
-`/tmp/transformer` is lost, the next process creates a new epoch. Transformer
-removes prediction jobs, their inputs/outputs/tickets and linked idempotency
-records because those artifacts cannot be reconstructed. A non-terminal fit
-whose inputs are in `recovery/` remains authoritative: an interrupted attempt
-becomes `RETRYING` and resumes from its latest registered completed epoch.
+`storage-epoch` идентифицирует текущее поколение filesystem runtime. После
+потери `/tmp/transformer` следующий процесс создаёт новую epoch. Transformer
+удаляет prediction jobs, их inputs/outputs/tickets и связанные idempotency
+records, поскольку эти artifacts невозможно восстановить. Незавершённый fit с
+inputs в `recovery/` остаётся авторитетным: прерванная attempt переходит в
+`RETRYING` и возобновляется с последней зарегистрированной завершённой epoch.
 
-Published models, persistent fit inputs/checkpoints and API access tokens are
-not tied to the runtime epoch. Loss of `recovery/` is different: a registered
-input or checkpoint which is absent or corrupt produces an explicit recovery
-error; Transformer never silently restarts the fit from epoch zero. PostgreSQL
-stores metadata only, so neither filesystem can be reconstructed from the
-database.
+Опубликованные модели, постоянные fit inputs/checkpoints и API access tokens не
+связаны с runtime epoch. Потеря `recovery/` обрабатывается иначе: отсутствие или
+повреждение зарегистрированного input либо checkpoint приводит к явной ошибке
+recovery; Transformer не начинает fit незаметно с нулевой epoch. PostgreSQL
+хранит только metadata, поэтому ни один filesystem нельзя восстановить из БД.
 
-## PostgreSQL configuration and migrations
+## Настройка PostgreSQL и migrations
 
-Database settings are read from `<project-root>/.env`. Values already present
-in the process environment take precedence. The required settings are:
+Параметры БД читаются из `<project-root>/.env`. Значения, уже присутствующие в
+окружении процесса, имеют приоритет. Обязательные параметры:
 
 ```dotenv
 POSTGRES_HOST=10.20.30.10
@@ -129,70 +132,80 @@ POSTGRES_USER=transformer
 POSTGRES_PASSWORD=replace-with-a-secret
 ```
 
-`POSTGRES_PORT` defaults to `5432` when omitted. The database is expected to
-remain on the private network. Credentials must not be committed to the
-repository or included in logs.
+Если `POSTGRES_PORT` не указан, используется `5432`. БД должна оставаться в
+частной сети. Credentials нельзя фиксировать в репозитории или включать в
+логи.
 
-Transformer uses the `transformer` PostgreSQL schema. The service never applies
-migrations at startup. Inspect and update it explicitly:
+Transformer использует schema PostgreSQL `transformer`. Сервис никогда не
+применяет migrations при запуске. Проверяйте и обновляйте schema явно:
 
 ```bash
 ./.venv/bin/python ./app/main.py db migrations status
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-`status` is read-only. `apply` upgrades to the current Alembic head. The
-service and token-management commands refuse to start against a missing or
-outdated schema and direct the operator to `db migrations apply`. Flight v3 is
-the current schema and runtime contract; the service does not apply migrations
-automatically.
+`status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
+head. Сервис и команды управления tokens отказываются запускаться при
+отсутствующей или устаревшей schema и предлагают выполнить
+`db migrations apply`. Flight v4 является текущим контрактом schema и runtime;
+автоматически migrations не применяются.
 
-PostgreSQL stores control-plane state, not Arrow payloads and not a local cache.
-Transactions are short. Worker dispatch uses an in-process FIFO initialized
-from queued rows at startup, so idle workers do not poll the database.
+Переход на Alembic revision `0006` необратим: он удаляет незавершённые v3
+jobs, idempotency и recovery state. Access tokens, model identities и aliases
+сохраняются, но прежние модели не получают `mlContract` v4 и недоступны для
+prediction. Перед первым применением `0006` остановите Inventory workers и
+Transformer, сохраните резервную копию PostgreSQL и model artifacts. После
+обновления одновременно запускаются только Inventory v4 и Transformer v4;
+модели требуется переобучить.
 
-## API access tokens
+PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
+cache. Transactions короткие. In-process FIFO получает быстрые notifications
+после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
+`QUEUED` и `RETRYING` строки, чтобы восстановить потерянное уведомление. Idle
+worker lanes БД не опрашивают.
 
-Bearer authentication is required for every Flight RPC, including actions,
-DoPut, GetFlightInfo and DoGet. Issue a token for a local service identity:
+## Токены доступа API
+
+Bearer authentication обязательна для каждого Flight RPC, включая actions,
+DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
 
 ```bash
 ./.venv/bin/python ./app/main.py auth tokens issue --subject=inventory-production
 ```
 
-The command prints the token ID, subject and newly generated credential. The
-credential has the form `a.<base64url>` and is stored in PostgreSQL exactly in
-that form. Deliver it through the deployment's secret channel; do not place it
-in command history, logs or the repository.
+Команда выводит ID token, subject и новый credential. Credential имеет формат
+`a.<base64url>` и хранится в PostgreSQL именно в таком виде. Передавайте его
+через канал secrets, принятый в deployment; не помещайте credential в историю
+команд, логи или репозиторий.
 
-List metadata without revealing credentials:
+Просмотр metadata без раскрытия credentials:
 
 ```bash
 ./.venv/bin/python ./app/main.py auth tokens list
 ```
 
-Revoke by token ID:
+Отзыв по ID token:
 
 ```bash
 ./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
 ```
 
-The Flight process builds an immutable SHA-256 digest index of active tokens in
-RAM. Authentication computes the supplied credential digest and consults that
-index; it does not query PostgreSQL on the RPC path. PostgreSQL
-`LISTEN/NOTIFY` triggers a full cache refresh after issue or revoke. A listener
-reconnect also reloads the complete active set, so PostgreSQL remains the only
-source of truth.
+Flight-процесс строит в RAM неизменяемый индекс SHA-256 digests активных
+tokens. При authentication вычисляется digest переданного credential и
+проверяется индекс; запрос к PostgreSQL на пути RPC не выполняется.
+PostgreSQL `LISTEN/NOTIFY` вызывает полное обновление cache после выпуска или
+отзыва. После reconnect listener также загружает весь активный набор, поэтому
+PostgreSQL остаётся единственным источником истины.
 
-## Flight service configuration
+## Настройка Flight service
 
-Service configuration precedence, from lowest to highest, is:
+Приоритет конфигурации сервиса от низшего к высшему:
 
-1. settings in `app/config.py` and remaining built-in defaults;
-2. supported `TRANSFORMER_*` environment variables;
-3. explicitly supplied `flight serve` options.
+1. параметры в `app/config.py` и остальные встроенные значения;
+2. поддерживаемые переменные окружения `TRANSFORMER_*`;
+3. явно переданные options `flight serve`.
 
-The CLI exposes only endpoint and transport overrides:
+CLI предоставляет только overrides endpoint и transport:
 
 ```text
 --host
@@ -204,69 +217,68 @@ The CLI exposes only endpoint and transport overrides:
 --tls-require-client-cert
 ```
 
-The following service settings are configured in `app/config.py`, not through
-the environment:
+Следующие параметры сервиса задаются в `app/config.py`, а не через окружение:
 
-| Python setting | Default | Notes |
+| Параметр Python | По умолчанию | Назначение |
 | --- | --- | --- |
-| `HOST_DEFAULT` | `127.0.0.1` | Flight listen host |
-| `PORT_DEFAULT` | `8815` | Flight listen port; `0` is accepted for tests |
-| `ALLOW_PLAINTEXT` | `true` | Allow serving without TLS |
-| `CPU_WORKERS` | `2` | Concurrent CPU worker lanes |
-| `RETENTION_SECONDS` | `604800` | Terminal-job retention |
+| `HOST_DEFAULT` | `127.0.0.1` | Адрес прослушивания Flight |
+| `PORT_DEFAULT` | `8815` | Порт Flight; значение `0` разрешено в тестах |
+| `ALLOW_PLAINTEXT` | `true` | Разрешить работу без TLS |
+| `CPU_WORKERS` | `2` | Число одновременных CPU worker lanes |
+| `RETENTION_SECONDS` | `604800` | Срок хранения terminal jobs |
 
-The runtime directory is derived with
-`os.path.join(tempfile.gettempdir(), PROJECT_NAME)`. It resolves to
-`/tmp/transformer` in the target systemd environment.
+Каталог runtime формируется через
+`os.path.join(tempfile.gettempdir(), PROJECT_NAME)`. В целевом окружении
+systemd это `/tmp/transformer`.
 
-The corresponding `TRANSFORMER_*` environment variables are not read.
-TLS and mTLS have no persistent configuration defaults: they are enabled only
-by explicitly supplying certificate options to `flight serve`.
-Flight v3 derives `cudaCapacity` from the healthy physical GPUs discovered at
-startup; it is not an application setting.
+Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
+нет постоянных значений по умолчанию: они включаются только явно переданными
+certificate options команды `flight serve`. Flight v4 определяет
+`cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
+не параметр приложения.
 
-Certificate and key must be configured together. `tls-require-client-cert`
-also requires a CA file. Plaintext transport is accepted only when explicitly
-enabled; bearer authentication remains mandatory in every transport mode.
+Certificate и key должны задаваться вместе. `tls-require-client-cert` также
+требует CA file. Plaintext transport разрешён только при явном включении;
+bearer authentication остаётся обязательной во всех transport modes.
 
-### Quotas and interoperability targets
+### Квоты и целевые параметры interoperability
 
-| Environment variable | Default | Notes |
+| Переменная окружения | По умолчанию | Назначение |
 | --- | --- | --- |
-| `TRANSFORMER_MAX_MESSAGE_BYTES` | `16777216` | Client interoperability target |
-| `TRANSFORMER_TARGET_BATCH_BYTES` | `8388608` | Recommended producer RecordBatch size |
-| `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Application RecordBatch limit |
-| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Logical DoPut and persisted IPC-file limit |
-| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Rows in one DoPut |
-| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Logical payloads in one job |
-| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Total committed input bytes per job |
-| `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Non-terminal jobs per subject |
+| `TRANSFORMER_MAX_MESSAGE_BYTES` | `16777216` | Целевой лимит interoperability клиента |
+| `TRANSFORMER_TARGET_BATCH_BYTES` | `8388608` | Рекомендуемый размер RecordBatch producer-а |
+| `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Прикладной лимит RecordBatch |
+| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Лимит логического DoPut и сохранённого IPC-файла |
+| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Число строк в одном DoPut |
+| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Число логических payload-ов в job |
+| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Общий объём committed inputs одной job |
+| `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Число non-terminal jobs на subject |
 
-The validated ordering is
+Проверяемый порядок:
 `targetBatchBytes <= maxBatchBytes <= maxMessageBytes <= maxPayloadBytes`.
-Inventory should discover effective values through capabilities instead of
-copying defaults.
+Inventory должен получать фактические значения через capabilities, а не
+копировать defaults.
 
-### Lifecycle policy
+### Политика lifecycle
 
-| Environment variable | Default | Notes |
+| Переменная окружения | По умолчанию | Назначение |
 | --- | --- | --- |
-| `TRANSFORMER_TICKET_TTL_SECONDS` | `600` | Opaque DoGet ticket lifetime |
-| `TRANSFORMER_CANCEL_GRACE_SECONDS` | `10.0` | SIGTERM grace before SIGKILL |
-| `TRANSFORMER_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Worker drain before forced cancellation |
-| `TRANSFORMER_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Hard CLI execution deadline |
-| `TRANSFORMER_MAINTENANCE_INTERVAL_SECONDS` | `60` | Maintenance interval |
-| `TRANSFORMER_INPUT_IDLE_TIMEOUT_SECONDS` | `900.0` | Confirmed contiguous-input wait before `INPUT_TIMEOUT` |
-| `TRANSFORMER_ACQUIRE_IDLE_GRACE_SECONDS` | `30.0` | Grace after a successful ownership takeover |
+| `TRANSFORMER_TICKET_TTL_SECONDS` | `600` | Срок действия opaque DoGet ticket |
+| `TRANSFORMER_CANCEL_GRACE_SECONDS` | `10.0` | Пауза между SIGTERM и SIGKILL |
+| `TRANSFORMER_SHUTDOWN_DRAIN_SECONDS` | `30.0` | Ожидание workers до принудительной отмены |
+| `TRANSFORMER_SUBPROCESS_TIMEOUT_SECONDS` | `86400.0` | Жёсткий срок выполнения CLI |
+| `TRANSFORMER_MAINTENANCE_INTERVAL_SECONDS` | `60` | Интервал maintenance |
+| `TRANSFORMER_INPUT_IDLE_TIMEOUT_SECONDS` | `900.0` | Подтверждённое ожидание contiguous input до `INPUT_TIMEOUT` |
+| `TRANSFORMER_ACQUIRE_IDLE_GRACE_SECONDS` | `30.0` | Пауза после успешного takeover владения |
 
-All quotas, capacities and intervals must be positive. Only the service port
-may be zero.
+Все квоты, capacities и интервалы должны быть положительными. Нулевым может
+быть только порт сервиса.
 
-## Manual foreground start
+## Ручной запуск на переднем плане
 
-Production startup is defined only in
-[`deployment/systemd.md`](deployment/systemd.md). For foreground diagnostics,
-a local plaintext process can be started with:
+Production-запуск определён только в
+[`deployment/systemd.md`](deployment/systemd.md). Для foreground diagnostics
+локальный plaintext-процесс можно запустить так:
 
 ```bash
 ./.venv/bin/python ./app/main.py flight serve \
@@ -275,7 +287,7 @@ a local plaintext process can be started with:
   --port=8815
 ```
 
-For a TLS endpoint:
+Для TLS endpoint:
 
 ```bash
 ./.venv/bin/python ./app/main.py flight serve \
@@ -285,151 +297,157 @@ For a TLS endpoint:
   --tls-key-file=/run/secrets/transformer/tls.key
 ```
 
-Add `--tls-ca-file` and `--tls-require-client-cert` when client certificates
-are required. Ensure the server certificate SAN matches the address used by
-Inventory.
+Если требуются client certificates, добавьте `--tls-ca-file` и
+`--tls-require-client-cert`. Убедитесь, что SAN server certificate совпадает с
+адресом, который использует Inventory.
 
-The process writes structured JSON logs to stderr. A deployment supervisor
-must forward SIGTERM, allow at least `shutdownDrainSeconds +
-cancelGraceSeconds` before an external SIGKILL, and never start two processes
-against the same runtime directory. The target Fedora systemd unit, runtime
-directory policy and operator procedure are documented in
+Процесс пишет структурированные JSON logs в stderr. Supervisor deployment-а
+должен передавать SIGTERM, ждать не меньше `shutdownDrainSeconds +
+cancelGraceSeconds` до внешнего SIGKILL и никогда не запускать два процесса с
+одним каталогом runtime. Целевой Fedora systemd unit, политика каталога runtime
+и действия operator описаны в
 [`deployment/systemd.md`](deployment/systemd.md).
 
-## Startup and recovery
+## Запуск и восстановление
 
-Startup:
+При запуске сервис:
 
-1. locks the runtime and recovery directories;
-2. verifies that the PostgreSQL schema is at the current Alembic head;
-3. identifies and safely terminates exact surviving worker process groups;
-4. removes crash-left temporary files after all surviving workers are reaped;
-5. reconciles a changed runtime epoch, discarding jobs whose required runtime
-   artifacts no longer exist;
-6. moves interrupted persistent fits to `RETRYING`, marks interrupted
-   predictions `FAILED / EXECUTION_INTERRUPTED`, and finishes interrupted
-   `CANCELLING` jobs as `CANCELLED`;
-7. removes incomplete upload reservations and unpublished/orphan artifacts;
-8. reconciles persistent model directories against PostgreSQL metadata;
-9. inventories usable physical CUDA devices without initializing CUDA in the
-   Flight process;
-10. loads the API token cache and starts its notification listener;
-11. loads `QUEUED` and `RETRYING` jobs into the in-memory device queues and
-    starts workers plus maintenance;
-12. begins Flight RPC serving.
+1. блокирует каталоги runtime и recovery;
+2. проверяет, что schema PostgreSQL находится на текущем Alembic head;
+3. идентифицирует и безопасно завершает точные surviving worker process groups;
+4. после завершения всех surviving workers удаляет temporary files, оставшиеся
+   после сбоя;
+5. обрабатывает изменение runtime epoch, удаляя jobs без необходимых runtime
+   artifacts;
+6. переводит прерванные постоянные fits в `RETRYING`, помечает прерванные
+   predictions как `FAILED / EXECUTION_INTERRUPTED`, а прерванные
+   `CANCELLING` jobs завершает как `CANCELLED`;
+7. удаляет незавершённые upload reservations и unpublished/orphan artifacts;
+8. сверяет постоянные каталоги моделей с metadata PostgreSQL;
+9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
+   Flight-процессе;
+10. загружает cache API tokens и запускает notification listener;
+11. загружает `QUEUED` и `RETRYING` jobs в in-memory device queues, запускает
+    workers и maintenance; дальнейшая сверка в maintenance cycle
+    восстанавливает потерянные queue notifications;
+12. начинает обслуживать Flight RPC.
 
-A resumed fit restores the latest PostgreSQL-registered global-epoch
-checkpoint. If none exists, it restarts from epoch zero using the same
-persistent inputs and immutable job configuration. Before EOF an incomplete
-epoch zero is deliberately repeated in full. `inputIdleTimeout` runs only
-after the worker has reported that it waits for the next contiguous ordinal;
-an out-of-order commit does not extend it.
+Возобновляемый fit восстанавливает последний зарегистрированный в PostgreSQL
+checkpoint global epoch. Если checkpoint отсутствует, обучение начинается с
+нулевой epoch на тех же постоянных inputs и неизменяемой конфигурации job. До
+EOF незавершённая нулевая epoch намеренно повторяется полностью.
+`inputIdleTimeout` отсчитывается только после сообщения worker об ожидании
+следующего contiguous ordinal; out-of-order commit не продлевает timeout.
 
-## Cancellation and shutdown
+## Отмена и остановка
 
-Job cancellation behavior:
+Поведение при отмене job:
 
-- `WAITING_INPUT`, `QUEUED` and `RETRYING` become `CANCELLED`
-  transactionally; an open input moves to `ABORTED`;
-- `RUNNING` becomes `CANCELLING`, then the complete worker process group is
-  sent SIGTERM and, after the configured grace period, SIGKILL if necessary;
-- no prediction output or model is published after cancellation wins the final
-  transaction race;
-- terminal state and published artifacts win only when final publication
-  committed first.
+- `WAITING_INPUT`, `QUEUED` и `RETRYING` transactionally переходят в
+  `CANCELLED`; открытый input переходит в `ABORTED`;
+- `RUNNING` переходит в `CANCELLING`, затем всей группе процессов worker
+  отправляется SIGTERM и, если требуется после заданной паузы, SIGKILL;
+- после победы cancellation в финальной transaction prediction output или
+  model не публикуются;
+- terminal state и опубликованные artifacts побеждают, только если финальная
+  publication была committed раньше.
 
-On SIGINT/SIGTERM the process closes the queue-claim boundary, marks itself
-draining, stops accepting RPC work, waits for running work and cancels any
-remaining worker groups. Maintenance and the token listener stop before the
-PostgreSQL connection pool closes and the runtime lock is released.
+При SIGINT/SIGTERM процесс закрывает границу claim очереди, помечает себя как
+draining, прекращает приём RPC work, ожидает running work и отменяет оставшиеся
+worker groups. Maintenance и token listener останавливаются до закрытия pool
+соединений PostgreSQL и освобождения runtime lock.
 
-## Retention and storage failures
+## Хранение и ошибки хранилища
 
-Maintenance periodically deletes expired output tickets and eligible terminal
-jobs. A job is retained while it has a live ticket or a recent linked
-idempotency record. Recovery inputs/checkpoints are removed after a fit becomes
-terminal. Published model directories are not deleted by job retention and
-their optional producing-job reference is cleared. A compact owner-scoped
-identity tombstone remains, so `jobId` cannot be reused and an exact lost-create
-replay remains resolvable. V3 has no network action for model deletion.
+Maintenance периодически удаляет истёкшие output tickets и подходящие terminal
+jobs. Job сохраняется, пока с ней связан действующий ticket или недавний
+idempotency record. Recovery inputs/checkpoints удаляются после перехода fit в
+terminal state. Каталоги опубликованных моделей не удаляются вместе с job, а
+необязательная ссылка на producing job очищается. Компактная owner-scoped
+identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
+а точный lost-create replay остаётся разрешимым. В v4 нет сетевого action для
+удаления модели.
 
-The service does not apply a configured free-space admission watermark.
-Health reports current free bytes for runtime and recovery storage without
-deriving readiness from them. Actual filesystem exhaustion uses stable
-`DISK_FULL` and does not publish partial artifacts.
+Сервис не использует настроенный admission watermark свободного места. Health
+возвращает текущий свободный объём runtime и recovery storage, но не выводит из
+него readiness. Реальное заполнение filesystem возвращает стабильный
+`DISK_FULL` и не публикует частичные artifacts.
 
-## Health and observability
+## Работоспособность и наблюдаемость
 
-The service has no separate unauthenticated HTTP health endpoint. Call the
-authenticated `transformer.v3.health` Flight action.
+Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
+аутентифицированный Flight action `transformer.v4.health`.
 
-- `live=true` means the process can answer the action.
-- `ready=true` requires a non-draining service and a successful PostgreSQL
-  health check.
-- CUDA availability, physical-device count and quarantine count are reported
-  independently.
+- `live=true` означает, что процесс отвечает на action.
+- `ready=true` требует, чтобы сервис не находился в draining и health check
+  PostgreSQL завершался успешно.
+- Доступность CUDA, число физических devices и число quarantined devices
+  возвращаются независимо.
 
-Service logs are one JSON object per line on stderr. They cover service
-lifecycle, RPC/action completion, job transitions, input commits, worker
-execution, publication, runtime resets, recovery and maintenance. Bearer
-credentials, authorization headers, output tickets, filesystem paths and
-worker argv are not logged.
+Логи сервиса — по одному JSON object на строку в stderr. Они охватывают
+lifecycle сервиса, завершение RPC/actions, переходы jobs, commits inputs,
+выполнение worker, publication, runtime resets, recovery и maintenance. Bearer
+credentials, authorization headers, output tickets, paths filesystem и argv
+worker не логируются.
 
-The health response also exposes bounded in-process aggregate metrics. Metrics
-reset on service restart and are not a durable accounting source; PostgreSQL
-timestamps remain available for incident analysis while the corresponding job
-belongs to the active runtime generation.
+Health response также содержит ограниченные агрегированные in-process metrics.
+Metrics сбрасываются при перезапуске сервиса и не являются долговечным
+источником учёта; timestamps PostgreSQL доступны для анализа инцидента, пока
+соответствующая job принадлежит активной generation runtime.
 
-Recommended alerts include:
+Рекомендуемые alerts:
 
-- `ready=false` or PostgreSQL unavailable;
-- filesystem exhaustion reported as `DISK_FULL`;
-- persistent recovery/model growth outside forecast;
-- worker-lane errors, CUDA OOM, quarantined devices or repeated subprocess
-  failure/retry;
-- interrupted-process recovery or a runtime storage epoch reset;
-- long queue wait relative to configured CPU/CUDA capacity.
+- `ready=false` или недоступность PostgreSQL;
+- заполнение filesystem с `DISK_FULL`;
+- рост постоянного recovery/model storage вне прогноза;
+- ошибки worker lane, CUDA OOM, quarantined devices или повторные ошибки/retry
+  subprocess;
+- recovery прерванного процесса или сброс storage epoch runtime;
+- долгое ожидание в queue относительно настроенной CPU/CUDA capacity.
 
-## Stable errors and PyArrow limitations
+## Стабильные ошибки и ограничения PyArrow
 
-The service fails an RPC instead of returning an error result. Stable codes are
-included in safe error text and terminal status. Raw tracebacks, filesystem
-paths, credentials and subprocess stderr must not reach clients.
+Сервис завершает RPC ошибкой, а не возвращает error result. Стабильные codes
+включаются в безопасный текст ошибки и terminal status. Raw tracebacks, paths
+filesystem, credentials и stderr subprocess не должны попадать клиентам.
 
-PyArrow 24 has two confirmed binding limitations:
+В PyArrow 24 подтверждены два ограничения bindings:
 
-1. Python `FlightServerBase` cannot emit exact gRPC `ALREADY_EXISTS`,
-   `FAILED_PRECONDITION` or `RESOURCE_EXHAUSTED`; the service preserves its
-   stable application code in safe text.
-2. Python `FlightServerBase` cannot configure a hard server receive-message
-   limit. Per-batch, logical-payload, row and job limits remain
-   application-enforced.
+1. Python `FlightServerBase` не может отправить точные gRPC
+   `ALREADY_EXISTS`, `FAILED_PRECONDITION` или `RESOURCE_EXHAUSTED`; сервис
+   сохраняет стабильный application code в безопасном тексте.
+2. Python `FlightServerBase` не позволяет настроить жёсткий server limit для
+   размера принимаемого сообщения. Лимиты batch, logical payload, rows и job
+   по-прежнему контролируются приложением.
 
-Details are recorded in
+Подробности записаны в
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Known v3 limits
+## Известные ограничения v4
 
-- One Transformer service instance with one local runtime store and one
-  persistent recovery store.
-- No replica scheduling or automatic failover.
-- No `DoExchange` and no `PollFlightInfo`.
-- At most 100000 logical payloads per job. Inputs are listed with bounded
-  revision pagination and close sends only constant-size totals plus a digest.
-- One DoPut is one semantic payload; RecordBatch chunking and payload
-  partitioning do not define optimizer batches, shuffle windows or epochs.
-- One predict job loads one checkpoint once and emits one output per input
-  ordinal.
-- Fit recovery is only at a completed global-epoch boundary; an incomplete
-  epoch is repeated.
-- One fit attempt uses one GPU; a single job is not distributed across GPUs.
-- A confirmed lost GPU is quarantined until the next Linux boot; an ordinary
-  service restart does not return it to the pool.
-- Loss of runtime storage invalidates prediction work but not a fit with intact
-  persistent recovery artifacts.
-- Transformer owns checkpoints; clients receive only opaque `modelRef` values.
-- Output tickets are short-lived and are not model references.
-- Plaintext availability is controlled by `ALLOW_PLAINTEXT` in
-  `app/config.py`; `--allow-plaintext` can enable it for one process.
-- Node-to-PyArrow interoperability and physical CUDA behavior require separate
-  target-environment validation.
+- Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
+  постоянным recovery storage.
+- Нет планирования replicas и автоматического failover.
+- Нет `DoExchange` и `PollFlightInfo`.
+- Не более 100000 logical payload-ов на job. Inputs возвращаются ограниченной
+  revision pagination, а close передаёт только итоги постоянного размера и
+  digest.
+- Один DoPut соответствует одному semantic payload; chunking RecordBatch и
+  разбиение payload-ов не определяют optimizer batches, shuffle windows или
+  epochs.
+- Одна predict job однократно загружает один checkpoint и формирует один output
+  на каждый ordinal input.
+- Fit recovery выполняется только на границе завершённой global epoch;
+  незавершённая epoch повторяется.
+- Одна fit attempt использует один GPU; одна job не распределяется между GPU.
+- Подтверждённо потерянный GPU находится в quarantine до следующей загрузки
+  Linux; обычный restart сервиса не возвращает его в pool.
+- Потеря runtime storage делает prediction work недействительной, но не
+  затрагивает fit с целыми постоянными recovery artifacts.
+- Transformer владеет checkpoints; клиенты получают только opaque значения
+  `modelRef`.
+- Output tickets краткоживущие и не являются ссылками на модель.
+- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в `app/config.py`; option
+  `--allow-plaintext` может включить её для одного процесса.
+- Interoperability Node → PyArrow и физическое поведение CUDA требуют отдельной
+  проверки в целевом окружении.

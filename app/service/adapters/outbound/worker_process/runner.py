@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import PROJECT_ROOT
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,

@@ -13,7 +13,7 @@ from app.flight.maintenance import MaintenanceService
 from app.flight.observability import OperationalMetrics
 from app.flight.spool import Spool
 from app.service.domain.job import ErrorCode, ExecutionState
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     close_input,
     commit_input,
     create_fit,
@@ -104,6 +104,10 @@ def test_input_timeout_starts_only_after_worker_confirms_frontier_wait(
         now=3.0,
     )
     assert claimed is not None
+    commit_input(postgres_ledger, running, 2, now=3.5)
+    current = postgres_ledger.get_job(running["job_id"])
+    assert current["input_revision"] == 2
+    assert current["next_input_ordinal"] == 1
     assert postgres_ledger.mark_input_waiting(
         running["job_id"],
         claimed.attempt,
