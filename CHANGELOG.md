@@ -9,9 +9,8 @@
 
 ### Added
 
-- Добавлены политика Python types и tensor runtime contracts, короткий
-  `AGENTS.md`-маршрутизатор и поэтапный Pyright strict baseline для
-  model/context/tensor boundary.
+- Добавлены политика Python types и tensor runtime contracts и поэтапный
+  Pyright strict baseline для model/context/tensor boundary.
 - Pytest tests размечаются по внешним ресурсам `gpu` и `postgres`; быстрый
   CPU-набор не требует CUDA или PostgreSQL.
 
