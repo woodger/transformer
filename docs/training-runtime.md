@@ -1,244 +1,178 @@
 # Training runtime и checkpoint
 
-> Type: Reference. Checkpoint format, обучение, missing-data semantics и
-> training metrics local CLI.
+> Type: Reference. Формат checkpoint, обучение, missing-data semantics и
+> training telemetry локального CLI и Flight worker.
 
-Параметры команд находятся в [справочнике CLI](./cli/index.md), точные формулы
-loss — в [документе о функции потерь](./losses.md), а input/output schema — в
-[локальном Arrow и stream contract](./local-arrow-protocol.md).
+Параметры команд находятся в [справочнике CLI](./cli/index.md), формулы — в
+[описании функции потерь](./losses.md), нормативный ML-контракт — в
+[ADR 0007](./adr/0007-target-aligned-flight-v4.md).
 
 ## Checkpoint contract
 
-Новый формат `transformer-checkpoint-v2` содержит `state_dict`, версию
-приложения, model config, train config, `data_schema` и metadata выбора best
-checkpoint. Model config включает `seq_len`, `hidden`, `layers`, `dropout`,
-`nhead`, `context_mode`, `out_dim` и фактический `feature_dim` training input.
-`data_schema` фиксирует имена и ширину `src`/`tgt`, допустимые element types,
-`float32` tensor dtype, исходный и подготовленный model input dimension,
-отсутствие normalization и missing policy. При prediction входной `feature_dim`
-должен совпасть с сохранённым.
+Текущий формат — `transformer-checkpoint-v3`. Он содержит только закрытый
+набор полей:
 
-`fit` и `fit-stream` всегда создают новую модель; продолжение обучения из
-checkpoint не реализовано. `--checkpoint-out` задаёт только конечную цель:
-существующий checkpoint остаётся нетронутым во время обучения и атомарно
-заменяется лишь при успешном save.
+- `state_dict` и версию приложения;
+- полные `model_config` и `train_config`;
+- physical/model input schema;
+- `data_contract`;
+- полный `ml_contract` с `objectiveConfigSha256`;
+- каноническую `objective_config`;
+- metadata выбора checkpoint.
 
-Loader принимает v2, предыдущий wrapped v1 и raw legacy `state_dict`;
-неизвестный wrapped format отклоняется. Для v2 явно заданные model options
-служат проверкой совпадения с checkpoint. Для legacy checkpoint без model
-config `--seq-len` обязателен, а остальные не-default architecture options
-задаются вручную.
+Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `dropout`,
+`nhead`, `context_mode` и public `out_dim=6`. Фактическая модель имеет ещё одну
+private uncertainty head, которая не меняет public width.
 
-## Monitor, early stopping и loss schedule
+Loader принимает только точный формат v3. Предыдущие wrapped и raw legacy
+checkpoint не интерпретируются автоматически. Для Flight prediction другой
+корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
+противоречивой semantic metadata даёт `MODEL_CORRUPT`.
 
-Критерий early stopping и выбора checkpoint задаётся `--monitor`; требуемая для
-MAE monitors доля улучшения относительно zero-return baseline —
-`--monitor-min-improvement`. Их defaults определены в `app/config.py`:
+`fit` и `fit-stream` всегда создают новую модель. `--checkpoint-out` задаёт
+конечную цель: существующий файл атомарно заменяется только после успешного
+обучения и validation.
 
-```python
-TRAIN_MONITOR = "ret_mae_skill"          # loss | ret_mae | ret_mae_skill
-TRAIN_MONITOR_MIN_IMPROVEMENT = 0.0      # 0.01 означает лучше baseline на 1%
-SAVE_BEST_CHECKPOINT = True
-```
+## Target-aligned objective
 
-Для `ret_mae_skill` формула такая:
+Публичный prediction имеет шесть координат в том же порядке, что target:
 
 ```text
-ret_mae_skill = ret_mae / ret_mae_baseline
+meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
 ```
 
-Значение `< 1.0` означает, что модель лучше нулевого прогноза `meanR=0`.
-Monitor вычисляется по тому же training pass, на котором обновлялись веса;
-отдельного validation split этот CLI не создаёт. Early stopping начинает
-останавливать только на максимальном настроенном loss stage, сбрасывает свой
-счётчик при смене stage и отключён при `--patience=0`. Best checkpoint
-обновляется только если baseline пройден, monitor конечен и улучшился; если
-baseline ни разу не пройден, сохраняются текущие веса последней эпохи.
+Для каждой координаты JSONL содержит отдельные MAE и RMSE. Общая MAE/MSE по
+шести разнородным величинам не вычисляется и не используется для оценки
+модели. `trainingLoss` может содержать direct и auxiliary components, но
+checkpoint selection использует только прямые `L0…L5`.
 
-Loss stage соответствует следующим компонентам:
+## Loss schedule
 
-| Stage | Компоненты |
-| --- | --- |
-| `1` | Gaussian NLL для return |
-| `2` | stage 1 + BCE для TP/SL logits |
-| `3` | stage 2 + Bayesian EV/risk |
-| `4` | stage 3 + log-volatility loss |
+Максимальный `--loss-stage` зафиксирован в `4`. Способы перехода:
 
-Stage 1 NLL может быть отрицательным — это допустимое значение Gaussian NLL,
-а не признак сломанного обучения. Точные формулы находятся в
-[`docs/losses.md`](./losses.md).
+- `none` — stage 4 активен с первого optimizer step;
+- `epoch` — stage повышается каждые `--stage-size` epochs;
+- `step` — stage повышается каждые `--stage-size` optimizer steps и может
+  смениться внутри epoch.
 
-Loss schedule можно зафиксировать вручную:
+Stage 4 непосредственно обучает все шесть public heads. Запуск, в котором не
+завершилась ни одна полная epoch stage 4, считается ошибочным и не публикует
+checkpoint.
+
+## Selection и early stopping
+
+По умолчанию selection выключен: выполняется фиксированное число epochs и
+сохраняется последний checkpoint максимального stage.
+
+Включение:
 
 ```bash
-./.venv/bin/python ./app/main.py fit-stream \
+./.venv/bin/python ./app/main.py fit ./data/train.arrow \
   --seq-len=20 \
-  --loss-schedule=none \
-  --loss-stage=1
+  --select-best-checkpoint \
+  --selection-min-delta=0.001 \
+  --selection-patience=5
 ```
 
-Или включить автоматический curriculum по эпохам:
+Selection начинает работать только после полной epoch stage 4. При входе в
+этот режим прежние best/patience/baseline сбрасываются. Score равен сумме шести
+direct losses с положительными `--direct-loss-weights`, агрегированных по всем
+строкам. Auxiliary NLL и EV не участвуют.
 
-```bash
-./.venv/bin/python ./app/main.py fit-stream \
-  --seq-len=20 \
-  --loss-stage=4 \
-  --loss-schedule=epoch \
-  --stage-size=4
-```
+Candidate принимается только при `score < best - minDelta`; tie сохраняет
+ранний checkpoint. Нефинитный или неполный score завершает обучение ошибкой.
+`--selection-patience=0` отключает остановку, но сохраняет выбор лучшего
+candidate.
 
-Для schedule по optimizer steps:
-
-```bash
-./.venv/bin/python ./app/main.py fit-stream \
-  --seq-len=20 \
-  --loss-stage=4 \
-  --loss-schedule=step \
-  --stage-size=100
-```
-
-При step schedule счётчик проверяется перед каждым optimizer step, поэтому
-активный stage может смениться посреди epoch.
+Вся selection policy входит в `objectiveConfigSha256` и recovery state.
 
 ## File, standalone stream и Flight fit
 
-В standalone `fit-stream`, читающем stdin, каждый непустой Arrow frame
-обучается отдельным циклом `epoch=1..--epochs` до срабатывания `--patience`.
-Веса модели при этом не сбрасываются между frames; optimizer step также
-остаётся глобальным, а per-frame early stopping начинается заново. Пустые Arrow
-tables пропускаются; если непустых frames не было, команда завершается ошибкой
-и модель не сохраняется. После terminator или clean EOF с хотя бы одним
-непустым frame команда атомарно сохраняет checkpoint.
+File fit обучается на одном Arrow IPC dataset. Standalone `fit-stream`
+обрабатывает каждый непустой frame отдельным циклом epochs, сохраняя модель и
+optimizer между frames. Пустые frames пропускаются; полностью пустой fit
+завершается ошибкой. Скрытый spooled режим, используемый внутренними
+сценариями recovery, выполняет global epochs над полным набором payloads.
 
-Flight fit использует durable input stream: epoch 0 начинает обработку
-непрерывного префикса payloads до EOF, а последующие job-wide эпохи перечитывают
-закрытый immutable dataset по ordinal, с едиными loss
-schedule, optimizer, checkpoint selection и early stopping на весь job. Строки
-проходят через ограниченное job-wide окно перемешивания; его границы и optimizer
-batches могут пересекать payload и не зависят от транспортного разбиения.
+Flight fit использует durable input stream. Epoch 0 начинает обучение после
+первого committed непустого payload и может ждать следующий contiguous
+ordinal при открытом input. `input.close` задаёт EOF. Последующие epochs
+перечитывают закрытый immutable dataset.
 
-Полная schema/value validation выполняется сервисом до durable commit каждого
-Flight payload. Worker перед первым чтением в рамках attempt проверяет
-immutable receipt, размер и SHA-256; повторные эпохи сверяют physical Arrow
-schema и число строк, но не хешируют и не сканируют все значения заново.
-Для закрытых эпох CPU pipeline подготавливает не более одного следующего batch,
-пока текущий batch обрабатывается моделью. Открытая epoch 0 остаётся
-синхронной с durable input/control channel.
+RecordBatch и payload boundaries не являются optimizer batch, shuffle window
+или epoch boundaries. CPU pipeline закрытых epochs готовит не более одного
+следующего batch параллельно текущему training step. Pinned memory и
+asynchronous H2D намеренно не используются.
+
+Полная physical/value validation выполняется до durable commit DoPut. Worker
+один раз за attempt проверяет receipt, размер и SHA-256, затем использует fast
+replay с проверкой schema и row count.
+
+## Recovery
+
+Текущий формат — `transformer-training-recovery-v3`. Checkpoint создаётся
+только на границе завершённой global epoch после EOF и содержит:
+
+- model, optimizer и AMP scaler state;
+- global epoch и optimizer step;
+- Python, NumPy, PyTorch и CUDA RNG state;
+- shuffle generator state;
+- selection state, best candidate и patience;
+- `objectiveConfigSha256`, model/train/data contracts.
+
+Сбой в открытой epoch 0 повторяет её с начала; committed inputs не теряются.
+Recovery другого objective, data contract или immutable input manifest
+отклоняется.
 
 ## Контекстные пропуски
 
-`src` может содержать `NaN` в отдельных фичах контекстного timestep. Режим
-`--mode` задаёт, как такие timesteps попадают в Transformer:
+`src` может содержать `NaN` в отдельных features:
 
-- `strict` — timestep маскируется, если хотя бы одна фича `NaN`; значения
-  `NaN` заменяются на `0.0`, per-feature flags не добавляются.
-- `relaxed` — timestep маскируется, только если все фичи `NaN`; значения `NaN`
-  заменяются на `0.0`, а к каждой фиче добавляется бинарный missing-флаг.
-  Поэтому `0` остаётся численным placeholder, а информация о частичном
-  пропуске не теряется.
+- `strict` — timestep маскируется, если отсутствует хотя бы одна feature;
+- `relaxed` — timestep маскируется, только если отсутствуют все features;
+  дополнительно к значениям передаются per-feature missing flags.
 
-Текущий default — `relaxed`. При таком contract producer должен передавать
-`NaN` для отсутствующих context candles; Transformer строит mask и, в relaxed
-mode, missing-флаги из исходных `NaN` до любых tensor ops, и только затем
-заменяет `NaN -> 0`.
+В обоих режимах mask строится до `NaN → 0`. Trading head получает последний
+незамаскированный timestep. Полностью пустая последовательность использует
+безопасный zero placeholder, чтобы attention не породил non-finite значения.
 
-Trading head получает фактический последний незамаскированный timestep, а не
-просто число валидных токенов: ведущие, внутренние и хвостовые пропуски поэтому
-обрабатываются корректно. Для полностью пустой последовательности первый
-timestep с заполненными нулями значениями временно остаётся unmasked как
-безопасный placeholder; relaxed missing-флаги при этом сохраняются. Это не даёт
-attention создать non-finite значения.
+## Метрики
 
-## Метрики обучения
-
-`fit` и `fit-stream` один раз печатают конфигурацию запуска, а затем компактную
-summary-строку для каждого epoch. Standalone `fit-stream` дополнительно пишет
-номер входного frame; Flight fit пишет одну агрегированную строку на job-wide
-эпоху без `frame`. Loss schedule продвигается по выбранному `--loss-schedule`:
-
-- `none` — всегда используется `--loss-stage`;
-- `epoch` — stage считается от epoch внутри текущего standalone frame или
-  всего Flight job;
-- `step` — stage считается от глобального optimizer step и не сбрасывается
-  между frames.
+Компактная строка epoch выглядит так:
 
 ```text
-frame=1 epoch=2 monitor_value=3.82703 loss=-3.149016 mae=0.0225603 baseline=0.00589499 skill=3.82703x status=WORSE sigma=0.0231593 grad=476.013 rows=67249 batches=263 time=181.7s stage=1/4
+epoch=4 selection=0.1842 loss=0.233100 mean_mae=0.012 sigma_mae=0.021 tp_mae=0.11 sl_mae=0.10 vol_mae=0.03 hit_mae=0.09 grad=1.000 rows=67249 batches=263 time=181.7s stage=4/4
 ```
 
-Summary показывает основной результат эпохи, сравнение с baseline, среднюю
-`sigmaR`, gradient norm до clipping, объём данных, время и активный loss stage.
-`status=BETTER` означает `skill < 1.0`, `status=WORSE` — что baseline пока лучше
-модели. Для non-finite skill выводятся `skill=n/a status=N/A`.
+`selection=n/a` означает, что текущая epoch не является полной epoch
+максимального stage либо selection выключен.
 
-Полный набор метрик доступен в JSONL:
+JSONL содержит:
 
-- `loss` — итоговый loss после всех весов компонентов;
-- `batch_size`, `loss_schedule`, `stage_size`, `max_loss_stage`, `hidden`,
-  `layers`, `seq_len`, `device` — параметры запуска, записываются в каждую
-  строку JSONL;
-- `loss_ret`, `loss_prob`, `loss_ev`, `loss_vol` — компоненты loss;
-- `sigma_min`, `sigma_p05`, `sigma_mean` — статистика предсказанного `sigmaR`
-  для диагностики Gaussian NLL;
-- `ret_mae`, `ret_rmse` — ошибка прогноза `meanR` против target `meanR`;
-- `ret_mae_baseline` — MAE нулевого прогноза `meanR=0`; полезно сравнивать с
-  `ret_mae`, чтобы видеть, лучше ли модель простой нулевой гипотезы;
-- `ret_mae_skill` — отношение `ret_mae / ret_mae_baseline`; меньше `1.0`
-  означает лучше baseline;
-- `ret_mae_improvement` — `1 - ret_mae_skill`;
-- `monitor_value`, `best_monitor`, `baseline_passed`, `checkpoint_best` —
-  состояние критерия early stopping и выбора checkpoint;
-- `grad_norm` — gradient norm до clipping;
-- `rows`, `batches` — объём данных в проходе;
-- `nan_ratio` — доля NaN во входном `src`;
-- `masked_token_ratio` — доля timesteps, скрытых от attention текущим
-  `--mode`;
-- `complete_token_ratio` — доля timesteps без `NaN`;
-- `partial_token_ratio` — доля timesteps с частью заполненных фичей и `NaN`;
-- `empty_token_ratio` — доля timesteps, где все фичи `NaN`;
-- `step` — глобальный номер optimizer step к концу строки метрик;
-- `lr` — текущий learning rate;
-- `loss_stage` — активный этап функции потерь;
-- `input_pipeline_ms` — host wall time получения batch из input pipeline,
-  включая ожидание Arrow replay/первой receipt verification, streaming input и
-  CPU shuffle; при closed-input prefetch это время ожидания consumer-а, а не
-  суммарное CPU-время producer-а;
-- `missing_stats_ms` — host wall time расчёта NaN и token ratios;
-- `host_to_device_ms` — host wall time вызовов CPU-to-device transfer;
-- `train_step_ms` — host wall time forward, loss, backward, optimizer step и
-  сбора batch metrics;
-- `elapsed_ms` — время training pass.
+- `loss`, `loss_l0…loss_l5`, `loss_nll`, `loss_ev`;
+- по каждой public semantic поля `<name>_mae` и `<name>_rmse`;
+- `selection_score`, `checkpoint_best`, `best_selection_score`;
+- `grad_norm`, `rows`, `batches`, `step`, `lr`;
+- `loss_stage`, `minimum_loss_stage`, `maximum_loss_stage`;
+- `nan_ratio`, `masked_token_ratio`, `complete_token_ratio`,
+  `partial_token_ratio`, `empty_token_ratio`;
+- `input_pipeline_ms`, `missing_stats_ms`, `host_to_device_ms`,
+  `train_step_ms`, `elapsed_ms`.
 
-Фазовые таймеры являются host-side диагностикой и не добавляют отдельную CUDA
-synchronize, поэтому не являются точным GPU kernel time. CUDA scalar metrics
-loss/gradient собираются в один tensor и материализуются одной передачей на
-CPU за batch. Сумма фаз может быть меньше `elapsed_ms` на служебные операции и
-перекрытый prefetch. Как и `elapsed_ms`, фазовые значения исключаются из
-deterministic equivalence ML-state.
+Фазовые таймеры являются host wall-clock telemetry и не добавляют отдельную
+CUDA synchronization. Loss/gradient scalars объединяются в один CUDA tensor и
+переносятся на CPU одной операцией за batch. Wall-clock поля исключены из
+критерия deterministic equivalence.
 
-Чтобы сохранять метрики, добавьте `--metrics-out`:
+Сохранение и визуализация:
 
 ```bash
 ./.venv/bin/python ./app/main.py fit ./data/train.arrow \
   --seq-len=20 \
   --metrics-out=train.jsonl
-```
 
-Для `fit-stream` используется тот же аргумент. Каждая строка — один JSON object
-с полным набором числовых полей, параметрами запуска и контекстом `epoch`;
-standalone stream также добавляет `frame`. Non-finite значения сериализуются как
-JSON `null`.
-
-Построить SVG-графики по JSONL:
-
-```bash
 ./.venv/bin/python ./app/main.py plot-metrics train.jsonl \
   --plots-dir=./metrics/plots
 ```
 
-`plot-metrics` создаёт отдельные SVG-файлы для `loss`, компонентов loss,
-`sigma_min`, `sigma_p05`, `sigma_mean`, `grad_norm`, `nan_ratio`, token ratios,
-`rows`, `batches`, `step`, `lr`, `loss_stage`, фазовые durations и
-`elapsed_ms`. Output directory
-создаётся автоматически; существующие одноимённые SVG перезаписываются.
-Невалидная JSON-строка в `METRICS_FILE` прерывает команду.
+`plot-metrics` создаёт отдельный SVG для каждого доступного числового поля.

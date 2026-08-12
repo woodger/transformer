@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import BinaryIO
 
-from app.contracts.worker.v2 import WorkerContractError, parse_control_message
+from app.contracts.worker.v3 import WorkerContractError, parse_control_message
 
 
 class DurableInputStream:

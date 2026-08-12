@@ -38,7 +38,7 @@ def make_args(**overrides):
         "lr": 1e-3,
         "batch_size": 8,
         "epochs": 1,
-        "patience": 1,
+        "direct_loss_weights": (1.0,) * 6,
         "use_amp": False,
         "hidden": 32,
         "layers": 1,
@@ -79,10 +79,10 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
             ]
             for epoch, metrics in enumerate(metrics_rows):
                 on_epoch(epoch, metrics, {
-                    "monitor_value": metrics.loss,
-                    "baseline_passed": True,
+                    "selection_score": None,
                     "checkpoint_best": epoch == 0,
-                    "best_monitor": metrics.loss,
+                    "should_stop": False,
+                    "best_selection_score": metrics.loss,
                 })
             return metrics_rows
 
@@ -105,9 +105,9 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
-    assert "frame=2 epoch=1 monitor_value=1.25" in output
+    assert "frame=2 epoch=1 selection=n/a" in output
     assert "loss=1.250000" in output
-    assert "frame=2 epoch=2 monitor_value=1.1" in output
+    assert "frame=2 epoch=2 selection=n/a" in output
     assert "loss=1.100000" in output
     assert "Model saved after 1 trained frame(s), 2 epoch(s) from 2 received frame(s)" in output
 
@@ -169,10 +169,10 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
                     loss_stage=epoch + 1,
                 )
                 on_epoch(epoch, metrics, {
-                    "monitor_value": metrics.loss,
-                    "baseline_passed": True,
+                    "selection_score": None,
                     "checkpoint_best": True,
-                    "best_monitor": metrics.loss,
+                    "should_stop": False,
+                    "best_selection_score": metrics.loss,
                 })
 
         def save(self, model_name):
@@ -205,7 +205,7 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
-    assert "epoch=1 monitor_value=1" in output
+    assert "epoch=1 selection=n/a" in output
     assert "frame=" not in output.split("epoch=1", 1)[1]
     assert "2 trained frame(s), 2 epoch(s) from 3 received frame(s)" in output
 

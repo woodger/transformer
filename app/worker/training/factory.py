@@ -29,7 +29,13 @@ def build_model(args_or_config, X_cpu: torch.Tensor, Y_cpu: torch.Tensor | None,
     ).to(device)
 
 
-def build_trainer(args_or_config, model, device, model_config: ModelConfig | None = None):
+def build_trainer(
+    args_or_config,
+    model,
+    device,
+    model_config: ModelConfig | None = None,
+    data_contract: dict | None = None,
+):
     train_config = _coerce_train_config(args_or_config)
     if model_config is None:
         model_config = _coerce_model_config(args_or_config)
@@ -43,15 +49,13 @@ def build_trainer(args_or_config, model, device, model_config: ModelConfig | Non
         lr=train_config.lr,
         batch_size=train_config.batch_size,
         epochs=train_config.epochs,
-        patience=train_config.patience,
         loss_stage=train_config.loss_stage,
         loss_schedule=train_config.loss_schedule,
         stage_size=train_config.stage_size,
         use_amp=train_config.use_amp,
         weight_decay=train_config.weight_decay,
-        monitor=train_config.monitor,
-        monitor_min_improvement=train_config.monitor_min_improvement,
-        save_best_checkpoint=train_config.save_best_checkpoint,
+        direct_loss_weights=train_config.direct_loss_weights,
+        selection=train_config.selection,
         metrics_path=metrics_path,
         context_mode=model_config.context_mode if model_config else CONTEXT_MODE,
         metrics_context={
@@ -61,6 +65,7 @@ def build_trainer(args_or_config, model, device, model_config: ModelConfig | Non
         } if model_config else None,
         model_config=model_config,
         train_config=train_config,
+        data_contract=data_contract,
         seed=train_config.seed,
     )
 

@@ -6,7 +6,8 @@
 Проект использует Clean Architecture отдельно для каждого исполняемого
 процесса. Нормативные решения и их причины зафиксированы в
 [ADR 0004](../adr/0004-clean-architecture-process-boundaries.md) и
-[ADR 0006](../adr/0006-service-application-boundaries.md).
+[ADR 0006](../adr/0006-service-application-boundaries.md) и текущем
+[ADR 0007](../adr/0007-target-aligned-flight-v4.md).
 
 ## Процессы и composition roots
 
@@ -16,8 +17,8 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
 
-app/contracts/flight/v3            публичный Flight contract
-app/contracts/worker/v2            внутренний process contract
+app/contracts/flight/v4            публичный Flight contract
+app/contracts/worker/v3            внутренний process contract
 ```
 
 Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
@@ -94,10 +95,10 @@ cases, которые определяют операции с access tokens. Al
 
 ## Contracts
 
-- `app/contracts/flight/v3/` — нормативные schemas и fixtures публичного API;
-- Flight v3 является текущей штатной архитектурой remote API; дальнейшие
+- `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
+- Flight v4 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v2/` — command/result manifests, capability document,
+- `app/contracts/worker/v3/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
@@ -145,7 +146,7 @@ Ownership хранения:
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v2`;
+- shared service/worker данные находятся только в `app/contracts/worker/v3`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

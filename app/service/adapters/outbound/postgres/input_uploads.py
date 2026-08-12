@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.contracts.worker.v2.config import ModelConfig
+from app.contracts.worker.v3.config import ModelConfig
 from app.service.application.input_models import (
     CommittedInput,
     InputPayloadReceipt,

@@ -1,5 +1,11 @@
 ## Regime-aware heads
 
+> Это ненормативная проектная идея, а не текущая архитектура. Любая её будущая
+> реализация обязана сохранять шесть target-aligned public coordinates и
+> private uncertainty head из
+> [`ADR 0007`](./adr/0007-target-aligned-flight-v4.md). Примеры ниже созданы до
+> Flight v4 и не задают wire-, checkpoint- или objective-контракт.
+
 Разные “режимы рынка” → **разные головы модели**.
 
 Примеры режимов:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import BinaryIO
 
-from app.contracts.worker.v2 import encode_event
+from app.contracts.worker.v3 import encode_event
 
 
 class WorkerEventEmitter:

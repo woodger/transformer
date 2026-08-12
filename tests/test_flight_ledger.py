@@ -4,7 +4,8 @@ import uuid
 
 import pytest
 
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.objective import ml_contract
 from app.flight.constants import FIT_SCHEMA_ID
 from app.flight.ledger import Ledger
 from app.service.domain.errors import ServiceError
@@ -30,6 +31,7 @@ def _data_contract() -> dict:
 def _create_fit(ledger: Ledger, *, now: float = 1.0) -> tuple[dict, str]:
     job_id = str(uuid.uuid4())
     execution_id = str(uuid.uuid4())
+    training_config = TrainConfig(epochs=2, deterministic=True)
     job = ledger.create_job(
         job_id=job_id,
         owner_subject=OWNER,
@@ -39,10 +41,11 @@ def _create_fit(ledger: Ledger, *, now: float = 1.0) -> tuple[dict, str]:
         prediction_column="out",
         config_hash="a" * 64,
         data_contract=_data_contract(),
+        ml_contract=ml_contract(training_config),
         create_result={"jobId": job_id, "ownership": {"fencingToken": "1"}},
         model_label="daily",
         model_config=ModelConfig(seq_len=2),
-        training_config=TrainConfig(epochs=2, deterministic=True),
+        training_config=training_config,
         now=now,
     )
     return job, execution_id

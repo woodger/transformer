@@ -1,11 +1,11 @@
 # Локальный Arrow и stream contract
 
-> Type: Reference. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v3 contract.
+> Тип: справочник. Формат данных local file/stream CLI. Этот документ не
+> переопределяет public Arrow Flight v4 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md); local CLI
+[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md); local CLI
 использует те же shapes там, где они пересекаются.
 
 ## Arrow IPC input
@@ -21,18 +21,23 @@ tgt: list<float32|float64>  # width 6, required for training
 
 В обеих колонках запрещены Arrow null rows и null elements; длина list должна
 быть одинаковой у всех строк. `src` допускает IEEE `NaN` для пропусков, но
-отклоняет `+inf` и `-inf`. `tgt` должен быть полностью finite, иметь ровно шесть
-значений, неотрицательный `tgt[4]` и `tgt[5]` в диапазоне `[0, 1]`. У непустого
-input ширина `src` должна быть больше нуля.
+отклоняет `+inf` и `-inf`. `tgt` должен быть полностью finite и иметь ровно
+шесть значений: `tgt[0]` находится в `[-1, 1]`, остальные координаты — в
+`[0, 1]`. У непустого input ширина `src` должна быть больше нуля.
 
-Текущий loss использует target positions так:
+Target и prediction используют одинаковый порядок:
 
 | Позиция | Назначение |
 | --- | --- |
-| `tgt[0]` | target return для Gaussian NLL |
-| `tgt[4]` | target next volatility |
-| `tgt[5]` | hit probability для TP/SL BCE |
-| `tgt[1:4]` | присутствуют в формате, но текущим loss не используются |
+| `tgt[0]` | `meanReturn` |
+| `tgt[1]` | `sigmaReturn` |
+| `tgt[2]` | `probTP` |
+| `tgt[3]` | `probSL` |
+| `tgt[4]` | `volatilityNext` |
+| `tgt[5]` | `hittingProbTP` |
+
+На максимальном loss stage каждая координата имеет прямой supervised path.
+Private Gaussian scale не входит в этот вектор.
 
 После валидации `float64` и `float32` input преобразуется в PyTorch `float32`;
 finite `float64`, который выходит за диапазон `float32`, отклоняется до cast.
@@ -43,7 +48,7 @@ finite `float64`, который выходит за диапазон `float32`,
 ```
 
 Ширина `src` должна делиться на `--seq-len`. В stream `feature_dim` не может
-меняться между frames; при prediction с checkpoint v2 она также должна совпасть
+меняться между frames; при prediction с checkpoint v3 она также должна совпасть
 с сохранённым значением. Missing-data semantics для `NaN` определяет
 [training reference](./training-runtime.md).
 
@@ -58,10 +63,11 @@ finite `float64`, который выходит за диапазон `float32`,
 Порядок шести output values:
 
 ```text
-[meanR, sigmaR, logitTP, logitSL, volNext, logitHit]
+[meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP]
 ```
 
-`sigmaR` и `volNext` положительны, позиции TP/SL/hit являются raw logits.
+`meanReturn` находится в `[-1, 1]`, остальные координаты — в `[0, 1]`.
+`probTP` и `probSL` независимы. Raw logits не пересекают output boundary.
 Пустой file input для `predict` создаёт типизированный пустой output; `fit`
 отклоняет training input без строк.
 

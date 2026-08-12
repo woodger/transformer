@@ -1,12 +1,14 @@
-# Сервис Transformer Arrow Flight: операционное руководство v3
+# Сервис Transformer Arrow Flight: операционное руководство v4
 
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
 [`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v3`](../app/contracts/flight/v3/README.md). Lifecycle
+[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md). Lifecycle
 долговечного потока, fencing и семантика восстановления закреплены в
-[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md).
+[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md), а текущий ML-контракт и
+breaking cutover — в
+[`ADR 0007`](adr/0007-target-aligned-flight-v4.md).
 
 ## Требования к runtime
 
@@ -99,7 +101,7 @@ PostgreSQL только после успешной публикации в file
 прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V3 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -145,8 +147,16 @@ Transformer использует schema PostgreSQL `transformer`. Сервис �
 `status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
 head. Сервис и команды управления tokens отказываются запускаться при
 отсутствующей или устаревшей schema и предлагают выполнить
-`db migrations apply`. Flight v3 является текущим контрактом schema и runtime;
+`db migrations apply`. Flight v4 является текущим контрактом schema и runtime;
 автоматически migrations не применяются.
+
+Переход на Alembic revision `0006` необратим: он удаляет незавершённые v3
+jobs, idempotency и recovery state. Access tokens, model identities и aliases
+сохраняются, но прежние модели не получают `mlContract` v4 и недоступны для
+prediction. Перед первым применением `0006` остановите Inventory workers и
+Transformer, сохраните резервную копию PostgreSQL и model artifacts. После
+обновления одновременно запускаются только Inventory v4 и Transformer v4;
+модели требуется переобучить.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -223,7 +233,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v3 определяет
+certificate options команды `flight serve`. Flight v4 определяет
 `cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -355,7 +365,7 @@ idempotency record. Recovery inputs/checkpoints удаляются после п
 terminal state. Каталоги опубликованных моделей не удаляются вместе с job, а
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
-а точный lost-create replay остаётся разрешимым. В v3 нет сетевого action для
+а точный lost-create replay остаётся разрешимым. В v4 нет сетевого action для
 удаления модели.
 
 Сервис не использует настроенный admission watermark свободного места. Health
@@ -366,7 +376,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v3.health`.
+аутентифицированный Flight action `transformer.v4.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -413,7 +423,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Известные ограничения v3
+## Известные ограничения v4
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

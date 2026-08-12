@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.contracts.worker.v2.config import CHECKPOINT_FORMAT
+from app.contracts.worker.v3.objective import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,
@@ -49,6 +49,7 @@ def present_job_created(result: JobCreated) -> dict:
         },
         resolvedModelRef=result.resolved_model_ref,
         dataContract=data_contract_to_api(result.data_contract),
+        mlContract=dict(result.ml_contract),
         limits=limits_to_api(result.limits),
         upload={
             "descriptorPath": [
@@ -146,6 +147,7 @@ def present_job_status(result: JobStatusResult) -> dict:
             "selected": job.selected_device,
         },
         dataContract=data_contract_to_api(job.data_contract),
+        mlContract=dict(job.ml_contract),
         resolvedModelRef=job.resolved_model_ref,
         predictionColumn=job.prediction_column,
         progress=job.progress,
@@ -222,6 +224,7 @@ def present_model_description(result: ModelDescription) -> dict:
         label=model.label,
         generation=model.generation,
         dataContract=data_contract_to_api(model.data_contract),
+        mlContract=dict(model.ml_contract),
         modelConfig=model_config_to_api(result.model_config),
         checkpoint={
             "format": CHECKPOINT_FORMAT,

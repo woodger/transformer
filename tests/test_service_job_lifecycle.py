@@ -10,8 +10,13 @@ from app.service.application.job_models import (
 )
 from app.service.domain.job import ExecutionState, InputState
 
+ML_CONTRACT = {
+    "targetSchemaId": "inventory.target.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+}
 
-def test_persisted_v3_wire_result_replays_without_new_mutation():
+
+def test_persisted_v4_wire_result_replays_without_new_mutation():
     limits = ServiceLimits(
         max_message_bytes=1024,
         target_batch_bytes=512,
@@ -46,6 +51,7 @@ def test_persisted_v3_wire_result_replays_without_new_mutation():
             "feature_dim": 1,
             "target_schema_id": "inventory.target.v1",
         },
+        ml_contract=ML_CONTRACT,
         limits=limits,
     )
     wire_result = present_job_created(created)
@@ -54,7 +60,7 @@ def test_persisted_v3_wire_result_replays_without_new_mutation():
         def lookup_idempotency(self, owner, action, key):
             assert (owner, action, key) == (
                 "inventory",
-                "transformer.v3.job.create",
+                "transformer.v4.job.create",
                 "create:1",
             )
             return {
@@ -65,10 +71,10 @@ def test_persisted_v3_wire_result_replays_without_new_mutation():
     gateway = PostgresJobLifecycle(
         ReplayLedger(),
         JobActionNames(
-            create="transformer.v3.job.create",
-            acquire="transformer.v3.job.acquire",
-            input_close="transformer.v3.job.input.close",
-            cancel="transformer.v3.job.cancel",
+            create="transformer.v4.job.create",
+            acquire="transformer.v4.job.acquire",
+            input_close="transformer.v4.job.input.close",
+            cancel="transformer.v4.job.cancel",
         ),
     )
     command = CreateJobCommand(
@@ -82,6 +88,7 @@ def test_persisted_v3_wire_result_replays_without_new_mutation():
         requested_device="cpu",
         prediction_column="out",
         data_contract=created.data_contract,
+        ml_contract=ML_CONTRACT,
     )
 
     def fail_prepare(_model):

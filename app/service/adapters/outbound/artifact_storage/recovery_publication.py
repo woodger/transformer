@@ -4,7 +4,7 @@ import hashlib
 import os
 import shutil
 
-from app.contracts.worker.v2.config import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v3.objective import TRAINING_RECOVERY_FORMAT
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.job import ErrorCode, InputState
 

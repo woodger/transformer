@@ -10,15 +10,16 @@ from app.config import (
     LR,
     NHEAD,
     NUM_LAYERS,
-    PATIENCE,
-    SAVE_BEST_CHECKPOINT,
     SEED,
     STAGE_SIZE,
-    TRAIN_MONITOR,
-    TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import (
+    DEFAULT_DIRECT_LOSS_WEIGHTS,
+    CheckpointSelectionConfig,
+    ModelConfig,
+    TrainConfig,
+)
 
 
 def _pick(value, default):
@@ -61,6 +62,25 @@ def model_config_from_args(
 
 def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = None) -> TrainConfig:
     checkpoint_config = _coerce_train_config(checkpoint_config)
+    selection_requested = getattr(args, "select_best_checkpoint", None)
+    selection_min_delta = getattr(args, "selection_min_delta", None)
+    selection_patience = getattr(args, "selection_patience", None)
+    if (
+        selection_requested is not True
+        and (selection_min_delta is not None or selection_patience is not None)
+    ):
+        raise ValueError(
+            "selection policy options require --select-best-checkpoint"
+        )
+    if selection_requested is None:
+        selection = _attr(checkpoint_config, "selection", None)
+    elif selection_requested:
+        selection = CheckpointSelectionConfig(
+            min_delta=_pick(selection_min_delta, 0.0),
+            patience=_pick(selection_patience, 0),
+        )
+    else:
+        selection = None
 
     return TrainConfig(
         lr=_pick(getattr(args, "lr", None), _attr(checkpoint_config, "lr", LR)),
@@ -69,10 +89,6 @@ def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = 
             _attr(checkpoint_config, "batch_size", BATCH_SIZE),
         ),
         epochs=_pick(getattr(args, "epochs", None), _attr(checkpoint_config, "epochs", EPOCHS)),
-        patience=_pick(
-            getattr(args, "patience", None),
-            _attr(checkpoint_config, "patience", PATIENCE),
-        ),
         loss_stage=_pick(
             getattr(args, "loss_stage", None),
             _attr(checkpoint_config, "loss_stage", LOSS_STAGE),
@@ -92,24 +108,17 @@ def train_config_from_args(args, checkpoint_config: TrainConfig | dict | None = 
             getattr(args, "weight_decay", None),
             _attr(checkpoint_config, "weight_decay", WEIGHT_DECAY),
         ),
-        monitor=_pick(
-            getattr(args, "monitor", None),
-            _attr(checkpoint_config, "monitor", TRAIN_MONITOR),
-        ),
-        monitor_min_improvement=_pick(
-            getattr(args, "monitor_min_improvement", None),
-            _attr(
-                checkpoint_config,
-                "monitor_min_improvement",
-                TRAIN_MONITOR_MIN_IMPROVEMENT,
-            ),
-        ),
-        save_best_checkpoint=bool(
+        direct_loss_weights=tuple(
             _pick(
-                getattr(args, "save_best_checkpoint", None),
-                _attr(checkpoint_config, "save_best_checkpoint", SAVE_BEST_CHECKPOINT),
+                getattr(args, "direct_loss_weights", None),
+                _attr(
+                    checkpoint_config,
+                    "direct_loss_weights",
+                    DEFAULT_DIRECT_LOSS_WEIGHTS,
+                ),
             )
         ),
+        selection=selection,
         seed=_pick(getattr(args, "seed", None), _attr(checkpoint_config, "seed", SEED)),
         deterministic=bool(
             _pick(

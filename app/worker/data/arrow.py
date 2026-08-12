@@ -7,10 +7,11 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
-from app.contracts.flight.v3.arrow import (
+from app.contracts.flight.v4.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     canonical_prediction_schema,
+    validate_target_space_values,
 )
 from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
@@ -256,7 +257,8 @@ def _validate_list_column(
         raise ValueError("Arrow column 'src' must have a positive list length")
 
     if table.num_rows == 0:
-        return np.empty((0, 0), dtype=np.float32)
+        empty_width = width if width is not None else expected_width
+        return np.empty((0, empty_width or 0), dtype=np.float32)
 
     values = np.empty((table.num_rows, width), dtype=np.float32)
     for offset, rows, flat_values in chunks:
@@ -271,21 +273,7 @@ def _list_values_to_tensor(values):
 
 
 def _validate_target_values(values):
-    if values.shape[0] == 0:
-        return
-    invalid_volatility = values[:, 4] < 0.0
-    invalid_probability = (values[:, 5] < 0.0) | (values[:, 5] > 1.0)
-    invalid_row = _first_true(invalid_volatility | invalid_probability)
-    if invalid_row is None:
-        return
-    if invalid_volatility[invalid_row]:
-        raise ValueError(
-            f"Arrow column 'tgt' has negative volatility at row {invalid_row + 1}"
-        )
-    raise ValueError(
-        f"Arrow column 'tgt' has hit probability outside [0, 1] "
-        f"at row {invalid_row + 1}"
-    )
+    validate_target_space_values(values)
 
 
 def _first_true(values) -> int | None:
@@ -370,6 +358,7 @@ def predictions_to_table(
     arr = preds.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
+    validate_target_space_values(arr)
     arr = np.ascontiguousarray(arr)
     values = pa.array(arr.reshape(-1), type=pa.float32())
     column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)

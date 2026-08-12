@@ -7,7 +7,19 @@ import re
 import uuid
 from dataclasses import replace
 
-from app.contracts.worker.v2.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.config import (
+    ModelConfig,
+    TrainConfig,
+    train_config_to_manifest,
+)
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    OBJECTIVE_ID,
+    PREDICTION_SCHEMA_ID,
+    TARGET_SCHEMA_ID,
+    TARGET_WIDTH,
+    ml_contract,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -203,22 +215,7 @@ def model_config_to_api(config: ModelConfig | dict) -> dict:
 def train_config_to_api(config: TrainConfig | dict) -> dict:
     if isinstance(config, dict):
         config = TrainConfig.from_dict(config)
-    return {
-        "lr": config.lr,
-        "batchSize": config.batch_size,
-        "epochs": config.epochs,
-        "patience": config.patience,
-        "lossStage": config.loss_stage,
-        "lossSchedule": config.loss_schedule,
-        "stageSize": config.stage_size,
-        "useAmp": config.use_amp,
-        "weightDecay": config.weight_decay,
-        "monitor": config.monitor,
-        "monitorMinImprovement": config.monitor_min_improvement,
-        "saveBestCheckpoint": config.save_best_checkpoint,
-        "seed": config.seed,
-        "deterministic": config.deterministic,
-    }
+    return train_config_to_manifest(config)
 
 
 def data_contract_to_api(contract: dict) -> dict:
@@ -271,6 +268,7 @@ def _validate_create(document: dict, request_id: str) -> dict:
         "trainingConfig",
         "predictionColumn",
         "dataContract",
+        "mlContract",
     }
     _reject_unknown(document, allowed)
     operation = document.get("operation")
@@ -288,6 +286,7 @@ def _validate_create(document: dict, request_id: str) -> dict:
     ):
         raise invalid("predictionColumn has an invalid value")
     data_contract = _data_contract(document.get("dataContract"))
+    requested_ml_contract = _ml_contract(document.get("mlContract"))
 
     result = {
         "request_id": request_id,
@@ -298,6 +297,7 @@ def _validate_create(document: dict, request_id: str) -> dict:
         "device": device,
         "prediction_column": prediction_column,
         "data_contract": data_contract,
+        "ml_contract": requested_ml_contract,
     }
     if operation == "fit":
         if any(key in document for key in ("modelRef", "modelAlias")):
@@ -310,9 +310,14 @@ def _validate_create(document: dict, request_id: str) -> dict:
             model_config,
             feature_dim=data_contract["feature_dim"],
         )
-        result["train_config"] = _train_config(
+        train_config = _train_config(
             document.get("trainingConfig", {})
         )
+        if requested_ml_contract != ml_contract(train_config):
+            raise invalid(
+                "mlContract does not match the target-aligned training objective"
+            )
+        result["train_config"] = train_config
     else:
         if any(
             key in document
@@ -470,13 +475,49 @@ def _data_contract(document) -> dict:
         "targetSchemaId",
     }
     _reject_unknown(document, allowed, "dataContract")
-    return {
+    result = {
         "id": _label(document, "id"),
         "version": _positive_integer(document, "version"),
         "data_contract_sha256": _sha256(document, "dataContractSha256"),
         "seq_len": _positive_integer(document, "seqLen"),
         "feature_dim": _positive_integer(document, "featureDim"),
         "target_schema_id": _label(document, "targetSchemaId"),
+    }
+    if result["target_schema_id"] != TARGET_SCHEMA_ID:
+        raise invalid(f"dataContract.targetSchemaId must be {TARGET_SCHEMA_ID}")
+    return result
+
+
+def _ml_contract(document) -> dict:
+    if not isinstance(document, dict):
+        raise invalid("mlContract must be an object")
+    allowed = {
+        "targetSchemaId",
+        "predictionSchemaId",
+        "objectiveId",
+        "objectiveConfigSha256",
+        "checkpointFormat",
+        "targetWidth",
+        "predictionSpace",
+    }
+    _reject_unknown(document, allowed, "mlContract")
+    expected = {
+        "targetSchemaId": TARGET_SCHEMA_ID,
+        "predictionSchemaId": PREDICTION_SCHEMA_ID,
+        "objectiveId": OBJECTIVE_ID,
+        "checkpointFormat": CHECKPOINT_FORMAT,
+        "targetWidth": TARGET_WIDTH,
+        "predictionSpace": "target",
+    }
+    for key, value in expected.items():
+        if document.get(key) != value:
+            raise invalid(f"mlContract.{key} must be {value!r}")
+    return {
+        **expected,
+        "objectiveConfigSha256": _sha256(
+            document,
+            "objectiveConfigSha256",
+        ),
     }
 
 
@@ -524,21 +565,19 @@ def _train_config(document) -> TrainConfig:
         "lr": "lr",
         "batchSize": "batch_size",
         "epochs": "epochs",
-        "patience": "patience",
         "lossStage": "loss_stage",
         "lossSchedule": "loss_schedule",
         "stageSize": "stage_size",
         "useAmp": "use_amp",
         "weightDecay": "weight_decay",
-        "monitor": "monitor",
-        "monitorMinImprovement": "monitor_min_improvement",
-        "saveBestCheckpoint": "save_best_checkpoint",
+        "directLossWeights": "direct_loss_weights",
+        "selection": "selection",
         "seed": "seed",
         "deterministic": "deterministic",
     }
     _reject_unknown(document, set(names), "trainingConfig")
     mapped = {names[key]: value for key, value in document.items()}
-    for name in ("use_amp", "save_best_checkpoint", "deterministic"):
+    for name in ("use_amp", "deterministic"):
         if name in mapped and not isinstance(mapped[name], bool):
             raise invalid(
                 f"trainingConfig.{_api_name(names, name)} must be a boolean"
@@ -548,7 +587,6 @@ def _train_config(document) -> TrainConfig:
         integer=(
             "batch_size",
             "epochs",
-            "patience",
             "loss_stage",
             "stage_size",
             "seed",
@@ -569,7 +607,6 @@ def _require_numbers(mapping: dict, *, integer: tuple[str, ...]) -> None:
             "dropout",
             "lr",
             "weight_decay",
-            "monitor_min_improvement",
         ):
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise invalid(f"{key} must be a number")

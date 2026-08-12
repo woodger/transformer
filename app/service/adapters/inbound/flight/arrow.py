@@ -3,11 +3,12 @@ from dataclasses import dataclass
 import numpy as np
 import pyarrow as pa
 
-from app.contracts.flight.v3.arrow import (
+from app.contracts.flight.v4.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,
+    validate_target_space_values,
 )
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted
 
@@ -266,21 +267,7 @@ def _validate_list_column(
 
 
 def _validate_target_values(values: np.ndarray) -> None:
-    if values.shape[0] == 0:
-        return
-    invalid_volatility = values[:, 4] < 0.0
-    invalid_probability = (values[:, 5] < 0.0) | (values[:, 5] > 1.0)
-    invalid_row = _first_true(invalid_volatility | invalid_probability)
-    if invalid_row is None:
-        return
-    if invalid_volatility[invalid_row]:
-        raise ValueError(
-            f"Arrow column 'tgt' has negative volatility at row {invalid_row + 1}"
-        )
-    raise ValueError(
-        "Arrow column 'tgt' has hit probability outside [0, 1] "
-        f"at row {invalid_row + 1}"
-    )
+    validate_target_space_values(values)
 
 
 def _fixed_width(schema: pa.Schema, name: str) -> int | None:

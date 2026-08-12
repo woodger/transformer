@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.contracts.worker.v3.objective import objective_config
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
     ACQUIRE_ACTION,
@@ -25,7 +26,7 @@ from app.flight.coordinator import JobCoordinator
 from app.flight.errors import ServiceError
 from app.flight.spool import Spool
 from app.service.domain.input_manifest import manifest_sha256
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
     close_input,
@@ -34,6 +35,8 @@ from tests.flight_v3_helpers import (
     internal_data_contract,
     model_config,
     public_data_contract,
+    public_ml_contract,
+    train_config,
 )
 
 
@@ -56,7 +59,7 @@ def coordinator_components(tmp_path, postgres_ledger):
 def _common():
     return {
         "contract": "transformer-flight",
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
     }
 
@@ -81,12 +84,17 @@ def _fit_create(*, job_id=None, execution_id=None, idempotency_key=None):
         "trainingConfig": {
             "batchSize": 2,
             "epochs": 2,
-            "patience": 0,
+            "lossStage": 4,
+            "lossSchedule": "none",
+            "stageSize": 5,
+            "directLossWeights": [1.0] * 6,
+            "selection": None,
             "useAmp": False,
             "seed": 17,
             "deterministic": True,
         },
         "dataContract": public_data_contract(),
+        "mlContract": public_ml_contract(),
     }
 
 
@@ -97,14 +105,14 @@ def _dispatch(coordinator, action, document, *, owner=OWNER):
     )
 
 
-def test_capabilities_advertise_only_v3_streaming_surface(
+def test_capabilities_advertise_only_v4_streaming_surface(
     coordinator_components,
 ):
     _, _, _, coordinator = coordinator_components
 
     result = _dispatch(coordinator, CAPABILITIES_ACTION, _common())
 
-    assert result["protocolVersions"] == [3]
+    assert result["protocolVersions"] == [4]
     assert result["features"]["doExchange"] is False
     assert result["features"]["durableStreamingInput"] is True
     assert result["features"]["clientGeneratedJobId"] is True
@@ -369,7 +377,11 @@ def _publish_model(ledger, spool, *, label="daily"):
         sha256=digest,
         metadata={
             "model_config": model_config().to_dict(),
+            "train_config": train_config().to_dict(),
             "data_contract": internal_data_contract(),
+            "ml_contract": public_ml_contract(),
+            "objective_config": objective_config(train_config()),
+            "checkpoint": {"mlContract": public_ml_contract()},
         },
         result={"modelRef": model_ref},
     )
@@ -391,6 +403,7 @@ def test_model_alias_is_owner_scoped_and_resolved_during_create(
         "modelAlias": "daily",
         "predictionColumn": "forecast",
         "dataContract": public_data_contract(),
+        "mlContract": public_ml_contract(),
     }
 
     result = _dispatch(coordinator, CREATE_ACTION, create)
@@ -444,6 +457,7 @@ def test_predict_contract_mismatch_is_rejected_before_job_creation(
         "device": "cpu",
         "modelRef": model_ref,
         "dataContract": public_data_contract(digest="f" * 64),
+        "mlContract": public_ml_contract(),
     }
 
     with pytest.raises(ServiceError) as error:

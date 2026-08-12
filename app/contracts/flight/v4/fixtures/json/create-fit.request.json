@@ -1,0 +1,50 @@
+{
+  "contract": "transformer-flight",
+  "version": 4,
+  "requestId": "22222222-2222-4222-8222-222222222222",
+  "idempotencyKey": "inventory-fit-20260810-1",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "clientExecutionId": "44444444-4444-4444-8444-444444444444",
+  "operation": "fit",
+  "device": "cpu",
+  "modelLabel": "returns.daily",
+  "modelConfig": {
+    "seqLen": 2,
+    "hidden": 256,
+    "layers": 5,
+    "dropout": 0.1,
+    "nhead": 8,
+    "mode": "relaxed"
+  },
+  "trainingConfig": {
+    "lr": 0.0005,
+    "batchSize": 256,
+    "epochs": 25,
+    "lossStage": 4,
+    "lossSchedule": "epoch",
+    "stageSize": 5,
+    "useAmp": false,
+    "weightDecay": 0.00001,
+    "directLossWeights": [1, 1, 1, 1, 1, 1],
+    "selection": {"minDelta": 0, "patience": 5},
+    "seed": 42,
+    "deterministic": true
+  },
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 1,
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v1"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v1",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
+    "objectiveId": "transformer.objective.target-aligned.v1",
+    "objectiveConfigSha256": "70ccf944fa5aa94f8e51836c28b105779d17cc660ecf88c608cca9ebe171866a",
+    "checkpointFormat": "transformer-checkpoint-v3",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  }
+}

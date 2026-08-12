@@ -111,13 +111,13 @@ def test_cli_loss_schedule_args(monkeypatch):
         "main.py",
         "fit-stream",
         "--seq-len=12",
-        "--loss-stage=3",
+        "--loss-stage=4",
         "--loss-schedule=step",
         "--stage-size=100",
     ])
 
     args = parse_args()
 
-    assert args.loss_stage == 3
+    assert args.loss_stage == 4
     assert args.loss_schedule == "step"
     assert args.stage_size == 100

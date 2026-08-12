@@ -4,6 +4,7 @@ import pytest
 import torch
 
 import app.storage.checkpoint as checkpoint_module
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.storage.checkpoint import (
     CHECKPOINT_FORMAT,
     load_checkpoint,
@@ -43,7 +44,12 @@ def test_checkpoint_save_atomically_replaces_existing_file(tmp_path):
     path.parent.mkdir()
     path.write_bytes(b"old checkpoint")
 
-    save_checkpoint(path, model)
+    save_checkpoint(
+        path,
+        model,
+        model_config=ModelConfig(seq_len=1, feature_dim=2),
+        train_config=TrainConfig(),
+    )
 
     checkpoint = load_checkpoint(path, torch.device("cpu"))
     assert checkpoint["format"] == CHECKPOINT_FORMAT

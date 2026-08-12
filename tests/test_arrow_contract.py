@@ -72,7 +72,7 @@ def test_empty_training_table_preserves_typed_empty_tensors():
     source, target = table_to_tensors(table)
 
     assert source.shape == (0, 0)
-    assert target.shape == (0, 0)
+    assert target.shape == (0, 6)
 
 
 @pytest.mark.parametrize("name", ["src", "tgt"])
@@ -188,28 +188,33 @@ def test_target_requires_six_values():
         table_to_tensors(table)
 
 
-def test_target_rejects_negative_volatility():
+@pytest.mark.parametrize("position", range(1, 6))
+@pytest.mark.parametrize("value", [-0.1, 1.1])
+def test_target_rejects_unit_interval_violation(position, value):
     target = [0.0] * 6
-    target[4] = -0.1
+    target[position] = value
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
         "tgt": make_target(target),
     })
 
-    with pytest.raises(ValueError, match="negative volatility"):
+    with pytest.raises(
+        ValueError,
+        match=rf"position {position} is outside \[0, 1\]",
+    ):
         table_to_tensors(table)
 
 
-@pytest.mark.parametrize("hit_probability", [-0.1, 1.1])
-def test_target_rejects_hit_probability_outside_unit_interval(hit_probability):
+@pytest.mark.parametrize("mean_return", [-1.1, 1.1])
+def test_target_rejects_mean_return_outside_signed_unit_interval(mean_return):
     target = [0.0] * 6
-    target[5] = hit_probability
+    target[0] = mean_return
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
         "tgt": make_target(target),
     })
 
-    with pytest.raises(ValueError, match=r"outside \[0, 1\]"):
+    with pytest.raises(ValueError, match=r"meanReturn is outside \[-1, 1\]"):
         table_to_tensors(table)
 
 
@@ -233,7 +238,10 @@ def test_columns_reject_inconsistent_row_width(name):
 
 def test_prediction_tables_always_use_fixed_size_list_float32():
     non_empty = predictions_to_table(
-        torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], dtype=torch.float64),
+        torch.tensor(
+            [[-0.5, 0.2, 0.3, 0.4, 0.5, 0.6]],
+            dtype=torch.float64,
+        ),
         "predictions",
     )
     empty = empty_predictions_table("predictions")
@@ -266,12 +274,14 @@ def test_predictions_require_six_finite_values():
 def test_prediction_file_is_atomically_replaced_and_parent_is_created(tmp_path):
     path = tmp_path / "nested" / "predictions.arrow"
 
-    write_arrow(path, torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]]), "out")
-    write_arrow(path, torch.tensor([[6.0, 5.0, 4.0, 3.0, 2.0, 1.0]]), "out")
+    write_arrow(path, torch.tensor([[-0.5, 0.2, 0.3, 0.4, 0.5, 0.6]]), "out")
+    write_arrow(path, torch.tensor([[0.6, 0.5, 0.4, 0.3, 0.2, 0.1]]), "out")
 
     with pa.memory_map(str(path), "r") as source:
         table = ipc.RecordBatchFileReader(source).read_all()
-    assert table.column("out").to_pylist() == [[6.0, 5.0, 4.0, 3.0, 2.0, 1.0]]
+    assert table.column("out").to_pylist() == [
+        pytest.approx([0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+    ]
     assert not list(path.parent.glob("*.tmp"))
 
 

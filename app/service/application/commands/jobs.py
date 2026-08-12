@@ -19,6 +19,9 @@ from app.service.application.ports.job_lifecycle import (
     JobLifecycleStore,
     ModelArtifactVerifier,
 )
+from app.service.application.services.model_contract import (
+    verify_model_semantics,
+)
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.policies import resolve_device
@@ -71,10 +74,13 @@ class CreateJobAction:
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                _verify_model_contract(model, command.data_contract)
+                model_config = verify_model_semantics(
+                    model,
+                    data_contract=command.data_contract,
+                    requested_ml_contract=command.ml_contract,
+                )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
-                model_config = _model_config_from_metadata(model.metadata)
             if model_config is None:
                 raise ServiceError(
                     ErrorCode.INVALID_ARGUMENT,
@@ -96,6 +102,7 @@ class CreateJobAction:
                 selected_device=None,
                 resolved_model_ref=resolved_model_ref,
                 data_contract=dict(command.data_contract),
+                ml_contract=dict(command.ml_contract),
                 limits=self.limits,
             )
             return JobCreationPreparation(
@@ -247,40 +254,6 @@ class CancelJobAction:
             if outcome.notify_worker:
                 self._cancel_notifier(outcome.result.job_id)
         return outcome.result
-
-
-def _verify_model_contract(model, data_contract: dict) -> None:
-    if not model.certified_for_v3 or model.data_contract is None:
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model generation is not certified for Flight v3",
-        )
-    if (
-        model.data_contract.get("data_contract_sha256")
-        != data_contract["data_contract_sha256"]
-    ):
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model data contract does not match prediction input",
-        )
-
-
-def _model_config_from_metadata(metadata: dict):
-    from app.contracts.worker.v2.config import ModelConfig
-
-    try:
-        config = ModelConfig.from_dict(metadata.get("model_config"))
-    except (TypeError, ValueError) as exc:
-        raise ServiceError(
-            ErrorCode.MODEL_CORRUPT,
-            "published model metadata is invalid",
-        ) from exc
-    if config is None:
-        raise ServiceError(
-            ErrorCode.MODEL_CORRUPT,
-            "published model configuration is unavailable",
-        )
-    return config
 
 
 def _select_device(requested: str, cuda_available: bool) -> str:

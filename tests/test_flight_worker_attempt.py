@@ -9,6 +9,8 @@ from app.flight.worker_attempt import WorkerAttemptExecutor
 from app.flight.worker_subprocess import WorkerSubprocessError
 from app.service.domain.job import ExecutionState, InputState
 
+ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v1"}
+
 
 class _Ledger:
     def __init__(self, job):
@@ -129,6 +131,7 @@ def _job() -> ExecutionJobRecord:
         model_config=None,
         training_config=None,
         data_contract={"data_contract_sha256": "d" * 64},
+        ml_contract=ML_CONTRACT,
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

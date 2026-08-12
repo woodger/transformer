@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from app.storage.checkpoint import load_checkpoint_metadata, save_checkpoint
-from app.training.run_config import ModelConfig
+from app.training.run_config import ModelConfig, TrainConfig
 
 fit_module = importlib.import_module("app.commands.fit")
 fit_stream_module = importlib.import_module("app.commands.fit_stream")
@@ -53,21 +53,27 @@ def test_checkpoint_metadata_describes_training_data_schema(tmp_path):
         feature_dim=4,
     )
 
-    save_checkpoint(path, torch.nn.Linear(2, 1), model_config=model_config)
+    save_checkpoint(
+        path,
+        torch.nn.Linear(2, 1),
+        model_config=model_config,
+        train_config=TrainConfig(),
+    )
 
     metadata = load_checkpoint_metadata(path)
     assert metadata["data_schema"] == {
-        "schema_version": 1,
+        "schema_version": 2,
         "tensor_dtype": "float32",
         "src": {
             "column": "src",
-            "accepted_element_types": ["float32", "float64"],
+            "accepted_element_types": ["float32"],
             "width": 12,
         },
         "tgt": {
             "column": "tgt",
-            "accepted_element_types": ["float32", "float64"],
+            "accepted_element_types": ["float32"],
             "width": 6,
+            "target_schema_id": "inventory.target.v1",
         },
         "feature_dim": 4,
         "model_input_feature_dim": 8,
@@ -77,7 +83,7 @@ def test_checkpoint_metadata_describes_training_data_schema(tmp_path):
     }
 
 
-def test_v1_checkpoint_metadata_without_data_schema_remains_supported(tmp_path):
+def test_v1_checkpoint_is_not_implicitly_compatible(tmp_path):
     path = tmp_path / "model-v1.pth"
     torch.save(
         {
@@ -88,9 +94,51 @@ def test_v1_checkpoint_metadata_without_data_schema_remains_supported(tmp_path):
         path,
     )
 
-    metadata = load_checkpoint_metadata(path)
+    with pytest.raises(ValueError, match="Unsupported checkpoint format"):
+        load_checkpoint_metadata(path)
 
-    assert metadata["data_schema"] is None
+
+def test_current_checkpoint_requires_a_frozen_feature_dimension(tmp_path):
+    path = tmp_path / "model.pth"
+    with pytest.raises(ValueError, match="feature dimension is unavailable"):
+        save_checkpoint(
+            path,
+            torch.nn.Linear(2, 1),
+            model_config=ModelConfig(
+                seq_len=2,
+                hidden=8,
+                layers=1,
+                dropout=0.0,
+                nhead=2,
+                feature_dim=None,
+            ),
+            train_config=TrainConfig(),
+        )
+
+    assert not path.exists()
+
+
+def test_current_checkpoint_with_missing_feature_dimension_is_corrupt(tmp_path):
+    path = tmp_path / "model.pth"
+    save_checkpoint(
+        path,
+        torch.nn.Linear(2, 1),
+        model_config=ModelConfig(
+            seq_len=2,
+            hidden=8,
+            layers=1,
+            dropout=0.0,
+            nhead=2,
+            feature_dim=2,
+        ),
+        train_config=TrainConfig(),
+    )
+    payload = torch.load(path, weights_only=False)
+    payload["model_config"]["feature_dim"] = None
+    torch.save(payload, path)
+
+    with pytest.raises(ValueError, match="feature dimension is unavailable"):
+        load_checkpoint_metadata(path)
 
 
 def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch):
@@ -295,61 +343,3 @@ def test_stream_predict_rejects_checkpoint_feature_dim_mismatch(monkeypatch):
         match="Feature dim 3 does not match checkpoint feature_dim 2",
     ):
         predict_stream_module.run(args, torch.device("cpu"))
-
-
-def test_stream_predict_keeps_cross_frame_check_for_legacy_checkpoint(monkeypatch):
-    args = model_args(
-        seq_len=None,
-        hidden=None,
-        layers=None,
-        dropout=None,
-        nhead=None,
-        context_mode=None,
-        out_dim=None,
-        pred_col="predictions",
-    )
-    first = SimpleNamespace(num_rows=1, frame=1)
-    second = SimpleNamespace(num_rows=1, frame=2)
-
-    monkeypatch.setattr(
-        predict_stream_module.sys,
-        "stdin",
-        SimpleNamespace(buffer=io.BytesIO()),
-    )
-    monkeypatch.setattr(
-        predict_stream_module,
-        "iter_framed_arrow",
-        lambda *args, **kwargs: iter([first, second]),
-    )
-    monkeypatch.setattr(
-        predict_stream_module,
-        "load_checkpoint",
-        lambda *args: {
-            "model_config": checkpoint_model_config(feature_dim=None),
-            "state_dict": {},
-        },
-    )
-    monkeypatch.setattr(
-        predict_stream_module,
-        "table_to_source_tensor",
-        lambda table: torch.zeros((1, 4 if table.frame == 1 else 6)),
-    )
-    monkeypatch.setattr(predict_stream_module, "write_framed_arrow", lambda *args: None)
-
-    class Trainer:
-        def load_payload(self, *args):
-            pass
-
-        def predict(self, X):
-            return torch.zeros((X.shape[0], 6))
-
-    with pytest.raises(
-        ValueError,
-        match="Feature dim changed across frames: expected 2, got 3",
-    ):
-        predict_stream_module.run(
-            args,
-            torch.device("cpu"),
-            build_model_fn=lambda *args: object(),
-            build_trainer_fn=lambda *args: Trainer(),
-        )

@@ -9,6 +9,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.flight as flight
 
+from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v3.objective import ml_contract
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -35,22 +37,20 @@ MODEL_CONFIG = {
     "nhead": 2,
     "mode": "relaxed",
 }
-TRAINING_CONFIG = {
-    "lr": 0.001,
-    "weightDecay": 0.0,
-    "batchSize": 8,
-    "epochs": 1,
-    "patience": 0,
-    "lossStage": 1,
-    "lossSchedule": "none",
-    "stageSize": 1,
-    "useAmp": False,
-    "monitor": "loss",
-    "monitorMinImprovement": 0.0,
-    "saveBestCheckpoint": False,
-    "seed": 29,
-    "deterministic": True,
-}
+TRAIN_CONFIG = TrainConfig(
+    lr=0.001,
+    weight_decay=0.0,
+    batch_size=8,
+    epochs=1,
+    loss_stage=4,
+    loss_schedule="none",
+    stage_size=1,
+    use_amp=False,
+    seed=29,
+    deterministic=True,
+)
+TRAINING_CONFIG = train_config_to_manifest(TRAIN_CONFIG)
+ML_CONTRACT = ml_contract(TRAIN_CONFIG)
 DATA_CONTRACT = {
     "id": "inventory.learning-dataset",
     "version": 1,
@@ -84,7 +84,7 @@ def _auth():
 def _action(client, name, **fields):
     request = {
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -117,7 +117,7 @@ def _batch(source_rows, target_rows):
 def _put(client, created, ordinal, batches):
     payload_id = str(uuid.uuid4())
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", created["jobId"], "inputs", str(ordinal)
+        "transformer", "v4", "jobs", created["jobId"], "inputs", str(ordinal)
     )
     writer, results = client.do_put(
         descriptor,
@@ -127,7 +127,7 @@ def _put(client, created, ordinal, batches):
     rows = sum(batch.num_rows for batch in batches)
     writer.write_metadata(pa.py_buffer(json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "jobId": created["jobId"],
         "clientExecutionId": created["ownership"]["clientExecutionId"],
         "fencingToken": created["ownership"]["fencingToken"],
@@ -146,7 +146,7 @@ def _put(client, created, ordinal, batches):
     return result
 
 
-def test_real_cpu_v3_fit_starts_before_eof_and_publishes_after_close(
+def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
     tmp_path,
     postgres_config,
     postgres_ledger,
@@ -174,6 +174,7 @@ def test_real_cpu_v3_fit_starts_before_eof_and_publishes_after_close(
             modelConfig=MODEL_CONFIG,
             trainingConfig=TRAINING_CONFIG,
             dataContract=DATA_CONTRACT,
+            mlContract=ML_CONTRACT,
         )
         assert created["jobId"] == job_id
         first = _put(client, created, 0, [
@@ -243,7 +244,7 @@ def test_real_cpu_v3_fit_starts_before_eof_and_publishes_after_close(
         assert status["results"]["outputCount"] == 0
         assert status["results"]["modelRef"].startswith("mdl_")
         assert status["recovery"]["latestCheckpoint"]["completedEpochs"] == 1
-        assert _action(client, CAPABILITIES_ACTION)["protocolVersions"] == [3]
+        assert _action(client, CAPABILITIES_ACTION)["protocolVersions"] == [4]
         assert _action(client, HEALTH_ACTION)["live"] is True
 
         model = application.ledger.get_model(

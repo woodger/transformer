@@ -16,18 +16,22 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v2.config import (
+from app.contracts.worker.v3.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
+)
+from app.contracts.worker.v3.objective import (
+    ml_contract,
+    objective_config_sha256,
 )
 from app.service.adapters.outbound.worker_process.runner import (
     WorkerSubprocessRunner,
@@ -88,14 +92,14 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
     }
 
 
-def test_worker_capabilities_are_reported_through_v2_process_contract():
+def test_worker_capabilities_are_reported_through_v3_process_contract():
     result = subprocess.run(
         [
             sys.executable,
             "-m",
             "app.worker.bootstrap",
             "inspect",
-            "--contract-version=2",
+            "--contract-version=3",
         ],
         cwd=PROJECT_ROOT,
         check=False,
@@ -107,7 +111,7 @@ def test_worker_capabilities_are_reported_through_v2_process_contract():
     assert result.returncode == 0, result.stderr
     document = validate_document(json.loads(result.stdout), "capabilities")
     assert document["contract"] == "transformer-worker"
-    assert document["protocolVersion"] == 2
+    assert document["protocolVersion"] == 3
     assert document["torchVersion"]
 
 
@@ -148,7 +152,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=2",
+            "--contract-version=3",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -190,8 +194,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
     train_config = TrainConfig(
         batch_size=2,
         epochs=1,
-        patience=0,
-        loss_stage=1,
+        loss_stage=4,
         loss_schedule="none",
         stage_size=1,
     )
@@ -203,13 +206,14 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
         model,
         model_config=model_config,
         train_config=train_config,
+        data_contract=_data_contract(),
     )
     input_path = tmp_path / "input.arrow"
     _write_input(input_path, [[1.0, 2.0, 3.0, 4.0]], fit=False)
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 2,
+        "protocolVersion": 3,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -226,6 +230,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
             "checkpoint": _artifact(checkpoint),
         },
         "dataContract": _data_contract(),
+        "mlContract": ml_contract(train_config),
     }
     manifest_path = workspace / "worker-command.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -267,12 +272,9 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     train_config = TrainConfig(
         batch_size=2,
         epochs=1,
-        patience=0,
-        loss_stage=1,
+        loss_stage=4,
         loss_schedule="none",
         stage_size=1,
-        monitor="loss",
-        save_best_checkpoint=False,
         seed=7,
         deterministic=True,
     )
@@ -287,7 +289,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 2,
+        "protocolVersion": 3,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -304,9 +306,11 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
         },
         "training": train_config_to_manifest(train_config),
         "dataContract": _data_contract(),
+        "mlContract": ml_contract(train_config),
         "recovery": {
             "configSha256": "a" * 64,
             "dataContractSha256": DATA_CONTRACT_SHA256,
+            "objectiveConfigSha256": objective_config_sha256(train_config),
             "manifestSha256": MANIFEST_SHA256,
         },
     }
@@ -355,6 +359,7 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=None,
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
+        ml_contract=ml_contract(TrainConfig()),
         config_hash="a" * 64,
         manifest_sha256=MANIFEST_SHA256,
         feature_dim=2,
@@ -436,6 +441,7 @@ def test_duplicate_worker_event_is_rejected_before_repeating_its_side_effect():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
+        ml_contract=ml_contract(TrainConfig()),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,
@@ -515,6 +521,7 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
+        ml_contract=ml_contract(TrainConfig()),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,
@@ -631,7 +638,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=2",
+            "--contract-version=3",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

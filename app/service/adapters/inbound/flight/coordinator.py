@@ -1,5 +1,12 @@
 import pyarrow
 
+from app.contracts.worker.v3.objective import (
+    CHECKPOINT_FORMAT,
+    OBJECTIVE_ID,
+    PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
+    TARGET_SCHEMA_ID,
+    TARGET_WIDTH,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -177,6 +184,15 @@ class JobCoordinator:
                 "predictInput": PREDICT_SCHEMA_ID,
                 "predictionOutput": PREDICTION_SCHEMA_ID,
             },
+            mlContract={
+                "targetSchemaId": TARGET_SCHEMA_ID,
+                "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
+                "objectiveId": OBJECTIVE_ID,
+                "checkpointFormat": CHECKPOINT_FORMAT,
+                "targetWidth": TARGET_WIDTH,
+                "predictionSpace": "target",
+                "objectiveConfigSchemaVersion": 1,
+            },
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
@@ -243,6 +259,7 @@ def _create_command(owner: str, request: dict, document: dict) -> CreateJobComma
         requested_device=request["device"],
         prediction_column=request["prediction_column"],
         data_contract=request["data_contract"],
+        ml_contract=request["ml_contract"],
         model_label=request.get("model_label"),
         model_selector=(
             None

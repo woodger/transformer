@@ -136,6 +136,7 @@ class Ledger:
         prediction_column: str,
         config_hash: str,
         data_contract: dict,
+        ml_contract: dict,
         create_result: dict,
         model_label: str | None = None,
         resolved_model_ref: str | None = None,
@@ -160,6 +161,12 @@ class Ledger:
             raise ValueError("data_contract must be an object")
         contract_sha256 = data_contract.get("data_contract_sha256")
         _digest(contract_sha256, "data_contract_sha256")
+        if not isinstance(ml_contract, dict):
+            raise ValueError("ml_contract must be an object")
+        _digest(
+            ml_contract.get("objectiveConfigSha256"),
+            "objective_config_sha256",
+        )
         seq_len = data_contract.get("seq_len")
         feature_dim = data_contract.get("feature_dim")
         if any(
@@ -208,6 +215,7 @@ class Ledger:
             ),
             data_contract=_json_value(data_contract),
             data_contract_sha256=contract_sha256,
+            ml_contract=_json_value(ml_contract),
             config_hash=config_hash,
             source_width=seq_len * feature_dim,
             feature_dim=feature_dim,

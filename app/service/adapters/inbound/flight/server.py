@@ -33,7 +33,7 @@ from app.service.adapters.inbound.flight.errors import (
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v3 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v4 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     CREATE_ACTION: "Create a durable streaming job.",
     ACQUIRE_ACTION: "Transfer externally fenced job ownership.",

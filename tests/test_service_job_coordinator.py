@@ -1,7 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.worker.v2.config import ModelConfig
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
+from app.contracts.worker.v3.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.job_models import (
@@ -11,7 +12,7 @@ from app.service.application.job_models import (
 from app.service.domain.job import ExecutionState, InputState
 
 
-def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
+def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -43,6 +44,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
             selected_device=None,
             resolved_model_ref=None,
             data_contract=command.data_contract,
+            ml_contract=command.ml_contract,
             limits=limits,
         )
 
@@ -69,6 +71,8 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
         "feature_dim": 1,
         "target_schema_id": "inventory.target.v1",
     }
+    train_config = TrainConfig()
+    contract = ml_contract(train_config)
     request = {
         "request_id": request_id,
         "idempotency_key": "create:1",
@@ -78,15 +82,16 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
         "device": "cpu",
         "prediction_column": "out",
         "data_contract": data_contract,
+        "ml_contract": contract,
         "model_label": "daily",
         "model_selector": None,
         "model_ref": None,
         "model_config": ModelConfig(seq_len=2, feature_dim=1),
-        "train_config": None,
+        "train_config": train_config,
     }
     document = {
         "contract": "transformer-flight",
-        "version": 3,
+        "version": 4,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -105,7 +110,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 3
+    assert result["version"] == 4
     assert result["jobId"] == job_id
     assert result["ownership"] == {
         "clientExecutionId": execution_id,
@@ -114,7 +119,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v3():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v3",
+            "v4",
             "jobs",
             job_id,
             "inputs",

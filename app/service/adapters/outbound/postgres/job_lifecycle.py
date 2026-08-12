@@ -111,6 +111,7 @@ class PostgresJobLifecycle:
                 prediction_column=command.prediction_column,
                 config_hash=command.request_hash,
                 data_contract=command.data_contract,
+                ml_contract=command.ml_contract,
                 create_result=encoded,
                 model_label=command.model_label,
                 resolved_model_ref=prepared.resolved_model_ref,
@@ -363,6 +364,7 @@ def _encode_created(result: JobCreated) -> dict:
         "selected_device": result.selected_device,
         "resolved_model_ref": result.resolved_model_ref,
         "data_contract": dict(result.data_contract),
+        "ml_contract": dict(result.ml_contract),
         "limits": _encode_limits(result.limits),
     }
 
@@ -384,6 +386,7 @@ def _decode_created(document: dict) -> JobCreated:
             selected_device=document["selected_device"],
             resolved_model_ref=document.get("resolved_model_ref"),
             data_contract=dict(document["data_contract"]),
+            ml_contract=dict(document["ml_contract"]),
             limits=_decode_limits(document["limits"]),
         )
     ownership = document["ownership"]
@@ -402,6 +405,7 @@ def _decode_created(document: dict) -> JobCreated:
         selected_device=document["device"].get("selected"),
         resolved_model_ref=document.get("resolvedModelRef"),
         data_contract=_wire_data_contract(document["dataContract"]),
+        ml_contract=dict(document["mlContract"]),
         limits=_wire_limits(document["limits"]),
     )
 

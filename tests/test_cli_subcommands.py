@@ -7,7 +7,6 @@ from app.config import (
     DETERMINISTIC,
     HOST_DEFAULT,
     PORT_DEFAULT,
-    SAVE_BEST_CHECKPOINT,
     SEED,
     WEIGHT_DECAY,
 )
@@ -36,14 +35,15 @@ def test_fit_namespace_has_only_fit_options():
     assert args.seed == SEED
     assert args.deterministic is DETERMINISTIC
     assert args.weight_decay == WEIGHT_DECAY
-    assert args.save_best_checkpoint is SAVE_BEST_CHECKPOINT
+    assert args.select_best_checkpoint is None
+    assert args.direct_loss_weights is None
     assert not hasattr(args, "preds_path")
     assert not hasattr(args, "pred_col")
     assert not hasattr(args, "plots_dir")
     assert not hasattr(args, "max_frame_bytes")
 
 
-def test_predict_namespace_keeps_legacy_model_overrides():
+def test_predict_namespace_keeps_checkpoint_validation_overrides():
     args = parse(
         "predict",
         "input.arrow",
@@ -322,8 +322,8 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--epochs" not in predict_help
     assert "--metrics-name" not in predict_help
     assert "--plots-dir" not in predict_help
-    assert "required for legacy checkpoints" in normalized_predict_help
-    assert "or 256 for legacy checkpoints" in normalized_predict_help
+    assert "read from the checkpoint" in normalized_predict_help
+    assert "If specified, it must match" in normalized_predict_help
 
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["fit-stream", "--help"])
@@ -523,7 +523,7 @@ def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
         ("--batch-size", "0"),
         ("--epochs", "0"),
         ("--stage-size", "0"),
-        ("--patience", "-1"),
+        ("--selection-patience", "-1"),
         ("--seed", "-1"),
     ),
 )
@@ -532,7 +532,7 @@ def test_training_numeric_options_are_validated_by_argparse(options):
         parse("fit", "train.arrow", "--seq-len", "10", *options)
 
 
-def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
+def test_zero_is_valid_for_dropout_selection_seed_and_weight_decay():
     args = parse(
         "fit",
         "train.arrow",
@@ -540,7 +540,10 @@ def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
         "10",
         "--dropout",
         "0",
-        "--patience",
+        "--select-best-checkpoint",
+        "--selection-patience",
+        "0",
+        "--selection-min-delta",
         "0",
         "--seed",
         "0",
@@ -549,7 +552,8 @@ def test_zero_is_valid_for_dropout_patience_seed_and_weight_decay():
     )
 
     assert args.dropout == 0
-    assert args.patience == 0
+    assert args.selection_patience == 0
+    assert args.selection_min_delta == 0
     assert args.seed == 0
     assert args.weight_decay == 0
 
@@ -592,22 +596,19 @@ def test_training_seed_options_are_plumbed_into_train_config():
     assert config.to_dict()["deterministic"] is True
 
 
-def test_training_monitor_options_are_plumbed_into_train_config():
+def test_direct_loss_weights_are_plumbed_into_train_config():
     args = parse(
         "fit",
         "train.arrow",
         "--seq-len",
         "10",
-        "--monitor",
-        "ret_mae",
-        "--monitor-min-improvement",
-        "0.05",
+        "--direct-loss-weights",
+        "1,2,3,4,5,6",
     )
 
     config = train_config_from_args(args)
 
-    assert config.monitor == "ret_mae"
-    assert config.monitor_min_improvement == 0.05
+    assert config.direct_loss_weights == (1, 2, 3, 4, 5, 6)
 
 
 @pytest.mark.parametrize("action", ("fit", "fit-stream"))
@@ -635,18 +636,23 @@ def test_checkpoint_selection_policy_is_plumbed_into_train_config(action):
         *positional,
         "--seq-len",
         "10",
-        "--no-save-best-checkpoint",
+        "--select-best-checkpoint",
+        "--selection-min-delta",
+        "0.05",
+        "--selection-patience",
+        "3",
     )
 
-    assert train_config_from_args(args).save_best_checkpoint is False
+    selection = train_config_from_args(args).selection
+    assert selection.min_delta == 0.05
+    assert selection.patience == 3
 
 
 @pytest.mark.parametrize(
     "options",
     (
-        ("--monitor-min-improvement", "-0.1"),
-        ("--monitor-min-improvement", "1"),
-        ("--monitor-min-improvement", "nan"),
+        ("--selection-min-delta", "-0.1"),
+        ("--selection-min-delta", "nan"),
         ("--seed", str(2**32)),
     ),
 )
@@ -677,10 +683,10 @@ def test_model_config_validates_programmatic_values(kwargs, message):
         ({"lr": 0}, "lr"),
         ({"batch_size": 0}, "batch_size"),
         ({"epochs": 0}, "epochs"),
-        ({"patience": -1}, "patience"),
+        ({"loss_stage": 3}, "loss_stage"),
         ({"weight_decay": -1}, "weight_decay"),
-        ({"monitor": "unknown"}, "monitor"),
-        ({"monitor_min_improvement": 1}, "monitor_min_improvement"),
+        ({"direct_loss_weights": (1, 1, 1, 1, 1, 0)}, "direct_loss_weights"),
+        ({"selection": {"minDelta": -1, "patience": 1}}, "min_delta"),
         ({"seed": 2**32}, "seed"),
     ),
 )
@@ -759,7 +765,7 @@ def test_matching_prediction_overrides_are_allowed_and_feature_dim_is_checkpoint
     assert config.seq_len == 20
 
 
-def test_legacy_model_config_without_checkpoint_uses_defaults():
+def test_training_model_config_without_checkpoint_uses_defaults():
     args = SimpleNamespace(
         seq_len=12,
         hidden=None,

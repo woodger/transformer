@@ -30,7 +30,7 @@ from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
 from app.flight.upload import UploadHandler
 from app.worker.data.arrow import read_committed_fit_arrow
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
     close_input,
@@ -91,7 +91,7 @@ def _noncanonical_fit_batch(rows):
 def _upload_metadata(job, payload_id, ordinal, rows):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "jobId": job["job_id"],
         "clientExecutionId": job["client_execution_id"],
         "fencingToken": str(job["fencing_token"]),
@@ -145,7 +145,7 @@ def data_plane(tmp_path, postgres_ledger):
 def _put(client, job, payload_id, ordinal, batches):
     descriptor = flight.FlightDescriptor.for_path(
         "transformer",
-        "v3",
+        "v4",
         "jobs",
         job["job_id"],
         "inputs",
@@ -351,7 +351,7 @@ class _Reader:
 
 def _descriptor(job):
     return flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", job["job_id"], "inputs", "0"
+        "transformer", "v4", "jobs", job["job_id"], "inputs", "0"
     )
 
 
@@ -506,7 +506,7 @@ def test_output_is_unavailable_until_one_terminal_publication(data_plane):
     commit_input(ledger, job, 0, rows=1, storage_class="runtime")
     close_input(ledger, job)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", job["job_id"], "outputs", "0"
+        "transformer", "v4", "jobs", job["job_id"], "outputs", "0"
     )
 
     with pytest.raises(pa.ArrowInvalid, match="FAILED_PRECONDITION"):

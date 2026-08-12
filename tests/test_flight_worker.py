@@ -24,7 +24,7 @@ from app.service.adapters.outbound.artifact_storage.recovery_store import (
 from app.service.application.services.worker_pool import WorkerPool
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ModelArtifactRecord
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     close_input,
     create_fit,
@@ -129,7 +129,7 @@ def _commit_real_input(ledger, recovery, job, ordinal, *, value=1.0):
     )
 
 
-def test_open_fit_plan_is_an_immutable_worker_v2_snapshot(
+def test_open_fit_plan_is_an_immutable_worker_v3_snapshot(
     tmp_path,
     postgres_ledger,
 ):
@@ -143,7 +143,7 @@ def test_open_fit_plan_is_an_immutable_worker_v2_snapshot(
     plan = builder.build(running, running.attempt)
     document = json.loads(Path(plan.manifest_path).read_text())
 
-    assert plan.protocol_version == 2
+    assert plan.protocol_version == 3
     assert plan.argv[:3] == (
         sys.executable,
         "-m",
@@ -341,7 +341,10 @@ def test_predict_plan_preserves_stable_model_lifecycle_errors(
             ),
             sha256="0" * 64,
             data_contract=internal_data_contract(),
-            certified_for_v3=True,
+            ml_contract=running.ml_contract,
+            objective_config_sha256=running.ml_contract[
+                "objectiveConfigSha256"
+            ],
         )
     builder = WorkerPlanBuilder(
         config,

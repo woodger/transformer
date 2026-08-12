@@ -10,6 +10,10 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import torch
 
+from app.contracts.worker.v3.objective import (
+    ml_contract,
+    objective_config,
+)
 from app.flight.application import FlightApplication
 from app.flight.config import FlightServiceConfig
 from app.flight.constants import (
@@ -25,7 +29,7 @@ from app.model.transformer import TransformerModel
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.job import ExecutionState, InputState
 from app.storage.checkpoint import save_checkpoint
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
     close_input,
@@ -34,6 +38,7 @@ from tests.flight_v3_helpers import (
     internal_data_contract,
     model_config,
     public_data_contract,
+    public_ml_contract,
     train_config,
 )
 
@@ -63,7 +68,7 @@ def _auth():
 def _action(client, name, **fields):
     request = {
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
         **fields,
     }
@@ -95,7 +100,7 @@ def _publish_seed_model(ledger, models_dir, runtime_dir):
         nhead=config.nhead,
         context_mode=config.context_mode,
     )
-    assert model(source).shape == (1, 6)
+    assert model(source).shape == (1, 7)
     model_ref = f"mdl_{uuid.uuid4().hex}"
     checkpoint = spool.model_checkpoint_path(model_ref)
     save_checkpoint(
@@ -103,12 +108,16 @@ def _publish_seed_model(ledger, models_dir, runtime_dir):
         model,
         model_config=config,
         train_config=train_config(),
+        data_contract=public_data_contract(),
     )
     metadata_path = spool.model_metadata_path(model_ref)
     metadata = {
         "model_config": config.to_dict(),
         "train_config": train_config().to_dict(),
         "data_contract": internal_data_contract(),
+        "ml_contract": ml_contract(train_config()),
+        "objective_config": objective_config(train_config()),
+        "checkpoint": {"mlContract": public_ml_contract()},
     }
     spool.atomic_write_json(metadata_path, metadata)
     checkpoint_bytes = Path(checkpoint).read_bytes()
@@ -138,13 +147,13 @@ def _predict_schema():
 def _put(client, created, ordinal, batches):
     payload_id = str(uuid.uuid4())
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", created["jobId"], "inputs", str(ordinal)
+        "transformer", "v4", "jobs", created["jobId"], "inputs", str(ordinal)
     )
     writer, results = client.do_put(descriptor, _predict_schema(), options=_auth())
     rows = sum(batch.num_rows for batch in batches)
     writer.write_metadata(pa.py_buffer(json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "jobId": created["jobId"],
         "clientExecutionId": created["ownership"]["clientExecutionId"],
         "fencingToken": created["ownership"]["fencingToken"],
@@ -177,6 +186,7 @@ def _create_predict(client, model_ref):
         modelRef=model_ref,
         predictionColumn="prediction",
         dataContract=public_data_contract(),
+        mlContract=public_ml_contract(),
     )
 
 
@@ -210,7 +220,7 @@ def _wait_terminal(client, job_id):
         time.sleep(0.02)
 
 
-def test_real_cpu_v3_prediction_publishes_outputs_atomically_after_eof(
+def test_real_cpu_v4_prediction_publishes_outputs_atomically_after_eof(
     tmp_path,
     postgres_ledger,
     postgres_config,
@@ -261,7 +271,7 @@ def test_real_cpu_v3_prediction_publishes_outputs_atomically_after_eof(
         ]
         for ordinal, expected_rows in ((0, 2), (1, 0)):
             descriptor = flight.FlightDescriptor.for_path(
-                "transformer", "v3", "jobs", created["jobId"],
+                "transformer", "v4", "jobs", created["jobId"],
                 "outputs", str(ordinal),
             )
             info = client.get_flight_info(descriptor, options=_auth())

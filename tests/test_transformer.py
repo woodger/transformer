@@ -8,7 +8,7 @@ from app.model.context import (
     context_token_ratios,
     prepare_context_input,
 )
-from app.model.transformer import TransformerModel
+from app.model.transformer import TransformerModel, public_predictions
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +37,8 @@ def test_transformer_forward_shape():
     x = torch.randn(batch, seq_len, feat_dim)
     y = model(x)
 
-    assert y.shape == (batch, out_dim)
+    assert y.shape == (batch, out_dim + 1)
+    assert public_predictions(y).shape == (batch, out_dim)
 
 
 def test_transformer_input_dim_matches_context_mode():
@@ -168,5 +169,22 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
 
     y = model(x)
 
-    assert y.shape == (2, 6)
+    assert y.shape == (2, 7)
     assert torch.isfinite(y).all()
+
+
+def test_public_predictions_are_target_aligned_and_bounded():
+    output = torch.tensor([
+        [-0.25, 0.4, 0.0, 2.0, 0.75, -2.0, 3.5],
+    ])
+
+    prediction = public_predictions(output)
+
+    assert prediction.shape == (1, 6)
+    assert prediction[0, 0] == pytest.approx(-0.25)
+    assert prediction[0, 1] == pytest.approx(0.4)
+    assert prediction[0, 2] == pytest.approx(0.5)
+    assert prediction[0, 3] == pytest.approx(torch.sigmoid(torch.tensor(2.0)).item())
+    assert prediction[0, 4] == pytest.approx(0.75)
+    assert prediction[0, 5] == pytest.approx(torch.sigmoid(torch.tensor(-2.0)).item())
+    assert torch.all((prediction[:, 1:] >= 0) & (prediction[:, 1:] <= 1))

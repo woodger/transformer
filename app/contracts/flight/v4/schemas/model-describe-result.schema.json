@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v4/model-describe-result.schema.json",
+  "title": "transformer.v4.model.describe result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "modelRef", "label", "generation",
+    "dataContract", "mlContract", "modelConfig", "checkpoint", "createdAt"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 4},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/label"},
+    "label": {"$ref": "common.schema.json#/$defs/label"},
+    "generation": {"type": "integer", "minimum": 1},
+    "dataContract": {"$ref": "common.schema.json#/$defs/dataContract"},
+    "mlContract": {"$ref": "common.schema.json#/$defs/mlContract"},
+    "modelConfig": {"$ref": "common.schema.json#/$defs/modelConfig"},
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "sha256", "bytes"],
+      "properties": {
+        "format": {"const": "transformer-checkpoint-v3"},
+        "sha256": {"$ref": "common.schema.json#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}

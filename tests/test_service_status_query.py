@@ -45,6 +45,10 @@ def _job(**overrides):
             "feature_dim": 2,
             "target_schema_id": "inventory.target.v1",
         },
+        ml_contract={
+            "targetSchemaId": "inventory.target.v1",
+            "objectiveId": "transformer.objective.target-aligned.v1",
+        },
         progress={"epoch": 2},
         attempt=2,
         error_code=None,
@@ -91,13 +95,13 @@ def _execute(query, request_id):
     )
 
 
-def test_status_exposes_bounded_v3_state_without_artifact_paths():
+def test_status_exposes_bounded_v4_state_without_artifact_paths():
     recovery = StatusRecoveryRecord(
         checkpoint=TrainingRecoveryCheckpointRecord(
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v1",
+            format="transformer-training-recovery-v3",
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,

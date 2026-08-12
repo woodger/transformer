@@ -3,14 +3,14 @@ from __future__ import annotations
 import hashlib
 import os
 
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v2.config import (
+from app.contracts.worker.v3.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -163,6 +163,7 @@ class WorkerPlanBuilder:
             "workspace": {"root": workspace},
             "model": {"config": model_config_to_manifest(model_config)},
             "dataContract": _data_contract_manifest(job.data_contract),
+            "mlContract": dict(job.ml_contract),
         }
         if job.operation == "predict":
             model = self._validated_model(job)
@@ -202,6 +203,9 @@ class WorkerPlanBuilder:
                     "configSha256": job.config_hash,
                     "dataContractSha256": job.data_contract[
                         "data_contract_sha256"
+                    ],
+                    "objectiveConfigSha256": job.ml_contract[
+                        "objectiveConfigSha256"
                     ],
                     "manifestSha256": job.manifest_sha256,
                 }

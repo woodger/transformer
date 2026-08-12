@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from app.contracts.flight.v3.constants import (
+from app.contracts.flight.v4.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
 )
-from app.contracts.worker.v2 import (
+from app.contracts.worker.v3 import (
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
@@ -24,6 +24,8 @@ from app.contracts.worker.v2 import (
     parse_event,
     validate_document,
 )
+from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v3.objective import ml_contract
 from app.worker.application.inputs import DurableInputStream
 
 SCHEMA_ROOT = (
@@ -31,7 +33,7 @@ SCHEMA_ROOT = (
     / "app"
     / "contracts"
     / "worker"
-    / "v2"
+    / "v3"
     / "schemas"
 )
 JOB_ID = "00000000-0000-4000-8000-000000000001"
@@ -56,22 +58,7 @@ def _model_config() -> dict:
 
 
 def _training_config() -> dict:
-    return {
-        "lr": 0.001,
-        "batchSize": 4,
-        "epochs": 2,
-        "patience": 1,
-        "lossStage": 1,
-        "lossSchedule": "epoch",
-        "stageSize": 1,
-        "useAmp": False,
-        "weightDecay": 0.0,
-        "monitor": "loss",
-        "monitorMinImprovement": 0.0,
-        "saveBestCheckpoint": True,
-        "seed": 42,
-        "deterministic": True,
-    }
+    return train_config_to_manifest(TrainConfig(batch_size=4, epochs=2))
 
 
 def _data_contract() -> dict:
@@ -103,7 +90,7 @@ def _input(ordinal: int, *, revision: int, rows: int, byte_count: int) -> dict:
 def _fit_manifest(*, closed: bool = False) -> dict:
     return {
         "contract": "transformer-worker",
-        "protocolVersion": 2,
+        "protocolVersion": 3,
         "jobId": JOB_ID,
         "attempt": 1,
         "attemptId": ATTEMPT_ID,
@@ -117,9 +104,13 @@ def _fit_manifest(*, closed: bool = False) -> dict:
         "model": {"label": "forecast", "config": _model_config()},
         "training": _training_config(),
         "dataContract": _data_contract(),
+        "mlContract": ml_contract(TrainConfig(batch_size=4, epochs=2)),
         "recovery": {
             "configSha256": SHA256,
             "dataContractSha256": DATA_CONTRACT_SHA256,
+            "objectiveConfigSha256": ml_contract(
+                TrainConfig(batch_size=4, epochs=2)
+            )["objectiveConfigSha256"],
             "manifestSha256": SHA256 if closed else None,
         },
     }
@@ -136,7 +127,7 @@ class _Emitter:
         self.events.append(("ack", payload))
 
 
-def test_worker_v2_schemas_are_valid_draft_2020_12_documents():
+def test_worker_v3_schemas_are_valid_draft_2020_12_documents():
     schemas = sorted(SCHEMA_ROOT.glob("*.schema.json"))
     assert {path.name for path in schemas} == {
         "arrow-manifest.schema.json",
@@ -151,7 +142,7 @@ def test_worker_v2_schemas_are_valid_draft_2020_12_documents():
         Draft202012Validator.check_schema(json.loads(path.read_text()))
 
 
-def test_worker_v2_pins_flight_v3_arrow_schema_ids():
+def test_worker_v3_pins_flight_v4_arrow_schema_ids():
     assert (
         FIT_INPUT_SCHEMA_ID,
         PREDICT_INPUT_SCHEMA_ID,

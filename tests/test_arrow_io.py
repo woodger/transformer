@@ -23,7 +23,7 @@ def test_arrow_file_io_preserves_tensor_values(tmp_path):
     X = [[1.0, 2.0], [3.0, 4.0]]
     Y = [
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
-        [1.5, 0.0, 0.0, 0.0, 1.0, 0.0],
+        [-0.5, 0.1, 0.2, 0.3, 0.4, 0.5],
     ]
 
     table = pa.table({"src": X, "tgt": Y})
@@ -38,11 +38,11 @@ def test_arrow_file_io_preserves_tensor_values(tmp_path):
     assert isinstance(X_t, torch.Tensor)
     assert isinstance(Y_t, torch.Tensor)
     assert X_t.tolist() == X
-    assert Y_t.tolist() == Y
+    assert torch.allclose(Y_t, torch.tensor(Y, dtype=torch.float32))
 
     preds = torch.tensor([
-        [1.0, 2.0, 3.0, 4.0, 5.0, 0.5],
-        [6.0, 5.0, 4.0, 3.0, 2.0, 0.25],
+        [1.0, 0.2, 0.3, 0.4, 0.5, 0.6],
+        [-1.0, 0.5, 0.4, 0.3, 0.2, 0.25],
     ])
     out_path = tmp_path / "preds.arrow"
 
@@ -61,7 +61,7 @@ def test_iter_framed_arrow_reads_multiple_payloads():
         }),
         pa.table({
             "src": [[3.0, 4.0]],
-            "tgt": [[1.5, 0.0, 0.0, 0.0, 1.0, 0.0]],
+            "tgt": [[-0.5, 0.1, 0.2, 0.3, 0.4, 0.5]],
         }),
     ]
 
@@ -82,7 +82,10 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     X_t, Y_t = table_to_tensors(result[1])
     assert isinstance(X_t, torch.Tensor)
     assert X_t.tolist() == [[3.0, 4.0]]
-    assert Y_t.tolist() == [[1.5, 0.0, 0.0, 0.0, 1.0, 0.0]]
+    assert torch.allclose(
+        Y_t,
+        torch.tensor([[-0.5, 0.1, 0.2, 0.3, 0.4, 0.5]]),
+    )
 
 
 def test_read_source_arrow_does_not_require_target(tmp_path):
@@ -114,7 +117,10 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
         pa.record_batch(
             [
                 pa.array([[5.0, 6.0, 7.0, 8.0]], type=schema.field(0).type),
-                pa.array([[1.5, 0.0, 0.0, 0.0, 2.0, 0.0]], type=schema.field(1).type),
+                pa.array(
+                    [[-0.5, 0.1, 0.2, 0.3, 0.4, 0.0]],
+                    type=schema.field(1).type,
+                ),
             ],
             schema=schema,
         ),
@@ -134,10 +140,10 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
     assert source.shape == (2, 4)
     assert torch.isnan(source[0, 1])
     assert source[1].tolist() == [5.0, 6.0, 7.0, 8.0]
-    assert target.tolist() == [
+    assert torch.allclose(target, torch.tensor([
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
-        [1.5, 0.0, 0.0, 0.0, 2.0, 0.0],
-    ]
+        [-0.5, 0.1, 0.2, 0.3, 0.4, 0.0],
+    ]))
 
 
 def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):

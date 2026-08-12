@@ -4,6 +4,7 @@ import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from app.contracts.worker.v3.objective import objective_config_sha256
 from app.data.arrow import (
     DEFAULT_MAX_FRAME_BYTES,
     iter_framed_arrow,
@@ -167,6 +168,9 @@ def _run_spooled(
                 device,
                 expected_config_hash=recovery["config_hash"],
                 expected_manifest_hash=recovery["manifest_hash"],
+                expected_objective_config_sha256=objective_config_sha256(
+                    trainer.train_config
+                ),
             )
             if payload["model_config"] != asdict(model_config):
                 raise ValueError(

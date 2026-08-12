@@ -13,7 +13,7 @@ from app.flight.maintenance import MaintenanceService
 from app.flight.observability import OperationalMetrics
 from app.flight.spool import Spool
 from app.service.domain.job import ErrorCode, ExecutionState
-from tests.flight_v3_helpers import (
+from tests.flight_v4_helpers import (
     close_input,
     commit_input,
     create_fit,

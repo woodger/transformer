@@ -7,8 +7,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлен target-aligned ML-контракт Flight v4: шесть public predictions
+  совпадают с target Inventory по индексу, имеют прямой supervision и
+  проверяются по finite/range-инвариантам до публикации.
+- Добавлены каноническая objective configuration, cross-language JSON fixture
+  и `objectiveConfigSha256`; checkpoint selection учитывает только глобально
+  агрегированные `L0…L5` полной epoch максимального stage.
+
 ### Changed
 
+- Flight v4, worker process v3, `transformer-checkpoint-v3` и
+  `transformer-training-recovery-v3` образуют одну breaking-границу. Private
+  Gaussian scale отделён от public `sigmaReturn`; probability logits не
+  пересекают prediction boundary.
+- Миграция `0006` удаляет jobs, idempotency и recovery state прежнего
+  objective, сохраняя access tokens, model identities и aliases. Прежние
+  модели требуют полного переобучения и нового `modelRef`.
 - Service boundary доведена до полноценной Clean Architecture: application
   commands/queries используют нейтральные DTO и capability ports, Flight
   presentation находится во inbound adapter, а PostgreSQL transactions,
@@ -18,7 +34,7 @@
 
 ### Fixed
 
-- Flight v3 теперь использует единое canonical определение Arrow physical
+- Flight v4 использует единое canonical определение Arrow physical
   schema для ingress, fingerprint, fixtures, durable replay и worker output.
   Неканоническая nested nullability отклоняется с `INVALID_ARGUMENT` до
   reservation, durable commit и запуска worker.
@@ -33,6 +49,12 @@
 - Пустой fit возвращает `EMPTY_INPUT` до повторной проверки доступности CUDA.
 - Миграция `0005` приводит длину `models.model_ref` и
   `model_aliases.model_ref` к ORM-контракту `VARCHAR(128)`.
+
+### Removed
+
+- Удалены Flight v3 actions/descriptors/fixtures и worker v2 contract; runtime
+  не содержит v3 compatibility surface или fallback.
+- Удалено чтение прежних checkpoint formats и raw `state_dict` локальным CLI.
 
 ## [0.1.9] - 2026-08-11
 

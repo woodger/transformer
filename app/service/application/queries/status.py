@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.contracts.worker.v2.config import ModelConfig
 from app.service.application.job_models import (
     DescribeModelQuery,
     GetJobStatusQuery,
@@ -13,6 +12,9 @@ from app.service.application.job_models import (
 )
 from app.service.application.ports.job_lifecycle import ModelArtifactVerifier
 from app.service.application.ports.job_queries import JobQueryStore
+from app.service.application.services.model_contract import (
+    verify_model_semantics,
+)
 from app.service.domain.errors import ServiceError, not_found
 from app.service.domain.job import ErrorCode
 
@@ -111,26 +113,8 @@ class DescribeModel:
             )
         if model is None:
             raise not_found("model generation not found")
-        if not model.certified_for_v3 or model.data_contract is None:
-            raise ServiceError(
-                ErrorCode.MODEL_SCHEMA_MISMATCH,
-                "model generation is not certified for Flight v3",
-            )
+        model_config = verify_model_semantics(model)
         self._model_verifier.verify(model)
-        try:
-            model_config = ModelConfig.from_dict(
-                model.metadata["model_config"]
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ServiceError(
-                ErrorCode.MODEL_CORRUPT,
-                "model metadata is invalid",
-            ) from exc
-        if model_config is None:
-            raise ServiceError(
-                ErrorCode.MODEL_CORRUPT,
-                "model metadata is invalid",
-            )
         return ModelDescription(query.request_id, model, model_config)
 
 __all__ = [

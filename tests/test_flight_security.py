@@ -14,6 +14,8 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
+from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v3.objective import ml_contract
 from app.database.models import OutputTicket
 from app.flight.auth import BearerAuthMiddlewareFactory
 from app.flight.config import FlightServiceConfig
@@ -41,6 +43,12 @@ from app.service.adapters.inbound.flight.output import (
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.records import OutputRecord
 
+SECURITY_TRAIN_CONFIG = TrainConfig(
+    epochs=1,
+    loss_schedule="none",
+)
+SECURITY_ML_CONTRACT = ml_contract(SECURITY_TRAIN_CONFIG)
+
 
 def _auth(token="secret"):
     return flight.FlightCallOptions(
@@ -52,7 +60,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -60,7 +68,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 3,
+        "version": 4,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
@@ -69,7 +77,7 @@ def _create_fit_document(**overrides):
         "device": "cpu",
         "modelLabel": "returns.daily",
         "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
-        "trainingConfig": {"epochs": 1},
+        "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),
         "dataContract": {
             "id": "inventory.learning-dataset",
             "version": 1,
@@ -78,6 +86,7 @@ def _create_fit_document(**overrides):
             "featureDim": 1,
             "targetSchemaId": "inventory.target.v1",
         },
+        "mlContract": SECURITY_ML_CONTRACT,
     }
     document.update(overrides)
     return document
@@ -353,6 +362,7 @@ def published_output_server(tmp_path, postgres_ledger):
             "feature_dim": 1,
             "target_schema_id": "inventory.target.v1",
         },
+        ml_contract=SECURITY_ML_CONTRACT,
         create_result={"jobId": job_id},
         resolved_model_ref="mdl_seed",
         model_config={
@@ -425,7 +435,7 @@ def test_output_descriptor_and_ticket_are_owner_bound_and_expired_ticket_fails(
 ):
     ledger, job_id, client = published_output_server
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", job_id, "outputs", "0"
+        "transformer", "v4", "jobs", job_id, "outputs", "0"
     )
 
     with pytest.raises(pa.ArrowKeyError):
@@ -456,7 +466,7 @@ def test_client_cancellation_reaches_active_do_get_and_closes_output(
     monkeypatch,
 ):
     _, job_id, client = published_output_server
-    import app.flight.output as output_module
+    import app.service.adapters.inbound.flight.output as output_module
 
     original = output_module._stream_batches
     resume = threading.Event()
@@ -476,7 +486,7 @@ def test_client_cancellation_reaches_active_do_get_and_closes_output(
 
     monkeypatch.setattr(output_module, "_stream_batches", observable_stream)
     descriptor = flight.FlightDescriptor.for_path(
-        "transformer", "v3", "jobs", job_id, "outputs", "0"
+        "transformer", "v4", "jobs", job_id, "outputs", "0"
     )
     ticket = client.get_flight_info(descriptor, options=_auth()).endpoints[0].ticket
     reader = client.do_get(ticket, options=_auth())

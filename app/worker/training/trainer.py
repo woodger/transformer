@@ -16,19 +16,21 @@ from app.config import (
     GRAD_CLIP_NORM,
     LOSS_SCHEDULE,
     LOSS_STAGE,
-    SAVE_BEST_CHECKPOINT,
     SEED,
     STAGE_SIZE,
-    TRAIN_MONITOR,
-    TRAIN_MONITOR_MIN_IMPROVEMENT,
     WEIGHT_DECAY,
 )
+from app.contracts.worker.v3.config import (
+    DEFAULT_DIRECT_LOSS_WEIGHTS,
+    CheckpointSelectionConfig,
+)
+from app.contracts.worker.v3.objective import objective_config_sha256
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
 from app.worker.model.context import context_missingness_ratios
-from app.worker.training.early_stopping import EarlyStopping
+from app.worker.model.transformer import public_predictions
+from app.worker.training.early_stopping import SelectionState
 from app.worker.training.loss_scheduler import LossScheduler
 from app.worker.training.losses import (
-    LOSS_STAGES,
     combined_loss,
     validate_loss_schedule,
     validate_loss_stage,
@@ -122,48 +124,55 @@ class Trainer:
         lr: float,
         batch_size: int,
         epochs: int,
-        patience: int,
         use_amp: bool = False,
         loss_stage: int = LOSS_STAGE,
         loss_schedule: str = LOSS_SCHEDULE,
         stage_size: int = STAGE_SIZE,
         weight_decay: float = WEIGHT_DECAY,
-        monitor: str = TRAIN_MONITOR,
-        monitor_min_improvement: float = TRAIN_MONITOR_MIN_IMPROVEMENT,
-        save_best_checkpoint: bool = SAVE_BEST_CHECKPOINT,
+        direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
+        selection: CheckpointSelectionConfig | None = None,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
         metrics_context: dict | None = None,
         model_config=None,
         train_config=None,
+        data_contract: dict | None = None,
         seed: int = SEED,
     ):
         self.model = model
         self.device = device
         self.batch_size = batch_size
         self.epochs = epochs
-        self.patience = patience
         self.loss_stage = validate_loss_stage(loss_stage)
         self.loss_schedule = validate_loss_schedule(loss_schedule)
         self.stage_size = validate_stage_size(stage_size)
-        self.monitor = self._validate_monitor(monitor)
-        self.monitor_min_improvement = float(monitor_min_improvement)
-        self.save_best_checkpoint = bool(save_best_checkpoint)
+        self.direct_loss_weights = tuple(float(value) for value in direct_loss_weights)
+        if len(self.direct_loss_weights) != 6 or any(
+            not math.isfinite(value) or value <= 0
+            for value in self.direct_loss_weights
+        ):
+            raise ValueError("direct_loss_weights must contain six positive values")
+        self.selection = selection
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.model_config = model_config
         self.train_config = train_config
+        self.data_contract = (
+            None if data_contract is None else dict(data_contract)
+        )
         self.seed = seed
-        self.best_monitor = float("inf")
+        self.best_selection_score = float("inf")
         self.best_state_dict = None
         self.best_metrics = None
         self.best_frame = None
         self.best_epoch = None
         self.state = TrainingState()
-        self.early_stopping = EarlyStopping(
-            patience=self.patience,
-            min_stage=min(self.loss_stage, LOSS_STAGES),
+        self.selection_state = (
+            None
+            if selection is None
+            else SelectionState(selection.min_delta, selection.patience)
         )
+        self.maximum_stage_completed = False
         self.training_complete = False
         self._payload_shuffle_generator = torch.Generator()
         self._payload_shuffle_generator.manual_seed(self.seed)
@@ -178,8 +187,7 @@ class Trainer:
             "stage_size": self.stage_size,
             "max_loss_stage": self.loss_stage,
             "device": str(self.device),
-            "monitor": self.monitor,
-            "monitor_min_improvement": self.monitor_min_improvement,
+            "selection_enabled": self.selection is not None,
         }
         if metrics_context:
             self.metrics_context.update(metrics_context)
@@ -195,12 +203,6 @@ class Trainer:
 
         if use_amp and device.type != "cuda":
             print("AMP requested but CUDA not available — disabled")
-
-    def _validate_monitor(self, monitor: str) -> str:
-        choices = ("loss", "ret_mae", "ret_mae_skill")
-        if monitor not in choices:
-            raise ValueError(f"monitor must be one of: {', '.join(choices)}")
-        return monitor
 
     @property
     def train_step(self) -> int:
@@ -266,6 +268,7 @@ class Trainer:
                             preds,
                             yb,
                             loss_stage,
+                            self.direct_loss_weights,
                             return_statistics=True,
                         )
 
@@ -301,56 +304,66 @@ class Trainer:
     def _train_loader(self, loader) -> TrainMetrics:
         return self._train_loaders((loader,))
 
-    def _monitor_value(self, metrics: TrainMetrics) -> float:
-        if self.monitor == "loss":
-            return metrics.loss
-        if self.monitor == "ret_mae":
-            return metrics.ret_mae
-        return metrics.ret_mae_skill
-
-    def _baseline_passed(self, metrics: TrainMetrics) -> bool:
-        if self.monitor == "loss":
-            return True
-        if metrics.ret_mae_baseline <= 0.0:
-            return False
-
-        threshold = metrics.ret_mae_baseline * (1.0 - self.monitor_min_improvement)
-        return metrics.ret_mae < threshold
-
     def _observe_metrics(
         self,
         metrics: TrainMetrics,
         frame: int | None = None,
         epoch: int | None = None,
     ) -> dict:
-        monitor_value = self._monitor_value(metrics)
-        baseline_passed = self._baseline_passed(metrics)
         checkpoint_best = False
+        should_stop = False
+        selection_score = None
+        maximum_stage_epoch = (
+            metrics.minimum_loss_stage == self.loss_stage
+            and metrics.maximum_loss_stage == self.loss_stage
+        )
+        if maximum_stage_epoch:
+            self.maximum_stage_completed = True
+            if self.selection_state is not None:
+                if not self.selection_state.active:
+                    self._reset_selection()
+                components = metrics.direct_losses()
+                selection_score = math.fsum(
+                    weight * value
+                    for weight, value in zip(
+                        self.direct_loss_weights,
+                        components,
+                        strict=True,
+                    )
+                )
+                if not math.isfinite(selection_score):
+                    raise ValueError("checkpoint selection score must be finite")
+                checkpoint_best, should_stop = self.selection_state.update(
+                    selection_score
+                )
+                metrics.selection_score = selection_score
+                if checkpoint_best:
+                    self.best_selection_score = selection_score
+                    self.best_state_dict = self._snapshot_state_dict()
+                    self.best_metrics = metrics.to_dict()
+                    self.best_frame = frame
+                    self.best_epoch = epoch
 
-        if (
-            self.save_best_checkpoint
-            and baseline_passed
-            and math.isfinite(monitor_value)
-            and monitor_value < self.best_monitor
-        ):
-            self.best_monitor = monitor_value
-            self.best_state_dict = self._snapshot_state_dict()
-            self.best_metrics = metrics.to_dict()
-            self.best_frame = frame
-            self.best_epoch = epoch
-            checkpoint_best = True
-
-        payload = {
-            "monitor_value": monitor_value,
-            "baseline_passed": baseline_passed,
+        return {
+            "selection_score": selection_score,
             "checkpoint_best": checkpoint_best,
+            "should_stop": should_stop,
+            "best_selection_score": (
+                self.best_selection_score
+                if math.isfinite(self.best_selection_score)
+                else None
+            ),
         }
-        if math.isfinite(self.best_monitor):
-            payload["best_monitor"] = self.best_monitor
-        else:
-            payload["best_monitor"] = None
 
-        return payload
+    def _reset_selection(self) -> None:
+        if self.selection_state is None:
+            return
+        self.selection_state.begin()
+        self.best_selection_score = float("inf")
+        self.best_state_dict = None
+        self.best_metrics = None
+        self.best_frame = None
+        self.best_epoch = None
 
     def _snapshot_state_dict(self) -> dict:
         return {
@@ -404,7 +417,6 @@ class Trainer:
             loaders,
             on_epoch=on_epoch,
             start_epoch=self.state.global_epoch,
-            stopper=self.early_stopping,
         )
 
     def _payload_batches(self, payloads, generator):
@@ -513,14 +525,9 @@ class Trainer:
         frame: int | None = None,
         *,
         start_epoch: int = 0,
-        stopper: EarlyStopping | None = None,
         on_epoch_committed=None,
     ):
         metrics_rows = []
-        stopper = stopper or EarlyStopping(
-            patience=self.patience,
-            min_stage=min(self.loss_stage, LOSS_STAGES),
-        )
         self.state.begin_frame(frame)
         self.training_complete = False
 
@@ -528,28 +535,29 @@ class Trainer:
             self.state.begin_epoch(epoch)
             metrics = self._train_loaders(loaders())
             metrics_rows.append(metrics)
-            monitor_payload = self._observe_metrics(
+            selection_payload = self._observe_metrics(
                 metrics,
                 frame=frame,
                 epoch=epoch + 1,
             )
 
             if on_epoch is not None:
-                on_epoch(epoch, metrics, monitor_payload)
+                on_epoch(epoch, metrics, selection_payload)
 
-            should_stop = stopper.update(
-                monitor_payload["monitor_value"],
-                metrics.loss_stage,
-            )
+            should_stop = selection_payload["should_stop"]
             self.state.finish_epoch()
             self.training_complete = (
                 should_stop or self.state.global_epoch >= self.epochs
             )
+            if self.training_complete and not self.maximum_stage_completed:
+                raise ValueError(
+                    "training completed before the maximum loss stage"
+                )
             if on_epoch_committed is not None:
                 on_epoch_committed(
                     epoch,
                     metrics,
-                    monitor_payload,
+                    selection_payload,
                     self.training_complete,
                 )
             if should_stop:
@@ -573,7 +581,6 @@ class Trainer:
             loaders,
             on_epoch=on_epoch,
             start_epoch=self.state.global_epoch,
-            stopper=self.early_stopping,
             on_epoch_committed=on_epoch_committed,
         )
 
@@ -612,7 +619,6 @@ class Trainer:
             loaders,
             on_epoch=on_epoch,
             start_epoch=self.state.global_epoch,
-            stopper=self.early_stopping,
             on_epoch_committed=on_epoch_committed,
         )
 
@@ -632,9 +638,14 @@ class Trainer:
             ),
             "scaler_state_dict": copy.deepcopy(self.scaler.state_dict()),
             "training_state": asdict(self.state),
-            "early_stopping": asdict(self.early_stopping),
+            "objective_config_sha256": self._objective_config_sha256(),
+            "selection_state": (
+                None
+                if self.selection_state is None
+                else asdict(self.selection_state)
+            ),
             "selection": {
-                "best_monitor": self.best_monitor,
+                "best_selection_score": self.best_selection_score,
                 "best_state_dict": (
                     None
                     if self.best_state_dict is None
@@ -654,6 +665,7 @@ class Trainer:
                 "cuda": cuda_rng_state,
             },
             "training_complete": self.training_complete,
+            "maximum_stage_completed": self.maximum_stage_completed,
         }
 
     def load_recovery_state_dict(self, payload: dict) -> None:
@@ -666,17 +678,19 @@ class Trainer:
             "optimizer_state_dict",
             "scaler_state_dict",
             "training_state",
-            "early_stopping",
+            "objective_config_sha256",
+            "selection_state",
             "selection",
             "payload_shuffle_generator_state",
             "rng",
             "training_complete",
+            "maximum_stage_completed",
         }
         if set(payload) != required:
             raise ValueError("training recovery state has invalid fields")
 
         training_state = payload["training_state"]
-        early_stopping = payload["early_stopping"]
+        selection_state = payload["selection_state"]
         selection = payload["selection"]
         rng = payload["rng"]
         if not isinstance(training_state, dict) or set(training_state) != {
@@ -686,16 +700,21 @@ class Trainer:
             "train_step",
         }:
             raise ValueError("training recovery progress is invalid")
-        if not isinstance(early_stopping, dict) or set(early_stopping) != {
+        if payload["objective_config_sha256"] != self._objective_config_sha256():
+            raise ValueError("training recovery objective configuration differs")
+        if self.selection is None:
+            if selection_state is not None:
+                raise ValueError("training recovery selection state is invalid")
+        elif not isinstance(selection_state, dict) or set(selection_state) != {
+            "min_delta",
             "patience",
-            "min_stage",
+            "active",
             "best_score",
             "wait",
-            "current_stage",
         }:
-            raise ValueError("training recovery early stopping is invalid")
+            raise ValueError("training recovery selection state is invalid")
         if not isinstance(selection, dict) or set(selection) != {
-            "best_monitor",
+            "best_selection_score",
             "best_state_dict",
             "best_metrics",
             "best_frame",
@@ -709,23 +728,23 @@ class Trainer:
             "cuda",
         }:
             raise ValueError("training recovery random state is invalid")
-        if early_stopping["patience"] != self.patience:
-            raise ValueError("training recovery patience does not match")
-        if early_stopping["min_stage"] != min(
-            self.loss_stage,
-            LOSS_STAGES,
+        if self.selection is not None and (
+            selection_state["min_delta"] != self.selection.min_delta
+            or selection_state["patience"] != self.selection.patience
         ):
-            raise ValueError(
-                "training recovery loss stage does not match"
-            )
+            raise ValueError("training recovery selection policy differs")
 
         self.model.load_state_dict(payload["model_state_dict"])
         self.optimizer.load_state_dict(payload["optimizer_state_dict"])
         _optimizer_to(self.optimizer, self.device)
         self.scaler.load_state_dict(payload["scaler_state_dict"])
         self.state = TrainingState(**training_state)
-        self.early_stopping = EarlyStopping(**early_stopping)
-        self.best_monitor = selection["best_monitor"]
+        self.selection_state = (
+            None
+            if selection_state is None
+            else SelectionState(**selection_state)
+        )
+        self.best_selection_score = selection["best_selection_score"]
         self.best_state_dict = selection["best_state_dict"]
         self.best_metrics = selection["best_metrics"]
         self.best_frame = selection["best_frame"]
@@ -744,23 +763,24 @@ class Trainer:
                 )
             torch.cuda.set_rng_state_all(cuda_rng_state)
         self.training_complete = bool(payload["training_complete"])
+        self.maximum_stage_completed = bool(payload["maximum_stage_completed"])
 
     def fit(self, X: torch.Tensor, Y: torch.Tensor, model_name: str):
-        def on_epoch(epoch: int, metrics: TrainMetrics, monitor_payload: dict):
+        def on_epoch(epoch: int, metrics: TrainMetrics, selection_payload: dict):
             stats = tree_stats(self.model.parameters())
 
             print(metrics.console_line(
                 epoch=epoch + 1,
                 norm=f"{stats['norm']:.0f}",
                 **self.metrics_context,
-                **monitor_payload,
+                **selection_payload,
             ))
             self.record_metrics(
                 metrics,
                 mode="fit",
                 epoch=epoch + 1,
                 norm=stats["norm"],
-                **monitor_payload,
+                **selection_payload,
             )
 
         print(self.config_line())
@@ -773,12 +793,12 @@ class Trainer:
         self.model.eval()
         with torch.no_grad(), self._autocast():
             if X.size(0) == 0:
-                return self.model(X.to(self.device))
+                return public_predictions(self.model(X.to(self.device)))
 
             predictions = None
             for offset in range(0, X.size(0), self.batch_size):
                 batch = X[offset:offset + self.batch_size].to(self.device)
-                output = self.model(batch)
+                output = public_predictions(self.model(batch))
                 if predictions is None:
                     predictions = torch.empty(
                         (X.size(0), *output.shape[1:]),
@@ -796,7 +816,7 @@ class Trainer:
         self.model.load_state_dict(checkpoint["state_dict"])
 
     def save(self, model_name: str):
-        if self.save_best_checkpoint and self.best_state_dict is not None:
+        if self.selection is not None and self.best_state_dict is not None:
             self._restore_best_state_dict()
 
         save_model(
@@ -804,20 +824,22 @@ class Trainer:
             self.model,
             model_config=self.model_config,
             train_config=self.train_config,
+            data_contract=self.data_contract,
             extra={
                 "checkpoint_selection": {
-                    "monitor": self.monitor,
-                    "monitor_min_improvement": self.monitor_min_improvement,
-                    "best_monitor": (
-                        self.best_monitor if math.isfinite(self.best_monitor) else None
+                    "enabled": self.selection is not None,
+                    "objective_config_sha256": self._objective_config_sha256(),
+                    "best_selection_score": (
+                        self.best_selection_score
+                        if math.isfinite(self.best_selection_score)
+                        else None
                     ),
                     "best_frame": self.best_frame,
                     "best_epoch": self.best_epoch,
-                    "baseline_passed": self.best_state_dict is not None,
                     "source": (
-                        "best_monitor"
+                        "best_selection_score"
                         if self.best_state_dict is not None
-                        else "current"
+                        else "last_maximum_stage"
                     ),
                 },
             },
@@ -837,14 +859,18 @@ class Trainer:
             "loss_schedule": context["loss_schedule"],
             "stage_size": context["stage_size"],
             "max_loss_stage": context["max_loss_stage"],
-            "monitor": context["monitor"],
-            "monitor_min_improvement": f"{context['monitor_min_improvement']:.6g}",
+            "selection": "on" if self.selection is not None else "off",
             "context_mode": self.context_mode,
             "amp": self.use_amp,
         })
         return "config " + " ".join(
             f"{key}={value}" for key, value in fields.items()
         )
+
+    def _objective_config_sha256(self) -> str:
+        if self.train_config is None:
+            raise ValueError("training configuration is unavailable")
+        return objective_config_sha256(self.train_config)
 
     def record_metrics(self, metrics: TrainMetrics, **extra):
         payload = {**self.metrics_context, **extra}
