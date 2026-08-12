@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 import app.main as main_module
-from app.runtime.reproducibility import configure_reproducibility
+from app.worker.runtime.reproducibility import configure_reproducibility
 
 
 def test_configure_reproducibility_repeats_random_sequences():

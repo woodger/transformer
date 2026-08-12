@@ -5,12 +5,52 @@ import uuid
 
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.contracts.worker.v3.objective import ml_contract
-from app.flight.constants import FIT_SCHEMA_ID, PREDICT_SCHEMA_ID
+from app.service.adapters.inbound.flight.constants import (
+    FIT_SCHEMA_ID,
+    PREDICT_SCHEMA_ID,
+)
+from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.adapters.outbound.worker_probe.device_inventory import (
+    static_cuda_inventory,
+)
+from app.service.bootstrap.job_control import build_job_coordinator
 from app.service.domain.input_manifest import manifest_sha256
 
 OWNER = "inventory"
 DATA_CONTRACT_SHA256 = "d" * 64
 SCHEMA_FINGERPRINT = "e" * 64
+
+
+def build_test_job_coordinator(
+    config,
+    ledger,
+    spool,
+    *,
+    cuda_available=None,
+    device_inventory=None,
+    recovery_store=None,
+    metrics=None,
+    logger=None,
+    cancel_notifier=None,
+    queue_notifier=None,
+):
+    """Assemble a coordinator with deterministic test dependencies."""
+    inventory = device_inventory
+    if inventory is None:
+        inventory = static_cuda_inventory(
+            cuda_available or (lambda: False),
+        )
+    return build_job_coordinator(
+        config,
+        ledger,
+        spool,
+        recovery_store or spool,
+        device_inventory=inventory,
+        metrics=metrics or OperationalMetrics(),
+        logger=logger or JsonLogger(),
+        cancel_notifier=cancel_notifier,
+        queue_notifier=queue_notifier,
+    )
 
 
 def internal_data_contract(*, digest=DATA_CONTRACT_SHA256):

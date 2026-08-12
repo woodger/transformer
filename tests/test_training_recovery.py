@@ -8,13 +8,13 @@ from torch import nn
 
 from app.contracts.worker.v3.config import CheckpointSelectionConfig
 from app.contracts.worker.v3.objective import objective_config_sha256
-from app.storage.training_recovery import (
+from app.worker.data.tensors import TrainingBatch
+from app.worker.runtime.checkpoints.training_recovery import (
     load_training_recovery,
     save_training_recovery,
 )
-from app.training.run_config import ModelConfig, TrainConfig
-from app.training.trainer import Trainer
-from app.worker.data.tensors import TrainingBatch
+from app.worker.training.run_config import ModelConfig, TrainConfig
+from app.worker.training.trainer import Trainer
 
 CONFIG_HASH = "a" * 64
 MANIFEST_HASH = "b" * 64

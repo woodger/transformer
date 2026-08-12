@@ -14,15 +14,21 @@ import pyarrow.flight as flight
 import pytest
 
 from app.config import PROJECT_ROOT
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
-from app.flight.contract import encode_document, response_document
-from app.flight.observability import OperationalMetrics
-from app.flight.records import ExecutionJobRecord
-from app.flight.server import TransformerFlightServer
-from app.flight.spool import Spool
+from app.service.adapters.inbound.flight.constants import (
+    CAPABILITIES_ACTION,
+    CONTRACT_NAME,
+)
+from app.service.adapters.inbound.flight.contract import (
+    encode_document,
+    response_document,
+)
+from app.service.adapters.inbound.flight.server import TransformerFlightServer
+from app.service.adapters.observability import OperationalMetrics
+from app.service.adapters.outbound.artifact_storage.spool import Spool
 from app.service.application.services.worker_pool import WorkerPool
+from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
+from app.service.domain.records import ExecutionJobRecord
 
 
 class RecordingLogger:
@@ -227,9 +233,9 @@ import json
 import os
 import sys
 from dataclasses import replace
-from app.database.config import load_database_config
+from app.service.adapters.outbound.postgres.config import load_database_config
 import app.service.bootstrap.application as application_module
-from app.flight.config import FlightServiceConfig
+from app.service.bootstrap.config import FlightServiceConfig
 
 def run_from_args(args):
     database_config = replace(

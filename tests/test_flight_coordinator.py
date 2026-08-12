@@ -10,8 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.contracts.worker.v3.objective import objective_config
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
@@ -21,14 +20,15 @@ from app.flight.constants import (
     STATUS_ACTION,
     ErrorCode,
 )
-from app.flight.contract import validate_action_request
-from app.flight.coordinator import JobCoordinator
-from app.flight.errors import ServiceError
-from app.flight.spool import Spool
+from app.service.adapters.inbound.flight.contract import validate_action_request
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.bootstrap.config import FlightServiceConfig
+from app.service.domain.errors import ServiceError
 from app.service.domain.input_manifest import manifest_sha256
 from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
+    build_test_job_coordinator,
     close_input,
     commit_input,
     create_fit,
@@ -47,7 +47,7 @@ def coordinator_components(tmp_path, postgres_ledger):
         allow_plaintext=True,
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
-    coordinator = JobCoordinator(
+    coordinator = build_test_job_coordinator(
         config,
         postgres_ledger,
         spool,
@@ -278,7 +278,7 @@ def test_empty_fit_reports_empty_input_before_device_revalidation(
             cuda_capacity=1 if available["cuda"] else 0,
         ),
     )
-    coordinator = JobCoordinator(
+    coordinator = build_test_job_coordinator(
         config,
         postgres_ledger,
         spool,

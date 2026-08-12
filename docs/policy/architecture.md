@@ -82,9 +82,9 @@ Worker является осознанным исключением из вну�
 checkpoint storage не вводятся без измеримой проблемы или второго
 implementation.
 
-`app/data`, `app/model`, `app/training`, `app/storage`, `app/runtime` и
-`app/metrics` временно сохраняются только как compatibility import facades.
-Новый production-код размещается непосредственно в `app/worker/`.
+ML-код имеет единственный канонический import path в `app/worker/`. Старые
+параллельные пакеты `app/data`, `app/model`, `app/training`, `app/storage`,
+`app/runtime` и `app/metrics` отсутствуют и повторно не вводятся.
 
 ## Admin
 

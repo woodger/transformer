@@ -17,18 +17,17 @@ from app.contracts.worker.v3.objective import (
     ml_contract,
     objective_config,
 )
-from app.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
-from app.model.transformer import TransformerModel, public_predictions
-from app.storage.checkpoint import load_checkpoint
-from app.training.early_stopping import SelectionState
-from app.training.factory import build_trainer
-from app.training.losses import resolve_loss_stage
-from app.training.run_config import model_config_from_args
-from app.training.trainer import Trainer
 from app.worker.data.tensors import TrainingBatch
+from app.worker.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
+from app.worker.model.transformer import TransformerModel, public_predictions
+from app.worker.runtime.checkpoints.checkpoint import load_checkpoint
 from app.worker.runtime.reproducibility import configure_reproducibility
 from app.worker.training import trainer as trainer_module
-from app.worker.training.trainer import _BatchPrefetcher
+from app.worker.training.early_stopping import SelectionState
+from app.worker.training.factory import build_trainer
+from app.worker.training.losses import resolve_loss_stage
+from app.worker.training.run_config import model_config_from_args
+from app.worker.training.trainer import Trainer, _BatchPrefetcher
 
 
 @pytest.fixture(autouse=True)

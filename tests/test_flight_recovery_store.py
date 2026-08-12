@@ -4,8 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from app.flight.recovery_store import RecoveryStore
-from app.flight.spool import RuntimeDirectoryLocked
+from app.service.adapters.outbound.artifact_storage.recovery_store import (
+    RecoveryStore,
+)
+from app.service.adapters.outbound.artifact_storage.spool import (
+    RuntimeDirectoryLocked,
+)
 
 
 def test_recovery_store_uses_managed_job_paths_and_durable_replace(

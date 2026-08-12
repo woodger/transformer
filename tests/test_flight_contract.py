@@ -8,13 +8,13 @@ import pytest
 
 from app.contracts.worker.v3.config import TrainConfig
 from app.contracts.worker.v3.objective import ml_contract
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CREATE_ACTION,
     INPUTS_LIST_ACTION,
     MAX_PAGE_ITEMS,
 )
-from app.flight.contract import (
+from app.service.adapters.inbound.flight.contract import (
     JobDataDescriptor,
     canonical_request_hash,
     parse_action_body,

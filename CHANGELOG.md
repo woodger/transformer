@@ -26,9 +26,13 @@
   service bootstrap; dynamic PyArrow/ORM boundaries локализованы и сразу
   переводятся в типизированные records, mappings и JSON-документы.
 - Ruff `ANN` закрепляет явные типы параметров и результатов production-кода;
-  исключения ограничены tests, legacy facades и двумя dynamic boundaries.
+  исключения ограничены tests и двумя dynamic boundaries.
 - `Trainer` принимает единый immutable `TrainConfig`; дублирующие параметры
   optimizer, schedule, AMP, selection и seed удалены из его конструктора.
+- Удалены compatibility facades `app.flight`, `app.database` и прежние
+  ML-пакеты: service и worker теперь имеют по одному каноническому import path.
+- Команды проверки изменений собраны в одной политике тестирования; удалены
+  ненормативные ML-заметки с устаревшими конфигурационными рекомендациями.
 
 ## [0.1.10] - 2026-08-12
 

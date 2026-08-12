@@ -4,10 +4,17 @@ import uuid
 import pyarrow.flight as flight
 import pytest
 
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import ACTIONS, CAPABILITIES_ACTION, CONTRACT_NAME
-from app.flight.contract import encode_document, response_document
-from app.flight.server import TransformerFlightServer
+from app.service.adapters.inbound.flight.constants import (
+    ACTIONS,
+    CAPABILITIES_ACTION,
+    CONTRACT_NAME,
+)
+from app.service.adapters.inbound.flight.contract import (
+    encode_document,
+    response_document,
+)
+from app.service.adapters.inbound.flight.server import TransformerFlightServer
+from app.service.bootstrap.config import FlightServiceConfig
 
 
 class StubCoordinator:

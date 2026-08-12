@@ -41,9 +41,9 @@ from app.service.application.ports.workers import ExecutionInput
 from app.service.domain.errors import failed_precondition
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
-from app.storage.checkpoint import save_checkpoint
-from app.training.factory import build_model
 from app.worker.application import executor as worker_executor
+from app.worker.runtime.checkpoints.checkpoint import save_checkpoint
+from app.worker.training.factory import build_model
 
 PROJECT_ROOT = Path(__file__).parents[1]
 DATA_CONTRACT_SHA256 = "c" * 64

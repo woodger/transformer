@@ -3,11 +3,14 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
-from app.flight.constants import ErrorCode
-from app.flight.records import ExecutionJobRecord
-from app.flight.worker_attempt import WorkerAttemptExecutor
-from app.flight.worker_subprocess import WorkerSubprocessError
-from app.service.domain.job import ExecutionState, InputState
+from app.service.adapters.outbound.worker_process.runner import (
+    WorkerSubprocessError,
+)
+from app.service.application.services.attempt_executor import (
+    WorkerAttemptExecutor,
+)
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.records import ExecutionJobRecord
 
 ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v1"}
 

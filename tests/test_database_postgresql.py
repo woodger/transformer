@@ -10,16 +10,19 @@ from sqlalchemy.schema import DropSchema
 
 from app.contracts.worker.v3.config import TrainConfig
 from app.contracts.worker.v3.objective import ml_contract
-from app.database.migrations import (
+from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
+from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.migrations import (
+    alembic_config,
     apply_migrations,
     migration_status,
     rollback_migration,
 )
-from app.database.tokens import AccessTokenStore
-from app.flight.constants import FIT_SCHEMA_ID
-from app.flight.ledger import Ledger
-from app.flight.token_cache import AccessTokenCache, AccessTokenCacheService
-from app.service.adapters.outbound.postgres.migrations import alembic_config
+from app.service.adapters.outbound.postgres.token_cache import (
+    AccessTokenCache,
+    AccessTokenCacheService,
+)
+from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 
 
 class _SilentLogger:

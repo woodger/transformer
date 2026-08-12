@@ -4,8 +4,8 @@ import pytest
 
 from app import __version__
 from app.cli.args import parse_args
-from app.runtime.device import get_device
-from app.runtime.version import __version__ as runtime_version, version_text
+from app.version import __version__ as runtime_version, version_text
+from app.worker.runtime.device import get_device
 
 
 def test_cpu_device():
@@ -23,7 +23,7 @@ def test_legacy_gpu_device_follows_cuda_availability(
     expected,
 ):
     monkeypatch.setattr(
-        "app.runtime.device.torch.cuda.is_available",
+        "app.worker.runtime.device.torch.cuda.is_available",
         lambda: cuda_available,
     )
 

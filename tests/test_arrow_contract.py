@@ -6,7 +6,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.data.arrow import (
+from app.worker.data.arrow import (
     empty_predictions_table,
     iter_framed_arrow,
     predictions_to_table,

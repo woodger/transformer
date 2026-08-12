@@ -14,9 +14,7 @@ from app.contracts.worker.v3.objective import (
     ml_contract,
     objective_config,
 )
-from app.flight.application import FlightApplication
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     CREATE_ACTION,
     INPUT_CLOSE_ACTION,
@@ -24,11 +22,13 @@ from app.flight.constants import (
     PREDICT_SCHEMA_ID,
     STATUS_ACTION,
 )
-from app.flight.spool import Spool
-from app.model.transformer import TransformerModel
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.bootstrap.application import FlightApplication
+from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.job import ExecutionState, InputState
-from app.storage.checkpoint import save_checkpoint
+from app.worker.model.transformer import TransformerModel
+from app.worker.runtime.checkpoints.checkpoint import save_checkpoint
 from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,

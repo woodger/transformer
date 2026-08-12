@@ -26,8 +26,8 @@ from app.contracts.worker.v3.objective import (
     objective_config,
     objective_config_sha256,
 )
-from app.flight.arrow import schema_fingerprint
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.arrow import schema_fingerprint
+from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
@@ -40,7 +40,7 @@ from app.flight.constants import (
     OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
 )
-from app.flight.contract import (
+from app.service.adapters.inbound.flight.contract import (
     canonical_manifest_hash,
     parse_action_body,
     validate_action_request,

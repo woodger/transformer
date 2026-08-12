@@ -9,14 +9,22 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-import app.flight.application as application_module
+import app.service.bootstrap.application as application_module
 from app.cli.help import build_parser
-from app.database.tokens import AccessTokenStore
-from app.flight.application import FlightApplication
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import CAPABILITIES_ACTION, CONTRACT_NAME
-from app.flight.process import capture_worker_process
-from app.flight.spool import RuntimeDirectoryLocked, Spool
+from app.service.adapters.inbound.flight.constants import (
+    CAPABILITIES_ACTION,
+    CONTRACT_NAME,
+)
+from app.service.adapters.outbound.artifact_storage.spool import (
+    RuntimeDirectoryLocked,
+    Spool,
+)
+from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
+from app.service.adapters.outbound.worker_process.process import (
+    capture_worker_process,
+)
+from app.service.bootstrap.application import FlightApplication
+from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
 from tests.flight_v4_helpers import commit_input, create_fit
 

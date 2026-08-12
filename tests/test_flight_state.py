@@ -1,7 +1,7 @@
 import pytest
 
-from app.flight.constants import ErrorCode, ExecutionState, InputState
-from app.flight.state import (
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.policies import (
     AttemptOutcomeDecision,
     CancelDecision,
     DeviceDecision,

@@ -82,6 +82,10 @@ Pyright не заменяет runtime tests shape, dtype, NaN/Infinity, CUDA/AMP
 serialization. Pytest не является основанием оставлять внутренние вызовы
 нетипизированными.
 
+Этот документ — единственный источник команд проверки изменений. Другие
+документы задают профильный риск и ссылаются сюда, но не публикуют параллельный
+набор команд.
+
 ## Маркеры ресурсов
 
 Markers описывают требуемый внешний ресурс, а не расположение файла:
@@ -98,7 +102,8 @@ Markers описывают требуемый внешний ресурс, а н
 PostgreSQL-набор:
 
 ```bash
-./.venv/bin/python -m pytest -q -m postgres
+POSTGRES_DB=transformer_test \
+  ./.venv/bin/python -m pytest -q -m postgres
 ```
 
 GPU marker не отменяет `skipif`, проверяющий фактическую доступность CUDA.
@@ -291,14 +296,23 @@ def test_fit_stream_runs_epochs_over_all_payloads():
 Сначала запускается изменённый module или группа:
 
 ```bash
-.venv/bin/python -m pytest -q tests/test_flight_config.py
+./.venv/bin/python -m pytest -q tests/test_flight_config.py
 ```
 
-Перед release и после изменений общих contracts:
+Перед release, после изменений общих contracts и после широкого рефакторинга
+запускается полный source validation:
 
 ```bash
-.venv/bin/python -m pytest -q
+./.venv/bin/python -m ruff check .
+./.venv/bin/pyright
+POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
+git diff --check
 ```
+
+Полный pytest suite требует доступной выделенной PostgreSQL database с именем
+`transformer_test*` и Node.js для cross-language contract test. GPU tests
+сохраняют собственный marker и могут быть пропущены только при фактическом
+отсутствии CUDA; такой skip не подтверждает CUDA-поведение.
 
 Skipped test не считается доказательством проверенного поведения. Причина skip
 должна быть конкретной: например, отсутствие `openssl` для TLS integration.

@@ -5,13 +5,13 @@ import pyarrow.ipc as ipc
 import pytest
 
 from app.contracts.flight.v4.arrow import canonical_input_schema
-from app.flight.arrow import (
+from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
     validate_prediction_file,
 )
-from app.flight.constants import ErrorCode
-from app.flight.errors import ServiceError
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
 
 
 def fit_schema(source_width=4):

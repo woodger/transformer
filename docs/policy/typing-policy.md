@@ -92,33 +92,25 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 Текущий `strict` scope перечислен там явно. Он охватывает канонические
 production-модули admin/CLI/contracts, весь worker, service domain/application,
 Flight ingress, PostgreSQL/artifact/process adapters и service bootstrap.
-Legacy compatibility facades остаются только тонкими re-export paths и не
-являются владельцами type contract.
 
 Правила ratchet:
 
 - новый strict scope добавляется только с нулевым baseline;
 - существующий strict path не удаляется ради прохождения проверки;
 - severity не ослабляется без отдельного обоснованного изменения политики;
-- legacy compatibility facade не становится первым владельцем type contract;
 - отсутствие module в strict scope не разрешает ухудшать его типы.
 
 Ruff с набором правил `ANN` отдельно требует явные типы параметров и
 результатов: выведенного Pyright return type недостаточно. Из этой проверки
-исключены tests и legacy compatibility facades. Явный `Any` в production
-signatures разрешён только в двух зафиксированных dynamic boundaries:
+исключены только tests. Явный `Any` в production signatures разрешён только в
+двух зафиксированных dynamic boundaries:
 forwarding аргументов `argparse` в `app/cli/help.py` и ленивый PyTorch runtime
 команды `gmark`, который сохраняет изоляцию control plane от Torch/CUDA.
 
-Стандартные команды:
-
-```bash
-./.venv/bin/python -m ruff check .
-./.venv/bin/pyright
-```
-
-Pyright запускается после Ruff и до относящихся pytest tests. Изменение только
-документации не требует type check, если оно не меняет Python/config examples.
+Pyright запускается после Ruff и до относящихся pytest tests. Точные команды и
+полный порядок задаёт [политика тестирования](./testing-policy.md#статическая-проверка).
+Изменение только документации не требует type check, если оно не меняет
+Python/config examples.
 
 ## Review
 

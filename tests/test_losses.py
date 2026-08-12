@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from app.training.losses import combined_loss
+from app.worker.training.losses import combined_loss
 
 
 def make_outputs_and_targets():

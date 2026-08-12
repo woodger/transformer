@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from app.database.config import DatabaseConfig, load_database_config
+from app.service.adapters.outbound.postgres.config import (
+    DatabaseConfig,
+    load_database_config,
+)
 
 
 def _write_env(path: Path) -> None:

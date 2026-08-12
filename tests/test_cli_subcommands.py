@@ -10,9 +10,9 @@ from app.config import (
     SEED,
     WEIGHT_DECAY,
 )
-from app.data.arrow import DEFAULT_MAX_FRAME_BYTES
-from app.runtime.device import get_device
-from app.training.run_config import (
+from app.worker.data.arrow import DEFAULT_MAX_FRAME_BYTES
+from app.worker.runtime.device import get_device
+from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,
     model_config_from_args,
@@ -696,15 +696,24 @@ def test_train_config_validates_programmatic_values(kwargs, message):
 
 
 def test_device_auto_selects_cuda_only_when_available(monkeypatch):
-    monkeypatch.setattr("app.runtime.device.torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: True,
+    )
     assert get_device("auto").type == "cuda"
 
-    monkeypatch.setattr("app.runtime.device.torch.cuda.is_available", lambda: False)
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: False,
+    )
     assert get_device("auto").type == "cpu"
 
 
 def test_explicit_cuda_errors_when_unavailable(monkeypatch):
-    monkeypatch.setattr("app.runtime.device.torch.cuda.is_available", lambda: False)
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: False,
+    )
 
     with pytest.raises(RuntimeError, match=r"CUDA .* not available"):
         get_device("cuda")

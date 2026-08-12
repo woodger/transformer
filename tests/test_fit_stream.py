@@ -7,8 +7,8 @@ import pytest
 import torch
 
 import app.main as main_module
-from app.metrics import TrainMetrics
 from app.worker.data.tensors import TrainingBatch
+from app.worker.metrics import TrainMetrics
 
 
 class FakeStdin:

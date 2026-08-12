@@ -5,17 +5,15 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.data.arrow import (
+from app.worker.data.arrow import (
     iter_framed_arrow,
     read_arrow,
+    read_committed_fit_arrow,
+    read_committed_source_arrow,
     read_source_arrow,
     table_to_source_tensor,
     table_to_tensors,
     write_arrow,
-)
-from app.worker.data.arrow import (
-    read_committed_fit_arrow,
-    read_committed_source_arrow,
 )
 
 

@@ -124,7 +124,6 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 `transformer_test`. Pytest создаёт в ней одноразовую schema и удаляет её после
 session; production database намеренно отклоняется.
 
-```bash
-./.venv/bin/python -m ruff check .
-POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
-```
+Быстрый цикл, resource markers и полный набор команд находятся в единственном
+нормативном источнике —
+[политике тестирования](./policy/testing-policy.md#запуск).

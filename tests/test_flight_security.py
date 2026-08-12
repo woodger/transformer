@@ -16,32 +16,34 @@ import pytest
 
 from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
 from app.contracts.worker.v3.objective import ml_contract
-from app.database.models import OutputTicket
-from app.flight.auth import BearerAuthMiddlewareFactory
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
+from app.service.adapters.inbound.flight.constants import (
     ACTIONS,
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
     ErrorCode,
 )
-from app.flight.contract import (
+from app.service.adapters.inbound.flight.contract import (
     encode_document,
     response_document,
     validate_action_request,
 )
-from app.flight.coordinator import JobCoordinator
-from app.flight.errors import ServiceError, to_flight_exception
-from app.flight.observability import JsonLogger, OperationalMetrics
-from app.flight.output import OutputHandler, _stream_batches
-from app.flight.server import TransformerFlightServer
-from app.flight.spool import Spool
+from app.service.adapters.inbound.flight.errors import to_flight_exception
 from app.service.adapters.inbound.flight.output import (
     OutputHandler as FlightOutputHandler,
+    _stream_batches,
 )
+from app.service.adapters.inbound.flight.server import TransformerFlightServer
+from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.postgres.models import OutputTicket
+from app.service.bootstrap.config import FlightServiceConfig
+from app.service.bootstrap.data_plane import build_output_handler
+from app.service.domain.errors import ServiceError
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.records import OutputRecord
+from tests.flight_v4_helpers import build_test_job_coordinator
 
 SECURITY_TRAIN_CONFIG = TrainConfig(
     epochs=1,
@@ -410,7 +412,7 @@ def published_output_server(tmp_path, postgres_ledger):
         attempt_id=running["attempt_id"],
         result={},
     )
-    coordinator = JobCoordinator(
+    coordinator = build_test_job_coordinator(
         config,
         ledger,
         spool,
@@ -420,7 +422,7 @@ def published_output_server(tmp_path, postgres_ledger):
         config,
         coordinator,
         {"secret": "inventory", "other": "other-subject"},
-        output_handler=OutputHandler(config, ledger, spool),
+        output_handler=build_output_handler(config, ledger, spool),
     )
     client = flight.FlightClient(("localhost", server.port))
     try:
@@ -689,7 +691,7 @@ def test_tls_and_plaintext_transports_do_not_change_explicit_cuda_policy(
     for index, config in enumerate(configs):
         spool = Spool(config.runtime_dir, tmp_path / f"models-{index}").initialize()
         ledger = postgres_ledger
-        coordinator = JobCoordinator(
+        coordinator = build_test_job_coordinator(
             config,
             ledger,
             spool,

@@ -6,8 +6,8 @@ import pytest
 
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.contracts.worker.v3.objective import ml_contract
-from app.flight.constants import FIT_SCHEMA_ID
-from app.flight.ledger import Ledger
+from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
+from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.domain.errors import ServiceError
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.job import ErrorCode, ExecutionState, InputState

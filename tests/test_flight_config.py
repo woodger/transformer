@@ -12,7 +12,7 @@ from app.config import (
     PROJECT_NAME,
     RETENTION_SECONDS,
 )
-from app.flight.config import FlightServiceConfig, load_config
+from app.service.bootstrap.config import FlightServiceConfig, load_config
 
 
 def test_service_defaults_come_from_app_config(tmp_path):

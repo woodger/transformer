@@ -4,8 +4,8 @@ import pytest
 
 import app.commands.auth_tokens as auth_tokens_command
 import app.commands.db_migrations as migrations_command
-from app.database.migrations import MigrationStatus
-from app.database.tokens import AccessTokenStore
+from app.service.adapters.outbound.postgres.migrations import MigrationStatus
+from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 
 
 def test_auth_token_command_closes_database_after_store_error(monkeypatch):

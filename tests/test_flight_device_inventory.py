@@ -1,7 +1,7 @@
 from importlib.metadata import version as package_version
 
-import app.flight.device_inventory as device_inventory_module
-from app.flight.device_inventory import (
+import app.service.adapters.outbound.worker_probe.device_inventory as device_inventory_module
+from app.service.adapters.outbound.worker_probe.device_inventory import (
     CudaDeviceInventory,
     CudaDeviceState,
 )

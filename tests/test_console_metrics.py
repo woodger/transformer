@@ -4,8 +4,8 @@ from app.contracts.worker.v3.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )
-from app.metrics import TrainMetrics
-from app.training.trainer import Trainer
+from app.worker.metrics import TrainMetrics
+from app.worker.training.trainer import Trainer
 
 
 def test_console_line_is_compact_and_human_readable():

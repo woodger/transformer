@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from app.model.transformer import TransformerModel, public_predictions
+from app.worker.model.transformer import TransformerModel, public_predictions
 
 
 class PassThroughEncoder(nn.Module):

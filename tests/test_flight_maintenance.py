@@ -8,10 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.flight.config import FlightServiceConfig
-from app.flight.maintenance import MaintenanceService
-from app.flight.observability import OperationalMetrics
-from app.flight.spool import Spool
+from app.service.adapters.observability import OperationalMetrics
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.bootstrap.config import FlightServiceConfig
+from app.service.bootstrap.maintenance import MaintenanceService
 from app.service.domain.job import ErrorCode, ExecutionState
 from tests.flight_v4_helpers import (
     close_input,

@@ -1,7 +1,7 @@
 import pytest
 
-import app.utils as utils_module
-from app.utils import resolve_metrics_path
+import app.worker.utils as utils_module
+from app.worker.utils import resolve_metrics_path
 
 
 def test_omitted_metrics_path_remains_disabled():

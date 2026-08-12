@@ -87,8 +87,6 @@ app/contracts/       # public Flight v4 и internal worker v3 contracts
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots
-app/flight/          # временные compatibility imports старого service API
-app/database/        # временные compatibility imports PostgreSQL adapter
 docs/                # пользовательская документация, ADR и политики
 recovery/            # runtime-created persistent fit inputs/checkpoints
 app/config.py        # project defaults

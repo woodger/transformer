@@ -12,16 +12,19 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.flight.arrow import schema_fingerprint
-from app.flight.config import FlightServiceConfig
-from app.flight.maintenance import MaintenanceService
-from app.flight.observability import OperationalMetrics
-from app.flight.spool import Spool
-from app.flight.worker_plan import WorkerPlanBuilder, WorkerPlanError
+from app.service.adapters.inbound.flight.arrow import schema_fingerprint
+from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifact_storage.recovery_store import (
     RecoveryStore,
 )
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.worker_process.plan import (
+    WorkerPlanBuilder,
+    WorkerPlanError,
+)
 from app.service.application.services.worker_pool import WorkerPool
+from app.service.bootstrap.config import FlightServiceConfig
+from app.service.bootstrap.maintenance import MaintenanceService
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ModelArtifactRecord
 from tests.flight_v4_helpers import (

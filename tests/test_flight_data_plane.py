@@ -13,26 +13,30 @@ import pyarrow.ipc as ipc
 import pytest
 from sqlalchemy import func, select
 
-from app.database.models import InputUpload
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     FIT_SCHEMA_ID,
     ErrorCode,
     ExecutionState,
     InputState,
 )
-from app.flight.coordinator import JobCoordinator
-from app.flight.errors import ServiceError
-from app.flight.output import OutputHandler
-from app.flight.recovery_store import RecoveryStore
-from app.flight.server import TransformerFlightServer
-from app.flight.spool import Spool
-from app.flight.upload import UploadHandler
+from app.service.adapters.inbound.flight.server import TransformerFlightServer
+from app.service.adapters.outbound.artifact_storage.recovery_store import (
+    RecoveryStore,
+)
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.postgres.models import InputUpload
+from app.service.bootstrap.config import FlightServiceConfig
+from app.service.bootstrap.data_plane import (
+    build_output_handler,
+    build_upload_handler,
+)
+from app.service.domain.errors import ServiceError
 from app.worker.data.arrow import read_committed_fit_arrow
 from tests.flight_v4_helpers import (
     DATA_CONTRACT_SHA256,
     OWNER,
+    build_test_job_coordinator,
     close_input,
     commit_input,
     create_fit,
@@ -112,21 +116,21 @@ def data_plane(tmp_path, postgres_ledger):
     ).validate()
     spool = Spool(config.runtime_dir, tmp_path / "models").initialize()
     recovery = RecoveryStore(tmp_path / "recovery").initialize()
-    coordinator = JobCoordinator(
+    coordinator = build_test_job_coordinator(
         config,
         postgres_ledger,
         spool,
         recovery_store=recovery,
         cuda_available=lambda: False,
     )
-    upload = UploadHandler(
+    upload = build_upload_handler(
         config,
         postgres_ledger,
         spool,
         recovery,
         cuda_available=lambda: False,
     )
-    output = OutputHandler(config, postgres_ledger, spool)
+    output = build_output_handler(config, postgres_ledger, spool)
     server = TransformerFlightServer(
         config,
         coordinator,
@@ -216,7 +220,7 @@ def test_noncanonical_schema_is_rejected_before_commit_or_queue(data_plane):
     config, spool, recovery, ledger, _, _ = data_plane
     job = create_fit(ledger)
     queued = []
-    upload = UploadHandler(
+    upload = build_upload_handler(
         config,
         ledger,
         spool,

@@ -3,9 +3,9 @@ import os
 import pytest
 import torch
 
-import app.storage.checkpoint as checkpoint_module
+import app.worker.runtime.checkpoints.checkpoint as checkpoint_module
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
-from app.storage.checkpoint import (
+from app.worker.runtime.checkpoints.checkpoint import (
     CHECKPOINT_FORMAT,
     load_checkpoint,
     model_path,

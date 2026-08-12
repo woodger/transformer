@@ -11,9 +11,7 @@ import pyarrow.flight as flight
 
 from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
 from app.contracts.worker.v3.objective import ml_contract
-from app.flight.application import FlightApplication
-from app.flight.config import FlightServiceConfig
-from app.flight.constants import (
+from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
     CREATE_ACTION,
@@ -22,6 +20,8 @@ from app.flight.constants import (
     INPUT_CLOSE_ACTION,
     STATUS_ACTION,
 )
+from app.service.bootstrap.application import FlightApplication
+from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.job import ExecutionState, InputState
 

@@ -16,13 +16,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Тема | Основной источник |
 | --- | --- |
 | Назначение, навигация и общий CLI | `readme.md` |
-| Локальный quick start и проверка working copy | `docs/getting-started.md` |
+| Локальный quick start | `docs/getting-started.md` |
 | Local CLI commands, options и artifact paths | `docs/cli/index.md` |
 | Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
 | Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
 | Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
+| Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
@@ -172,3 +173,7 @@ protocol, checkpoint или архитектурную границу, соот�
 завершением проверяются links, команды, paths, version markers и отсутствие
 секретов. Deployment-команда считается документированной только после
 успешной проверки на целевом host environment.
+
+Команды Ruff, Pyright и pytest для проверки изменений публикуются только в
+`docs/policy/testing-policy.md`. Guides и другие policies ссылаются на него и
+не создают сокращённую или альтернативную последовательность.

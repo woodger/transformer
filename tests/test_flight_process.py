@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from app.flight.process import (
+from app.service.adapters.outbound.worker_process.process import (
     capture_worker_process,
     read_process_identity,
     recover_process_groups,

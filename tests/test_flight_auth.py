@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-from app.flight.auth import BearerAuthMiddlewareFactory
-from app.flight.observability import JsonLogger, OperationalMetrics
-from app.flight.token_cache import AccessTokenCache
+from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
+from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.adapters.outbound.postgres.token_cache import AccessTokenCache
 
 
 def factory():

@@ -5,9 +5,12 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from app.storage.checkpoint import load_checkpoint_metadata, save_checkpoint
-from app.training.run_config import ModelConfig, TrainConfig
 from app.worker.data.tensors import TrainingBatch
+from app.worker.runtime.checkpoints.checkpoint import (
+    load_checkpoint_metadata,
+    save_checkpoint,
+)
+from app.worker.training.run_config import ModelConfig, TrainConfig
 
 fit_module = importlib.import_module("app.commands.fit")
 fit_stream_module = importlib.import_module("app.commands.fit_stream")

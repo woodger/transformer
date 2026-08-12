@@ -147,8 +147,6 @@ def test_service_adapters_and_processes_do_not_cross_ownership_boundaries():
         elif _is_within(source, "app.worker"):
             forbidden = (
                 "app.service",
-                "app.flight",
-                "app.database",
                 "sqlalchemy",
             )
         elif _is_within(source, "app.admin.cli"):
@@ -156,14 +154,12 @@ def test_service_adapters_and_processes_do_not_cross_ownership_boundaries():
                 "app.admin.bootstrap",
                 "app.service.adapters",
                 "app.worker",
-                "app.flight",
                 "pyarrow",
                 "torch",
             )
         elif _is_within(source, "app.admin"):
             forbidden = (
                 "app.worker",
-                "app.flight",
                 "pyarrow",
                 "torch",
             )
@@ -197,6 +193,18 @@ def test_contracts_and_composition_roots_have_canonical_locations():
     assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
     assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
     assert not (PROJECT_ROOT / "contracts").exists()
+    for legacy_package in (
+        "data",
+        "database",
+        "flight",
+        "metrics",
+        "model",
+        "runtime",
+        "storage",
+        "training",
+    ):
+        assert not (APP_ROOT / legacy_package / "__init__.py").exists()
+    assert not (APP_ROOT / "utils.py").exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",
         APP_ROOT / "service" / "bootstrap" / "data_plane.py",

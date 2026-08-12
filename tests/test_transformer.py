@@ -1,14 +1,14 @@
 import pytest
 import torch
 
-from app.model.context import (
+from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,
     context_missingness_ratios,
     context_token_ratios,
     prepare_context_input,
 )
-from app.model.transformer import TransformerModel, public_predictions
+from app.worker.model.transformer import TransformerModel, public_predictions
 
 
 @pytest.fixture(autouse=True)

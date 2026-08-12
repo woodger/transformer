@@ -3,8 +3,11 @@ import uuid
 
 import pytest
 
-import app.flight.spool as spool_module
-from app.flight.spool import RuntimeDirectoryLocked, Spool
+import app.service.adapters.outbound.artifact_storage.spool as spool_module
+from app.service.adapters.outbound.artifact_storage.spool import (
+    RuntimeDirectoryLocked,
+    Spool,
+)
 
 
 @pytest.fixture
