@@ -140,7 +140,7 @@ def active_loss_components(loss_stage: int) -> tuple[str, ...]:
 
 @overload
 def combined_loss(
-    output: torch.Tensor,
+    model_output: torch.Tensor,
     targets: torch.Tensor,
     loss_stage: int = LOSS_STAGE,
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
@@ -151,7 +151,7 @@ def combined_loss(
 
 @overload
 def combined_loss(
-    output: torch.Tensor,
+    model_output: torch.Tensor,
     targets: torch.Tensor,
     loss_stage: int,
     direct_loss_weights: tuple[float, ...],
@@ -162,7 +162,7 @@ def combined_loss(
 
 @overload
 def combined_loss(
-    output: torch.Tensor,
+    model_output: torch.Tensor,
     targets: torch.Tensor,
     loss_stage: int,
     direct_loss_weights: tuple[float, ...],
@@ -172,7 +172,7 @@ def combined_loss(
 
 
 def combined_loss(
-    output: torch.Tensor,
+    model_output: torch.Tensor,
     targets: torch.Tensor,
     loss_stage: int = LOSS_STAGE,
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
@@ -194,22 +194,22 @@ def combined_loss(
         raise ValueError(
             "return_parts and return_statistics are mutually exclusive"
         )
-    if output.ndim != 2 or output.shape[1] != 7:
+    if model_output.ndim != 2 or model_output.shape[1] != 7:
         raise ValueError("model output must have shape [rows, 7]")
-    if targets.ndim != 2 or targets.shape != (output.shape[0], 6):
+    if targets.ndim != 2 or targets.shape != (model_output.shape[0], 6):
         raise ValueError("targets must have shape [rows, 6]")
     if len(direct_loss_weights) != 6:
         raise ValueError("direct_loss_weights must contain six values")
 
     loss_stage = validate_loss_stage(loss_stage)
     active = frozenset(active_loss_components(loss_stage))
-    mean_return = output[:, 0]
-    sigma_return = output[:, 1]
-    take_profit_logit = output[:, 2]
-    stop_loss_logit = output[:, 3]
-    next_volatility = output[:, 4]
-    hitting_probability_logit = output[:, 5]
-    return_scale = output[:, 6]
+    mean_return = model_output[:, 0]
+    sigma_return = model_output[:, 1]
+    take_profit_logit = model_output[:, 2]
+    stop_loss_logit = model_output[:, 3]
+    next_volatility = model_output[:, 4]
+    hitting_probability_logit = model_output[:, 5]
+    return_scale = model_output[:, 6]
 
     direct_rows = (
         F.smooth_l1_loss(mean_return, targets[:, 0], reduction="none"),
@@ -236,7 +236,7 @@ def combined_loss(
     )
     direct_means = tuple(values.mean() for values in direct_rows)
 
-    loss = output.new_tensor(0.0)
+    loss = model_output.new_tensor(0.0)
     for index, direct in enumerate(direct_means):
         if f"L{index}" in active:
             loss = loss + float(direct_loss_weights[index]) * direct
@@ -250,7 +250,7 @@ def combined_loss(
     if "nll" in active:
         loss = loss + loss_nll
 
-    predictions = public_predictions(output)
+    predictions = public_predictions(model_output)
     ev = predictions[:, 2] - predictions[:, 3]
     risk_penalty = return_scale.detach() * torch.abs(ev)
     loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_penalty)

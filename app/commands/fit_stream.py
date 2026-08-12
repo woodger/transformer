@@ -114,7 +114,7 @@ def run(
             )
             trainer = build_trainer_fn(args, model, device, model_config)
             _print_config_line(trainer)
-            print("X:", features_cpu.shape, "Y:", targets_cpu.shape)
+            print("features:", features_cpu.shape, "targets:", targets_cpu.shape)
 
         if trainer is None:
             raise AssertionError("streaming trainer was not initialized")
@@ -228,7 +228,7 @@ def _run_spooled(
             )
             trainer = build_trainer_fn(args, model, device, model_config)
             _print_config_line(trainer)
-            print("X:", features_cpu.shape, "Y:", targets_cpu.shape)
+            print("features:", features_cpu.shape, "targets:", targets_cpu.shape)
 
         trained_inputs.append(path)
         del features_cpu, targets_cpu

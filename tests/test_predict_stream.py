@@ -144,6 +144,7 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
     assert "accidental build stdout" in diagnostics
     assert "accidental load stdout" in diagnostics
     assert "accidental predict stdout" in diagnostics
+    assert "features: torch.Size([1, 2, 2])" in diagnostics
 
 
 def test_predict_stream_applies_max_frame_bytes_without_writing_stdout(monkeypatch):

@@ -161,23 +161,23 @@ class WorkerApplication:
             if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
                 raise ValueError("fit input schemaId is invalid")
             path = committed_inputs.path(item)
-            source, target = read_committed_fit_arrow(
+            features_cpu, targets_cpu = read_committed_fit_arrow(
                 path,
                 expected_rows=integer_field(item, "rows"),
                 source_width=model_config.seq_len * expected_feature_dim,
             )
-            source = reshape_source(source, model_config.seq_len)
-            validate_feature_dim(source, expected_feature_dim)
-            validate_target_dim(target, expected_target_dim)
-            return path, source, target
+            features_cpu = reshape_source(features_cpu, model_config.seq_len)
+            validate_feature_dim(features_cpu, expected_feature_dim)
+            validate_target_dim(targets_cpu, expected_target_dim)
+            return path, features_cpu, targets_cpu
 
         stream = iter(input_stream.items())
         first = None
         for item in stream:
-            path, source, target = read_payload(item)
-            if source.size(0) == 0:
+            path, features_cpu, targets_cpu = read_payload(item)
+            if features_cpu.size(0) == 0:
                 continue
-            first = (path, source, target)
+            first = (path, features_cpu, targets_cpu)
             break
         if first is None:
             raise ValueError("fit requires at least one non-empty input")
@@ -264,9 +264,9 @@ class WorkerApplication:
         ]:
             yield first[1], first[2]
             for item in stream:
-                _path, source, target = read_payload(item)
-                if source.size(0) != 0:
-                    yield source, target
+                _path, features_cpu, targets_cpu = read_payload(item)
+                if features_cpu.size(0) != 0:
+                    yield features_cpu, targets_cpu
 
         def closed_payloads() -> Iterator[
             tuple[torch.Tensor, torch.Tensor]
@@ -274,9 +274,9 @@ class WorkerApplication:
             if not input_stream.closed:
                 raise ValueError("complete input is unavailable for replay")
             for item in input_stream.inputs:
-                _path, source, target = read_payload(item)
-                if source.size(0) != 0:
-                    yield source, target
+                _path, features_cpu, targets_cpu = read_payload(item)
+                if features_cpu.size(0) != 0:
+                    yield features_cpu, targets_cpu
 
         def on_epoch(
             epoch: int,
@@ -446,7 +446,7 @@ class WorkerApplication:
             if string_field(item, "schemaId") != PREDICT_INPUT_SCHEMA_ID:
                 raise ValueError("prediction input schemaId is invalid")
             input_path = committed_inputs.path(item)
-            source = read_committed_source_arrow(
+            features_cpu = read_committed_source_arrow(
                 input_path,
                 expected_rows=integer_field(item, "rows"),
                 source_width=model_config.seq_len * model_config.feature_dim,
@@ -456,16 +456,24 @@ class WorkerApplication:
                 "outputs",
                 f"{integer_field(item, 'ordinal')}.arrow",
             )
-            if source.size(0) == 0:
+            if features_cpu.size(0) == 0:
                 predictions = torch.empty((0, 6), dtype=torch.float32)
             else:
-                source = reshape_source(source, model_config.seq_len)
+                features_cpu = reshape_source(
+                    features_cpu,
+                    model_config.seq_len,
+                )
                 validate_checkpoint_feature_dim(
-                    source,
+                    features_cpu,
                     model_config.feature_dim,
                 )
                 if model is None:
-                    model = build_model(model_config, source, None, device)
+                    model = build_model(
+                        model_config,
+                        features_cpu,
+                        None,
+                        device,
+                    )
                     trainer = build_trainer(
                         train_config,
                         model,
@@ -481,7 +489,7 @@ class WorkerApplication:
                     checkpoint = None
                 if trainer is None:
                     raise AssertionError("prediction trainer was not initialized")
-                predictions = trainer.predict(source)
+                predictions = trainer.predict(features_cpu)
             write_arrow(
                 output_path,
                 predictions,

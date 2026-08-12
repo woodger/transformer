@@ -76,21 +76,21 @@ class TrainingWorkload:
         )
         self.scaler = torch.amp.GradScaler(enabled=self._use_amp)
 
-        self._source = torch.randn(
+        self._features_cpu = torch.randn(
             (args.batch_size, args.seq_len, args.feature_dim),
             dtype=torch.float32,
         )
-        self._targets = torch.zeros(
+        self._targets_cpu = torch.zeros(
             (args.batch_size, 6),
             dtype=torch.float32,
         )
-        self._targets[:, 0] = (
+        self._targets_cpu[:, 0] = (
             torch.randn(args.batch_size, dtype=torch.float32) * 0.05
         )
-        self._targets[:, 4] = (
+        self._targets_cpu[:, 4] = (
             torch.rand(args.batch_size, dtype=torch.float32) * 0.2 + 1e-3
         )
-        self._targets[:, 5] = torch.randint(
+        self._targets_cpu[:, 5] = torch.randint(
             0,
             2,
             (args.batch_size,),
@@ -131,15 +131,15 @@ class TrainingWorkload:
 
     def _attempt_step(self) -> TrainingStep | None:
         torch = self._torch
-        source = self._source.to(self._device)
-        targets = self._targets.to(self._device)
+        batch_features = self._features_cpu.to(self._device)
+        batch_targets = self._targets_cpu.to(self._device)
 
         self.optimizer.zero_grad()
         with self._autocast():
-            predictions = self.model(source)
+            model_output = self.model(batch_features)
             loss = self._combined_loss(
-                predictions,
-                targets,
+                model_output,
+                batch_targets,
                 LOSS_STAGE,
             )
 

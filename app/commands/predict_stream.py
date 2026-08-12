@@ -97,7 +97,7 @@ def run(
                     )
                 trainer.load_payload(checkpoint)
                 checkpoint = None
-            print("X:", features_cpu.shape, file=sys.stderr)
+            print("features:", features_cpu.shape, file=sys.stderr)
             print("Model loaded", file=sys.stderr)
 
         with redirect_stdout(sys.stderr):

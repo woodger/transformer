@@ -105,6 +105,7 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
+    assert "features: torch.Size([1, 2, 2]) targets: torch.Size([1, 6])" in output
     assert "frame=2 epoch=1 selection=n/a" in output
     assert "loss=1.250000" in output
     assert "frame=2 epoch=2 selection=n/a" in output

@@ -36,7 +36,7 @@ def run(
         raise ValueError("data path is required for fit")
     model_config = model_config_from_args(args)
     features_cpu, targets_cpu = read_arrow(args.data)
-    print("X:", features_cpu.shape, "Y:", targets_cpu.shape)
+    print("features:", features_cpu.shape, "targets:", targets_cpu.shape)
     if features_cpu.shape[0] == 0:
         raise ValueError("Training input contains no rows")
     features_cpu = reshape_source(features_cpu, model_config.seq_len)

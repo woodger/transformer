@@ -51,7 +51,7 @@ def run(
     )
 
     features_cpu = read_source_arrow(args.data)
-    print("X:", features_cpu.shape)
+    print("features:", features_cpu.shape)
     if features_cpu.shape[0] == 0:
         write_arrow(
             args.preds_path,

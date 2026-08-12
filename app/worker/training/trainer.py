@@ -460,20 +460,20 @@ class Trainer:
         generator: torch.Generator,
     ) -> Iterator[TensorBatch]:
         window_rows: int | None = None
-        source_buffer: torch.Tensor | None = None
-        target_buffer: torch.Tensor | None = None
+        features_buffer: torch.Tensor | None = None
+        targets_buffer: torch.Tensor | None = None
         buffered_rows = 0
 
-        for source, targets in payloads:
-            payload_rows = source.size(0)
+        for features, targets in payloads:
+            payload_rows = features.size(0)
             if targets.size(0) != payload_rows:
-                raise ValueError("source and target row counts must match")
+                raise ValueError("features and targets row counts must match")
             if payload_rows == 0:
                 continue
 
-            if source_buffer is None:
+            if features_buffer is None:
                 row_bytes = (
-                    source[0].numel() * source.element_size()
+                    features[0].numel() * features.element_size()
                     + targets[0].numel() * targets.element_size()
                 )
                 batch_bytes = self.batch_size * row_bytes
@@ -482,18 +482,18 @@ class Trainer:
                     max(1, _MAX_SHUFFLE_WINDOW_BYTES // batch_bytes),
                 )
                 window_rows = self.batch_size * window_batches
-                source_buffer = torch.empty(
-                    (window_rows, *source.shape[1:]),
-                    dtype=source.dtype,
-                    device=source.device,
+                features_buffer = torch.empty(
+                    (window_rows, *features.shape[1:]),
+                    dtype=features.dtype,
+                    device=features.device,
                 )
-                target_buffer = torch.empty(
+                targets_buffer = torch.empty(
                     (window_rows, *targets.shape[1:]),
                     dtype=targets.dtype,
                     device=targets.device,
                 )
 
-            if window_rows is None or target_buffer is None:
+            if window_rows is None or targets_buffer is None:
                 raise AssertionError("shuffle buffers were not initialized")
 
             offset = 0
@@ -504,10 +504,10 @@ class Trainer:
                 )
                 buffer_end = buffered_rows + copied_rows
                 payload_end = offset + copied_rows
-                source_buffer[buffered_rows:buffer_end].copy_(
-                    source[offset:payload_end]
+                features_buffer[buffered_rows:buffer_end].copy_(
+                    features[offset:payload_end]
                 )
-                target_buffer[buffered_rows:buffer_end].copy_(
+                targets_buffer[buffered_rows:buffer_end].copy_(
                     targets[offset:payload_end]
                 )
                 buffered_rows = buffer_end
@@ -515,21 +515,21 @@ class Trainer:
 
                 if buffered_rows == window_rows:
                     yield from self._shuffled_batches(
-                        source_buffer,
-                        target_buffer,
+                        features_buffer,
+                        targets_buffer,
                         buffered_rows,
                         generator,
                     )
                     buffered_rows = 0
 
-            del source, targets
+            del features, targets
 
         if buffered_rows:
-            if source_buffer is None or target_buffer is None:
+            if features_buffer is None or targets_buffer is None:
                 raise AssertionError("shuffle buffers were not initialized")
             yield from self._shuffled_batches(
-                source_buffer,
-                target_buffer,
+                features_buffer,
+                targets_buffer,
                 buffered_rows,
                 generator,
             )
@@ -545,7 +545,7 @@ class Trainer:
 
     def _shuffled_batches(
         self,
-        source: torch.Tensor,
+        features: torch.Tensor,
         targets: torch.Tensor,
         rows: int,
         generator: torch.Generator,
@@ -553,12 +553,12 @@ class Trainer:
         order = torch.randperm(
             rows,
             generator=generator,
-            device=source.device,
+            device=features.device,
         )
         for offset in range(0, rows, self.batch_size):
             indices = order[offset:offset + self.batch_size]
             yield (
-                source.index_select(0, indices),
+                features.index_select(0, indices),
                 targets.index_select(0, indices),
             )
 
@@ -967,15 +967,19 @@ class Trainer:
 
             predictions = None
             for offset in range(0, features.size(0), self.batch_size):
-                batch = features[offset:offset + self.batch_size].to(self.device)
-                output = public_predictions(self.model(batch))
+                batch_features = features[
+                    offset:offset + self.batch_size
+                ].to(self.device)
+                batch_predictions = public_predictions(self.model(batch_features))
                 if predictions is None:
                     predictions = torch.empty(
-                        (features.size(0), *output.shape[1:]),
-                        dtype=output.dtype,
-                        device=output.device,
+                        (features.size(0), *batch_predictions.shape[1:]),
+                        dtype=batch_predictions.dtype,
+                        device=batch_predictions.device,
                     )
-                predictions[offset:offset + output.size(0)].copy_(output)
+                predictions[
+                    offset:offset + batch_predictions.size(0)
+                ].copy_(batch_predictions)
 
             if predictions is None:
                 raise AssertionError("prediction buffer was not initialized")

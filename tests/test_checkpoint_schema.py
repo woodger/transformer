@@ -141,7 +141,7 @@ def test_current_checkpoint_with_missing_feature_dimension_is_corrupt(tmp_path):
         load_checkpoint_metadata(path)
 
 
-def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch):
+def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch, capsys):
     args = model_args(data="train.arrow")
     captured = {}
 
@@ -172,6 +172,10 @@ def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch):
 
     assert captured["model_config"].feature_dim == 3
     assert captured["trainer_config"].feature_dim == 3
+    assert (
+        "features: torch.Size([2, 6]) targets: torch.Size([2, 6])"
+        in capsys.readouterr().out
+    )
 
 
 def test_file_fit_rejects_empty_training_input(monkeypatch):
