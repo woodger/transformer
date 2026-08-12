@@ -63,6 +63,48 @@ JSON Schemas проверяются как Draft 2020-12 через `jsonschema`
 `$ref` разрешаются только из каталога schemas соответствующего versioned
 contract.
 
+## Статическая проверка
+
+Ruff проверяет style, imports и выбранные defect patterns. Pyright проверяет
+типизированный scope, зафиксированный в `pyproject.toml`. Правила типов и
+tensor runtime contracts находятся в
+[политике типов](./typing-policy.md).
+
+Стандартный быстрый цикл:
+
+```bash
+./.venv/bin/python -m ruff check .
+./.venv/bin/pyright
+./.venv/bin/python -m pytest -q <затронутые tests>
+```
+
+Pyright не заменяет runtime tests shape, dtype, NaN/Infinity, CUDA/AMP и
+serialization. Pytest не является основанием оставлять внутренние вызовы
+нетипизированными.
+
+## Маркеры ресурсов
+
+Markers описывают требуемый внешний ресурс, а не расположение файла:
+
+- `gpu` — нужен реальный CUDA device;
+- `postgres` — нужна выделенная PostgreSQL database `transformer_test*`.
+
+Быстрый CPU-набор без внешних ресурсов:
+
+```bash
+./.venv/bin/python -m pytest -q -m "not gpu and not postgres"
+```
+
+PostgreSQL-набор:
+
+```bash
+./.venv/bin/python -m pytest -q -m postgres
+```
+
+GPU marker не отменяет `skipif`, проверяющий фактическую доступность CUDA.
+Полный suite сохраняет environment safety checks и честно сообщает skip либо
+blocker.
+
 ## Структура и именование
 
 Используется pytest:

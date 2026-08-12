@@ -393,6 +393,7 @@ def test_main_preserves_gmark_exit_status_without_generic_device_resolution(
 
 
 @pytest.mark.parametrize("use_amp", (False, True))
+@pytest.mark.gpu
 @pytest.mark.skipif(
     not torch.cuda.is_available(),
     reason="CUDA device is required for gmark integration",

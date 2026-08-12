@@ -3,6 +3,15 @@ import torch
 CONTEXT_MODES = ("strict", "relaxed")
 
 
+def _validate_features(features: torch.Tensor) -> None:
+    if features.ndim != 3:
+        raise ValueError("features must have shape [batch, sequence, features]")
+    if features.shape[1] == 0 or features.shape[2] == 0:
+        raise ValueError("sequence and feature dimensions must be positive")
+    if features.dtype != torch.float32:
+        raise ValueError("features must use float32")
+
+
 def validate_context_mode(context_mode: str) -> str:
     if context_mode not in CONTEXT_MODES:
         choices = ", ".join(CONTEXT_MODES)
@@ -18,11 +27,14 @@ def context_input_dim(input_dim: int, context_mode: str) -> int:
 
 
 def context_key_padding_mask(
-    x: torch.Tensor,
+    features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> torch.Tensor:
+    """Return bool [batch, sequence], where True marks an ignored token."""
+
+    _validate_features(features)
     context_mode = validate_context_mode(context_mode)
-    missing = torch.isnan(x)
+    missing = torch.isnan(features)
     return _key_padding_mask(missing, context_mode)
 
 
@@ -36,11 +48,14 @@ def _key_padding_mask(
 
 
 def context_missingness_ratios(
-    x: torch.Tensor,
+    features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> dict[str, float]:
+    """Measure NaN and token ratios for float32 [batch, sequence, features]."""
+
+    _validate_features(features)
     context_mode = validate_context_mode(context_mode)
-    missing = torch.isnan(x)
+    missing = torch.isnan(features)
     any_missing = missing.any(dim=-1)
     empty = missing.all(dim=-1)
     masked = any_missing if context_mode == "strict" else empty
@@ -56,10 +71,10 @@ def context_missingness_ratios(
 
 
 def context_token_ratios(
-    x: torch.Tensor,
+    features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> dict[str, float]:
-    ratios = context_missingness_ratios(x, context_mode)
+    ratios = context_missingness_ratios(features, context_mode)
     return {
         key: value
         for key, value in ratios.items()
@@ -68,11 +83,24 @@ def context_token_ratios(
 
 
 def prepare_context_input(
-    x: torch.Tensor,
+    features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Prepare float32 features and bool padding mask for TransformerEncoder.
+
+    Args:
+        features: Tensor [batch, sequence, features]. NaN denotes a missing value.
+        context_mode: ``strict`` masks partially missing tokens; ``relaxed``
+            masks only fully missing tokens and appends per-feature missing flags.
+
+    Returns:
+        Prepared float32 features and bool mask [batch, sequence]. In the mask,
+        ``True`` means that attention must ignore the token.
+    """
+
+    _validate_features(features)
     context_mode = validate_context_mode(context_mode)
-    missing = torch.isnan(x)
+    missing = torch.isnan(features)
     key_padding_mask = _key_padding_mask(missing, context_mode)
 
     # PyTorch attention can produce non-finite outputs when every token in a
@@ -81,7 +109,7 @@ def prepare_context_input(
     all_missing_rows = key_padding_mask.all(dim=1)
     key_padding_mask[:, 0] &= ~all_missing_rows
 
-    values = torch.nan_to_num(x, nan=0.0)
+    values = torch.nan_to_num(features, nan=0.0)
     if context_mode == "relaxed":
         values = torch.cat([values, missing.to(dtype=values.dtype)], dim=-1)
 

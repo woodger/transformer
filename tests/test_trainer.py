@@ -499,6 +499,7 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
     assert "<svg" in expected.read_text()
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_cuda_amp_training_updates_parameters():
     source, targets = make_dummy_data(n=4)

@@ -9,6 +9,29 @@ combine-as-imports = true
 
 [tool.pytest.ini_options]
 cache_dir = ".cache/pytest"
+markers = [
+  "gpu: requires a real CUDA device",
+  "postgres: requires a dedicated transformer_test PostgreSQL database",
+]
+
+[tool.pyright]
+include = [
+  "app/contracts/worker/v3/config.py",
+  "app/worker/data/tensors.py",
+  "app/worker/model/context.py",
+  "app/worker/model/positional_encoding.py",
+  "app/worker/model/transformer.py",
+  "app/worker/training/losses.py",
+]
+strict = [
+  "app/worker/data/tensors.py",
+  "app/worker/model/context.py",
+  "app/worker/model/positional_encoding.py",
+  "app/worker/model/transformer.py",
+]
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
 
 [tool.alembic]
 script_location = "%(here)s/app/service/adapters/outbound/postgres/alembic"

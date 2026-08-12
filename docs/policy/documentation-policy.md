@@ -21,7 +21,9 @@ identifiers, команды, пути, значения enum и другие э�
 | Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
 | Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
-| Конфигурация Ruff, pytest и Alembic | `pyproject.toml` |
+| Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
+| Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
+| Маршрутизация агента и команды проверки | `AGENTS.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |

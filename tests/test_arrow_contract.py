@@ -14,8 +14,14 @@ from app.data.arrow import (
     table_to_tensors,
     write_arrow,
 )
+from app.worker.data.tensors import reshape_source
 
 FLOAT_LIST = pa.list_(pa.float32())
+
+
+def test_reshape_source_rejects_non_matrix_input():
+    with pytest.raises(ValueError, match="flattened_features"):
+        reshape_source(torch.zeros(2, 3, 4), seq_len=3)
 
 
 def make_target(values=None):

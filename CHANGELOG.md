@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлены политика Python types и tensor runtime contracts, короткий
+  `AGENTS.md`-маршрутизатор и поэтапный Pyright strict baseline для
+  model/context/tensor boundary.
+- Pytest tests размечаются по внешним ресурсам `gpu` и `postgres`; быстрый
+  CPU-набор не требует CUDA или PostgreSQL.
+
+### Changed
+
+- Model input явно проверяет форму `[batch, sequence, features]`, immutable
+  `seq_len`/`feature_dim` и `float32`; mask semantics и семь внутренних heads
+  закреплены в типизированных сигнатурах и docstrings.
+
 ## [0.1.10] - 2026-08-12
 
 ### Added

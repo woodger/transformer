@@ -41,6 +41,43 @@ def test_transformer_forward_shape():
     assert public_predictions(y).shape == (batch, out_dim)
 
 
+@pytest.mark.parametrize(
+    ("features", "message"),
+    [
+        (torch.zeros(2, 24), "shape"),
+        (torch.zeros(2, 2, 8), "sequence length"),
+        (torch.zeros(2, 3, 7), "feature dimension"),
+        (torch.zeros(2, 3, 8, dtype=torch.float64), "float32"),
+    ],
+)
+def test_transformer_rejects_input_outside_tensor_contract(features, message):
+    model = TransformerModel(
+        input_dim=8,
+        seq_len=3,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        out_dim=6,
+        nhead=4,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        model(features)
+
+
+def test_transformer_rejects_invalid_attention_dimensions():
+    with pytest.raises(ValueError, match="divisible"):
+        TransformerModel(
+            input_dim=8,
+            seq_len=3,
+            hidden_dim=30,
+            layers=1,
+            dropout=0.0,
+            out_dim=6,
+            nhead=8,
+        )
+
+
 def test_transformer_input_dim_matches_context_mode():
     relaxed = TransformerModel(
         input_dim=8,

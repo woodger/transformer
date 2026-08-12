@@ -11,6 +11,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "app"))
 
+POSTGRES_FIXTURES = frozenset({
+    "postgres_config",
+    "postgres_database",
+    "postgres_ledger",
+})
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    """Mark tests by resolved external-resource fixtures before selection."""
+
+    for item in items:
+        if POSTGRES_FIXTURES.intersection(item.fixturenames):
+            item.add_marker(pytest.mark.postgres)
+
 
 @pytest.fixture(scope="session")
 def postgres_config():
