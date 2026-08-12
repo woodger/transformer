@@ -46,13 +46,12 @@ class OutputAccess:
         job_id: str,
         ordinal: int,
     ) -> OutputTicketGrant:
-        token, expires_at = self.store.issue_ticket(
+        return self.store.issue_ticket(
             job_id=job_id,
             ordinal=ordinal,
             owner_subject=owner,
             ttl_seconds=self.ticket_ttl_seconds,
         )
-        return OutputTicketGrant(token, expires_at)
 
     def resolve(self, owner: str, token: bytes) -> OutputRecord:
         return self.store.resolve_ticket(token, owner_subject=owner)

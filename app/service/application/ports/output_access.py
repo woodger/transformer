@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.service.application.output_models import OutputTicketGrant
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import OutputRecord
 
@@ -27,7 +28,7 @@ class OutputAccessStore(Protocol):
         ordinal: int,
         owner_subject: str,
         ttl_seconds: float,
-    ) -> tuple[bytes, float]: ...
+    ) -> OutputTicketGrant: ...
 
     def resolve_ticket(
         self,

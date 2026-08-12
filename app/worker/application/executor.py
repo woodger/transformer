@@ -8,7 +8,6 @@ import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import BinaryIO, cast
 
 import torch
@@ -48,6 +47,7 @@ from app.worker.data.arrow import (
     write_arrow,
 )
 from app.worker.data.tensors import (
+    TrainingBatch,
     reshape_source,
     validate_checkpoint_feature_dim,
     validate_feature_dim,
@@ -157,27 +157,33 @@ class WorkerApplication:
 
         def read_payload(
             item: JsonObject,
-        ) -> tuple[str, torch.Tensor, torch.Tensor]:
+        ) -> TrainingBatch:
             if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
                 raise ValueError("fit input schemaId is invalid")
             path = committed_inputs.path(item)
-            features_cpu, targets_cpu = read_committed_fit_arrow(
+            batch = read_committed_fit_arrow(
                 path,
                 expected_rows=integer_field(item, "rows"),
                 source_width=model_config.seq_len * expected_feature_dim,
             )
-            features_cpu = reshape_source(features_cpu, model_config.seq_len)
-            validate_feature_dim(features_cpu, expected_feature_dim)
-            validate_target_dim(targets_cpu, expected_target_dim)
-            return path, features_cpu, targets_cpu
+            batch = TrainingBatch(
+                features=reshape_source(
+                    batch.features,
+                    model_config.seq_len,
+                ),
+                targets=batch.targets,
+            )
+            validate_feature_dim(batch.features, expected_feature_dim)
+            validate_target_dim(batch.targets, expected_target_dim)
+            return batch
 
         stream = iter(input_stream.items())
         first = None
         for item in stream:
-            path, features_cpu, targets_cpu = read_payload(item)
-            if features_cpu.size(0) == 0:
+            batch = read_payload(item)
+            if batch.features.size(0) == 0:
                 continue
-            first = (path, features_cpu, targets_cpu)
+            first = batch
             break
         if first is None:
             raise ValueError("fit requires at least one non-empty input")
@@ -186,18 +192,20 @@ class WorkerApplication:
             model_config,
             feature_dim=expected_feature_dim,
         )
-        model = build_model(actual_config, first[1], first[2], device)
-        metrics_path = os.path.join(workspace, "metrics.jsonl")
-        trainer_args = SimpleNamespace(
-            **train_config.to_dict(),
-            metrics_name=metrics_path,
+        model = build_model(
+            actual_config,
+            first.features,
+            first.targets,
+            device,
         )
+        metrics_path = os.path.join(workspace, "metrics.jsonl")
         trainer = build_trainer(
-            trainer_args,
+            train_config,
             model,
             device,
             actual_config,
             data_contract=data_contract,
+            metrics_path=metrics_path,
         )
         reset_metrics_log(metrics_path)
 
@@ -259,24 +267,20 @@ class WorkerApplication:
                     "training recovery checkpoint could not be restored",
                 ) from exc
 
-        def first_epoch_payloads() -> Iterator[
-            tuple[torch.Tensor, torch.Tensor]
-        ]:
-            yield first[1], first[2]
+        def first_epoch_payloads() -> Iterator[TrainingBatch]:
+            yield first
             for item in stream:
-                _path, features_cpu, targets_cpu = read_payload(item)
-                if features_cpu.size(0) != 0:
-                    yield features_cpu, targets_cpu
+                batch = read_payload(item)
+                if batch.features.size(0) != 0:
+                    yield batch
 
-        def closed_payloads() -> Iterator[
-            tuple[torch.Tensor, torch.Tensor]
-        ]:
+        def closed_payloads() -> Iterator[TrainingBatch]:
             if not input_stream.closed:
                 raise ValueError("complete input is unavailable for replay")
             for item in input_stream.inputs:
-                _path, features_cpu, targets_cpu = read_payload(item)
-                if features_cpu.size(0) != 0:
-                    yield features_cpu, targets_cpu
+                batch = read_payload(item)
+                if batch.features.size(0) != 0:
+                    yield batch
 
         def on_epoch(
             epoch: int,

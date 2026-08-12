@@ -6,7 +6,7 @@ import math
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence, Set
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import (
     Literal,
     NotRequired,
@@ -270,7 +270,13 @@ def validate_upload_metadata(document: JsonObject) -> UploadMetadataFields:
     }
 
 
-def parse_input_descriptor(descriptor: object) -> tuple[str, int]:
+@dataclass(frozen=True, slots=True)
+class JobDataDescriptor:
+    job_id: str
+    ordinal: int
+
+
+def parse_input_descriptor(descriptor: object) -> JobDataDescriptor:
     parts = _descriptor_parts(descriptor)
     if (
         len(parts) != 6
@@ -278,13 +284,13 @@ def parse_input_descriptor(descriptor: object) -> tuple[str, int]:
         or parts[4] != "inputs"
     ):
         raise invalid("invalid input Flight descriptor")
-    return (
-        _uuid_value(parts[3], "descriptor jobId"),
-        _ordinal_text(parts[5], "descriptor ordinal"),
+    return JobDataDescriptor(
+        job_id=_uuid_value(parts[3], "descriptor jobId"),
+        ordinal=_ordinal_text(parts[5], "descriptor ordinal"),
     )
 
 
-def parse_output_descriptor(descriptor: object) -> tuple[str, int]:
+def parse_output_descriptor(descriptor: object) -> JobDataDescriptor:
     parts = _descriptor_parts(descriptor)
     if (
         len(parts) != 6
@@ -292,9 +298,9 @@ def parse_output_descriptor(descriptor: object) -> tuple[str, int]:
         or parts[4] != "outputs"
     ):
         raise invalid("invalid output Flight descriptor")
-    return (
-        _uuid_value(parts[3], "descriptor jobId"),
-        _ordinal_text(parts[5], "descriptor ordinal"),
+    return JobDataDescriptor(
+        job_id=_uuid_value(parts[3], "descriptor jobId"),
+        ordinal=_ordinal_text(parts[5], "descriptor ordinal"),
     )
 
 
@@ -981,6 +987,7 @@ def _json_value(value: object, location: str) -> JsonValue:
 
 
 __all__ = [
+    "JobDataDescriptor",
     "canonical_manifest_hash",
     "canonical_manifest_receipts",
     "canonical_request_hash",

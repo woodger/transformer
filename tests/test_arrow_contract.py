@@ -75,10 +75,10 @@ def test_empty_training_table_preserves_typed_empty_tensors():
         "tgt": pa.array([], type=FLOAT_LIST),
     })
 
-    source, target = table_to_tensors(table)
+    batch = table_to_tensors(table)
 
-    assert source.shape == (0, 0)
-    assert target.shape == (0, 6)
+    assert batch.features.shape == (0, 0)
+    assert batch.targets.shape == (0, 6)
 
 
 @pytest.mark.parametrize("name", ["src", "tgt"])

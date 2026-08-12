@@ -25,6 +25,7 @@ from app.contracts.worker.v3.config import (
     TrainConfig,
 )
 from app.contracts.worker.v3.objective import objective_config_sha256
+from app.worker.data.tensors import TrainingBatch
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
 from app.worker.model.context import context_missingness_ratios
 from app.worker.model.transformer import public_predictions
@@ -42,9 +43,8 @@ from app.worker.utils import load_model, save_model, tree_stats
 _MAX_SHUFFLE_WINDOW_BATCHES = 32
 _MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024
 
-TensorBatch = tuple[torch.Tensor, torch.Tensor]
-Payloads = Iterable[TensorBatch]
-PayloadFactory = Callable[[], Payloads]
+TrainingBatches = Iterable[TrainingBatch]
+TrainingBatchFactory = Callable[[], TrainingBatches]
 
 
 class SelectionPayload(TypedDict):
@@ -66,6 +66,29 @@ class _Closable(Protocol):
     def close(self) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class _TrainingBatchLoader:
+    batch: TrainingBatch
+    batch_size: int
+
+    def __iter__(self) -> Iterator[TrainingBatch]:
+        dataset = TensorDataset(
+            self.batch.features,
+            self.batch.targets,
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0,
+        )
+        for batch_features, batch_targets in loader:
+            yield TrainingBatch(
+                features=batch_features,
+                targets=batch_targets,
+            )
+
+
 @dataclass(frozen=True)
 class _PrefetchEnd:
     pass
@@ -82,10 +105,10 @@ class _PrefetchError:
 class _BatchPrefetcher:
     """Prepare at most one closed-input batch ahead of the trainer."""
 
-    def __init__(self, batches: Iterable[TensorBatch]) -> None:
+    def __init__(self, batches: TrainingBatches) -> None:
         self._batches = iter(batches)
         self._queue: queue.Queue[
-            TensorBatch | _PrefetchError | _PrefetchEnd
+            TrainingBatch | _PrefetchError | _PrefetchEnd
         ] = queue.Queue(maxsize=1)
         self._slot = threading.Semaphore(1)
         self._stop = threading.Event()
@@ -99,7 +122,7 @@ class _BatchPrefetcher:
     def __iter__(self) -> _BatchPrefetcher:
         return self
 
-    def __next__(self) -> TensorBatch:
+    def __next__(self) -> TrainingBatch:
         message = self._queue.get()
         self._slot.release()
         if isinstance(message, _PrefetchEnd):
@@ -241,7 +264,7 @@ class Trainer:
 
     def _train_loaders(
         self,
-        loaders: Iterable[Iterable[TensorBatch]],
+        loaders: Iterable[TrainingBatches],
     ) -> TrainMetrics:
         self.model.train()
         metrics = TrainMetrics(
@@ -258,7 +281,7 @@ class Trainer:
                 while True:
                     phase_started = time.perf_counter()
                     try:
-                        batch_features_cpu, batch_targets_cpu = next(batches)
+                        batch = next(batches)
                     except StopIteration:
                         break
                     metrics.input_pipeline_ms += (
@@ -266,10 +289,10 @@ class Trainer:
                     ) * 1000
 
                     loss_stage = self._loss_stage_for()
-                    batch_rows = batch_features_cpu.size(0)
+                    batch_rows = batch.features.size(0)
                     phase_started = time.perf_counter()
                     missingness_ratios = context_missingness_ratios(
-                        batch_features_cpu,
+                        batch.features,
                         self.context_mode,
                     )
                     metrics.missing_stats_ms += (
@@ -277,8 +300,8 @@ class Trainer:
                     ) * 1000
 
                     phase_started = time.perf_counter()
-                    batch_features = batch_features_cpu.to(self.device)
-                    batch_targets = batch_targets_cpu.to(self.device)
+                    batch_features = batch.features.to(self.device)
+                    batch_targets = batch.targets.to(self.device)
                     metrics.host_to_device_ms += (
                         time.perf_counter() - phase_started
                     ) * 1000
@@ -288,13 +311,14 @@ class Trainer:
 
                     with self._autocast():
                         model_output = self.model(batch_features)
-                        loss, loss_statistics = combined_loss(
+                        loss_evaluation = combined_loss(
                             model_output,
                             batch_targets,
                             loss_stage,
                             self.direct_loss_weights,
                             return_statistics=True,
                         )
+                        loss = loss_evaluation.loss
 
                     self.scaler.scale(
                         loss
@@ -305,9 +329,13 @@ class Trainer:
                     )
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
-                    loss_parts, grad_norm_value = (
-                        loss_statistics.materialize(grad_norm)
+                    materialized_statistics = (
+                        loss_evaluation.statistics.materialize(grad_norm)
                     )
+                    loss_parts = materialized_statistics.parts
+                    grad_norm_value = materialized_statistics.grad_norm
+                    if grad_norm_value is None:
+                        raise AssertionError("gradient norm was not materialized")
                     loss_parts["step"] = self.state.finish_step()
 
                     metrics.update(
@@ -326,7 +354,7 @@ class Trainer:
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
         return metrics
 
-    def _train_loader(self, loader: Iterable[TensorBatch]) -> TrainMetrics:
+    def _train_loader(self, loader: TrainingBatches) -> TrainMetrics:
         return self._train_loaders((loader,))
 
     def _observe_metrics(
@@ -358,9 +386,11 @@ class Trainer:
                 )
                 if not math.isfinite(selection_score):
                     raise ValueError("checkpoint selection score must be finite")
-                checkpoint_best, should_stop = self.selection_state.update(
-                    selection_score
+                selection_decision = self.selection_state.update(
+                    selection_score,
                 )
+                checkpoint_best = selection_decision.improved
+                should_stop = selection_decision.should_stop
                 metrics.selection_score = selection_score
                 if checkpoint_best:
                     self.best_selection_score = selection_score
@@ -411,23 +441,21 @@ class Trainer:
 
     def fit_batch(
         self,
-        features: torch.Tensor,
-        targets: torch.Tensor,
+        batch: TrainingBatch,
         epoch: int = 0,
     ) -> TrainMetrics:
-        loader = self._data_loader(features, targets)
+        loader = self._data_loader(batch)
 
         self.state.begin_epoch(epoch)
         return self._train_loader(loader)
 
     def fit_epochs(
         self,
-        features: torch.Tensor,
-        targets: torch.Tensor,
+        batch: TrainingBatch,
         on_epoch: EpochCallback | None = None,
         frame: int | None = None,
     ) -> list[TrainMetrics]:
-        loader = self._data_loader(features, targets)
+        loader = self._data_loader(batch)
         return self._fit_loader_epochs(
             lambda: (loader,),
             on_epoch=on_epoch,
@@ -436,7 +464,7 @@ class Trainer:
 
     def fit_payloads(
         self,
-        payloads: PayloadFactory,
+        payloads: TrainingBatchFactory,
         on_epoch: EpochCallback | None = None,
     ) -> list[TrainMetrics]:
         """Train global epochs over a payload-independent row stream.
@@ -445,7 +473,7 @@ class Trainer:
         epoch. Optimizer batches and bounded shuffle windows may cross payload
         boundaries, so transport partitioning cannot change the trajectory.
         """
-        def loaders() -> Iterator[Iterable[TensorBatch]]:
+        def loaders() -> Iterator[TrainingBatches]:
             yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
@@ -456,25 +484,25 @@ class Trainer:
 
     def _payload_batches(
         self,
-        payloads: Payloads,
+        payloads: TrainingBatches,
         generator: torch.Generator,
-    ) -> Iterator[TensorBatch]:
+    ) -> Iterator[TrainingBatch]:
         window_rows: int | None = None
         features_buffer: torch.Tensor | None = None
         targets_buffer: torch.Tensor | None = None
         buffered_rows = 0
 
-        for features, targets in payloads:
-            payload_rows = features.size(0)
-            if targets.size(0) != payload_rows:
+        for batch in payloads:
+            payload_rows = batch.features.size(0)
+            if batch.targets.size(0) != payload_rows:
                 raise ValueError("features and targets row counts must match")
             if payload_rows == 0:
                 continue
 
             if features_buffer is None:
                 row_bytes = (
-                    features[0].numel() * features.element_size()
-                    + targets[0].numel() * targets.element_size()
+                    batch.features[0].numel() * batch.features.element_size()
+                    + batch.targets[0].numel() * batch.targets.element_size()
                 )
                 batch_bytes = self.batch_size * row_bytes
                 window_batches = min(
@@ -483,14 +511,14 @@ class Trainer:
                 )
                 window_rows = self.batch_size * window_batches
                 features_buffer = torch.empty(
-                    (window_rows, *features.shape[1:]),
-                    dtype=features.dtype,
-                    device=features.device,
+                    (window_rows, *batch.features.shape[1:]),
+                    dtype=batch.features.dtype,
+                    device=batch.features.device,
                 )
                 targets_buffer = torch.empty(
-                    (window_rows, *targets.shape[1:]),
-                    dtype=targets.dtype,
-                    device=targets.device,
+                    (window_rows, *batch.targets.shape[1:]),
+                    dtype=batch.targets.dtype,
+                    device=batch.targets.device,
                 )
 
             if window_rows is None or targets_buffer is None:
@@ -505,10 +533,10 @@ class Trainer:
                 buffer_end = buffered_rows + copied_rows
                 payload_end = offset + copied_rows
                 features_buffer[buffered_rows:buffer_end].copy_(
-                    features[offset:payload_end]
+                    batch.features[offset:payload_end]
                 )
                 targets_buffer[buffered_rows:buffer_end].copy_(
-                    targets[offset:payload_end]
+                    batch.targets[offset:payload_end]
                 )
                 buffered_rows = buffer_end
                 offset = payload_end
@@ -522,7 +550,7 @@ class Trainer:
                     )
                     buffered_rows = 0
 
-            del features, targets
+            del batch
 
         if buffered_rows:
             if features_buffer is None or targets_buffer is None:
@@ -536,7 +564,7 @@ class Trainer:
 
     def _prefetched_payload_batches(
         self,
-        payloads: Payloads,
+        payloads: TrainingBatches,
     ) -> _BatchPrefetcher:
         return _BatchPrefetcher(self._payload_batches(
             payloads,
@@ -549,7 +577,7 @@ class Trainer:
         targets: torch.Tensor,
         rows: int,
         generator: torch.Generator,
-    ) -> Iterator[TensorBatch]:
+    ) -> Iterator[TrainingBatch]:
         order = torch.randperm(
             rows,
             generator=generator,
@@ -557,27 +585,23 @@ class Trainer:
         )
         for offset in range(0, rows, self.batch_size):
             indices = order[offset:offset + self.batch_size]
-            yield (
-                features.index_select(0, indices),
-                targets.index_select(0, indices),
+            yield TrainingBatch(
+                features=features.index_select(0, indices),
+                targets=targets.index_select(0, indices),
             )
 
     def _data_loader(
         self,
-        features: torch.Tensor,
-        targets: torch.Tensor,
-    ) -> Iterable[TensorBatch]:
-        dataset = TensorDataset(features, targets)
-        return DataLoader(
-            dataset,
+        batch: TrainingBatch,
+    ) -> TrainingBatches:
+        return _TrainingBatchLoader(
+            batch=batch,
             batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=0,
         )
 
     def _fit_loader_epochs(
         self,
-        loaders: Callable[[], Iterable[Iterable[TensorBatch]]],
+        loaders: Callable[[], Iterable[TrainingBatches]],
         on_epoch: EpochCallback | None = None,
         frame: int | None = None,
         *,
@@ -624,14 +648,14 @@ class Trainer:
 
     def fit_payloads_resumable(
         self,
-        payloads: PayloadFactory,
+        payloads: TrainingBatchFactory,
         *,
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
     ) -> list[TrainMetrics]:
         """Train job-wide epochs and expose only complete recovery boundaries."""
 
-        def loaders() -> Iterator[Iterable[TensorBatch]]:
+        def loaders() -> Iterator[TrainingBatches]:
             yield self._prefetched_payload_batches(payloads())
 
         return self._fit_loader_epochs(
@@ -643,8 +667,8 @@ class Trainer:
 
     def fit_streaming_payloads(
         self,
-        first_epoch_payloads: Payloads,
-        closed_payloads: PayloadFactory,
+        first_epoch_payloads: TrainingBatches,
+        closed_payloads: TrainingBatchFactory,
         *,
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
@@ -658,7 +682,7 @@ class Trainer:
 
         first_epoch = True
 
-        def loaders() -> Iterator[Iterable[TensorBatch]]:
+        def loaders() -> Iterator[TrainingBatches]:
             nonlocal first_epoch
             if first_epoch:
                 payloads = first_epoch_payloads
@@ -923,8 +947,7 @@ class Trainer:
 
     def fit(
         self,
-        features: torch.Tensor,
-        targets: torch.Tensor,
+        batch: TrainingBatch,
         model_name: str,
     ) -> None:
         def on_epoch(
@@ -954,7 +977,7 @@ class Trainer:
             )
 
         print(self.config_line())
-        self.fit_epochs(features, targets, on_epoch=on_epoch)
+        self.fit_epochs(batch, on_epoch=on_epoch)
 
         self.save(model_name)
         print("Model saved")

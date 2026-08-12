@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Protocol, Self, cast
 
@@ -16,6 +17,7 @@ from app.contracts.flight.v4.arrow import (
     canonical_prediction_schema,
     validate_target_space_values,
 )
+from app.worker.data.tensors import TrainingBatch
 from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 if TYPE_CHECKING:
@@ -87,22 +89,28 @@ class _ListType(Protocol):
     def list_size(self) -> int: ...
 
 
-def table_to_tensors(table: pa.Table) -> tuple[torch.Tensor, torch.Tensor]:
-    source_values, target_values = _validated_arrow_columns(
+@dataclass(frozen=True, slots=True)
+class _ValidatedArrowColumns:
+    features: np.ndarray
+    targets: np.ndarray | None
+
+
+def table_to_tensors(table: pa.Table) -> TrainingBatch:
+    columns = _validated_arrow_columns(
         table,
         require_target=True,
     )
-    features = _list_values_to_tensor(source_values)
-    if target_values is None:
+    features = _list_values_to_tensor(columns.features)
+    if columns.targets is None:
         raise AssertionError("fit Arrow validation did not return targets")
-    targets = _list_values_to_tensor(target_values)
+    targets = _list_values_to_tensor(columns.targets)
 
-    return features, targets
+    return TrainingBatch(features=features, targets=targets)
 
 
 def table_to_source_tensor(table: pa.Table) -> torch.Tensor:
-    source_values, _ = _validated_arrow_columns(table, require_target=False)
-    return _list_values_to_tensor(source_values)
+    columns = _validated_arrow_columns(table, require_target=False)
+    return _list_values_to_tensor(columns.features)
 
 
 def validate_arrow_table(
@@ -115,7 +123,7 @@ def validate_arrow_table(
 def _validated_arrow_columns(
     table: pa.Table,
     require_target: bool,
-) -> tuple[np.ndarray, np.ndarray | None]:
+) -> _ValidatedArrowColumns:
     typed_table = cast(_ArrowTable, table)
     source_values = _validate_list_column(
         typed_table,
@@ -132,12 +140,15 @@ def _validated_arrow_columns(
         )
         _validate_target_values(target_values)
 
-    return source_values, target_values
+    return _ValidatedArrowColumns(
+        features=source_values,
+        targets=target_values,
+    )
 
 
 def read_arrow(
     path: str | os.PathLike[str],
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> TrainingBatch:
     with open(path, "rb") as f:
         reader = cast(_ArrowReader, ipc.RecordBatchFileReader(f))
         table = reader.read_all()
@@ -158,7 +169,7 @@ def read_committed_fit_arrow(
     *,
     expected_rows: int,
     source_width: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> TrainingBatch:
     """Replay one service-validated immutable fit artifact.
 
     The service validates values before durable commit and the worker verifies
@@ -173,9 +184,9 @@ def read_committed_fit_arrow(
         source_width=source_width,
         require_target=True,
     )
-    return (
-        _committed_column_to_tensor(table, "src", source_width),
-        _committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
+    return TrainingBatch(
+        features=_committed_column_to_tensor(table, "src", source_width),
+        targets=_committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
     )
 
 

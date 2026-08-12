@@ -2,6 +2,12 @@ import math
 from dataclasses import dataclass
 
 
+@dataclass(frozen=True, slots=True)
+class SelectionDecision:
+    improved: bool
+    should_stop: bool
+
+
 @dataclass
 class SelectionState:
     min_delta: float
@@ -15,7 +21,7 @@ class SelectionState:
         self.best_score = float("inf")
         self.wait = 0
 
-    def update(self, score: float) -> tuple[bool, bool]:
+    def update(self, score: float) -> SelectionDecision:
         if not self.active:
             raise ValueError("checkpoint selection has not started")
         if not math.isfinite(score):
@@ -28,7 +34,10 @@ class SelectionState:
         else:
             self.wait += 1
         should_stop = self.patience > 0 and self.wait >= self.patience
-        return improved, should_stop
+        return SelectionDecision(
+            improved=improved,
+            should_stop=should_stop,
+        )
 
 
-__all__ = ["SelectionState"]
+__all__ = ["SelectionDecision", "SelectionState"]

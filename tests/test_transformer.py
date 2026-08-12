@@ -176,10 +176,10 @@ def test_relaxed_keeps_missing_flags_after_nan_to_num():
         ],
     ])
 
-    values, mask = prepare_context_input(features, "relaxed")
+    prepared_context = prepare_context_input(features, "relaxed")
 
-    assert mask.tolist() == [[False, True]]
-    assert values.tolist() == [
+    assert prepared_context.key_padding_mask.tolist() == [[False, True]]
+    assert prepared_context.features.tolist() == [
         [
             [1.0, 0.0, 3.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],

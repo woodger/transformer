@@ -91,8 +91,10 @@ class CudaDeviceInventory:
                     self._boot_id,
                 )
             document = self._probe()
-            devices, runtime_version, torch_version = _parse_probe(document)
-            devices = _merge_quarantine(devices, persisted)
+            probe_snapshot = _parse_probe(document)
+            devices = _merge_quarantine(probe_snapshot.devices, persisted)
+            runtime_version = probe_snapshot.runtime_version
+            torch_version = probe_snapshot.torch_version
         except Exception as exc:
             devices = ()
             runtime_version = None
@@ -180,8 +182,11 @@ class CudaDeviceInventory:
                 return True
         try:
             document = self._probe()
-            devices, _, _ = _parse_probe(document)
-            live_ids = {device.device_id for device in devices}
+            probe_snapshot = _parse_probe(document)
+            live_ids = {
+                device.device_id
+                for device in probe_snapshot.devices
+            }
             lost = device_id not in live_ids
         except Exception:
             # An inventory probe which cannot initialize the CUDA runtime is
@@ -381,7 +386,7 @@ def _worker_inspect(
 
 def _parse_probe(
     document: JsonObject,
-) -> tuple[tuple[CudaDevice, ...], str | None, str]:
+) -> CudaInventorySnapshot:
     raw_devices = document.get("devices")
     runtime_version = document.get("runtimeVersion")
     torch_version = document.get("torchVersion")
@@ -431,7 +436,11 @@ def _parse_probe(
             name,
             CudaDeviceState.AVAILABLE,
         ))
-    return tuple(devices), runtime_version, torch_version
+    return CudaInventorySnapshot(
+        devices=tuple(devices),
+        runtime_version=runtime_version,
+        torch_version=torch_version,
+    )
 
 
 def _current_boot_id() -> str:

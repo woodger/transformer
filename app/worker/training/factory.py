@@ -46,22 +46,24 @@ def build_trainer(
     device: torch.device,
     model_config: ModelConfig | None = None,
     data_contract: Mapping[str, object] | None = None,
+    *,
+    metrics_path: str | None = None,
 ) -> Trainer:
     train_config = _coerce_train_config(args_or_config)
     if model_config is None:
         model_config = _coerce_model_config(args_or_config)
 
-    metrics_name_value = cast(
-        object,
-        getattr(args_or_config, "metrics_name", None),
-    )
-    if metrics_name_value is not None and not isinstance(
-        metrics_name_value,
-        str,
-    ):
-        raise ValueError("metrics_name must be a string")
-    metrics_name = metrics_name_value
-    metrics_path = resolve_metrics_path(metrics_name)
+    if metrics_path is None:
+        metrics_name_value = cast(
+            object,
+            getattr(args_or_config, "metrics_name", None),
+        )
+        if metrics_name_value is not None and not isinstance(
+            metrics_name_value,
+            str,
+        ):
+            raise ValueError("metrics_name must be a string")
+        metrics_path = resolve_metrics_path(metrics_name_value)
 
     return Trainer(
         model=model,

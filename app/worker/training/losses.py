@@ -11,7 +11,7 @@ from app.contracts.worker.v3.config import DEFAULT_DIRECT_LOSS_WEIGHTS
 from app.worker.model.transformer import public_predictions
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LossStageDefinition:
     stage: int
     name: str
@@ -57,26 +57,25 @@ _LOSS_STATISTIC_NAMES = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class MaterializedLossStatistics:
+    """Host-side scalar metrics produced by one synchronized transfer."""
+
+    parts: dict[str, float | int]
+    grad_norm: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class LossStatistics:
     """Device-resident row-normalized statistics awaiting one host transfer."""
 
     values: tuple[torch.Tensor, ...]
     loss_stage: int
 
-    @overload
-    def materialize(self, grad_norm: None = None) -> dict[str, float | int]: ...
-
-    @overload
-    def materialize(
-        self,
-        grad_norm: torch.Tensor,
-    ) -> tuple[dict[str, float | int], float]: ...
-
     def materialize(
         self,
         grad_norm: torch.Tensor | None = None,
-    ) -> dict[str, float | int] | tuple[dict[str, float | int], float]:
+    ) -> MaterializedLossStatistics:
         device_values = self.values
         if grad_norm is not None:
             device_values = (*device_values, grad_norm.detach())
@@ -95,9 +94,26 @@ class LossStatistics:
             strict=True,
         ))
         parts["loss_stage"] = self.loss_stage
-        if grad_norm is None:
-            return parts
-        return parts, host_values[-1]
+        return MaterializedLossStatistics(
+            parts=parts,
+            grad_norm=None if grad_norm is None else host_values[-1],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LossEvaluation:
+    """Differentiable loss paired with device-resident statistics."""
+
+    loss: torch.Tensor
+    statistics: LossStatistics
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializedLossEvaluation:
+    """Differentiable loss paired with host-side scalar statistics."""
+
+    loss: torch.Tensor
+    statistics: MaterializedLossStatistics
 
 
 def validate_loss_stage(loss_stage: int) -> int:
@@ -157,7 +173,7 @@ def combined_loss(
     direct_loss_weights: tuple[float, ...],
     return_parts: Literal[True],
     return_statistics: Literal[False] = False,
-) -> tuple[torch.Tensor, dict[str, float | int]]: ...
+) -> MaterializedLossEvaluation: ...
 
 
 @overload
@@ -168,7 +184,7 @@ def combined_loss(
     direct_loss_weights: tuple[float, ...],
     return_parts: Literal[False] = False,
     return_statistics: Literal[True] = True,
-) -> tuple[torch.Tensor, LossStatistics]: ...
+) -> LossEvaluation: ...
 
 
 def combined_loss(
@@ -180,8 +196,8 @@ def combined_loss(
     return_statistics: bool = False,
 ) -> (
     torch.Tensor
-    | tuple[torch.Tensor, dict[str, float | int]]
-    | tuple[torch.Tensor, LossStatistics]
+    | MaterializedLossEvaluation
+    | LossEvaluation
 ):
     """Evaluate the target-aligned staged objective.
 
@@ -275,5 +291,8 @@ def combined_loss(
         loss_stage=loss_stage,
     )
     if return_statistics:
-        return loss, statistics
-    return loss, statistics.materialize()
+        return LossEvaluation(loss=loss, statistics=statistics)
+    return MaterializedLossEvaluation(
+        loss=loss,
+        statistics=statistics.materialize(),
+    )

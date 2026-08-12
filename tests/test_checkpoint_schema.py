@@ -7,6 +7,7 @@ import torch
 
 from app.storage.checkpoint import load_checkpoint_metadata, save_checkpoint
 from app.training.run_config import ModelConfig, TrainConfig
+from app.worker.data.tensors import TrainingBatch
 
 fit_module = importlib.import_module("app.commands.fit")
 fit_stream_module = importlib.import_module("app.commands.fit_stream")
@@ -148,7 +149,10 @@ def test_file_fit_freezes_actual_feature_dim_before_building(monkeypatch, capsys
     monkeypatch.setattr(
         fit_module,
         "read_arrow",
-        lambda _: (torch.zeros((2, 6)), torch.zeros((2, 6))),
+        lambda _: TrainingBatch(
+            features=torch.zeros((2, 6)),
+            targets=torch.zeros((2, 6)),
+        ),
     )
 
     def build_model(config, *args):
@@ -183,7 +187,10 @@ def test_file_fit_rejects_empty_training_input(monkeypatch):
     monkeypatch.setattr(
         fit_module,
         "read_arrow",
-        lambda _: (torch.empty((0, 0)), torch.empty((0, 0))),
+        lambda _: TrainingBatch(
+            features=torch.empty((0, 0)),
+            targets=torch.empty((0, 0)),
+        ),
     )
 
     with pytest.raises(ValueError, match="Training input contains no rows"):
@@ -204,7 +211,10 @@ def test_stream_fit_freezes_first_frame_feature_dim_before_building(monkeypatch)
     monkeypatch.setattr(
         fit_stream_module,
         "table_to_tensors",
-        lambda _: (torch.zeros((1, 4)), torch.zeros((1, 6))),
+        lambda _: TrainingBatch(
+            features=torch.zeros((1, 4)),
+            targets=torch.zeros((1, 6)),
+        ),
     )
 
     def build_model(config, *args):

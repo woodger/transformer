@@ -15,6 +15,7 @@ from app.flight.constants import (
     MAX_PAGE_ITEMS,
 )
 from app.flight.contract import (
+    JobDataDescriptor,
     canonical_request_hash,
     parse_action_body,
     parse_input_descriptor,
@@ -173,8 +174,14 @@ def test_v4_input_and_output_descriptor_paths_are_strict():
     output_descriptor = flight.FlightDescriptor.for_path(
         "transformer", "v4", "jobs", JOB_ID, "outputs", "3"
     )
-    assert parse_input_descriptor(input_descriptor) == (JOB_ID, 12)
-    assert parse_output_descriptor(output_descriptor) == (JOB_ID, 3)
+    assert parse_input_descriptor(input_descriptor) == JobDataDescriptor(
+        job_id=JOB_ID,
+        ordinal=12,
+    )
+    assert parse_output_descriptor(output_descriptor) == JobDataDescriptor(
+        job_id=JOB_ID,
+        ordinal=3,
+    )
 
     malformed = flight.FlightDescriptor.for_path(
         "transformer", "jobs", JOB_ID, "inputs", "0"

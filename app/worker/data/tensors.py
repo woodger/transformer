@@ -1,4 +1,19 @@
+from dataclasses import dataclass
+
 import torch
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingBatch:
+    """Worker-owned fit data with one aligned row axis.
+
+    ``features`` is float32 ``[rows, source_width]`` at the Arrow boundary and
+    float32 ``[batch, sequence, features]`` after source reshaping. ``targets``
+    is float32 ``[rows, 6]`` in the target-aligned public order.
+    """
+
+    features: torch.Tensor
+    targets: torch.Tensor
 
 
 def reshape_source(

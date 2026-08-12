@@ -41,19 +41,21 @@ def test_each_target_changes_only_its_corresponding_direct_component(
     changed_targets = targets.clone()
     changed_targets[0, target_index] = replacement
 
-    _, original = combined_loss(
+    original_evaluation = combined_loss(
         outputs,
         targets,
         loss_stage=4,
         return_parts=True,
     )
-    _, changed = combined_loss(
+    changed_evaluation = combined_loss(
         outputs,
         changed_targets,
         loss_stage=4,
         return_parts=True,
     )
 
+    original = original_evaluation.statistics.parts
+    changed = changed_evaluation.statistics.parts
     assert changed[f"loss_l{target_index}"] != pytest.approx(
         original[f"loss_l{target_index}"]
     )
@@ -76,7 +78,7 @@ def test_sigma_return_and_private_gaussian_scale_are_distinct_heads():
 def test_probability_targets_use_logits_for_stable_direct_loss():
     outputs, targets = make_outputs_and_targets()
 
-    _, parts = combined_loss(
+    evaluation = combined_loss(
         outputs,
         targets,
         loss_stage=4,
@@ -87,29 +89,33 @@ def test_probability_targets_use_logits_for_stable_direct_loss():
         outputs[:, 2],
         targets[:, 2],
     )
-    assert parts["loss_l2"] == pytest.approx(expected.item())
+    assert evaluation.statistics.parts["loss_l2"] == pytest.approx(
+        expected.item()
+    )
 
 
 def test_deferred_loss_statistics_preserve_materialized_metrics():
     outputs, targets = make_outputs_and_targets()
 
-    _, expected = combined_loss(
+    expected_evaluation = combined_loss(
         outputs,
         targets,
         loss_stage=4,
         return_parts=True,
     )
-    _, statistics = combined_loss(
+    deferred_evaluation = combined_loss(
         outputs,
         targets,
         loss_stage=4,
         return_statistics=True,
     )
-    actual, grad_norm = statistics.materialize(
+    actual_statistics = deferred_evaluation.statistics.materialize(
         torch.tensor(3.25, dtype=torch.float64)
     )
 
+    expected = expected_evaluation.statistics.parts
+    actual = actual_statistics.parts
     assert actual.keys() == expected.keys()
     for name, value in expected.items():
         assert actual[name] == pytest.approx(value)
-    assert grad_norm == pytest.approx(3.25)
+    assert actual_statistics.grad_norm == pytest.approx(3.25)

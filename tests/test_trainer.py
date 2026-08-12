@@ -25,6 +25,7 @@ from app.training.factory import build_trainer
 from app.training.losses import resolve_loss_stage
 from app.training.run_config import model_config_from_args
 from app.training.trainer import Trainer
+from app.worker.data.tensors import TrainingBatch
 from app.worker.runtime.reproducibility import configure_reproducibility
 from app.worker.training import trainer as trainer_module
 from app.worker.training.trainer import _BatchPrefetcher
@@ -38,10 +39,17 @@ def torch_rng():
 
 
 def make_dummy_data(n=32, seq_len=5, feat_dim=4):
-    source = torch.randn(n, seq_len, feat_dim)
+    features = torch.randn(n, seq_len, feat_dim)
     targets = torch.rand(n, 6)
     targets[:, 0] = torch.rand(n) * 2 - 1
-    return source, targets
+    return TrainingBatch(features=features, targets=targets)
+
+
+def slice_batch(batch, rows):
+    return TrainingBatch(
+        features=batch.features[rows],
+        targets=batch.targets[rows],
+    )
 
 
 def model_config(*, seq_len=5, feature_dim=4):
@@ -79,7 +87,7 @@ def new_model():
 
 
 def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
-    source, targets = make_dummy_data(n=8)
+    batch = make_dummy_data(n=8)
     config = TrainConfig(
         batch_size=4,
         epochs=1,
@@ -95,7 +103,7 @@ def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
     )
 
     path = tmp_path / "model.pth"
-    trainer.fit(source, targets, str(path))
+    trainer.fit(batch, str(path))
 
     checkpoint = load_checkpoint(str(path), torch.device("cpu"))
     assert checkpoint["format"] == CHECKPOINT_FORMAT
@@ -133,7 +141,7 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
 
 
 def test_cpu_training_disables_amp_and_updates_parameters():
-    source, targets = make_dummy_data(n=4)
+    batch = make_dummy_data(n=4)
     model = new_model()
     trainer = Trainer(
         model=model,
@@ -151,7 +159,7 @@ def test_cpu_training_disables_amp_and_updates_parameters():
         for name, value in model.state_dict().items()
     }
 
-    metrics = trainer.fit_batch(source, targets)
+    metrics = trainer.fit_batch(batch)
 
     assert metrics.rows == 4
     assert trainer.use_amp is False
@@ -162,7 +170,7 @@ def test_cpu_training_disables_amp_and_updates_parameters():
 
 
 def test_fit_batch_reports_six_target_metrics():
-    source, targets = make_dummy_data()
+    batch = make_dummy_data()
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
@@ -174,9 +182,9 @@ def test_fit_batch_reports_six_target_metrics():
         ),
     )
 
-    metrics = trainer.fit_batch(source, targets)
+    metrics = trainer.fit_batch(batch)
 
-    assert metrics.rows == source.size(0)
+    assert metrics.rows == batch.features.size(0)
     assert metrics.batches == 4
     assert metrics.loss_stage == 4
     for semantic in (
@@ -249,7 +257,7 @@ def test_loss_schedule_reaches_target_aligned_maximum_stage(
 
 
 def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
-    source, targets = make_dummy_data(n=4)
+    batch = make_dummy_data(n=4)
     selection = CheckpointSelectionConfig(min_delta=0.0, patience=1)
     trainer = Trainer(
         model=new_model(),
@@ -264,7 +272,7 @@ def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
         ),
     )
 
-    metrics = trainer.fit_epochs(source, targets)
+    metrics = trainer.fit_epochs(batch)
 
     assert [item.loss_stage for item in metrics] == [1, 2, 3, 4, 4]
     assert trainer.best_epoch == 4
@@ -273,7 +281,7 @@ def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
 
 
 def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
-    source, targets = make_dummy_data(n=4)
+    batch = make_dummy_data(n=4)
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
@@ -285,7 +293,7 @@ def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
         ),
     )
 
-    metrics = trainer.fit_epochs(source, targets)
+    metrics = trainer.fit_epochs(batch)
 
     assert len(metrics) == 3
     assert trainer.best_state_dict is None
@@ -296,9 +304,16 @@ def test_selection_tie_keeps_the_earlier_candidate():
     state = SelectionState(min_delta=0.1, patience=2)
     state.begin()
 
-    assert state.update(1.0) == (True, False)
-    assert state.update(0.9) == (False, False)
-    assert state.update(0.89) == (True, False)
+    first = state.update(1.0)
+    tie = state.update(0.9)
+    improved = state.update(0.89)
+
+    assert first.improved is True
+    assert first.should_stop is False
+    assert tie.improved is False
+    assert tie.should_stop is False
+    assert improved.improved is True
+    assert improved.should_stop is False
 
 
 def test_selection_rejects_nonfinite_score():
@@ -332,20 +347,20 @@ def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
     third_started = threading.Event()
 
     def batches():
-        yield 0
+        yield make_dummy_data(n=1)
         second_started.set()
-        yield 1
+        yield make_dummy_data(n=2)
         third_started.set()
-        yield 2
+        yield make_dummy_data(n=3)
 
     prefetched = _BatchPrefetcher(batches())
     try:
-        assert next(prefetched) == 0
+        assert next(prefetched).features.size(0) == 1
         assert second_started.wait(timeout=1.0)
         assert not third_started.wait(timeout=0.05)
-        assert next(prefetched) == 1
+        assert next(prefetched).features.size(0) == 2
         assert third_started.wait(timeout=1.0)
-        assert next(prefetched) == 2
+        assert next(prefetched).features.size(0) == 3
         with pytest.raises(StopIteration):
             next(prefetched)
     finally:
@@ -354,12 +369,12 @@ def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
 
 def test_closed_batch_prefetch_propagates_producer_failure():
     def batches():
-        yield 0
+        yield make_dummy_data(n=1)
         raise RuntimeError("closed replay failed")
 
     prefetched = _BatchPrefetcher(batches())
     try:
-        assert next(prefetched) == 0
+        assert next(prefetched).features.size(0) == 1
         with pytest.raises(RuntimeError, match="closed replay failed"):
             next(prefetched)
     finally:
@@ -367,7 +382,7 @@ def test_closed_batch_prefetch_propagates_producer_failure():
 
 
 def test_payload_partitioning_does_not_change_training_state():
-    source, targets = make_dummy_data(n=10)
+    batch = make_dummy_data(n=10)
     initial = new_model().state_dict()
 
     def train(payloads):
@@ -393,11 +408,11 @@ def test_payload_partitioning_does_not_change_training_state():
             _semantic_metrics(item) for item in metrics
         ]
 
-    single_state, single_metrics = train(((source, targets),))
+    single_state, single_metrics = train((batch,))
     split_state, split_metrics = train((
-        (source[:3], targets[:3]),
-        (source[3:5], targets[3:5]),
-        (source[5:], targets[5:]),
+        slice_batch(batch, slice(None, 3)),
+        slice_batch(batch, slice(3, 5)),
+        slice_batch(batch, slice(5, None)),
     ))
 
     assert single_metrics == split_metrics
@@ -411,7 +426,7 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
     monkeypatch,
 ):
     monkeypatch.setattr(trainer_module, "_MAX_SHUFFLE_WINDOW_BATCHES", 2)
-    source, targets = make_dummy_data(n=14)
+    batch = make_dummy_data(n=14)
     initial = copy.deepcopy(new_model().state_dict())
 
     def train(*, streaming: bool):
@@ -448,22 +463,22 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
             )
 
             def delayed_first_epoch():
-                yield source[:9], targets[:9]
+                yield slice_batch(batch, slice(None, 9))
                 assert training_started.is_set()
-                yield source[9:11], targets[9:11]
-                yield source[11:], targets[11:]
+                yield slice_batch(batch, slice(9, 11))
+                yield slice_batch(batch, slice(11, None))
 
             try:
                 trainer.fit_streaming_payloads(
                     delayed_first_epoch(),
-                    lambda: iter(((source, targets),)),
+                    lambda: iter((batch,)),
                     on_epoch=on_epoch,
                 )
             finally:
                 hook.remove()
         else:
             trainer.fit_payloads(
-                lambda: iter(((source, targets),)),
+                lambda: iter((batch,)),
                 on_epoch=on_epoch,
             )
         return epochs, trainer.state
@@ -512,7 +527,7 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
 @pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_cuda_amp_training_updates_parameters():
-    source, targets = make_dummy_data(n=4)
+    batch = make_dummy_data(n=4)
     model = new_model().to("cuda")
     trainer = Trainer(
         model=model,
@@ -530,7 +545,7 @@ def test_cuda_amp_training_updates_parameters():
         for name, value in model.state_dict().items()
     }
 
-    metrics = trainer.fit_batch(source, targets)
+    metrics = trainer.fit_batch(batch)
 
     assert metrics.rows == 4
     assert any(

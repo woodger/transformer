@@ -156,20 +156,22 @@ class TransformerModel(nn.Module):
         if features.dtype != torch.float32:
             raise ValueError("features must use float32")
 
-        encoded_features, key_padding_mask = prepare_context_input(
+        prepared_context = prepare_context_input(
             features,
             self.context_mode,
         )
 
-        encoded_features = self.input_proj(encoded_features)
+        encoded_features = self.input_proj(prepared_context.features)
         encoded_features = self.pos(encoded_features)
 
         enc = self.encoder(
             encoded_features,
-            src_key_padding_mask=key_padding_mask
+            src_key_padding_mask=prepared_context.key_padding_mask
         )
 
-        last_unmasked_indices = _last_unmasked_indices(key_padding_mask)
+        last_unmasked_indices = _last_unmasked_indices(
+            prepared_context.key_padding_mask
+        )
 
         batch_idx = torch.arange(
             encoded_features.size(0),

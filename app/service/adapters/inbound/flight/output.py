@@ -60,19 +60,27 @@ class OutputHandler:
         self.logger = logger or JsonLogger()
 
     def get_flight_info(self, owner: str, descriptor: object) -> object:
-        job_id, ordinal = parse_output_descriptor(descriptor)
-        output = self.access.locate(owner, job_id, ordinal)
+        job_descriptor = parse_output_descriptor(descriptor)
+        output = self.access.locate(
+            owner,
+            job_descriptor.job_id,
+            job_descriptor.ordinal,
+        )
         path = self.artifact_store.absolute_path(output.relative_path)
         with pa.memory_map(path, "r") as source:
             reader = cast(_RecordBatchReader, ipc.RecordBatchFileReader(source))
             schema = reader.schema
 
-        grant = self.access.issue(owner, job_id, ordinal)
+        grant = self.access.issue(
+            owner,
+            job_descriptor.job_id,
+            job_descriptor.ordinal,
+        )
         self.metrics.add("outputTicketsIssued")
         self.logger.event(
             "flight.output.ticket_issued",
-            jobId=job_id,
-            ordinal=ordinal,
+            jobId=job_descriptor.job_id,
+            ordinal=job_descriptor.ordinal,
             rows=output.rows,
             bytes=output.byte_count,
             expiresAt=grant.expires_at,

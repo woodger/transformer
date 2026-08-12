@@ -8,6 +8,7 @@ from app.service.adapters.outbound.postgres.mapping import (
     row_optional_float,
     row_string,
 )
+from app.service.application.output_models import OutputTicketGrant
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import OutputRecord
 
@@ -51,13 +52,14 @@ class PostgresOutputAccessStore:
         ordinal: int,
         owner_subject: str,
         ttl_seconds: float,
-    ) -> tuple[bytes, float]:
-        return self.ledger.issue_ticket(
+    ) -> OutputTicketGrant:
+        token, expires_at = self.ledger.issue_ticket(
             job_id=job_id,
             ordinal=ordinal,
             owner_subject=owner_subject,
             ttl_seconds=ttl_seconds,
         )
+        return OutputTicketGrant(token=token, expires_at=expires_at)
 
     def resolve_ticket(
         self,

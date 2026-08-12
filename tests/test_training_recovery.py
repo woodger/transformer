@@ -14,6 +14,7 @@ from app.storage.training_recovery import (
 )
 from app.training.run_config import ModelConfig, TrainConfig
 from app.training.trainer import Trainer
+from app.worker.data.tensors import TrainingBatch
 
 CONFIG_HASH = "a" * 64
 MANIFEST_HASH = "b" * 64
@@ -80,10 +81,16 @@ def _trainer(initial_state: dict) -> Trainer:
     )
 
 
-def _payloads(source: torch.Tensor, target: torch.Tensor):
+def _payloads(features: torch.Tensor, targets: torch.Tensor):
     def open_payloads():
-        yield source[:5].clone(), target[:5].clone()
-        yield source[5:].clone(), target[5:].clone()
+        yield TrainingBatch(
+            features=features[:5].clone(),
+            targets=targets[:5].clone(),
+        )
+        yield TrainingBatch(
+            features=features[5:].clone(),
+            targets=targets[5:].clone(),
+        )
 
     return open_payloads
 

@@ -203,13 +203,13 @@ def test_one_doput_commits_one_immutable_multi_batch_payload(data_plane):
     with pa.memory_map(path, "r") as source:
         reader = ipc.RecordBatchFileReader(source)
         assert reader.num_record_batches == 2
-    source, target = read_committed_fit_arrow(
+    batch = read_committed_fit_arrow(
         path,
         expected_rows=3,
         source_width=4,
     )
-    assert source.shape == (3, 4)
-    assert target.shape == (3, 6)
+    assert batch.features.shape == (3, 4)
+    assert batch.targets.shape == (3, 6)
 
 
 def test_noncanonical_schema_is_rejected_before_commit_or_queue(data_plane):

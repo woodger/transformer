@@ -33,13 +33,13 @@ def test_arrow_file_io_preserves_tensor_values(tmp_path):
         with ipc.new_file(sink, table.schema) as writer:
             writer.write_table(table)
 
-    features, targets = read_arrow(str(path))
+    batch = read_arrow(str(path))
 
-    assert isinstance(features, torch.Tensor)
-    assert isinstance(targets, torch.Tensor)
-    assert features.tolist() == source_rows
+    assert isinstance(batch.features, torch.Tensor)
+    assert isinstance(batch.targets, torch.Tensor)
+    assert batch.features.tolist() == source_rows
     assert torch.allclose(
-        targets,
+        batch.targets,
         torch.tensor(target_rows, dtype=torch.float32),
     )
 
@@ -82,11 +82,11 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     result = list(iter_framed_arrow(stream))
 
     assert len(result) == 2
-    X_t, Y_t = table_to_tensors(result[1])
-    assert isinstance(X_t, torch.Tensor)
-    assert X_t.tolist() == [[3.0, 4.0]]
+    batch = table_to_tensors(result[1])
+    assert isinstance(batch.features, torch.Tensor)
+    assert batch.features.tolist() == [[3.0, 4.0]]
     assert torch.allclose(
-        Y_t,
+        batch.targets,
         torch.tensor([[-0.5, 0.1, 0.2, 0.3, 0.4, 0.5]]),
     )
 
@@ -134,16 +134,16 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
             for batch in batches:
                 writer.write_batch(batch)
 
-    source, target = read_committed_fit_arrow(
+    batch = read_committed_fit_arrow(
         str(path),
         expected_rows=2,
         source_width=4,
     )
 
-    assert source.shape == (2, 4)
-    assert torch.isnan(source[0, 1])
-    assert source[1].tolist() == [5.0, 6.0, 7.0, 8.0]
-    assert torch.allclose(target, torch.tensor([
+    assert batch.features.shape == (2, 4)
+    assert torch.isnan(batch.features[0, 1])
+    assert batch.features[1].tolist() == [5.0, 6.0, 7.0, 8.0]
+    assert torch.allclose(batch.targets, torch.tensor([
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
         [-0.5, 0.1, 0.2, 0.3, 0.4, 0.0],
     ]))

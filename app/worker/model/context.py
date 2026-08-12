@@ -1,6 +1,16 @@
+from dataclasses import dataclass
+
 import torch
 
 CONTEXT_MODES = ("strict", "relaxed")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedContext:
+    """Model features paired with their Transformer padding mask."""
+
+    features: torch.Tensor
+    key_padding_mask: torch.Tensor
 
 
 def _validate_features(features: torch.Tensor) -> None:
@@ -85,7 +95,7 @@ def context_token_ratios(
 def prepare_context_input(
     features: torch.Tensor,
     context_mode: str = "relaxed",
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> PreparedContext:
     """Prepare float32 features and bool padding mask for TransformerEncoder.
 
     Args:
@@ -113,4 +123,7 @@ def prepare_context_input(
     if context_mode == "relaxed":
         values = torch.cat([values, missing.to(dtype=values.dtype)], dim=-1)
 
-    return values, key_padding_mask
+    return PreparedContext(
+        features=values,
+        key_padding_mask=key_padding_mask,
+    )

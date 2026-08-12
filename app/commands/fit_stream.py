@@ -18,6 +18,7 @@ from app.worker.data.arrow import (
     table_to_tensors,
 )
 from app.worker.data.tensors import (
+    TrainingBatch,
     reshape_source,
     validate_feature_dim,
     validate_target_dim,
@@ -93,14 +94,17 @@ def run(
             print(f"frame {received_frames}, skipped empty payload")
             continue
 
-        features_cpu, targets_cpu = table_to_tensors(table)
-        features_cpu = reshape_source(features_cpu, model_config.seq_len)
+        batch = table_to_tensors(table)
+        batch = TrainingBatch(
+            features=reshape_source(batch.features, model_config.seq_len),
+            targets=batch.targets,
+        )
         expected_feat_dim = validate_feature_dim(
-            features_cpu,
+            batch.features,
             expected_feat_dim,
         )
         expected_target_dim = validate_target_dim(
-            targets_cpu,
+            batch.targets,
             expected_target_dim,
         )
 
@@ -108,13 +112,18 @@ def run(
             model_config = replace(model_config, feature_dim=expected_feat_dim)
             model = build_model_fn(
                 model_config,
-                features_cpu,
-                targets_cpu,
+                batch.features,
+                batch.targets,
                 device,
             )
             trainer = build_trainer_fn(args, model, device, model_config)
             _print_config_line(trainer)
-            print("features:", features_cpu.shape, "targets:", targets_cpu.shape)
+            print(
+                "features:",
+                batch.features.shape,
+                "targets:",
+                batch.targets.shape,
+            )
 
         if trainer is None:
             raise AssertionError("streaming trainer was not initialized")
@@ -155,8 +164,7 @@ def run(
             )
 
         active_trainer.fit_epochs(
-            features_cpu,
-            targets_cpu,
+            batch,
             on_epoch=on_epoch,
             frame=received_frames,
         )
@@ -202,19 +210,22 @@ def _run_spooled(
     for ordinal in range(input_frame_count):
         frame = ordinal + 1
         path = input_directory / f"{ordinal}.arrow"
-        features_cpu, targets_cpu = read_arrow(str(path))
-        if features_cpu.size(0) == 0:
+        batch = read_arrow(str(path))
+        if batch.features.size(0) == 0:
             print(f"frame {frame}, skipped empty payload")
-            del features_cpu, targets_cpu
+            del batch
             continue
 
-        features_cpu = reshape_source(features_cpu, model_config.seq_len)
+        batch = TrainingBatch(
+            features=reshape_source(batch.features, model_config.seq_len),
+            targets=batch.targets,
+        )
         expected_feat_dim = validate_feature_dim(
-            features_cpu,
+            batch.features,
             expected_feat_dim,
         )
         expected_target_dim = validate_target_dim(
-            targets_cpu,
+            batch.targets,
             expected_target_dim,
         )
 
@@ -222,16 +233,21 @@ def _run_spooled(
             model_config = replace(model_config, feature_dim=expected_feat_dim)
             model = build_model_fn(
                 model_config,
-                features_cpu,
-                targets_cpu,
+                batch.features,
+                batch.targets,
                 device,
             )
             trainer = build_trainer_fn(args, model, device, model_config)
             _print_config_line(trainer)
-            print("features:", features_cpu.shape, "targets:", targets_cpu.shape)
+            print(
+                "features:",
+                batch.features.shape,
+                "targets:",
+                batch.targets.shape,
+            )
 
         trained_inputs.append(path)
-        del features_cpu, targets_cpu
+        del batch
 
     if trainer is None:
         raise ValueError("No non-empty frames received in input spool")
@@ -267,14 +283,17 @@ def _run_spooled(
                 "training recovery checkpoint could not be restored"
             ) from exc
 
-    def payloads() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def payloads() -> Iterator[TrainingBatch]:
         for path in trained_inputs:
-            features_cpu, targets_cpu = read_arrow(str(path))
-            features_cpu = reshape_source(features_cpu, model_config.seq_len)
-            validate_feature_dim(features_cpu, expected_feat_dim)
-            validate_target_dim(targets_cpu, expected_target_dim)
-            yield features_cpu, targets_cpu
-            del features_cpu, targets_cpu
+            batch = read_arrow(str(path))
+            batch = TrainingBatch(
+                features=reshape_source(batch.features, model_config.seq_len),
+                targets=batch.targets,
+            )
+            validate_feature_dim(batch.features, expected_feat_dim)
+            validate_target_dim(batch.targets, expected_target_dim)
+            yield batch
+            del batch
 
     trained_epochs = 0
 

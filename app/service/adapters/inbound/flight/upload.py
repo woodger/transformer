@@ -74,15 +74,15 @@ class UploadHandler:
         reader: FlightStreamReader,
         writer: PutMetadataWriter,
     ) -> None:
-        job_id, descriptor_ordinal = parse_input_descriptor(descriptor)
-        self.lifecycle.validate_ordinal(descriptor_ordinal)
+        job_descriptor = parse_input_descriptor(descriptor)
+        self.lifecycle.validate_ordinal(job_descriptor.ordinal)
         outcome = InputUploadSession(
             self.config,
             self.lifecycle,
             self.artifact_stores,
             owner=owner,
-            job_id=job_id,
-            ordinal=descriptor_ordinal,
+            job_id=job_descriptor.job_id,
+            ordinal=job_descriptor.ordinal,
             reader=reader,
         ).run()
         record = outcome.record
