@@ -13,9 +13,8 @@ class AttemptExecutionError(Exception):
     message: str
     exit_code: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         Exception.__init__(self, self.message)
 
 
 __all__ = ["AttemptExecutionError"]
-

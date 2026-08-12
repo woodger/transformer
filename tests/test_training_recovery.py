@@ -75,18 +75,8 @@ def _trainer(initial_state: dict) -> Trainer:
     return Trainer(
         model=model,
         device=torch.device("cpu"),
-        lr=train_config.lr,
-        batch_size=train_config.batch_size,
-        epochs=train_config.epochs,
-        loss_stage=train_config.loss_stage,
-        loss_schedule=train_config.loss_schedule,
-        stage_size=train_config.stage_size,
-        weight_decay=train_config.weight_decay,
-        direct_loss_weights=train_config.direct_loss_weights,
-        selection=train_config.selection,
-        model_config=model_config,
         train_config=train_config,
-        seed=train_config.seed,
+        model_config=model_config,
     )
 
 

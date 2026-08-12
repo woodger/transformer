@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import cast
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.service.adapters.outbound.postgres.ledger_support import (
+    LedgerSessions,
+    RowMapping,
     canonical_uuid,
     decode,
+    decode_optional,
     digest,
     nonnegative,
     now as timestamp_now,
@@ -32,7 +38,7 @@ from app.service.domain.records import CommittedInputRecord
 class InputLedgerSlice:
     """PostgreSQL operations for one job's durable input lifecycle."""
 
-    def __init__(self, sessions):
+    def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
         self.database = sessions.database
 
@@ -43,7 +49,7 @@ class InputLedgerSlice:
         ordinal: int | None = None,
         payload_id: str | None = None,
         connection: Session | None = None,
-    ):
+    ) -> RowMapping | None:
         if ordinal is None and payload_id is None:
             raise ValueError("ordinal or payload_id is required")
         statement = select(JobInput).where(JobInput.job_id == job_id)
@@ -52,7 +58,7 @@ class InputLedgerSlice:
         if payload_id is not None:
             statement = statement.where(JobInput.payload_id == payload_id)
         with self.sessions.read(connection) as session:
-            return decode(session.scalar(statement))
+            return decode_optional(session.scalar(statement))
 
     def reserve_input(
         self,
@@ -66,7 +72,7 @@ class InputLedgerSlice:
         candidate_path: str,
         storage_class: str = "runtime",
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         nonnegative(ordinal, "ordinal")
         payload_id = canonical_uuid(payload_id, "payload_id")
         client_execution_id = canonical_uuid(
@@ -155,7 +161,7 @@ class InputLedgerSlice:
         max_job_bytes: int,
         storage_class: str = "runtime",
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         validate_relative_path(relative_path)
         _validate_storage_class(storage_class)
         client_execution_id = canonical_uuid(
@@ -316,7 +322,7 @@ class InputLedgerSlice:
         job_id: str,
         *,
         connection: Session | None = None,
-    ) -> list[dict]:
+    ) -> list[RowMapping]:
         with self.sessions.read(connection) as session:
             rows = session.scalars(
                 select(JobInput)
@@ -334,7 +340,7 @@ class InputLedgerSlice:
         snapshot_revision: int | None,
         cursor: int | None,
         limit: int,
-    ) -> dict:
+    ) -> RowMapping:
         with self.database.transaction() as session:
             job = session.scalar(
                 select(Job)
@@ -349,6 +355,10 @@ class InputLedgerSlice:
             if snapshot_revision is None:
                 snapshot_revision = job.input_revision
                 cursor = after_revision
+            if cursor is None:
+                raise failed_precondition(
+                    "input pagination cursor is required"
+                )
             if snapshot_revision > job.input_revision:
                 raise failed_precondition(
                     "snapshotRevision is newer than the current input revision"
@@ -406,7 +416,7 @@ class InputLedgerSlice:
         selected_device: str,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[dict, bool]:
+    ) -> tuple[RowMapping, bool]:
         client_execution_id = canonical_uuid(
             client_execution_id,
             "client_execution_id",
@@ -495,7 +505,7 @@ class InputLedgerSlice:
 
 
 def _next_input_ordinal(
-    session,
+    session: Session,
     job_id: str,
     start: int,
 ) -> int:
@@ -512,11 +522,19 @@ def _next_input_ordinal(
     return expected
 
 
-def _queue_job(job: Job, selected_device: str, session, timestamp) -> None:
+def _queue_job(
+    job: Job,
+    selected_device: str,
+    session: Session,
+    timestamp: datetime,
+) -> None:
     job.execution_state = ExecutionState.QUEUED.value
     job.selected_device = selected_device
     job.queued_at = timestamp
-    job.queue_sequence = session.scalar(QUEUE_SEQUENCE.next_value())
+    queue_sequence = session.scalar(QUEUE_SEQUENCE.next_value())
+    if queue_sequence is None:
+        raise RuntimeError("queue sequence did not return a value")
+    job.queue_sequence = queue_sequence
 
 
 def _clear_input_wait(job: Job) -> None:
@@ -555,7 +573,12 @@ def _validate_selected_device(value: str) -> None:
 
 
 def _positive_fence(value: int) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+    raw_value = cast(object, value)
+    if (
+        isinstance(raw_value, bool)
+        or not isinstance(raw_value, int)
+        or raw_value <= 0
+    ):
         raise ValueError("fencing_token must be a positive integer")
 
 

@@ -8,7 +8,7 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
@@ -66,8 +66,11 @@ class _WorkerEventState:
 
 
 class _RunnerConfig(Protocol):
-    subprocess_timeout_seconds: float
-    cancel_grace_seconds: float
+    @property
+    def subprocess_timeout_seconds(self) -> float: ...
+
+    @property
+    def cancel_grace_seconds(self) -> float: ...
 
 
 class _RunnerLedger(JobRepository, Protocol):
@@ -83,7 +86,7 @@ class _RunnerLedger(JobRepository, Protocol):
         process_start_ticks: int,
     ) -> None: ...
 
-    def get_job(self, job_id: str) -> JsonObject | None: ...
+    def get_job(self, job_id: str) -> Mapping[str, object] | None: ...
 
     def mark_input_waiting(
         self,
@@ -969,19 +972,19 @@ def _object(value: JsonValue, label: str) -> JsonObject:
     return cast(JsonObject, value)
 
 
-def _string(value: JsonValue, label: str) -> str:
+def _string(value: object, label: str) -> str:
     if not isinstance(value, str):
         raise WorkerContractError(f"{label} must be a string")
     return value
 
 
-def _optional_string(value: JsonValue, label: str) -> str | None:
+def _optional_string(value: object, label: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise WorkerContractError(f"{label} must be a string or null")
     return value
 
 
-def _integer(value: JsonValue, label: str) -> int:
+def _integer(value: object, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise WorkerContractError(f"{label} must be an integer")
     return value

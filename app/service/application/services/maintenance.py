@@ -19,8 +19,11 @@ from app.service.application.ports.operations import DiskUsage
 
 
 class MaintenanceConfig(Protocol):
-    retention_seconds: float
-    input_idle_timeout_seconds: float
+    @property
+    def retention_seconds(self) -> float: ...
+
+    @property
+    def input_idle_timeout_seconds(self) -> float: ...
 
 
 @dataclass(frozen=True)

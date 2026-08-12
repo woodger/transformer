@@ -9,10 +9,14 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.contracts.json_types import JsonObject
 from app.service.adapters.outbound.postgres.ledger_support import (
+    LedgerSessions,
+    RowMapping,
     advisory_lock,
     canonical_uuid,
     decode,
+    decode_optional,
     digest,
     json_value,
     nonnegative,
@@ -41,7 +45,7 @@ from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 class ArtifactLedgerSlice:
     """Atomic publication and retrieval of Transformer-owned artifacts."""
 
-    def __init__(self, sessions):
+    def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
         self.database = sessions.database
 
@@ -49,12 +53,12 @@ class ArtifactLedgerSlice:
         self,
         job_id: str,
         attempt: int,
-        outputs: Sequence[dict],
+        outputs: Sequence[JsonObject],
         *,
         attempt_id: str,
-        result: dict,
+        result: JsonObject,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         published_at = timestamp_now(now)
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         try:
@@ -122,10 +126,10 @@ class ArtifactLedgerSlice:
         metadata_path: str,
         byte_count: int,
         sha256: str,
-        metadata: dict,
-        result: dict,
+        metadata: JsonObject,
+        result: JsonObject,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
         validate_relative_path(metadata_path)
@@ -174,7 +178,7 @@ class ArtifactLedgerSlice:
                     job.owner_subject,
                     label,
                 )
-                next_generation = int(session.scalar(
+                next_generation_value = session.scalar(
                     select(
                         func.coalesce(
                             func.max(PublishedModel.generation),
@@ -185,7 +189,12 @@ class ArtifactLedgerSlice:
                         PublishedModel.owner_subject == job.owner_subject,
                         PublishedModel.label == label,
                     )
-                ))
+                )
+                if next_generation_value is None:
+                    raise RuntimeError(
+                        "model generation query did not return a value"
+                    )
+                next_generation = int(next_generation_value)
                 if generation is None:
                     generation = next_generation
                 elif generation != next_generation:
@@ -206,9 +215,10 @@ class ArtifactLedgerSlice:
                     data_contract=json_value(job.data_contract),
                     data_contract_sha256=job.data_contract_sha256,
                     ml_contract=json_value(job.ml_contract),
-                    objective_config_sha256=job.ml_contract[
-                        "objectiveConfigSha256"
-                    ],
+                    objective_config_sha256=digest(
+                        job.ml_contract.get("objectiveConfigSha256"),
+                        "objectiveConfigSha256",
+                    ),
                     producing_job_id=job_id,
                     created_at=published_at,
                 ))
@@ -251,7 +261,7 @@ class ArtifactLedgerSlice:
         *,
         owner_subject: str | None = None,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         statement = select(PublishedModel).where(
             PublishedModel.model_ref == model_ref
         )
@@ -260,7 +270,7 @@ class ArtifactLedgerSlice:
                 PublishedModel.owner_subject == owner_subject
             )
         with self.sessions.read(connection) as session:
-            return decode(session.scalar(statement))
+            return decode_optional(session.scalar(statement))
 
     def get_model_artifact(
         self,
@@ -302,7 +312,7 @@ class ArtifactLedgerSlice:
         label: str,
         *,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         with self.sessions.read(connection) as session:
             model = session.scalar(
                 select(PublishedModel)
@@ -315,7 +325,7 @@ class ArtifactLedgerSlice:
                     ModelAlias.label == label,
                 )
             )
-            return decode(model)
+            return decode_optional(model)
 
     def resolve_published_model_alias(
         self,
@@ -338,7 +348,7 @@ class ArtifactLedgerSlice:
             )
             return published_model_record(model)
 
-    def list_models(self) -> list[dict]:
+    def list_models(self) -> list[RowMapping]:
         with self.database.session() as session:
             rows = session.scalars(
                 select(PublishedModel).order_by(
@@ -354,7 +364,7 @@ class ArtifactLedgerSlice:
         job_id: str,
         *,
         connection: Session | None = None,
-    ) -> list[dict]:
+    ) -> list[RowMapping]:
         with self.sessions.read(connection) as session:
             rows = session.scalars(
                 select(JobOutput)
@@ -370,7 +380,7 @@ class ArtifactLedgerSlice:
         *,
         cursor: int | None,
         limit: int,
-    ) -> dict:
+    ) -> RowMapping:
         with self.database.session() as session:
             job = session.scalar(select(Job.job_id).where(
                 Job.job_id == job_id,
@@ -442,7 +452,7 @@ class ArtifactLedgerSlice:
         *,
         owner_subject: str,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         ticket_hash = hashlib.sha256(bytes(ticket)).hexdigest()
         with self.database.session() as session:
             row = session.execute(
@@ -480,23 +490,27 @@ class ArtifactLedgerSlice:
 
 def _output_record(
     job_id: str,
-    output: dict,
+    output: JsonObject,
     published_at: datetime,
 ) -> JobOutput:
-    relative_path = output["relative_path"]
-    validate_relative_path(relative_path)
-    for name in ("ordinal", "rows", "batches", "bytes"):
-        nonnegative(output[name], name)
-    digest(output["sha256"], "sha256")
-    digest(output["schema_fingerprint"], "schema_fingerprint")
+    relative_path = validate_relative_path(output.get("relative_path"))
+    ordinal = nonnegative(output.get("ordinal"), "ordinal")
+    rows = nonnegative(output.get("rows"), "rows")
+    batches = nonnegative(output.get("batches"), "batches")
+    byte_count = nonnegative(output.get("bytes"), "bytes")
+    sha256 = digest(output.get("sha256"), "sha256")
+    schema_fingerprint = digest(
+        output.get("schema_fingerprint"),
+        "schema_fingerprint",
+    )
     return JobOutput(
         job_id=job_id,
-        ordinal=output["ordinal"],
-        rows=output["rows"],
-        batches=output["batches"],
-        bytes=output["bytes"],
-        sha256=output["sha256"],
-        schema_fingerprint=output["schema_fingerprint"],
+        ordinal=ordinal,
+        rows=rows,
+        batches=batches,
+        bytes=byte_count,
+        sha256=sha256,
+        schema_fingerprint=schema_fingerprint,
         relative_path=relative_path,
         published_at=published_at,
     )

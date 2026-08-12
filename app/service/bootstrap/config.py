@@ -1,7 +1,9 @@
 import math
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
+from typing import TypedDict, cast
 
 from app.config import (
     ALLOW_PLAINTEXT,
@@ -30,7 +32,35 @@ _NON_ENVIRONMENT_FIELDS = frozenset({
 })
 
 
-@dataclass(frozen=True)
+class _FlightServiceOverrides(TypedDict, total=False):
+    runtime_dir: str
+    host: str
+    port: int
+    allow_plaintext: bool
+    tls_cert_file: str | None
+    tls_key_file: str | None
+    tls_ca_file: str | None
+    tls_require_client_cert: bool
+    max_message_bytes: int
+    target_batch_bytes: int
+    max_batch_bytes: int
+    max_payload_bytes: int
+    max_rows_per_payload: int
+    max_payloads_per_job: int
+    max_job_bytes: int
+    max_active_jobs_per_subject: int
+    cpu_capacity: int
+    ticket_ttl_seconds: int
+    cancel_grace_seconds: float
+    shutdown_drain_seconds: float
+    retention_seconds: int
+    maintenance_interval_seconds: int
+    subprocess_timeout_seconds: float
+    input_idle_timeout_seconds: float
+    acquire_idle_grace_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
 class FlightServiceConfig:
     runtime_dir: str = os.path.join(tempfile.gettempdir(), PROJECT_NAME)
     host: str = HOST_DEFAULT
@@ -86,15 +116,18 @@ class FlightServiceConfig:
         return os.path.join(self.runtime_dir, "service.lock")
 
     def validate(self) -> "FlightServiceConfig":
-        if not isinstance(self.runtime_dir, str) or not self.runtime_dir:
+        runtime_dir: object = object.__getattribute__(self, "runtime_dir")
+        if not isinstance(runtime_dir, str) or not runtime_dir:
             raise ValueError("runtime_dir must not be empty")
-        if not isinstance(self.host, str) or not self.host:
+        host: object = object.__getattribute__(self, "host")
+        if not isinstance(host, str) or not host:
             raise ValueError("host must be a non-empty string")
+        port: object = object.__getattribute__(self, "port")
         if (
-            isinstance(self.port, bool)
-            or not isinstance(self.port, int)
-            or self.port < 0
-            or self.port > 65535
+            isinstance(port, bool)
+            or not isinstance(port, int)
+            or port < 0
+            or port > 65535
         ):
             raise ValueError("port must be between 0 and 65535")
         for name in ("allow_plaintext", "tls_require_client_cert"):
@@ -133,7 +166,7 @@ class FlightServiceConfig:
             "maintenance_interval_seconds",
         )
         for name in positive_integers:
-            value = getattr(self, name)
+            value = cast(object, getattr(self, name))
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be greater than zero")
         for name in (
@@ -143,7 +176,7 @@ class FlightServiceConfig:
             "input_idle_timeout_seconds",
             "acquire_idle_grace_seconds",
         ):
-            value = getattr(self, name)
+            value = cast(object, getattr(self, name))
             if (
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))
@@ -179,9 +212,9 @@ class FlightServiceConfig:
 def load_config(
     *,
     environ: dict[str, str] | None = None,
-    overrides: dict | None = None,
+    overrides: Mapping[str, object] | None = None,
 ) -> FlightServiceConfig:
-    values = {}
+    values: dict[str, object] = {}
     env = os.environ if environ is None else environ
     legacy_keys = sorted(
         key for key in env if key.startswith(LEGACY_ENV_PREFIX)
@@ -217,10 +250,15 @@ def load_config(
     unknown = sorted(set(values) - allowed)
     if unknown:
         raise ValueError(f"unknown Flight configuration field(s): {', '.join(unknown)}")
-    return FlightServiceConfig(**values).validate()
+    typed_values = cast(_FlightServiceOverrides, values)
+    return FlightServiceConfig(**typed_values).validate()
 
 
-def _parse_environment_value(value: str, annotation, key: str):
+def _parse_environment_value(
+    value: str,
+    annotation: object,
+    key: str,
+) -> str | int | float | bool:
     annotation_text = str(annotation)
     if annotation is bool or annotation_text == "bool":
         normalized = value.strip().lower()

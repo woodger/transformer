@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 from app.config import (
@@ -111,7 +111,7 @@ class TrainingWorkload:
     def amp_backoffs(self) -> int:
         return self._amp_backoffs
 
-    def _autocast(self):
+    def _autocast(self) -> AbstractContextManager[object]:
         if self._use_amp:
             return self._torch.amp.autocast(
                 device_type="cuda",

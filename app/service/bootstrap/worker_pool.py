@@ -13,16 +13,23 @@ from app.service.adapters.outbound.artifact_storage.publication import (
 from app.service.adapters.outbound.artifact_storage.recovery_publication import (
     RecoveryCheckpointPublisher,
 )
+from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.worker_probe.device_inventory import (
     static_cuda_inventory,
 )
 from app.service.adapters.outbound.worker_process.plan import WorkerPlanBuilder
-from app.service.adapters.outbound.worker_process.runner import WorkerSubprocessRunner
+from app.service.adapters.outbound.worker_process.runner import (
+    PopenFactory,
+    WorkerSubprocessRunner,
+)
 from app.service.application.ports.devices import DeviceLeaseManager
 from app.service.application.services.attempt_executor import (
     WorkerAttemptExecutor,
 )
 from app.service.application.services.worker_pool import WorkerPool as WorkerScheduler
+from app.service.bootstrap.config import FlightServiceConfig
 
 
 class WorkerPool(WorkerScheduler):
@@ -30,19 +37,19 @@ class WorkerPool(WorkerScheduler):
 
     def __init__(
         self,
-        config,
-        ledger,
-        spool,
-        recovery_store=None,
+        config: FlightServiceConfig,
+        ledger: Ledger,
+        spool: Spool,
+        recovery_store: RecoveryStore | None = None,
         *,
         logger: JsonLogger | None = None,
         metrics: OperationalMetrics | None = None,
-        popen_factory: Callable = subprocess.Popen,
+        popen_factory: PopenFactory = subprocess.Popen,
         signal_group: Callable[[int, int], None] = os.killpg,
         python_executable: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         device_inventory: DeviceLeaseManager | None = None,
-    ):
+    ) -> None:
         logger = logger or JsonLogger()
         metrics = metrics or OperationalMetrics()
         device_inventory = device_inventory or static_cuda_inventory(lambda: True)

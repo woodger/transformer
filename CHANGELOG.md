@@ -22,6 +22,13 @@
   закреплены в типизированных сигнатурах и docstrings.
 - В orchestration и boundary code безымянные `X`/`Y`/`x`/`pred` заменены на
   `features`, `targets` и `predictions`; wire fields и CLI options сохранены.
+- Pyright strict scope расширен на Flight ingress, PostgreSQL adapters и
+  service bootstrap; dynamic PyArrow/ORM boundaries локализованы и сразу
+  переводятся в типизированные records, mappings и JSON-документы.
+- Ruff `ANN` закрепляет явные типы параметров и результатов production-кода;
+  исключения ограничены tests, legacy facades и двумя dynamic boundaries.
+- `Trainer` принимает единый immutable `TrainConfig`; дублирующие параметры
+  optimizer, schedule, AMP, selection и seed удалены из его конструктора.
 
 ## [0.1.10] - 2026-08-12
 

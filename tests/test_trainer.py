@@ -138,11 +138,13 @@ def test_cpu_training_disables_amp_and_updates_parameters():
     trainer = Trainer(
         model=model,
         device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=4,
-        epochs=1,
-        loss_schedule="none",
-        use_amp=True,
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=1,
+            loss_schedule="none",
+            use_amp=True,
+        ),
     )
     before = {
         name: value.detach().clone()
@@ -164,10 +166,12 @@ def test_fit_batch_reports_six_target_metrics():
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=8,
-        epochs=1,
-        loss_schedule="none",
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=8,
+            epochs=1,
+            loss_schedule="none",
+        ),
     )
 
     metrics = trainer.fit_batch(source, targets)
@@ -201,10 +205,12 @@ def test_predict_batches_model_and_returns_only_public_target_space():
     trainer = Trainer(
         model=model,
         device=torch.device("cpu"),
-        lr=1e-3,
-        batch_size=4,
-        epochs=1,
-        loss_schedule="none",
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=1,
+            loss_schedule="none",
+        ),
     )
     source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
     internal = torch.nn.functional.linear(
@@ -248,12 +254,14 @@ def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
-        lr=0.0,
-        batch_size=4,
-        epochs=10,
-        loss_schedule="epoch",
-        stage_size=1,
-        selection=selection,
+        train_config=TrainConfig(
+            lr=1e-30,
+            batch_size=4,
+            epochs=10,
+            loss_schedule="epoch",
+            stage_size=1,
+            selection=selection,
+        ),
     )
 
     metrics = trainer.fit_epochs(source, targets)
@@ -269,10 +277,12 @@ def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
-        lr=0.0,
-        batch_size=4,
-        epochs=3,
-        loss_schedule="none",
+        train_config=TrainConfig(
+            lr=1e-30,
+            batch_size=4,
+            epochs=3,
+            loss_schedule="none",
+        ),
     )
 
     metrics = trainer.fit_epochs(source, targets)
@@ -507,11 +517,13 @@ def test_cuda_amp_training_updates_parameters():
     trainer = Trainer(
         model=model,
         device=torch.device("cuda"),
-        lr=1e-3,
-        batch_size=4,
-        epochs=1,
-        loss_schedule="none",
-        use_amp=True,
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=1,
+            loss_schedule="none",
+            use_amp=True,
+        ),
     )
     before = {
         name: value.detach().clone()

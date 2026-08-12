@@ -5,7 +5,7 @@ import math
 import os
 import shutil
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
@@ -50,7 +50,7 @@ class _PublicationLedger(Protocol):
         *,
         attempt_id: str,
         result: JsonObject,
-    ) -> JsonObject: ...
+    ) -> Mapping[str, object]: ...
 
     def publish_model(
         self,
@@ -67,7 +67,7 @@ class _PublicationLedger(Protocol):
         sha256: str,
         metadata: JsonObject,
         result: JsonObject,
-    ) -> JsonObject: ...
+    ) -> Mapping[str, object]: ...
 
     def get_execution_job(self, job_id: str) -> ExecutionJobRecord | None: ...
 

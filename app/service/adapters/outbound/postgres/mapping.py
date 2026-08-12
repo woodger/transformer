@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from datetime import datetime
+from typing import cast
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
@@ -22,47 +24,47 @@ from app.service.domain.records import (
 
 
 def execution_job_from_mapping(
-    value: Mapping[str, Any],
+    value: Mapping[str, object],
 ) -> ExecutionJobRecord:
     return ExecutionJobRecord(
-        job_id=value["job_id"],
-        owner_subject=value["owner_subject"],
-        operation=value["operation"],
-        input_state=InputState(value["input_state"]),
-        execution_state=ExecutionState(value["execution_state"]),
-        input_revision=value["input_revision"],
-        selected_device=value.get("selected_device"),
-        model_label=value.get("model_label"),
-        input_model_ref=value.get("resolved_model_ref"),
-        prediction_column=value["prediction_column"],
+        job_id=row_string(value, "job_id"),
+        owner_subject=row_string(value, "owner_subject"),
+        operation=row_string(value, "operation"),
+        input_state=InputState(row_string(value, "input_state")),
+        execution_state=ExecutionState(row_string(value, "execution_state")),
+        input_revision=row_integer(value, "input_revision"),
+        selected_device=row_optional_string(value, "selected_device"),
+        model_label=row_optional_string(value, "model_label"),
+        input_model_ref=row_optional_string(value, "resolved_model_ref"),
+        prediction_column=row_string(value, "prediction_column"),
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
-        data_contract=dict(value["data_contract"]),
-        ml_contract=dict(value["ml_contract"]),
-        config_hash=value["config_hash"],
-        manifest_sha256=value.get("manifest_sha256"),
-        feature_dim=value["feature_dim"],
-        input_frame_count=value["next_input_ordinal"],
-        attempt=value["attempt"],
-        assigned_device_id=value.get("device_id"),
-        resume_generation=value.get("resume_generation"),
-        queued_at=value.get("queued_at"),
-        started_at=value.get("started_at"),
-        attempt_id=value.get("attempt_id"),
+        data_contract=row_json_object(value, "data_contract"),
+        ml_contract=row_json_object(value, "ml_contract"),
+        config_hash=row_string(value, "config_hash"),
+        manifest_sha256=row_optional_string(value, "manifest_sha256"),
+        feature_dim=row_integer(value, "feature_dim"),
+        input_frame_count=row_integer(value, "next_input_ordinal"),
+        attempt=row_integer(value, "attempt"),
+        assigned_device_id=row_optional_string(value, "device_id"),
+        resume_generation=row_optional_integer(value, "resume_generation"),
+        queued_at=row_optional_float(value, "queued_at"),
+        started_at=row_optional_float(value, "started_at"),
+        attempt_id=row_optional_string(value, "attempt_id"),
     )
 
 
 def recoverable_attempt_from_mapping(
-    value: Mapping[str, Any],
+    value: Mapping[str, object],
 ) -> RecoverableAttemptRecord:
     return RecoverableAttemptRecord(
-        job_id=value["job_id"],
-        attempt=value["attempt"],
-        pid=value.get("pid"),
-        pgid=value.get("pgid"),
-        boot_id=value.get("boot_id"),
-        process_start_ticks=value.get("process_start_ticks"),
-        attempt_id=value.get("attempt_id"),
+        job_id=row_string(value, "job_id"),
+        attempt=row_integer(value, "attempt"),
+        pid=row_optional_integer(value, "pid"),
+        pgid=row_optional_integer(value, "pgid"),
+        boot_id=row_optional_string(value, "boot_id"),
+        process_start_ticks=row_optional_integer(value, "process_start_ticks"),
+        attempt_id=row_optional_string(value, "attempt_id"),
     )
 
 
@@ -167,8 +169,84 @@ def published_model_record(
     )
 
 
-def _timestamp(value) -> float | None:
+def _timestamp(value: datetime | None) -> float | None:
     return None if value is None else value.timestamp()
+
+
+def row_string(value: Mapping[str, object], key: str) -> str:
+    item = _row_value(value, key)
+    if not isinstance(item, str):
+        raise ValueError(f"database field {key} must be a string")
+    return item
+
+
+def row_optional_string(
+    value: Mapping[str, object],
+    key: str,
+) -> str | None:
+    item = value.get(key)
+    if item is None:
+        return None
+    if not isinstance(item, str):
+        raise ValueError(f"database field {key} must be a string or null")
+    return item
+
+
+def row_integer(value: Mapping[str, object], key: str) -> int:
+    item = _row_value(value, key)
+    if isinstance(item, bool) or not isinstance(item, int):
+        raise ValueError(f"database field {key} must be an integer")
+    return item
+
+
+def row_optional_integer(
+    value: Mapping[str, object],
+    key: str,
+) -> int | None:
+    item = value.get(key)
+    if item is None:
+        return None
+    if isinstance(item, bool) or not isinstance(item, int):
+        raise ValueError(f"database field {key} must be an integer or null")
+    return item
+
+
+def row_boolean(value: Mapping[str, object], key: str) -> bool:
+    item = _row_value(value, key)
+    if not isinstance(item, bool):
+        raise ValueError(f"database field {key} must be a boolean")
+    return item
+
+
+def row_optional_float(
+    value: Mapping[str, object],
+    key: str,
+) -> float | None:
+    item = value.get(key)
+    if item is None:
+        return None
+    if isinstance(item, bool) or not isinstance(item, (int, float)):
+        raise ValueError(f"database field {key} must be numeric or null")
+    return float(item)
+
+
+def row_json_object(
+    value: Mapping[str, object],
+    key: str,
+) -> JsonObject:
+    item = _row_value(value, key)
+    if not isinstance(item, Mapping):
+        raise ValueError(f"database field {key} must be a JSON object")
+    mapping = cast(Mapping[object, object], item)
+    if not all(isinstance(name, str) for name in mapping):
+        raise ValueError(f"database field {key} contains a non-string key")
+    return cast(JsonObject, dict(mapping))
+
+
+def _row_value(value: Mapping[str, object], key: str) -> object:
+    if key not in value:
+        raise ValueError(f"database field {key} is missing")
+    return value[key]
 
 
 __all__ = [
@@ -178,4 +256,11 @@ __all__ = [
     "output_record",
     "published_model_record",
     "recoverable_attempt_from_mapping",
+    "row_boolean",
+    "row_integer",
+    "row_json_object",
+    "row_optional_float",
+    "row_optional_integer",
+    "row_optional_string",
+    "row_string",
 ]

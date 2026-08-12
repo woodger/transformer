@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import cast
+
+from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.mapping import (
+    row_boolean,
+    row_integer,
+    row_optional_float,
+    row_optional_integer,
+    row_string,
+)
 from app.service.application.job_models import StoredInputPage, StoredOutputPage
 from app.service.domain.records import (
     InputRecord,
@@ -10,7 +21,7 @@ from app.service.domain.records import (
 
 
 class PostgresJobQueryStore:
-    def __init__(self, ledger):
+    def __init__(self, ledger: Ledger) -> None:
         self.ledger = ledger
 
     def get_status_snapshot_record(
@@ -51,12 +62,15 @@ class PostgresJobQueryStore:
             limit=limit,
         )
         return StoredInputPage(
-            after_revision=page["after_revision"],
-            snapshot_revision=page["snapshot_revision"],
-            cursor=page["cursor"],
-            items=tuple(_input_record(item) for item in page["items"]),
-            next_cursor=page["next_cursor"],
-            has_more=page["has_more"],
+            after_revision=row_integer(page, "after_revision"),
+            snapshot_revision=row_integer(page, "snapshot_revision"),
+            cursor=row_integer(page, "cursor"),
+            items=tuple(
+                _input_record(item)
+                for item in _mapping_items(page, "items")
+            ),
+            next_cursor=row_optional_integer(page, "next_cursor"),
+            has_more=row_boolean(page, "has_more"),
         )
 
     def list_outputs_page(
@@ -74,10 +88,13 @@ class PostgresJobQueryStore:
             limit=limit,
         )
         return StoredOutputPage(
-            cursor=page["cursor"],
-            items=tuple(_output_record(item) for item in page["items"]),
-            next_cursor=page["next_cursor"],
-            has_more=page["has_more"],
+            cursor=row_optional_integer(page, "cursor"),
+            items=tuple(
+                _output_record(item)
+                for item in _mapping_items(page, "items")
+            ),
+            next_cursor=row_optional_integer(page, "next_cursor"),
+            has_more=row_boolean(page, "has_more"),
         )
 
     def get_published_model(
@@ -102,39 +119,61 @@ class PostgresJobQueryStore:
         )
 
 
-def _input_record(item: dict) -> InputRecord:
+def _input_record(item: Mapping[str, object]) -> InputRecord:
     return InputRecord(
-        job_id=item["job_id"],
-        ordinal=item["ordinal"],
-        payload_id=item["payload_id"],
-        commit_revision=item["commit_revision"],
-        schema_id=item["schema_id"],
-        data_contract_sha256=item["data_contract_sha256"],
-        rows=item["rows"],
-        batches=item["batches"],
-        byte_count=item["bytes"],
-        sha256=item["sha256"],
-        schema_fingerprint=item["schema_fingerprint"],
-        relative_path=item["relative_path"],
-        storage_class=item["storage_class"],
-        source_width=item["source_width"],
-        feature_dim=item["feature_dim"],
-        committed_at=item["committed_at"],
+        job_id=row_string(item, "job_id"),
+        ordinal=row_integer(item, "ordinal"),
+        payload_id=row_string(item, "payload_id"),
+        commit_revision=row_integer(item, "commit_revision"),
+        schema_id=row_string(item, "schema_id"),
+        data_contract_sha256=row_string(item, "data_contract_sha256"),
+        rows=row_integer(item, "rows"),
+        batches=row_integer(item, "batches"),
+        byte_count=row_integer(item, "bytes"),
+        sha256=row_string(item, "sha256"),
+        schema_fingerprint=row_string(item, "schema_fingerprint"),
+        relative_path=row_string(item, "relative_path"),
+        storage_class=row_string(item, "storage_class"),
+        source_width=row_integer(item, "source_width"),
+        feature_dim=row_integer(item, "feature_dim"),
+        committed_at=_required_float(item, "committed_at"),
     )
 
 
-def _output_record(item: dict) -> OutputRecord:
+def _output_record(item: Mapping[str, object]) -> OutputRecord:
     return OutputRecord(
-        job_id=item["job_id"],
-        ordinal=item["ordinal"],
-        rows=item["rows"],
-        batches=item["batches"],
-        byte_count=item["bytes"],
-        sha256=item["sha256"],
-        schema_fingerprint=item["schema_fingerprint"],
-        relative_path=item["relative_path"],
-        published_at=item["published_at"],
+        job_id=row_string(item, "job_id"),
+        ordinal=row_integer(item, "ordinal"),
+        rows=row_integer(item, "rows"),
+        batches=row_integer(item, "batches"),
+        byte_count=row_integer(item, "bytes"),
+        sha256=row_string(item, "sha256"),
+        schema_fingerprint=row_string(item, "schema_fingerprint"),
+        relative_path=row_string(item, "relative_path"),
+        published_at=_required_float(item, "published_at"),
     )
+
+
+def _mapping_items(
+    value: Mapping[str, object],
+    key: str,
+) -> tuple[Mapping[str, object], ...]:
+    items = value.get(key)
+    if not isinstance(items, list):
+        raise ValueError(f"database field {key} must be a list")
+    object_items = cast(list[object], items)
+    if not all(isinstance(item, Mapping) for item in object_items):
+        raise ValueError(f"database field {key} contains a non-object item")
+    return tuple(
+        cast(Mapping[str, object], item) for item in object_items
+    )
+
+
+def _required_float(value: Mapping[str, object], key: str) -> float:
+    result = row_optional_float(value, key)
+    if result is None:
+        raise ValueError(f"database field {key} must be numeric")
+    return result
 
 
 __all__ = ["PostgresJobQueryStore"]

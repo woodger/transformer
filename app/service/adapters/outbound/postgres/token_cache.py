@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Mapping
 from types import MappingProxyType
 
 import psycopg
@@ -17,8 +18,8 @@ _NOTIFY_CHANNEL = "transformer_auth_tokens"
 class AccessTokenCache:
     """Immutable digest index swapped atomically after PostgreSQL changes."""
 
-    def __init__(self):
-        self._entries = MappingProxyType({})
+    def __init__(self) -> None:
+        self._entries: Mapping[str, AuthIdentity] = MappingProxyType({})
         self._lock = threading.Lock()
 
     def reload(self, store: AccessTokenStore) -> int:
@@ -45,7 +46,7 @@ class AccessTokenCacheService:
         cache: AccessTokenCache,
         *,
         logger: JsonLogger | None = None,
-    ):
+    ) -> None:
         self.database_config = database_config
         self.store = store
         self.cache = cache
@@ -89,7 +90,11 @@ class AccessTokenCacheService:
         while not self._stop.is_set():
             try:
                 with psycopg.connect(
-                    **self.database_config.psycopg_parameters,
+                    host=self.database_config.host,
+                    dbname=self.database_config.database,
+                    user=self.database_config.user,
+                    password=self.database_config.password,
+                    port=self.database_config.port,
                     autocommit=True,
                 ) as connection:
                     connection.execute(f"LISTEN {_NOTIFY_CHANNEL}")

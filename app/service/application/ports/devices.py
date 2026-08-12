@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 
 class WorkerDevice(Protocol):
-    device_id: str
-    ordinal: int
-    name: str
+    @property
+    def device_id(self) -> str: ...
+
+    @property
+    def ordinal(self) -> int: ...
+
+    @property
+    def name(self) -> str: ...
 
 
 class WorkerCapabilitySnapshot(Protocol):
-    devices: tuple[WorkerDevice, ...]
-    runtime_version: str | None
-    torch_version: str
+    @property
+    def devices(self) -> Sequence[WorkerDevice]: ...
+
+    @property
+    def runtime_version(self) -> str | None: ...
+
+    @property
+    def torch_version(self) -> str: ...
 
     @property
     def device_count(self) -> int: ...
@@ -33,7 +44,7 @@ class WorkerCapabilities(Protocol):
 class DeviceLeaseManager(WorkerCapabilities, Protocol):
     """Lease opaque execution devices and quarantine confirmed failures."""
 
-    def schedulable_devices(self) -> tuple[WorkerDevice, ...]: ...
+    def schedulable_devices(self) -> Sequence[WorkerDevice]: ...
 
     def mark_busy(self, device_id: str) -> bool: ...
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -23,6 +22,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.contracts.json_types import JsonObject
+
 SCHEMA = "transformer"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)
 
@@ -41,7 +42,7 @@ class JobIdentity(Base):
     job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     create_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    create_result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    create_result: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -149,11 +150,11 @@ class Job(Base):
     model_label: Mapped[str | None] = mapped_column(String(256))
     resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
-    model_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    training_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    data_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
+    data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    ml_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    ml_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_width: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -161,7 +162,7 @@ class Job(Base):
     payload_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    progress: Mapped[dict[str, Any]] = mapped_column(
+    progress: Mapped[JsonObject] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
@@ -180,7 +181,7 @@ class Job(Base):
     acquire_grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
-    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    result: Mapped[JsonObject | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     input_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -395,10 +396,10 @@ class PublishedModel(Base):
     metadata_path: Mapped[str] = mapped_column(Text, nullable=False)
     checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
-    data_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    metadata_json: Mapped[JsonObject] = mapped_column("metadata", JSONB, nullable=False)
+    data_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
     data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
-    ml_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ml_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
     objective_config_sha256: Mapped[str | None] = mapped_column(String(64))
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
@@ -441,7 +442,7 @@ class IdempotencyRecord(Base):
     action_name: Mapped[str] = mapped_column(String(128))
     idempotency_key: Mapped[str] = mapped_column(String(256))
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    response: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.job_identities.job_id", ondelete="SET NULL"),

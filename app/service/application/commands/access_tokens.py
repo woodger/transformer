@@ -7,7 +7,7 @@ from app.service.domain.access import AccessTokenRecord
 class AccessTokenAdministration:
     """Application use cases shared by administrative entrypoints."""
 
-    def __init__(self, repository: AccessTokenRepository):
+    def __init__(self, repository: AccessTokenRepository) -> None:
         self._repository = repository
 
     def issue(self, subject: str) -> AccessTokenRecord:

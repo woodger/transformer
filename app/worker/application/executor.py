@@ -572,7 +572,7 @@ def _checkpoint_metadata(
 ) -> JsonObject:
     model_config = trainer.model_config
     train_config = trainer.train_config
-    if model_config is None or train_config is None:
+    if model_config is None:
         raise ValueError("fit checkpoint configuration is unavailable")
     feature_dim = model_config.feature_dim
     if feature_dim is None:

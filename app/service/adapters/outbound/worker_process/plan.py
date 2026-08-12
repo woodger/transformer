@@ -34,13 +34,14 @@ class WorkerPlanError(AttemptExecutionError):
 
 
 class _PlanConfig(Protocol):
-    max_payload_bytes: int
+    @property
+    def max_payload_bytes(self) -> int: ...
 
 
 class _PlanLedger(JobRepository, Protocol):
     def get_model_artifact(
         self,
-        model_ref: str | None,
+        model_ref: str,
         *,
         owner_subject: str,
     ) -> ModelArtifactRecord | None: ...
@@ -293,8 +294,14 @@ class WorkerPlanBuilder:
         self,
         job: ExecutionJobRecord,
     ) -> ModelArtifactRecord:
+        model_ref = job.input_model_ref
+        if model_ref is None:
+            raise WorkerPlanError(
+                ErrorCode.MODEL_SCHEMA_MISMATCH,
+                "predict job does not identify a model generation",
+            )
         model = self.ledger.get_model_artifact(
-            job.input_model_ref,
+            model_ref,
             owner_subject=job.owner_subject,
         )
         if model is None:

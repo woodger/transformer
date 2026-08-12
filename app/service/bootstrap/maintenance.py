@@ -3,9 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.application.services.maintenance import (
     MaintenanceService as MaintenanceApplicationService,
 )
+from app.service.bootstrap.config import FlightServiceConfig
 
 
 class MaintenanceService(MaintenanceApplicationService):
@@ -13,16 +17,16 @@ class MaintenanceService(MaintenanceApplicationService):
 
     def __init__(
         self,
-        config,
-        ledger,
-        spool,
-        recovery_store=None,
+        config: FlightServiceConfig,
+        ledger: Ledger,
+        spool: Spool,
+        recovery_store: RecoveryStore | None = None,
         *,
         interval_seconds: float = 60.0,
         queue_reconciler: Callable[[], None] | None = None,
         logger: JsonLogger | None = None,
         metrics: OperationalMetrics | None = None,
-    ):
+    ) -> None:
         super().__init__(
             config,
             ledger,

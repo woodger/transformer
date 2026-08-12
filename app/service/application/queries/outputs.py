@@ -10,7 +10,12 @@ from app.service.domain.records import OutputRecord
 class OutputAccess:
     """Authorize published output discovery and ticket resolution."""
 
-    def __init__(self, store: OutputAccessStore, *, ticket_ttl_seconds: float):
+    def __init__(
+        self,
+        store: OutputAccessStore,
+        *,
+        ticket_ttl_seconds: float,
+    ) -> None:
         self.store = store
         self.ticket_ttl_seconds = ticket_ttl_seconds
 

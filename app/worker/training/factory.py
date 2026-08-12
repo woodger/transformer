@@ -66,16 +66,7 @@ def build_trainer(
     return Trainer(
         model=model,
         device=device,
-        lr=train_config.lr,
-        batch_size=train_config.batch_size,
-        epochs=train_config.epochs,
-        loss_stage=train_config.loss_stage,
-        loss_schedule=train_config.loss_schedule,
-        stage_size=train_config.stage_size,
-        use_amp=train_config.use_amp,
-        weight_decay=train_config.weight_decay,
-        direct_loss_weights=train_config.direct_loss_weights,
-        selection=train_config.selection,
+        train_config=train_config,
         metrics_path=metrics_path,
         context_mode=model_config.context_mode,
         metrics_context={
@@ -84,11 +75,9 @@ def build_trainer(
             "seq_len": model_config.seq_len,
         },
         model_config=model_config,
-        train_config=train_config,
         data_contract=(
             None if data_contract is None else dict(data_contract)
         ),
-        seed=train_config.seed,
     )
 
 

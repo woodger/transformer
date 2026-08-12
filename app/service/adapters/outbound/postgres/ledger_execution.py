@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import cast, overload
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger_support import (
+    LedgerSessions,
+    RowMapping,
     canonical_uuid,
     decode,
     json_value,
@@ -32,7 +36,7 @@ from app.service.domain.records import (
 class ExecutionLedgerSlice:
     """PostgreSQL queue, attempt, and worker-execution operations."""
 
-    def __init__(self, sessions):
+    def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
         self.database = sessions.database
 
@@ -66,11 +70,11 @@ class ExecutionLedgerSlice:
     def update_progress(
         self,
         job_id: str,
-        progress: dict,
+        progress: JsonObject,
         *,
         attempt_id: str,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         with self.database.transaction() as session:
             job = session.scalar(
@@ -108,7 +112,7 @@ class ExecutionLedgerSlice:
         worker_id: str | None = None,
         device_id: str | None = None,
         now: float | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         if selected_device not in ("cpu", "cuda"):
             raise ValueError("selected_device must be cpu or cuda")
         with self.database.transaction() as session:
@@ -177,7 +181,7 @@ class ExecutionLedgerSlice:
         worker_id: str | None = None,
         device_id: str | None = None,
         now: float | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         if selected_device not in ("cpu", "cuda"):
             raise ValueError("selected_device must be cpu or cuda")
         with self.database.transaction() as session:
@@ -288,7 +292,7 @@ class ExecutionLedgerSlice:
             record.boot_id = boot_id
             record.process_start_ticks = process_start_ticks
 
-    def list_active_attempts(self) -> list[dict]:
+    def list_active_attempts(self) -> list[RowMapping]:
         with self.database.session() as session:
             rows = session.scalars(
                 select(JobAttempt)
@@ -335,7 +339,7 @@ class ExecutionLedgerSlice:
         error_message: str | None = None,
         exit_code: int | None = None,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         target_state = ExecutionState(target_state)
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         if target_state not in (
@@ -459,15 +463,16 @@ class ExecutionLedgerSlice:
         now: float | None = None,
     ) -> bool:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, int)
-            or value < 0
-            for value in (next_ordinal, input_revision)
-        ):
-            raise ValueError(
-                "input wait ordinal and revision must be non-negative"
-            )
+        for value in (next_ordinal, input_revision):
+            raw_value = cast(object, value)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, int)
+                or raw_value < 0
+            ):
+                raise ValueError(
+                    "input wait ordinal and revision must be non-negative"
+                )
         waiting_at = timestamp_now(now)
         with self.database.transaction() as session:
             job = session.scalar(
@@ -509,7 +514,7 @@ class ExecutionLedgerSlice:
             session.flush()
             return True
 
-    def queued_jobs(self) -> list[dict]:
+    def queued_jobs(self) -> list[RowMapping]:
         with self.database.session() as session:
             rows = session.scalars(
                 select(Job)
@@ -534,6 +539,20 @@ class ExecutionLedgerSlice:
             return [_execution_job_record(row) for row in rows]
 
 
+@overload
+def _execution_job_record(
+    record: None,
+    attempt: JobAttempt | None = None,
+) -> None: ...
+
+
+@overload
+def _execution_job_record(
+    record: Job,
+    attempt: JobAttempt | None = None,
+) -> ExecutionJobRecord: ...
+
+
 def _execution_job_record(
     record: Job | None,
     attempt: JobAttempt | None = None,
@@ -553,8 +572,8 @@ def _execution_job_record(
         prediction_column=record.prediction_column,
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),
-        data_contract=dict(record.data_contract),
-        ml_contract=dict(record.ml_contract),
+        data_contract=json_value(record.data_contract),
+        ml_contract=json_value(record.ml_contract),
         config_hash=record.config_hash,
         manifest_sha256=record.manifest_sha256,
         feature_dim=record.feature_dim,
@@ -572,7 +591,7 @@ def _execution_job_record(
     )
 
 
-def _claimed_job_mapping(job: Job, attempt: JobAttempt) -> dict:
+def _claimed_job_mapping(job: Job, attempt: JobAttempt) -> RowMapping:
     result = decode(job)
     result["attempt_id"] = attempt.attempt_id
     return result

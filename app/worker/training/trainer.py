@@ -18,16 +18,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from app.config import (
     CONTEXT_MODE,
     GRAD_CLIP_NORM,
-    LOSS_SCHEDULE,
-    LOSS_STAGE,
-    SEED,
-    STAGE_SIZE,
-    WEIGHT_DECAY,
 )
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3.config import (
-    DEFAULT_DIRECT_LOSS_WEIGHTS,
-    CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
@@ -159,46 +152,33 @@ class Trainer:
         self,
         model: torch.nn.Module,
         device: torch.device,
-        lr: float,
-        batch_size: int,
-        epochs: int,
-        use_amp: bool = False,
-        loss_stage: int = LOSS_STAGE,
-        loss_schedule: str = LOSS_SCHEDULE,
-        stage_size: int = STAGE_SIZE,
-        weight_decay: float = WEIGHT_DECAY,
-        direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
-        selection: CheckpointSelectionConfig | None = None,
+        train_config: TrainConfig,
+        *,
         metrics_path: str | None = None,
         context_mode: str = CONTEXT_MODE,
         metrics_context: Mapping[str, JsonValue] | None = None,
         model_config: ModelConfig | None = None,
-        train_config: TrainConfig | None = None,
         data_contract: Mapping[str, object] | None = None,
-        seed: int = SEED,
     ) -> None:
         self.model = model
         self.device = device
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.loss_stage = validate_loss_stage(loss_stage)
-        self.loss_schedule = validate_loss_schedule(loss_schedule)
-        self.stage_size = validate_stage_size(stage_size)
-        self.direct_loss_weights = tuple(float(value) for value in direct_loss_weights)
-        if len(self.direct_loss_weights) != 6 or any(
-            not math.isfinite(value) or value <= 0
-            for value in self.direct_loss_weights
-        ):
-            raise ValueError("direct_loss_weights must contain six positive values")
-        self.selection = selection
+        self.train_config = train_config
+        self.batch_size = train_config.batch_size
+        self.epochs = train_config.epochs
+        self.loss_stage = validate_loss_stage(train_config.loss_stage)
+        self.loss_schedule = validate_loss_schedule(
+            train_config.loss_schedule
+        )
+        self.stage_size = validate_stage_size(train_config.stage_size)
+        self.direct_loss_weights = train_config.direct_loss_weights
+        self.selection = train_config.selection
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.model_config = model_config
-        self.train_config = train_config
         self.data_contract = (
             None if data_contract is None else dict(data_contract)
         )
-        self.seed = seed
+        self.seed = train_config.seed
         self.best_selection_score: float = float("inf")
         self.best_state_dict: dict[str, torch.Tensor] | None = None
         self.best_metrics: JsonObject | None = None
@@ -207,8 +187,11 @@ class Trainer:
         self.state = TrainingState()
         self.selection_state = (
             None
-            if selection is None
-            else SelectionState(selection.min_delta, selection.patience)
+            if self.selection is None
+            else SelectionState(
+                self.selection.min_delta,
+                self.selection.patience,
+            )
         )
         self.maximum_stage_completed = False
         self.training_complete = False
@@ -230,16 +213,16 @@ class Trainer:
         if metrics_context:
             self.metrics_context.update(metrics_context)
 
-        self.use_amp = bool(use_amp and device.type == "cuda")
+        self.use_amp = bool(train_config.use_amp and device.type == "cuda")
         self.scaler = torch.GradScaler("cuda", enabled=self.use_amp)
 
         self.optimizer = torch.optim.Adam(
             model.parameters(),
-            lr=lr,
-            weight_decay=weight_decay,
+            lr=train_config.lr,
+            weight_decay=train_config.weight_decay,
         )
 
-        if use_amp and device.type != "cuda":
+        if train_config.use_amp and device.type != "cuda":
             print("AMP requested but CUDA not available — disabled")
 
     @property
@@ -1059,8 +1042,6 @@ class Trainer:
         )
 
     def _objective_config_sha256(self) -> str:
-        if self.train_config is None:
-            raise ValueError("training configuration is unavailable")
         return objective_config_sha256(self.train_config)
 
     def record_metrics(

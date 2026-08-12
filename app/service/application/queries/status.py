@@ -22,7 +22,7 @@ from app.service.domain.job import ErrorCode
 class GetJobStatus:
     """Read one bounded, consistent durable status snapshot."""
 
-    def __init__(self, store: JobQueryStore):
+    def __init__(self, store: JobQueryStore) -> None:
         self.store = store
 
     def execute(self, query: GetJobStatusQuery) -> JobStatusResult:
@@ -45,7 +45,7 @@ class GetJobStatus:
 
 
 class ListJobInputs:
-    def __init__(self, store: JobQueryStore):
+    def __init__(self, store: JobQueryStore) -> None:
         self.store = store
 
     def execute(self, query: ListJobInputsQuery) -> JobInputsPage:
@@ -70,7 +70,7 @@ class ListJobInputs:
 
 
 class ListJobOutputs:
-    def __init__(self, store: JobQueryStore):
+    def __init__(self, store: JobQueryStore) -> None:
         self.store = store
 
     def execute(self, query: ListJobOutputsQuery) -> JobOutputsPage:
@@ -96,7 +96,7 @@ class DescribeModel:
         store: JobQueryStore,
         *,
         model_verifier: ModelArtifactVerifier,
-    ):
+    ) -> None:
         self.store = store
         self._model_verifier = model_verifier
 

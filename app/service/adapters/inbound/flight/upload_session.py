@@ -2,14 +2,19 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from typing import BinaryIO, Protocol, cast
 
+import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.service.adapters.inbound.flight.arrow import InputBatchValidator
+from app.contracts.json_types import JsonObject
+from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
+from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
 from app.service.adapters.inbound.flight.contract import validate_upload_metadata
 from app.service.application.input_models import (
     CommittedInput,
     InputPayloadReceipt,
+    InputUploadAuthorization,
     InputUploadMetadata,
 )
 from app.service.application.ports.input_uploads import InputArtifactStore
@@ -26,7 +31,32 @@ from app.service.domain.errors import (
 from app.service.domain.job import ErrorCode
 
 
-@dataclass(frozen=True)
+class _ArrowBuffer(Protocol):
+    def to_pybytes(self) -> bytes: ...
+
+
+class FlightStreamChunk(Protocol):
+    app_metadata: _ArrowBuffer | None
+    data: pa.RecordBatch | None
+
+
+class FlightStreamReader(Protocol):
+    schema: pa.Schema
+
+    def read_chunk(self) -> FlightStreamChunk: ...
+
+
+class _IpcWriter(Protocol):
+    def write_batch(self, batch: pa.RecordBatch) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _Closeable(Protocol):
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
 class UploadOutcome:
     record: CommittedInput
     committed_now: bool
@@ -37,15 +67,15 @@ class InputUploadSession:
 
     def __init__(
         self,
-        config,
+        config: FlightUploadLimits,
         lifecycle: InputUploadLifecycle,
         artifact_stores: dict[str, InputArtifactStore],
         *,
-        owner,
-        job_id,
-        ordinal,
-        reader,
-    ):
+        owner: str,
+        job_id: str,
+        ordinal: int,
+        reader: FlightStreamReader,
+    ) -> None:
         self.config = config
         self.lifecycle = lifecycle
         self.artifact_stores = artifact_stores
@@ -54,13 +84,13 @@ class InputUploadSession:
         self.ordinal = ordinal
         self.reader = reader
 
-        self.authorization = None
-        self.artifact_store = None
-        self.destination = None
-        self.temporary_file = None
-        self.temporary_path = None
-        self.ipc_writer = None
-        self.validator = None
+        self.authorization: InputUploadAuthorization | None = None
+        self.artifact_store: InputArtifactStore | None = None
+        self.destination: str | None = None
+        self.temporary_file: BinaryIO | None = None
+        self.temporary_path: str | None = None
+        self.ipc_writer: _IpcWriter | None = None
+        self.validator: InputBatchValidator | None = None
         self.committed = False
         self.destination_published = False
 
@@ -140,9 +170,12 @@ class InputUploadSession:
                                 self.destination
                             ),
                         )
-                    self.ipc_writer = ipc.new_file(
-                        self.temporary_file,
-                        self.reader.schema,
+                    self.ipc_writer = cast(
+                        _IpcWriter,
+                        ipc.new_file(  # pyright: ignore[reportUnknownMemberType]
+                            self.temporary_file,
+                            self.reader.schema,
+                        ),
                     )
                     _enforce_staged_size(
                         self.temporary_file,
@@ -154,48 +187,74 @@ class InputUploadSession:
                         raise invalid(
                             "DoPut application metadata must precede RecordBatch data"
                         )
-                    self.validator.validate_batch(chunk.data)
-                    self.ipc_writer.write_batch(chunk.data)
+                    validator = self.validator
+                    ipc_writer = self.ipc_writer
+                    temporary_file = self.temporary_file
+                    if (
+                        validator is None
+                        or ipc_writer is None
+                        or temporary_file is None
+                    ):
+                        raise RuntimeError("authorized upload staging is incomplete")
+                    validator.validate_batch(chunk.data)
+                    ipc_writer.write_batch(chunk.data)
                     _enforce_staged_size(
-                        self.temporary_file,
+                        temporary_file,
                         self.config.max_payload_bytes,
                     )
 
             if self.authorization is None:
                 raise invalid("DoPut application metadata is required")
 
-            stats = self.validator.stats()
-            metadata = self.authorization.metadata
+            authorization = self.authorization
+            validator = self.validator
+            ipc_writer = self.ipc_writer
+            temporary_file = self.temporary_file
+            temporary_path = self.temporary_path
+            artifact_store = self.artifact_store
+            destination = self.destination
+            if (
+                validator is None
+                or ipc_writer is None
+                or temporary_file is None
+                or temporary_path is None
+                or artifact_store is None
+                or destination is None
+            ):
+                raise RuntimeError("authorized upload staging is incomplete")
+
+            stats = validator.stats()
+            metadata = authorization.metadata
             if stats.rows != metadata.rows:
                 raise invalid(
                     f"metadata rows {metadata.rows} does not match uploaded "
                     f"row count {stats.rows}"
                 )
 
-            self.ipc_writer.close()
+            ipc_writer.close()
             self.ipc_writer = None
-            self.temporary_file.flush()
-            os.fsync(self.temporary_file.fileno())
-            self.temporary_file.close()
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+            temporary_file.close()
             self.temporary_file = None
 
-            byte_count = os.path.getsize(self.temporary_path)
+            byte_count = os.path.getsize(temporary_path)
             if byte_count > self.config.max_payload_bytes:
                 raise resource_exhausted(
                     f"payload size {byte_count} exceeds limit "
                     f"{self.config.max_payload_bytes}"
                 )
-            digest = _sha256_file(self.temporary_path)
+            digest = _sha256_file(temporary_path)
             feature_dim = (
                 None
                 if stats.src_width is None
                 else stats.src_width
-                // self.authorization.job.model_config.seq_len
+                // authorization.job.model_config.seq_len
             )
             if stats.src_width is None or feature_dim is None:
                 raise invalid("input source width is unavailable")
 
-            existing = self.authorization.existing
+            existing = authorization.existing
             if existing is not None:
                 _validate_exact_duplicate(
                     existing,
@@ -206,14 +265,14 @@ class InputUploadSession:
                 )
                 _validate_committed_artifact(
                     existing,
-                    self.artifact_store.absolute_path(
+                    artifact_store.absolute_path(
                         existing.relative_path
                     ),
                 )
-                os.unlink(self.temporary_path)
+                os.unlink(temporary_path)
                 self.temporary_path = None
                 return UploadOutcome(
-                    self.lifecycle.replay(self.authorization),
+                    self.lifecycle.replay(authorization),
                     False,
                 )
 
@@ -221,14 +280,14 @@ class InputUploadSession:
             # parent directory. Mark it first so cleanup treats the final name
             # as a candidate whose ledger ownership must be checked.
             self.destination_published = True
-            self.artifact_store.durable_create(
-                self.temporary_path,
-                self.destination,
+            artifact_store.durable_create(
+                temporary_path,
+                destination,
             )
             self.temporary_path = None
             receipt = InputPayloadReceipt(
-                relative_path=self.artifact_store.relative_path(
-                    self.destination
+                relative_path=artifact_store.relative_path(
+                    destination
                 ),
                 rows=stats.rows,
                 batches=stats.batches,
@@ -244,16 +303,16 @@ class InputUploadSession:
                     receipt,
                 )
             except BaseException:
-                durable = _committed_record(
+                durable_exists = _committed_record_exists(
                     self.lifecycle,
-                    self.authorization,
+                    authorization,
                 )
-                if durable is not None:
+                if durable_exists:
                     self.committed = True
                 else:
                     _best_effort_remove(
-                        self.artifact_store,
-                        self.destination,
+                        artifact_store,
+                        destination,
                     )
                 raise
             self.committed = True
@@ -270,12 +329,14 @@ class InputUploadSession:
             _best_effort_unlink(self.temporary_path)
         if self.authorization is None or self.committed:
             return
-        durable = _committed_record(
+        durable_exists = _committed_record_exists(
             self.lifecycle,
             self.authorization,
         )
-        if durable is None:
+        if not durable_exists:
             if self.destination_published:
+                if self.artifact_store is None or self.destination is None:
+                    raise RuntimeError("published upload destination is unavailable")
                 _best_effort_remove(
                     self.artifact_store,
                     self.destination,
@@ -286,7 +347,7 @@ class InputUploadSession:
             )
 
 
-def _parse_metadata(buffer) -> dict:
+def _parse_metadata(buffer: _ArrowBuffer) -> JsonObject:
     payload = buffer.to_pybytes()
     if len(payload) > 64 * 1024:
         raise invalid("DoPut application metadata exceeds 65536 bytes")
@@ -298,10 +359,16 @@ def _parse_metadata(buffer) -> dict:
         ) from exc
     if not isinstance(document, dict):
         raise invalid("DoPut application metadata must be a JSON object")
-    return document
+    return cast(JsonObject, document)
 
 
-def _validate_exact_duplicate(existing, metadata, stats, byte_count, digest):
+def _validate_exact_duplicate(
+    existing: CommittedInput,
+    metadata: InputUploadMetadata,
+    stats: ArrowStats,
+    byte_count: int,
+    digest: str,
+) -> None:
     matches = (
         existing.payload_id == metadata.payload_id
         and existing.ordinal == metadata.ordinal
@@ -321,7 +388,10 @@ def _validate_exact_duplicate(existing, metadata, stats, byte_count, digest):
         )
 
 
-def _validate_committed_artifact(existing, destination: str) -> None:
+def _validate_committed_artifact(
+    existing: CommittedInput,
+    destination: str,
+) -> None:
     code = (
         ErrorCode.RECOVERY_INPUT_UNAVAILABLE
         if existing.storage_class == "recovery"
@@ -353,7 +423,7 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _enforce_staged_size(file, maximum: int) -> None:
+def _enforce_staged_size(file: BinaryIO, maximum: int) -> None:
     size = file.tell()
     if size > maximum:
         raise resource_exhausted(
@@ -361,16 +431,19 @@ def _enforce_staged_size(file, maximum: int) -> None:
         )
 
 
-def _committed_record(lifecycle, authorization):
+def _committed_record_exists(
+    lifecycle: InputUploadLifecycle,
+    authorization: InputUploadAuthorization,
+) -> bool:
     try:
-        return lifecycle.find_committed(authorization)
+        return lifecycle.find_committed(authorization) is not None
     except Exception:
-        # Unknown is distinct from a confirmed missing record. The sentinel
-        # preserves the final artifact for startup reconciliation.
-        return {"reconciliation": "deferred"}
+        # Lookup failure does not prove that the commit is absent. Preserve
+        # the final artifact so startup reconciliation can resolve ownership.
+        return True
 
 
-def _best_effort_close(resource) -> None:
+def _best_effort_close(resource: _Closeable) -> None:
     try:
         resource.close()
     except BaseException:
@@ -384,14 +457,17 @@ def _best_effort_unlink(path: str) -> None:
         pass
 
 
-def _best_effort_remove(store, path: str) -> None:
+def _best_effort_remove(store: InputArtifactStore, path: str) -> None:
     try:
         store.remove(path)
     except (FileNotFoundError, OSError):
         pass
 
 
-def _best_effort_abort(lifecycle, upload_token: str) -> None:
+def _best_effort_abort(
+    lifecycle: InputUploadLifecycle,
+    upload_token: str,
+) -> None:
     try:
         lifecycle.abort(upload_token)
     except Exception:

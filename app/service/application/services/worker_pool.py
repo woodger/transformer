@@ -19,9 +19,14 @@ from app.service.domain.records import ExecutionJobRecord
 
 
 class WorkerPoolConfig(Protocol):
-    cpu_capacity: int
-    shutdown_drain_seconds: float
-    cancel_grace_seconds: float
+    @property
+    def cpu_capacity(self) -> int: ...
+
+    @property
+    def shutdown_drain_seconds(self) -> float: ...
+
+    @property
+    def cancel_grace_seconds(self) -> float: ...
 
 
 class WorkerPool:

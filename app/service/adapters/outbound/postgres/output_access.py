@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.mapping import (
+    row_integer,
+    row_optional_float,
+    row_string,
+)
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import OutputRecord
 
 
 class PostgresOutputAccessStore:
-    def __init__(self, ledger):
+    def __init__(self, ledger: Ledger) -> None:
         self.ledger = ledger
 
     def execution_state(
@@ -18,7 +26,7 @@ class PostgresOutputAccessStore:
         return (
             None
             if job is None
-            else ExecutionState(job["execution_state"])
+            else ExecutionState(row_string(job, "execution_state"))
         )
 
     def find_output(
@@ -30,14 +38,26 @@ class PostgresOutputAccessStore:
             (
                 item
                 for item in self.ledger.list_outputs(job_id)
-                if item["ordinal"] == ordinal
+                if row_integer(item, "ordinal") == ordinal
             ),
             None,
         )
         return None if value is None else _output_record(value)
 
-    def issue_ticket(self, **kwargs) -> tuple[bytes, float]:
-        return self.ledger.issue_ticket(**kwargs)
+    def issue_ticket(
+        self,
+        *,
+        job_id: str,
+        ordinal: int,
+        owner_subject: str,
+        ttl_seconds: float,
+    ) -> tuple[bytes, float]:
+        return self.ledger.issue_ticket(
+            job_id=job_id,
+            ordinal=ordinal,
+            owner_subject=owner_subject,
+            ttl_seconds=ttl_seconds,
+        )
 
     def resolve_ticket(
         self,
@@ -51,17 +71,17 @@ class PostgresOutputAccessStore:
         ))
 
 
-def _output_record(value: dict) -> OutputRecord:
+def _output_record(value: Mapping[str, object]) -> OutputRecord:
     return OutputRecord(
-        job_id=value["job_id"],
-        ordinal=value["ordinal"],
-        rows=value["rows"],
-        batches=value["batches"],
-        byte_count=value["bytes"],
-        sha256=value["sha256"],
-        schema_fingerprint=value["schema_fingerprint"],
-        relative_path=value["relative_path"],
-        published_at=value.get("published_at", 0.0),
+        job_id=row_string(value, "job_id"),
+        ordinal=row_integer(value, "ordinal"),
+        rows=row_integer(value, "rows"),
+        batches=row_integer(value, "batches"),
+        byte_count=row_integer(value, "bytes"),
+        sha256=row_string(value, "sha256"),
+        schema_fingerprint=row_string(value, "schema_fingerprint"),
+        relative_path=row_string(value, "relative_path"),
+        published_at=row_optional_float(value, "published_at") or 0.0,
     )
 
 

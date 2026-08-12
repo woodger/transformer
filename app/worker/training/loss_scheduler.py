@@ -16,7 +16,7 @@ class LossScheduler:
     stage_size: int = STAGE_SIZE
     max_stage: int = LOSS_STAGE
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         validate_loss_schedule(self.loss_schedule)
         validate_stage_size(self.stage_size)
         validate_loss_stage(self.max_stage)

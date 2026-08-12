@@ -1,15 +1,24 @@
+from __future__ import annotations
+
 import os
 import signal
 import threading
-from typing import Protocol
+from collections.abc import Callable
+from types import FrameType
+from typing import Protocol, cast
 
+from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifact_storage.spool import Spool
-from app.service.adapters.outbound.postgres.config import load_database_config
+from app.service.adapters.outbound.postgres.config import (
+    DatabaseConfig,
+    load_database_config,
+)
 from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.mapping import row_string
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCache,
@@ -20,7 +29,8 @@ from app.service.adapters.outbound.worker_probe.device_inventory import (
     CudaDeviceInventory,
 )
 from app.service.adapters.outbound.worker_process.process import recover_process_groups
-from app.service.bootstrap.config import load_config
+from app.service.application.ports.devices import DeviceLeaseManager
+from app.service.bootstrap.config import FlightServiceConfig, load_config
 from app.service.bootstrap.data_plane import (
     build_output_handler,
     build_upload_handler,
@@ -28,6 +38,7 @@ from app.service.bootstrap.data_plane import (
 from app.service.bootstrap.job_control import build_job_coordinator
 from app.service.bootstrap.maintenance import MaintenanceService
 from app.service.bootstrap.worker_pool import WorkerPool
+from app.service.domain.access import AuthIdentity
 
 
 class FlightServiceArguments(Protocol):
@@ -40,6 +51,45 @@ class FlightServiceArguments(Protocol):
     tls_require_client_cert: bool | None
 
 
+class _TokenLookup(Protocol):
+    def lookup(self, token: str) -> AuthIdentity | None: ...
+
+
+class _CoordinatorRuntime(Protocol):
+    def set_draining(self, value: bool = True) -> None: ...
+
+
+class _FlightServerRuntime(Protocol):
+    @property
+    def port(self) -> int: ...
+
+    def serve(self) -> None: ...
+
+    def shutdown(self) -> None: ...
+
+
+class _WorkerRuntime(Protocol):
+    def stop_claiming(self) -> None: ...
+
+    def shutdown(self, timeout: float | None = None) -> None: ...
+
+
+class _MaintenanceRuntime(Protocol):
+    def shutdown(self, timeout: float | None = None) -> None: ...
+
+
+class _TokenCacheRuntime(Protocol):
+    def shutdown(self, timeout: float | None = None) -> None: ...
+
+
+class _LedgerRuntime(Protocol):
+    def close(self) -> None: ...
+
+
+class _LockRuntime(Protocol):
+    def release_lock(self) -> None: ...
+
+
 class FlightApplication:
     """Own service startup reconciliation, process runtime, and shutdown.
 
@@ -49,18 +99,18 @@ class FlightApplication:
 
     def __init__(
         self,
-        config,
-        spool,
-        ledger,
-        coordinator,
-        server,
-        maintenance,
-        worker,
-        metrics,
-        logger,
-        token_cache_service=None,
-        recovery_store=None,
-    ):
+        config: FlightServiceConfig,
+        spool: Spool,
+        ledger: Ledger,
+        coordinator: _CoordinatorRuntime,
+        server: _FlightServerRuntime,
+        maintenance: _MaintenanceRuntime,
+        worker: _WorkerRuntime,
+        metrics: OperationalMetrics,
+        logger: JsonLogger,
+        token_cache_service: _TokenCacheRuntime | None = None,
+        recovery_store: _LockRuntime | None = None,
+    ) -> None:
         self.config = config
         self.spool = spool
         self.ledger = ledger
@@ -79,20 +129,24 @@ class FlightApplication:
     @classmethod
     def build(
         cls,
-        config,
+        config: FlightServiceConfig,
         *,
-        database_config=None,
-        models_dir=None,
-        token_cache=None,
-        bearer_tokens=None,
-        logger=None,
-        device_inventory=None,
-    ):
+        database_config: DatabaseConfig | None = None,
+        models_dir: str | os.PathLike[str] | None = None,
+        token_cache: _TokenLookup | None = None,
+        bearer_tokens: dict[str, str] | None = None,
+        logger: JsonLogger | None = None,
+        device_inventory: DeviceLeaseManager | None = None,
+    ) -> FlightApplication:
         logger = logger or JsonLogger()
         metrics = OperationalMetrics()
-        effective_models_dir = os.path.abspath(
-            os.fspath(models_dir or config.models_dir)
+        model_path = config.models_dir if models_dir is None else models_dir
+        model_path_text = (
+            model_path
+            if isinstance(model_path, str)
+            else model_path.__fspath__()
         )
+        effective_models_dir = os.path.abspath(model_path_text)
         spool = Spool(
             config.runtime_dir,
             effective_models_dir,
@@ -106,12 +160,13 @@ class FlightApplication:
             )
         )
         recovery_store = RecoveryStore(recovery_dir).initialize()
-        ledger = None
-        token_cache_service = None
-        worker = None
+        ledger: Ledger | None = None
+        token_cache_service: AccessTokenCacheService | None = None
+        worker: WorkerPool | None = None
         coordinator = None
-        server = None
-        maintenance = None
+        server: _FlightServerRuntime | None = None
+        maintenance: MaintenanceService | None = None
+        application: FlightApplication | None = None
         try:
             recovery_store.acquire_lock()
             spool.acquire_lock()
@@ -130,20 +185,32 @@ class FlightApplication:
                 spool.storage_epoch()
             )
             recovery = ledger.reconcile_interrupted_jobs()
+            temporary_paths = _string_list(recovery, "temporary_paths")
+            recovery_temporary_paths = _string_list(
+                recovery,
+                "recovery_temporary_paths",
+            )
+            interrupted_jobs = _string_list(recovery, "interrupted_jobs")
+            retried_jobs = _string_list(recovery, "retried_jobs")
+            cancelled_jobs = _string_list(recovery, "cancelled_jobs")
             reconciliation = spool.reconcile(
                 ledger.referenced_paths(),
-                temporary_paths=recovery["temporary_paths"],
-                known_job_ids={job["job_id"] for job in ledger.list_jobs()},
+                temporary_paths=temporary_paths,
+                known_job_ids={
+                    row_string(job, "job_id")
+                    for job in ledger.list_jobs()
+                },
             )
             recovery_reconciliation = recovery_store.reconcile(
                 ledger.recovery_referenced_paths(),
                 known_job_ids=ledger.active_recovery_job_ids(),
-                temporary_paths=recovery[
-                    "recovery_temporary_paths"
-                ],
+                temporary_paths=recovery_temporary_paths,
             )
             removed_models = spool.reconcile_model_directories(
-                {model["model_ref"] for model in ledger.list_models()}
+                {
+                    row_string(model, "model_ref")
+                    for model in ledger.list_models()
+                }
             )
             if token_cache is None and bearer_tokens is not None:
                 token_cache = InMemoryAccessTokenCache(bearer_tokens)
@@ -203,14 +270,17 @@ class FlightApplication:
                 metrics=metrics,
                 logger=logger,
             )
-            server = TransformerFlightServer(
-                config,
-                coordinator,
-                token_cache,
-                upload_handler=upload,
-                output_handler=output,
-                metrics=metrics,
-                logger=logger,
+            server = cast(
+                _FlightServerRuntime,
+                TransformerFlightServer(
+                    config,
+                    coordinator,
+                    token_cache,
+                    upload_handler=upload,
+                    output_handler=output,
+                    metrics=metrics,
+                    logger=logger,
+                ),
             )
             maintenance = MaintenanceService(
                 config,
@@ -237,7 +307,7 @@ class FlightApplication:
             )
             worker.start()
             maintenance.start()
-            for job_id in recovery["interrupted_jobs"]:
+            for job_id in interrupted_jobs:
                 metrics.record_transition("RUNNING", "FAILED")
                 logger.event(
                     "flight.job.transition",
@@ -247,7 +317,7 @@ class FlightApplication:
                     code="EXECUTION_INTERRUPTED",
                     recovery=True,
                 )
-            for job_id in recovery["retried_jobs"]:
+            for job_id in retried_jobs:
                 metrics.record_transition("RUNNING", "RETRYING")
                 logger.event(
                     "flight.job.transition",
@@ -257,7 +327,7 @@ class FlightApplication:
                     code="EXECUTION_INTERRUPTED",
                     recovery=True,
                 )
-            for job_id in recovery["cancelled_jobs"]:
+            for job_id in cancelled_jobs:
                 metrics.record_transition("CANCELLING", "CANCELLED")
                 logger.event(
                     "flight.job.transition",
@@ -273,13 +343,13 @@ class FlightApplication:
                 host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
-                recoveredInterruptedJobs=len(recovery["interrupted_jobs"]),
-                recoveredRetryingJobs=len(recovery["retried_jobs"]),
+                recoveredInterruptedJobs=len(interrupted_jobs),
+                recoveredRetryingJobs=len(retried_jobs),
                 recoveredProcessGroups=sum(
                     result.outcome in ("terminated", "killed")
                     for result in process_recovery
                 ),
-                removedOrphans=len(reconciliation["removed"]),
+                removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
@@ -288,8 +358,10 @@ class FlightApplication:
                 removedRecoveryOrphans=len(
                     recovery_reconciliation
                 ),
-                runtimeStorageReset=epoch_result["reset"],
-                discardedRuntimeJobs=len(epoch_result["discarded_jobs"]),
+                runtimeStorageReset=_boolean(epoch_result, "reset"),
+                discardedRuntimeJobs=len(
+                    _string_list(epoch_result, "discarded_jobs")
+                ),
                 diskTotalBytes=usage.total,
                 diskUsedBytes=usage.used,
                 diskFreeBytes=usage.free,
@@ -318,12 +390,12 @@ class FlightApplication:
             raise
         return application
 
-    def serve(self):
-        previous = {}
+    def serve(self) -> None:
+        previous: dict[signal.Signals, object] = {}
         server_done = threading.Event()
-        server_errors = []
+        server_errors: list[BaseException] = []
 
-        def run_server():
+        def run_server() -> None:
             try:
                 self.server.serve()
             except BaseException as exc:
@@ -331,7 +403,7 @@ class FlightApplication:
             finally:
                 server_done.set()
 
-        def handle_signal(signum, _frame):
+        def handle_signal(signum: int, _frame: FrameType | None) -> None:
             self.logger.event("flight.service.signal", signal=signum)
             # Keep shutdown outside the signal handler and outside Flight RPC
             # threads.  The non-daemon thread guarantees process exit cannot
@@ -364,7 +436,10 @@ class FlightApplication:
             server_done.wait()
         finally:
             for signum, handler in previous.items():
-                signal.signal(signum, handler)
+                signal.signal(
+                    signum,
+                    cast(Callable[[int, FrameType | None], None], handler),
+                )
             with self._shutdown_lock:
                 shutdown_started = self._shutdown_started
             if not shutdown_started:
@@ -375,7 +450,7 @@ class FlightApplication:
         if server_errors:
             raise server_errors[0]
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         with self._shutdown_lock:
             if self._shutdown_started:
                 started_here = False
@@ -385,7 +460,7 @@ class FlightApplication:
         if not started_here:
             self._shutdown_complete.wait()
             return
-        errors = []
+        errors: list[BaseException] = []
         try:
             # Close the queue claim boundary before RPC shutdown.  A start
             # already racing with this point may still commit QUEUED, but it
@@ -443,19 +518,19 @@ def run_from_args(args: FlightServiceArguments) -> None:
 
 def _cleanup_runtime(
     *,
-    server,
-    worker,
-    maintenance,
-    token_cache_service,
-    ledger,
-    spool,
-    recovery_store=None,
-    worker_timeout,
-    maintenance_timeout,
+    server: _FlightServerRuntime | None,
+    worker: _WorkerRuntime | None,
+    maintenance: _MaintenanceRuntime | None,
+    token_cache_service: _TokenCacheRuntime | None,
+    ledger: _LedgerRuntime | None,
+    spool: _LockRuntime,
+    recovery_store: _LockRuntime | None = None,
+    worker_timeout: float,
+    maintenance_timeout: float,
 ) -> list[BaseException]:
     """Stop partially or fully constructed runtime components in safe order."""
     errors: list[BaseException] = []
-    operations = (
+    operations: tuple[Callable[[], None] | None, ...] = (
         None if server is None else server.shutdown,
         None if worker is None else lambda: worker.shutdown(worker_timeout),
         None if maintenance is None else lambda: maintenance.shutdown(maintenance_timeout),
@@ -476,3 +551,22 @@ def _cleanup_runtime(
         except BaseException as exc:
             errors.append(exc)
     return errors
+
+
+def _string_list(document: JsonObject, key: str) -> tuple[str, ...]:
+    value = document.get(key)
+    if not isinstance(value, list):
+        raise ValueError(f"service startup field {key} must be a list")
+    items = cast(list[object], value)
+    if not all(isinstance(item, str) for item in items):
+        raise ValueError(
+            f"service startup field {key} must contain strings"
+        )
+    return tuple(cast(str, item) for item in items)
+
+
+def _boolean(document: JsonObject, key: str) -> bool:
+    value = document.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"service startup field {key} must be a boolean")
+    return value

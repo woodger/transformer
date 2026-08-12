@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime
+from typing import NoReturn, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v3.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger_artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger_execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger_inputs import InputLedgerSlice
@@ -17,13 +20,16 @@ from app.service.adapters.outbound.postgres.ledger_maintenance import (
 from app.service.adapters.outbound.postgres.ledger_recovery import RecoveryLedgerSlice
 from app.service.adapters.outbound.postgres.ledger_support import (
     LedgerSessions,
+    RowMapping,
     advisory_lock as _advisory_lock,
     at as _at,
     canonical_uuid as _canonical_uuid,
     decode as _decode,
+    decode_optional as _decode_optional,
     digest as _digest,
     json_value as _json_value,
     now as _now,
+    positive as _positive,
 )
 from app.service.adapters.outbound.postgres.mapping import (
     job_record,
@@ -81,11 +87,12 @@ _FIT_RETRY_CODES = (
 class Ledger:
     """PostgreSQL source of truth for Flight jobs and published artifacts."""
 
-    def __init__(self, database: Database):
-        if not isinstance(database, Database):
+    def __init__(self, database: Database) -> None:
+        runtime_database = cast(object, database)
+        if not isinstance(runtime_database, Database):
             raise TypeError("Ledger requires a PostgreSQL Database")
-        self.database = database
-        self._sessions = LedgerSessions(database)
+        self.database = runtime_database
+        self._sessions = LedgerSessions(runtime_database)
         self._inputs = InputLedgerSlice(self._sessions)
         self._execution = ExecutionLedgerSlice(self._sessions)
         self._artifacts = ArtifactLedgerSlice(self._sessions)
@@ -105,23 +112,29 @@ class Ledger:
         return True
 
     @contextmanager
-    def connection(self) -> Iterator[Session]:
+    def connection(self) -> Generator[Session]:
         """Expose a read-only-by-default ORM session for diagnostics."""
         with self.database.session() as session:
             yield session
 
     @contextmanager
-    def transaction(self) -> Iterator[Session]:
+    def transaction(self) -> Generator[Session]:
         with self.database.transaction() as session:
             yield session
 
     @contextmanager
-    def _read(self, connection: Session | None):
+    def _read(
+        self,
+        connection: Session | None,
+    ) -> Generator[Session]:
         with self._sessions.read(connection) as session:
             yield session
 
     @contextmanager
-    def _write(self, connection: Session | None):
+    def _write(
+        self,
+        connection: Session | None,
+    ) -> Generator[Session]:
         with self._sessions.write(connection) as session:
             yield session
 
@@ -135,16 +148,16 @@ class Ledger:
         requested_device: str,
         prediction_column: str,
         config_hash: str,
-        data_contract: dict,
-        ml_contract: dict,
-        create_result: dict,
+        data_contract: JsonObject,
+        ml_contract: JsonObject,
+        create_result: JsonObject,
         model_label: str | None = None,
         resolved_model_ref: str | None = None,
-        model_config=None,
-        training_config=None,
+        model_config: ModelConfig | JsonObject | None = None,
+        training_config: TrainConfig | JsonObject | None = None,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         job_id = _canonical_uuid(job_id, "job_id")
         client_execution_id = _canonical_uuid(
             client_execution_id,
@@ -157,25 +170,30 @@ class Ledger:
         if requested_device not in SUPPORTED_DEVICES:
             raise ValueError(f"unsupported device: {requested_device}")
         _digest(config_hash, "config_hash")
-        if not isinstance(data_contract, dict):
+        raw_data_contract = cast(object, data_contract)
+        if not isinstance(raw_data_contract, dict):
             raise ValueError("data_contract must be an object")
-        contract_sha256 = data_contract.get("data_contract_sha256")
-        _digest(contract_sha256, "data_contract_sha256")
-        if not isinstance(ml_contract, dict):
+        typed_data_contract = cast(JsonObject, raw_data_contract)
+        raw_ml_contract = cast(object, ml_contract)
+        if not isinstance(raw_ml_contract, dict):
             raise ValueError("ml_contract must be an object")
+        typed_ml_contract = cast(JsonObject, raw_ml_contract)
+        contract_sha256 = _digest(
+            typed_data_contract.get("data_contract_sha256"),
+            "data_contract_sha256",
+        )
         _digest(
-            ml_contract.get("objectiveConfigSha256"),
+            typed_ml_contract.get("objectiveConfigSha256"),
             "objective_config_sha256",
         )
-        seq_len = data_contract.get("seq_len")
-        feature_dim = data_contract.get("feature_dim")
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, int)
-            or value <= 0
-            for value in (seq_len, feature_dim)
-        ):
-            raise ValueError("data contract dimensions must be positive integers")
+        seq_len = _positive(
+            typed_data_contract.get("seq_len"),
+            "data_contract.seq_len",
+        )
+        feature_dim = _positive(
+            typed_data_contract.get("feature_dim"),
+            "data_contract.feature_dim",
+        )
         if operation == "fit" and (
             not model_label or resolved_model_ref is not None
         ):
@@ -207,15 +225,17 @@ class Ledger:
             model_label=model_label,
             resolved_model_ref=resolved_model_ref,
             prediction_column=prediction_column,
-            model_config=_json_value(model_config),
+            model_config=(
+                None if model_config is None else _json_value(model_config)
+            ),
             training_config=(
                 None
                 if training_config is None
                 else _json_value(training_config)
             ),
-            data_contract=_json_value(data_contract),
+            data_contract=_json_value(typed_data_contract),
             data_contract_sha256=contract_sha256,
-            ml_contract=_json_value(ml_contract),
+            ml_contract=_json_value(typed_ml_contract),
             config_hash=config_hash,
             source_width=seq_len * feature_dim,
             feature_dim=feature_dim,
@@ -255,14 +275,14 @@ class Ledger:
         owner_subject: str | None = None,
         connection: Session | None = None,
         for_update: bool = False,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         statement = select(Job).where(Job.job_id == job_id)
         if owner_subject is not None:
             statement = statement.where(Job.owner_subject == owner_subject)
         if for_update:
             statement = statement.with_for_update()
         with self._read(connection) as session:
-            return _decode(session.scalar(statement))
+            return _decode_optional(session.scalar(statement))
 
     def get_job_identity(
         self,
@@ -270,14 +290,14 @@ class Ledger:
         *,
         owner_subject: str | None = None,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         statement = select(JobIdentity).where(JobIdentity.job_id == job_id)
         if owner_subject is not None:
             statement = statement.where(
                 JobIdentity.owner_subject == owner_subject
             )
         with self._read(connection) as session:
-            return _decode(session.scalar(statement))
+            return _decode_optional(session.scalar(statement))
 
     def acquire_job(
         self,
@@ -290,7 +310,7 @@ class Ledger:
         acquire_grace_seconds: float,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[dict, tuple[tuple[str, str], ...]]:
+    ) -> tuple[RowMapping, tuple[tuple[str, str], ...]]:
         previous_client_execution_id = _canonical_uuid(
             previous_client_execution_id,
             "previous_client_execution_id",
@@ -299,10 +319,11 @@ class Ledger:
             client_execution_id,
             "client_execution_id",
         )
+        raw_fencing_token = cast(object, expected_fencing_token)
         if (
-            isinstance(expected_fencing_token, bool)
-            or not isinstance(expected_fencing_token, int)
-            or expected_fencing_token <= 0
+            isinstance(raw_fencing_token, bool)
+            or not isinstance(raw_fencing_token, int)
+            or raw_fencing_token <= 0
         ):
             raise ValueError("expected_fencing_token must be positive")
         if acquire_grace_seconds <= 0:
@@ -366,7 +387,7 @@ class Ledger:
         fencing_token: int,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[dict, bool, tuple[tuple[str, str], ...]]:
+    ) -> tuple[RowMapping, bool, tuple[tuple[str, str], ...]]:
         client_execution_id = _canonical_uuid(
             client_execution_id,
             "client_execution_id",
@@ -542,7 +563,7 @@ class Ledger:
         states: Sequence[str | ExecutionState] | None = None,
         *,
         connection: Session | None = None,
-    ) -> list[dict]:
+    ) -> list[RowMapping]:
         statement = select(Job)
         if states:
             statement = statement.where(
@@ -560,10 +581,10 @@ class Ledger:
         target_state: str | ExecutionState,
         *,
         expected_revision: int | None = None,
-        updates: dict | None = None,
+        updates: Mapping[str, object] | None = None,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         target_state = ExecutionState(target_state)
         timestamp = _now(now)
         with self._write(connection) as session:
@@ -584,11 +605,11 @@ class Ledger:
     def update_progress(
         self,
         job_id: str,
-        progress: dict,
+        progress: JsonObject,
         *,
         attempt_id: str,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._execution.update_progress(
             job_id,
             progress,
@@ -603,9 +624,9 @@ class Ledger:
         idempotency_key: str,
         *,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         with self._read(connection) as session:
-            return _decode(session.get(
+            return _decode_optional(session.get(
                 IdempotencyRecord,
                 (owner_subject, action_name, idempotency_key),
             ))
@@ -617,11 +638,11 @@ class Ledger:
         action_name: str,
         idempotency_key: str,
         request_hash: str,
-        response: dict,
+        response: JsonObject,
         job_id: str | None = None,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[dict, bool]:
+    ) -> tuple[JsonObject, bool]:
         with self._write(connection) as session:
             _advisory_lock(session, "idempotency", owner_subject, action_name, idempotency_key)
             existing = session.get(
@@ -651,10 +672,10 @@ class Ledger:
         action_name: str,
         idempotency_key: str,
         request_hash: str,
-        mutation: Callable[[Session], tuple[dict, str | None]],
+        mutation: Callable[[Session], tuple[JsonObject, str | None]],
         replay_guard: Callable[[Session], None] | None = None,
         now: float | None = None,
-    ) -> tuple[dict, bool]:
+    ) -> tuple[JsonObject, bool]:
         with self.database.transaction() as session:
             _advisory_lock(session, "idempotency", owner_subject, action_name, idempotency_key)
             existing = session.get(
@@ -687,7 +708,7 @@ class Ledger:
         ordinal: int | None = None,
         payload_id: str | None = None,
         connection: Session | None = None,
-    ):
+    ) -> RowMapping | None:
         return self._inputs.find_input(
             job_id,
             ordinal=ordinal,
@@ -707,7 +728,7 @@ class Ledger:
         candidate_path: str,
         storage_class: str = "runtime",
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._inputs.reserve_input(
             job_id=job_id,
             payload_id=payload_id,
@@ -745,7 +766,7 @@ class Ledger:
         max_job_bytes: int,
         storage_class: str = "runtime",
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._inputs.commit_input(
             upload_token=upload_token,
             job_id=job_id,
@@ -773,7 +794,7 @@ class Ledger:
         job_id: str,
         *,
         connection: Session | None = None,
-    ) -> list[dict]:
+    ) -> list[RowMapping]:
         return self._inputs.list_inputs(job_id, connection=connection)
 
     def list_committed_inputs(
@@ -796,7 +817,7 @@ class Ledger:
         snapshot_revision: int | None,
         cursor: int | None,
         limit: int,
-    ) -> dict:
+    ) -> RowMapping:
         return self._inputs.list_inputs_page(
             job_id,
             owner_subject,
@@ -819,7 +840,7 @@ class Ledger:
         selected_device: str,
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[dict, bool]:
+    ) -> tuple[RowMapping, bool]:
         return self._inputs.close_input(
             job_id,
             client_execution_id=client_execution_id,
@@ -841,7 +862,7 @@ class Ledger:
         worker_id: str | None = None,
         device_id: str | None = None,
         now: float | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         return self._execution.claim_job(
             job_id,
             selected_device,
@@ -874,7 +895,7 @@ class Ledger:
         worker_id: str | None = None,
         device_id: str | None = None,
         now: float | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         return self._execution.claim_next_job(
             selected_device,
             worker_id=worker_id,
@@ -903,7 +924,7 @@ class Ledger:
             process_start_ticks=process_start_ticks,
         )
 
-    def list_active_attempts(self) -> list[dict]:
+    def list_active_attempts(self) -> list[RowMapping]:
         return self._execution.list_active_attempts()
 
     def list_recoverable_attempts(self) -> list[RecoverableAttemptRecord]:
@@ -920,7 +941,7 @@ class Ledger:
         error_message: str | None = None,
         exit_code: int | None = None,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._execution.finish_attempt(
             job_id,
             attempt,
@@ -1039,7 +1060,7 @@ class Ledger:
         error_message: str,
         exit_code: int | None = None,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._recovery.schedule_retry(
             job_id,
             attempt,
@@ -1054,12 +1075,12 @@ class Ledger:
         self,
         job_id: str,
         attempt: int,
-        outputs: Sequence[dict],
+        outputs: Sequence[JsonObject],
         *,
         attempt_id: str,
-        result: dict,
+        result: JsonObject,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._artifacts.publish_outputs(
             job_id,
             attempt,
@@ -1082,10 +1103,10 @@ class Ledger:
         metadata_path: str,
         byte_count: int,
         sha256: str,
-        metadata: dict,
-        result: dict,
+        metadata: JsonObject,
+        result: JsonObject,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._artifacts.publish_model(
             job_id,
             attempt,
@@ -1108,7 +1129,7 @@ class Ledger:
         *,
         owner_subject: str | None = None,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         return self._artifacts.get_model(
             model_ref,
             owner_subject=owner_subject,
@@ -1134,7 +1155,7 @@ class Ledger:
         label: str,
         *,
         connection: Session | None = None,
-    ) -> dict | None:
+    ) -> RowMapping | None:
         return self._artifacts.resolve_model_alias(
             owner_subject,
             label,
@@ -1167,10 +1188,15 @@ class Ledger:
             connection=connection,
         )
 
-    def list_models(self) -> list[dict]:
+    def list_models(self) -> list[RowMapping]:
         return self._artifacts.list_models()
 
-    def list_outputs(self, job_id: str, *, connection: Session | None = None) -> list[dict]:
+    def list_outputs(
+        self,
+        job_id: str,
+        *,
+        connection: Session | None = None,
+    ) -> list[RowMapping]:
         return self._artifacts.list_outputs(
             job_id,
             connection=connection,
@@ -1183,7 +1209,7 @@ class Ledger:
         *,
         cursor: int | None,
         limit: int,
-    ) -> dict:
+    ) -> RowMapping:
         return self._artifacts.list_outputs_page(
             job_id,
             owner_subject,
@@ -1214,7 +1240,7 @@ class Ledger:
         *,
         owner_subject: str,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         return self._artifacts.resolve_ticket(
             ticket,
             owner_subject=owner_subject,
@@ -1235,7 +1261,11 @@ class Ledger:
             now=now,
         )
 
-    def reconcile_interrupted_jobs(self, *, now: float | None = None) -> dict:
+    def reconcile_interrupted_jobs(
+        self,
+        *,
+        now: float | None = None,
+    ) -> JsonObject:
         return self._maintenance.reconcile_interrupted_jobs(now=now)
 
     def referenced_paths(self) -> set[str]:
@@ -1244,20 +1274,25 @@ class Ledger:
     def delete_terminal_jobs_before(self, cutoff: float) -> list[str]:
         return self._maintenance.delete_terminal_jobs_before(cutoff)
 
-    def synchronize_runtime_epoch(self, epoch: str, *, now: float | None = None) -> dict:
+    def synchronize_runtime_epoch(
+        self,
+        epoch: str,
+        *,
+        now: float | None = None,
+    ) -> JsonObject:
         return self._maintenance.synchronize_runtime_epoch(
             epoch,
             now=now,
         )
 
-    def queued_jobs(self) -> list[dict]:
+    def queued_jobs(self) -> list[RowMapping]:
         return self._execution.queued_jobs()
 
     def queued_execution_jobs(self) -> list[ExecutionJobRecord]:
         return self._execution.queued_execution_jobs()
 
 
-def _transition_updates(updates: dict) -> dict:
+def _transition_updates(updates: Mapping[str, object]) -> RowMapping:
     mapping = {
         "selected_device": "selected_device",
         "input_closed_at": "input_closed_at",
@@ -1275,7 +1310,7 @@ def _transition_updates(updates: dict) -> dict:
         raise ValueError(
             f"unsupported job update field(s): {', '.join(sorted(unknown))}"
         )
-    encoded = {}
+    encoded: RowMapping = {}
     for key, value in updates.items():
         target = mapping[key]
         if key in ("result_json", "progress_json") and value is not None:
@@ -1285,12 +1320,16 @@ def _transition_updates(updates: dict) -> dict:
             and value is not None
             and not isinstance(value, datetime)
         ):
-            value = _at(value)
+            value = _at(cast(float, value))
         encoded[target] = value
     return encoded
 
 
-def _raise_missing_job(session, job_id: str, owner_subject: str) -> None:
+def _raise_missing_job(
+    session: Session,
+    job_id: str,
+    owner_subject: str,
+) -> NoReturn:
     identity = session.scalar(select(JobIdentity).where(
         JobIdentity.job_id == job_id,
         JobIdentity.owner_subject == owner_subject,
@@ -1308,10 +1347,11 @@ def _verify_external_fence(
     client_execution_id: str,
     fencing_token: int,
 ) -> None:
+    raw_fencing_token = cast(object, fencing_token)
     if (
-        isinstance(fencing_token, bool)
-        or not isinstance(fencing_token, int)
-        or fencing_token <= 0
+        isinstance(raw_fencing_token, bool)
+        or not isinstance(raw_fencing_token, int)
+        or raw_fencing_token <= 0
         or job.client_execution_id != client_execution_id
         or job.fencing_token != fencing_token
     ):

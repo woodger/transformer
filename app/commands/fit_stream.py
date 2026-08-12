@@ -238,8 +238,6 @@ def _run_spooled(
 
     if recovery is not None and recovery.resume_checkpoint is not None:
         train_config = trainer.train_config
-        if train_config is None:
-            raise ValueError("training recovery configuration is unavailable")
         try:
             payload = load_training_recovery(
                 recovery.resume_checkpoint,

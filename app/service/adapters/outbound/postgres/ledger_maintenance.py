@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Protocol, cast
 
 from sqlalchemy import delete, or_, select, update
 
+from app.contracts.json_types import JsonObject
 from app.service.adapters.outbound.postgres.ledger_support import (
+    LedgerSessions,
     at,
     canonical_uuid,
+    json_value,
     now as timestamp_now,
 )
 from app.service.adapters.outbound.postgres.models import (
@@ -31,10 +35,14 @@ _TERMINAL_STATES = (
 )
 
 
+class _RowCountResult(Protocol):
+    rowcount: int
+
+
 class MaintenanceLedgerSlice:
     """Restart reconciliation, retention, and runtime epoch operations."""
 
-    def __init__(self, sessions):
+    def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
         self.database = sessions.database
 
@@ -49,7 +57,7 @@ class MaintenanceLedgerSlice:
                     OutputTicket.expires_at <= timestamp_now(now)
                 )
             )
-            return result.rowcount
+            return cast(_RowCountResult, result).rowcount
 
     def expire_input_waits(
         self,
@@ -64,7 +72,7 @@ class MaintenanceLedgerSlice:
             expired_at.timestamp() - timeout_seconds,
             tz=expired_at.tzinfo,
         )
-        expired = []
+        expired: list[str] = []
         with self.database.transaction() as session:
             jobs = session.scalars(
                 select(Job)
@@ -117,7 +125,7 @@ class MaintenanceLedgerSlice:
         self,
         *,
         now: float | None = None,
-    ) -> dict:
+    ) -> JsonObject:
         reconciled_at = timestamp_now(now)
         with self.database.transaction() as session:
             uploads = session.execute(
@@ -126,8 +134,8 @@ class MaintenanceLedgerSlice:
                     InputUpload.storage_class,
                 )
             ).all()
-            interrupted = []
-            retried = []
+            interrupted: list[str] = []
+            retried: list[str] = []
             cancelling = list(session.scalars(
                 select(Job.job_id)
                 .where(
@@ -182,9 +190,14 @@ class MaintenanceLedgerSlice:
                         )
                         attempt.finished_at = reconciled_at
                     job.execution_state = ExecutionState.RETRYING.value
-                    job.queue_sequence = session.scalar(
+                    queue_sequence = session.scalar(
                         select(QUEUE_SEQUENCE.next_value())
                     )
+                    if queue_sequence is None:
+                        raise RuntimeError(
+                            "queue sequence did not return a value"
+                        )
+                    job.queue_sequence = queue_sequence
                     job.queued_at = reconciled_at
                     job.error_code = None
                     job.error_message = None
@@ -228,7 +241,7 @@ class MaintenanceLedgerSlice:
                 job.finished_at = reconciled_at
                 job.updated_at = reconciled_at
             session.execute(delete(InputUpload))
-        return {
+        return json_value({
             "interrupted_jobs": interrupted,
             "retried_jobs": retried,
             "cancelled_jobs": cancelling,
@@ -242,7 +255,7 @@ class MaintenanceLedgerSlice:
                 for path, storage_class in uploads
                 if storage_class == "recovery"
             ],
-        }
+        })
 
     def referenced_paths(self) -> set[str]:
         with self.database.session() as session:
@@ -308,7 +321,7 @@ class MaintenanceLedgerSlice:
         epoch: str,
         *,
         now: float | None = None,
-    ) -> dict:
+    ) -> JsonObject:
         epoch = canonical_uuid(epoch, "runtime storage epoch")
         synchronized_at = timestamp_now(now)
         with self.database.transaction() as session:
@@ -319,7 +332,7 @@ class MaintenanceLedgerSlice:
             )
             if state is not None and state.value == epoch:
                 return {"reset": False, "discarded_jobs": []}
-            discarded_jobs = []
+            discarded_jobs: list[str] = []
             jobs = session.scalars(
                 select(Job).order_by(Job.job_id)
             ).all()
@@ -365,10 +378,10 @@ class MaintenanceLedgerSlice:
             else:
                 state.value = epoch
                 state.updated_at = synchronized_at
-            return {
+            return json_value({
                 "reset": reset,
                 "discarded_jobs": discarded_jobs,
-            }
+            })
 
 
 __all__ = ["MaintenanceLedgerSlice"]

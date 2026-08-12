@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -8,10 +10,13 @@ from app.service.adapters.inbound.flight.constants import (
     MAX_PAGE_ITEMS,
 )
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
+from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifact_storage.job_artifacts import (
     CandidateArtifactCleaner,
     ModelArtifactVerifier,
 )
+from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifact_storage.spool import Spool
 from app.service.adapters.outbound.postgres.job_lifecycle import (
     JobActionNames,
     PostgresJobLifecycle,
@@ -19,6 +24,7 @@ from app.service.adapters.outbound.postgres.job_lifecycle import (
 from app.service.adapters.outbound.postgres.job_queries import (
     PostgresJobQueryStore,
 )
+from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.application.commands.jobs import (
     AcquireJobAction,
     CancelJobAction,
@@ -26,6 +32,7 @@ from app.service.application.commands.jobs import (
     InputCloseAction,
 )
 from app.service.application.job_models import ServiceLimits
+from app.service.application.ports.devices import WorkerCapabilities
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
@@ -36,19 +43,20 @@ from app.service.application.queries.status import (
     ListJobInputs,
     ListJobOutputs,
 )
+from app.service.bootstrap.config import FlightServiceConfig
 
 
 def build_job_coordinator(
-    config,
-    ledger,
-    spool,
-    recovery_store,
+    config: FlightServiceConfig,
+    ledger: Ledger,
+    spool: Spool,
+    recovery_store: RecoveryStore,
     *,
-    device_inventory,
-    metrics,
-    logger,
-    cancel_notifier=None,
-    queue_notifier=None,
+    device_inventory: WorkerCapabilities,
+    metrics: OperationalMetrics,
+    logger: JsonLogger,
+    cancel_notifier: Callable[[str], None] | None = None,
+    queue_notifier: Callable[[str], None] | None = None,
 ) -> JobCoordinator:
     limits = _service_limits(config)
     availability = ServiceAvailability()
@@ -130,7 +138,7 @@ def build_job_coordinator(
     )
 
 
-def _service_limits(config) -> ServiceLimits:
+def _service_limits(config: FlightServiceConfig) -> ServiceLimits:
     return ServiceLimits(
         max_message_bytes=config.max_message_bytes,
         target_batch_bytes=config.target_batch_bytes,

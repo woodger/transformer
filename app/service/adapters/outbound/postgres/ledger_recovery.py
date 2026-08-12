@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from typing import cast
+
 from sqlalchemy import select
 
 from app.contracts.worker.v3.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger_support import (
+    LedgerSessions,
+    RowMapping,
     canonical_uuid,
     decode,
     digest,
@@ -30,7 +34,7 @@ from app.service.domain.records import TrainingRecoveryCheckpointRecord
 class RecoveryLedgerSlice:
     """Atomic visibility and retry operations for training recovery."""
 
-    def __init__(self, sessions):
+    def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
         self.database = sessions.database
 
@@ -55,13 +59,15 @@ class RecoveryLedgerSlice:
         positive(generation, "generation")
         positive(byte_count, "bytes")
         positive(completed_epochs, "completed_epochs")
+        raw_global_step = cast(object, global_step)
         if (
-            isinstance(global_step, bool)
-            or not isinstance(global_step, int)
-            or global_step < 0
+            isinstance(raw_global_step, bool)
+            or not isinstance(raw_global_step, int)
+            or raw_global_step < 0
         ):
             raise ValueError("global_step must be a non-negative integer")
-        if not isinstance(training_complete, bool):
+        raw_training_complete = cast(object, training_complete)
+        if not isinstance(raw_training_complete, bool):
             raise ValueError("training_complete must be a boolean")
         if format != TRAINING_RECOVERY_FORMAT:
             raise ValueError("unsupported training recovery format")
@@ -276,7 +282,7 @@ class RecoveryLedgerSlice:
         error_message: str,
         exit_code: int | None = None,
         now: float | None = None,
-    ) -> dict:
+    ) -> RowMapping:
         positive(attempt, "attempt")
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         if not error_message:
@@ -369,9 +375,14 @@ class RecoveryLedgerSlice:
             record.error_message = error_message
             job.execution_state = ExecutionState.RETRYING.value
             job.revision += 1
-            job.queue_sequence = session.scalar(
+            queue_sequence = session.scalar(
                 select(QUEUE_SEQUENCE.next_value())
             )
+            if queue_sequence is None:
+                raise RuntimeError(
+                    "queue sequence did not return a value"
+                )
+            job.queue_sequence = queue_sequence
             job.queued_at = retried_at
             job.updated_at = retried_at
             job.finished_at = None
@@ -404,19 +415,26 @@ def _record(
 
 def _same_checkpoint(
     value: TrainingRecoveryCheckpoint,
-    **expected,
+    *,
+    attempt: int,
+    format: str,
+    relative_path: str,
+    byte_count: int,
+    sha256: str,
+    completed_epochs: int,
+    global_step: int,
+    training_complete: bool,
 ) -> bool:
-    actual = {
-        "attempt": value.attempt,
-        "format": value.format,
-        "relative_path": value.relative_path,
-        "byte_count": value.bytes,
-        "sha256": value.sha256,
-        "completed_epochs": value.completed_epochs,
-        "global_step": value.global_step,
-        "training_complete": value.training_complete,
-    }
-    return actual == expected
+    return (
+        value.attempt == attempt
+        and value.format == format
+        and value.relative_path == relative_path
+        and value.bytes == byte_count
+        and value.sha256 == sha256
+        and value.completed_epochs == completed_epochs
+        and value.global_step == global_step
+        and value.training_complete is training_complete
+    )
 
 
 __all__ = ["RecoveryLedgerSlice"]

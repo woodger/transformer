@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3.objective import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
@@ -25,9 +26,13 @@ from app.service.application.job_models import (
     ServiceLimits,
 )
 from app.service.domain.job import TERMINAL_EXECUTION_STATES, ExecutionState
+from app.service.domain.records import (
+    JobRecord,
+    StatusRecoveryRecord,
+)
 
 
-def present_job_created(result: JobCreated) -> dict:
+def present_job_created(result: JobCreated) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -70,7 +75,7 @@ def present_job_created(result: JobCreated) -> dict:
     )
 
 
-def present_job_acquired(result: JobAcquired) -> dict:
+def present_job_acquired(result: JobAcquired) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -82,7 +87,7 @@ def present_job_acquired(result: JobAcquired) -> dict:
     )
 
 
-def present_input_closed(result: InputClosed) -> dict:
+def present_input_closed(result: InputClosed) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -99,7 +104,7 @@ def present_input_closed(result: InputClosed) -> dict:
     )
 
 
-def present_job_cancelled(result: JobCancelled) -> dict:
+def present_job_cancelled(result: JobCancelled) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -109,14 +114,14 @@ def present_job_cancelled(result: JobCancelled) -> dict:
     )
 
 
-def present_job_status(result: JobStatusResult) -> dict:
+def present_job_status(result: JobStatusResult) -> JsonObject:
     snapshot = result.snapshot
     job = snapshot.job
     if job is None:
         raise ValueError("job status result is missing its job")
     terminal = job.execution_state in TERMINAL_EXECUTION_STATES
     durable_result = job.result or {}
-    error = None
+    error: JsonObject | None = None
     if job.execution_state == ExecutionState.FAILED:
         error = {"code": job.error_code, "message": job.error_message}
     return response_document(
@@ -162,7 +167,7 @@ def present_job_status(result: JobStatusResult) -> dict:
     )
 
 
-def present_job_inputs(result: JobInputsPage) -> dict:
+def present_job_inputs(result: JobInputsPage) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -189,7 +194,7 @@ def present_job_inputs(result: JobInputsPage) -> dict:
     )
 
 
-def present_job_outputs(result: JobOutputsPage) -> dict:
+def present_job_outputs(result: JobOutputsPage) -> JsonObject:
     return response_document(
         result.request_id,
         jobId=result.job_id,
@@ -216,8 +221,10 @@ def present_job_outputs(result: JobOutputsPage) -> dict:
     )
 
 
-def present_model_description(result: ModelDescription) -> dict:
+def present_model_description(result: ModelDescription) -> JsonObject:
     model = result.model
+    if model.data_contract is None or model.ml_contract is None:
+        raise ValueError("published model is missing its ML contract")
     return response_document(
         result.request_id,
         modelRef=model.model_ref,
@@ -235,7 +242,7 @@ def present_model_description(result: ModelDescription) -> dict:
     )
 
 
-def limits_to_api(limits: ServiceLimits) -> dict:
+def limits_to_api(limits: ServiceLimits) -> JsonObject:
     return {
         "maxMessageBytes": limits.max_message_bytes,
         "targetBatchBytes": limits.target_batch_bytes,
@@ -251,7 +258,9 @@ def limits_to_api(limits: ServiceLimits) -> dict:
     }
 
 
-def _safe_recovery(recovery) -> dict | None:
+def _safe_recovery(
+    recovery: StatusRecoveryRecord | None,
+) -> JsonObject | None:
     if recovery is None:
         return None
     checkpoint = recovery.checkpoint
@@ -273,7 +282,7 @@ def _safe_recovery(recovery) -> dict | None:
     }
 
 
-def _timestamps(job) -> dict:
+def _timestamps(job: JobRecord) -> JsonObject:
     return {
         "createdAt": _timestamp(job.created_at),
         "updatedAt": _timestamp(job.updated_at),
@@ -285,7 +294,7 @@ def _timestamps(job) -> dict:
     }
 
 
-def _timestamp(value) -> str | None:
+def _timestamp(value: float | datetime | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):

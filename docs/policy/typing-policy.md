@@ -9,8 +9,10 @@
 
 ## Python type hints
 
-Новая или изменяемая public/reusable функция production-кода указывает типы
-параметров и результата. Для private функции аннотации обязательны, если она:
+Канонический production-код типизируется полностью: функции и методы указывают
+типы параметров и результата, callback-и и коллекции раскрывают тип элементов,
+а состояние объекта не появляется как неявный `Unknown`. Для private функции
+это особенно важно, если она:
 
 - принимает callback, iterator или вложенную структуру;
 - пересекает module boundary;
@@ -22,6 +24,13 @@ Bare `dict`, `list`, `tuple` и `set` в аннотациях не исполь�
 `Any`, `cast`, `# type: ignore` и `# pyright: ignore` допустимы только на
 неизбежной dynamic boundary с узкой причиной. Они не применяются для скрытия
 ошибок или быстрого прохождения checker-а.
+
+Устойчивая конфигурация передаётся одной immutable dataclass, а не параллельным
+набором scalar-параметров и не `dict[str, object]`. После parsing boundary код
+обращается к `config.lr`, `config.epochs` и другим именованным
+полям. Второй набор аргументов, дублирующий поля той же конфигурации, не
+поддерживается: он создаёт два источника истины. В частности, `Trainer`
+принимает целиком `TrainConfig`.
 
 ## Boundary и внутренние структуры
 
@@ -75,8 +84,11 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 ## Pyright
 
 Конфигурация находится только в `[tool.pyright]` файла `pyproject.toml`.
-Текущий `strict` scope перечислен там явно и расширяется постепенно после
-устранения diagnostics в следующем устойчивом module boundary.
+Текущий `strict` scope перечислен там явно. Он охватывает канонические
+production-модули admin/CLI/contracts, весь worker, service domain/application,
+Flight ingress, PostgreSQL/artifact/process adapters и service bootstrap.
+Legacy compatibility facades остаются только тонкими re-export paths и не
+являются владельцами type contract.
 
 Правила ratchet:
 
@@ -86,9 +98,17 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 - legacy compatibility facade не становится первым владельцем type contract;
 - отсутствие module в strict scope не разрешает ухудшать его типы.
 
-Стандартная команда:
+Ruff с набором правил `ANN` отдельно требует явные типы параметров и
+результатов: выведенного Pyright return type недостаточно. Из этой проверки
+исключены tests и legacy compatibility facades. Явный `Any` в production
+signatures разрешён только в двух зафиксированных dynamic boundaries:
+forwarding аргументов `argparse` в `app/cli/help.py` и ленивый PyTorch runtime
+команды `gmark`, который сохраняет изоляцию control plane от Torch/CUDA.
+
+Стандартные команды:
 
 ```bash
+./.venv/bin/python -m ruff check .
 ./.venv/bin/pyright
 ```
 

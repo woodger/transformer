@@ -1,6 +1,9 @@
 import torch
 
-from app.contracts.worker.v3.config import CheckpointSelectionConfig
+from app.contracts.worker.v3.config import (
+    CheckpointSelectionConfig,
+    TrainConfig,
+)
 from app.metrics import TrainMetrics
 from app.training.trainer import Trainer
 
@@ -56,12 +59,17 @@ def test_trainer_config_line_contains_static_run_configuration():
     trainer = Trainer(
         model=torch.nn.Linear(2, 7),
         device=torch.device("cpu"),
-        lr=5e-4,
-        batch_size=256,
-        epochs=1,
-        selection=CheckpointSelectionConfig(min_delta=0.0, patience=1),
-        loss_stage=4,
-        stage_size=4,
+        train_config=TrainConfig(
+            lr=5e-4,
+            batch_size=256,
+            epochs=1,
+            selection=CheckpointSelectionConfig(
+                min_delta=0.0,
+                patience=1,
+            ),
+            loss_stage=4,
+            stage_size=4,
+        ),
         metrics_context={"hidden": 256, "layers": 4, "seq_len": 10},
     )
 
