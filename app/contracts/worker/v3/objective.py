@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
+
+import rfc8785
 
 TARGET_SCHEMA_ID = "inventory.target.v1"
 PREDICTION_SCHEMA_ID = "transformer.prediction.target-aligned.v1"
@@ -89,13 +90,7 @@ def objective_config(config) -> dict:
 
 
 def objective_config_sha256(config) -> str:
-    payload = json.dumps(
-        objective_config(config),
-        ensure_ascii=True,
-        allow_nan=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    payload = rfc8785.dumps(objective_config(config))
     return hashlib.sha256(payload).hexdigest()
 
 

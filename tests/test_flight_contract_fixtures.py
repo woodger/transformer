@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from copy import deepcopy
@@ -57,6 +58,7 @@ FIXTURE_ROOT = (
 JSON_ROOT = FIXTURE_ROOT / "json"
 ARROW_ROOT = FIXTURE_ROOT / "arrow"
 SCHEMA_ROOT = FIXTURE_ROOT.parent / "schemas"
+NODE_OBJECTIVE_DIGEST = FIXTURE_ROOT / "objective_config_sha256.mjs"
 
 REQUEST_FIXTURES = {
     "capabilities.request.json": "query.schema.json",
@@ -221,6 +223,30 @@ def test_fit_objective_fixture_pins_the_cross_language_digest():
 
     assert fixture == objective_config(config)
     assert objective_config_sha256(config) == _read_json(
+        "create-fit.request.json"
+    )["mlContract"]["objectiveConfigSha256"]
+
+
+def test_node_jcs_matches_the_normative_objective_digest():
+    node = shutil.which("node")
+    assert node is not None, (
+        "Node.js is required for the cross-language contract test"
+    )
+
+    result = subprocess.run(
+        [
+            node,
+            str(NODE_OBJECTIVE_DIGEST),
+            str(JSON_ROOT / "objective-config.fit.json"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.stderr == ""
+    assert result.stdout.strip() == _read_json(
         "create-fit.request.json"
     )["mlContract"]["objectiveConfigSha256"]
 

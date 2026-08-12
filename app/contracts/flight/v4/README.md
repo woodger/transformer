@@ -193,9 +193,15 @@ predictionSpace        target
 Точная форма канонической objective configuration задана
 `schemas/objective-config.schema.json`. Фикстура
 `fixtures/json/objective-config.fit.json` соответствует `trainingConfig` из
-`create-fit.request.json`; SHA-256 её компактного JSON с отсортированными
-ключами равен `objectiveConfigSha256` create-запроса. Это нормативная
-cross-language пара для реализации хеша Consumer-ом.
+`create-fit.request.json`. Документ канонизируется строго по
+[RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), а SHA-256
+вычисляется над полученными UTF-8 bytes. JCS использует ECMAScript serialization
+для JSON numbers: `1.0` и `1`, а также `0.0` и `0`, дают одинаковые bytes.
+Нормативный digest fixture равен
+`2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c`.
+Скрипт `fixtures/objective_config_sha256.mjs` независимо вычисляет его в
+Node.js; Python и Node.js результаты проверяются одним contract test. Это
+нормативная cross-language пара для реализации хеша Consumer-ом.
 
 Публичный prediction совпадает с target по индексу:
 

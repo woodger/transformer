@@ -34,6 +34,9 @@
 
 ### Fixed
 
+- `objectiveConfigSha256` теперь вычисляется по RFC 8785/JCS, поэтому Python и
+  Node.js одинаково канонизируют JSON numbers, включая пары `1.0`/`1` и
+  `0.0`/`0`. Golden digest и cross-language contract test обновлены.
 - Flight v4 использует единое canonical определение Arrow physical
   schema для ingress, fingerprint, fixtures, durable replay и worker output.
   Неканоническая nested nullability отклоняется с `INVALID_ARGUMENT` до

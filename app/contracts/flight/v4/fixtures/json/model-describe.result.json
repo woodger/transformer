@@ -17,7 +17,7 @@
     "targetSchemaId": "inventory.target.v1",
     "predictionSchemaId": "transformer.prediction.target-aligned.v1",
     "objectiveId": "transformer.objective.target-aligned.v1",
-    "objectiveConfigSha256": "70ccf944fa5aa94f8e51836c28b105779d17cc660ecf88c608cca9ebe171866a",
+    "objectiveConfigSha256": "2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c",
     "checkpointFormat": "transformer-checkpoint-v3",
     "targetWidth": 6,
     "predictionSpace": "target"

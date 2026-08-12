@@ -147,9 +147,14 @@ checkpoint. Нефинитный или неполный score является 
 
 ## Каноническая objective configuration
 
-`objectiveConfigSha256` — SHA-256 от UTF-8 JSON полной objective
-configuration. JSON сериализуется с сортировкой ключей, без пробелов и без
-NaN/Infinity. Документ включает:
+`objectiveConfigSha256` — SHA-256 от JCS-представления полной objective
+configuration по [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html).
+Документ должен принадлежать I-JSON; JCS рекурсивно сортирует свойства по
+UTF-16 code units, сериализует primitives и числа по правилам ECMAScript, не
+добавляет whitespace и кодирует результат в UTF-8. `NaN`, `Infinity`,
+повторяющиеся имена свойств и некорректный Unicode запрещены. Числа `1.0` и
+`1`, а также `0.0` и `0`, имеют одно каноническое представление. Документ
+включает:
 
 - тип, semantic index, `global_row_mean` normalization и вес каждого `L0…L5`;
 - private auxiliary losses и их коэффициенты;
@@ -164,6 +169,11 @@ NaN/Infinity. Документ включает:
 checkpoint, recovery metadata, published model metadata и результат
 `model.describe`. Fit отклоняется до создания job, если хеш не соответствует
 фактической `trainingConfig` и текущему objective Transformer.
+
+Нормативная fit fixture имеет digest
+`2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c`.
+Один digest независимо проверяется Python-реализацией Transformer и Node.js
+contract test.
 
 ## Model lifecycle
 

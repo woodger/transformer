@@ -143,9 +143,17 @@ Inventory владеет каноническим документом, digest �
 [`objective-config.schema.json`](../app/contracts/flight/v4/schemas/objective-config.schema.json),
 а нормативная cross-language пара документ/digest — фикстурами
 [`objective-config.fit.json`](../app/contracts/flight/v4/fixtures/json/objective-config.fit.json)
-и create-fit. JSON кодируется в UTF-8 с отсортированными ключами, компактными
-разделителями, ASCII escaping и запретом `NaN`/`Infinity`. Transformer
-независимо строит тот же документ и отклоняет несовпадение до создания job.
+и create-fit. Документ канонизируется строго по
+[RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), после чего SHA-256
+вычисляется над полученными UTF-8 bytes. В частности, JCS использует
+ECMAScript-сериализацию чисел, поэтому `1.0` и `1` дают одинаковое
+представление. `NaN`, `Infinity` и другие значения вне I-JSON запрещены.
+Нормативный digest fit fixture:
+`2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c`.
+Node.js-проверка находится в
+[`objective_config_sha256.mjs`](../app/contracts/flight/v4/fixtures/objective_config_sha256.mjs).
+Transformer независимо строит тот же документ и отклоняет несовпадение до
+создания job.
 
 На максимальном loss stage каждая из шести координат имеет прямой supervised
 loss. `directLossWeights` содержит шесть положительных весов. Поле `selection`

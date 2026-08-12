@@ -54,6 +54,11 @@ process envelopes в `app/contracts/worker/v3/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
+Cross-language проверка `objectiveConfigSha256` запускает Node.js-скрипт из
+Flight v4 fixtures и сравнивает его RFC 8785/JCS digest с Python runtime.
+Скрипт не использует npm dependencies; отсутствие Node.js блокирует полный
+contract test suite, а не переводит проверку в skip.
+
 JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
 `$ref` разрешаются только из каталога schemas соответствующего versioned
 contract.
