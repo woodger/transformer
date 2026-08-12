@@ -4,8 +4,9 @@
 > и ownership данных Transformer Arrow Flight service.
 
 Проект использует Clean Architecture отдельно для каждого исполняемого
-процесса. Нормативное решение и его причины зафиксированы в
-[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md).
+процесса. Нормативные решения и их причины зафиксированы в
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md) и
+[ADR 0006](../adr/0006-service-application-boundaries.md).
 
 ## Процессы и composition roots
 
@@ -42,21 +43,24 @@ service/adapters/outbound/{postgres,artifact_storage,worker_process,worker_probe
 - `service/domain` содержит job states, error codes, immutable records и pure
   lifecycle policies. Он не знает о Flight, SQLAlchemy, PyArrow, filesystem,
   subprocess и Torch.
-- `service/application` содержит use cases, scheduler orchestration и
-  capability-oriented ports. Он зависит только от domain и нейтральных
-  contracts.
+- `service/application` содержит типизированные commands, queries, нейтральные
+  results, scheduler orchestration и capability-oriented ports. Он зависит
+  только от domain и внутреннего worker contract.
 - inbound Flight adapter валидирует wire DTO, выполняет mapping и преобразует
-  application errors в Flight/Arrow status.
+  application results и errors в Flight documents и Arrow status. Action names,
+  descriptor paths, schema IDs и wire casing не попадают в application.
 - outbound adapters реализуют PostgreSQL, artifact storage, worker process и
-  worker capability boundaries. Inbound и outbound adapters не импортируют
-  друг друга.
+  worker capability boundaries. PostgreSQL adapter владеет транзакциями,
+  idempotency, row locks и mapping database projections. Inbound и outbound
+  adapters не импортируют друг друга.
 - `service/bootstrap` — единственное место сборки конкретных service adapters.
 
-Ports называются по возможностям: `JobRepository`, `ArtifactPublisher`,
-`ExecutionPlanBuilder`, `AttemptProcess`, `WorkerExecutor`,
-`WorkerCapabilities`, `DeviceLeaseManager`. Имена технологий в application
-ports и generic `Repository[T]` не допускаются. Каждый port имеет текущего
-runtime consumer и adapter; интерфейсы «на будущее» не создаются.
+Ports называются по возможностям: `JobLifecycleStore`, `JobQueryStore`,
+`InputUploadStore`, `OutputAccessStore`, `JobRepository`,
+`ArtifactPublisher`, `ExecutionPlanBuilder`, `AttemptProcess`,
+`WorkerExecutor`, `WorkerCapabilities`, `DeviceLeaseManager`. Имена технологий
+в application ports и generic `Repository[T]` не допускаются. Каждый port имеет
+текущего runtime consumer и adapter; интерфейсы «на будущее» не создаются.
 
 ## Worker
 
@@ -70,6 +74,12 @@ device/reproducibility runtime и checkpoint staging. Один процесс о
 - не подключается к PostgreSQL и не знает о Flight, bearer auth, idempotency,
   public job state или `modelRef`;
 - не публикует output, recovery generation или model generation.
+
+Worker является осознанным исключением из внутреннего послойного разделения:
+его executor может напрямую использовать PyArrow, Torch и filesystem как части
+одного принадлежащего worker runtime. Ports вокруг tensors, Arrow replay и
+checkpoint storage не вводятся без измеримой проблемы или второго
+implementation.
 
 `app/data`, `app/model`, `app/training`, `app/storage`, `app/runtime` и
 `app/metrics` временно сохраняются только как compatibility import facades.
@@ -129,6 +139,7 @@ Ownership хранения:
 
 - domain не зависит от application, adapters или bootstrap;
 - application не зависит от adapters или bootstrap;
+- application не зависит от публичного Flight contract;
 - adapters зависят от application/domain, но не от другого направления
   transport-а;
 - service не импортирует `app.worker` implementation;

@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Service boundary доведена до полноценной Clean Architecture: application
+  commands/queries используют нейтральные DTO и capability ports, Flight
+  presentation находится во inbound adapter, а PostgreSQL transactions,
+  idempotency и projection mapping — в outbound adapters. Composition roots
+  отдельно собирают job control и data plane; worker остаётся осознанным
+  изолированным runtime-исключением без дополнительного слоения.
+
 ### Fixed
 
 - Flight v3 теперь использует единое canonical определение Arrow physical

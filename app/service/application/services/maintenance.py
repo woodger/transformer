@@ -6,6 +6,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.service.application.ports.maintenance import (
+    MaintenanceRepository,
+    RetentionArtifactStore,
+)
+
 
 @dataclass(frozen=True)
 class MaintenanceResult:
@@ -39,9 +44,9 @@ class MaintenanceService:
     def __init__(
         self,
         config,
-        ledger,
-        spool,
-        recovery_store=None,
+        ledger: MaintenanceRepository,
+        spool: RetentionArtifactStore,
+        recovery_store: RetentionArtifactStore | None = None,
         *,
         interval_seconds: float = 60.0,
         queue_reconciler: Callable[[], None] | None = None,

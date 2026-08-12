@@ -35,7 +35,11 @@ from app.flight.observability import JsonLogger, OperationalMetrics
 from app.flight.output import OutputHandler, _stream_batches
 from app.flight.server import TransformerFlightServer
 from app.flight.spool import Spool
+from app.service.adapters.inbound.flight.output import (
+    OutputHandler as FlightOutputHandler,
+)
 from app.service.domain.input_manifest import manifest_sha256
+from app.service.domain.records import OutputRecord
 
 
 def _auth(token="secret"):
@@ -269,8 +273,18 @@ def test_do_get_opens_output_before_return_and_survives_retention_unlink(
 ):
     path = tmp_path / "output.arrow"
     expected = _write_two_batch_output(path)
-    ledger = SimpleNamespace(
-        resolve_ticket=lambda token, owner_subject: {"relative_path": "output.arrow"}
+    access = SimpleNamespace(
+        resolve=lambda owner, token: OutputRecord(
+            job_id="job-id",
+            ordinal=0,
+            rows=2,
+            batches=2,
+            byte_count=path.stat().st_size,
+            sha256="0" * 64,
+            schema_fingerprint="1" * 64,
+            relative_path="output.arrow",
+            published_at=0.0,
+        )
     )
     spool = SimpleNamespace(absolute_path=lambda relative: str(path))
 
@@ -279,8 +293,11 @@ def test_do_get_opens_output_before_return_and_survives_retention_unlink(
             self.schema = schema
             self.generator = generator
 
-    monkeypatch.setattr("app.flight.output.flight.GeneratorStream", CapturedStream)
-    stream = OutputHandler(SimpleNamespace(), ledger, spool).do_get(
+    monkeypatch.setattr(
+        "app.service.adapters.inbound.flight.output.flight.GeneratorStream",
+        CapturedStream,
+    )
+    stream = FlightOutputHandler(access, spool).do_get(
         SimpleNamespace(is_cancelled=lambda: False),
         "inventory",
         flight.Ticket(b"opaque"),

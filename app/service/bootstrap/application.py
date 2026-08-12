@@ -3,10 +3,7 @@ import signal
 import threading
 
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
-from app.service.adapters.inbound.flight.coordinator import JobCoordinator
-from app.service.adapters.inbound.flight.output import OutputHandler
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
-from app.service.adapters.inbound.flight.upload import UploadHandler
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifact_storage.spool import Spool
@@ -23,6 +20,11 @@ from app.service.adapters.outbound.worker_probe.device_inventory import (
 )
 from app.service.adapters.outbound.worker_process.process import recover_process_groups
 from app.service.bootstrap.config import load_config
+from app.service.bootstrap.data_plane import (
+    build_output_handler,
+    build_upload_handler,
+)
+from app.service.bootstrap.job_control import build_job_coordinator
 from app.service.bootstrap.maintenance import MaintenanceService
 from app.service.bootstrap.worker_pool import WorkerPool
 
@@ -159,18 +161,18 @@ class FlightApplication:
                 logger=logger,
                 device_inventory=device_inventory,
             )
-            coordinator = JobCoordinator(
+            coordinator = build_job_coordinator(
                 config,
                 ledger,
                 spool,
+                recovery_store,
                 metrics=metrics,
                 logger=logger,
                 cancel_notifier=worker.notify_cancel,
                 queue_notifier=worker.notify_queued,
                 device_inventory=device_inventory,
-                recovery_store=recovery_store,
             )
-            upload = UploadHandler(
+            upload = build_upload_handler(
                 config,
                 ledger,
                 spool,
@@ -183,7 +185,7 @@ class FlightApplication:
                 metrics=metrics,
                 logger=logger,
             )
-            output = OutputHandler(
+            output = build_output_handler(
                 config,
                 ledger,
                 spool,

@@ -5,43 +5,34 @@ import pyarrow as pa
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
-    ErrorCode,
-    InputState,
 )
 from app.service.adapters.inbound.flight.contract import (
     encode_document,
     parse_input_descriptor,
 )
-from app.service.adapters.inbound.flight.errors import (
-    ServiceError,
-    failed_precondition,
-    not_found,
-    resource_exhausted,
-)
 from app.service.adapters.inbound.flight.upload_session import InputUploadSession
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.domain.policies import resolve_device
+from app.service.application.ports.input_uploads import InputArtifactStore
+from app.service.application.services.input_upload import InputUploadLifecycle
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
 
 
 class UploadHandler:
     def __init__(
         self,
         config,
-        ledger,
-        spool,
-        recovery_store=None,
+        lifecycle: InputUploadLifecycle,
+        artifact_stores: dict[str, InputArtifactStore],
         *,
-        cuda_available=None,
         queue_notifier=None,
         input_notifier=None,
         metrics=None,
         logger=None,
     ):
         self.config = config
-        self.ledger = ledger
-        self.spool = spool
-        self.recovery_store = recovery_store
-        self._cuda_available = cuda_available or (lambda: False)
+        self.lifecycle = lifecycle
+        self.artifact_stores = artifact_stores
         self._queue_notifier = queue_notifier
         self._input_notifier = input_notifier
         self.metrics = metrics or OperationalMetrics()
@@ -60,93 +51,58 @@ class UploadHandler:
 
     def _handle(self, owner, descriptor, reader, writer):
         job_id, descriptor_ordinal = parse_input_descriptor(descriptor)
-        if descriptor_ordinal >= self.config.max_payloads_per_job:
-            raise resource_exhausted(
-                f"input ordinal {descriptor_ordinal} exceeds the per-job payload limit"
-            )
-        job = self.ledger.get_job(job_id, owner_subject=owner)
-        if job is None:
-            raise not_found("job not found")
-        if job["input_state"] != InputState.OPEN.value:
-            raise failed_precondition("job no longer accepts inputs")
-
-        decision = resolve_device(
-            job["requested_device"],
-            bool(self._cuda_available()),
-        )
-        if decision.error_code is not None:
-            raise ServiceError(
-                decision.error_code,
-                "explicit CUDA device is unavailable",
-            )
-
+        self.lifecycle.validate_ordinal(descriptor_ordinal)
         outcome = InputUploadSession(
             self.config,
-            self.ledger,
-            (
-                self.recovery_store
-                if (
-                    job["operation"] == "fit"
-                    and self.recovery_store is not None
-                )
-                else self.spool
-            ),
-            storage_class=(
-                "recovery"
-                if (
-                    job["operation"] == "fit"
-                    and self.recovery_store is not None
-                )
-                else "runtime"
-            ),
+            self.lifecycle,
+            self.artifact_stores,
             owner=owner,
-            job=job,
+            job_id=job_id,
             ordinal=descriptor_ordinal,
             reader=reader,
-            selected_device=decision.selected,
         ).run()
         record = outcome.record
         if outcome.committed_now:
-            self.metrics.add("uploadBytes", record["bytes"])
-            self.metrics.add("uploadRows", record["rows"])
-            self.metrics.add("uploadBatches", record["batches"])
+            self.metrics.add("uploadBytes", record.byte_count)
+            self.metrics.add("uploadRows", record.rows)
+            self.metrics.add("uploadBatches", record.batches)
             self.logger.event(
                 "flight.input.committed",
-                jobId=record["job_id"],
-                payloadId=record["payload_id"],
-                ordinal=record["ordinal"],
-                rows=record["rows"],
-                batches=record["batches"],
-                bytes=record["bytes"],
+                jobId=record.job_id,
+                payloadId=record.payload_id,
+                ordinal=record.ordinal,
+                rows=record.rows,
+                batches=record.batches,
+                bytes=record.byte_count,
             )
-            if record["queued"] and self._queue_notifier is not None:
-                self._queue_notifier(record["job_id"])
+            if record.queued and self._queue_notifier is not None:
+                self._queue_notifier(record.job_id)
             elif (
-                record["frontier_advanced"]
+                record.frontier_advanced
                 and self._input_notifier is not None
             ):
-                self._input_notifier(record["job_id"])
+                self._input_notifier(record.job_id)
 
         # The durable ledger commit deliberately precedes the sole PutResult.
         writer.write(pa.py_buffer(encode_document(_put_result(record))))
 
 
-def _put_result(record: dict) -> dict:
+def _put_result(record) -> dict:
     return {
         "contract": CONTRACT_NAME,
         "version": CONTRACT_VERSION,
-        "jobId": record["job_id"],
-        "payloadId": record["payload_id"],
-        "ordinal": record["ordinal"],
+        "jobId": record.job_id,
+        "payloadId": record.payload_id,
+        "ordinal": record.ordinal,
         "status": "committed",
-        "rows": record["rows"],
-        "batches": record["batches"],
-        "bytes": record["bytes"],
-        "sha256": record["sha256"],
-        "schemaFingerprint": record["schema_fingerprint"],
-        "inputRevision": record["input_revision"],
-        "nextInputOrdinal": record["next_input_ordinal"],
-        "queued": record["queued"],
+        "rows": record.rows,
+        "batches": record.batches,
+        "bytes": record.byte_count,
+        "sha256": record.sha256,
+        "schemaFingerprint": record.schema_fingerprint,
+        "inputRevision": record.input_revision,
+        "nextInputOrdinal": record.next_input_ordinal,
+        "queued": record.queued,
     }
 
 

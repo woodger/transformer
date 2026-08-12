@@ -115,6 +115,7 @@ def validate_upload_metadata(document: dict) -> dict:
         "payload_id": _uuid(document, "payloadId"),
         "ordinal": _ordinal(document, "ordinal"),
         "schema_id": schema_id,
+        "input_kind": "fit" if schema_id == FIT_SCHEMA_ID else "predict",
         "data_contract_sha256": _sha256(document, "dataContractSha256"),
         "rows": _nonnegative_integer(document, "rows"),
     }
