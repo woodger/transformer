@@ -3,6 +3,7 @@
 - Статус: принято
 - Дата: 2026-08-12
 - Уточняет: service boundaries из ADR 0004
+- Текущая публичная версия Flight определяется ADR 0007
 
 ## Контекст
 
@@ -14,8 +15,10 @@ Inbound adapters одновременно координировали ledger, a
 job lifecycle. Формальный import graph был направлен внутрь, но прикладная
 граница оставалась неполной.
 
-Flight v3 является текущим штатным публичным контрактом. Решение не вводит
-Flight v2 dispatcher, aliases, fallback или иной v2 compatibility surface.
+На момент принятия решения Flight v3 был штатным публичным контрактом. ADR 0007
+заменил публичную границу на Flight v4, не изменив описанные здесь service
+boundaries. Runtime не содержит compatibility surface, aliases или fallback
+для прежних версий Flight.
 
 ## Решение
 
@@ -42,10 +45,13 @@ PostgreSQL adapter владеет:
 - fencing checks непосредственно перед mutation commit;
 - преобразованием строк и page projections PostgreSQL в domain/application
   records;
-- декодированием ранее записанного результата Flight v3 при точном replay.
+- декодированием ранее записанного idempotency result текущего Flight-контракта
+  при точном replay.
 
-Последний пункт сохраняет уже зафиксированные v3 idempotency results во время
-внутреннего рефакторинга. Он не является поддержкой старой версии протокола.
+На момент рефакторинга последний пункт сохранял уже зафиксированные v3
+idempotency results. Миграция `0006` удалила прежние records; тот же
+архитектурный инвариант действует для Flight v4 и не является поддержкой старой
+версии протокола.
 
 Composition roots `service/bootstrap/job_control.py` и
 `service/bootstrap/data_plane.py` являются единственными местами сборки этих

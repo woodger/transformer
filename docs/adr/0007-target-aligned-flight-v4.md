@@ -228,9 +228,9 @@ Wall-clock telemetry исключается. Checkpoint сравнивается
 и выбор кандидата. SHA-256 сериализованного файла не является критерием
 эквивалентности.
 
-## Cutover
+## Выполненная breaking-миграция
 
-Миграция `0006` необратима и образует одну breaking-границу:
+Миграция `0006` необратима и образовала одну breaking-границу:
 
 1. остановить Inventory workers и Transformer;
 2. сохранить резервную копию PostgreSQL и model artifacts;
@@ -242,6 +242,10 @@ Wall-clock telemetry исключается. Checkpoint сравнивается
 state. Access tokens, model identities и aliases сохраняются. Старые models не
 получают `mlContract` и остаются недоступными для v4 prediction. Неявной
 сертификации checkpoint нет.
+
+Cutover завершён. Flight v4 является штатным базовым контрактом. Дальнейшие
+изменения не предусматривают v3 compatibility surface, aliases, fallback или
+переходные режимы.
 
 ## Проверки приёмки
 
