@@ -3,6 +3,7 @@ from typing import cast
 
 import torch
 
+from app.worker.metrics.paths import resolve_metrics_path
 from app.worker.model.transformer import TransformerModel
 from app.worker.training.run_config import (
     ModelConfig,
@@ -11,7 +12,6 @@ from app.worker.training.run_config import (
     train_config_from_args,
 )
 from app.worker.training.trainer import Trainer
-from app.worker.utils import resolve_metrics_path
 
 
 def build_model(

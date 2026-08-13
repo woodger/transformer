@@ -59,9 +59,10 @@ CLI help является публичным контрактом.
 
 Источники:
 
-- `app/cli/help.py` — parser metadata, descriptions и rendering;
+- `app/cli/parser.py` и `app/cli/parsers/` — parser tree и command groups;
+- `app/cli/formatting.py` и `app/cli/options.py` — rendering и общие options;
 - `app/cli/args.py` — parsing entry;
-- `app/commands/` и `app/admin/` — command behavior;
+- `app/local/` и `app/admin/` — command behavior;
 - process roots в `app/service/bootstrap/`, `app/worker/bootstrap/` и
   `app/admin/bootstrap/` — resource lifecycle.
 
@@ -82,8 +83,9 @@ transformer <command> --help
 ## Environment
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
-группам переменных. Фактические правила parsing и defaults находятся в
-`app/config.py`, `app/service/bootstrap/config.py` и
+группам переменных. Фактические правила parsing и defaults находятся у
+владельцев runtime: `app/local/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v3/config.py` и
 `app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:

@@ -112,9 +112,19 @@ blocker.
 
 ## Структура и именование
 
-Используется pytest:
+Используется pytest. Тесты сначала группируются по уровню, затем по владельцу:
 
-- файл — `tests/test_<subject>.py`;
+```text
+tests/unit/{cli,local,service,worker}
+tests/contract/{flight_v4,worker_v3}
+tests/integration/{flight,postgres,worker_process}
+tests/architecture
+tests/support
+```
+
+Правила именования:
+
+- файл — `tests/<level>/<owner>/test_<subject>.py`;
 - функция — `test_<expected_behavior>`;
 - fixture — существительное, описывающее предоставляемый resource;
 - `@pytest.mark.parametrize` — для одной семантики на наборе inputs.
@@ -296,7 +306,7 @@ def test_fit_stream_runs_epochs_over_all_payloads():
 Сначала запускается изменённый module или группа:
 
 ```bash
-./.venv/bin/python -m pytest -q tests/test_flight_config.py
+./.venv/bin/python -m pytest -q tests/unit/service/test_config.py
 ```
 
 Перед release, после изменений общих contracts и после широкого рефакторинга

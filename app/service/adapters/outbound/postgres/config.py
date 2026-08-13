@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from sqlalchemy import URL
 
-from app.config import PROJECT_ROOT
+from app.project import PROJECT_ROOT
 
 _REQUIRED_KEYS = (
     "POSTGRES_HOST",

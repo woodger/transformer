@@ -82,14 +82,16 @@ user-site. Полный локальный сценарий находится �
 
 ```text
 app/main.py          # тонкий CLI entrypoint
-app/cli/             # argparse и форматированный --help/--version
+app/cli/             # parser, help formatting и command-group parsers
+app/local/           # локальные file/stream commands и GPU diagnostics
 app/contracts/       # public Flight v4 и internal worker v3 contracts
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots
+app/project.py       # identity и путь корня проекта
 docs/                # пользовательская документация, ADR и политики
 recovery/            # runtime-created persistent fit inputs/checkpoints
-app/config.py        # project defaults
+tests/               # unit, contract, integration и architecture tests
 ```
 
 ## Развертывание

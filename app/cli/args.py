@@ -1,7 +1,7 @@
 import argparse
 from collections.abc import Sequence
 
-from app.cli.help import build_parser
+from app.cli.parser import build_parser
 
 
 def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:

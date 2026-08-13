@@ -5,8 +5,8 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
+from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.metrics.types import TrainMetrics
-from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 
 def reset_metrics_log(path: str | None) -> None:

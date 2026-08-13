@@ -1,24 +1,22 @@
 from collections.abc import Sequence
 from typing import TypeVar, cast
 
-from app.config import (
-    BATCH_SIZE,
-    CONTEXT_MODE,
-    D_MODEL,
-    DETERMINISTIC,
-    DROPOUT,
-    EPOCHS,
-    LOSS_SCHEDULE,
-    LOSS_STAGE,
-    LR,
-    NHEAD,
-    NUM_LAYERS,
-    SEED,
-    STAGE_SIZE,
-    WEIGHT_DECAY,
-)
 from app.contracts.worker.v3.config import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_CONTEXT_MODE,
+    DEFAULT_DETERMINISTIC,
     DEFAULT_DIRECT_LOSS_WEIGHTS,
+    DEFAULT_DROPOUT,
+    DEFAULT_EPOCHS,
+    DEFAULT_HIDDEN,
+    DEFAULT_LAYERS,
+    DEFAULT_LOSS_SCHEDULE,
+    DEFAULT_LOSS_STAGE,
+    DEFAULT_LR,
+    DEFAULT_NHEAD,
+    DEFAULT_SEED,
+    DEFAULT_STAGE_SIZE,
+    DEFAULT_WEIGHT_DECAY,
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
@@ -53,24 +51,40 @@ def model_config_from_args(
         seq_len=seq_len,
         hidden=_pick(
             _optional_arg(args, "hidden", int),
-            D_MODEL if checkpoint_config is None else checkpoint_config.hidden,
+            (
+                DEFAULT_HIDDEN
+                if checkpoint_config is None
+                else checkpoint_config.hidden
+            ),
         ),
         layers=_pick(
             _optional_arg(args, "layers", int),
-            NUM_LAYERS if checkpoint_config is None else checkpoint_config.layers,
+            (
+                DEFAULT_LAYERS
+                if checkpoint_config is None
+                else checkpoint_config.layers
+            ),
         ),
         dropout=_pick(
             _optional_arg(args, "dropout", float),
-            DROPOUT if checkpoint_config is None else checkpoint_config.dropout,
+            (
+                DEFAULT_DROPOUT
+                if checkpoint_config is None
+                else checkpoint_config.dropout
+            ),
         ),
         nhead=_pick(
             _optional_arg(args, "nhead", int),
-            NHEAD if checkpoint_config is None else checkpoint_config.nhead,
+            (
+                DEFAULT_NHEAD
+                if checkpoint_config is None
+                else checkpoint_config.nhead
+            ),
         ),
         context_mode=_pick(
             _optional_arg(args, "context_mode", str),
             (
-                CONTEXT_MODE
+                DEFAULT_CONTEXT_MODE
                 if checkpoint_config is None
                 else checkpoint_config.context_mode
             ),
@@ -119,24 +133,28 @@ def train_config_from_args(
     return TrainConfig(
         lr=_pick(
             _optional_arg(args, "lr", float),
-            LR if checkpoint_config is None else checkpoint_config.lr,
+            DEFAULT_LR if checkpoint_config is None else checkpoint_config.lr,
         ),
         batch_size=_pick(
             _optional_arg(args, "batch_size", int),
             (
-                BATCH_SIZE
+                DEFAULT_BATCH_SIZE
                 if checkpoint_config is None
                 else checkpoint_config.batch_size
             ),
         ),
         epochs=_pick(
             _optional_arg(args, "epochs", int),
-            EPOCHS if checkpoint_config is None else checkpoint_config.epochs,
+            (
+                DEFAULT_EPOCHS
+                if checkpoint_config is None
+                else checkpoint_config.epochs
+            ),
         ),
         loss_stage=_pick(
             _optional_arg(args, "loss_stage", int),
             (
-                LOSS_STAGE
+                DEFAULT_LOSS_STAGE
                 if checkpoint_config is None
                 else checkpoint_config.loss_stage
             ),
@@ -144,7 +162,7 @@ def train_config_from_args(
         loss_schedule=_pick(
             _optional_arg(args, "loss_schedule", str),
             (
-                LOSS_SCHEDULE
+                DEFAULT_LOSS_SCHEDULE
                 if checkpoint_config is None
                 else checkpoint_config.loss_schedule
             ),
@@ -152,7 +170,7 @@ def train_config_from_args(
         stage_size=_pick(
             _optional_arg(args, "stage_size", int),
             (
-                STAGE_SIZE
+                DEFAULT_STAGE_SIZE
                 if checkpoint_config is None
                 else checkpoint_config.stage_size
             ),
@@ -164,7 +182,7 @@ def train_config_from_args(
         weight_decay=_pick(
             _optional_arg(args, "weight_decay", float),
             (
-                WEIGHT_DECAY
+                DEFAULT_WEIGHT_DECAY
                 if checkpoint_config is None
                 else checkpoint_config.weight_decay
             ),
@@ -180,12 +198,16 @@ def train_config_from_args(
         selection=selection,
         seed=_pick(
             _optional_arg(args, "seed", int),
-            SEED if checkpoint_config is None else checkpoint_config.seed,
+            (
+                DEFAULT_SEED
+                if checkpoint_config is None
+                else checkpoint_config.seed
+            ),
         ),
         deterministic=_pick(
             _optional_arg(args, "deterministic", bool),
             (
-                DETERMINISTIC
+                DEFAULT_DETERMINISTIC
                 if checkpoint_config is None
                 else checkpoint_config.deterministic
             ),

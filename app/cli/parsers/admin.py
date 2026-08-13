@@ -1,0 +1,108 @@
+from app.cli.formatting import HelpFormatter
+from app.cli.options import add_hidden_help_argument
+from app.cli.parsers import SubparserTarget
+
+
+def add_admin_parsers(subparsers: SubparserTarget) -> None:
+    _add_auth_parsers(subparsers)
+    _add_database_parsers(subparsers)
+
+
+def _add_auth_parsers(subparsers: SubparserTarget) -> None:
+    auth = subparsers.add_parser(
+        "auth",
+        help="API access commands.",
+        formatter_class=HelpFormatter,
+    )
+    auth_commands = auth.add_subparsers(
+        dest="auth_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    tokens = auth_commands.add_parser(
+        "tokens",
+        help="API access token commands.",
+        formatter_class=HelpFormatter,
+    )
+    token_commands = tokens.add_subparsers(
+        dest="tokens_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    issue = token_commands.add_parser(
+        "issue",
+        add_help=False,
+        description="Issue an API access token and print its credential.",
+        formatter_class=HelpFormatter,
+    )
+    add_hidden_help_argument(issue)
+    issue.add_argument(
+        "--subject",
+        required=True,
+        help="Authenticated subject associated with the token.",
+    )
+    issue.set_defaults(data=None, metrics_name=None)
+    token_list = token_commands.add_parser(
+        "list",
+        add_help=False,
+        description="List API access token metadata without credentials.",
+        formatter_class=HelpFormatter,
+    )
+    add_hidden_help_argument(token_list)
+    token_list.set_defaults(data=None, metrics_name=None)
+    revoke = token_commands.add_parser(
+        "revoke",
+        add_help=False,
+        description="Revoke an API access token by ID.",
+        formatter_class=HelpFormatter,
+    )
+    add_hidden_help_argument(revoke)
+    revoke.add_argument(
+        "token_id",
+        metavar="TOKEN_ID",
+        help="API access token UUID.",
+    )
+    revoke.set_defaults(data=None, metrics_name=None)
+
+
+def _add_database_parsers(subparsers: SubparserTarget) -> None:
+    database = subparsers.add_parser(
+        "db",
+        help="Database schema commands.",
+        formatter_class=HelpFormatter,
+    )
+    database_commands = database.add_subparsers(
+        dest="db_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    migrations = database_commands.add_parser(
+        "migrations",
+        help="Database schema migration commands.",
+        formatter_class=HelpFormatter,
+    )
+    migration_commands = migrations.add_subparsers(
+        dest="migrations_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    for name, description in (
+        ("status", "Read the current and expected schema revisions."),
+        ("apply", "Apply all pending schema migrations."),
+        ("rollback", "Revert the latest applied schema migration."),
+    ):
+        command = migration_commands.add_parser(
+            name,
+            add_help=False,
+            description=description,
+            formatter_class=HelpFormatter,
+        )
+        add_hidden_help_argument(command)
+        command.set_defaults(data=None, metrics_name=None)
+
+
+__all__ = ["add_admin_parsers"]

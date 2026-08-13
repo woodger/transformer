@@ -9,12 +9,12 @@ from app.service.adapters.inbound.flight.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
 )
-from app.service.adapters.inbound.flight.contract import (
+from app.service.adapters.inbound.flight.documents import (
     data_contract_to_api,
     model_config_to_api,
     response_document,
 )
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     InputClosed,
     JobAcquired,
     JobCancelled,

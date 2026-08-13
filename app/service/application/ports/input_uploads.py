@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import BinaryIO, Protocol
 
-from app.service.application.input_models import (
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,

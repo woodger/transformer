@@ -13,12 +13,12 @@ from app.cli.args import parse_args
 if TYPE_CHECKING:
     import torch
 
-    from app.commands.fit import FitArguments, ModelBuilder, TrainerBuilder
-    from app.commands.fit_stream import FitStreamArguments
-    from app.commands.plot_metrics import PlotMetricsArguments
-    from app.commands.predict import PredictArguments
-    from app.commands.predict_stream import PredictStreamArguments
     from app.contracts.worker.v3.config import ModelConfig
+    from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
+    from app.local.fit_stream import FitStreamArguments
+    from app.local.plot_metrics import PlotMetricsArguments
+    from app.local.predict import PredictArguments
+    from app.local.predict_stream import PredictStreamArguments
     from app.worker.training.trainer import Trainer
 
 
@@ -96,7 +96,7 @@ def build_trainer(
 
 
 def fit_stream(args: FitStreamArguments, device: torch.device) -> None:
-    from app.commands.fit_stream import run
+    from app.local.fit_stream import run
 
     return run(args, device, build_model, build_trainer)
 
@@ -105,7 +105,7 @@ def predict_stream(
     args: PredictStreamArguments,
     device: torch.device,
 ) -> None:
-    from app.commands.predict_stream import run
+    from app.local.predict_stream import run
 
     return run(args, device, build_model, build_trainer)
 
@@ -116,7 +116,7 @@ def run_fit(
     model_factory: ModelBuilder,
     trainer_factory: TrainerBuilder,
 ) -> None:
-    from app.commands.fit import run
+    from app.local.fit import run
 
     return run(args, device, model_factory, trainer_factory)
 
@@ -127,19 +127,19 @@ def run_predict(
     model_factory: ModelBuilder,
     trainer_factory: TrainerBuilder,
 ) -> None:
-    from app.commands.predict import run
+    from app.local.predict import run
 
     return run(args, device, model_factory, trainer_factory)
 
 
 def run_plot_metrics(args: PlotMetricsArguments) -> None:
-    from app.commands.plot_metrics import run
+    from app.local.plot_metrics import run
 
     return run(args)
 
 
 def run_gmark(args: object) -> int:
-    from app.commands.gmark import run
+    from app.local.gmark import run
 
     return run(args)
 
@@ -151,7 +151,7 @@ def reset_metrics_log(path: str | None) -> None:
 
 
 def resolve_metrics_path(name: str | None) -> str | None:
-    from app.worker.utils import resolve_metrics_path as implementation
+    from app.worker.metrics.paths import resolve_metrics_path as implementation
 
     return implementation(name)
 

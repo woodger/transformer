@@ -9,7 +9,7 @@ from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect
 
-from app.config import PROJECT_ROOT
+from app.project import PROJECT_ROOT
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.session import Database
 

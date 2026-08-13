@@ -9,8 +9,8 @@ from app.service.adapters.inbound.flight.constants import (
 from app.service.adapters.inbound.flight.output import OutputHandler
 from app.service.adapters.inbound.flight.upload import UploadHandler
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
-from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.postgres.input_uploads import (
     PostgresInputUploadStore,
 )

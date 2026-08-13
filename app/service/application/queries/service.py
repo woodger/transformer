@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.service.application.job_models import ServiceLimits
+from app.service.application.messages.jobs import ServiceLimits
 from app.service.application.ports.devices import (
     WorkerCapabilities,
     WorkerCapabilitySnapshot,

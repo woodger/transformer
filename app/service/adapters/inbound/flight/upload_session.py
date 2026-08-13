@@ -10,8 +10,8 @@ import pyarrow.ipc as ipc
 from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
-from app.service.adapters.inbound.flight.contract import validate_upload_metadata
-from app.service.application.input_models import (
+from app.service.adapters.inbound.flight.validation import validate_upload_metadata
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,

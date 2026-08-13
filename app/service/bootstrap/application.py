@@ -11,8 +11,11 @@ from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
-from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifacts.spool import Spool
+from app.service.adapters.outbound.cuda.inventory import (
+    CudaDeviceInventory,
+)
 from app.service.adapters.outbound.postgres.config import (
     DatabaseConfig,
     load_database_config,
@@ -25,19 +28,16 @@ from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCacheService,
 )
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
-from app.service.adapters.outbound.worker_probe.device_inventory import (
-    CudaDeviceInventory,
-)
-from app.service.adapters.outbound.worker_process.process import recover_process_groups
+from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
 from app.service.bootstrap.config import FlightServiceConfig, load_config
+from app.service.bootstrap.control_plane import build_job_coordinator
 from app.service.bootstrap.data_plane import (
     build_output_handler,
     build_upload_handler,
 )
-from app.service.bootstrap.job_control import build_job_coordinator
+from app.service.bootstrap.execution import WorkerPool
 from app.service.bootstrap.maintenance import MaintenanceService
-from app.service.bootstrap.worker_pool import WorkerPool
 from app.service.domain.access import AuthIdentity
 
 

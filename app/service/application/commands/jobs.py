@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
     CloseInputCommand,

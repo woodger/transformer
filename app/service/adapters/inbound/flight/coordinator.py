@@ -26,17 +26,7 @@ from app.service.adapters.inbound.flight.constants import (
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
 )
-from app.service.adapters.inbound.flight.contract import (
-    AcquireRequestFields,
-    CancelRequestFields,
-    CreateRequestFields,
-    InputCloseRequestFields,
-    InputsListRequestFields,
-    ModelDescribeRequestFields,
-    OutputsListRequestFields,
-    RequestIdFields,
-    StatusRequestFields,
-    ValidatedActionRequest,
+from app.service.adapters.inbound.flight.documents import (
     canonical_request_hash,
     encode_document,
     response_document,
@@ -52,13 +42,25 @@ from app.service.adapters.inbound.flight.presentation import (
     present_job_status,
     present_model_description,
 )
+from app.service.adapters.inbound.flight.validation import (
+    AcquireRequestFields,
+    CancelRequestFields,
+    CreateRequestFields,
+    InputCloseRequestFields,
+    InputsListRequestFields,
+    ModelDescribeRequestFields,
+    OutputsListRequestFields,
+    RequestIdFields,
+    StatusRequestFields,
+    ValidatedActionRequest,
+)
 from app.service.application.commands.jobs import (
     AcquireJobAction,
     CancelJobAction,
     CreateJobAction,
     InputCloseAction,
 )
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
     CloseInputCommand,

@@ -5,8 +5,9 @@ cache-dir = ".cache/ruff"
 select = ["ANN", "B", "E4", "E7", "E9", "F", "I", "RUF022", "RUF043", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
-"app/cli/help.py" = ["ANN401"]
-"app/commands/gmark.py" = ["ANN401"]
+"app/cli/options.py" = ["ANN401"]
+"app/cli/parsers/__init__.py" = ["ANN401"]
+"app/local/gmark.py" = ["ANN401"]
 "tests/**/*.py" = ["ANN"]
 
 [tool.ruff.lint.isort]
@@ -23,16 +24,16 @@ markers = [
 include = [
   "app/admin",
   "app/cli",
-  "app/commands",
-  "app/config.py",
+  "app/local",
+  "app/project.py",
   "app/contracts",
   "app/main.py",
   "app/service/adapters/observability.py",
   "app/service/adapters/inbound/flight",
-  "app/service/adapters/outbound/artifact_storage",
+  "app/service/adapters/outbound/artifacts",
   "app/service/adapters/outbound/postgres",
-  "app/service/adapters/outbound/worker_probe",
-  "app/service/adapters/outbound/worker_process",
+  "app/service/adapters/outbound/cuda",
+  "app/service/adapters/outbound/worker",
   "app/service/application",
   "app/service/bootstrap",
   "app/service/domain",
@@ -42,16 +43,16 @@ include = [
 strict = [
   "app/admin",
   "app/cli",
-  "app/commands",
-  "app/config.py",
+  "app/local",
+  "app/project.py",
   "app/contracts",
   "app/main.py",
   "app/service/adapters/observability.py",
   "app/service/adapters/inbound/flight",
-  "app/service/adapters/outbound/artifact_storage",
+  "app/service/adapters/outbound/artifacts",
   "app/service/adapters/outbound/postgres",
-  "app/service/adapters/outbound/worker_probe",
-  "app/service/adapters/outbound/worker_process",
+  "app/service/adapters/outbound/cuda",
+  "app/service/adapters/outbound/worker",
   "app/service/application",
   "app/service/bootstrap",
   "app/service/domain",

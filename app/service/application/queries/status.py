@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     DescribeModelQuery,
     GetJobStatusQuery,
     JobInputsPage,

@@ -104,7 +104,7 @@ Ruff с набором правил `ANN` отдельно требует явн
 результатов: выведенного Pyright return type недостаточно. Из этой проверки
 исключены только tests. Явный `Any` в production signatures разрешён только в
 двух зафиксированных dynamic boundaries:
-forwarding аргументов `argparse` в `app/cli/help.py` и ленивый PyTorch runtime
+forwarding аргументов `argparse` в `app/cli/options.py` и ленивый PyTorch runtime
 команды `gmark`, который сохраняет изоляцию control plane от Torch/CUDA.
 
 Pyright запускается после Ruff и до относящихся pytest tests. Точные команды и

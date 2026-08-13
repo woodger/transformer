@@ -1,0 +1,3 @@
+GRAD_CLIP_NORM = 1.0
+
+__all__ = ["GRAD_CLIP_NORM"]

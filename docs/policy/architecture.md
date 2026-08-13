@@ -5,14 +5,16 @@
 
 Проект использует Clean Architecture отдельно для каждого исполняемого
 процесса. Нормативные решения и их причины зафиксированы в
-[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md) и
-[ADR 0006](../adr/0006-service-application-boundaries.md) и текущем
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md).
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
+[ADR 0006](../adr/0006-service-application-boundaries.md), текущем
+[ADR 0007](../adr/0007-target-aligned-flight-v4.md) и
+[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md).
 
 ## Процессы и composition roots
 
 ```text
 app/main.py                         ленивый CLI dispatcher
+├── app/local                      локальные file/stream commands и gmark
 ├── app/service/bootstrap          Arrow Flight service
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
@@ -38,7 +40,7 @@ service/application/{commands,queries,services,ports}
 service/domain
 
 service/bootstrap ── собирает inbound и outbound adapters
-service/adapters/outbound/{postgres,artifact_storage,worker_process,worker_probe}
+service/adapters/outbound/{postgres,artifacts,worker,cuda}
 ```
 
 - `service/domain` содержит job states, error codes, immutable records и pure
@@ -85,6 +87,25 @@ implementation.
 ML-код имеет единственный канонический import path в `app/worker/`. Старые
 параллельные пакеты `app/data`, `app/model`, `app/training`, `app/storage`,
 `app/runtime` и `app/metrics` отсутствуют и повторно не вводятся.
+
+Checkpoints принадлежат `app/worker/checkpoints/`, а не generic runtime-пакету.
+Подготовка batch и prefetch принадлежат `app/worker/training/batching.py`;
+исполнитель attempt только выбирает fit/predict use case и не содержит их
+реализацию целиком.
+
+## Local CLI
+
+`app/local/` владеет локальными file/stream командами, `plot-metrics` и
+`gmark`. Этот execution path может напрямую использовать worker-код: он
+работает в локальном процессе и не является частью Flight service. Пакет
+`app/commands` отсутствует, чтобы слово `commands` не обозначало одновременно
+local CLI и application use cases сервиса.
+
+Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
+размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
+service defaults — в `app/service/bootstrap/config.py`, worker contract
+defaults — в `app/contracts/worker/v3/config.py`. Общий `app/config.py` не
+создаётся.
 
 ## Admin
 
@@ -152,17 +173,23 @@ Ownership хранения:
   выполняются при import.
 
 Правила закреплены AST- и process-import тестами в
-`tests/test_architecture_boundaries.py`.
+`tests/architecture/test_boundaries.py`.
 
 ## Размещение нового кода
 
 - lifecycle rule или record — `app/service/domain/`;
 - command/query и capability port — `app/service/application/`;
 - Flight parser/presenter — `app/service/adapters/inbound/flight/`;
+- wire documents, descriptors и validation разделяются по этим
+  ответственностям внутри Flight adapter;
 - ORM/repository/Alembic — `app/service/adapters/outbound/postgres/`;
-- spool/publication — `app/service/adapters/outbound/artifact_storage/`;
-- subprocess supervision — `app/service/adapters/outbound/worker_process/`;
+- транзакционные ledger capabilities — профильный модуль в
+  `app/service/adapters/outbound/postgres/ledger/`;
+- spool/publication — `app/service/adapters/outbound/artifacts/`;
+- subprocess supervision — `app/service/adapters/outbound/worker/`;
+- CUDA inventory — `app/service/adapters/outbound/cuda/`;
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в `app/worker/`;
+- local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;
 - runtime wiring — composition root конкретного процесса.
 

@@ -6,8 +6,12 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
-from app.contracts.worker.v3.config import DEFAULT_DIRECT_LOSS_WEIGHTS
+from app.contracts.worker.v3.config import (
+    DEFAULT_DIRECT_LOSS_WEIGHTS,
+    DEFAULT_LOSS_SCHEDULE,
+    DEFAULT_LOSS_STAGE,
+    DEFAULT_STAGE_SIZE,
+)
 from app.worker.model.transformer import public_predictions
 
 
@@ -137,9 +141,9 @@ def validate_loss_schedule(loss_schedule: str) -> str:
 
 def resolve_loss_stage(
     progress: int,
-    loss_schedule: str = LOSS_SCHEDULE,
-    stage_size: int = STAGE_SIZE,
-    max_stage: int = LOSS_STAGE,
+    loss_schedule: str = DEFAULT_LOSS_SCHEDULE,
+    stage_size: int = DEFAULT_STAGE_SIZE,
+    max_stage: int = DEFAULT_LOSS_STAGE,
 ) -> int:
     max_stage = validate_loss_stage(max_stage)
     loss_schedule = validate_loss_schedule(loss_schedule)
@@ -158,7 +162,7 @@ def active_loss_components(loss_stage: int) -> tuple[str, ...]:
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int = LOSS_STAGE,
+    loss_stage: int = DEFAULT_LOSS_STAGE,
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
     return_parts: Literal[False] = False,
     return_statistics: Literal[False] = False,
@@ -190,7 +194,7 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int = LOSS_STAGE,
+    loss_stage: int = DEFAULT_LOSS_STAGE,
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
     return_parts: bool = False,
     return_statistics: bool = False,

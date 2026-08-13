@@ -201,7 +201,8 @@ PostgreSQL остаётся единственным источником ист
 
 Приоритет конфигурации сервиса от низшего к высшему:
 
-1. параметры в `app/config.py` и остальные встроенные значения;
+1. параметры в `app/service/bootstrap/config.py` и остальные встроенные
+   значения;
 2. поддерживаемые переменные окружения `TRANSFORMER_*`;
 3. явно переданные options `flight serve`.
 
@@ -217,7 +218,8 @@ CLI предоставляет только overrides endpoint и transport:
 --tls-require-client-cert
 ```
 
-Следующие параметры сервиса задаются в `app/config.py`, а не через окружение:
+Следующие параметры сервиса задаются в
+`app/service/bootstrap/config.py`, а не через окружение:
 
 | Параметр Python | По умолчанию | Назначение |
 | --- | --- | --- |
@@ -447,7 +449,8 @@ filesystem, credentials и stderr subprocess не должны попадать 
 - Transformer владеет checkpoints; клиенты получают только opaque значения
   `modelRef`.
 - Output tickets краткоживущие и не являются ссылками на модель.
-- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в `app/config.py`; option
-  `--allow-plaintext` может включить её для одного процесса.
+- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в
+  `app/service/bootstrap/config.py`; option `--allow-plaintext` может включить
+  её для одного процесса.
 - Interoperability Node → PyArrow и физическое поведение CUDA требуют отдельной
   проверки в целевом окружении.

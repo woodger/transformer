@@ -5,16 +5,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TypedDict, cast
 
-from app.config import (
-    ALLOW_PLAINTEXT,
-    CPU_WORKERS,
-    HOST_DEFAULT,
-    PORT_DEFAULT,
-    PROJECT_NAME,
-    PROJECT_ROOT,
-    RETENTION_SECONDS,
-)
 from app.contracts.flight.v4.constants import MAX_PAYLOADS_PER_JOB
+from app.project import PROJECT_NAME, PROJECT_ROOT
+
+HOST_DEFAULT = "127.0.0.1"
+PORT_DEFAULT = 8815
+ALLOW_PLAINTEXT = True
+CPU_WORKERS = 2
+RETENTION_SECONDS = 7 * 24 * 60 * 60
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
@@ -222,14 +220,14 @@ def load_config(
     if legacy_keys:
         raise ValueError(
             "unsupported legacy Transformer environment variable(s): "
-            f"{', '.join(legacy_keys)}; use the current app/config.py and "
+            f"{', '.join(legacy_keys)}; use the current service config and "
             "TRANSFORMER_* settings"
         )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            "configure HOST_DEFAULT in app/config.py or use --host"
+            "configure HOST_DEFAULT in service/bootstrap/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
         if field.name in _NON_ENVIRONMENT_FIELDS:

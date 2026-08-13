@@ -14,7 +14,7 @@
 
 `app/main.py` выполняет dispatch и лениво подключает command-specific
 dependencies. CLI schema и help находятся в `app/cli/`, handlers — в
-`app/commands/`, а process-specific roots — в `app/service/bootstrap/`,
+`app/local/`, а process-specific roots — в `app/service/bootstrap/`,
 `app/worker/bootstrap/` и `app/admin/bootstrap/`.
 
 ## Что считается контрактом

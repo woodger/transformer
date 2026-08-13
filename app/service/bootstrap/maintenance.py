@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.adapters.outbound.artifact_storage.recovery_store import RecoveryStore
-from app.service.adapters.outbound.artifact_storage.spool import Spool
+from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
+from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.application.services.maintenance import (
     MaintenanceService as MaintenanceApplicationService,

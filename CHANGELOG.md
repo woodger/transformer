@@ -17,6 +17,15 @@
 
 ### Changed
 
+- Структура Python-кода приведена к одному каноническому пути на
+  ответственность: local CLI вынесен в `app/local`, service outbound adapters
+  названы по capabilities, PostgreSQL ledger и application DTO сгруппированы,
+  worker checkpoints и batching получили собственных владельцев.
+- CLI parser разделён на command-group parsers, formatting и options; общий
+  `app/config.py` удалён, а defaults размещены у local/service/worker owners.
+- Pytest suite разделён на `unit`, `contract`, `integration` и `architecture`
+  с общими fixtures в `tests/support`; архитектурные тесты запрещают возврат
+  прежних compatibility paths.
 - Model input явно проверяет форму `[batch, sequence, features]`, immutable
   `seq_len`/`feature_dim` и `float32`; mask semantics и семь внутренних heads
   закреплены в типизированных сигнатурах и docstrings.

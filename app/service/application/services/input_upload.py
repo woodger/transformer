@@ -4,7 +4,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.service.application.input_models import (
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,

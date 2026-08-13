@@ -9,7 +9,7 @@ from app.service.adapters.outbound.postgres.mapping import (
     row_optional_string,
     row_string,
 )
-from app.service.application.input_models import (
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,

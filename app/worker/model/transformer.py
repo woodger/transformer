@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from app.config import CONTEXT_MODE
+from app.contracts.worker.v3.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -91,7 +91,7 @@ class TransformerModel(nn.Module):
         dropout: float,
         out_dim: int,
         nhead: int = 8,
-        context_mode: str = CONTEXT_MODE,
+        context_mode: str = DEFAULT_CONTEXT_MODE,
     ) -> None:
         super().__init__()
 

@@ -10,16 +10,14 @@ from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
 )
-from app.service.adapters.inbound.flight.contract import (
-    encode_document,
-    parse_input_descriptor,
-)
+from app.service.adapters.inbound.flight.descriptors import parse_input_descriptor
+from app.service.adapters.inbound.flight.documents import encode_document
 from app.service.adapters.inbound.flight.upload_session import (
     FlightStreamReader,
     InputUploadSession,
 )
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.application.input_models import CommittedInput
+from app.service.application.messages.inputs import CommittedInput
 from app.service.application.ports.input_uploads import InputArtifactStore
 from app.service.application.services.input_upload import InputUploadLifecycle
 from app.service.domain.errors import ServiceError

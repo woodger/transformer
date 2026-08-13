@@ -3,8 +3,8 @@ import math
 import os
 
 from app.contracts.json_types import JsonObject
+from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.metrics.io import load_metrics_jsonl
-from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 PLOT_METRICS = (
     "loss",

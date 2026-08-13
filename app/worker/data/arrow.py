@@ -10,20 +10,20 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.flight.v4.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     canonical_prediction_schema,
     validate_target_space_values,
 )
+from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
-from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 if TYPE_CHECKING:
     import torch
 
 FRAME_HEADER_BYTES = 8
+DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024
 FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 

@@ -8,7 +8,7 @@ from app.service.adapters.outbound.postgres.mapping import (
     row_optional_float,
     row_string,
 )
-from app.service.application.output_models import OutputTicketGrant
+from app.service.application.messages.outputs import OutputTicketGrant
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import OutputRecord
 

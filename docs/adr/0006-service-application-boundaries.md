@@ -53,7 +53,7 @@ idempotency results. Миграция `0006` удалила прежние recor
 архитектурный инвариант действует для Flight v4 и не является поддержкой старой
 версии протокола.
 
-Composition roots `service/bootstrap/job_control.py` и
+Composition roots `service/bootstrap/control_plane.py` и
 `service/bootstrap/data_plane.py` являются единственными местами сборки этих
 use cases и adapters. Inbound adapters не импортируют outbound implementations
 и не получают raw ledger.
@@ -93,13 +93,17 @@ application executor может напрямую зависеть от PyArrow, 
 нарушают service boundary. Дополнительные worker ports/adapters не вводятся без
 измеримой проблемы, второго runtime implementation или отдельной задачи.
 
-## Compatibility facades
+## Compatibility facades на момент принятия
 
 `app.flight` временно сохраняет старые Python import paths и конструкторы для
 внутренних consumers и тестов. Эти файлы только делегируют сборку текущим
 composition roots и не содержат job lifecycle или protocol dispatcher.
 Standalone file/stream CLI остаётся действующим локальным интерфейсом и не
 является альтернативной реализацией Flight job lifecycle.
+
+После миграции всех production- и test-imports эти фасады удалены решением
+[ADR 0008](./0008-project-layout-by-runtime-owner.md). Текущая архитектура не
+имеет второй карты legacy import paths.
 
 ## Последствия
 

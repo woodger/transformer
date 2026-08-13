@@ -24,12 +24,8 @@ from app.service.adapters.inbound.flight.constants import (
     OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
 )
-from app.service.adapters.inbound.flight.contract import (
-    ValidatedActionRequest,
-    parse_action_body,
-    validate_action_request,
-)
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
+from app.service.adapters.inbound.flight.documents import parse_action_body
 from app.service.adapters.inbound.flight.errors import (
     ServiceError,
     invalid,
@@ -38,6 +34,10 @@ from app.service.adapters.inbound.flight.errors import (
 from app.service.adapters.inbound.flight.output import OutputHandler
 from app.service.adapters.inbound.flight.upload import PutMetadataWriter, UploadHandler
 from app.service.adapters.inbound.flight.upload_session import FlightStreamReader
+from app.service.adapters.inbound.flight.validation import (
+    ValidatedActionRequest,
+    validate_action_request,
+)
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.domain.access import AuthIdentity
 

@@ -11,7 +11,7 @@ from app.service.adapters.outbound.postgres.mapping import (
     row_optional_integer,
     row_string,
 )
-from app.service.application.job_models import StoredInputPage, StoredOutputPage
+from app.service.application.messages.jobs import StoredInputPage, StoredOutputPage
 from app.service.domain.records import (
     InputRecord,
     OutputRecord,

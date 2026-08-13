@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.service.application.output_models import OutputTicketGrant
+from app.service.application.messages.outputs import OutputTicketGrant
 from app.service.application.ports.output_access import OutputAccessStore
 from app.service.domain.errors import failed_precondition, not_found
 from app.service.domain.job import ExecutionState

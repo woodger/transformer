@@ -6,7 +6,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 
-from app.service.adapters.inbound.flight.contract import parse_output_descriptor
+from app.service.adapters.inbound.flight.descriptors import parse_output_descriptor
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.output_access import OutputArtifactStore
 from app.service.application.queries.outputs import OutputAccess

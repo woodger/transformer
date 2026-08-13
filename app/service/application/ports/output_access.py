@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.service.application.output_models import OutputTicketGrant
+from app.service.application.messages.outputs import OutputTicketGrant
 from app.service.domain.job import ExecutionState
 from app.service.domain.records import OutputRecord
 

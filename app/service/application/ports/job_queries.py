@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.service.application.job_models import StoredInputPage, StoredOutputPage
+from app.service.application.messages.jobs import StoredInputPage, StoredOutputPage
 from app.service.domain.records import PublishedModelRecord, StatusSnapshot
 
 

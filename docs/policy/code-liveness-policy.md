@@ -36,9 +36,9 @@
 
 ### Test graph
 
-Test graph начинается с `tests/test_*.py`, `tests/conftest.py` и pytest
-fixtures. Тест подтверждает проверяемое поведение, но сам по себе не доказывает
-production usage.
+Test graph начинается с `tests/{unit,contract,integration,architecture}/`,
+`tests/conftest.py`, `tests/support/` и pytest fixtures. Тест подтверждает
+проверяемое поведение, но сам по себе не доказывает production usage.
 
 ## Категории
 

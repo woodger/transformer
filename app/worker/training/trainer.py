@@ -2,33 +2,30 @@ from __future__ import annotations
 
 import copy
 import math
-import queue
 import random
-import threading
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import asdict, dataclass
-from typing import Protocol, TypedDict, cast, runtime_checkable
+from dataclasses import asdict
+from typing import TypedDict, cast
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
-from app.config import (
-    CONTEXT_MODE,
-    GRAD_CLIP_NORM,
-)
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v3.config import (
+    DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
 from app.contracts.worker.v3.objective import objective_config_sha256
+from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
 from app.worker.model.context import context_missingness_ratios
 from app.worker.model.transformer import public_predictions
+from app.worker.training.batching import Closable, PayloadBatcher, TrainingBatches
+from app.worker.training.constants import GRAD_CLIP_NORM
 from app.worker.training.early_stopping import SelectionState
 from app.worker.training.loss_scheduler import LossScheduler
 from app.worker.training.losses import (
@@ -37,13 +34,9 @@ from app.worker.training.losses import (
     validate_loss_stage,
     validate_stage_size,
 )
+from app.worker.training.parameter_stats import parameter_tree_stats
 from app.worker.training.training_state import TrainingState
-from app.worker.utils import load_model, save_model, tree_stats
 
-_MAX_SHUFFLE_WINDOW_BATCHES = 32
-_MAX_SHUFFLE_WINDOW_BYTES = 64 * 1024 * 1024
-
-TrainingBatches = Iterable[TrainingBatch]
 TrainingBatchFactory = Callable[[], TrainingBatches]
 
 
@@ -61,108 +54,6 @@ EpochCommittedCallback = Callable[
 ]
 
 
-@runtime_checkable
-class _Closable(Protocol):
-    def close(self) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class _TrainingBatchLoader:
-    batch: TrainingBatch
-    batch_size: int
-
-    def __iter__(self) -> Iterator[TrainingBatch]:
-        dataset = TensorDataset(
-            self.batch.features,
-            self.batch.targets,
-        )
-        loader = DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=0,
-        )
-        for batch_features, batch_targets in loader:
-            yield TrainingBatch(
-                features=batch_features,
-                targets=batch_targets,
-            )
-
-
-@dataclass(frozen=True)
-class _PrefetchEnd:
-    pass
-
-
-_PREFETCH_END = _PrefetchEnd()
-
-
-@dataclass(frozen=True)
-class _PrefetchError:
-    error: BaseException
-
-
-class _BatchPrefetcher:
-    """Prepare at most one closed-input batch ahead of the trainer."""
-
-    def __init__(self, batches: TrainingBatches) -> None:
-        self._batches = iter(batches)
-        self._queue: queue.Queue[
-            TrainingBatch | _PrefetchError | _PrefetchEnd
-        ] = queue.Queue(maxsize=1)
-        self._slot = threading.Semaphore(1)
-        self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._produce,
-            name="transformer-batch-prefetch",
-            daemon=True,
-        )
-        self._thread.start()
-
-    def __iter__(self) -> _BatchPrefetcher:
-        return self
-
-    def __next__(self) -> TrainingBatch:
-        message = self._queue.get()
-        self._slot.release()
-        if isinstance(message, _PrefetchEnd):
-            self._thread.join()
-            raise StopIteration
-        if isinstance(message, _PrefetchError):
-            self._thread.join()
-            raise message.error
-        return message
-
-    def close(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=0.1)
-
-    def _produce(self) -> None:
-        try:
-            while self._reserve_slot():
-                try:
-                    message = next(self._batches)
-                except StopIteration:
-                    self._queue.put(_PREFETCH_END)
-                    return
-                except BaseException as exc:
-                    self._queue.put(_PrefetchError(exc))
-                    return
-                if self._stop.is_set():
-                    self._slot.release()
-                    return
-                self._queue.put(message)
-        finally:
-            if isinstance(self._batches, _Closable):
-                self._batches.close()
-
-    def _reserve_slot(self) -> bool:
-        while not self._stop.is_set():
-            if self._slot.acquire(timeout=0.05):
-                return True
-        return False
-
-
 class Trainer:
     """Own optimization, checkpoint selection, and resumable training state.
 
@@ -178,7 +69,7 @@ class Trainer:
         train_config: TrainConfig,
         *,
         metrics_path: str | None = None,
-        context_mode: str = CONTEXT_MODE,
+        context_mode: str = DEFAULT_CONTEXT_MODE,
         metrics_context: Mapping[str, JsonValue] | None = None,
         model_config: ModelConfig | None = None,
         data_contract: Mapping[str, object] | None = None,
@@ -187,6 +78,7 @@ class Trainer:
         self.device = device
         self.train_config = train_config
         self.batch_size = train_config.batch_size
+        self._batcher = PayloadBatcher(self.batch_size)
         self.epochs = train_config.epochs
         self.loss_stage = validate_loss_stage(train_config.loss_stage)
         self.loss_schedule = validate_loss_schedule(
@@ -348,7 +240,7 @@ class Trainer:
                         time.perf_counter() - phase_started
                     ) * 1000
             finally:
-                if isinstance(batches, _Closable):
+                if isinstance(batches, Closable):
                     batches.close()
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
@@ -444,7 +336,7 @@ class Trainer:
         batch: TrainingBatch,
         epoch: int = 0,
     ) -> TrainMetrics:
-        loader = self._data_loader(batch)
+        loader = self._batcher.data_loader(batch)
 
         self.state.begin_epoch(epoch)
         return self._train_loader(loader)
@@ -455,7 +347,7 @@ class Trainer:
         on_epoch: EpochCallback | None = None,
         frame: int | None = None,
     ) -> list[TrainMetrics]:
-        loader = self._data_loader(batch)
+        loader = self._batcher.data_loader(batch)
         return self._fit_loader_epochs(
             lambda: (loader,),
             on_epoch=on_epoch,
@@ -474,129 +366,15 @@ class Trainer:
         boundaries, so transport partitioning cannot change the trajectory.
         """
         def loaders() -> Iterator[TrainingBatches]:
-            yield self._prefetched_payload_batches(payloads())
+            yield self._batcher.prefetched(
+                payloads(),
+                self._payload_shuffle_generator,
+            )
 
         return self._fit_loader_epochs(
             loaders,
             on_epoch=on_epoch,
             start_epoch=self.state.global_epoch,
-        )
-
-    def _payload_batches(
-        self,
-        payloads: TrainingBatches,
-        generator: torch.Generator,
-    ) -> Iterator[TrainingBatch]:
-        window_rows: int | None = None
-        features_buffer: torch.Tensor | None = None
-        targets_buffer: torch.Tensor | None = None
-        buffered_rows = 0
-
-        for batch in payloads:
-            payload_rows = batch.features.size(0)
-            if batch.targets.size(0) != payload_rows:
-                raise ValueError("features and targets row counts must match")
-            if payload_rows == 0:
-                continue
-
-            if features_buffer is None:
-                row_bytes = (
-                    batch.features[0].numel() * batch.features.element_size()
-                    + batch.targets[0].numel() * batch.targets.element_size()
-                )
-                batch_bytes = self.batch_size * row_bytes
-                window_batches = min(
-                    _MAX_SHUFFLE_WINDOW_BATCHES,
-                    max(1, _MAX_SHUFFLE_WINDOW_BYTES // batch_bytes),
-                )
-                window_rows = self.batch_size * window_batches
-                features_buffer = torch.empty(
-                    (window_rows, *batch.features.shape[1:]),
-                    dtype=batch.features.dtype,
-                    device=batch.features.device,
-                )
-                targets_buffer = torch.empty(
-                    (window_rows, *batch.targets.shape[1:]),
-                    dtype=batch.targets.dtype,
-                    device=batch.targets.device,
-                )
-
-            if window_rows is None or targets_buffer is None:
-                raise AssertionError("shuffle buffers were not initialized")
-
-            offset = 0
-            while offset < payload_rows:
-                copied_rows = min(
-                    window_rows - buffered_rows,
-                    payload_rows - offset,
-                )
-                buffer_end = buffered_rows + copied_rows
-                payload_end = offset + copied_rows
-                features_buffer[buffered_rows:buffer_end].copy_(
-                    batch.features[offset:payload_end]
-                )
-                targets_buffer[buffered_rows:buffer_end].copy_(
-                    batch.targets[offset:payload_end]
-                )
-                buffered_rows = buffer_end
-                offset = payload_end
-
-                if buffered_rows == window_rows:
-                    yield from self._shuffled_batches(
-                        features_buffer,
-                        targets_buffer,
-                        buffered_rows,
-                        generator,
-                    )
-                    buffered_rows = 0
-
-            del batch
-
-        if buffered_rows:
-            if features_buffer is None or targets_buffer is None:
-                raise AssertionError("shuffle buffers were not initialized")
-            yield from self._shuffled_batches(
-                features_buffer,
-                targets_buffer,
-                buffered_rows,
-                generator,
-            )
-
-    def _prefetched_payload_batches(
-        self,
-        payloads: TrainingBatches,
-    ) -> _BatchPrefetcher:
-        return _BatchPrefetcher(self._payload_batches(
-            payloads,
-            self._payload_shuffle_generator,
-        ))
-
-    def _shuffled_batches(
-        self,
-        features: torch.Tensor,
-        targets: torch.Tensor,
-        rows: int,
-        generator: torch.Generator,
-    ) -> Iterator[TrainingBatch]:
-        order = torch.randperm(
-            rows,
-            generator=generator,
-            device=features.device,
-        )
-        for offset in range(0, rows, self.batch_size):
-            indices = order[offset:offset + self.batch_size]
-            yield TrainingBatch(
-                features=features.index_select(0, indices),
-                targets=targets.index_select(0, indices),
-            )
-
-    def _data_loader(
-        self,
-        batch: TrainingBatch,
-    ) -> TrainingBatches:
-        return _TrainingBatchLoader(
-            batch=batch,
-            batch_size=self.batch_size,
         )
 
     def _fit_loader_epochs(
@@ -656,7 +434,10 @@ class Trainer:
         """Train job-wide epochs and expose only complete recovery boundaries."""
 
         def loaders() -> Iterator[TrainingBatches]:
-            yield self._prefetched_payload_batches(payloads())
+            yield self._batcher.prefetched(
+                payloads(),
+                self._payload_shuffle_generator,
+            )
 
         return self._fit_loader_epochs(
             loaders,
@@ -687,13 +468,16 @@ class Trainer:
             if first_epoch:
                 payloads = first_epoch_payloads
                 first_epoch = False
-                batches = self._payload_batches(
+                batches = self._batcher.batches(
                     payloads,
                     self._payload_shuffle_generator,
                 )
             else:
                 payloads = closed_payloads()
-                batches = self._prefetched_payload_batches(payloads)
+                batches = self._batcher.prefetched(
+                    payloads,
+                    self._payload_shuffle_generator,
+                )
             yield batches
 
         return self._fit_loader_epochs(
@@ -955,7 +739,7 @@ class Trainer:
             metrics: TrainMetrics,
             selection_payload: SelectionPayload,
         ) -> None:
-            stats = tree_stats(self.model.parameters())
+            stats = parameter_tree_stats(self.model.parameters())
 
             print(metrics.console_line(
                 epoch=epoch + 1,
