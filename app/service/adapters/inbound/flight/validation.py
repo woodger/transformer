@@ -1,62 +1,48 @@
 from __future__ import annotations
 
-import math
-import re
-import uuid
-from collections.abc import Mapping, Set
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import (
-    Literal,
-    NotRequired,
-    TypedDict,
-    cast,
-    overload,
-)
+from typing import NotRequired, TypedDict, cast
 
+from app.contracts.flight.v4.codec import (
+    FlightContractError,
+    FlightRequestSchema,
+    validate_request_document,
+)
 from app.contracts.json_types import JsonObject
 from app.contracts.worker.v3.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v3.objective import (
-    CHECKPOINT_FORMAT,
-    OBJECTIVE_ID,
-    PREDICTION_SCHEMA_ID,
-    TARGET_SCHEMA_ID,
-    TARGET_WIDTH,
-    ml_contract,
-)
+from app.contracts.worker.v3.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    CONTRACT_NAME,
-    CONTRACT_VERSION,
     CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MAX_PAGE_ITEMS,
-    MAX_PAYLOADS_PER_JOB,
     MODEL_DESCRIBE_ACTION,
     OUTPUTS_LIST_ACTION,
-    PREDICT_SCHEMA_ID,
     STATUS_ACTION,
-    SUPPORTED_DEVICES,
-    SUPPORTED_OPERATIONS,
 )
 from app.service.adapters.inbound.flight.errors import invalid
 
-_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-_PREDICTION_COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
-_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_FENCING_TOKEN = re.compile(r"^[1-9][0-9]{0,18}$")
-
-_COMMON = {"contract", "version", "requestId"}
-_MUTATING = _COMMON | {"idempotencyKey"}
-_FENCED = _MUTATING | {"jobId", "clientExecutionId", "fencingToken"}
+_ACTION_SCHEMAS: dict[str, FlightRequestSchema] = {
+    ACQUIRE_ACTION: "acquire",
+    CANCEL_ACTION: "cancel",
+    CAPABILITIES_ACTION: "query",
+    CREATE_ACTION: "create",
+    HEALTH_ACTION: "query",
+    INPUT_CLOSE_ACTION: "input-close",
+    INPUTS_LIST_ACTION: "inputs-list",
+    MODEL_DESCRIBE_ACTION: "model-describe",
+    OUTPUTS_LIST_ACTION: "outputs-list",
+    STATUS_ACTION: "status",
+}
 
 
 class RequestIdFields(TypedDict):
@@ -176,12 +162,15 @@ def validate_action_request(
     action_name: str,
     document: JsonObject,
 ) -> ValidatedActionRequest:
-    request_id = _validate_common(document)
+    schema_name = _ACTION_SCHEMAS.get(action_name)
+    if schema_name is None:
+        raise invalid(f"unsupported action: {action_name}")
+    _validate_schema(document, schema_name)
+    request_id = _uuid(document, "requestId")
+
     if action_name in (CAPABILITIES_ACTION, HEALTH_ACTION):
-        _reject_unknown(document, _COMMON)
         return {"request_id": request_id}
     if action_name == STATUS_ACTION:
-        _reject_unknown(document, _COMMON | {"jobId"})
         return {"request_id": request_id, "job_id": _uuid(document, "jobId")}
     if action_name == CREATE_ACTION:
         return _validate_create(document, request_id)
@@ -201,122 +190,75 @@ def validate_action_request(
 
 
 def validate_upload_metadata(document: JsonObject) -> UploadMetadataFields:
-    _validate_common(document, require_request_id=False)
-    allowed = {
-        "contract",
-        "version",
-        "jobId",
-        "clientExecutionId",
-        "fencingToken",
-        "payloadId",
-        "ordinal",
-        "schemaId",
-        "dataContractSha256",
-        "rows",
-    }
-    _reject_unknown(document, allowed)
-    schema_id = document.get("schemaId")
-    if schema_id not in (FIT_SCHEMA_ID, PREDICT_SCHEMA_ID):
-        raise invalid(
-            f"schemaId must be one of: {FIT_SCHEMA_ID}, {PREDICT_SCHEMA_ID}"
-        )
+    _validate_schema(document, "upload-metadata")
+    schema_id = _string(document, "schemaId")
     return {
         "job_id": _uuid(document, "jobId"),
         "client_execution_id": _uuid(document, "clientExecutionId"),
         "fencing_token": _fencing_token(document, "fencingToken"),
         "payload_id": _uuid(document, "payloadId"),
-        "ordinal": _ordinal(document, "ordinal"),
+        "ordinal": _integer(document, "ordinal"),
         "schema_id": schema_id,
         "input_kind": "fit" if schema_id == FIT_SCHEMA_ID else "predict",
-        "data_contract_sha256": _sha256(document, "dataContractSha256"),
-        "rows": _nonnegative_integer(document, "rows"),
+        "data_contract_sha256": _string(document, "dataContractSha256"),
+        "rows": _integer(document, "rows"),
     }
 
 
-@overload
-def _validate_common(
+def _validate_schema(
+    document: JsonObject,
+    schema_name: FlightRequestSchema,
+) -> None:
+    try:
+        validate_request_document(document, schema_name)
+    except FlightContractError as exc:
+        raise invalid(_schema_error_message(document, schema_name, exc)) from exc
+
+
+def _schema_error_message(
     document: Mapping[str, object],
-    *,
-    require_request_id: Literal[True] = True,
-) -> str: ...
-
-
-@overload
-def _validate_common(
-    document: Mapping[str, object],
-    *,
-    require_request_id: Literal[False],
-) -> None: ...
-
-
-def _validate_common(
-    document: Mapping[str, object],
-    *,
-    require_request_id: bool = True,
-) -> str | None:
-    if document.get("contract") != CONTRACT_NAME:
-        raise invalid(f"contract must be {CONTRACT_NAME!r}")
-    version = document.get("version")
-    if isinstance(version, bool) or version != CONTRACT_VERSION:
-        raise invalid(f"version must be {CONTRACT_VERSION}")
-    if not require_request_id:
-        if "requestId" in document:
-            raise invalid("DoPut metadata must not contain requestId")
-        return None
-    return _uuid(document, "requestId")
+    schema_name: FlightRequestSchema,
+    error: FlightContractError,
+) -> str:
+    validation_error = error.validation_error
+    if validation_error is None:
+        return str(error)
+    if validation_error.validator == "oneOf":
+        if schema_name == "create":
+            return "create request must match exactly one operation form"
+        if schema_name == "inputs-list":
+            return "snapshotRevision and cursor must be supplied together"
+        if schema_name == "model-describe":
+            return "model.describe requires exactly one of modelRef or modelAlias"
+    if (
+        schema_name == "upload-metadata"
+        and validation_error.validator == "additionalProperties"
+        and "requestId" in document
+    ):
+        return "DoPut metadata must not contain requestId"
+    return str(error)
 
 
 def _validate_create(
     document: JsonObject,
     request_id: str,
 ) -> CreateRequestFields:
-    allowed = _MUTATING | {
-        "jobId",
-        "clientExecutionId",
-        "operation",
-        "device",
-        "modelLabel",
-        "modelRef",
-        "modelAlias",
-        "modelConfig",
-        "trainingConfig",
-        "predictionColumn",
-        "dataContract",
-        "mlContract",
-    }
-    _reject_unknown(document, allowed)
-    operation = document.get("operation")
-    if not isinstance(operation, str) or operation not in SUPPORTED_OPERATIONS:
-        raise invalid(
-            f"operation must be one of: {', '.join(SUPPORTED_OPERATIONS)}"
-        )
-    device = document.get("device")
-    if not isinstance(device, str) or device not in SUPPORTED_DEVICES:
-        raise invalid(f"device must be one of: {', '.join(SUPPORTED_DEVICES)}")
-    prediction_column = document.get("predictionColumn", "out")
-    if (
-        not isinstance(prediction_column, str)
-        or not _PREDICTION_COLUMN.fullmatch(prediction_column)
-    ):
-        raise invalid("predictionColumn has an invalid value")
-    data_contract = _data_contract(document.get("dataContract"))
-    requested_ml_contract = _ml_contract(document.get("mlContract"))
-
+    operation = _string(document, "operation")
+    data_contract = _data_contract(_object(document, "dataContract"))
+    requested_ml_contract = _ml_contract(_object(document, "mlContract"))
     common: CreateRequestFields = {
         "request_id": request_id,
-        "idempotency_key": _idempotency_key(document),
+        "idempotency_key": _string(document, "idempotencyKey"),
         "job_id": _uuid(document, "jobId"),
         "client_execution_id": _uuid(document, "clientExecutionId"),
         "operation": operation,
-        "device": device,
-        "prediction_column": prediction_column,
+        "device": _string(document, "device"),
+        "prediction_column": cast(str, document.get("predictionColumn", "out")),
         "data_contract": data_contract,
         "ml_contract": requested_ml_contract,
     }
     if operation == "fit":
-        if any(key in document for key in ("modelRef", "modelAlias")):
-            raise invalid("fit create does not accept modelRef or modelAlias")
-        model_config = _model_config(document.get("modelConfig"))
+        model_config = _model_config(_object(document, "modelConfig"))
         if model_config.seq_len != data_contract["seq_len"]:
             raise invalid("modelConfig.seqLen must match dataContract.seqLen")
         resolved_model_config = replace(
@@ -324,30 +266,18 @@ def _validate_create(
             feature_dim=data_contract["feature_dim"],
         )
         train_config = _train_config(
-            document.get("trainingConfig", {})
+            cast(Mapping[str, object], document.get("trainingConfig", {}))
         )
         if requested_ml_contract != ml_contract(train_config):
             raise invalid(
                 "mlContract does not match the target-aligned training objective"
             )
-        common["model_label"] = _label(document, "modelLabel")
+        common["model_label"] = _string(document, "modelLabel")
         common["model_config"] = resolved_model_config
         common["train_config"] = train_config
     else:
-        if any(
-            key in document
-            for key in ("modelLabel", "modelConfig", "trainingConfig")
-        ):
-            raise invalid(
-                "predict create accepts a modelRef or modelAlias, not training config"
-            )
-        selectors = [key for key in ("modelRef", "modelAlias") if key in document]
-        if len(selectors) != 1:
-            raise invalid(
-                "predict create requires exactly one of modelRef or modelAlias"
-            )
-        selector = selectors[0]
-        common["model_ref"] = _label(document, selector)
+        selector = "modelRef" if "modelRef" in document else "modelAlias"
+        common["model_ref"] = _string(document, selector)
         common["model_selector"] = selector
     return common
 
@@ -356,23 +286,13 @@ def _validate_acquire(
     document: JsonObject,
     request_id: str,
 ) -> AcquireRequestFields:
-    _reject_unknown(
-        document,
-        _MUTATING
-        | {
-            "jobId",
-            "previousClientExecutionId",
-            "expectedFencingToken",
-            "clientExecutionId",
-        },
-    )
     previous = _uuid(document, "previousClientExecutionId")
     current = _uuid(document, "clientExecutionId")
     if previous == current:
         raise invalid("clientExecutionId must change during acquire")
     return {
         "request_id": request_id,
-        "idempotency_key": _idempotency_key(document),
+        "idempotency_key": _string(document, "idempotencyKey"),
         "job_id": _uuid(document, "jobId"),
         "previous_client_execution_id": previous,
         "expected_fencing_token": _fencing_token(
@@ -387,25 +307,9 @@ def _validate_inputs_list(
     document: JsonObject,
     request_id: str,
 ) -> InputsListRequestFields:
-    allowed = _COMMON | {
-        "jobId",
-        "afterRevision",
-        "snapshotRevision",
-        "cursor",
-        "limit",
-    }
-    _reject_unknown(document, allowed)
-    after_revision = _nonnegative_integer(document, "afterRevision")
-    has_snapshot = "snapshotRevision" in document
-    has_cursor = "cursor" in document
-    if has_snapshot != has_cursor:
-        raise invalid("snapshotRevision and cursor must be supplied together")
-    snapshot = (
-        _nonnegative_integer(document, "snapshotRevision")
-        if has_snapshot
-        else None
-    )
-    cursor = _nonnegative_integer(document, "cursor") if has_cursor else None
+    after_revision = _integer(document, "afterRevision")
+    snapshot = _optional_integer(document, "snapshotRevision")
+    cursor = _optional_integer(document, "cursor")
     if (
         snapshot is not None
         and cursor is not None
@@ -428,26 +332,16 @@ def _validate_input_close(
     document: JsonObject,
     request_id: str,
 ) -> InputCloseRequestFields:
-    _reject_unknown(
-        document,
-        _FENCED
-        | {"payloadCount", "totalRows", "totalBytes", "manifestSha256"},
-    )
-    payload_count = _nonnegative_integer(document, "payloadCount")
-    if payload_count > MAX_PAYLOADS_PER_JOB:
-        raise invalid(
-            f"payloadCount must not exceed {MAX_PAYLOADS_PER_JOB}"
-        )
     return {
         "request_id": request_id,
-        "idempotency_key": _idempotency_key(document),
+        "idempotency_key": _string(document, "idempotencyKey"),
         "job_id": _uuid(document, "jobId"),
         "client_execution_id": _uuid(document, "clientExecutionId"),
         "fencing_token": _fencing_token(document, "fencingToken"),
-        "payload_count": payload_count,
-        "total_rows": _nonnegative_integer(document, "totalRows"),
-        "total_bytes": _nonnegative_integer(document, "totalBytes"),
-        "manifest_sha256": _sha256(document, "manifestSha256"),
+        "payload_count": _integer(document, "payloadCount"),
+        "total_rows": _integer(document, "totalRows"),
+        "total_bytes": _integer(document, "totalBytes"),
+        "manifest_sha256": _string(document, "manifestSha256"),
     }
 
 
@@ -455,15 +349,10 @@ def _validate_outputs_list(
     document: JsonObject,
     request_id: str,
 ) -> OutputsListRequestFields:
-    _reject_unknown(document, _COMMON | {"jobId", "cursor", "limit"})
     return {
         "request_id": request_id,
         "job_id": _uuid(document, "jobId"),
-        "cursor": (
-            _nonnegative_integer(document, "cursor")
-            if "cursor" in document
-            else None
-        ),
+        "cursor": _optional_integer(document, "cursor"),
         "limit": _page_limit(document),
     }
 
@@ -472,10 +361,9 @@ def _validate_cancel(
     document: JsonObject,
     request_id: str,
 ) -> CancelRequestFields:
-    _reject_unknown(document, _FENCED)
     return {
         "request_id": request_id,
-        "idempotency_key": _idempotency_key(document),
+        "idempotency_key": _string(document, "idempotencyKey"),
         "job_id": _uuid(document, "jobId"),
         "client_execution_id": _uuid(document, "clientExecutionId"),
         "fencing_token": _fencing_token(document, "fencingToken"),
@@ -486,114 +374,61 @@ def _validate_model_describe(
     document: JsonObject,
     request_id: str,
 ) -> ModelDescribeRequestFields:
-    _reject_unknown(document, _COMMON | {"modelRef", "modelAlias"})
-    selectors = [key for key in ("modelRef", "modelAlias") if key in document]
-    if len(selectors) != 1:
-        raise invalid(
-            "model.describe requires exactly one of modelRef or modelAlias"
-        )
-    selector = selectors[0]
+    selector = "modelRef" if "modelRef" in document else "modelAlias"
     return {
         "request_id": request_id,
-        "model_ref": _label(document, selector),
+        "model_ref": _string(document, selector),
         "model_selector": selector,
     }
 
 
-def _data_contract(document: object) -> DataContractFields:
-    if not isinstance(document, dict):
-        raise invalid("dataContract must be an object")
-    values = cast(dict[str, object], document)
-    allowed = {
-        "id",
-        "version",
-        "dataContractSha256",
-        "seqLen",
-        "featureDim",
-        "targetSchemaId",
-    }
-    _reject_unknown(values, allowed, "dataContract")
-    result: DataContractFields = {
-        "id": _label(values, "id"),
-        "version": _positive_integer(values, "version"),
-        "data_contract_sha256": _sha256(values, "dataContractSha256"),
-        "seq_len": _positive_integer(values, "seqLen"),
-        "feature_dim": _positive_integer(values, "featureDim"),
-        "target_schema_id": _label(values, "targetSchemaId"),
-    }
-    if result["target_schema_id"] != TARGET_SCHEMA_ID:
-        raise invalid(f"dataContract.targetSchemaId must be {TARGET_SCHEMA_ID}")
-    return result
-
-
-def _ml_contract(document: object) -> MlContractFields:
-    if not isinstance(document, dict):
-        raise invalid("mlContract must be an object")
-    values = cast(dict[str, object], document)
-    allowed = {
-        "targetSchemaId",
-        "predictionSchemaId",
-        "objectiveId",
-        "objectiveConfigSha256",
-        "checkpointFormat",
-        "targetWidth",
-        "predictionSpace",
-    }
-    _reject_unknown(values, allowed, "mlContract")
-    expected: dict[str, str | int] = {
-        "targetSchemaId": TARGET_SCHEMA_ID,
-        "predictionSchemaId": PREDICTION_SCHEMA_ID,
-        "objectiveId": OBJECTIVE_ID,
-        "checkpointFormat": CHECKPOINT_FORMAT,
-        "targetWidth": TARGET_WIDTH,
-        "predictionSpace": "target",
-    }
-    for key, value in expected.items():
-        if values.get(key) != value:
-            raise invalid(f"mlContract.{key} must be {value!r}")
+def _data_contract(document: Mapping[str, object]) -> DataContractFields:
     return {
-        "targetSchemaId": TARGET_SCHEMA_ID,
-        "predictionSchemaId": PREDICTION_SCHEMA_ID,
-        "objectiveId": OBJECTIVE_ID,
-        "objectiveConfigSha256": _sha256(values, "objectiveConfigSha256"),
-        "checkpointFormat": CHECKPOINT_FORMAT,
-        "targetWidth": TARGET_WIDTH,
-        "predictionSpace": "target",
+        "id": _string(document, "id"),
+        "version": _integer(document, "version"),
+        "data_contract_sha256": _string(document, "dataContractSha256"),
+        "seq_len": _integer(document, "seqLen"),
+        "feature_dim": _integer(document, "featureDim"),
+        "target_schema_id": _string(document, "targetSchemaId"),
     }
 
 
-def _model_config(document: object) -> ModelConfig:
-    if not isinstance(document, dict):
-        raise invalid("modelConfig must be an object")
-    values = cast(dict[str, object], document)
-    allowed = {"seqLen", "hidden", "layers", "dropout", "nhead", "mode"}
-    _reject_unknown(values, allowed, "modelConfig")
-    if "seqLen" not in values:
-        raise invalid("modelConfig.seqLen is required")
+def _ml_contract(document: Mapping[str, object]) -> MlContractFields:
+    return {
+        "targetSchemaId": _string(document, "targetSchemaId"),
+        "predictionSchemaId": _string(document, "predictionSchemaId"),
+        "objectiveId": _string(document, "objectiveId"),
+        "objectiveConfigSha256": _string(document, "objectiveConfigSha256"),
+        "checkpointFormat": _string(document, "checkpointFormat"),
+        "targetWidth": _integer(document, "targetWidth"),
+        "predictionSpace": _string(document, "predictionSpace"),
+    }
+
+
+def _model_config(document: Mapping[str, object]) -> ModelConfig:
     mapped: dict[str, object] = {
-        "seq_len": values.get("seqLen"),
-        "hidden": values.get(
+        "seq_len": document["seqLen"],
+        "hidden": document.get(
             "hidden",
             ModelConfig.__dataclass_fields__["hidden"].default,
         ),
-        "layers": values.get(
+        "layers": document.get(
             "layers",
             ModelConfig.__dataclass_fields__["layers"].default,
         ),
-        "dropout": values.get(
+        "dropout": document.get(
             "dropout",
             ModelConfig.__dataclass_fields__["dropout"].default,
         ),
-        "nhead": values.get(
+        "nhead": document.get(
             "nhead",
             ModelConfig.__dataclass_fields__["nhead"].default,
         ),
-        "context_mode": values.get(
+        "context_mode": document.get(
             "mode",
             ModelConfig.__dataclass_fields__["context_mode"].default,
         ),
     }
-    _require_numbers(mapped, integer=("seq_len", "hidden", "layers", "nhead"))
     try:
         config = ModelConfig.from_dict(mapped)
         if config is None:
@@ -603,10 +438,7 @@ def _model_config(document: object) -> ModelConfig:
         raise invalid(f"invalid modelConfig: {exc}") from exc
 
 
-def _train_config(document: object) -> TrainConfig:
-    if not isinstance(document, dict):
-        raise invalid("trainingConfig must be an object")
-    values = cast(dict[str, object], document)
+def _train_config(document: Mapping[str, object]) -> TrainConfig:
     names = {
         "lr": "lr",
         "batchSize": "batch_size",
@@ -621,25 +453,7 @@ def _train_config(document: object) -> TrainConfig:
         "seed": "seed",
         "deterministic": "deterministic",
     }
-    _reject_unknown(values, set(names), "trainingConfig")
-    mapped: dict[str, object] = {
-        names[key]: value for key, value in values.items()
-    }
-    for name in ("use_amp", "deterministic"):
-        if name in mapped and not isinstance(mapped[name], bool):
-            raise invalid(
-                f"trainingConfig.{_api_name(names, name)} must be a boolean"
-            )
-    _require_numbers(
-        mapped,
-        integer=(
-            "batch_size",
-            "epochs",
-            "loss_stage",
-            "stage_size",
-            "seed",
-        ),
-    )
+    mapped = {names[key]: value for key, value in document.items()}
     try:
         if not mapped:
             return TrainConfig()
@@ -651,117 +465,39 @@ def _train_config(document: object) -> TrainConfig:
         raise invalid(f"invalid trainingConfig: {exc}") from exc
 
 
-def _require_numbers(
-    mapping: Mapping[str, object],
-    *,
-    integer: tuple[str, ...],
-) -> None:
-    for key, value in mapping.items():
-        if key in integer:
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise invalid(f"{key} must be an integer")
-        elif key in (
-            "dropout",
-            "lr",
-            "weight_decay",
-        ):
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise invalid(f"{key} must be a number")
-            if not math.isfinite(value):
-                raise invalid(f"{key} must be finite")
-
-
-def _reject_unknown(
-    document: Mapping[str, object],
-    allowed: Set[str],
-    location: str = "request",
-) -> None:
-    unknown = sorted(set(document) - allowed)
-    if unknown:
-        raise invalid(f"unknown {location} field(s): {', '.join(unknown)}")
-
-
 def _uuid(document: Mapping[str, object], key: str) -> str:
-    if key not in document:
-        raise invalid(f"{key} is required")
-    return _uuid_value(document[key], key)
-
-
-def _uuid_value(value: object, label: str) -> str:
-    if not isinstance(value, str):
-        raise invalid(f"{label} must be a UUID string")
-    try:
-        parsed = uuid.UUID(value)
-    except (ValueError, AttributeError) as exc:
-        raise invalid(f"{label} must be a UUID string") from exc
-    if str(parsed) != value.lower():
-        raise invalid(f"{label} must be a canonical UUID string")
-    return str(parsed)
-
-
-def _idempotency_key(document: Mapping[str, object]) -> str:
-    value = document.get("idempotencyKey")
-    if not isinstance(value, str) or not _IDEMPOTENCY_KEY.fullmatch(value):
-        raise invalid("idempotencyKey has an invalid value")
-    return value
-
-
-def _label(document: Mapping[str, object], key: str) -> str:
-    value = document.get(key)
-    if not isinstance(value, str) or not _LABEL.fullmatch(value):
-        raise invalid(f"{key} has an invalid value")
-    return value
-
-
-def _sha256(document: Mapping[str, object], key: str) -> str:
-    value = document.get(key)
-    if not isinstance(value, str) or not _SHA256.fullmatch(value):
-        raise invalid(f"{key} must be a lowercase SHA-256 digest")
-    return value
+    return _string(document, key).lower()
 
 
 def _fencing_token(document: Mapping[str, object], key: str) -> int:
-    value = document.get(key)
-    if not isinstance(value, str) or not _FENCING_TOKEN.fullmatch(value):
-        raise invalid(f"{key} must be a positive canonical decimal string")
-    parsed = int(value)
+    parsed = int(_string(document, key))
     if parsed > 2**63 - 1:
         raise invalid(f"{key} exceeds the supported range")
     return parsed
 
 
-def _nonnegative_integer(document: Mapping[str, object], key: str) -> int:
-    value = document.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise invalid(f"{key} must be a non-negative integer")
-    return value
+def _object(document: Mapping[str, object], key: str) -> Mapping[str, object]:
+    return cast(Mapping[str, object], document[key])
 
 
-def _positive_integer(document: Mapping[str, object], key: str) -> int:
-    value = _nonnegative_integer(document, key)
-    if value == 0:
-        raise invalid(f"{key} must be a positive integer")
-    return value
+def _string(document: Mapping[str, object], key: str) -> str:
+    return cast(str, document[key])
 
 
-def _ordinal(document: Mapping[str, object], key: str) -> int:
-    value = _nonnegative_integer(document, key)
-    if value >= MAX_PAYLOADS_PER_JOB:
-        raise invalid(f"{key} must be less than {MAX_PAYLOADS_PER_JOB}")
-    return value
+def _integer(document: Mapping[str, object], key: str) -> int:
+    return cast(int, document[key])
+
+
+def _optional_integer(document: Mapping[str, object], key: str) -> int | None:
+    if key not in document:
+        return None
+    return _integer(document, key)
 
 
 def _page_limit(document: Mapping[str, object]) -> int:
     if "limit" not in document:
         return MAX_PAGE_ITEMS
-    limit = _positive_integer(document, "limit")
-    if limit > MAX_PAGE_ITEMS:
-        raise invalid(f"limit must not exceed {MAX_PAGE_ITEMS}")
-    return limit
-
-
-def _api_name(mapping: dict[str, str], internal: str) -> str:
-    return next(key for key, value in mapping.items() if value == internal)
+    return _integer(document, "limit")
 
 
 __all__ = [

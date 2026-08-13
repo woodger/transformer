@@ -6,6 +6,10 @@ import uuid
 import pyarrow.flight as flight
 import pytest
 
+from app.contracts.flight.v4.codec import (
+    FlightContractError,
+    validate_request_document,
+)
 from app.contracts.worker.v3.config import TrainConfig
 from app.contracts.worker.v3.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
@@ -66,6 +70,16 @@ def _fit_create(**fields) -> dict:
     )
     document.update(fields)
     return document
+
+
+def test_runtime_contract_validator_enforces_the_closed_versioned_schema():
+    document = _common()
+
+    assert validate_request_document(document, "query") == document
+
+    document["unexpected"] = True
+    with pytest.raises(FlightContractError, match="unexpected"):
+        validate_request_document(document, "query")
 
 
 def test_create_requires_client_identity_and_semantic_data_contract():

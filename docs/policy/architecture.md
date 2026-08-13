@@ -49,9 +49,11 @@ service/adapters/outbound/{postgres,artifacts,worker,cuda}
 - `service/application` содержит типизированные commands, queries, нейтральные
   results, scheduler orchestration и capability-oriented ports. Он зависит
   только от domain и внутреннего worker contract.
-- inbound Flight adapter валидирует wire DTO, выполняет mapping и преобразует
-  application results и errors в Flight documents и Arrow status. Action names,
-  descriptor paths, schema IDs и wire casing не попадают в application.
+- inbound Flight adapter проверяет структуру wire DTO нормативными JSON Schema
+  Draft 2020-12, затем выполняет семантическую валидацию и mapping и
+  преобразует application results и errors в Flight documents и Arrow status.
+  Action names, descriptor paths, schema IDs и wire casing не попадают в
+  application.
 - outbound adapters реализуют PostgreSQL, artifact storage, worker process и
   worker capability boundaries. PostgreSQL adapter владеет транзакциями,
   idempotency, row locks и mapping database projections. Inbound и outbound

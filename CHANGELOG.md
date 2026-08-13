@@ -17,6 +17,9 @@
 
 ### Changed
 
+- Структурная валидация Flight action requests и DoPut metadata переведена на
+  нормативные JSON Schema Draft 2020-12 через `jsonschema`; Python ingress
+  оставляет только семантические инварианты и mapping в типизированные DTO.
 - Структура Python-кода приведена к одному каноническому пути на
   ответственность: local CLI вынесен в `app/local`, service outbound adapters
   названы по capabilities, PostgreSQL ledger и application DTO сгруппированы,

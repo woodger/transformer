@@ -61,7 +61,9 @@ contract test suite, а не переводит проверку в skip.
 
 JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
 `$ref` разрешаются только из каталога schemas соответствующего versioned
-contract.
+contract. Runtime ingress использует те же схемы для action requests и DoPut
+metadata, поэтому contract tests проверяют не только fixtures, но и runtime
+parser.
 
 ## Статическая проверка
 
