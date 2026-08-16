@@ -22,7 +22,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from app.contracts.json_types import JsonObject
+from app.contracts.json_types import JsonObject, JsonValue
+
+# SQLAlchemy resolves recursive aliases in postponed Mapped annotations from
+# this module's namespace. Keep JsonValue available even though annotations
+# refer to it indirectly through JsonObject.
+_JSON_VALUE_TYPE = JsonValue
 
 SCHEMA = "transformer"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)

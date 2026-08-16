@@ -57,6 +57,12 @@
 - Команды проверки изменений собраны в одной политике тестирования; удалены
   ненормативные ML-заметки с устаревшими конфигурационными рекомендациями.
 
+### Fixed
+
+- ORM-модели сохраняют recursive `JsonValue` в runtime namespace, поэтому
+  SQLAlchemy корректно разрешает postponed `Mapped[JsonObject]` annotations
+  при запуске Alembic на Python 3.14.
+
 ## [0.1.10] - 2026-08-12
 
 ### Added
