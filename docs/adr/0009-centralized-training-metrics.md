@@ -3,7 +3,8 @@
 ## Статус
 
 Принято, 2026-08-15. Уточнено 2026-08-16: projection использует обычные
-versioned indices вместо data streams.
+versioned indices вместо data streams, а текущее развёртывание подключается к
+OpenSearch по trusted-LAN HTTP-профилю.
 
 ## Контекст
 
@@ -98,13 +99,20 @@ Templates и обычные versioned indices `metrics-points-v1` и
 разбиение допустимо только как отдельное изменение delivery contract с
 детерминированным выбором partition по immutable `recordedAt`.
 
-## Безопасность
+Оба template задают `number_of_replicas: 0`, поскольку текущий OpenSearch
+работает как одиночный узел.
 
-Transformer использует отдельного non-admin writer-а, доверенный CA и только
-HTTPS. Writer может выполнять Bulk create и exact `_mget` только для двух
-metrics indices. Он не управляет indices, templates, mappings, lifecycle
-policies или cluster settings. Password, Arrow data, stack traces и filesystem
-paths не попадают в документы и логи.
+## Подключение
+
+Текущее развёртывание находится в полностью доверенной локальной сети и
+использует HTTP без TLS и authentication. Runtime-конфигурация содержит только
+OpenSearch endpoint и стабильный `deploymentId`. Templates и indices
+по-прежнему создаёт оператор до запуска publisher-а; publisher выполняет только
+Bulk create и exact `_mget` для двух metrics indices.
+
+Transformer сохраняет прежний HTTPS-профиль для других сред, но он не является
+частью текущего deployment. Arrow data, stack traces и filesystem paths не
+попадают в документы и логи независимо от transport profile.
 
 ## Ограничения v1
 

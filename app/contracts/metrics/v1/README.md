@@ -63,12 +63,16 @@ metrics-points-v1
 metrics-artifacts-v1
 ```
 
-Publisher не имеет прав создавать indices, templates или mappings. Data streams
-и rollover в v1 не используются: запись в data stream направляется в текущий
-write index, поэтому после rollover повтор потерянного Bulk response может
-создать тот же semantic event в новом backing index. Обычный index сохраняет
-глобальную уникальность `_id` внутри versioned projection и позволяет проверить
-конфликт через `_mget`.
+Оба template задают `number_of_replicas: 0`: текущая платформа является
+одиночным узлом и не должна оставлять индексы в состоянии `yellow` из-за
+невозможной replica allocation.
+
+Publisher не создаёт indices, templates или mappings. Data streams и rollover
+в v1 не используются: запись в data stream направляется в текущий write index,
+поэтому после rollover повтор потерянного Bulk response может создать тот же
+semantic event в новом backing index. Обычный index сохраняет глобальную
+уникальность `_id` внутри versioned projection и позволяет проверить конфликт
+через `_mget`.
 
 Будущее разбиение по времени требует отдельной версии delivery contract:
 конкретный index должен детерминированно вычисляться по immutable `recordedAt`,

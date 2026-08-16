@@ -24,10 +24,10 @@ _DEPLOYMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 @dataclass(frozen=True, slots=True)
 class OpenSearchMetricsConfig:
     endpoint: str
-    username: str
-    password: str = field(repr=False)
-    ca_file: str
     deployment_id: str
+    username: str | None = None
+    password: str | None = field(default=None, repr=False)
+    ca_file: str | None = None
     connect_timeout_seconds: float = 3.0
     request_timeout_seconds: float = 15.0
     max_bulk_documents: int = 500
@@ -36,24 +36,37 @@ class OpenSearchMetricsConfig:
     def __post_init__(self) -> None:
         parsed = urlsplit(self.endpoint)
         if (
-            parsed.scheme != "https"
+            parsed.scheme not in {"http", "https"}
             or not parsed.hostname
             or parsed.username is not None
             or parsed.password is not None
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("OPENSEARCH_ENDPOINT must be an HTTPS origin")
+            raise ValueError("OPENSEARCH_ENDPOINT must be an HTTP(S) origin")
         if parsed.path not in ("", "/"):
             raise ValueError("OPENSEARCH_ENDPOINT must not contain a path")
-        if not self.username or not self.password:
-            raise ValueError("OpenSearch credentials must not be empty")
-        if self.username.casefold() == "admin":
-            raise ValueError("OpenSearch metrics publisher must not use admin")
-        if not os.path.isfile(self.ca_file):
-            raise ValueError("OPENSEARCH_CA_FILE must name a trusted CA file")
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("OPENSEARCH_ENDPOINT has an invalid port") from exc
         if _DEPLOYMENT_ID.fullmatch(self.deployment_id) is None:
             raise ValueError("OPENSEARCH_DEPLOYMENT_ID is invalid")
+        security_values = (self.username, self.password, self.ca_file)
+        if parsed.scheme == "http":
+            if any(security_values):
+                raise ValueError(
+                    "HTTP OpenSearch must not configure credentials or CA"
+                )
+            return
+        if not all(security_values):
+            raise ValueError(
+                "HTTPS OpenSearch requires username, password and CA file"
+            )
+        if self.username is not None and self.username.casefold() == "admin":
+            raise ValueError("OpenSearch metrics publisher must not use admin")
+        if self.ca_file is None or not os.path.isfile(self.ca_file):
+            raise ValueError("OPENSEARCH_CA_FILE must name a trusted CA file")
 
 
 def load_opensearch_metrics_config(
@@ -73,7 +86,8 @@ def load_opensearch_metrics_config(
     configured = [key for key in _KEYS if values.get(key)]
     if not configured:
         return None
-    missing = [key for key in _KEYS if not values.get(key)]
+    required = ("OPENSEARCH_ENDPOINT", "OPENSEARCH_DEPLOYMENT_ID")
+    missing = [key for key in required if not values.get(key)]
     if missing:
         raise ValueError(
             "incomplete OpenSearch metrics configuration: "
@@ -81,10 +95,10 @@ def load_opensearch_metrics_config(
         )
     return OpenSearchMetricsConfig(
         endpoint=values["OPENSEARCH_ENDPOINT"].rstrip("/"),
-        username=values["OPENSEARCH_USERNAME"],
-        password=values["OPENSEARCH_PASSWORD"],
-        ca_file=values["OPENSEARCH_CA_FILE"],
         deployment_id=values["OPENSEARCH_DEPLOYMENT_ID"],
+        username=values.get("OPENSEARCH_USERNAME") or None,
+        password=values.get("OPENSEARCH_PASSWORD") or None,
+        ca_file=values.get("OPENSEARCH_CA_FILE") or None,
     )
 
 

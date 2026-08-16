@@ -104,6 +104,9 @@ def test_metrics_json_schemas_and_opensearch_templates_are_closed():
     for path in sorted((CONTRACT_ROOT / "opensearch").glob("*.json")):
         template = json.loads(path.read_text(encoding="utf-8"))
         assert "data_stream" not in template
+        assert template["template"]["settings"] == {
+            "number_of_replicas": 0
+        }
         assert template["template"]["mappings"]["dynamic"] == "strict"
         assert template["index_patterns"] == [path.name.removesuffix(
             ".template.json"

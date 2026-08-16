@@ -7,24 +7,27 @@
 templates — в
 [`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md).
 
+Текущее развёртывание использует доверенную локальную сеть:
+
+```text
+http://hp260g9.home:9200
+```
+
+TLS, authentication, пользователи и роли для него не настраиваются.
+
 ## Подготовить templates и индексы
 
-Операцию выполняет администратор OpenSearch. Transformer service не должен
-получать эти права.
+Операцию выполняет администратор OpenSearch до включения publisher-а.
 
 Обычный index и data stream не могут одновременно использовать одно имя. Если
 в кластере уже существуют data streams `metrics-points-v1` или
 `metrics-artifacts-v1`, сначала остановите publisher и отдельно решите вопрос
-сохранения их данных. Эта инструкция намеренно не удаляет существующие
-streams или backing indices.
+сохранения их данных. Эта инструкция намеренно ничего не удаляет.
 
 ```bash
-search_endpoint=https://hp260g9.home:9200
-search_ca=/path/to/opensearch-ca.pem
+search_endpoint=http://hp260g9.home:9200
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
   --header 'Content-Type: application/json' \
   --request PUT \
   "$search_endpoint/_index_template/metrics-points-v1" \
@@ -32,8 +35,6 @@ curl --fail --silent --show-error \
   @app/contracts/metrics/v1/opensearch/metrics-points-v1.template.json
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
   --header 'Content-Type: application/json' \
   --request PUT \
   "$search_endpoint/_index_template/metrics-artifacts-v1" \
@@ -41,66 +42,31 @@ curl --fail --silent --show-error \
   @app/contracts/metrics/v1/opensearch/metrics-artifacts-v1.template.json
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
   --request PUT \
   "$search_endpoint/metrics-points-v1"
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
   --request PUT \
   "$search_endpoint/metrics-artifacts-v1"
 ```
 
-`--user admin` запрашивает password интерактивно. Не передавайте password в
-аргументе команды. После создания проверьте, что templates имеют
-`dynamic: strict`, а оба индекса используют ожидаемые mappings.
-
-Не преобразуйте индексы в data streams и не назначайте им rollover alias или
-ISM rollover policy. Глобальная уникальность `_id` и проверка через `_mget`
-требуют одного concrete index на каждую versioned projection. Причина и
-условие снятия ограничения зафиксированы в ADR 0009.
-
-## Создать отдельного writer-а
-
-Создайте пользователя, например `transformer-metrics`, и роль только для
-patterns `metrics-points-v1` и `metrics-artifacts-v1`. Для фактических Bulk
-create и `_mget` нужны минимальные действия:
-
-```text
-cluster:
-  indices:data/write/bulk
-  indices:data/read/mget
-
-index:
-  indices:data/write/bulk*
-  indices:data/write/index*
-  indices:data/read/mget*
-  indices:admin/resolve/index
-```
-
-Проверьте набор на установленном Security plugin representative Bulk и `_mget`
-requests. Writer не должен иметь `delete`, `update`, index creation, template,
-mapping, data stream, ISM или cluster-admin permissions. Пользователь `admin`
-для runtime запрещён самим Transformer.
+Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Не
+преобразуйте индексы в data streams и не назначайте им rollover alias или ISM
+rollover policy: проверка повторного `create` и `_mget` требует одного concrete
+index на каждую versioned projection.
 
 ## Настроить Transformer
 
 Добавьте в project `.env`:
 
 ```dotenv
-OPENSEARCH_ENDPOINT=https://hp260g9.home:9200
-OPENSEARCH_USERNAME=transformer-metrics
-OPENSEARCH_PASSWORD=replace-with-a-secret
-OPENSEARCH_CA_FILE=/path/to/opensearch-ca.pem
+OPENSEARCH_ENDPOINT=http://hp260g9.home:9200
 OPENSEARCH_DEPLOYMENT_ID=hp800g9.home
 ```
 
-Все пять параметров задаются вместе. `OPENSEARCH_ENDPOINT` обязан быть HTTPS
-origin без path, CA verification нельзя отключить. `deploymentId` различает
-несколько установок Transformer в общей платформе и участвует в semantic
-identity каждого point.
+Для HTTP-профиля не задавайте `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` и
+`OPENSEARCH_CA_FILE`. `deploymentId` различает установки Transformer в общей
+платформе и участвует в semantic identity каждого point.
 
 Версия приложения и Git commit записываются в каждый artifact и point. При
 развёртывании из Git checkout commit определяется автоматически. Если каталог
@@ -111,9 +77,10 @@ lowercase SHA-1 развёрнутого commit:
 TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 ```
 
-Если ни одной переменной нет, publisher выключен, но model publication всё
-равно создаёт durable artifact и outbox backlog. Частичная конфигурация
-считается ошибкой deployment и не позволяет запустить service.
+Если ни одной `OPENSEARCH_*` переменной нет, publisher выключен, но model
+publication продолжает создавать durable artifact и outbox backlog. Частичная
+или смешанная конфигурация считается ошибкой deployment и не позволяет
+запустить service.
 
 После изменения `.env` перезапустите service. Migrations применяются отдельно:
 

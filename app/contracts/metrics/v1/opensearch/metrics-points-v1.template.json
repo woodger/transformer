@@ -2,6 +2,9 @@
   "index_patterns": ["metrics-points-v1"],
   "priority": 300,
   "template": {
+    "settings": {
+      "number_of_replicas": 0
+    },
     "mappings": {
       "dynamic": "strict",
       "properties": {

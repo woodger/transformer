@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- OpenSearch publisher поддерживает trusted-LAN HTTP-профиль без credentials и
+  CA; достаточно `OPENSEARCH_ENDPOINT` и `OPENSEARCH_DEPLOYMENT_ID`. Оба metrics
+  index template задают `number_of_replicas: 0` для текущего single-node
+  deployment. Строгий HTTPS-профиль сохранён.
+
 ## [0.1.11] - 2026-08-16
 
 ### Added
