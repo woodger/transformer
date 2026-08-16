@@ -3,7 +3,7 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
     OBJECTIVE_ID,
     PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,

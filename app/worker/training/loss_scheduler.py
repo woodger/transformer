@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v6.config import (
     DEFAULT_LOSS_SCHEDULE,
     DEFAULT_LOSS_STAGE,
     DEFAULT_STAGE_SIZE,

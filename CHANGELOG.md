@@ -7,6 +7,44 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-16
+
+### Added
+
+- Успешный fit публикует model-owned `run-summary.json` v2 с lifecycle
+  durations, количеством attempts/recoveries, input counters и статистикой
+  всех шести target-ов по принятому immutable dataset.
+- Epoch telemetry различает завершённые training batches, применённые и
+  пропущенные optimizer updates, AMP overflow и finite/non-finite gradients;
+  для конечных pre-clip gradient norms публикуются mean, max и P95.
+- Внутренний worker process contract повышен до v6. Новые metrics contracts
+  используют проекцию `inventory.metrics.v3` и обычные индексы
+  `metrics-points-v2`, `metrics-artifacts-v2` и `metrics-runs-v2`.
+
+### Changed
+
+- OpenSearch publisher поддерживает trusted-LAN HTTP как без authentication,
+  так и с полной парой Basic Auth credentials; CA для HTTP запрещён. Оба
+  metrics index template задают `number_of_replicas: 0` для текущего
+  single-node deployment. Строгий HTTPS-профиль сохранён.
+- PostgreSQL сохраняет lifecycle/recovery state и checkpoint-aligned epoch
+  metrics как источник истины; OpenSearch остаётся post-commit аналитической
+  проекцией и не участвует в результате fit.
+- Нефинитная gradient norm одного batch больше не уничтожает статистику
+  остальных batch-ей epoch. `globalTrainingStep` по-прежнему означает число
+  завершённых training batches.
+- Механизмы чтения экспериментальных metrics v1 и маршрутизация прежних
+  записей outbox удалены; текущий runtime поддерживает только артефакты v2 и
+  проекцию `inventory.metrics.v3`.
+
+### Fixed
+
+- Штатное удаление модели теперь очищает metadata model-owned
+  `run-summary.json` вместе с checkpoint, epoch metrics и outbox.
+- Conflict verification использует поддерживаемую OpenSearch форму `_mget`
+  `docs` с per-document `_source`; повторная доставка идентичных metrics
+  documents больше не блокируется ответом HTTP 400.
+
 ## [0.1.11] - 2026-08-16
 
 ### Added
@@ -480,7 +518,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/woodger/transformer/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/woodger/transformer/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/woodger/transformer/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/woodger/transformer/compare/v0.1.8...v0.1.9

@@ -6,10 +6,16 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.v1 import (
+from app.contracts.metrics.fit_run.v2 import (
+    PROJECTION_VERSION,
+    SUMMARY_FORMAT,
+    SUMMARY_MEDIA_TYPE,
+    build_run_document,
+    validate_run_summary,
+)
+from app.contracts.metrics.v2 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
-    PROJECTION_VERSION,
     build_artifact_document,
     project_training_points,
     validate_training_record,
@@ -66,10 +72,63 @@ class ModelMetricsProjection:
             created_at=artifact.created_at,
         )
 
+    def run_summary_document(
+        self,
+        entry: MetricsOutboxRecord,
+        *,
+        deployment_id: str,
+    ) -> JsonObject:
+        if entry.projection_version != PROJECTION_VERSION:
+            raise ValueError("unsupported metrics projection version")
+        artifact = entry.run_summary
+        if artifact is None:
+            raise ValueError("fit run summary artifact is unavailable")
+        if (
+            artifact.format != SUMMARY_FORMAT
+            or artifact.media_type != SUMMARY_MEDIA_TYPE
+            or artifact.model_ref != entry.artifact.model_ref
+            or artifact.job_id != entry.artifact.job_id
+            or artifact.attempt_id != entry.artifact.attempt_id
+            or artifact.attempt != entry.artifact.attempt
+            or artifact.application_version
+            != entry.artifact.application_version
+            or artifact.git_commit != entry.artifact.git_commit
+        ):
+            raise ValueError("fit run summary metadata is inconsistent")
+        path = self.storage.model_absolute_path(artifact.relative_path)
+        if (
+            os.path.getsize(path) != artifact.byte_count
+            or _sha256_file(path) != artifact.sha256
+        ):
+            raise ValueError("fit run summary integrity check failed")
+        try:
+            with open(path, encoding="utf-8") as source:
+                loaded: object = json.load(source)
+                summary = validate_run_summary(loaded)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            raise ValueError("fit run summary artifact is invalid") from exc
+        if (
+            summary["jobId"] != artifact.job_id
+            or summary["attemptId"] != artifact.attempt_id
+            or summary["attempt"] != artifact.attempt
+            or summary["modelRef"] != artifact.model_ref
+            or summary["transformerVersion"] != artifact.application_version
+            or summary["transformerGitCommit"] != artifact.git_commit
+        ):
+            raise ValueError("fit run summary identity differs from metadata")
+        return build_run_document(
+            summary,
+            deployment_id=deployment_id,
+            byte_count=artifact.byte_count,
+            sha256=artifact.sha256,
+        )
+
     def _rows(self, entry: MetricsOutboxRecord) -> tuple[JsonObject, ...]:
         artifact = entry.artifact
         if entry.projection_version != PROJECTION_VERSION:
             raise ValueError("unsupported metrics projection version")
+        if entry.run_summary is None:
+            raise ValueError("fit run summary artifact is unavailable")
         if (
             artifact.format != ARTIFACT_FORMAT
             or artifact.media_type != ARTIFACT_MEDIA_TYPE
@@ -89,7 +148,8 @@ class ModelMetricsProjection:
                         "training metrics artifact line is not terminated"
                     )
                 try:
-                    row = validate_training_record(json.loads(line))
+                    loaded: object = json.loads(line)
+                    row = validate_training_record(loaded)
                 except (json.JSONDecodeError, ValueError) as exc:
                     raise ValueError(
                         "training metrics artifact contains an invalid record"

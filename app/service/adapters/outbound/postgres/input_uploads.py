@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.contracts.worker.v4.config import ModelConfig
+from app.contracts.worker.v6.config import ModelConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
     row_integer,

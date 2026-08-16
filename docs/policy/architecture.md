@@ -10,7 +10,8 @@
 [ADR 0007](../adr/0007-target-aligned-flight-v4.md) и
 [ADR 0008](../adr/0008-project-layout-by-runtime-owner.md), а граница
 централизованных training metrics — в
-[ADR 0009](../adr/0009-centralized-training-metrics.md).
+[ADR 0009](../adr/0009-centralized-training-metrics.md) и
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md).
 
 ## Процессы и composition roots
 
@@ -22,8 +23,9 @@ app/main.py                         ленивый CLI dispatcher
 └── app/admin/bootstrap            auth и database commands
 
 app/contracts/flight/v4            публичный Flight contract
-app/contracts/worker/v4            внутренний process contract
-app/contracts/metrics/v1           artifact и OpenSearch documents
+app/contracts/worker/v6            внутренний process contract
+app/contracts/metrics/v2           текущие artifact и OpenSearch documents
+app/contracts/metrics/fit_run/v2   terminal fit summary
 ```
 
 Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
@@ -109,7 +111,7 @@ local CLI и application use cases сервиса.
 Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
 размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
 service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v4/config.py`. Общий `app/config.py` не
+defaults — в `app/contracts/worker/v6/config.py`. Общий `app/config.py` не
 создаётся.
 
 ## Admin
@@ -124,10 +126,12 @@ cases, которые определяют операции с access tokens. Al
 - `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
 - Flight v4 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v4/` — command/result manifests, capability document,
+- `app/contracts/worker/v6/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/metrics/v1/` — immutable training artifact, закрытая
+- `app/contracts/metrics/v2/` — текущий immutable epoch artifact, закрытая
   OpenSearch projection, golden identity и strict index templates;
+- `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
+  counters и статистика training targets;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
   `attempt` остаётся положительным job-local ordinal;
@@ -178,7 +182,7 @@ Ownership хранения:
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v4`;
+- shared service/worker данные находятся только в `app/contracts/worker/v6`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

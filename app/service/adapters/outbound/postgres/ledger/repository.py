@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -63,6 +63,7 @@ from app.service.domain.policies import decide_cancel, validate_execution_transi
 from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
+    FitRunSummarySource,
     ModelArtifactRecord,
     PublishedModelRecord,
     RecoverableAttemptRecord,
@@ -925,6 +926,36 @@ class Ledger:
             process_start_ticks=process_start_ticks,
         )
 
+    def mark_attempt_worker_ready(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        now: float | None = None,
+    ) -> None:
+        self._execution.mark_attempt_worker_ready(
+            job_id,
+            attempt,
+            attempt_id=attempt_id,
+            now=now,
+        )
+
+    def mark_attempt_worker_completed(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        now: float | None = None,
+    ) -> None:
+        self._execution.mark_attempt_worker_completed(
+            job_id,
+            attempt,
+            attempt_id=attempt_id,
+            now=now,
+        )
+
     def list_active_attempts(self) -> list[RowMapping]:
         return self._execution.list_active_attempts()
 
@@ -1003,6 +1034,8 @@ class Ledger:
         global_step: int,
         training_complete: bool,
         metrics: JsonObject,
+        checkpoint_serialization_ms: float,
+        checkpoint_publication_ms: float,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
         return self._recovery.register_checkpoint(
@@ -1018,6 +1051,8 @@ class Ledger:
             global_step=global_step,
             training_complete=training_complete,
             metrics=metrics,
+            checkpoint_serialization_ms=checkpoint_serialization_ms,
+            checkpoint_publication_ms=checkpoint_publication_ms,
             now=now,
         )
 
@@ -1118,6 +1153,11 @@ class Ledger:
         metrics_byte_count: int,
         metrics_sha256: str,
         metrics_row_count: int,
+        run_summary_path: str,
+        run_summary_format: str,
+        run_summary_media_type: str,
+        run_summary_byte_count: int,
+        run_summary_sha256: str,
         application_version: str,
         git_commit: str,
         metadata: JsonObject,
@@ -1141,10 +1181,30 @@ class Ledger:
             metrics_byte_count=metrics_byte_count,
             metrics_sha256=metrics_sha256,
             metrics_row_count=metrics_row_count,
+            run_summary_path=run_summary_path,
+            run_summary_format=run_summary_format,
+            run_summary_media_type=run_summary_media_type,
+            run_summary_byte_count=run_summary_byte_count,
+            run_summary_sha256=run_summary_sha256,
             application_version=application_version,
             git_commit=git_commit,
             metadata=metadata,
             result=result,
+            now=now,
+        )
+
+    def fit_run_summary_source(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        now: float | None = None,
+    ) -> FitRunSummarySource:
+        return self._artifacts.fit_run_summary_source(
+            job_id,
+            attempt,
+            attempt_id=attempt_id,
             now=now,
         )
 

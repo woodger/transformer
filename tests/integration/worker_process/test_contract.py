@@ -16,20 +16,20 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v4 import (
+from app.contracts.worker.v6 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v6.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v6.objective import (
     ml_contract,
     objective_config_sha256,
 )
@@ -92,14 +92,14 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
     }
 
 
-def test_worker_capabilities_are_reported_through_v4_process_contract():
+def test_worker_capabilities_are_reported_through_v6_process_contract():
     result = subprocess.run(
         [
             sys.executable,
             "-m",
             "app.worker.bootstrap",
             "inspect",
-            "--contract-version=4",
+            "--contract-version=6",
         ],
         cwd=PROJECT_ROOT,
         check=False,
@@ -111,7 +111,7 @@ def test_worker_capabilities_are_reported_through_v4_process_contract():
     assert result.returncode == 0, result.stderr
     document = validate_document(json.loads(result.stdout), "capabilities")
     assert document["contract"] == "transformer-worker"
-    assert document["protocolVersion"] == 4
+    assert document["protocolVersion"] == 6
     assert document["torchVersion"]
 
 
@@ -152,7 +152,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=4",
+            "--contract-version=6",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -213,7 +213,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 4,
+        "protocolVersion": 6,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -289,7 +289,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 4,
+        "protocolVersion": 6,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -330,10 +330,16 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert checkpoint_event["generation"] == 1
     assert checkpoint_event["completedEpochs"] == 1
     assert checkpoint_event["trainingComplete"] is True
+    assert checkpoint_event["checkpointSerializationMs"] >= 0
     assert validate_document(
         checkpoint_event["metrics"],
         "training-metrics",
     )["epoch"] == 1
+    assert checkpoint_event["metrics"]["trainingBatchesCompleted"] == 2
+    assert checkpoint_event["metrics"]["optimizerUpdatesApplied"] == 2
+    assert checkpoint_event["metrics"]["optimizerUpdatesSkipped"] == 0
+    assert checkpoint_event["metrics"]["finiteGradientBatches"] == 2
+    assert checkpoint_event["metrics"]["nonFiniteGradientBatches"] == 0
 
     result_manifest = load_document(
         workspace / "worker-result.json",
@@ -344,6 +350,28 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert result_manifest["artifacts"] == []
     assert result_manifest["checkpointMetadata"]["dataContract"] == _data_contract()
     assert Path(result_manifest["checkpoint"]["path"]).is_file()
+    assert result_manifest["checkpointSerializationMs"] >= 0
+    target_statistics = result_manifest["targetStatistics"]
+    expected_targets = (
+        ("meanReturn", 0.0),
+        ("sigmaReturn", 0.0),
+        ("probTP", 0.0),
+        ("probSL", 0.0),
+        ("volatilityNext", 0.2),
+        ("hittingProbTP", 1.0),
+    )
+    for index, ((name, value), statistic) in enumerate(
+        zip(expected_targets, target_statistics, strict=True)
+    ):
+        assert statistic["targetIndex"] == index
+        assert statistic["name"] == name
+        assert statistic["count"] == 4
+        assert statistic["min"] == pytest.approx(value)
+        assert statistic["max"] == pytest.approx(value)
+        assert statistic["mean"] == pytest.approx(value)
+        assert statistic["std"] == pytest.approx(0.0)
+        assert statistic["zeroCount"] == (4 if value == 0.0 else 0)
+        assert statistic["oneCount"] == (4 if value == 1.0 else 0)
 
 
 def test_service_rejects_progress_after_attempt_ownership_changes():
@@ -376,6 +404,9 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
     )
 
     class StaleLedger:
+        def mark_attempt_worker_ready(self, *args, **kwargs):
+            return None
+
         def update_progress(self, job_id, progress, *, attempt_id):
             assert (job_id, progress, attempt_id) == (
                 job.job_id,
@@ -464,6 +495,9 @@ def test_duplicate_worker_event_is_rejected_before_repeating_its_side_effect():
         def mark_input_waiting(self, *args, **kwargs):
             self.waits += 1
             return True
+
+        def mark_attempt_worker_ready(self, *args, **kwargs):
+            return None
 
     ledger = Ledger()
     runner = WorkerSubprocessRunner(
@@ -641,7 +675,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=4",
+            "--contract-version=6",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

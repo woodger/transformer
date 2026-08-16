@@ -5,11 +5,12 @@ import json
 import uuid
 from dataclasses import dataclass
 
-from app.contracts.metrics.v1 import (
+from app.contracts.metrics.fit_run.v2 import build_run_summary
+from app.contracts.metrics.v2 import (
     build_training_record,
 )
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config_sha256,
@@ -36,6 +37,13 @@ class TestMetricsArtifact:
     byte_count: int
     sha256: str
     row_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class TestRunSummaryArtifact:
+    relative_path: str
+    byte_count: int
+    sha256: str
 
 
 def build_test_job_coordinator(
@@ -159,7 +167,15 @@ def create_test_metrics_artifact(
         "volatility_next_rmse": 0.1,
         "hitting_prob_tp_rmse": 0.1,
         "selection_score": None,
-        "grad_norm": 1.0,
+        "trainingBatchesCompleted": 1,
+        "optimizerUpdatesApplied": 1,
+        "optimizerUpdatesSkipped": 0,
+        "ampOverflowBatches": 0,
+        "finiteGradientBatches": 1,
+        "nonFiniteGradientBatches": 0,
+        "preClipGradientNormMean": 1.0,
+        "preClipGradientNormMax": 1.0,
+        "preClipGradientNormP95": 1.0,
         "nan_ratio": 0.0,
         "masked_token_ratio": 0.0,
         "complete_token_ratio": 1.0,
@@ -204,6 +220,88 @@ def create_test_metrics_artifact(
         byte_count=len(payload),
         sha256=hashlib.sha256(payload).hexdigest(),
         row_count=1,
+    )
+
+
+def create_test_run_summary_artifact(
+    spool,
+    *,
+    model_ref,
+    job_id,
+    attempt_id,
+    attempt,
+):
+    summary = build_run_summary(
+        recorded_at=10.0,
+        job_id=job_id,
+        attempt_id=attempt_id,
+        attempt=attempt,
+        model_ref=model_ref,
+        data_contract_sha256=DATA_CONTRACT_SHA256,
+        objective_config_sha256=objective_config_sha256(train_config()),
+        checkpoint_format=CHECKPOINT_FORMAT,
+        application_version="0.1.10",
+        git_commit="0" * 40,
+        milestones={
+            "createdAt": "1970-01-01T00:00:01.000Z",
+            "firstInputCommittedAt": "1970-01-01T00:00:02.000Z",
+            "inputClosedAt": "1970-01-01T00:00:03.000Z",
+            "workerCompletedAt": "1970-01-01T00:00:09.000Z",
+            "publishedAt": "1970-01-01T00:00:10.000Z",
+        },
+        durations={
+            "firstInputWaitMs": 1000.0,
+            "eofWaitMs": 1000.0,
+            "queueWaitMs": 1000.0,
+            "workerStartupMs": 1000.0,
+            "trainingMs": 4000.0,
+            "checkpointSerializationMs": 1.0,
+            "checkpointPublicationMs": 1.0,
+            "modelPublicationMs": 1000.0,
+            "remoteFitMs": 9000.0,
+        },
+        counts={
+            "attempts": attempt,
+            "recoveries": max(0, attempt - 1),
+            "inputPayloads": 1,
+            "inputRows": 1,
+            "inputBytes": 1,
+        },
+        target_statistics=[
+            {
+                "targetIndex": index,
+                "name": name,
+                "count": 1,
+                "min": 0.0,
+                "max": 0.0,
+                "mean": 0.0,
+                "std": 0.0,
+                "zeroCount": 1,
+                "oneCount": 0,
+            }
+            for index, name in enumerate((
+                "meanReturn",
+                "sigmaReturn",
+                "probTP",
+                "probSL",
+                "volatilityNext",
+                "hittingProbTP",
+            ))
+        ],
+    )
+    payload = json.dumps(
+        summary,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    path = spool.model_run_summary_path(model_ref)
+    spool.atomic_write_bytes(path, payload)
+    return TestRunSummaryArtifact(
+        relative_path=spool.model_relative_path(path),
+        byte_count=len(payload),
+        sha256=hashlib.sha256(payload).hexdigest(),
     )
 
 

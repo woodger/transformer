@@ -80,8 +80,30 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
         ):
             self.calls.append((batch.features.shape, batch.targets.shape))
             metrics_rows = [
-                TrainMetrics(rows=1, batches=1, loss=1.25, loss_stage=1),
-                TrainMetrics(rows=1, batches=1, loss=1.10, loss_stage=2),
+                TrainMetrics(
+                    rows=1,
+                    batches=1,
+                    loss=1.25,
+                    loss_stage=1,
+                    training_batches_completed=1,
+                    optimizer_updates_applied=1,
+                    finite_gradient_batches=1,
+                    pre_clip_gradient_norm_mean=0.0,
+                    pre_clip_gradient_norm_max=0.0,
+                    pre_clip_gradient_norm_p95=0.0,
+                ),
+                TrainMetrics(
+                    rows=1,
+                    batches=1,
+                    loss=1.10,
+                    loss_stage=2,
+                    training_batches_completed=1,
+                    optimizer_updates_applied=1,
+                    finite_gradient_batches=1,
+                    pre_clip_gradient_norm_mean=0.0,
+                    pre_clip_gradient_norm_max=0.0,
+                    pre_clip_gradient_norm_p95=0.0,
+                ),
             ]
             for epoch, metrics in enumerate(metrics_rows):
                 on_epoch(epoch, metrics, {
@@ -174,6 +196,12 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
                     batches=len(loaded),
                     loss=1.0 - epoch * 0.1,
                     loss_stage=epoch + 1,
+                    training_batches_completed=len(loaded),
+                    optimizer_updates_applied=len(loaded),
+                    finite_gradient_batches=len(loaded),
+                    pre_clip_gradient_norm_mean=0.0,
+                    pre_clip_gradient_norm_max=0.0,
+                    pre_clip_gradient_norm_p95=0.0,
                 )
                 on_epoch(epoch, metrics, {
                     "selection_score": None,

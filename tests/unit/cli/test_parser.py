@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.parser import build_parser
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v6.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,

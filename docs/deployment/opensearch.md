@@ -3,104 +3,103 @@
 > Type: Operations. Настройка OpenSearch projection Transformer.
 
 Источник истины и границы решения описаны в
-[ADR 0009](../adr/0009-centralized-training-metrics.md), нормативные schemas и
-templates — в
-[`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md).
+[ADR 0009](../adr/0009-centralized-training-metrics.md) и
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Прежние contracts
+[`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md) и
+[`app/contracts/metrics/fit_run/v1`](../../app/contracts/metrics/fit_run/v1/README.md)
+сохранены только для доставки уже зафиксированных outbox entries. Текущие
+schemas и templates находятся в
+[`app/contracts/metrics/v2`](../../app/contracts/metrics/v2/README.md) и
+[`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
+
+Текущее развёртывание использует доверенную локальную сеть:
+
+```text
+http://hp260g9.home:9200
+```
+
+REST TLS отключён, OpenSearch требует существующую Basic Auth.
 
 ## Подготовить templates и индексы
 
-Операцию выполняет администратор OpenSearch. Transformer service не должен
-получать эти права.
+Операцию выполняет администратор OpenSearch до включения publisher-а.
 
 Обычный index и data stream не могут одновременно использовать одно имя. Если
-в кластере уже существуют data streams `metrics-points-v1` или
-`metrics-artifacts-v1`, сначала остановите publisher и отдельно решите вопрос
-сохранения их данных. Эта инструкция намеренно не удаляет существующие
-streams или backing indices.
+в кластере уже существуют data streams `metrics-points-v2`,
+`metrics-artifacts-v2` или `metrics-runs-v2`, сначала остановите publisher и
+отдельно решите вопрос
+сохранения их данных. Эта инструкция намеренно ничего не удаляет.
 
 ```bash
-search_endpoint=https://hp260g9.home:9200
-search_ca=/path/to/opensearch-ca.pem
+search_endpoint=http://hp260g9.home:9200
+read -r -s -p 'OpenSearch password: ' OPENSEARCH_PASSWORD
+printf '\n'
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-points-v1" \
+  "$search_endpoint/_index_template/metrics-points-v2" \
   --data-binary \
-  @app/contracts/metrics/v1/opensearch/metrics-points-v1.template.json
+  @app/contracts/metrics/v2/opensearch/metrics-points-v2.template.json
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-artifacts-v1" \
+  "$search_endpoint/_index_template/metrics-artifacts-v2" \
   --data-binary \
-  @app/contracts/metrics/v1/opensearch/metrics-artifacts-v1.template.json
+  @app/contracts/metrics/v2/opensearch/metrics-artifacts-v2.template.json
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
+  --user "admin:$OPENSEARCH_PASSWORD" \
+  --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/metrics-points-v1"
+  "$search_endpoint/_index_template/metrics-runs-v2" \
+  --data-binary \
+  @app/contracts/metrics/fit_run/v2/opensearch/metrics-runs-v2.template.json
 
 curl --fail --silent --show-error \
-  --cacert "$search_ca" \
-  --user admin \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-artifacts-v1"
+  "$search_endpoint/metrics-points-v2"
+
+curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
+  --request PUT \
+  "$search_endpoint/metrics-artifacts-v2"
+
+curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
+  --request PUT \
+  "$search_endpoint/metrics-runs-v2"
+
+unset OPENSEARCH_PASSWORD
 ```
 
-`--user admin` запрашивает password интерактивно. Не передавайте password в
-аргументе команды. После создания проверьте, что templates имеют
-`dynamic: strict`, а оба индекса используют ожидаемые mappings.
+Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Не
+преобразуйте индексы в data streams и не назначайте им rollover alias или ISM
+rollover policy: проверка повторного `create` и `_mget` требует одного concrete
+index на каждую versioned projection.
 
-Не преобразуйте индексы в data streams и не назначайте им rollover alias или
-ISM rollover policy. Глобальная уникальность `_id` и проверка через `_mget`
-требуют одного concrete index на каждую versioned projection. Причина и
-условие снятия ограничения зафиксированы в ADR 0009.
-
-## Создать отдельного writer-а
-
-Создайте пользователя, например `transformer-metrics`, и роль только для
-patterns `metrics-points-v1` и `metrics-artifacts-v1`. Для фактических Bulk
-create и `_mget` нужны минимальные действия:
-
-```text
-cluster:
-  indices:data/write/bulk
-  indices:data/read/mget
-
-index:
-  indices:data/write/bulk*
-  indices:data/write/index*
-  indices:data/read/mget*
-  indices:admin/resolve/index
-```
-
-Проверьте набор на установленном Security plugin representative Bulk и `_mget`
-requests. Writer не должен иметь `delete`, `update`, index creation, template,
-mapping, data stream, ISM или cluster-admin permissions. Пользователь `admin`
-для runtime запрещён самим Transformer.
+Transformer публикует только projection `inventory.metrics.v3` в v2 indices.
+Поддержки прежних экспериментальных артефактов, записей outbox и индексов нет.
 
 ## Настроить Transformer
 
 Добавьте в project `.env`:
 
 ```dotenv
-OPENSEARCH_ENDPOINT=https://hp260g9.home:9200
-OPENSEARCH_USERNAME=transformer-metrics
-OPENSEARCH_PASSWORD=replace-with-a-secret
-OPENSEARCH_CA_FILE=/path/to/opensearch-ca.pem
+OPENSEARCH_ENDPOINT=http://hp260g9.home:9200
+OPENSEARCH_USERNAME=admin
+OPENSEARCH_PASSWORD=<пароль OpenSearch>
 OPENSEARCH_DEPLOYMENT_ID=hp800g9.home
 ```
 
-Все пять параметров задаются вместе. `OPENSEARCH_ENDPOINT` обязан быть HTTPS
-origin без path, CA verification нельзя отключить. `deploymentId` различает
-несколько установок Transformer в общей платформе и участвует в semantic
-identity каждого point.
+HTTP-профиль допускает либо отсутствие credentials, либо полную пару
+`OPENSEARCH_USERNAME`/`OPENSEARCH_PASSWORD`; CA для него не задаётся. Текущий
+deployment использует Basic Auth. `deploymentId` различает установки
+Transformer в общей платформе и участвует в semantic identity каждого point.
 
 Версия приложения и Git commit записываются в каждый artifact и point. При
 развёртывании из Git checkout commit определяется автоматически. Если каталог
@@ -111,9 +110,10 @@ lowercase SHA-1 развёрнутого commit:
 TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 ```
 
-Если ни одной переменной нет, publisher выключен, но model publication всё
-равно создаёт durable artifact и outbox backlog. Частичная конфигурация
-считается ошибкой deployment и не позволяет запустить service.
+Если ни одной `OPENSEARCH_*` переменной нет, publisher выключен, но model
+publication продолжает создавать durable artifact и outbox backlog. Частичная
+или смешанная конфигурация считается ошибкой deployment и не позволяет
+запустить service.
 
 После изменения `.env` перезапустите service. Migrations применяются отдельно:
 
@@ -122,18 +122,19 @@ TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0008`.
+Текущий head — `0009`.
 
 ## Проверить работу
 
 После короткого fit проверьте:
 
-- модель содержит `models/{modelRef}/metrics.jsonl`;
+- модель содержит `models/{modelRef}/metrics.jsonl` и
+  `models/{modelRef}/run-summary.json`;
 - health показывает gauges `metricsOutboxEntries`, `metricsOutboxBytes` и
   `metricsOutboxOldestAgeSeconds`;
 - журнал содержит `metrics.artifact.delivered`;
-- поиск по `runId`, `transformerJobId` или `modelRef` возвращает points и один
-  artifact document;
+- поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points,
+  один artifact document и один terminal fit run summary;
 - повторная доставка не создаёт второй документ с тем же `_id`.
 
 `metrics.delivery.retry_scheduled` означает временную ошибку.

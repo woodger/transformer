@@ -4,7 +4,7 @@ import os
 from typing import BinaryIO
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4 import encode_event
+from app.contracts.worker.v6 import encode_event
 
 
 class WorkerEventEmitter:

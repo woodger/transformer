@@ -29,11 +29,16 @@ class OpenSearchMetricsClient:
         if parsed.hostname is None:
             raise ValueError("OpenSearch endpoint has no hostname")
         self._host = parsed.hostname
-        self._port = parsed.port or 443
-        self._authorization = "Basic " + base64.b64encode(
-            f"{config.username}:{config.password}".encode()
-        ).decode("ascii")
-        self._context = ssl.create_default_context(cafile=config.ca_file)
+        self._use_tls = parsed.scheme == "https"
+        self._port = parsed.port or (443 if self._use_tls else 80)
+        self._authorization: str | None = None
+        self._context: ssl.SSLContext | None = None
+        if config.username is not None and config.password is not None:
+            self._authorization = "Basic " + base64.b64encode(
+                f"{config.username}:{config.password}".encode()
+            ).decode("ascii")
+        if self._use_tls:
+            self._context = ssl.create_default_context(cafile=config.ca_file)
 
     def create_documents(
         self,
@@ -108,8 +113,13 @@ class OpenSearchMetricsClient:
     ) -> None:
         body = json.dumps(
             {
-                "ids": [document_id for document_id, _ in conflicts],
-                "_source": ["documentSha256"],
+                "docs": [
+                    {
+                        "_id": document_id,
+                        "_source": ["documentSha256"],
+                    }
+                    for document_id, _ in conflicts
+                ],
             },
             ensure_ascii=True,
             allow_nan=False,
@@ -148,12 +158,27 @@ class OpenSearchMetricsClient:
         *,
         ndjson: bool = False,
     ) -> JsonObject:
-        connection = http.client.HTTPSConnection(
-            self._host,
-            self._port,
-            timeout=self.config.connect_timeout_seconds,
-            context=self._context,
-        )
+        connection: http.client.HTTPConnection
+        if self._use_tls:
+            connection = http.client.HTTPSConnection(
+                self._host,
+                self._port,
+                timeout=self.config.connect_timeout_seconds,
+                context=self._context,
+            )
+        else:
+            connection = http.client.HTTPConnection(
+                self._host,
+                self._port,
+                timeout=self.config.connect_timeout_seconds,
+            )
+        headers = {
+            "Content-Type": (
+                "application/x-ndjson" if ndjson else "application/json"
+            ),
+        }
+        if self._authorization is not None:
+            headers["Authorization"] = self._authorization
         try:
             connection.connect()
             if connection.sock is not None:
@@ -162,14 +187,7 @@ class OpenSearchMetricsClient:
                 method,
                 path,
                 body=body,
-                headers={
-                    "Authorization": self._authorization,
-                    "Content-Type": (
-                        "application/x-ndjson"
-                        if ndjson
-                        else "application/json"
-                    ),
-                },
+                headers=headers,
             )
             response = connection.getresponse()
             payload = response.read()

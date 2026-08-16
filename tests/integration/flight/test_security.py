@@ -14,8 +14,8 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v4.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v6.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
 from app.service.adapters.inbound.flight.constants import (
     ACTIONS,

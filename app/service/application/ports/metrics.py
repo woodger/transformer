@@ -72,6 +72,13 @@ class MetricsArtifactProjection(Protocol):
         deployment_id: str,
     ) -> JsonObject: ...
 
+    def run_summary_document(
+        self,
+        entry: MetricsOutboxRecord,
+        *,
+        deployment_id: str,
+    ) -> JsonObject: ...
+
 
 class MetricsDocumentSink(Protocol):
     def create_documents(

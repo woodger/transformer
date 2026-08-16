@@ -33,7 +33,8 @@ identifiers, команды, пути, значения enum и другие э�
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный Flight v4 contract | `app/contracts/flight/v4/` |
-| Нормативный worker v4 contract | `app/contracts/worker/v4/` |
+| Нормативный worker v6 contract | `app/contracts/worker/v6/` |
+| Нормативные training metrics contracts | `app/contracts/metrics/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -85,7 +86,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Фактические правила parsing и defaults находятся у
 владельцев runtime: `app/local/config.py`,
-`app/service/bootstrap/config.py`, `app/contracts/worker/v4/config.py` и
+`app/service/bootstrap/config.py`, `app/contracts/worker/v6/config.py` и
 `app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:

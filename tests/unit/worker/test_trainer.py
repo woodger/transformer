@@ -1,18 +1,20 @@
 import copy
 import json
+import math
 import threading
+from contextlib import nullcontext
 from dataclasses import asdict
 
 import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v6.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config,
@@ -186,6 +188,12 @@ def test_fit_batch_reports_six_target_metrics():
 
     assert metrics.rows == batch.features.size(0)
     assert metrics.batches == 4
+    assert metrics.training_batches_completed == 4
+    assert metrics.optimizer_updates_applied == 4
+    assert metrics.optimizer_updates_skipped == 0
+    assert metrics.amp_overflow_batches == 0
+    assert metrics.finite_gradient_batches == 4
+    assert metrics.non_finite_gradient_batches == 0
     assert metrics.loss_stage == 4
     for semantic in (
         "mean_return",
@@ -330,16 +338,99 @@ def test_train_metrics_uses_global_row_weighted_direct_losses():
         rows=1,
         loss_parts=_loss_parts(1.0),
         grad_norm=1.0,
+        optimizer_update_applied=True,
+        amp_overflow=False,
         nan_ratio=0.0,
     )
     first.update(
         rows=3,
         loss_parts=_loss_parts(3.0),
         grad_norm=1.0,
+        optimizer_update_applied=True,
+        amp_overflow=False,
         nan_ratio=0.0,
     )
 
     assert first.direct_losses() == pytest.approx((2.5,) * 6)
+
+
+def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
+    metrics = TrainMetrics()
+    for gradient, applied, overflow in (
+        (1.0, True, False),
+        (float("inf"), False, True),
+        (3.0, True, False),
+        (2.0, True, False),
+    ):
+        metrics.update(
+            rows=1,
+            loss_parts=_loss_parts(1.0),
+            grad_norm=gradient,
+            optimizer_update_applied=applied,
+            amp_overflow=overflow,
+            nan_ratio=0.0,
+        )
+
+    document = metrics.to_dict()
+
+    assert document["trainingBatchesCompleted"] == 4
+    assert document["optimizerUpdatesApplied"] == 3
+    assert document["optimizerUpdatesSkipped"] == 1
+    assert document["ampOverflowBatches"] == 1
+    assert document["finiteGradientBatches"] == 3
+    assert document["nonFiniteGradientBatches"] == 1
+    assert document["preClipGradientNormMean"] == pytest.approx(2.0)
+    assert document["preClipGradientNormMax"] == pytest.approx(3.0)
+    assert document["preClipGradientNormP95"] == pytest.approx(3.0)
+
+
+def test_amp_overflow_counts_a_skipped_update_and_keeps_later_gradient():
+    batch = make_dummy_data(n=4)
+    model = new_model()
+    trainer = Trainer(
+        model=model,
+        device=torch.device("cpu"),
+        train_config=TrainConfig(
+            batch_size=2,
+            epochs=1,
+            loss_schedule="none",
+        ),
+    )
+    forward_calls = 0
+
+    def count_forward(*_args):
+        nonlocal forward_calls
+        forward_calls += 1
+
+    forward_hook = model.register_forward_hook(count_forward)
+    gradient_hooks = [
+        parameter.register_hook(
+            lambda gradient: (
+                torch.full_like(gradient, torch.inf)
+                if forward_calls == 1
+                else gradient
+            )
+        )
+        for parameter in model.parameters()
+    ]
+    trainer.use_amp = True
+    trainer.scaler = torch.amp.GradScaler("cpu", init_scale=128.0)
+    trainer._autocast = nullcontext
+    try:
+        metrics = trainer.fit_batch(batch)
+    finally:
+        forward_hook.remove()
+        for hook in gradient_hooks:
+            hook.remove()
+
+    assert metrics.training_batches_completed == 2
+    assert metrics.optimizer_updates_applied == 1
+    assert metrics.optimizer_updates_skipped == 1
+    assert metrics.amp_overflow_batches == 1
+    assert metrics.finite_gradient_batches == 1
+    assert metrics.non_finite_gradient_batches == 1
+    assert metrics.pre_clip_gradient_norm_mean is not None
+    assert math.isfinite(metrics.pre_clip_gradient_norm_mean)
 
 
 def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
@@ -492,7 +583,17 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
 
 def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
     path = tmp_path / "metrics.jsonl"
-    metrics = TrainMetrics(rows=4, batches=1, loss_l0=0.2)
+    metrics = TrainMetrics(
+        rows=4,
+        batches=1,
+        loss_l0=0.2,
+        training_batches_completed=1,
+        optimizer_updates_applied=1,
+        finite_gradient_batches=1,
+        pre_clip_gradient_norm_mean=1.0,
+        pre_clip_gradient_norm_max=1.0,
+        pre_clip_gradient_norm_p95=1.0,
+    )
     append_metrics_jsonl(str(path), metrics, mode="fit")
 
     row = json.loads(path.read_text().strip())

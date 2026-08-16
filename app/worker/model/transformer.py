@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from app.contracts.worker.v4.config import DEFAULT_CONTEXT_MODE
+from app.contracts.worker.v6.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,

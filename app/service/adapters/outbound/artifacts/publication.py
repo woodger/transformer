@@ -4,25 +4,30 @@ import hashlib
 import math
 import os
 import shutil
+import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.flight.v4.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v6 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v6.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
+    DIRECT_LOSSES,
     ml_contract,
     objective_config,
     objective_config_sha256,
+)
+from app.service.adapters.outbound.artifacts.run_summary import (
+    publish_fit_run_summary,
 )
 from app.service.adapters.outbound.artifacts.training_metrics import (
     publish_training_metrics,
@@ -38,6 +43,7 @@ from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
+    FitRunSummarySource,
     StagedPredictionOutput,
     TrainingMetricIntervalRecord,
 )
@@ -75,11 +81,25 @@ class _PublicationLedger(Protocol):
         metrics_byte_count: int,
         metrics_sha256: str,
         metrics_row_count: int,
+        run_summary_path: str,
+        run_summary_format: str,
+        run_summary_media_type: str,
+        run_summary_byte_count: int,
+        run_summary_sha256: str,
         application_version: str,
         git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
+        now: float | None = None,
     ) -> Mapping[str, object]: ...
+
+    def fit_run_summary_source(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+    ) -> FitRunSummarySource: ...
 
     def get_execution_job(self, job_id: str) -> ExecutionJobRecord | None: ...
 
@@ -116,6 +136,8 @@ class _PublicationSpool(Protocol):
 
     def model_metrics_path(self, model_ref: str) -> str: ...
 
+    def model_run_summary_path(self, model_ref: str) -> str: ...
+
     def model_relative_path(self, absolute_path: str) -> str: ...
 
     def staged_file(
@@ -149,6 +171,7 @@ class WorkerArtifactPublisher:
         application_version: str,
         git_commit: str,
         max_payload_bytes: int | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.ledger = ledger
         self.spool = spool
@@ -157,6 +180,7 @@ class WorkerArtifactPublisher:
         self.application_version = application_version
         self.git_commit = git_commit
         self.max_payload_bytes = max_payload_bytes
+        self._monotonic = monotonic
 
     def _publish_outputs(
         self,
@@ -320,18 +344,36 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit worker artifact integrity check failed",
                 )
-        self._publish_model(
-            job,
-            _object(
+        try:
+            checkpoint_metadata = _object(
                 result.get("checkpointMetadata"),
                 "fit checkpoint metadata",
-            ),
+            )
+            checkpoint_serialization_ms = _nonnegative_number(
+                result.get("checkpointSerializationMs"),
+                "fit checkpoint serialization duration",
+            )
+            target_statistics = _target_statistics(
+                result.get("targetStatistics")
+            )
+        except ValueError as exc:
+            raise WorkerArtifactError(
+                ErrorCode.MALFORMED_OUTPUT,
+                "fit worker result contains invalid metadata",
+            ) from exc
+        self._publish_model(
+            job,
+            checkpoint_metadata,
+            checkpoint_serialization_ms,
+            target_statistics,
         )
 
     def _publish_model(
         self,
         job: ExecutionJobRecord,
         checkpoint_metadata: JsonObject,
+        terminal_checkpoint_serialization_ms: float,
+        target_statistics: list[JsonObject],
     ) -> None:
         attempt_path = self.spool.attempt_checkpoint_path(
             job.job_id, job.attempt
@@ -378,13 +420,18 @@ class WorkerArtifactPublisher:
                 "fit checkpoint configuration differs from the immutable job config",
             )
 
+        checkpoint_publication_started = self._monotonic()
         digest = _sha256_file(attempt_path)
         byte_count = os.path.getsize(attempt_path)
+        terminal_checkpoint_publication_ms = (
+            self._monotonic() - checkpoint_publication_started
+        ) * 1000.0
         model_ref = f"mdl_{uuid.uuid4().hex}"
         model_directory = self.spool.model_directory(model_ref)
         checkpoint_path = self.spool.model_checkpoint_path(model_ref)
         metadata_path = self.spool.model_metadata_path(model_ref)
         metrics_path = self.spool.model_metrics_path(model_ref)
+        run_summary_path = self.spool.model_run_summary_path(model_ref)
         try:
             service_version = _string(
                 checkpoint_metadata.get("serviceVersion"),
@@ -468,24 +515,68 @@ class WorkerArtifactPublisher:
             "attempt": job.attempt,
             "modelRef": model_ref,
         }
-        metadata: JsonObject = {
-            "modelRef": model_ref,
-            "label": job.model_label,
-            # Internal snake_case copies let predict create resolve a generation
-            # without depending on the public status document representation.
-            "model_config": actual_model.to_dict(),
-            "train_config": actual_train.to_dict(),
-            "data_contract": dict(job.data_contract),
-            "ml_contract": expected_ml_contract,
-            "objective_config": expected_objective,
-            "data_schema": data_schema,
-            "checkpoint": safe_checkpoint,
-            "training_metrics": training_metrics_metadata,
-        }
         try:
+            checkpoint_publication_started = self._monotonic()
             with open(attempt_path, "rb") as source:
                 with self.spool.staged_file(checkpoint_path) as (target, _):
                     shutil.copyfileobj(source, target, _COPY_CHUNK_BYTES)
+            terminal_checkpoint_publication_ms += (
+                self._monotonic() - checkpoint_publication_started
+            ) * 1000.0
+            summary_source = self.ledger.fit_run_summary_source(
+                job.job_id,
+                job.attempt,
+                attempt_id=_attempt_id(job),
+            )
+            run_summary = publish_fit_run_summary(
+                self.spool,
+                run_summary_path,
+                summary_source,
+                model_ref=model_ref,
+                data_contract_sha256=_string(
+                    job.data_contract.get("data_contract_sha256"),
+                    "fit data contract sha256",
+                ),
+                objective_config_sha256=_string(
+                    expected_ml_contract.get("objectiveConfigSha256"),
+                    "fit objective config sha256",
+                ),
+                checkpoint_format=CHECKPOINT_FORMAT,
+                application_version=self.application_version,
+                git_commit=self.git_commit,
+                terminal_checkpoint_serialization_ms=(
+                    terminal_checkpoint_serialization_ms
+                ),
+                terminal_checkpoint_publication_ms=(
+                    terminal_checkpoint_publication_ms
+                ),
+                target_statistics=target_statistics,
+            )
+            run_summary_metadata: JsonObject = {
+                "format": run_summary.format,
+                "mediaType": run_summary.media_type,
+                "bytes": run_summary.byte_count,
+                "sha256": run_summary.sha256,
+                "jobId": job.job_id,
+                "attemptId": _attempt_id(job),
+                "attempt": job.attempt,
+                "modelRef": model_ref,
+            }
+            metadata: JsonObject = {
+                "modelRef": model_ref,
+                "label": job.model_label,
+                # Internal snake_case copies let predict create resolve a generation
+                # without depending on the public status document representation.
+                "model_config": actual_model.to_dict(),
+                "train_config": actual_train.to_dict(),
+                "data_contract": dict(job.data_contract),
+                "ml_contract": expected_ml_contract,
+                "objective_config": expected_objective,
+                "data_schema": data_schema,
+                "checkpoint": safe_checkpoint,
+                "training_metrics": training_metrics_metadata,
+                "fit_run_summary": run_summary_metadata,
+            }
             self.spool.atomic_write_json(metadata_path, metadata)
             self.ledger.publish_model(
                 job.job_id,
@@ -504,6 +595,13 @@ class WorkerArtifactPublisher:
                 metrics_byte_count=training_metrics.byte_count,
                 metrics_sha256=training_metrics.sha256,
                 metrics_row_count=training_metrics.row_count,
+                run_summary_path=self.spool.model_relative_path(
+                    run_summary_path
+                ),
+                run_summary_format=run_summary.format,
+                run_summary_media_type=run_summary.media_type,
+                run_summary_byte_count=run_summary.byte_count,
+                run_summary_sha256=run_summary.sha256,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
                 metadata=metadata,
@@ -511,12 +609,14 @@ class WorkerArtifactPublisher:
                     "modelRef": model_ref,
                     "checkpoint": safe_checkpoint,
                 },
+                now=summary_source.publication_boundary_at,
             )
             self.metrics.add("checkpointBytes", byte_count)
             self.metrics.add(
                 "trainingMetricsArtifactBytes",
                 training_metrics.byte_count,
             )
+            self.metrics.add("fitRunSummaryArtifactBytes", run_summary.byte_count)
             self.logger.event(
                 "flight.model.published",
                 jobId=job.job_id,
@@ -705,6 +805,69 @@ def _validate_worker_selection(
     return result
 
 
+def _target_statistics(value: object) -> list[JsonObject]:
+    if not isinstance(value, list):
+        raise ValueError("fit target statistics must contain six targets")
+    items = cast(list[object], value)
+    if len(items) != len(DIRECT_LOSSES):
+        raise ValueError("fit target statistics must contain six targets")
+    statistics: list[JsonObject] = []
+    required = {
+        "targetIndex",
+        "name",
+        "count",
+        "min",
+        "max",
+        "mean",
+        "std",
+        "zeroCount",
+        "oneCount",
+    }
+    for index, ((_, semantic, _), item) in enumerate(
+        zip(DIRECT_LOSSES, items, strict=True)
+    ):
+        document = _object(item, "fit target statistic")
+        if (
+            set(document) != required
+            or _integer(document.get("targetIndex"), "target index") != index
+            or document.get("name") != semantic
+        ):
+            raise ValueError("fit target statistic identity is invalid")
+        count = _integer(document.get("count"), "target count")
+        zero_count = _integer(document.get("zeroCount"), "target zero count")
+        one_count = _integer(document.get("oneCount"), "target one count")
+        minimum = _finite_number(document.get("min"), "target minimum")
+        maximum = _finite_number(document.get("max"), "target maximum")
+        mean = _finite_number(document.get("mean"), "target mean")
+        standard_deviation = _nonnegative_number(
+            document.get("std"),
+            "target standard deviation",
+        )
+        lower = -1.0 if index == 0 else 0.0
+        if (
+            count <= 0
+            or zero_count < 0
+            or one_count < 0
+            or zero_count > count
+            or one_count > count
+            or zero_count + one_count > count
+            or not lower <= minimum <= mean <= maximum <= 1.0
+        ):
+            raise ValueError("fit target statistic values are invalid")
+        statistics.append({
+            "targetIndex": index,
+            "name": semantic,
+            "count": count,
+            "min": minimum,
+            "max": maximum,
+            "mean": mean,
+            "std": standard_deviation,
+            "zeroCount": zero_count,
+            "oneCount": one_count,
+        })
+    return statistics
+
+
 def _object(value: object, label: str) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
@@ -724,6 +887,27 @@ def _integer(value: object, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{label} must be an integer")
     return value
+
+
+def _nonnegative_number(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ValueError(f"{label} must be a finite non-negative number")
+    return float(value)
+
+
+def _finite_number(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise ValueError(f"{label} must be a finite number")
+    return float(value)
 
 
 def _attempt_id(job: ExecutionJobRecord) -> str:

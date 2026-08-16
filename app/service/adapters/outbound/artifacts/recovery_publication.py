@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import shutil
+import time
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4 import WorkerContractError, validate_document
-from app.contracts.worker.v4.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v6 import WorkerContractError, validate_document
+from app.contracts.worker.v6.objective import TRAINING_RECOVERY_FORMAT
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -41,6 +44,8 @@ class _RecoveryLedger(Protocol):
         global_step: int,
         training_complete: bool,
         metrics: JsonObject,
+        checkpoint_serialization_ms: float,
+        checkpoint_publication_ms: float,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
 
     def prune_recovery_checkpoints(
@@ -90,19 +95,23 @@ class RecoveryCheckpointPublisher:
         *,
         logger: EventLogger,
         metrics: OperationalMetricSink,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.ledger = ledger
         self.recovery_store = recovery_store
         self.spool = spool
         self.logger = logger
         self.metrics = metrics
+        self._monotonic = monotonic
 
     def publish(
         self,
         job: ExecutionJobRecord,
         event: JsonObject,
     ) -> None:
+        publication_started: float | None = None
         if "artifact" in event:
+            publication_started = self._monotonic()
             event = self._publish_attempt_checkpoint(job, event)
         required = {
             "format",
@@ -113,8 +122,15 @@ class RecoveryCheckpointPublisher:
             "bytes",
             "sha256",
             "metrics",
+            "checkpoint_serialization_ms",
+            "checkpoint_publication_ms",
         }
-        if set(event) != required:
+        expected_fields = (
+            required
+            if publication_started is None
+            else required - {"checkpoint_publication_ms"}
+        )
+        if set(event) != expected_fields:
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit subprocess emitted an invalid recovery event",
@@ -189,6 +205,17 @@ class RecoveryCheckpointPublisher:
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit recovery checkpoint metadata is inconsistent",
             )
+        checkpoint_publication_ms = (
+            _nonnegative_number(
+                event["checkpoint_publication_ms"],
+                "checkpoint publication duration",
+            )
+            if publication_started is None
+            else _nonnegative_number(
+                (self._monotonic() - publication_started) * 1000.0,
+                "checkpoint publication duration",
+            )
+        )
         _, replayed = self.ledger.register_recovery_checkpoint(
             job_id=job.job_id,
             attempt=job.attempt,
@@ -202,6 +229,11 @@ class RecoveryCheckpointPublisher:
             global_step=global_step,
             training_complete=training_complete,
             metrics=interval_metrics,
+            checkpoint_serialization_ms=_nonnegative_number(
+                event["checkpoint_serialization_ms"],
+                "checkpoint serialization duration",
+            ),
+            checkpoint_publication_ms=checkpoint_publication_ms,
         )
         if not replayed:
             self.metrics.add("recoveryCheckpointsPublished")
@@ -241,6 +273,7 @@ class RecoveryCheckpointPublisher:
             "globalStep",
             "trainingComplete",
             "artifact",
+            "checkpointSerializationMs",
             "metrics",
         }
         if set(event) != required or self.spool is None:
@@ -321,6 +354,10 @@ class RecoveryCheckpointPublisher:
                 artifact.get("sha256"),
                 "worker checkpoint sha256",
             ),
+            "checkpoint_serialization_ms": _nonnegative_number(
+                event["checkpointSerializationMs"],
+                "worker checkpoint serialization duration",
+            ),
             "metrics": _object(
                 event["metrics"],
                 "worker checkpoint metrics",
@@ -358,6 +395,20 @@ def _string(value: object, label: str) -> str:
             f"{label} must be a non-empty string",
         )
     return value
+
+
+def _nonnegative_number(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise WorkerRecoveryError(
+            ErrorCode.MALFORMED_OUTPUT,
+            f"{label} must be a finite non-negative number",
+        )
+    return float(value)
 
 
 def _positive_integer(value: object, label: str) -> int:

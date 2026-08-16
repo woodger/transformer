@@ -7,11 +7,13 @@ from sqlalchemy import func, select
 from app.service.adapters.outbound.postgres.models import (
     MetricsOutboxEntry,
     ModelMetricsArtifact,
+    ModelRunSummaryArtifact,
 )
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.domain.records import (
     MetricsOutboxRecord,
     ModelMetricsArtifactRecord,
+    ModelRunSummaryArtifactRecord,
 )
 
 
@@ -25,10 +27,19 @@ class PostgresMetricsOutbox:
         now = datetime.now(UTC)
         with self.database.session() as session:
             row = session.execute(
-                select(MetricsOutboxEntry, ModelMetricsArtifact)
+                select(
+                    MetricsOutboxEntry,
+                    ModelMetricsArtifact,
+                    ModelRunSummaryArtifact,
+                )
                 .join(
                     ModelMetricsArtifact,
                     ModelMetricsArtifact.model_ref
+                    == MetricsOutboxEntry.model_ref,
+                )
+                .outerjoin(
+                    ModelRunSummaryArtifact,
+                    ModelRunSummaryArtifact.model_ref
                     == MetricsOutboxEntry.model_ref,
                 )
                 .where(
@@ -40,7 +51,7 @@ class PostgresMetricsOutbox:
             ).one_or_none()
             if row is None:
                 return None
-            return _record(row[0], row[1])
+            return _record(row[0], row[1], row[2])
 
     def advance(
         self,
@@ -158,8 +169,19 @@ class PostgresMetricsOutbox:
             count, byte_count, oldest = session.execute(
                 select(
                     func.count(MetricsOutboxEntry.model_ref),
-                    func.coalesce(func.sum(ModelMetricsArtifact.bytes), 0),
+                    func.coalesce(
+                        func.sum(
+                            ModelMetricsArtifact.bytes
+                            + func.coalesce(ModelRunSummaryArtifact.bytes, 0)
+                        ),
+                        0,
+                    ),
                     func.min(MetricsOutboxEntry.created_at),
+                )
+                .outerjoin(
+                    ModelRunSummaryArtifact,
+                    ModelRunSummaryArtifact.model_ref
+                    == MetricsOutboxEntry.model_ref,
                 )
                 .join(
                     ModelMetricsArtifact,
@@ -184,6 +206,7 @@ def _owns(row: MetricsOutboxEntry, expected_cursor: int) -> bool:
 def _record(
     outbox: MetricsOutboxEntry,
     artifact: ModelMetricsArtifact,
+    run_summary: ModelRunSummaryArtifact | None,
 ) -> MetricsOutboxRecord:
     return MetricsOutboxRecord(
         artifact=ModelMetricsArtifactRecord(
@@ -200,6 +223,24 @@ def _record(
             application_version=artifact.application_version,
             git_commit=artifact.git_commit,
             created_at=artifact.created_at.timestamp(),
+        ),
+        run_summary=(
+            None
+            if run_summary is None
+            else ModelRunSummaryArtifactRecord(
+                model_ref=run_summary.model_ref,
+                format=run_summary.format,
+                media_type=run_summary.media_type,
+                relative_path=run_summary.relative_path,
+                byte_count=run_summary.bytes,
+                sha256=run_summary.sha256,
+                job_id=run_summary.job_id,
+                attempt_id=run_summary.attempt_id,
+                attempt=run_summary.attempt,
+                application_version=run_summary.application_version,
+                git_commit=run_summary.git_commit,
+                created_at=run_summary.created_at.timestamp(),
+            )
         ),
         projection_version=outbox.projection_version,
         status=outbox.status,

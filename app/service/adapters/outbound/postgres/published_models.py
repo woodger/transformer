@@ -11,6 +11,7 @@ from app.service.adapters.outbound.postgres.models import (
     MetricsOutboxEntry,
     ModelAlias,
     ModelMetricsArtifact,
+    ModelRunSummaryArtifact,
     PublishedModel,
 )
 from app.service.adapters.outbound.postgres.session import Database
@@ -178,6 +179,13 @@ class PublishedModelStore:
             )
             if artifact is not None:
                 session.delete(artifact)
+            run_summary = session.get(
+                ModelRunSummaryArtifact,
+                model_ref,
+                with_for_update=True,
+            )
+            if run_summary is not None:
+                session.delete(run_summary)
             aliases = session.scalars(
                 select(ModelAlias)
                 .where(ModelAlias.model_ref == model_ref)

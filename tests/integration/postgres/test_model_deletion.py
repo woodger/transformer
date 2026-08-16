@@ -19,6 +19,7 @@ from app.service.adapters.outbound.postgres.models import (
     MetricsOutboxEntry,
     ModelAlias,
     ModelMetricsArtifact,
+    ModelRunSummaryArtifact,
     PublishedModel,
 )
 from app.service.adapters.outbound.postgres.published_models import (
@@ -36,6 +37,7 @@ from tests.support.flight_v4_helpers import (
     create_fit,
     create_predict,
     create_test_metrics_artifact,
+    create_test_run_summary_artifact,
     internal_data_contract,
     model_config,
 )
@@ -74,25 +76,40 @@ def _seed_model(
             ))
         if outbox_status is not None:
             job_id = str(uuid.uuid4())
+            attempt_id = str(uuid.uuid4())
             session.add(ModelMetricsArtifact(
                 model_ref=model_ref,
-                format="transformer.training-metrics.v1",
+                format="transformer.training-metrics.v2",
                 media_type="application/x-ndjson",
                 relative_path=f"{model_ref}/metrics.jsonl",
                 bytes=10,
                 sha256="b" * 64,
                 row_count=1,
                 job_id=job_id,
-                attempt_id=str(uuid.uuid4()),
+                attempt_id=attempt_id,
                 attempt=1,
-                application_version="0.1.10",
+                application_version="0.1.12",
+                git_commit="0" * 40,
+                created_at=now,
+            ))
+            session.add(ModelRunSummaryArtifact(
+                model_ref=model_ref,
+                format="transformer.fit-run-summary.v2",
+                media_type="application/json",
+                relative_path=f"{model_ref}/run-summary.json",
+                bytes=10,
+                sha256="c" * 64,
+                job_id=job_id,
+                attempt_id=attempt_id,
+                attempt=1,
+                application_version="0.1.12",
                 git_commit="0" * 40,
                 created_at=now,
             ))
             session.flush()
             session.add(MetricsOutboxEntry(
                 model_ref=model_ref,
-                projection_version="inventory.metrics.v1",
+                projection_version="inventory.metrics.v3",
                 status=outbox_status,
                 cursor=0,
                 attempts=0,
@@ -150,6 +167,7 @@ def test_model_deletion_requires_explicit_metrics_discard_and_keeps_tombstone(
     with postgres_database.session() as session:
         assert session.get(PublishedModel, model_ref) is not None
         assert session.get(ModelMetricsArtifact, model_ref) is None
+        assert session.get(ModelRunSummaryArtifact, model_ref) is None
         assert session.get(MetricsOutboxEntry, model_ref) is None
 
 
@@ -283,6 +301,13 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         attempt_id=attempt.attempt_id,
         attempt=attempt.attempt,
     )
+    run_summary = create_test_run_summary_artifact(
+        spool,
+        model_ref=model_ref,
+        job_id=job["job_id"],
+        attempt_id=attempt.attempt_id,
+        attempt=attempt.attempt,
+    )
 
     ledger.publish_model(
         job["job_id"],
@@ -296,11 +321,16 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         byte_count=len(checkpoint),
         sha256=hashlib.sha256(checkpoint).hexdigest(),
         metrics_path=metrics.relative_path,
-        metrics_format="transformer.training-metrics.v1",
+        metrics_format="transformer.training-metrics.v2",
         metrics_media_type="application/x-ndjson",
         metrics_byte_count=metrics.byte_count,
         metrics_sha256=metrics.sha256,
         metrics_row_count=metrics.row_count,
+        run_summary_path=run_summary.relative_path,
+        run_summary_format="transformer.fit-run-summary.v2",
+        run_summary_media_type="application/json",
+        run_summary_byte_count=run_summary.byte_count,
+        run_summary_sha256=run_summary.sha256,
         application_version="0.1.10",
         git_commit="0" * 40,
         metadata={

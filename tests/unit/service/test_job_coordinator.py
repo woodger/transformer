@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.messages.jobs import (
