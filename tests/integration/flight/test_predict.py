@@ -10,7 +10,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import torch
 
-from app.contracts.worker.v3.objective import (
+from app.contracts.worker.v4.objective import (
     ml_contract,
     objective_config,
 )
@@ -35,6 +35,7 @@ from tests.support.flight_v4_helpers import (
     close_input,
     commit_input,
     create_fit,
+    create_test_metrics_artifact,
     internal_data_contract,
     model_config,
     public_data_contract,
@@ -121,6 +122,13 @@ def _publish_seed_model(ledger, models_dir, runtime_dir):
     }
     spool.atomic_write_json(metadata_path, metadata)
     checkpoint_bytes = Path(checkpoint).read_bytes()
+    metrics_artifact = create_test_metrics_artifact(
+        spool,
+        model_ref=model_ref,
+        job_id=fit["job_id"],
+        attempt_id=running.attempt_id,
+        attempt=running.attempt,
+    )
     ledger.publish_model(
         fit["job_id"],
         running.attempt,
@@ -132,6 +140,14 @@ def _publish_seed_model(ledger, models_dir, runtime_dir):
         metadata_path=spool.model_relative_path(metadata_path),
         byte_count=len(checkpoint_bytes),
         sha256=hashlib.sha256(checkpoint_bytes).hexdigest(),
+        metrics_path=metrics_artifact.relative_path,
+        metrics_format="transformer.training-metrics.v1",
+        metrics_media_type="application/x-ndjson",
+        metrics_byte_count=metrics_artifact.byte_count,
+        metrics_sha256=metrics_artifact.sha256,
+        metrics_row_count=metrics_artifact.row_count,
+        application_version="0.1.10",
+        git_commit="0" * 40,
         metadata=metadata,
         result={"modelRef": model_ref},
     )

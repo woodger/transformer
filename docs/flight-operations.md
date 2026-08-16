@@ -52,6 +52,8 @@ PostgreSQL является единственным долговечным ис
 - metadata inputs/outputs, idempotency records и output tickets;
 - зарегистрированных generations training recovery и истории retry;
 - metadata опубликованных моделей и owner-scoped aliases моделей;
+- committed epoch metrics, metadata model-owned metrics artifacts и состояние
+  OpenSearch outbox;
 - API access tokens;
 - текущей storage epoch runtime.
 
@@ -90,15 +92,18 @@ Fit inputs и восстанавливаемое состояние обучен
   {modelRef}/
     checkpoint.pth
     metadata.json
+    metrics.jsonl
 ```
 
 Файлы сначала записываются рядом с конечным расположением, синхронизируются
 через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
 Recovery checkpoint становится видимым только после надёжной записи файла и
-регистрации его generation в PostgreSQL. При публикации модели checkpoint
-успешной attempt сначала копируется в `models/`, а metadata фиксируются в
-PostgreSQL только после успешной публикации в filesystem. Неуспешные и
-прерванные attempts не создают generation модели.
+регистрации его generation и полной epoch metric в одной транзакции
+PostgreSQL. При публикации модели checkpoint успешной attempt и собранный
+`metrics.jsonl` сначала копируются в `models/`, а model/artifact metadata и
+OpenSearch outbox фиксируются одной terminal transaction только после
+успешной публикации в filesystem. Неуспешные и прерванные attempts не создают
+generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
 `service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
@@ -157,6 +162,12 @@ prediction. Перед первым применением `0006` останов
 Transformer, сохраните резервную копию PostgreSQL и model artifacts. После
 обновления одновременно запускаются только Inventory v4 и Transformer v4;
 модели требуется переобучить.
+
+Revision `0007` добавляет committed training intervals, metadata metrics
+artifact и delivery outbox. Flight v4 wire schema не меняется. Настройка
+OpenSearch выполняется отдельно по
+[`deployment/opensearch.md`](deployment/opensearch.md); недоступность
+OpenSearch не блокирует fit и публикацию модели.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications

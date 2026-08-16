@@ -12,11 +12,11 @@ import pyarrow.ipc as ipc
 import pytest
 from jsonschema.exceptions import ValidationError
 
-from app.contracts.worker.v3.config import (
+from app.contracts.worker.v4.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )
-from app.contracts.worker.v3.objective import (
+from app.contracts.worker.v4.objective import (
     objective_config,
     objective_config_sha256,
 )

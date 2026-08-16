@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v3.config import CheckpointSelectionConfig
-from app.contracts.worker.v3.objective import objective_config_sha256
+from app.contracts.worker.v4.config import CheckpointSelectionConfig
+from app.contracts.worker.v4.objective import objective_config_sha256
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,

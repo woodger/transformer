@@ -29,11 +29,12 @@ from app.service.application.services.attempt_executor import (
     WorkerAttemptExecutor,
 )
 from app.service.application.services.worker_pool import WorkerPool as WorkerScheduler
+from app.service.bootstrap.build_identity import BuildIdentity, load_build_identity
 from app.service.bootstrap.config import FlightServiceConfig
 
 
 class WorkerPool(WorkerScheduler):
-    """Compose the durable scheduler with worker-process v3 adapters."""
+    """Compose the durable scheduler with worker-process v4 adapters."""
 
     def __init__(
         self,
@@ -49,10 +50,12 @@ class WorkerPool(WorkerScheduler):
         python_executable: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         device_inventory: DeviceLeaseManager | None = None,
+        build_identity: BuildIdentity | None = None,
     ) -> None:
         logger = logger or JsonLogger()
         metrics = metrics or OperationalMetrics()
         device_inventory = device_inventory or static_cuda_inventory(lambda: True)
+        build_identity = build_identity or load_build_identity()
         super().__init__(
             config,
             ledger,
@@ -76,6 +79,8 @@ class WorkerPool(WorkerScheduler):
             spool,
             logger=logger,
             metrics=metrics,
+            application_version=build_identity.application_version,
+            git_commit=build_identity.git_commit,
             max_payload_bytes=config.max_payload_bytes,
         )
         self._recovery_publisher = (

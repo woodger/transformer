@@ -11,10 +11,19 @@ from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
+from app.service.adapters.outbound.artifacts.metrics_projection import (
+    ModelMetricsProjection,
+)
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
+)
+from app.service.adapters.outbound.opensearch.client import (
+    OpenSearchMetricsClient,
+)
+from app.service.adapters.outbound.opensearch.config import (
+    load_opensearch_metrics_config,
 )
 from app.service.adapters.outbound.postgres.config import (
     DatabaseConfig,
@@ -22,6 +31,9 @@ from app.service.adapters.outbound.postgres.config import (
 )
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import row_string
+from app.service.adapters.outbound.postgres.metrics_outbox import (
+    PostgresMetricsOutbox,
+)
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCache,
@@ -30,6 +42,8 @@ from app.service.adapters.outbound.postgres.token_cache import (
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
+from app.service.application.services.metrics_publisher import MetricsPublisher
+from app.service.bootstrap.build_identity import load_build_identity
 from app.service.bootstrap.config import FlightServiceConfig, load_config
 from app.service.bootstrap.control_plane import build_job_coordinator
 from app.service.bootstrap.data_plane import (
@@ -82,6 +96,10 @@ class _TokenCacheRuntime(Protocol):
     def shutdown(self, timeout: float | None = None) -> None: ...
 
 
+class _MetricsPublisherRuntime(Protocol):
+    def shutdown(self, timeout: float | None = None) -> None: ...
+
+
 class _LedgerRuntime(Protocol):
     def close(self) -> None: ...
 
@@ -110,6 +128,7 @@ class FlightApplication:
         logger: JsonLogger,
         token_cache_service: _TokenCacheRuntime | None = None,
         recovery_store: _LockRuntime | None = None,
+        metrics_publisher: _MetricsPublisherRuntime | None = None,
     ) -> None:
         self.config = config
         self.spool = spool
@@ -122,6 +141,7 @@ class FlightApplication:
         self.logger = logger
         self.token_cache_service = token_cache_service
         self.recovery_store = recovery_store
+        self.metrics_publisher = metrics_publisher
         self._shutdown_lock = threading.Lock()
         self._shutdown_started = False
         self._shutdown_complete = threading.Event()
@@ -166,12 +186,36 @@ class FlightApplication:
         coordinator = None
         server: _FlightServerRuntime | None = None
         maintenance: MaintenanceService | None = None
+        metrics_publisher: MetricsPublisher | None = None
         application: FlightApplication | None = None
         try:
             recovery_store.acquire_lock()
             spool.acquire_lock()
             database_config = database_config or load_database_config()
             ledger = Ledger(Database(database_config)).initialize()
+            build_identity = load_build_identity()
+            metrics_outbox = PostgresMetricsOutbox(ledger.database)
+            metrics_config = load_opensearch_metrics_config()
+            if metrics_config is None:
+                backlog_entries, backlog_bytes, backlog_age = (
+                    metrics_outbox.backlog()
+                )
+                metrics.set("metricsOutboxEntries", backlog_entries)
+                metrics.set("metricsOutboxBytes", backlog_bytes)
+                metrics.set("metricsOutboxOldestAgeSeconds", backlog_age)
+                logger.event(
+                    "metrics.publisher.disabled",
+                    pendingEntries=backlog_entries,
+                )
+            else:
+                metrics_publisher = MetricsPublisher(
+                    metrics_outbox,
+                    ModelMetricsProjection(spool),
+                    OpenSearchMetricsClient(metrics_config),
+                    deployment_id=metrics_config.deployment_id,
+                    logger=logger,
+                    metrics=metrics,
+                )
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
@@ -238,6 +282,7 @@ class FlightApplication:
                 metrics=metrics,
                 logger=logger,
                 device_inventory=device_inventory,
+                build_identity=build_identity,
             )
             coordinator = build_job_coordinator(
                 config,
@@ -304,7 +349,10 @@ class FlightApplication:
                 logger,
                 token_cache_service,
                 recovery_store,
+                metrics_publisher,
             )
+            if metrics_publisher is not None:
+                metrics_publisher.start()
             worker.start()
             maintenance.start()
             for job_id in interrupted_jobs:
@@ -380,6 +428,7 @@ class FlightApplication:
                 server=server,
                 worker=worker,
                 maintenance=maintenance,
+                metrics_publisher=metrics_publisher,
                 token_cache_service=token_cache_service,
                 ledger=ledger,
                 spool=spool,
@@ -484,6 +533,7 @@ class FlightApplication:
                 server=self.server,
                 worker=self.worker,
                 maintenance=self.maintenance,
+                metrics_publisher=self.metrics_publisher,
                 token_cache_service=self.token_cache_service,
                 ledger=self.ledger,
                 spool=self.spool,
@@ -521,6 +571,7 @@ def _cleanup_runtime(
     server: _FlightServerRuntime | None,
     worker: _WorkerRuntime | None,
     maintenance: _MaintenanceRuntime | None,
+    metrics_publisher: _MetricsPublisherRuntime | None,
     token_cache_service: _TokenCacheRuntime | None,
     ledger: _LedgerRuntime | None,
     spool: _LockRuntime,
@@ -533,6 +584,11 @@ def _cleanup_runtime(
     operations: tuple[Callable[[], None] | None, ...] = (
         None if server is None else server.shutdown,
         None if worker is None else lambda: worker.shutdown(worker_timeout),
+        (
+            None
+            if metrics_publisher is None
+            else lambda: metrics_publisher.shutdown(maintenance_timeout)
+        ),
         None if maintenance is None else lambda: maintenance.shutdown(maintenance_timeout),
         None if token_cache_service is None else lambda: token_cache_service.shutdown(maintenance_timeout),
         None if ledger is None else ledger.close,

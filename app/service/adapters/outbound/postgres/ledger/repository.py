@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -68,6 +68,7 @@ from app.service.domain.records import (
     RecoverableAttemptRecord,
     StatusRecoveryRecord,
     StatusSnapshot,
+    TrainingMetricIntervalRecord,
     TrainingRecoveryCheckpointRecord,
 )
 
@@ -1001,6 +1002,7 @@ class Ledger:
         completed_epochs: int,
         global_step: int,
         training_complete: bool,
+        metrics: JsonObject,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
         return self._recovery.register_checkpoint(
@@ -1015,8 +1017,15 @@ class Ledger:
             completed_epochs=completed_epochs,
             global_step=global_step,
             training_complete=training_complete,
+            metrics=metrics,
             now=now,
         )
+
+    def list_training_metrics(
+        self,
+        job_id: str,
+    ) -> list[TrainingMetricIntervalRecord]:
+        return self._recovery.list_metrics(job_id)
 
     def latest_recovery_checkpoint(
         self,
@@ -1103,6 +1112,14 @@ class Ledger:
         metadata_path: str,
         byte_count: int,
         sha256: str,
+        metrics_path: str,
+        metrics_format: str,
+        metrics_media_type: str,
+        metrics_byte_count: int,
+        metrics_sha256: str,
+        metrics_row_count: int,
+        application_version: str,
+        git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
         now: float | None = None,
@@ -1118,6 +1135,14 @@ class Ledger:
             metadata_path=metadata_path,
             byte_count=byte_count,
             sha256=sha256,
+            metrics_path=metrics_path,
+            metrics_format=metrics_format,
+            metrics_media_type=metrics_media_type,
+            metrics_byte_count=metrics_byte_count,
+            metrics_sha256=metrics_sha256,
+            metrics_row_count=metrics_row_count,
+            application_version=application_version,
+            git_commit=git_commit,
             metadata=metadata,
             result=result,
             now=now,

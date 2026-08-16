@@ -8,7 +8,9 @@
 [ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
 [ADR 0006](../adr/0006-service-application-boundaries.md), текущем
 [ADR 0007](../adr/0007-target-aligned-flight-v4.md) и
-[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md).
+[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md), а граница
+централизованных training metrics — в
+[ADR 0009](../adr/0009-centralized-training-metrics.md).
 
 ## Процессы и composition roots
 
@@ -20,7 +22,8 @@ app/main.py                         ленивый CLI dispatcher
 └── app/admin/bootstrap            auth и database commands
 
 app/contracts/flight/v4            публичный Flight contract
-app/contracts/worker/v3            внутренний process contract
+app/contracts/worker/v4            внутренний process contract
+app/contracts/metrics/v1           artifact и OpenSearch documents
 ```
 
 Единого bootstrap, импортирующего весь проект, нет. Service запускает worker
@@ -40,7 +43,7 @@ service/application/{commands,queries,services,ports}
 service/domain
 
 service/bootstrap ── собирает inbound и outbound adapters
-service/adapters/outbound/{postgres,artifacts,worker,cuda}
+service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
 - `service/domain` содержит job states, error codes, immutable records и pure
@@ -48,7 +51,7 @@ service/adapters/outbound/{postgres,artifacts,worker,cuda}
   subprocess и Torch.
 - `service/application` содержит типизированные commands, queries, нейтральные
   results, scheduler orchestration и capability-oriented ports. Он зависит
-  только от domain и внутреннего worker contract.
+  только от domain и внутренних worker/metrics contracts.
 - inbound Flight adapter проверяет структуру wire DTO нормативными JSON Schema
   Draft 2020-12, затем выполняет семантическую валидацию и mapping и
   преобразует application results и errors в Flight documents и Arrow status.
@@ -106,7 +109,7 @@ local CLI и application use cases сервиса.
 Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
 размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
 service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v3/config.py`. Общий `app/config.py` не
+defaults — в `app/contracts/worker/v4/config.py`. Общий `app/config.py` не
 создаётся.
 
 ## Admin
@@ -121,8 +124,10 @@ cases, которые определяют операции с access tokens. Al
 - `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
 - Flight v4 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v3/` — command/result manifests, capability document,
+- `app/contracts/worker/v4/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
+- `app/contracts/metrics/v1/` — immutable training artifact, закрытая
+  OpenSearch projection, golden identity и strict index templates;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
   `attempt` остаётся положительным job-local ordinal;
@@ -138,7 +143,9 @@ cases, которые определяют операции с access tokens. Al
 PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
-tokens и published metadata. SQLite и dual-write запрещены.
+tokens, published metadata и состояния metrics outbox. OpenSearch является
+восстанавливаемой аналитической проекцией, а не частью model/job lifecycle.
+SQLite и dual-write запрещены.
 
 PostgreSQL-транзакция не охватывает filesystem или subprocess. Artifact
 lifecycle всегда staged:
@@ -164,12 +171,14 @@ Ownership хранения:
 - domain не зависит от application, adapters или bootstrap;
 - application не зависит от adapters или bootstrap;
 - application не зависит от публичного Flight contract;
+- application может зависеть от внутреннего metrics contract для
+  детерминированной outbox projection;
 - adapters зависят от application/domain, но не от другого направления
   transport-а;
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v3`;
+- shared service/worker данные находятся только в `app/contracts/worker/v4`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.
@@ -190,6 +199,7 @@ Ownership хранения:
 - spool/publication — `app/service/adapters/outbound/artifacts/`;
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
+- OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в `app/worker/`;
 - local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;

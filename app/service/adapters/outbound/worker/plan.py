@@ -5,14 +5,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3 import (
+from app.contracts.worker.v4 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v3.config import (
+from app.contracts.worker.v4.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )

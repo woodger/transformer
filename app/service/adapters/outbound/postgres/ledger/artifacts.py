@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
+from app.contracts.metrics.v1 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -28,7 +29,9 @@ from app.service.adapters.outbound.postgres.models import (
     Job,
     JobAttempt,
     JobOutput,
+    MetricsOutboxEntry,
     ModelAlias,
+    ModelMetricsArtifact,
     OutputTicket,
     PublishedModel,
 )
@@ -126,6 +129,14 @@ class ArtifactLedgerSlice:
         metadata_path: str,
         byte_count: int,
         sha256: str,
+        metrics_path: str,
+        metrics_format: str,
+        metrics_media_type: str,
+        metrics_byte_count: int,
+        metrics_sha256: str,
+        metrics_row_count: int,
+        application_version: str,
+        git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
         now: float | None = None,
@@ -133,9 +144,22 @@ class ArtifactLedgerSlice:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
         validate_relative_path(metadata_path)
+        validate_relative_path(metrics_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
+        if isinstance(metrics_byte_count, bool) or metrics_byte_count <= 0:
+            raise ValueError("metrics_byte_count must be a positive integer")
+        if isinstance(metrics_row_count, bool) or metrics_row_count <= 0:
+            raise ValueError("metrics_row_count must be a positive integer")
+        digest(metrics_sha256, "metrics_sha256")
+        if not metrics_format or not metrics_media_type or not application_version:
+            raise ValueError("metrics artifact metadata must not be empty")
+        if (
+            len(git_commit) != 40
+            or any(character not in "0123456789abcdef" for character in git_commit)
+        ):
+            raise ValueError("git_commit must be a lowercase 40-character digest")
         published_at = timestamp_now(now)
         try:
             with self.database.transaction() as session:
@@ -222,6 +246,33 @@ class ArtifactLedgerSlice:
                     producing_job_id=job_id,
                     created_at=published_at,
                 ))
+                session.flush()
+                session.add(ModelMetricsArtifact(
+                    model_ref=model_ref,
+                    format=metrics_format,
+                    media_type=metrics_media_type,
+                    relative_path=metrics_path,
+                    bytes=metrics_byte_count,
+                    sha256=metrics_sha256,
+                    row_count=metrics_row_count,
+                    job_id=job_id,
+                    attempt_id=attempt_id,
+                    attempt=attempt,
+                    application_version=application_version,
+                    git_commit=git_commit,
+                    created_at=published_at,
+                ))
+                session.flush()
+                session.add(MetricsOutboxEntry(
+                    model_ref=model_ref,
+                    projection_version=PROJECTION_VERSION,
+                    status="PENDING",
+                    cursor=0,
+                    attempts=0,
+                    next_attempt_at=published_at,
+                    created_at=published_at,
+                    updated_at=published_at,
+                ))
                 alias = session.get(
                     ModelAlias,
                     (job.owner_subject, label),
@@ -253,7 +304,19 @@ class ArtifactLedgerSlice:
                 session.flush()
                 return decode(job)
         except IntegrityError as exc:
-            raise conflict("model generation already exists") from exc
+            diagnostic = getattr(exc.orig, "diag", None)
+            constraint_name = getattr(diagnostic, "constraint_name", None)
+            if constraint_name in {
+                "models_pkey",
+                "models_generation_uq",
+                "models_checkpoint_path_uq",
+                "models_metadata_path_uq",
+                "models_producing_job_id_key",
+            }:
+                raise conflict("model generation already exists") from exc
+            raise RuntimeError(
+                "model publication violated persistence invariants"
+            ) from exc
 
     def get_model(
         self,

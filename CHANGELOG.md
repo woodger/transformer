@@ -9,6 +9,14 @@
 
 ### Added
 
+- Добавлена централизованная training telemetry: committed epoch metrics
+  сохраняются вместе с recovery checkpoint, успешная модель получает
+  immutable `metrics.jsonl`, а PostgreSQL outbox доставляет детерминированные
+  `inventory.metrics.v1` points и artifact metadata в OpenSearch вне
+  критического пути fit.
+- Добавлены strict JSON Schemas и OpenSearch index templates для metrics v1,
+  cross-language golden `eventId`, HTTPS publisher с bounded Bulk create,
+  conflict integrity check, retry/backoff и health gauges backlog.
 - Добавлены политика Python types и tensor runtime contracts и поэтапный
   Pyright strict baseline для admin/CLI, contracts, service domain/application,
   worker и типизированных outbound process/artifact boundaries.
@@ -17,6 +25,9 @@
 
 ### Changed
 
+- Внутренний worker process contract повышен до v4: checkpoint event атомарно
+  связывает recovery generation с полной метрикой завершённой global epoch.
+  Публичный Flight v4 не изменён.
 - Структурная валидация Flight action requests и DoPut metadata переведена на
   нормативные JSON Schema Draft 2020-12 через `jsonschema`; Python ingress
   оставляет только семантические инварианты и mapping в типизированные DTO.

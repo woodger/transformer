@@ -10,8 +10,8 @@ from app.contracts.flight.v4.codec import (
     FlightContractError,
     validate_request_document,
 )
-from app.contracts.worker.v3.config import TrainConfig
-from app.contracts.worker.v3.objective import ml_contract
+from app.contracts.worker.v4.config import TrainConfig
+from app.contracts.worker.v4.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CREATE_ACTION,

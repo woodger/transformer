@@ -5,9 +5,9 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
-from app.contracts.worker.v3.objective import ml_contract
+from app.contracts.worker.v4 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -174,35 +174,10 @@ def execute_fit(
             if batch.features.size(0) != 0:
                 yield batch
 
-    def on_epoch(
+    def on_epoch_committed(
         epoch: int,
         metrics: TrainMetrics,
         monitor_payload: SelectionPayload,
-    ) -> None:
-        progress = metrics.to_dict(
-            **trainer.metrics_context,
-            mode="fit-stream",
-            epoch=epoch + 1,
-            selection_score=monitor_payload["selection_score"],
-            checkpoint_best=monitor_payload["checkpoint_best"],
-            should_stop=monitor_payload["should_stop"],
-            best_selection_score=monitor_payload["best_selection_score"],
-        )
-        trainer.record_metrics(
-            metrics,
-            mode="fit-stream",
-            epoch=epoch + 1,
-            selection_score=monitor_payload["selection_score"],
-            checkpoint_best=monitor_payload["checkpoint_best"],
-            should_stop=monitor_payload["should_stop"],
-            best_selection_score=monitor_payload["best_selection_score"],
-        )
-        emitter.progress(object_document(json_safe(progress), "fit progress"))
-
-    def on_epoch_committed(
-        _epoch: int,
-        _metrics: TrainMetrics,
-        _monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:
         if recovery is None:
@@ -223,6 +198,31 @@ def execute_fit(
             config_hash=string_field(recovery, "configSha256"),
             manifest_hash=manifest_sha256,
         )
+        committed_metrics = object_document(
+            json_safe(metrics.to_dict(
+                mode="fit-stream",
+                frame=None,
+                epoch=epoch + 1,
+                selection_score=monitor_payload["selection_score"],
+                checkpoint_best=monitor_payload["checkpoint_best"],
+                should_stop=monitor_payload["should_stop"],
+                best_selection_score=monitor_payload[
+                    "best_selection_score"
+                ],
+            )),
+            "committed fit metrics",
+        )
+        validate_document(committed_metrics, "training-metrics")
+        trainer.record_metrics(
+            metrics,
+            mode="fit-stream",
+            frame=None,
+            epoch=epoch + 1,
+            selection_score=monitor_payload["selection_score"],
+            checkpoint_best=monitor_payload["checkpoint_best"],
+            should_stop=monitor_payload["should_stop"],
+            best_selection_score=monitor_payload["best_selection_score"],
+        )
         emitter.checkpoint({
             "generation": integer_field(event, "generation"),
             "completedEpochs": integer_field(event, "completed_epochs"),
@@ -232,6 +232,7 @@ def execute_fit(
                 "training_complete",
             ),
             "artifact": artifact_document(checkpoint_path),
+            "metrics": committed_metrics,
         })
 
     if not trainer.training_complete:
@@ -239,13 +240,11 @@ def execute_fit(
             trainer.fit_streaming_payloads(
                 first_epoch_payloads(),
                 closed_payloads,
-                on_epoch=on_epoch,
                 on_epoch_committed=on_epoch_committed,
             )
         else:
             trainer.fit_payloads_resumable(
                 closed_payloads,
-                on_epoch=on_epoch,
                 on_epoch_committed=on_epoch_committed,
             )
 
@@ -257,7 +256,6 @@ def execute_fit(
         "manifestSha256": input_stream.manifest_sha256,
         "artifacts": [],
         "checkpoint": artifact_document(checkpoint_path),
-        "metrics": artifact_document(metrics_path),
         "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
     })
     validate_document(result, "result-manifest")

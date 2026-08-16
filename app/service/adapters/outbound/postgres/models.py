@@ -345,6 +345,48 @@ class TrainingRecoveryCheckpoint(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TrainingMetricInterval(Base):
+    __tablename__ = "training_metric_intervals"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "job_id",
+            "generation",
+            name="training_metric_intervals_pk",
+        ),
+        ForeignKeyConstraint(
+            ("job_id", "attempt"),
+            (f"{SCHEMA}.job_attempts.job_id", f"{SCHEMA}.job_attempts.attempt"),
+            ondelete="CASCADE",
+            name="training_metric_intervals_attempt_fk",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="training_metric_intervals_generation_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="training_metric_intervals_attempt_ck",
+        ),
+        UniqueConstraint(
+            "job_id",
+            "attempt_id",
+            "generation",
+            name="training_metric_intervals_identity_uq",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    generation: Mapped[int] = mapped_column(Integer)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    metrics: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
 class JobOutput(Base):
     __tablename__ = "job_outputs"
     __table_args__ = (
@@ -407,6 +449,100 @@ class PublishedModel(Base):
         unique=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ModelMetricsArtifact(Base):
+    __tablename__ = "model_metrics_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "relative_path",
+            name="model_metrics_artifacts_relative_path_uq",
+        ),
+        CheckConstraint(
+            "bytes > 0",
+            name="model_metrics_artifacts_bytes_ck",
+        ),
+        CheckConstraint(
+            "row_count > 0",
+            name="model_metrics_artifacts_rows_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="model_metrics_artifacts_attempt_ck",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    format: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    application_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    git_commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class MetricsOutboxEntry(Base):
+    __tablename__ = "metrics_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'BLOCKED', 'DELIVERED')",
+            name="metrics_outbox_status_ck",
+        ),
+        CheckConstraint("cursor >= 0", name="metrics_outbox_cursor_ck"),
+        CheckConstraint("attempts >= 0", name="metrics_outbox_attempts_ck"),
+        Index(
+            "metrics_outbox_pending_idx",
+            "status",
+            "next_attempt_at",
+            "created_at",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey(
+            f"{SCHEMA}.model_metrics_artifacts.model_ref",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+    projection_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    cursor: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class ModelAlias(Base):

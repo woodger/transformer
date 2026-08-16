@@ -1,6 +1,6 @@
 import torch
 
-from app.contracts.worker.v3.config import (
+from app.contracts.worker.v4.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )

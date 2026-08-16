@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.worker.v3.objective import objective_config
+from app.contracts.worker.v4.objective import objective_config
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -32,6 +32,7 @@ from tests.support.flight_v4_helpers import (
     close_input,
     commit_input,
     create_fit,
+    create_test_metrics_artifact,
     internal_data_contract,
     model_config,
     public_data_contract,
@@ -364,6 +365,13 @@ def _publish_model(ledger, spool, *, label="daily"):
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
     metadata_path = spool.model_metadata_path(model_ref)
     spool.atomic_write_json(metadata_path, {"modelRef": model_ref})
+    metrics_artifact = create_test_metrics_artifact(
+        spool,
+        model_ref=model_ref,
+        job_id=fit["job_id"],
+        attempt_id=running.attempt_id,
+        attempt=running.attempt,
+    )
     ledger.publish_model(
         fit["job_id"],
         running.attempt,
@@ -375,6 +383,14 @@ def _publish_model(ledger, spool, *, label="daily"):
         metadata_path=spool.model_relative_path(metadata_path),
         byte_count=checkpoint.stat().st_size,
         sha256=digest,
+        metrics_path=metrics_artifact.relative_path,
+        metrics_format="transformer.training-metrics.v1",
+        metrics_media_type="application/x-ndjson",
+        metrics_byte_count=metrics_artifact.byte_count,
+        metrics_sha256=metrics_artifact.sha256,
+        metrics_row_count=metrics_artifact.row_count,
+        application_version="0.1.10",
+        git_commit="0" * 40,
         metadata={
             "model_config": model_config().to_dict(),
             "train_config": train_config().to_dict(),

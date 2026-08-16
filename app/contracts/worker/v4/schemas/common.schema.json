@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v3/common.schema.json",
-  "title": "Transformer worker v3 common definitions",
+  "$id": "https://transformer.local/contracts/worker/v4/common.schema.json",
+  "title": "Transformer worker v4 common definitions",
   "$defs": {
     "uuid": {"type": "string", "format": "uuid"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

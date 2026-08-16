@@ -16,20 +16,20 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v3 import (
+from app.contracts.worker.v4 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v3.config import (
+from app.contracts.worker.v4.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v3.objective import (
+from app.contracts.worker.v4.objective import (
     ml_contract,
     objective_config_sha256,
 )
@@ -92,14 +92,14 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
     }
 
 
-def test_worker_capabilities_are_reported_through_v3_process_contract():
+def test_worker_capabilities_are_reported_through_v4_process_contract():
     result = subprocess.run(
         [
             sys.executable,
             "-m",
             "app.worker.bootstrap",
             "inspect",
-            "--contract-version=3",
+            "--contract-version=4",
         ],
         cwd=PROJECT_ROOT,
         check=False,
@@ -111,7 +111,7 @@ def test_worker_capabilities_are_reported_through_v3_process_contract():
     assert result.returncode == 0, result.stderr
     document = validate_document(json.loads(result.stdout), "capabilities")
     assert document["contract"] == "transformer-worker"
-    assert document["protocolVersion"] == 3
+    assert document["protocolVersion"] == 4
     assert document["torchVersion"]
 
 
@@ -152,7 +152,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=3",
+            "--contract-version=4",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -213,7 +213,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 3,
+        "protocolVersion": 4,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -289,7 +289,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 3,
+        "protocolVersion": 4,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -323,14 +323,17 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     events = [parse_event(line) for line in result.stdout.splitlines(keepends=True)]
     assert [event["type"] for event in events] == [
         "ready",
-        "progress",
         "checkpoint",
         "completed",
     ]
-    checkpoint_event = events[2]["payload"]
+    checkpoint_event = events[1]["payload"]
     assert checkpoint_event["generation"] == 1
     assert checkpoint_event["completedEpochs"] == 1
     assert checkpoint_event["trainingComplete"] is True
+    assert validate_document(
+        checkpoint_event["metrics"],
+        "training-metrics",
+    )["epoch"] == 1
 
     result_manifest = load_document(
         workspace / "worker-result.json",
@@ -638,7 +641,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=3",
+            "--contract-version=4",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

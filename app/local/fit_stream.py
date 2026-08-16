@@ -9,8 +9,8 @@ from typing import Protocol, cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3.config import ModelConfig
-from app.contracts.worker.v3.objective import objective_config_sha256
+from app.contracts.worker.v4.config import ModelConfig
+from app.contracts.worker.v4.objective import objective_config_sha256
 from app.local.config import DEFAULT_MAX_FRAME_BYTES
 from app.worker.checkpoints.recovery import (
     load_training_recovery,

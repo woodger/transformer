@@ -5,7 +5,7 @@ import hashlib
 import rfc8785
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3.config import TrainConfig
+from app.contracts.worker.v4.config import TrainConfig
 
 TARGET_SCHEMA_ID = "inventory.target.v1"
 PREDICTION_SCHEMA_ID = "transformer.prediction.target-aligned.v1"

@@ -9,8 +9,8 @@ from typing import Protocol, cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
-from app.contracts.worker.v3.objective import (
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.objective import (
     TRAINING_RECOVERY_FORMAT,
     ml_contract,
     objective_config,

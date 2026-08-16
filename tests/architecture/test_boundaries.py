@@ -88,6 +88,7 @@ def test_service_domain_and_application_dependencies_point_inward():
     allowed_application = (
         "app.service.application",
         "app.service.domain",
+        "app.contracts.metrics",
         "app.contracts.worker",
     )
     forbidden_libraries = ("pyarrow", "sqlalchemy", "torch")
@@ -190,9 +191,11 @@ def test_application_internal_import_graph_is_acyclic():
 
 def test_contracts_and_composition_roots_have_canonical_locations():
     assert (APP_ROOT / "contracts" / "flight" / "v4").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v3").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v4").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "v1").is_dir()
     assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
     assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
+    assert not (APP_ROOT / "contracts" / "worker" / "v3").exists()
     assert not (PROJECT_ROOT / "contracts").exists()
     assert (APP_ROOT / "local" / "fit.py").is_file()
     assert not (APP_ROOT / "commands" / "__init__.py").exists()

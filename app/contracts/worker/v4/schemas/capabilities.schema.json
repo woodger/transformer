@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v3/capabilities.schema.json",
-  "title": "Transformer worker v3 capabilities",
+  "$id": "https://transformer.local/contracts/worker/v4/capabilities.schema.json",
+  "title": "Transformer worker v4 capabilities",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,7 @@
   ],
   "properties": {
     "contract": {"const": "transformer-worker"},
-    "protocolVersion": {"const": 3},
+    "protocolVersion": {"const": 4},
     "torchVersion": {"type": "string", "minLength": 1},
     "cudaRuntimeVersion": {"type": ["string", "null"]},
     "devices": {

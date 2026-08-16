@@ -1,4 +1,4 @@
-# Контракт процесса Transformer worker v3
+# Контракт процесса Transformer worker v4
 
 Этот каталог содержит нормативный внутренний контракт между сервисом
 Transformer и одной короткоживущей попыткой ML worker-а. Контракт не зависит от
@@ -12,7 +12,7 @@ schema из Flight v4.
 
 ```text
 transformer-worker run
-  --contract-version=3
+  --contract-version=4
   --job-id=<uuid>
   --attempt=<positive-integer>
   --attempt-id=<uuid>
@@ -27,7 +27,7 @@ fence не существует.
 Возможности проверяются через тот же executable:
 
 ```text
-transformer-worker inspect --contract-version=3
+transformer-worker inspect --contract-version=4
 ```
 
 ## Каналы
@@ -67,6 +67,11 @@ input-idle timer сервиса.
 До EOF worker не публикует recovery checkpoint нулевой epoch. Если worker
 падает при открытом input, новая attempt повторяет эту незавершённую epoch с
 начала. После EOF checkpoints остаются snapshots полных global epochs.
+
+Событие `checkpoint` атомарно связывает recovery generation с полной строкой
+`training-metrics.schema.json`. Сервис сохраняет checkpoint и метрику одной
+транзакцией PostgreSQL. Поэтому восстановленная attempt не теряет метрики уже
+зафиксированных эпох и не может заменить их другими значениями.
 
 Command manifest содержит точный `mlContract`. Для fit worker повторно
 вычисляет его из `training` и отклоняет несовпадение до создания модели.

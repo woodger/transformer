@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 
@@ -160,6 +160,16 @@ class TrainingRecoveryCheckpointRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class TrainingMetricIntervalRecord:
+    job_id: str
+    generation: int
+    attempt: int
+    attempt_id: str
+    metrics: JsonObject
+    recorded_at: float
+
+
+@dataclass(frozen=True, slots=True)
 class StatusRecoveryRecord:
     checkpoint: TrainingRecoveryCheckpointRecord | None
     retry_count: int
@@ -201,6 +211,34 @@ class PublishedModelRecord:
     ml_contract: JsonObject | None
     objective_config_sha256: str | None
     producing_job_id: str | None
+    created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ModelMetricsArtifactRecord:
+    model_ref: str
+    format: str
+    media_type: str
+    relative_path: str
+    byte_count: int
+    sha256: str
+    row_count: int
+    job_id: str
+    attempt_id: str
+    attempt: int
+    application_version: str
+    git_commit: str
+    created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class MetricsOutboxRecord:
+    artifact: ModelMetricsArtifactRecord
+    projection_version: str
+    status: str
+    cursor: int
+    attempts: int
+    next_attempt_at: float
     created_at: float
 
 

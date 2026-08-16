@@ -4,7 +4,7 @@ from typing import Protocol
 
 import torch
 
-from app.contracts.worker.v3.config import ModelConfig
+from app.contracts.worker.v4.config import ModelConfig
 from app.worker.checkpoints.model import load_checkpoint_metadata
 from app.worker.data.arrow import read_source_arrow, write_arrow
 from app.worker.data.tensors import (

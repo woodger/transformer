@@ -72,9 +72,11 @@ user-site. Полный локальный сценарий находится �
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
 - [Arrow Flight v4 contract](./app/contracts/flight/v4/README.md)
-- [Worker process contract v3](./app/contracts/worker/v3/README.md)
+- [Worker process contract v4](./app/contracts/worker/v4/README.md)
+- [Training metrics contract v1](./app/contracts/metrics/v1/README.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
+- [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
 - [Архитектурные решения](./docs/adr/)
 - [Политики проекта](./docs/policy/index.md)
 
@@ -84,7 +86,7 @@ user-site. Полный локальный сценарий находится �
 app/main.py          # тонкий CLI entrypoint
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # public Flight v4 и internal worker v3 contracts
+app/contracts/       # public Flight v4, internal worker v4 и metrics v1
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

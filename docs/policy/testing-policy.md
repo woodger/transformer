@@ -49,13 +49,16 @@ config parsing, state transitions, serialization helpers.
 
 ### Contract tests
 
-Проверяют normative schemas и golden fixtures в `app/contracts/flight/v4/` и
-process envelopes в `app/contracts/worker/v3/`.
+Проверяют normative schemas и golden fixtures в `app/contracts/flight/v4/`,
+process envelopes в `app/contracts/worker/v4/`, а также immutable artifact,
+OpenSearch documents/templates и cross-language event identity в
+`app/contracts/metrics/v1/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
-Cross-language проверка `objectiveConfigSha256` запускает Node.js-скрипт из
-Flight v4 fixtures и сравнивает его RFC 8785/JCS digest с Python runtime.
+Cross-language проверки `objectiveConfigSha256` и metrics `eventId` запускают
+Node.js-скрипты из соответствующих fixtures и сравнивают RFC 8785/JCS digest с
+Python runtime.
 Скрипт не использует npm dependencies; отсутствие Node.js блокирует полный
 contract test suite, а не переводит проверку в skip.
 
@@ -118,7 +121,7 @@ blocker.
 
 ```text
 tests/unit/{cli,local,service,worker}
-tests/contract/{flight_v4,worker_v3}
+tests/contract/{flight_v4,worker_v4,metrics_v1}
 tests/integration/{flight,postgres,worker_process}
 tests/architecture
 tests/support

@@ -1,4 +1,4 @@
-from app.contracts.worker.v3.objective import PREDICTION_SCHEMA_ID
+from app.contracts.worker.v4.objective import PREDICTION_SCHEMA_ID
 
 FIT_INPUT_SCHEMA_ID = "inventory.sequence.fit.v2"
 PREDICT_INPUT_SCHEMA_ID = "inventory.sequence.predict.v2"

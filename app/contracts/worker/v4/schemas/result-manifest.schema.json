@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v3/result-manifest.schema.json",
-  "title": "Transformer worker v3 completed result manifest",
+  "$id": "https://transformer.local/contracts/worker/v4/result-manifest.schema.json",
+  "title": "Transformer worker v4 completed result manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,48 +10,44 @@
   ],
   "properties": {
     "contract": {"const": "transformer-worker"},
-    "protocolVersion": {"const": 3},
+    "protocolVersion": {"const": 4},
     "jobId": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
     },
     "attempt": {"type": "integer", "minimum": 1},
     "attemptId": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
     },
     "operation": {"enum": ["fit", "predict"]},
     "inputRevision": {"type": "integer", "minimum": 0},
     "manifestSha256": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/sha256"
+      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/sha256"
     },
     "artifacts": {
       "type": "array",
       "items": {
-        "$ref": "https://transformer.local/contracts/worker/v3/arrow-manifest.schema.json"
+        "$ref": "https://transformer.local/contracts/worker/v4/arrow-manifest.schema.json"
       },
       "maxItems": 100000
     },
     "checkpoint": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/artifact"
-    },
-    "metrics": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/artifact"
+      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/artifact"
     },
     "checkpointMetadata": {
-      "$ref": "https://transformer.local/contracts/worker/v3/common.schema.json#/$defs/checkpointMetadata"
+      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/checkpointMetadata"
     }
   },
   "allOf": [
     {
       "if": {"properties": {"operation": {"const": "fit"}}},
       "then": {
-        "required": ["checkpoint", "metrics", "checkpointMetadata"],
+        "required": ["checkpoint", "checkpointMetadata"],
         "properties": {"artifacts": {"maxItems": 0}}
       },
       "else": {
         "not": {
           "anyOf": [
             {"required": ["checkpoint"]},
-            {"required": ["metrics"]},
             {"required": ["checkpointMetadata"]}
           ]
         }

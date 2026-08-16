@@ -11,18 +11,21 @@ from typing import BinaryIO, Protocol, cast
 
 from app.contracts.flight.v4.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v3.config import (
+from app.contracts.worker.v4 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v4.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v3.objective import (
+from app.contracts.worker.v4.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config,
     objective_config_sha256,
+)
+from app.service.adapters.outbound.artifacts.training_metrics import (
+    publish_training_metrics,
 )
 from app.service.application.ports.observability import (
     EventLogger,
@@ -36,6 +39,7 @@ from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
     StagedPredictionOutput,
+    TrainingMetricIntervalRecord,
 )
 
 _COPY_CHUNK_BYTES = 1024 * 1024
@@ -65,6 +69,14 @@ class _PublicationLedger(Protocol):
         metadata_path: str,
         byte_count: int,
         sha256: str,
+        metrics_path: str,
+        metrics_format: str,
+        metrics_media_type: str,
+        metrics_byte_count: int,
+        metrics_sha256: str,
+        metrics_row_count: int,
+        application_version: str,
+        git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
     ) -> Mapping[str, object]: ...
@@ -75,6 +87,11 @@ class _PublicationLedger(Protocol):
         self,
         job_id: str,
     ) -> Sequence[CommittedInputRecord]: ...
+
+    def list_training_metrics(
+        self,
+        job_id: str,
+    ) -> Sequence[TrainingMetricIntervalRecord]: ...
 
 
 class _PublicationSpool(Protocol):
@@ -96,6 +113,8 @@ class _PublicationSpool(Protocol):
     def model_checkpoint_path(self, model_ref: str) -> str: ...
 
     def model_metadata_path(self, model_ref: str) -> str: ...
+
+    def model_metrics_path(self, model_ref: str) -> str: ...
 
     def model_relative_path(self, absolute_path: str) -> str: ...
 
@@ -127,12 +146,16 @@ class WorkerArtifactPublisher:
         *,
         logger: EventLogger,
         metrics: OperationalMetricSink,
+        application_version: str,
+        git_commit: str,
         max_payload_bytes: int | None = None,
     ) -> None:
         self.ledger = ledger
         self.spool = spool
         self.logger = logger
         self.metrics = metrics
+        self.application_version = application_version
+        self.git_commit = git_commit
         self.max_payload_bytes = max_payload_bytes
 
     def _publish_outputs(
@@ -263,25 +286,15 @@ class WorkerArtifactPublisher:
                 result.get("checkpoint"),
                 "fit checkpoint artifact",
             )
-            metrics = _object(
-                result.get("metrics"),
-                "fit metrics artifact",
-            )
         except ValueError as exc:
             raise WorkerArtifactError(
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit worker result does not contain required artifacts",
             ) from exc
-        expected = (
-            (
-                checkpoint,
-                self.spool.attempt_checkpoint_path(job.job_id, job.attempt),
-            ),
-            (
-                metrics,
-                self.spool.attempt_metrics_path(job.job_id, job.attempt),
-            ),
-        )
+        expected = ((
+            checkpoint,
+            self.spool.attempt_checkpoint_path(job.job_id, job.attempt),
+        ),)
         for artifact, expected_path in expected:
             path = os.path.abspath(os.fspath(
                 _string(artifact.get("path"), "fit artifact path")
@@ -371,6 +384,7 @@ class WorkerArtifactPublisher:
         model_directory = self.spool.model_directory(model_ref)
         checkpoint_path = self.spool.model_checkpoint_path(model_ref)
         metadata_path = self.spool.model_metadata_path(model_ref)
+        metrics_path = self.spool.model_metrics_path(model_ref)
         try:
             service_version = _string(
                 checkpoint_metadata.get("serviceVersion"),
@@ -418,6 +432,42 @@ class WorkerArtifactPublisher:
                 ErrorCode.SUBPROCESS_FAILED,
                 "fit subprocess created an invalid checkpoint",
             ) from exc
+        try:
+            training_metrics = publish_training_metrics(
+                self.spool,
+                metrics_path,
+                self.ledger.list_training_metrics(job.job_id),
+                job_id=job.job_id,
+                model_ref=model_ref,
+                data_contract_sha256=_string(
+                    job.data_contract.get("data_contract_sha256"),
+                    "fit data contract sha256",
+                ),
+                objective_config_sha256=_string(
+                    expected_ml_contract.get("objectiveConfigSha256"),
+                    "fit objective config sha256",
+                ),
+                checkpoint_format=CHECKPOINT_FORMAT,
+                application_version=self.application_version,
+                git_commit=self.git_commit,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self.spool.remove(model_directory)
+            raise WorkerArtifactError(
+                ErrorCode.MALFORMED_OUTPUT,
+                "committed training metrics could not be published",
+            ) from exc
+        training_metrics_metadata: JsonObject = {
+            "format": training_metrics.format,
+            "mediaType": training_metrics.media_type,
+            "bytes": training_metrics.byte_count,
+            "sha256": training_metrics.sha256,
+            "rowCount": training_metrics.row_count,
+            "jobId": job.job_id,
+            "attemptId": _attempt_id(job),
+            "attempt": job.attempt,
+            "modelRef": model_ref,
+        }
         metadata: JsonObject = {
             "modelRef": model_ref,
             "label": job.model_label,
@@ -430,6 +480,7 @@ class WorkerArtifactPublisher:
             "objective_config": expected_objective,
             "data_schema": data_schema,
             "checkpoint": safe_checkpoint,
+            "training_metrics": training_metrics_metadata,
         }
         try:
             with open(attempt_path, "rb") as source:
@@ -447,6 +498,14 @@ class WorkerArtifactPublisher:
                 metadata_path=self.spool.model_relative_path(metadata_path),
                 byte_count=byte_count,
                 sha256=digest,
+                metrics_path=self.spool.model_relative_path(metrics_path),
+                metrics_format=training_metrics.format,
+                metrics_media_type=training_metrics.media_type,
+                metrics_byte_count=training_metrics.byte_count,
+                metrics_sha256=training_metrics.sha256,
+                metrics_row_count=training_metrics.row_count,
+                application_version=self.application_version,
+                git_commit=self.git_commit,
                 metadata=metadata,
                 result={
                     "modelRef": model_ref,
@@ -454,6 +513,10 @@ class WorkerArtifactPublisher:
                 },
             )
             self.metrics.add("checkpointBytes", byte_count)
+            self.metrics.add(
+                "trainingMetricsArtifactBytes",
+                training_metrics.byte_count,
+            )
             self.logger.event(
                 "flight.model.published",
                 jobId=job.job_id,

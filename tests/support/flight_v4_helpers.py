@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
+from dataclasses import dataclass
 
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
-from app.contracts.worker.v3.objective import ml_contract
+from app.contracts.metrics.v1 import (
+    build_training_record,
+)
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.objective import (
+    CHECKPOINT_FORMAT,
+    ml_contract,
+    objective_config_sha256,
+)
 from app.service.adapters.inbound.flight.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
@@ -19,6 +28,14 @@ from app.service.domain.input_manifest import manifest_sha256
 OWNER = "inventory"
 DATA_CONTRACT_SHA256 = "d" * 64
 SCHEMA_FINGERPRINT = "e" * 64
+
+
+@dataclass(frozen=True, slots=True)
+class TestMetricsArtifact:
+    relative_path: str
+    byte_count: int
+    sha256: str
+    row_count: int
 
 
 def build_test_job_coordinator(
@@ -99,6 +116,95 @@ def train_config():
 
 def public_ml_contract():
     return ml_contract(train_config())
+
+
+def create_test_metrics_artifact(
+    spool,
+    *,
+    model_ref,
+    job_id,
+    attempt_id,
+    attempt,
+):
+    metrics = {
+        "mode": "fit-stream",
+        "frame": None,
+        "epoch": 1,
+        "step": 1,
+        "rows": 1,
+        "batches": 1,
+        "lr": 0.001,
+        "loss_stage": 4,
+        "minimum_loss_stage": 4,
+        "maximum_loss_stage": 4,
+        "loss": 0.5,
+        "loss_l0": 0.1,
+        "loss_l1": 0.1,
+        "loss_l2": 0.1,
+        "loss_l3": 0.1,
+        "loss_l4": 0.1,
+        "loss_l5": 0.1,
+        "loss_nll": 0.0,
+        "loss_ev": 0.0,
+        "mean_return_mae": 0.1,
+        "sigma_return_mae": 0.1,
+        "prob_tp_mae": 0.1,
+        "prob_sl_mae": 0.1,
+        "volatility_next_mae": 0.1,
+        "hitting_prob_tp_mae": 0.1,
+        "mean_return_rmse": 0.1,
+        "sigma_return_rmse": 0.1,
+        "prob_tp_rmse": 0.1,
+        "prob_sl_rmse": 0.1,
+        "volatility_next_rmse": 0.1,
+        "hitting_prob_tp_rmse": 0.1,
+        "selection_score": None,
+        "grad_norm": 1.0,
+        "nan_ratio": 0.0,
+        "masked_token_ratio": 0.0,
+        "complete_token_ratio": 1.0,
+        "partial_token_ratio": 0.0,
+        "empty_token_ratio": 0.0,
+        "input_pipeline_ms": 1.0,
+        "missing_stats_ms": 1.0,
+        "host_to_device_ms": 1.0,
+        "train_step_ms": 1.0,
+        "elapsed_ms": 4.0,
+        "checkpoint_best": False,
+        "should_stop": False,
+        "best_selection_score": None,
+    }
+    record = build_training_record(
+        metrics,
+        recorded_at=1.0,
+        job_id=job_id,
+        attempt_id=attempt_id,
+        attempt=attempt,
+        model_ref=model_ref,
+        data_contract_sha256=DATA_CONTRACT_SHA256,
+        objective_config_sha256=objective_config_sha256(train_config()),
+        checkpoint_format=CHECKPOINT_FORMAT,
+        application_version="0.1.10",
+        git_commit="0" * 40,
+    )
+    payload = (
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    path = spool.model_metrics_path(model_ref)
+    spool.atomic_write_bytes(path, payload)
+    return TestMetricsArtifact(
+        relative_path=spool.model_relative_path(path),
+        byte_count=len(payload),
+        sha256=hashlib.sha256(payload).hexdigest(),
+        row_count=1,
+    )
 
 
 def create_fit(ledger, *, job_id=None, execution_id=None, now=None):

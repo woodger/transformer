@@ -4,13 +4,15 @@ from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.worker.v3.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v4.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
     canonical_uuid,
     decode,
     digest,
+    json_value,
     now as timestamp_now,
     positive,
     validate_relative_path,
@@ -20,6 +22,7 @@ from app.service.adapters.outbound.postgres.models import (
     Job,
     JobAttempt,
     JobInput,
+    TrainingMetricInterval,
     TrainingRecoveryCheckpoint,
 )
 from app.service.domain.errors import (
@@ -28,7 +31,10 @@ from app.service.domain.errors import (
     not_found,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
-from app.service.domain.records import TrainingRecoveryCheckpointRecord
+from app.service.domain.records import (
+    TrainingMetricIntervalRecord,
+    TrainingRecoveryCheckpointRecord,
+)
 
 
 class RecoveryLedgerSlice:
@@ -52,6 +58,7 @@ class RecoveryLedgerSlice:
         completed_epochs: int,
         global_step: int,
         training_complete: bool,
+        metrics: JsonObject,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
         positive(attempt, "attempt")
@@ -71,6 +78,14 @@ class RecoveryLedgerSlice:
             raise ValueError("training_complete must be a boolean")
         if format != TRAINING_RECOVERY_FORMAT:
             raise ValueError("unsupported training recovery format")
+        metrics_value = json_value(metrics)
+        if (
+            metrics_value.get("epoch") != generation
+            or metrics_value.get("step") != global_step
+        ):
+            raise ValueError(
+                "training metrics identity differs from recovery progress"
+            )
         validate_relative_path(relative_path)
         digest(sha256, "sha256")
         created_at = timestamp_now(now)
@@ -109,16 +124,29 @@ class RecoveryLedgerSlice:
                 (job_id, generation),
             )
             if existing is not None:
-                if _same_checkpoint(
-                    existing,
-                    attempt=attempt,
-                    format=format,
-                    relative_path=relative_path,
-                    byte_count=byte_count,
-                    sha256=sha256,
-                    completed_epochs=completed_epochs,
-                    global_step=global_step,
-                    training_complete=training_complete,
+                existing_metrics = session.get(
+                    TrainingMetricInterval,
+                    (job_id, generation),
+                )
+                if (
+                    _same_checkpoint(
+                        existing,
+                        attempt=attempt,
+                        format=format,
+                        relative_path=relative_path,
+                        byte_count=byte_count,
+                        sha256=sha256,
+                        completed_epochs=completed_epochs,
+                        global_step=global_step,
+                        training_complete=training_complete,
+                    )
+                    and existing_metrics is not None
+                    and _same_metrics(
+                        existing_metrics,
+                        attempt=attempt,
+                        attempt_id=attempt_id,
+                        metrics=metrics_value,
+                    )
                 ):
                     return _record(existing), True
                 raise conflict(
@@ -156,10 +184,31 @@ class RecoveryLedgerSlice:
                 created_at=created_at,
             )
             session.add(record)
+            session.add(TrainingMetricInterval(
+                job_id=job_id,
+                generation=generation,
+                attempt=attempt,
+                attempt_id=attempt_id,
+                metrics=metrics_value,
+                recorded_at=created_at,
+            ))
+            job.progress = metrics_value
             job.revision += 1
             job.updated_at = created_at
             session.flush()
             return _record(record), False
+
+    def list_metrics(
+        self,
+        job_id: str,
+    ) -> list[TrainingMetricIntervalRecord]:
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(TrainingMetricInterval)
+                .where(TrainingMetricInterval.job_id == job_id)
+                .order_by(TrainingMetricInterval.generation)
+            )
+            return [_metrics_record(row) for row in rows]
 
     def latest_checkpoint(
         self,
@@ -410,6 +459,33 @@ def _record(
         completed_epochs=value.completed_epochs,
         global_step=value.global_step,
         training_complete=value.training_complete,
+    )
+
+
+def _metrics_record(
+    value: TrainingMetricInterval,
+) -> TrainingMetricIntervalRecord:
+    return TrainingMetricIntervalRecord(
+        job_id=value.job_id,
+        generation=value.generation,
+        attempt=value.attempt,
+        attempt_id=value.attempt_id,
+        metrics=dict(value.metrics),
+        recorded_at=value.recorded_at.timestamp(),
+    )
+
+
+def _same_metrics(
+    value: TrainingMetricInterval,
+    *,
+    attempt: int,
+    attempt_id: str,
+    metrics: JsonObject,
+) -> bool:
+    return (
+        value.attempt == attempt
+        and value.attempt_id == attempt_id
+        and value.metrics == metrics
     )
 
 

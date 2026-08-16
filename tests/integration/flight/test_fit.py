@@ -9,8 +9,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.flight as flight
 
-from app.contracts.worker.v3.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v3.objective import ml_contract
+from app.contracts.worker.v4.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v4.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -19,6 +19,9 @@ from app.service.adapters.inbound.flight.constants import (
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     STATUS_ACTION,
+)
+from app.service.adapters.outbound.postgres.metrics_outbox import (
+    PostgresMetricsOutbox,
 )
 from app.service.bootstrap.application import FlightApplication
 from app.service.bootstrap.config import FlightServiceConfig
@@ -257,6 +260,28 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
         )
         assert Path(checkpoint_path).is_file()
         assert hashlib.sha256(Path(checkpoint_path).read_bytes()).hexdigest() == model["sha256"]
+
+        outbox = PostgresMetricsOutbox(application.ledger.database)
+        pending = outbox.next_pending()
+        assert pending is not None
+        assert pending.artifact.model_ref == status["results"]["modelRef"]
+        assert pending.artifact.job_id == job_id
+        metrics_path = application.spool.model_absolute_path(
+            pending.artifact.relative_path
+        )
+        metrics_bytes = Path(metrics_path).read_bytes()
+        assert hashlib.sha256(metrics_bytes).hexdigest() == (
+            pending.artifact.sha256
+        )
+        metrics_rows = [
+            json.loads(line)
+            for line in metrics_bytes.decode("utf-8").splitlines()
+        ]
+        assert len(metrics_rows) == pending.artifact.row_count == 1
+        assert metrics_rows[0]["format"] == "transformer.training-metrics.v1"
+        assert metrics_rows[0]["jobId"] == job_id
+        assert metrics_rows[0]["modelRef"] == status["results"]["modelRef"]
+        assert metrics_rows[0]["epoch"] == 1
     finally:
         client.close()
         application.shutdown()

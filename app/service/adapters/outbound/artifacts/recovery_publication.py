@@ -7,7 +7,8 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v3.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v4 import WorkerContractError, validate_document
+from app.contracts.worker.v4.objective import TRAINING_RECOVERY_FORMAT
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -39,6 +40,7 @@ class _RecoveryLedger(Protocol):
         completed_epochs: int,
         global_step: int,
         training_complete: bool,
+        metrics: JsonObject,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
 
     def prune_recovery_checkpoints(
@@ -110,6 +112,7 @@ class RecoveryCheckpointPublisher:
             "training_complete",
             "bytes",
             "sha256",
+            "metrics",
         }
         if set(event) != required:
             raise WorkerRecoveryError(
@@ -171,6 +174,16 @@ class RecoveryCheckpointPublisher:
             event["training_complete"],
             "training complete",
         )
+        try:
+            interval_metrics = validate_document(
+                event["metrics"],
+                "training-metrics",
+            )
+        except WorkerContractError as exc:
+            raise WorkerRecoveryError(
+                ErrorCode.MALFORMED_OUTPUT,
+                "fit subprocess emitted invalid training metrics",
+            ) from exc
         if completed_epochs != generation:
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
@@ -188,6 +201,7 @@ class RecoveryCheckpointPublisher:
             completed_epochs=completed_epochs,
             global_step=global_step,
             training_complete=training_complete,
+            metrics=interval_metrics,
         )
         if not replayed:
             self.metrics.add("recoveryCheckpointsPublished")
@@ -227,6 +241,7 @@ class RecoveryCheckpointPublisher:
             "globalStep",
             "trainingComplete",
             "artifact",
+            "metrics",
         }
         if set(event) != required or self.spool is None:
             raise WorkerRecoveryError(
@@ -305,6 +320,10 @@ class RecoveryCheckpointPublisher:
             "sha256": _string(
                 artifact.get("sha256"),
                 "worker checkpoint sha256",
+            ),
+            "metrics": _object(
+                event["metrics"],
+                "worker checkpoint metrics",
             ),
         }
 

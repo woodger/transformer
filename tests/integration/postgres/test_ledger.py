@@ -4,8 +4,8 @@ import uuid
 
 import pytest
 
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
-from app.contracts.worker.v3.objective import ml_contract
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.domain.errors import ServiceError
