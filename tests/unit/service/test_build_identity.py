@@ -18,10 +18,10 @@ def test_build_identity_uses_explicit_deployed_commit(tmp_path):
 
 def test_build_identity_reads_symbolic_git_head(tmp_path):
     git_path = tmp_path / ".git"
-    reference = git_path / "refs" / "heads" / "delevop"
+    reference = git_path / "refs" / "heads" / "develop"
     reference.parent.mkdir(parents=True)
     (git_path / "HEAD").write_text(
-        "ref: refs/heads/delevop\n",
+        "ref: refs/heads/develop\n",
         encoding="ascii",
     )
     reference.write_text("b" * 40 + "\n", encoding="ascii")
