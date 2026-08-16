@@ -28,4 +28,12 @@ class RetentionArtifactStore(Protocol):
     def remove(self, path: str) -> bool: ...
 
 
-__all__ = ["MaintenanceRepository", "RetentionArtifactStore"]
+class MaintenanceArtifactStore(RetentionArtifactStore, Protocol):
+    def model_directory(self, model_ref: str) -> str: ...
+
+
+__all__ = [
+    "MaintenanceArtifactStore",
+    "MaintenanceRepository",
+    "RetentionArtifactStore",
+]

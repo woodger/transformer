@@ -33,9 +33,10 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
 | `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
+| `models list\|delete` | Просматривать и удалять опубликованные model generations |
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
-`flight serve`, `auth tokens` и `db migrations` требуют настройки PostgreSQL.
+`flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки PostgreSQL.
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
@@ -232,6 +233,46 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 явно отключается и для training, и для prediction; `--device=cuda` завершается
 ошибкой, если CUDA недоступна. Deterministic mode может быть медленнее и может
 сообщить об операции, для которой PyTorch не имеет deterministic implementation.
+
+## Опубликованные модели
+
+Список model generations включает точный `modelRef`, owner, label, generation,
+lifecycle state и состояние доставки training metrics:
+
+```bash
+./.venv/bin/python ./app/main.py models list
+```
+
+Удаление запрашивается только по точному `modelRef`; alias команда не
+принимает:
+
+```bash
+./.venv/bin/python ./app/main.py models delete \
+  mdl_ead8077a4cba4455920d718532551248
+```
+
+Команда атомарно переводит доступную модель в `DELETING` и снимает alias,
+если он всё ещё указывает на эту generation. Новые prediction jobs после этого
+модель не видят. Каталог удаляет maintenance-процесс Flight service, затем
+состояние становится `DELETED`. Повторный запрос идемпотентен; строка-tombstone
+остаётся в PostgreSQL, поэтому `modelRef` и номер generation не
+переиспользуются.
+
+Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
+Оно также по умолчанию отклоняется при `PENDING` или `BLOCKED` доставке metrics.
+Если потеря ещё не доставленной telemetry осознанно допустима, её можно явно
+отменить:
+
+```bash
+./.venv/bin/python ./app/main.py models delete \
+  mdl_ead8077a4cba4455920d718532551248 \
+  --discard-undelivered-metrics
+```
+
+Уже созданные документы OpenSearch не удаляются. При явной отмене publisher
+может успеть завершить уже начатый Bulk request; операция означает отказ от
+гарантии полной доставки локальной metrics projection, а не очистку
+OpenSearch.
 
 ## Пути и запись артефактов
 

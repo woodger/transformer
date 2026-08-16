@@ -9,6 +9,9 @@
 
 ### Added
 
+- Добавлены штатные `models list` и `models delete`: удаление опубликованной
+  generation проходит через durable `DELETING`/`DELETED` lifecycle, блокируется
+  активными prediction jobs и сохраняет identity tombstone без alias fallback.
 - Добавлена централизованная training telemetry: committed epoch metrics
   сохраняются вместе с recovery checkpoint, успешная модель получает
   immutable `metrics.jsonl`, а PostgreSQL outbox доставляет детерминированные

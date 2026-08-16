@@ -266,6 +266,13 @@ def test_access_and_database_namespaces_are_nested():
     token_id = "12345678-1234-4234-8234-123456789abc"
     revoked = parse("auth", "tokens", "revoke", token_id)
     status = parse("db", "migrations", "status")
+    models = parse("models", "list")
+    deleted = parse(
+        "models",
+        "delete",
+        "mdl_0123456789abcdef0123456789abcdef",
+        "--discard-undelivered-metrics",
+    )
 
     assert (issue.action, issue.auth_action, issue.tokens_action) == (
         "auth",
@@ -280,6 +287,10 @@ def test_access_and_database_namespaces_are_nested():
         "migrations",
         "status",
     )
+    assert (models.action, models.models_action) == ("models", "list")
+    assert deleted.models_action == "delete"
+    assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
+    assert deleted.discard_undelivered_metrics is True
 
 
 @pytest.mark.parametrize(
@@ -295,6 +306,8 @@ def test_access_and_database_namespaces_are_nested():
         ("auth", "tokens"),
         ("db",),
         ("db", "migrations"),
+        ("models",),
+        ("models", "delete"),
         ("plot-metrics",),
     ),
 )
@@ -381,6 +394,15 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--host" not in flight_help
     assert "Examples:" not in flight_help
 
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["models", "--help"])
+    assert exc.value.code == 0
+
+    models_help = capsys.readouterr().out
+    assert "list" in models_help
+    assert "delete" in models_help
+    assert "exact model generation" in models_help
+
 def test_flight_serve_help_documents_configuration_contract(capsys):
     with pytest.raises(SystemExit) as exc:
         build_parser().parse_args(["flight", "serve", "--help"])
@@ -462,9 +484,12 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("auth", "tokens", "issue", "--help"),
         ("auth", "tokens", "list", "--help"),
         ("auth", "tokens", "revoke", "--help"),
+        ("models", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),
+        ("models", "list", "--help"),
+        ("models", "delete", "--help"),
         ("plot-metrics", "--help"),
     ),
 )
@@ -491,6 +516,8 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),
+        ("models", "list", "--help"),
+        ("models", "delete", "--help"),
         ("plot-metrics", "--help"),
     ),
 )

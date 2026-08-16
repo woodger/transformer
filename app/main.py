@@ -27,8 +27,11 @@ class CliArguments(Protocol):
     flight_action: str
     tokens_action: str
     migrations_action: str
+    models_action: str
     subject: str
     token_id: str
+    model_ref: str
+    discard_undelivered_metrics: bool
     seed: int
     deterministic: bool
     device: str
@@ -173,6 +176,12 @@ def main() -> None:
 
     if args.action == "db":
         from app.admin.bootstrap.db_migrations import run
+
+        run(args)
+        return
+
+    if args.action == "models":
+        from app.admin.bootstrap.models import run
 
         run(args)
         return

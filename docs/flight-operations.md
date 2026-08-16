@@ -169,6 +169,10 @@ OpenSearch выполняется отдельно по
 [`deployment/opensearch.md`](deployment/opensearch.md); недоступность
 OpenSearch не блокирует fit и публикацию модели.
 
+Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
+опубликованных model generations и состояние `CANCELLED` для явно отброшенной
+metrics delivery. Публичный Flight v4 не меняется.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -336,7 +340,8 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    predictions как `FAILED / EXECUTION_INTERRUPTED`, а прерванные
    `CANCELLING` jobs завершает как `CANCELLED`;
 7. удаляет незавершённые upload reservations и unpublished/orphan artifacts;
-8. сверяет постоянные каталоги моделей с metadata PostgreSQL;
+8. сверяет постоянные каталоги моделей с metadata PostgreSQL, сохраняя
+   `AVAILABLE` и ожидающие удаления `DELETING` generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
 10. загружает cache API tokens и запускает notification listener;
@@ -379,7 +384,20 @@ terminal state. Каталоги опубликованных моделей н�
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
 а точный lost-create replay остаётся разрешимым. В v4 нет сетевого action для
-удаления модели.
+удаления модели; оператор использует локальную команду `models delete`.
+
+Удаление model generation имеет отдельную durable boundary. PostgreSQL
+transaction блокирует новые predict, проверяет отсутствие активных predict
+jobs, снимает только alias, который указывает на эту generation, и фиксирует
+`DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
+удаления переводит строку в `DELETED`. При filesystem error состояние остаётся
+`DELETING` для следующей попытки. Tombstone модели не удаляется: generation и
+`modelRef` не переиспользуются, а alias не откатывается на предыдущую
+generation.
+
+Pending или blocked OpenSearch outbox по умолчанию блокирует удаление. Option
+`--discard-undelivered-metrics` явно переводит такую запись в `CANCELLED`;
+доставленные или уже принятые OpenSearch documents команда не удаляет.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из

@@ -328,12 +328,14 @@ class PostgresJobLifecycle:
                 command.owner_subject,
                 model_ref,
                 connection=connection,
+                for_update=True,
             )
         else:
             model = self.ledger.get_published_model(
                 model_ref,
                 owner_subject=command.owner_subject,
                 connection=connection,
+                for_update=True,
             )
         if model is None:
             raise not_found("model generation not found")

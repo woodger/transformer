@@ -122,7 +122,7 @@ TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0007`.
+Текущий head — `0008`.
 
 ## Проверить работу
 

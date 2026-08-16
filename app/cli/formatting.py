@@ -16,6 +16,13 @@ COMMAND_GROUPS = (
         ),
     ),
     (
+        "Models",
+        (
+            ("models list", "List published model generations"),
+            ("models delete <model-ref>", "Delete one model generation"),
+        ),
+    ),
+    (
         "Training and inference",
         (
             ("fit", "Train from an Arrow file."),

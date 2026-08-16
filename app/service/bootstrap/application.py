@@ -34,6 +34,9 @@ from app.service.adapters.outbound.postgres.mapping import row_string
 from app.service.adapters.outbound.postgres.metrics_outbox import (
     PostgresMetricsOutbox,
 )
+from app.service.adapters.outbound.postgres.published_models import (
+    PublishedModelStore,
+)
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCache,
@@ -193,6 +196,7 @@ class FlightApplication:
             spool.acquire_lock()
             database_config = database_config or load_database_config()
             ledger = Ledger(Database(database_config)).initialize()
+            published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)
             metrics_config = load_opensearch_metrics_config()
@@ -251,10 +255,7 @@ class FlightApplication:
                 temporary_paths=recovery_temporary_paths,
             )
             removed_models = spool.reconcile_model_directories(
-                {
-                    row_string(model, "model_ref")
-                    for model in ledger.list_models()
-                }
+                published_models.retained_model_refs()
             )
             if token_cache is None and bearer_tokens is not None:
                 token_cache = InMemoryAccessTokenCache(bearer_tokens)
@@ -332,6 +333,7 @@ class FlightApplication:
                 ledger,
                 spool,
                 recovery_store,
+                model_deletions=published_models,
                 interval_seconds=config.maintenance_interval_seconds,
                 queue_reconciler=worker.notify_queued,
                 logger=logger,

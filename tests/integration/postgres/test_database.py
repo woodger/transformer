@@ -123,12 +123,12 @@ def _commit_input(ledger, job, *, storage_class):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0007",)
-    assert status.heads == ("0007",)
+    assert status.current == ("0008",)
+    assert status.heads == ("0008",)
     assert status.pending is False
 
 
-def test_metrics_migration_rolls_back_but_v4_cutover_remains_irreversible(
+def test_reversible_migrations_roll_back_but_v4_cutover_remains_irreversible(
     postgres_config,
 ):
     schema = f"transformer_migration_test_{uuid.uuid4().hex}"
@@ -144,18 +144,21 @@ def test_metrics_migration_rolls_back_but_v4_cutover_remains_irreversible(
     try:
         initial = migration_status(config)
         applied = apply_migrations(config)
-        rolled_back = rollback_migration(config)
+        model_lifecycle_rolled_back = rollback_migration(config)
+        metrics_rolled_back = rollback_migration(config)
         with pytest.raises(RuntimeError, match="cannot be downgraded"):
             rollback_migration(config)
         after_failed_rollback = migration_status(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0007",)
+        assert initial.heads == ("0008",)
         assert initial.pending is True
-        assert applied.current == ("0007",)
+        assert applied.current == ("0008",)
         assert applied.pending is False
-        assert rolled_back.current == ("0006",)
-        assert rolled_back.pending is True
+        assert model_lifecycle_rolled_back.current == ("0007",)
+        assert model_lifecycle_rolled_back.pending is True
+        assert metrics_rolled_back.current == ("0006",)
+        assert metrics_rolled_back.pending is True
         assert after_failed_rollback.current == ("0006",)
         assert after_failed_rollback.pending is True
     finally:
@@ -289,7 +292,8 @@ def test_v4_schema_migration_preserves_tokens_and_model_identities_only(
                     f"""
                     SELECT producing_job_id, checkpoint_bytes,
                            data_contract, data_contract_sha256,
-                           ml_contract, objective_config_sha256
+                           ml_contract, objective_config_sha256,
+                           lifecycle_state, deletion_requested_at, deleted_at
                     FROM {quoted}.models
                     WHERE model_ref = :model_ref
                     """
@@ -323,13 +327,23 @@ def test_v4_schema_migration_preserves_tokens_and_model_identities_only(
         assert idempotency == 0
         assert storage_epoch == 0
         assert token == (uuid.UUID(token_id), "inventory")
-        assert model == (None, 1, None, None, None, None)
+        assert model == (
+            None,
+            1,
+            None,
+            None,
+            None,
+            None,
+            "AVAILABLE",
+            None,
+            None,
+        )
         assert alias == model_ref
         assert model_ref_lengths == [
             ("model_aliases", 128),
             ("models", 128),
         ]
-        assert migration_status(config).current == ("0007",)
+        assert migration_status(config).current == ("0008",)
     finally:
         with engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))

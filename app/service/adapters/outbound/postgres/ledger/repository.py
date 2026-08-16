@@ -1193,11 +1193,13 @@ class Ledger:
         *,
         owner_subject: str | None = None,
         connection: Session | None = None,
+        for_update: bool = False,
     ) -> PublishedModelRecord | None:
         return self._artifacts.get_published_model(
             model_ref,
             owner_subject=owner_subject,
             connection=connection,
+            for_update=for_update,
         )
 
     def resolve_published_model_alias(
@@ -1206,11 +1208,13 @@ class Ledger:
         label: str,
         *,
         connection: Session | None = None,
+        for_update: bool = False,
     ) -> PublishedModelRecord | None:
         return self._artifacts.resolve_published_model_alias(
             owner_subject,
             label,
             connection=connection,
+            for_update=for_update,
         )
 
     def list_models(self) -> list[RowMapping]:

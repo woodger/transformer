@@ -427,10 +427,25 @@ class PublishedModel(Base):
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
+            "(lifecycle_state = 'AVAILABLE' "
+            "AND deletion_requested_at IS NULL AND deleted_at IS NULL) OR "
+            "(lifecycle_state = 'DELETING' "
+            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL) OR "
+            "(lifecycle_state = 'DELETED' "
+            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)",
+            name="models_lifecycle_ck",
+        ),
+        CheckConstraint(
             "(ml_contract IS NULL AND objective_config_sha256 IS NULL) OR "
             "(ml_contract IS NOT NULL AND objective_config_sha256 IS NOT NULL "
             "AND data_contract IS NOT NULL AND data_contract_sha256 IS NOT NULL)",
             name="models_ml_contract_ck",
+        ),
+        Index(
+            "models_deleting_idx",
+            "deletion_requested_at",
+            "model_ref",
+            postgresql_where=text("lifecycle_state = 'DELETING'"),
         ),
         {"schema": SCHEMA},
     )
@@ -454,6 +469,16 @@ class PublishedModel(Base):
         unique=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="AVAILABLE",
+        server_default="AVAILABLE",
+    )
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ModelMetricsArtifact(Base):
@@ -504,7 +529,7 @@ class MetricsOutboxEntry(Base):
     __tablename__ = "metrics_outbox"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('PENDING', 'BLOCKED', 'DELIVERED')",
+            "status IN ('PENDING', 'BLOCKED', 'DELIVERED', 'CANCELLED')",
             name="metrics_outbox_status_ck",
         ),
         CheckConstraint("cursor >= 0", name="metrics_outbox_cursor_ck"),

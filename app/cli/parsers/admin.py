@@ -6,6 +6,7 @@ from app.cli.parsers import SubparserTarget
 def add_admin_parsers(subparsers: SubparserTarget) -> None:
     _add_auth_parsers(subparsers)
     _add_database_parsers(subparsers)
+    _add_model_parsers(subparsers)
 
 
 def _add_auth_parsers(subparsers: SubparserTarget) -> None:
@@ -103,6 +104,49 @@ def _add_database_parsers(subparsers: SubparserTarget) -> None:
         )
         add_hidden_help_argument(command)
         command.set_defaults(data=None, metrics_name=None)
+
+
+def _add_model_parsers(subparsers: SubparserTarget) -> None:
+    models = subparsers.add_parser(
+        "models",
+        help="Published model administration commands.",
+        formatter_class=HelpFormatter,
+    )
+    model_commands = models.add_subparsers(
+        dest="models_action",
+        required=True,
+        title="Commands",
+        metavar="COMMAND",
+    )
+    model_list = model_commands.add_parser(
+        "list",
+        add_help=False,
+        help="List published model generations and lifecycle state.",
+        description="List published model generations and lifecycle state.",
+        formatter_class=HelpFormatter,
+    )
+    add_hidden_help_argument(model_list)
+    model_list.set_defaults(data=None, metrics_name=None)
+
+    delete = model_commands.add_parser(
+        "delete",
+        add_help=False,
+        help="Request deletion of one exact model generation.",
+        description="Request deletion of one exact published model generation.",
+        formatter_class=HelpFormatter,
+    )
+    add_hidden_help_argument(delete)
+    delete.add_argument(
+        "model_ref",
+        metavar="MODEL_REF",
+        help="Exact published model reference; aliases are not accepted.",
+    )
+    delete.add_argument(
+        "--discard-undelivered-metrics",
+        action="store_true",
+        help="Cancel pending or blocked OpenSearch metrics delivery.",
+    )
+    delete.set_defaults(data=None, metrics_name=None)
 
 
 __all__ = ["add_admin_parsers"]

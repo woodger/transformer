@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.contracts.worker.v4.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
+from app.service.domain.model import ModelLifecycleState
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +213,19 @@ class PublishedModelRecord:
     objective_config_sha256: str | None
     producing_job_id: str | None
     created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ModelLifecycleRecord:
+    model_ref: str
+    owner_subject: str
+    label: str
+    generation: int
+    state: ModelLifecycleState
+    metrics_delivery_status: str | None
+    created_at: float
+    deletion_requested_at: float | None
+    deleted_at: float | None
 
 
 @dataclass(frozen=True, slots=True)

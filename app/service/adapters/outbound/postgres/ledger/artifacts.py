@@ -42,6 +42,7 @@ from app.service.domain.errors import (
     not_found,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.model import ModelLifecycleState
 from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 
 
@@ -326,7 +327,9 @@ class ArtifactLedgerSlice:
         connection: Session | None = None,
     ) -> RowMapping | None:
         statement = select(PublishedModel).where(
-            PublishedModel.model_ref == model_ref
+            PublishedModel.model_ref == model_ref,
+            PublishedModel.lifecycle_state
+            == ModelLifecycleState.AVAILABLE.value,
         )
         if owner_subject is not None:
             statement = statement.where(
@@ -343,7 +346,9 @@ class ArtifactLedgerSlice:
         connection: Session | None = None,
     ) -> ModelArtifactRecord | None:
         statement = select(PublishedModel).where(
-            PublishedModel.model_ref == model_ref
+            PublishedModel.model_ref == model_ref,
+            PublishedModel.lifecycle_state
+            == ModelLifecycleState.AVAILABLE.value,
         )
         if owner_subject is not None:
             statement = statement.where(
@@ -358,14 +363,19 @@ class ArtifactLedgerSlice:
         *,
         owner_subject: str | None = None,
         connection: Session | None = None,
+        for_update: bool = False,
     ) -> PublishedModelRecord | None:
         statement = select(PublishedModel).where(
-            PublishedModel.model_ref == model_ref
+            PublishedModel.model_ref == model_ref,
+            PublishedModel.lifecycle_state
+            == ModelLifecycleState.AVAILABLE.value,
         )
         if owner_subject is not None:
             statement = statement.where(
                 PublishedModel.owner_subject == owner_subject
             )
+        if for_update:
+            statement = statement.with_for_update()
         with self.sessions.read(connection) as session:
             return published_model_record(session.scalar(statement))
 
@@ -386,6 +396,8 @@ class ArtifactLedgerSlice:
                 .where(
                     ModelAlias.owner_subject == owner_subject,
                     ModelAlias.label == label,
+                    PublishedModel.lifecycle_state
+                    == ModelLifecycleState.AVAILABLE.value,
                 )
             )
             return decode_optional(model)
@@ -396,9 +408,10 @@ class ArtifactLedgerSlice:
         label: str,
         *,
         connection: Session | None = None,
+        for_update: bool = False,
     ) -> PublishedModelRecord | None:
         with self.sessions.read(connection) as session:
-            model = session.scalar(
+            statement = (
                 select(PublishedModel)
                 .join(
                     ModelAlias,
@@ -407,8 +420,13 @@ class ArtifactLedgerSlice:
                 .where(
                     ModelAlias.owner_subject == owner_subject,
                     ModelAlias.label == label,
+                    PublishedModel.lifecycle_state
+                    == ModelLifecycleState.AVAILABLE.value,
                 )
             )
+            if for_update:
+                statement = statement.with_for_update(of=PublishedModel)
+            model = session.scalar(statement)
             return published_model_record(model)
 
     def list_models(self) -> list[RowMapping]:

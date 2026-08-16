@@ -166,7 +166,9 @@ class PostgresMetricsOutbox:
                     ModelMetricsArtifact.model_ref
                     == MetricsOutboxEntry.model_ref,
                 )
-                .where(MetricsOutboxEntry.status != "DELIVERED")
+                .where(
+                    MetricsOutboxEntry.status.in_(("PENDING", "BLOCKED"))
+                )
             ).one()
         age = None if oldest is None else max(0.0, (now - oldest).total_seconds())
         return int(count), int(byte_count), age
