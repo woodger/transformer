@@ -37,7 +37,7 @@ class OpenSearchMetricsClient:
 
     def create_documents(
         self,
-        stream: str,
+        index: str,
         documents: Sequence[JsonObject],
         *,
         id_field: str,
@@ -53,7 +53,7 @@ class OpenSearchMetricsClient:
             document_sha256 = _required_string(document, "documentSha256")
             identities.append((document_id, document_sha256))
             encoded.extend(_json_line({
-                "create": {"_index": stream, "_id": document_id}
+                "create": {"_index": index, "_id": document_id}
             }))
             encoded.extend(_json_line(document))
         if len(encoded) > self.config.max_bulk_bytes:
@@ -94,7 +94,7 @@ class OpenSearchMetricsClient:
                 f"OpenSearch rejected metrics documents with status {blocked[0]}"
             )
         if conflicts:
-            self._verify_conflicts(stream, conflicts)
+            self._verify_conflicts(index, conflicts)
         if retryable:
             raise RetryableMetricsDeliveryError(
                 f"OpenSearch temporarily rejected metrics documents with status "
@@ -103,7 +103,7 @@ class OpenSearchMetricsClient:
 
     def _verify_conflicts(
         self,
-        stream: str,
+        index: str,
         conflicts: Sequence[tuple[str, str]],
     ) -> None:
         body = json.dumps(
@@ -115,7 +115,7 @@ class OpenSearchMetricsClient:
             allow_nan=False,
             separators=(",", ":"),
         ).encode("utf-8")
-        response = self._request("POST", f"/{stream}/_mget", body)
+        response = self._request("POST", f"/{index}/_mget", body)
         documents = response.get("docs")
         if not isinstance(documents, list) or len(documents) != len(conflicts):
             raise RetryableMetricsDeliveryError(

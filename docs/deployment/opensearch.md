@@ -7,10 +7,16 @@
 templates — в
 [`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md).
 
-## Подготовить templates и data streams
+## Подготовить templates и индексы
 
 Операцию выполняет администратор OpenSearch. Transformer service не должен
 получать эти права.
+
+Обычный index и data stream не могут одновременно использовать одно имя. Если
+в кластере уже существуют data streams `metrics-points-v1` или
+`metrics-artifacts-v1`, сначала остановите publisher и отдельно решите вопрос
+сохранения их данных. Эта инструкция намеренно не удаляет существующие
+streams или backing indices.
 
 ```bash
 search_endpoint=https://hp260g9.home:9200
@@ -38,21 +44,23 @@ curl --fail --silent --show-error \
   --cacert "$search_ca" \
   --user admin \
   --request PUT \
-  "$search_endpoint/_data_stream/metrics-points-v1"
+  "$search_endpoint/metrics-points-v1"
 
 curl --fail --silent --show-error \
   --cacert "$search_ca" \
   --user admin \
   --request PUT \
-  "$search_endpoint/_data_stream/metrics-artifacts-v1"
+  "$search_endpoint/metrics-artifacts-v1"
 ```
 
 `--user admin` запрашивает password интерактивно. Не передавайте password в
 аргументе команды. После создания проверьте, что templates имеют
-`dynamic: strict`, а streams используют ожидаемые templates.
+`dynamic: strict`, а оба индекса используют ожидаемые mappings.
 
-Не назначайте этим streams ISM rollover policy в v1. Причина и условие снятия
-ограничения зафиксированы в ADR 0009.
+Не преобразуйте индексы в data streams и не назначайте им rollover alias или
+ISM rollover policy. Глобальная уникальность `_id` и проверка через `_mget`
+требуют одного concrete index на каждую versioned projection. Причина и
+условие снятия ограничения зафиксированы в ADR 0009.
 
 ## Создать отдельного writer-а
 
@@ -73,9 +81,9 @@ index:
 ```
 
 Проверьте набор на установленном Security plugin representative Bulk и `_mget`
-requests. Writer не должен иметь `delete`, `update`, template, mapping, data
-stream, ISM или cluster-admin permissions. Пользователь `admin` для runtime
-запрещён самим Transformer.
+requests. Writer не должен иметь `delete`, `update`, index creation, template,
+mapping, data stream, ISM или cluster-admin permissions. Пользователь `admin`
+для runtime запрещён самим Transformer.
 
 ## Настроить Transformer
 

@@ -53,20 +53,26 @@ Golden identity находится в `fixtures/event-identity.json`; незав
 Node.js-скрипт `fixtures/event_id_sha256.mjs` фиксирует межъязыковую
 канонизацию.
 
-## Data streams
+## Индексы OpenSearch
 
-Оператор заранее устанавливает strict templates из `opensearch/` и создаёт:
+Оператор заранее устанавливает strict templates из `opensearch/` и создаёт
+два обычных versioned index:
 
 ```text
 metrics-points-v1
 metrics-artifacts-v1
 ```
 
-Publisher не имеет прав создавать templates, mappings или data streams.
-Для v1 запрещён rollover этих streams: уникальность `_id` в OpenSearch
-ограничена backing index, поэтому после rollover повтор потерянного Bulk
-response мог бы создать тот же semantic event в новом backing index. Политика
-rollover требует отдельного изменения delivery contract.
+Publisher не имеет прав создавать indices, templates или mappings. Data streams
+и rollover в v1 не используются: запись в data stream направляется в текущий
+write index, поэтому после rollover повтор потерянного Bulk response может
+создать тот же semantic event в новом backing index. Обычный index сохраняет
+глобальную уникальность `_id` внутри versioned projection и позволяет проверить
+конфликт через `_mget`.
+
+Будущее разбиение по времени требует отдельной версии delivery contract:
+конкретный index должен детерминированно вычисляться по immutable `recordedAt`,
+чтобы исходная доставка и любой retry всегда попадали в один partition.
 
 ## Outbox
 

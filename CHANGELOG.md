@@ -62,6 +62,9 @@
 - ORM-модели сохраняют recursive `JsonValue` в runtime namespace, поэтому
   SQLAlchemy корректно разрешает postponed `Mapped[JsonObject]` annotations
   при запуске Alembic на Python 3.14.
+- Metrics v1 использует два обычных versioned OpenSearch index вместо data
+  streams: повторный Bulk `create` сохраняет глобальный конфликт `_id`, а
+  проверка `documentSha256` выполняется пакетным `_mget` по concrete index.
 
 ## [0.1.10] - 2026-08-12
 

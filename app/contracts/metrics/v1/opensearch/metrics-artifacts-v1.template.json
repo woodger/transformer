@@ -1,7 +1,6 @@
 {
   "index_patterns": ["metrics-artifacts-v1"],
   "priority": 300,
-  "data_stream": {},
   "template": {
     "mappings": {
       "dynamic": "strict",

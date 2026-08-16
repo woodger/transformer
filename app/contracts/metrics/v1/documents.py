@@ -18,8 +18,8 @@ ARTIFACT_MEDIA_TYPE = "application/x-ndjson"
 PROJECTION_VERSION = "inventory.metrics.v1"
 POINT_DOCUMENT_SCHEMA = "inventory.metrics.point.v1"
 ARTIFACT_DOCUMENT_SCHEMA = "inventory.metrics.artifact.v1"
-POINT_STREAM = "metrics-points-v1"
-ARTIFACT_STREAM = "metrics-artifacts-v1"
+POINT_INDEX = "metrics-points-v1"
+ARTIFACT_INDEX = "metrics-artifacts-v1"
 
 _SCHEMA_PATH = Path(__file__).with_name("training-record.schema.json")
 _TRAINING_RECORD_SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))

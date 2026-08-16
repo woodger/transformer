@@ -2,7 +2,8 @@
 
 ## Статус
 
-Принято, 2026-08-15.
+Принято, 2026-08-15. Уточнено 2026-08-16: projection использует обычные
+versioned indices вместо data streams.
 
 ## Контекст
 
@@ -84,18 +85,26 @@ Pending/blocked outbox entries не удаляются. Доставленные
 10 000 entries, 10 GiB или 30 дней создают явное событие, но не меняют
 результат fit.
 
+## Индексы OpenSearch
+
+Templates и обычные versioned indices `metrics-points-v1` и
+`metrics-artifacts-v1` создаёт оператор до включения publisher-а. Data streams
+не используются: они направляют запись в текущий write index, поэтому rollover
+позволяет повторно создать тот же `_id` в новом backing index, а exact `_mget`
+по имени data stream не обеспечивает проверку существующего документа.
+
+Один concrete index на versioned projection гарантирует конфликт повторного
+`create` и пакетную проверку `documentSha256` через `_mget`. Будущее временное
+разбиение допустимо только как отдельное изменение delivery contract с
+детерминированным выбором partition по immutable `recordedAt`.
+
 ## Безопасность
 
 Transformer использует отдельного non-admin writer-а, доверенный CA и только
 HTTPS. Writer может выполнять Bulk create и exact `_mget` только для двух
-metrics streams. Он не управляет templates, mappings, lifecycle policies или
-cluster settings. Password, Arrow data, stack traces и filesystem paths не
-попадают в документы и логи.
-
-Templates и data streams создаёт оператор до включения publisher-а. В v1
-rollover запрещён: OpenSearch гарантирует уникальность `_id` внутри backing
-index, а не всего data stream. Поддержка rollover потребует deterministic
-выбора concrete index либо отдельного глобального deduplication contract.
+metrics indices. Он не управляет indices, templates, mappings, lifecycle
+policies или cluster settings. Password, Arrow data, stack traces и filesystem
+paths не попадают в документы и логи.
 
 ## Ограничения v1
 

@@ -76,7 +76,7 @@ class MetricsArtifactProjection(Protocol):
 class MetricsDocumentSink(Protocol):
     def create_documents(
         self,
-        stream: str,
+        index: str,
         documents: Sequence[JsonObject],
         *,
         id_field: str,

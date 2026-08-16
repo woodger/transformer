@@ -1,7 +1,6 @@
 {
   "index_patterns": ["metrics-points-v1"],
   "priority": 300,
-  "data_stream": {},
   "template": {
     "mappings": {
       "dynamic": "strict",

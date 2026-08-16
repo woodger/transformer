@@ -5,7 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.v1 import ARTIFACT_STREAM, POINT_STREAM
+from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.application.ports.metrics import (
     BlockedMetricsDeliveryError,
     MetricsArtifactProjection,
@@ -104,7 +104,7 @@ class MetricsPublisher:
             if cursor < len(points):
                 chunk = points[cursor:cursor + _MAX_BULK_DOCUMENTS]
                 self.sink.create_documents(
-                    POINT_STREAM,
+                    POINT_INDEX,
                     chunk,
                     id_field="eventId",
                 )
@@ -120,7 +120,7 @@ class MetricsPublisher:
                 deployment_id=self.deployment_id,
             )
             self.sink.create_documents(
-                ARTIFACT_STREAM,
+                ARTIFACT_INDEX,
                 (artifact,),
                 id_field="artifactId",
             )

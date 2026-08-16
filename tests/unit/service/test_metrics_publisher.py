@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.v1 import ARTIFACT_STREAM, POINT_STREAM
+from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.application.ports.metrics import (
     RetryableMetricsDeliveryError,
@@ -126,8 +126,8 @@ class _Sink:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, str]] = []
 
-    def create_documents(self, stream, documents, *, id_field):
-        self.calls.append((stream, len(documents), id_field))
+    def create_documents(self, index, documents, *, id_field):
+        self.calls.append((index, len(documents), id_field))
 
 
 def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
@@ -147,16 +147,16 @@ def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
         publisher.shutdown(2.0)
 
     assert sink.calls == [
-        (POINT_STREAM, 500, "eventId"),
-        (POINT_STREAM, 1, "eventId"),
-        (ARTIFACT_STREAM, 1, "artifactId"),
+        (POINT_INDEX, 500, "eventId"),
+        (POINT_INDEX, 1, "eventId"),
+        (ARTIFACT_INDEX, 1, "artifactId"),
     ]
     assert outbox.maintenance_runs >= 1
 
 
 def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
     class RetrySink:
-        def create_documents(self, _stream, _documents, *, id_field):
+        def create_documents(self, _index, _documents, *, id_field):
             assert id_field == "eventId"
             raise RetryableMetricsDeliveryError("temporarily unavailable")
 
