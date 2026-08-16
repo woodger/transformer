@@ -226,6 +226,9 @@ class Spool:
     def model_metrics_path(self, model_ref: str) -> str:
         return os.path.join(self.model_directory(model_ref), "metrics.jsonl")
 
+    def model_run_summary_path(self, model_ref: str) -> str:
+        return os.path.join(self.model_directory(model_ref), "run-summary.json")
+
     def relative_path(self, absolute_path: str) -> str:
         resolved = self._inside_runtime(absolute_path)
         return os.path.relpath(resolved, self.runtime_dir).replace(os.sep, "/")

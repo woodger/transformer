@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import math
 from typing import cast
 
 from sqlalchemy import select
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v5.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -59,6 +60,8 @@ class RecoveryLedgerSlice:
         global_step: int,
         training_complete: bool,
         metrics: JsonObject,
+        checkpoint_serialization_ms: float,
+        checkpoint_publication_ms: float,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
         positive(attempt, "attempt")
@@ -78,6 +81,18 @@ class RecoveryLedgerSlice:
             raise ValueError("training_complete must be a boolean")
         if format != TRAINING_RECOVERY_FORMAT:
             raise ValueError("unsupported training recovery format")
+        for value, label in (
+            (checkpoint_serialization_ms, "checkpoint_serialization_ms"),
+            (checkpoint_publication_ms, "checkpoint_publication_ms"),
+        ):
+            raw_value = cast(object, value)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (int, float))
+                or not math.isfinite(raw_value)
+                or raw_value < 0
+            ):
+                raise ValueError(f"{label} must be finite and non-negative")
         metrics_value = json_value(metrics)
         if (
             metrics_value.get("epoch") != generation
@@ -146,6 +161,9 @@ class RecoveryLedgerSlice:
                         attempt=attempt,
                         attempt_id=attempt_id,
                         metrics=metrics_value,
+                        checkpoint_serialization_ms=float(
+                            checkpoint_serialization_ms
+                        ),
                     )
                 ):
                     return _record(existing), True
@@ -190,6 +208,10 @@ class RecoveryLedgerSlice:
                 attempt=attempt,
                 attempt_id=attempt_id,
                 metrics=metrics_value,
+                checkpoint_serialization_ms=float(
+                    checkpoint_serialization_ms
+                ),
+                checkpoint_publication_ms=float(checkpoint_publication_ms),
                 recorded_at=created_at,
             ))
             job.progress = metrics_value
@@ -465,6 +487,13 @@ def _record(
 def _metrics_record(
     value: TrainingMetricInterval,
 ) -> TrainingMetricIntervalRecord:
+    if (
+        value.checkpoint_serialization_ms is None
+        or value.checkpoint_publication_ms is None
+    ):
+        raise ValueError(
+            "training metric interval predates checkpoint timing contract"
+        )
     return TrainingMetricIntervalRecord(
         job_id=value.job_id,
         generation=value.generation,
@@ -472,6 +501,8 @@ def _metrics_record(
         attempt_id=value.attempt_id,
         metrics=dict(value.metrics),
         recorded_at=value.recorded_at.timestamp(),
+        checkpoint_serialization_ms=value.checkpoint_serialization_ms,
+        checkpoint_publication_ms=value.checkpoint_publication_ms,
     )
 
 
@@ -481,11 +512,13 @@ def _same_metrics(
     attempt: int,
     attempt_id: str,
     metrics: JsonObject,
+    checkpoint_serialization_ms: float,
 ) -> bool:
     return (
         value.attempt == attempt
         and value.attempt_id == attempt_id
         and value.metrics == metrics
+        and value.checkpoint_serialization_ms == checkpoint_serialization_ms
     )
 
 

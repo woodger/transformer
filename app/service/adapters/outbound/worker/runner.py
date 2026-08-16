@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v4 import (
+from app.contracts.worker.v5 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
@@ -87,6 +87,22 @@ class _RunnerLedger(JobRepository, Protocol):
     ) -> None: ...
 
     def get_job(self, job_id: str) -> Mapping[str, object] | None: ...
+
+    def mark_attempt_worker_ready(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+    ) -> None: ...
+
+    def mark_attempt_worker_completed(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+    ) -> None: ...
 
     def mark_input_waiting(
         self,
@@ -625,6 +641,11 @@ class WorkerSubprocessRunner:
                             "worker ready snapshot differs from the command manifest"
                         )
                     state.ready = True
+                    self.ledger.mark_attempt_worker_ready(
+                        job.job_id,
+                        job.attempt,
+                        attempt_id=attempt_id,
+                    )
                     continue
                 if event_type == "ready":
                     raise WorkerContractError("worker emitted ready more than once")
@@ -674,6 +695,11 @@ class WorkerSubprocessRunner:
                         )
                     self._publish_recovery(job, payload)
                 elif event_type == "completed":
+                    self.ledger.mark_attempt_worker_completed(
+                        job.job_id,
+                        job.attempt,
+                        attempt_id=attempt_id,
+                    )
                     state.terminal = event_type
                     state.completed_artifact = _object(
                         payload.get("resultManifest"),

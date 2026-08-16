@@ -22,7 +22,7 @@ app/main.py                         ленивый CLI dispatcher
 └── app/admin/bootstrap            auth и database commands
 
 app/contracts/flight/v4            публичный Flight contract
-app/contracts/worker/v4            внутренний process contract
+app/contracts/worker/v5            внутренний process contract
 app/contracts/metrics/v1           artifact и OpenSearch documents
 ```
 
@@ -109,7 +109,7 @@ local CLI и application use cases сервиса.
 Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
 размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
 service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v4/config.py`. Общий `app/config.py` не
+defaults — в `app/contracts/worker/v5/config.py`. Общий `app/config.py` не
 создаётся.
 
 ## Admin
@@ -124,7 +124,7 @@ cases, которые определяют операции с access tokens. Al
 - `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
 - Flight v4 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v4/` — command/result manifests, capability document,
+- `app/contracts/worker/v5/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - `app/contracts/metrics/v1/` — immutable training artifact, закрытая
   OpenSearch projection, golden identity и strict index templates;
@@ -178,7 +178,7 @@ Ownership хранения:
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v4`;
+- shared service/worker данные находятся только в `app/contracts/worker/v5`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

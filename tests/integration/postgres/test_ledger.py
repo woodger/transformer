@@ -4,8 +4,11 @@ import uuid
 
 import pytest
 
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v5.config import ModelConfig, TrainConfig
+from app.contracts.worker.v5.objective import (
+    TRAINING_RECOVERY_FORMAT,
+    ml_contract,
+)
 from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.domain.errors import ServiceError
@@ -202,6 +205,110 @@ def test_status_counts_process_failure_that_restarts_open_fit(postgres_ledger):
     assert retried["input_waiting_since"] is None
     assert snapshot.recovery.retry_count == 1
     assert snapshot.recovery.last_retry_code == ErrorCode.SUBPROCESS_FAILED.value
+
+
+def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
+    job, execution_id = _create_fit(postgres_ledger, now=1.0)
+    _reserve_and_commit(
+        postgres_ledger,
+        job,
+        execution_id,
+        0,
+        rows=2,
+        byte_count=102,
+        now=2.0,
+    )
+    _close(postgres_ledger, job, execution_id, now=3.0)
+
+    first_attempt = postgres_ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        now=4.0,
+    )
+    postgres_ledger.mark_attempt_worker_ready(
+        job["job_id"],
+        first_attempt.attempt,
+        attempt_id=first_attempt.attempt_id,
+        now=5.0,
+    )
+    postgres_ledger.register_recovery_checkpoint(
+        job_id=job["job_id"],
+        attempt=first_attempt.attempt,
+        attempt_id=first_attempt.attempt_id,
+        generation=1,
+        format=TRAINING_RECOVERY_FORMAT,
+        relative_path=f"jobs/{job['job_id']}/recovery/1.pth",
+        byte_count=10,
+        sha256="1" * 64,
+        completed_epochs=1,
+        global_step=10,
+        training_complete=False,
+        metrics={"epoch": 1, "step": 10, "elapsed_ms": 100.0},
+        checkpoint_serialization_ms=11.0,
+        checkpoint_publication_ms=12.0,
+        now=6.0,
+    )
+    postgres_ledger.schedule_retry(
+        job["job_id"],
+        first_attempt.attempt,
+        attempt_id=first_attempt.attempt_id,
+        error_code=ErrorCode.SUBPROCESS_FAILED,
+        error_message="worker crashed after the first epoch",
+        now=7.0,
+    )
+
+    second_attempt = postgres_ledger.claim_execution_job(
+        job["job_id"],
+        "cpu",
+        now=8.0,
+    )
+    postgres_ledger.mark_attempt_worker_ready(
+        job["job_id"],
+        second_attempt.attempt,
+        attempt_id=second_attempt.attempt_id,
+        now=9.0,
+    )
+    postgres_ledger.register_recovery_checkpoint(
+        job_id=job["job_id"],
+        attempt=second_attempt.attempt,
+        attempt_id=second_attempt.attempt_id,
+        generation=2,
+        format=TRAINING_RECOVERY_FORMAT,
+        relative_path=f"jobs/{job['job_id']}/recovery/2.pth",
+        byte_count=11,
+        sha256="2" * 64,
+        completed_epochs=2,
+        global_step=20,
+        training_complete=True,
+        metrics={"epoch": 2, "step": 20, "elapsed_ms": 200.0},
+        checkpoint_serialization_ms=13.0,
+        checkpoint_publication_ms=14.0,
+        now=10.0,
+    )
+    postgres_ledger.mark_attempt_worker_completed(
+        job["job_id"],
+        second_attempt.attempt,
+        attempt_id=second_attempt.attempt_id,
+        now=11.0,
+    )
+
+    summary = postgres_ledger.fit_run_summary_source(
+        job["job_id"],
+        second_attempt.attempt,
+        attempt_id=second_attempt.attempt_id,
+        now=12.0,
+    )
+
+    assert summary.attempt_count == 2
+    assert summary.recovery_count == 1
+    assert summary.input_payload_count == 1
+    assert summary.input_rows == 2
+    assert summary.input_bytes == 102
+    assert summary.queue_wait_ms == 3_000.0
+    assert summary.worker_startup_ms == 2_000.0
+    assert summary.training_ms == 300.0
+    assert summary.checkpoint_serialization_ms == 24.0
+    assert summary.checkpoint_publication_ms == 26.0
 
 
 def test_out_of_order_commits_advance_only_the_contiguous_frontier(

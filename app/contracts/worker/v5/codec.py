@@ -13,7 +13,7 @@ from referencing.jsonschema import Schema, SchemaRegistry
 from app.contracts.json_types import JsonObject
 
 CONTRACT_NAME = "transformer-worker"
-CONTRACT_VERSION = 4
+CONTRACT_VERSION = 5
 MAX_EVENT_BYTES = 1024 * 1024
 
 _SCHEMA_DIRECTORY = Path(__file__).with_name("schemas")

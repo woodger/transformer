@@ -7,12 +7,12 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v5.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v5.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config,

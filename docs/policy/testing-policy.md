@@ -50,7 +50,7 @@ config parsing, state transitions, serialization helpers.
 ### Contract tests
 
 Проверяют normative schemas и golden fixtures в `app/contracts/flight/v4/`,
-process envelopes в `app/contracts/worker/v4/`, а также immutable artifact,
+process envelopes в `app/contracts/worker/v5/`, а также immutable artifact,
 OpenSearch documents/templates и cross-language event identity в
 `app/contracts/metrics/v1/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
@@ -121,7 +121,7 @@ blocker.
 
 ```text
 tests/unit/{cli,local,service,worker}
-tests/contract/{flight_v4,worker_v4,metrics_v1}
+tests/contract/{flight_v4,worker_v5,metrics_v1,metrics_fit_run_v1}
 tests/integration/{flight,postgres,worker_process}
 tests/architecture
 tests/support

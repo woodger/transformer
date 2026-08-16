@@ -12,7 +12,7 @@ from app.contracts.flight.v4.constants import (
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
 )
-from app.contracts.worker.v4 import (
+from app.contracts.worker.v5 import (
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
@@ -23,8 +23,8 @@ from app.contracts.worker.v4 import (
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v4.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v5.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v5.objective import ml_contract
 from app.project import PROJECT_ROOT
 from app.worker.application.inputs import DurableInputStream
 
@@ -32,7 +32,7 @@ SCHEMA_ROOT = (
     PROJECT_ROOT / "app"
     / "contracts"
     / "worker"
-    / "v4"
+    / "v5"
     / "schemas"
 )
 JOB_ID = "00000000-0000-4000-8000-000000000001"
@@ -89,7 +89,7 @@ def _input(ordinal: int, *, revision: int, rows: int, byte_count: int) -> dict:
 def _fit_manifest(*, closed: bool = False) -> dict:
     return {
         "contract": "transformer-worker",
-        "protocolVersion": 4,
+        "protocolVersion": 5,
         "jobId": JOB_ID,
         "attempt": 1,
         "attemptId": ATTEMPT_ID,
@@ -126,7 +126,7 @@ class _Emitter:
         self.events.append(("ack", payload))
 
 
-def test_worker_v4_schemas_are_valid_draft_2020_12_documents():
+def test_worker_v5_schemas_are_valid_draft_2020_12_documents():
     schemas = sorted(SCHEMA_ROOT.glob("*.schema.json"))
     assert {path.name for path in schemas} == {
         "arrow-manifest.schema.json",
@@ -142,7 +142,7 @@ def test_worker_v4_schemas_are_valid_draft_2020_12_documents():
         Draft202012Validator.check_schema(json.loads(path.read_text()))
 
 
-def test_worker_v4_pins_flight_v4_arrow_schema_ids():
+def test_worker_v5_pins_flight_v4_arrow_schema_ids():
     assert (
         FIT_INPUT_SCHEMA_ID,
         PREDICT_INPUT_SCHEMA_ID,

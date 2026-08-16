@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator
 from dataclasses import replace
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v5 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v5.config import ModelConfig, TrainConfig
+from app.contracts.worker.v5.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -191,6 +192,7 @@ def execute_fit(
             "checkpoints",
             f"{generation}.pth",
         )
+        serialization_started = time.monotonic()
         event = save_training_recovery(
             checkpoint_path,
             trainer,
@@ -198,6 +200,9 @@ def execute_fit(
             config_hash=string_field(recovery, "configSha256"),
             manifest_hash=manifest_sha256,
         )
+        checkpoint_serialization_ms = (
+            time.monotonic() - serialization_started
+        ) * 1000.0
         committed_metrics = object_document(
             json_safe(metrics.to_dict(
                 mode="fit-stream",
@@ -232,6 +237,7 @@ def execute_fit(
                 "training_complete",
             ),
             "artifact": artifact_document(checkpoint_path),
+            "checkpointSerializationMs": checkpoint_serialization_ms,
             "metrics": committed_metrics,
         })
 
@@ -249,7 +255,11 @@ def execute_fit(
             )
 
     checkpoint_path = os.path.join(workspace, "checkpoint.pth")
+    serialization_started = time.monotonic()
     trainer.save(checkpoint_path)
+    checkpoint_serialization_ms = (
+        time.monotonic() - serialization_started
+    ) * 1000.0
     result = result_identity(manifest)
     result.update({
         "inputRevision": input_stream.input_revision,
@@ -257,6 +267,7 @@ def execute_fit(
         "artifacts": [],
         "checkpoint": artifact_document(checkpoint_path),
         "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
+        "checkpointSerializationMs": checkpoint_serialization_ms,
     })
     validate_document(result, "result-manifest")
     return result

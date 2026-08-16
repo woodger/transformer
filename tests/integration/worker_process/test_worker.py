@@ -132,7 +132,7 @@ def _commit_real_input(ledger, recovery, job, ordinal, *, value=1.0):
     )
 
 
-def test_open_fit_plan_is_an_immutable_worker_v4_snapshot(
+def test_open_fit_plan_is_an_immutable_worker_v5_snapshot(
     tmp_path,
     postgres_ledger,
 ):
@@ -146,7 +146,7 @@ def test_open_fit_plan_is_an_immutable_worker_v4_snapshot(
     plan = builder.build(running, running.attempt)
     document = json.loads(Path(plan.manifest_path).read_text())
 
-    assert plan.protocol_version == 4
+    assert plan.protocol_version == 5
     assert plan.argv[:3] == (
         sys.executable,
         "-m",

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v4/event.schema.json",
-  "title": "Transformer worker v4 event envelope",
+  "$id": "https://transformer.local/contracts/worker/v5/event.schema.json",
+  "title": "Transformer worker v5 event envelope",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,13 +10,13 @@
   ],
   "properties": {
     "contract": {"const": "transformer-worker"},
-    "protocolVersion": {"const": 4},
+    "protocolVersion": {"const": 5},
     "jobId": {
-      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
     },
     "attempt": {"type": "integer", "minimum": 1},
     "attemptId": {
-      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
     },
     "sequence": {"type": "integer", "minimum": 1},
     "type": {
@@ -100,7 +100,8 @@
             "additionalProperties": false,
             "required": [
               "generation", "completedEpochs", "globalStep",
-              "trainingComplete", "artifact", "metrics"
+              "trainingComplete", "artifact", "checkpointSerializationMs",
+              "metrics"
             ],
             "properties": {
               "generation": {"type": "integer", "minimum": 1},
@@ -108,10 +109,11 @@
               "globalStep": {"type": "integer", "minimum": 0},
               "trainingComplete": {"type": "boolean"},
               "artifact": {
-                "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/artifact"
+                "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/artifact"
               },
+              "checkpointSerializationMs": {"type": "number", "minimum": 0},
               "metrics": {
-                "$ref": "https://transformer.local/contracts/worker/v4/training-metrics.schema.json"
+                "$ref": "https://transformer.local/contracts/worker/v5/training-metrics.schema.json"
               }
             }
           }
@@ -128,7 +130,7 @@
             "required": ["resultManifest"],
             "properties": {
               "resultManifest": {
-                "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/artifact"
+                "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/artifact"
               }
             }
           }

@@ -72,7 +72,7 @@ user-site. Полный локальный сценарий находится �
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
 - [Arrow Flight v4 contract](./app/contracts/flight/v4/README.md)
-- [Worker process contract v4](./app/contracts/worker/v4/README.md)
+- [Worker process contract v5](./app/contracts/worker/v5/README.md)
 - [Training metrics contract v1](./app/contracts/metrics/v1/README.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)

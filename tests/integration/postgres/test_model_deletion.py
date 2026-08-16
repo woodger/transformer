@@ -36,6 +36,7 @@ from tests.support.flight_v4_helpers import (
     create_fit,
     create_predict,
     create_test_metrics_artifact,
+    create_test_run_summary_artifact,
     internal_data_contract,
     model_config,
 )
@@ -283,6 +284,13 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         attempt_id=attempt.attempt_id,
         attempt=attempt.attempt,
     )
+    run_summary = create_test_run_summary_artifact(
+        spool,
+        model_ref=model_ref,
+        job_id=job["job_id"],
+        attempt_id=attempt.attempt_id,
+        attempt=attempt.attempt,
+    )
 
     ledger.publish_model(
         job["job_id"],
@@ -301,6 +309,11 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         metrics_byte_count=metrics.byte_count,
         metrics_sha256=metrics.sha256,
         metrics_row_count=metrics.row_count,
+        run_summary_path=run_summary.relative_path,
+        run_summary_format="transformer.fit-run-summary.v1",
+        run_summary_media_type="application/json",
+        run_summary_byte_count=run_summary.byte_count,
+        run_summary_sha256=run_summary.sha256,
         application_version="0.1.10",
         git_commit="0" * 40,
         metadata={

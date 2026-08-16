@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
+from app.contracts.worker.v5.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -253,6 +253,7 @@ class ExecutionLedgerSlice:
             status=ExecutionState.RUNNING.value,
             worker_id=worker_id,
             claimed_at=claimed_at,
+            queue_entered_at=job.queued_at or claimed_at,
             started_at=claimed_at,
         )
         session.add(record)
@@ -291,6 +292,64 @@ class ExecutionLedgerSlice:
             record.pgid = pgid
             record.boot_id = boot_id
             record.process_start_ticks = process_start_ticks
+
+    def mark_attempt_worker_ready(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        now: float | None = None,
+    ) -> None:
+        self._mark_attempt_boundary(
+            job_id,
+            attempt,
+            attempt_id=attempt_id,
+            field="worker_ready_at",
+            now=now,
+        )
+
+    def mark_attempt_worker_completed(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        now: float | None = None,
+    ) -> None:
+        self._mark_attempt_boundary(
+            job_id,
+            attempt,
+            attempt_id=attempt_id,
+            field="worker_completed_at",
+            now=now,
+        )
+
+    def _mark_attempt_boundary(
+        self,
+        job_id: str,
+        attempt: int,
+        *,
+        attempt_id: str,
+        field: str,
+        now: float | None,
+    ) -> None:
+        attempt_id = canonical_uuid(attempt_id, "attempt_id")
+        measured_at = timestamp_now(now)
+        with self.database.transaction() as session:
+            record = session.get(
+                JobAttempt,
+                (job_id, attempt),
+                with_for_update=True,
+            )
+            if (
+                record is None
+                or record.status != ExecutionState.RUNNING.value
+                or record.attempt_id != attempt_id
+            ):
+                raise failed_precondition("job attempt is not running")
+            if getattr(record, field) is None:
+                setattr(record, field, measured_at)
 
     def list_active_attempts(self) -> list[RowMapping]:
         with self.database.session() as session:

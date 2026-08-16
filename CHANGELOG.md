@@ -7,12 +7,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- Успешный fit публикует model-owned `run-summary.json` с lifecycle durations,
+  количеством attempts/recoveries и итоговыми input counters. Terminal outbox
+  доставляет одну идемпотентную проекцию `inventory.metrics.fit-run.v1` в
+  обычный индекс `metrics-runs-v1`.
+- Внутренний worker process contract повышен до v5: recovery и terminal
+  checkpoints передают monotonic время сериализации, а service отдельно
+  измеряет durable publication.
+
 ### Changed
 
 - OpenSearch publisher поддерживает trusted-LAN HTTP как без authentication,
   так и с полной парой Basic Auth credentials; CA для HTTP запрещён. Оба
   metrics index template задают `number_of_replicas: 0` для текущего
   single-node deployment. Строгий HTTPS-профиль сохранён.
+- PostgreSQL сохраняет lifecycle/recovery state и checkpoint-aligned epoch
+  metrics как источник истины; OpenSearch остаётся post-commit аналитической
+  проекцией и не участвует в результате fit.
 
 ### Fixed
 

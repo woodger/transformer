@@ -22,9 +22,11 @@ Transformer. Он не заменяет PostgreSQL как источник ис�
 
 Принимается отдельный интеграционный контракт
 `transformer.training-metrics.v1` → `inventory.metrics.v1`. Публичный Flight v4
-не меняется. Внутренний worker process contract повышается до v4, поскольку
+не меняется. Внутренний worker process contract был повышен до v4, поскольку
 событие `checkpoint` теперь обязательно содержит полную метрику той же global
-epoch.
+epoch. Terminal fit summary и timing boundaries развиваются отдельным
+[ADR 0011](0011-terminal-fit-run-summary.md), который повышает внутренний
+контракт до v5 без изменения Flight v4.
 
 Durable flow:
 
@@ -89,7 +91,8 @@ Pending/blocked outbox entries не удаляются. Доставленные
 ## Индексы OpenSearch
 
 Templates и обычные versioned indices `metrics-points-v1` и
-`metrics-artifacts-v1` создаёт оператор до включения publisher-а. Data streams
+`metrics-artifacts-v1` создаёт оператор до включения publisher-а. Companion
+projection `metrics-runs-v1` определена ADR 0011. Data streams
 не используются: они направляют запись в текущий write index, поэтому rollover
 позволяет повторно создать тот же `_id` в новом backing index, а exact `_mget`
 по имени data stream не обеспечивает проверку существующего документа.
@@ -110,7 +113,7 @@ Runtime-конфигурация содержит endpoint, полную пар�
 стабильный `deploymentId`; CA для HTTP не задаётся. Анонимный HTTP остаётся
 допустимым профилем для доверенных deployments. Templates и indices по-прежнему
 создаёт оператор до запуска publisher-а; publisher выполняет только Bulk create
-и exact `_mget` для двух metrics indices.
+и exact `_mget` для versioned metrics indices.
 
 Transformer сохраняет прежний HTTPS-профиль для других сред, но он не является
 частью текущего deployment. Arrow data, stack traces и filesystem paths не

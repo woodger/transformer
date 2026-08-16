@@ -5,6 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from app.contracts.metrics.fit_run.v1 import RUN_INDEX
 from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.application.ports.metrics import (
     BlockedMetricsDeliveryError,
@@ -124,11 +125,23 @@ class MetricsPublisher:
                 (artifact,),
                 id_field="artifactId",
             )
+            run_summary = self.projection.run_summary_document(
+                entry,
+                deployment_id=self.deployment_id,
+            )
+            if run_summary is not None:
+                self.sink.create_documents(
+                    RUN_INDEX,
+                    (run_summary,),
+                    id_field="summaryId",
+                )
             if self.outbox.complete(
                 entry.artifact.model_ref,
                 expected_cursor=cursor,
             ):
                 self.metrics.add("metricsArtifactsDelivered")
+                if run_summary is not None:
+                    self.metrics.add("metricsRunSummariesDelivered")
                 self.logger.event(
                     "metrics.artifact.delivered",
                     modelRef=entry.artifact.model_ref,

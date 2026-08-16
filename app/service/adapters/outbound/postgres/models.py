@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -311,7 +312,15 @@ class JobAttempt(Base):
     boot_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False))
     process_start_ticks: Mapped[int | None] = mapped_column(BigInteger)
     claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    queue_entered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker_ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    worker_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     exit_code: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(64))
@@ -372,6 +381,14 @@ class TrainingMetricInterval(Base):
             "attempt > 0",
             name="training_metric_intervals_attempt_ck",
         ),
+        CheckConstraint(
+            "checkpoint_serialization_ms >= 0",
+            name="training_metric_intervals_checkpoint_serialization_ck",
+        ),
+        CheckConstraint(
+            "checkpoint_publication_ms >= 0",
+            name="training_metric_intervals_checkpoint_publication_ck",
+        ),
         UniqueConstraint(
             "job_id",
             "attempt_id",
@@ -386,6 +403,8 @@ class TrainingMetricInterval(Base):
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)
     attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     metrics: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    checkpoint_serialization_ms: Mapped[float | None] = mapped_column(Float)
+    checkpoint_publication_ms: Mapped[float | None] = mapped_column(Float)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -514,6 +533,45 @@ class ModelMetricsArtifact(Base):
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    application_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    git_commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class ModelRunSummaryArtifact(Base):
+    __tablename__ = "model_run_summary_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "relative_path",
+            name="model_run_summary_artifacts_relative_path_uq",
+        ),
+        CheckConstraint(
+            "bytes > 0",
+            name="model_run_summary_artifacts_bytes_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="model_run_summary_artifacts_attempt_ck",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    format: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)

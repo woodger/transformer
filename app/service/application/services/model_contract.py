@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.worker.v4.config import ModelConfig, TrainConfig
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v5.config import ModelConfig, TrainConfig
+from app.contracts.worker.v5.objective import (
     ml_contract,
     objective_config,
 )

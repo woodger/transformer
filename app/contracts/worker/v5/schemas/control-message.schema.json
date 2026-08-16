@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v4/control-message.schema.json",
-  "title": "Transformer worker v4 service-to-worker control message",
+  "$id": "https://transformer.local/contracts/worker/v5/control-message.schema.json",
+  "title": "Transformer worker v5 service-to-worker control message",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,13 +10,13 @@
   ],
   "properties": {
     "contract": {"const": "transformer-worker"},
-    "protocolVersion": {"const": 4},
+    "protocolVersion": {"const": 5},
     "jobId": {
-      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
     },
     "attempt": {"type": "integer", "minimum": 1},
     "attemptId": {
-      "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
     },
     "sequence": {"type": "integer", "minimum": 1},
     "type": {"enum": ["input.committed", "input.closed"]},
@@ -34,7 +34,7 @@
             "properties": {
               "inputRevision": {"type": "integer", "minimum": 1},
               "input": {
-                "$ref": "https://transformer.local/contracts/worker/v4/arrow-manifest.schema.json"
+                "$ref": "https://transformer.local/contracts/worker/v5/arrow-manifest.schema.json"
               }
             }
           }
@@ -58,7 +58,7 @@
               "totalRows": {"type": "integer", "minimum": 0},
               "totalBytes": {"type": "integer", "minimum": 0},
               "manifestSha256": {
-                "$ref": "https://transformer.local/contracts/worker/v4/common.schema.json#/$defs/sha256"
+                "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/sha256"
               }
             }
           }

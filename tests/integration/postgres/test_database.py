@@ -8,8 +8,8 @@ from alembic import command
 from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropSchema
 
-from app.contracts.worker.v4.config import TrainConfig
-from app.contracts.worker.v4.objective import ml_contract
+from app.contracts.worker.v5.config import TrainConfig
+from app.contracts.worker.v5.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.migrations import (
@@ -123,8 +123,8 @@ def _commit_input(ledger, job, *, storage_class):
 def test_postgresql_schema_is_at_alembic_head(postgres_config):
     status = migration_status(postgres_config)
 
-    assert status.current == ("0008",)
-    assert status.heads == ("0008",)
+    assert status.current == ("0009",)
+    assert status.heads == ("0009",)
     assert status.pending is False
 
 
@@ -144,6 +144,7 @@ def test_reversible_migrations_roll_back_but_v4_cutover_remains_irreversible(
     try:
         initial = migration_status(config)
         applied = apply_migrations(config)
+        run_summary_rolled_back = rollback_migration(config)
         model_lifecycle_rolled_back = rollback_migration(config)
         metrics_rolled_back = rollback_migration(config)
         with pytest.raises(RuntimeError, match="cannot be downgraded"):
@@ -151,10 +152,12 @@ def test_reversible_migrations_roll_back_but_v4_cutover_remains_irreversible(
         after_failed_rollback = migration_status(config)
 
         assert initial.current == ()
-        assert initial.heads == ("0008",)
+        assert initial.heads == ("0009",)
         assert initial.pending is True
-        assert applied.current == ("0008",)
+        assert applied.current == ("0009",)
         assert applied.pending is False
+        assert run_summary_rolled_back.current == ("0008",)
+        assert run_summary_rolled_back.pending is True
         assert model_lifecycle_rolled_back.current == ("0007",)
         assert model_lifecycle_rolled_back.pending is True
         assert metrics_rolled_back.current == ("0006",)
@@ -165,6 +168,74 @@ def test_reversible_migrations_roll_back_but_v4_cutover_remains_irreversible(
         with cleanup_engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))
         cleanup_engine.dispose()
+
+
+def test_fit_run_summary_migration_refuses_data_losing_rollback(
+    postgres_config,
+):
+    schema = f"transformer_summary_rb_{uuid.uuid4().hex}"
+    config = type(postgres_config)(
+        postgres_config.host,
+        postgres_config.database,
+        postgres_config.user,
+        postgres_config.password,
+        postgres_config.port,
+        schema,
+    )
+    engine = create_engine(config.url)
+    quoted = f'"{schema}"'
+    model_ref = "mdl_" + uuid.uuid4().hex
+    try:
+        apply_migrations(config)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.models (
+                        model_ref, owner_subject, label, generation,
+                        checkpoint_path, metadata_path, checkpoint_bytes,
+                        sha256, metadata, created_at
+                    ) VALUES (
+                        :model_ref, 'inventory', 'daily', 1,
+                        'models/test/checkpoint.pth',
+                        'models/test/metadata.json', 1, :sha256,
+                        '{{}}'::jsonb, now()
+                    )
+                    """
+                ),
+                {"model_ref": model_ref, "sha256": "a" * 64},
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {quoted}.model_run_summary_artifacts (
+                        model_ref, format, media_type, relative_path, bytes,
+                        sha256, job_id, attempt_id, attempt,
+                        application_version, git_commit, created_at
+                    ) VALUES (
+                        :model_ref, 'transformer.fit-run-summary.v1',
+                        'application/json', 'models/test/run-summary.json', 1,
+                        :sha256, :job_id, :attempt_id, 1,
+                        '0.1.12', :git_commit, now()
+                    )
+                    """
+                ),
+                {
+                    "model_ref": model_ref,
+                    "sha256": "b" * 64,
+                    "job_id": str(uuid.uuid4()),
+                    "attempt_id": str(uuid.uuid4()),
+                    "git_commit": "c" * 40,
+                },
+            )
+
+        with pytest.raises(RuntimeError, match="cannot be downgraded after use"):
+            rollback_migration(config)
+        assert migration_status(config).current == ("0009",)
+    finally:
+        with engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True, if_exists=True))
+        engine.dispose()
 
 
 def test_v4_schema_migration_preserves_tokens_and_model_identities_only(
@@ -343,7 +414,7 @@ def test_v4_schema_migration_preserves_tokens_and_model_identities_only(
             ("model_aliases", 128),
             ("models", 128),
         ]
-        assert migration_status(config).current == ("0008",)
+        assert migration_status(config).current == ("0009",)
     finally:
         with engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True, if_exists=True))

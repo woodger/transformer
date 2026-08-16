@@ -3,8 +3,13 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
+from app.contracts.metrics.fit_run.v1 import RUN_INDEX
 from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
+from app.service.adapters.outbound.artifacts.metrics_projection import (
+    ModelMetricsProjection,
+)
+from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.application.ports.metrics import (
     RetryableMetricsDeliveryError,
 )
@@ -15,6 +20,11 @@ from app.service.application.services.metrics_publisher import (
 from app.service.domain.records import (
     MetricsOutboxRecord,
     ModelMetricsArtifactRecord,
+    ModelRunSummaryArtifactRecord,
+)
+from tests.support.flight_v4_helpers import (
+    create_test_metrics_artifact,
+    create_test_run_summary_artifact,
 )
 
 
@@ -54,11 +64,12 @@ class _Logger:
 
 
 class _Projection:
-    def __init__(self, point_count: int) -> None:
+    def __init__(self, point_count: int, *, with_run_summary: bool = False) -> None:
         self._points = tuple(
             {"eventId": f"{index:064x}"}
             for index in range(point_count)
         )
+        self._with_run_summary = with_run_summary
 
     def points(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
@@ -67,6 +78,12 @@ class _Projection:
     def artifact_document(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
         return {"artifactId": "f" * 64}
+
+    def run_summary_document(self, _entry, *, deployment_id):
+        assert deployment_id == "hp800g9.home"
+        if self._with_run_summary:
+            return {"summaryId": "e" * 64}
+        return None
 
 
 class _Outbox:
@@ -177,6 +194,93 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
 
     assert outbox.retry_delay == 1.0
     assert outbox.entry.cursor == 0
+
+
+def test_current_projection_delivers_one_terminal_run_summary():
+    entry = replace(
+        _entry(),
+        projection_version="inventory.metrics.v2",
+    )
+    outbox = _Outbox(entry)
+    sink = _Sink()
+    publisher = MetricsPublisher(
+        outbox,
+        _Projection(1, with_run_summary=True),
+        sink,
+        deployment_id="hp800g9.home",
+        logger=_Logger(),
+        metrics=OperationalMetrics(),
+    ).start()
+    try:
+        assert outbox.delivered.wait(2.0)
+    finally:
+        publisher.shutdown(2.0)
+
+    assert sink.calls == [
+        (POINT_INDEX, 1, "eventId"),
+        (ARTIFACT_INDEX, 1, "artifactId"),
+        (RUN_INDEX, 1, "summaryId"),
+    ]
+
+
+def test_current_projection_verifies_immutable_run_summary(tmp_path):
+    spool = Spool(
+        str(tmp_path / "runtime"),
+        str(tmp_path / "models"),
+    ).initialize()
+    entry = _entry()
+    artifact = create_test_metrics_artifact(
+        spool,
+        model_ref=entry.artifact.model_ref,
+        job_id=entry.artifact.job_id,
+        attempt_id=entry.artifact.attempt_id,
+        attempt=entry.artifact.attempt,
+    )
+    summary = create_test_run_summary_artifact(
+        spool,
+        model_ref=entry.artifact.model_ref,
+        job_id=entry.artifact.job_id,
+        attempt_id=entry.artifact.attempt_id,
+        attempt=entry.artifact.attempt,
+    )
+    current = replace(
+        entry,
+        artifact=replace(
+            entry.artifact,
+            relative_path=artifact.relative_path,
+            byte_count=artifact.byte_count,
+            sha256=artifact.sha256,
+            row_count=artifact.row_count,
+            git_commit="0" * 40,
+        ),
+        run_summary=ModelRunSummaryArtifactRecord(
+            model_ref=entry.artifact.model_ref,
+            format="transformer.fit-run-summary.v1",
+            media_type="application/json",
+            relative_path=summary.relative_path,
+            byte_count=summary.byte_count,
+            sha256=summary.sha256,
+            job_id=entry.artifact.job_id,
+            attempt_id=entry.artifact.attempt_id,
+            attempt=entry.artifact.attempt,
+            application_version=entry.artifact.application_version,
+            git_commit="0" * 40,
+            created_at=10.0,
+        ),
+        projection_version="inventory.metrics.v2",
+    )
+
+    projection = ModelMetricsProjection(spool)
+    points = projection.points(current, deployment_id="hp800g9.home")
+    document = projection.run_summary_document(
+        current,
+        deployment_id="hp800g9.home",
+    )
+
+    assert document is not None
+    assert points
+    assert document["runId"] == entry.artifact.job_id
+    assert document["modelRef"] == entry.artifact.model_ref
 
 
 def test_retry_delay_remains_inside_the_operational_bounds():

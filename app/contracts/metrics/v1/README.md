@@ -89,3 +89,7 @@ errors блокируют запись outbox для оператора.
 В v1 централизуются только метрики успешно опубликованных fit runs. Метрики
 окончательно `FAILED` или `CANCELLED` attempts остаются attempt-local и не
 публикуются.
+
+Итоговые lifecycle durations и counters успешного fit принадлежат отдельному
+контракту [`fit_run/v1`](../fit_run/v1/README.md) и индексу
+`metrics-runs-v1`. Epoch points и их два существующих индекса не меняются.

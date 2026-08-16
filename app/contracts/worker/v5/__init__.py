@@ -1,4 +1,4 @@
-from app.contracts.worker.v4.codec import (
+from app.contracts.worker.v5.codec import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
@@ -10,13 +10,13 @@ from app.contracts.worker.v4.codec import (
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v4.constants import (
+from app.contracts.worker.v5.constants import (
     ARROW_SCHEMA_IDS,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
 )
-from app.contracts.worker.v4.objective import (
+from app.contracts.worker.v5.objective import (
     CHECKPOINT_FORMAT,
     OBJECTIVE_ID,
     TARGET_SCHEMA_ID,

@@ -13,12 +13,12 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v5.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v4.objective import objective_config_sha256
+from app.contracts.worker.v5.objective import objective_config_sha256
 from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl

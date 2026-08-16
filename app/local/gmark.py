@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
-from app.contracts.worker.v4.config import (
+from app.contracts.worker.v5.config import (
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DROPOUT,
     DEFAULT_LOSS_STAGE,

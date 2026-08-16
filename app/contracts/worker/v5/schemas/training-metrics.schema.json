@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v4/training-metrics.schema.json",
-  "title": "Transformer worker v4 committed training interval metrics",
+  "$id": "https://transformer.local/contracts/worker/v5/training-metrics.schema.json",
+  "title": "Transformer worker v5 committed training interval metrics",
   "type": "object",
   "additionalProperties": false,
   "required": [
