@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 
-from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
+from app.contracts.worker.v4.config import (
+    DEFAULT_LOSS_SCHEDULE,
+    DEFAULT_LOSS_STAGE,
+    DEFAULT_STAGE_SIZE,
+)
 from app.worker.training.losses import (
     resolve_loss_stage,
     validate_loss_schedule,
@@ -12,11 +16,11 @@ from app.worker.training.training_state import TrainingState
 
 @dataclass(frozen=True)
 class LossScheduler:
-    loss_schedule: str = LOSS_SCHEDULE
-    stage_size: int = STAGE_SIZE
-    max_stage: int = LOSS_STAGE
+    loss_schedule: str = DEFAULT_LOSS_SCHEDULE
+    stage_size: int = DEFAULT_STAGE_SIZE
+    max_stage: int = DEFAULT_LOSS_STAGE
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         validate_loss_schedule(self.loss_schedule)
         validate_stage_size(self.stage_size)
         validate_loss_stage(self.max_stage)

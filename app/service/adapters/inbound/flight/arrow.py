@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 import numpy as np
+import numpy.typing as npt
 import pyarrow as pa
 
 from app.contracts.flight.v4.arrow import (
@@ -15,7 +17,29 @@ from app.service.adapters.inbound.flight.errors import invalid, resource_exhaust
 _FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
-@dataclass(frozen=True)
+class _FixedSizeListType(Protocol):
+    list_size: int
+    value_type: object
+
+
+class _ArrowArray(Protocol):
+    type: object
+    offsets: "_ArrowArray"
+
+    def __len__(self) -> int: ...
+
+    def is_null(self) -> "_ArrowArray": ...
+
+    def flatten(self) -> "_ArrowArray": ...
+
+    def to_numpy(
+        self,
+        *,
+        zero_copy_only: bool,
+    ) -> npt.NDArray[np.generic]: ...
+
+
+@dataclass(frozen=True, slots=True)
 class ArrowStats:
     rows: int
     batches: int
@@ -41,7 +65,7 @@ class InputBatchValidator:
         max_batch_bytes: int,
         max_payload_bytes: int,
         max_rows: int,
-    ):
+    ) -> None:
         if operation not in ("fit", "predict"):
             raise invalid("unsupported input operation")
         self.operation = operation
@@ -54,9 +78,12 @@ class InputBatchValidator:
         self.rows = 0
         self.batches = 0
         self.logical_bytes = 0
-        self.src_width = _fixed_width(schema, "src")
-        self.tgt_width = _fixed_width(schema, "tgt") if operation == "fit" else None
         _validate_input_schema(schema, operation)
+        source_width = _fixed_width(schema, "src")
+        if source_width is None:
+            raise invalid("src must use a FixedSizeList physical type")
+        self.src_width = source_width
+        self.tgt_width = _fixed_width(schema, "tgt") if operation == "fit" else None
         self._validate_source_width(self.src_width)
         if self.tgt_width is not None and self.tgt_width != TARGET_WIDTH:
             raise invalid(f"tgt list width must be {TARGET_WIDTH}")
@@ -209,10 +236,11 @@ def _validate_list_column(
             f"Arrow column '{name}' must be a FixedSizeList<float32> column"
         )
 
-    width = column_type.list_size
-    chunks = []
+    width = cast(_FixedSizeListType, column_type).list_size
+    chunks: list[tuple[int, int, npt.NDArray[np.float32]]] = []
     row_offset = 0
-    for chunk in table.column(column_index).chunks:
+    for raw_chunk in table.column(column_index).chunks:
+        chunk = cast(_ArrowArray, raw_chunk)
         if len(chunk) == 0:
             continue
         null_row = _first_true(chunk.is_null().to_numpy(zero_copy_only=False))
@@ -229,7 +257,10 @@ def _validate_list_column(
                 f"Arrow column '{name}' has null element at row "
                 f"{row_offset + row_index + 1}, position {value_index + 1}"
             )
-        flat_values = flat.to_numpy(zero_copy_only=False)
+        flat_values = cast(
+            npt.NDArray[np.float32],
+            flat.to_numpy(zero_copy_only=False),
+        )
         invalid_values = (
             np.isinf(flat_values)
             if allow_nan
@@ -252,7 +283,7 @@ def _validate_list_column(
         chunks.append((row_offset, len(chunk), flat_values))
         row_offset += len(chunk)
 
-    if expected_width is not None and width is not None and width != expected_width:
+    if expected_width is not None and width != expected_width:
         raise ValueError(
             f"Arrow column '{name}' must have list length {expected_width}, got {width}"
         )
@@ -276,20 +307,21 @@ def _fixed_width(schema: pa.Schema, name: str) -> int | None:
         return None
     value_type = schema.field(index).type
     if pa.types.is_fixed_size_list(value_type):
-        return value_type.list_size
+        return cast(_FixedSizeListType, value_type).list_size
     return None
 
 
-def _observed_width(array) -> int | None:
+def _observed_width(value: object) -> int | None:
+    array = cast(_ArrowArray, value)
     if len(array) == 0:
         return None
     if pa.types.is_fixed_size_list(array.type):
-        return array.type.list_size
+        return cast(_FixedSizeListType, array.type).list_size
     offsets = array.offsets.to_numpy(zero_copy_only=False)
     return int(offsets[1] - offsets[0])
 
 
-def _first_true(values) -> int | None:
+def _first_true(values: npt.ArrayLike) -> int | None:
     indices = np.flatnonzero(values)
     return None if indices.size == 0 else int(indices[0])
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from sqlalchemy import URL
 
-from app.config import PROJECT_ROOT
+from app.project import PROJECT_ROOT
 
 _REQUIRED_KEYS = (
     "POSTGRES_HOST",
@@ -32,9 +32,10 @@ class DatabaseConfig:
             value = getattr(self, name)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"PostgreSQL {name} must not be empty")
-        if isinstance(self.port, bool) or not isinstance(self.port, int):
+        port: object = object.__getattribute__(self, "port")
+        if isinstance(port, bool) or not isinstance(port, int):
             raise ValueError("POSTGRES_PORT must be an integer")
-        if not 1 <= self.port <= 65535:
+        if not 1 <= port <= 65535:
             raise ValueError("POSTGRES_PORT must be between 1 and 65535")
         if not self.schema.replace("_", "a").isalnum() or not self.schema[0].isalpha():
             raise ValueError("PostgreSQL schema must be a simple SQL identifier")

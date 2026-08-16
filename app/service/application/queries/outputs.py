@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.service.application.output_models import OutputTicketGrant
+from app.service.application.messages.outputs import OutputTicketGrant
 from app.service.application.ports.output_access import OutputAccessStore
 from app.service.domain.errors import failed_precondition, not_found
 from app.service.domain.job import ExecutionState
@@ -10,7 +10,12 @@ from app.service.domain.records import OutputRecord
 class OutputAccess:
     """Authorize published output discovery and ticket resolution."""
 
-    def __init__(self, store: OutputAccessStore, *, ticket_ttl_seconds: float):
+    def __init__(
+        self,
+        store: OutputAccessStore,
+        *,
+        ticket_ttl_seconds: float,
+    ) -> None:
         self.store = store
         self.ticket_ttl_seconds = ticket_ttl_seconds
 
@@ -41,13 +46,12 @@ class OutputAccess:
         job_id: str,
         ordinal: int,
     ) -> OutputTicketGrant:
-        token, expires_at = self.store.issue_ticket(
+        return self.store.issue_ticket(
             job_id=job_id,
             ordinal=ordinal,
             owner_subject=owner,
             ttl_seconds=self.ticket_ttl_seconds,
         )
-        return OutputTicketGrant(token, expires_at)
 
     def resolve(self, owner: str, token: bytes) -> OutputRecord:
         return self.store.resolve_ticket(token, owner_subject=owner)

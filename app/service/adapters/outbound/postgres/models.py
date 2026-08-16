@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -23,6 +22,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.contracts.json_types import JsonObject, JsonValue
+
+# SQLAlchemy resolves recursive aliases in postponed Mapped annotations from
+# this module's namespace. Keep JsonValue available even though annotations
+# refer to it indirectly through JsonObject.
+_JSON_VALUE_TYPE = JsonValue
+
 SCHEMA = "transformer"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)
 
@@ -41,7 +47,7 @@ class JobIdentity(Base):
     job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     create_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    create_result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    create_result: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -149,11 +155,11 @@ class Job(Base):
     model_label: Mapped[str | None] = mapped_column(String(256))
     resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
-    model_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    training_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    data_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
+    data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    ml_contract: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    ml_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_width: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -161,7 +167,7 @@ class Job(Base):
     payload_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    progress: Mapped[dict[str, Any]] = mapped_column(
+    progress: Mapped[JsonObject] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
@@ -180,7 +186,7 @@ class Job(Base):
     acquire_grace_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_message: Mapped[str | None] = mapped_column(Text)
-    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    result: Mapped[JsonObject | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     input_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -344,6 +350,48 @@ class TrainingRecoveryCheckpoint(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TrainingMetricInterval(Base):
+    __tablename__ = "training_metric_intervals"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "job_id",
+            "generation",
+            name="training_metric_intervals_pk",
+        ),
+        ForeignKeyConstraint(
+            ("job_id", "attempt"),
+            (f"{SCHEMA}.job_attempts.job_id", f"{SCHEMA}.job_attempts.attempt"),
+            ondelete="CASCADE",
+            name="training_metric_intervals_attempt_fk",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="training_metric_intervals_generation_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="training_metric_intervals_attempt_ck",
+        ),
+        UniqueConstraint(
+            "job_id",
+            "attempt_id",
+            "generation",
+            name="training_metric_intervals_identity_uq",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
+    generation: Mapped[int] = mapped_column(Integer)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    metrics: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
 class JobOutput(Base):
     __tablename__ = "job_outputs"
     __table_args__ = (
@@ -379,10 +427,25 @@ class PublishedModel(Base):
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
+            "(lifecycle_state = 'AVAILABLE' "
+            "AND deletion_requested_at IS NULL AND deleted_at IS NULL) OR "
+            "(lifecycle_state = 'DELETING' "
+            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL) OR "
+            "(lifecycle_state = 'DELETED' "
+            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)",
+            name="models_lifecycle_ck",
+        ),
+        CheckConstraint(
             "(ml_contract IS NULL AND objective_config_sha256 IS NULL) OR "
             "(ml_contract IS NOT NULL AND objective_config_sha256 IS NOT NULL "
             "AND data_contract IS NOT NULL AND data_contract_sha256 IS NOT NULL)",
             name="models_ml_contract_ck",
+        ),
+        Index(
+            "models_deleting_idx",
+            "deletion_requested_at",
+            "model_ref",
+            postgresql_where=text("lifecycle_state = 'DELETING'"),
         ),
         {"schema": SCHEMA},
     )
@@ -395,10 +458,10 @@ class PublishedModel(Base):
     metadata_path: Mapped[str] = mapped_column(Text, nullable=False)
     checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
-    data_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    metadata_json: Mapped[JsonObject] = mapped_column("metadata", JSONB, nullable=False)
+    data_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
     data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
-    ml_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ml_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
     objective_config_sha256: Mapped[str | None] = mapped_column(String(64))
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
@@ -406,6 +469,110 @@ class PublishedModel(Base):
         unique=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="AVAILABLE",
+        server_default="AVAILABLE",
+    )
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ModelMetricsArtifact(Base):
+    __tablename__ = "model_metrics_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "relative_path",
+            name="model_metrics_artifacts_relative_path_uq",
+        ),
+        CheckConstraint(
+            "bytes > 0",
+            name="model_metrics_artifacts_bytes_ck",
+        ),
+        CheckConstraint(
+            "row_count > 0",
+            name="model_metrics_artifacts_rows_ck",
+        ),
+        CheckConstraint(
+            "attempt > 0",
+            name="model_metrics_artifacts_attempt_ck",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    format: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    application_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    git_commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
+class MetricsOutboxEntry(Base):
+    __tablename__ = "metrics_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING', 'BLOCKED', 'DELIVERED', 'CANCELLED')",
+            name="metrics_outbox_status_ck",
+        ),
+        CheckConstraint("cursor >= 0", name="metrics_outbox_cursor_ck"),
+        CheckConstraint("attempts >= 0", name="metrics_outbox_attempts_ck"),
+        Index(
+            "metrics_outbox_pending_idx",
+            "status",
+            "next_attempt_at",
+            "created_at",
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey(
+            f"{SCHEMA}.model_metrics_artifacts.model_ref",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+    projection_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    cursor: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class ModelAlias(Base):
@@ -441,7 +608,7 @@ class IdempotencyRecord(Base):
     action_name: Mapped[str] = mapped_column(String(128))
     idempotency_key: Mapped[str] = mapped_column(String(256))
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    response: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.job_identities.job_id", ondelete="SET NULL"),

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
+from typing import cast
 
 _RECEIPT_FIELDS = (
     "payloadId",
@@ -16,10 +18,10 @@ _RECEIPT_FIELDS = (
 )
 
 
-def canonical_receipts(inputs) -> list[dict]:
-    receipts = []
-    for item in sorted(inputs, key=lambda value: _field(value, "ordinal")):
-        receipt = {
+def canonical_receipts(inputs: Iterable[object]) -> list[dict[str, object]]:
+    receipts: list[dict[str, object]] = []
+    for item in sorted(inputs, key=_ordinal):
+        receipt: dict[str, object] = {
             "payloadId": _field(item, "payloadId", "payload_id"),
             "ordinal": _field(item, "ordinal"),
             "schemaId": _field(item, "schemaId", "schema_id"),
@@ -44,7 +46,7 @@ def canonical_receipts(inputs) -> list[dict]:
     return receipts
 
 
-def manifest_sha256(inputs) -> str:
+def manifest_sha256(inputs: Iterable[object]) -> str:
     payload = json.dumps(
         canonical_receipts(inputs),
         ensure_ascii=False,
@@ -55,12 +57,26 @@ def manifest_sha256(inputs) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _field(document, *names):
+def _ordinal(document: object) -> int:
+    value = _field(document, "ordinal")
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError("input receipt ordinal must be an integer")
+    return value
+
+
+def _field(document: object, *names: str) -> object:
+    if isinstance(document, Mapping):
+        mapping = cast(Mapping[object, object], document)
+        for name in names:
+            if name in mapping:
+                return mapping[name]
+
+    record = cast(object, document)
     for name in names:
-        if isinstance(document, dict) and name in document:
-            return document[name]
-        if hasattr(document, name):
-            return getattr(document, name)
+        if hasattr(record, name):
+            # Canonicalization accepts wire-shaped mappings and immutable
+            # receipt records without making either representation canonical.
+            return cast(object, getattr(record, name))
     raise ValueError(f"input receipt has no field {names[0]}")
 
 

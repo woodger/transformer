@@ -11,11 +11,30 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "app"))
 
+POSTGRES_FIXTURES = frozenset({
+    "postgres_config",
+    "postgres_database",
+    "postgres_ledger",
+})
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    """Mark tests by resolved external-resource fixtures before selection."""
+
+    for item in items:
+        if POSTGRES_FIXTURES.intersection(item.fixturenames):
+            item.add_marker(pytest.mark.postgres)
+
 
 @pytest.fixture(scope="session")
 def postgres_config():
-    from app.database.config import load_database_config
-    from app.database.migrations import apply_migrations
+    from app.service.adapters.outbound.postgres.config import (
+        load_database_config,
+    )
+    from app.service.adapters.outbound.postgres.migrations import (
+        apply_migrations,
+    )
 
     base = load_database_config()
     if not base.database.lower().startswith("transformer_test"):
@@ -56,8 +75,8 @@ def postgres_config():
 
 @pytest.fixture
 def postgres_database(postgres_config):
-    from app.database.models import Base
-    from app.database.session import Database
+    from app.service.adapters.outbound.postgres.models import Base
+    from app.service.adapters.outbound.postgres.session import Database
 
     database = Database(postgres_config)
     with database.transaction() as session:
@@ -71,6 +90,6 @@ def postgres_database(postgres_config):
 
 @pytest.fixture
 def postgres_ledger(postgres_database):
-    from app.flight.ledger import Ledger
+    from app.service.adapters.outbound.postgres.ledger import Ledger
 
     return Ledger(postgres_database).initialize()

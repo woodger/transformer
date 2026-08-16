@@ -33,7 +33,10 @@ IMMEDIATE_CANCEL_STATES = frozenset({
     ExecutionState.RETRYING,
 })
 
-EXECUTION_STATE_TRANSITIONS = {
+EXECUTION_STATE_TRANSITIONS: dict[
+    ExecutionState,
+    frozenset[ExecutionState],
+] = {
     ExecutionState.WAITING_INPUT: frozenset({
         ExecutionState.QUEUED,
         ExecutionState.FAILED,
@@ -61,7 +64,7 @@ EXECUTION_STATE_TRANSITIONS = {
     ExecutionState.CANCELLED: frozenset(),
 }
 
-INPUT_STATE_TRANSITIONS = {
+INPUT_STATE_TRANSITIONS: dict[InputState, frozenset[InputState]] = {
     InputState.OPEN: frozenset({InputState.CLOSED, InputState.ABORTED}),
     InputState.CLOSED: frozenset(),
     InputState.ABORTED: frozenset(),

@@ -2,13 +2,68 @@
 cache-dir = ".cache/ruff"
 
 [tool.ruff.lint]
-select = ["B", "E4", "E7", "E9", "F", "I", "RUF022", "RUF043", "UP"]
+select = ["ANN", "B", "E4", "E7", "E9", "F", "I", "RUF022", "RUF043", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/cli/options.py" = ["ANN401"]
+"app/cli/parsers/__init__.py" = ["ANN401"]
+"app/local/gmark.py" = ["ANN401"]
+"tests/**/*.py" = ["ANN"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
 
 [tool.pytest.ini_options]
 cache_dir = ".cache/pytest"
+markers = [
+  "gpu: requires a real CUDA device",
+  "postgres: requires a dedicated transformer_test PostgreSQL database",
+]
+
+[tool.pyright]
+include = [
+  "app/admin",
+  "app/cli",
+  "app/local",
+  "app/project.py",
+  "app/contracts",
+  "app/main.py",
+  "app/service/adapters/observability.py",
+  "app/service/adapters/inbound/flight",
+  "app/service/adapters/outbound/artifacts",
+  "app/service/adapters/outbound/postgres",
+  "app/service/adapters/outbound/cuda",
+  "app/service/adapters/outbound/opensearch",
+  "app/service/adapters/outbound/worker",
+  "app/service/application",
+  "app/service/bootstrap",
+  "app/service/domain",
+  "app/version.py",
+  "app/worker",
+]
+strict = [
+  "app/admin",
+  "app/cli",
+  "app/local",
+  "app/project.py",
+  "app/contracts",
+  "app/main.py",
+  "app/service/adapters/observability.py",
+  "app/service/adapters/inbound/flight",
+  "app/service/adapters/outbound/artifacts",
+  "app/service/adapters/outbound/postgres",
+  "app/service/adapters/outbound/cuda",
+  "app/service/adapters/outbound/opensearch",
+  "app/service/adapters/outbound/worker",
+  "app/service/application",
+  "app/service/bootstrap",
+  "app/service/domain",
+  "app/version.py",
+  "app/worker",
+]
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
 
 [tool.alembic]
 script_location = "%(here)s/app/service/adapters/outbound/postgres/alembic"

@@ -49,25 +49,87 @@ config parsing, state transitions, serialization helpers.
 
 ### Contract tests
 
-Проверяют normative schemas и golden fixtures в `app/contracts/flight/v4/` и
-process envelopes в `app/contracts/worker/v3/`.
+Проверяют normative schemas и golden fixtures в `app/contracts/flight/v4/`,
+process envelopes в `app/contracts/worker/v4/`, а также immutable artifact,
+OpenSearch documents/templates и cross-language event identity в
+`app/contracts/metrics/v1/`.
 Fixture обновляется только при намеренном изменении contract, а не ради
 «починки» падающего теста.
 
-Cross-language проверка `objectiveConfigSha256` запускает Node.js-скрипт из
-Flight v4 fixtures и сравнивает его RFC 8785/JCS digest с Python runtime.
+Cross-language проверки `objectiveConfigSha256` и metrics `eventId` запускают
+Node.js-скрипты из соответствующих fixtures и сравнивают RFC 8785/JCS digest с
+Python runtime.
 Скрипт не использует npm dependencies; отсутствие Node.js блокирует полный
 contract test suite, а не переводит проверку в skip.
 
 JSON Schemas проверяются как Draft 2020-12 через `jsonschema`; локальные
 `$ref` разрешаются только из каталога schemas соответствующего versioned
-contract.
+contract. Runtime ingress использует те же схемы для action requests и DoPut
+metadata, поэтому contract tests проверяют не только fixtures, но и runtime
+parser.
+
+## Статическая проверка
+
+Ruff проверяет style, imports и выбранные defect patterns. Pyright проверяет
+типизированный scope, зафиксированный в `pyproject.toml`. Правила типов и
+tensor runtime contracts находятся в
+[политике типов](./typing-policy.md).
+
+Стандартный быстрый цикл:
+
+```bash
+./.venv/bin/python -m ruff check .
+./.venv/bin/pyright
+./.venv/bin/python -m pytest -q <затронутые tests>
+```
+
+Pyright не заменяет runtime tests shape, dtype, NaN/Infinity, CUDA/AMP и
+serialization. Pytest не является основанием оставлять внутренние вызовы
+нетипизированными.
+
+Этот документ — единственный источник команд проверки изменений. Другие
+документы задают профильный риск и ссылаются сюда, но не публикуют параллельный
+набор команд.
+
+## Маркеры ресурсов
+
+Markers описывают требуемый внешний ресурс, а не расположение файла:
+
+- `gpu` — нужен реальный CUDA device;
+- `postgres` — нужна выделенная PostgreSQL database `transformer_test*`.
+
+Быстрый CPU-набор без внешних ресурсов:
+
+```bash
+./.venv/bin/python -m pytest -q -m "not gpu and not postgres"
+```
+
+PostgreSQL-набор:
+
+```bash
+POSTGRES_DB=transformer_test \
+  ./.venv/bin/python -m pytest -q -m postgres
+```
+
+GPU marker не отменяет `skipif`, проверяющий фактическую доступность CUDA.
+Полный suite сохраняет environment safety checks и честно сообщает skip либо
+blocker.
 
 ## Структура и именование
 
-Используется pytest:
+Используется pytest. Тесты сначала группируются по уровню, затем по владельцу:
 
-- файл — `tests/test_<subject>.py`;
+```text
+tests/unit/{cli,local,service,worker}
+tests/contract/{flight_v4,worker_v4,metrics_v1}
+tests/integration/{flight,postgres,worker_process}
+tests/architecture
+tests/support
+```
+
+Правила именования:
+
+- файл — `tests/<level>/<owner>/test_<subject>.py`;
 - функция — `test_<expected_behavior>`;
 - fixture — существительное, описывающее предоставляемый resource;
 - `@pytest.mark.parametrize` — для одной семантики на наборе inputs.
@@ -249,14 +311,23 @@ def test_fit_stream_runs_epochs_over_all_payloads():
 Сначала запускается изменённый module или группа:
 
 ```bash
-.venv/bin/python -m pytest -q tests/test_flight_config.py
+./.venv/bin/python -m pytest -q tests/unit/service/test_config.py
 ```
 
-Перед release и после изменений общих contracts:
+Перед release, после изменений общих contracts и после широкого рефакторинга
+запускается полный source validation:
 
 ```bash
-.venv/bin/python -m pytest -q
+./.venv/bin/python -m ruff check .
+./.venv/bin/pyright
+POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
+git diff --check
 ```
+
+Полный pytest suite требует доступной выделенной PostgreSQL database с именем
+`transformer_test*` и Node.js для cross-language contract test. GPU tests
+сохраняют собственный marker и могут быть пропущены только при фактическом
+отсутствии CUDA; такой skip не подтверждает CUDA-поведение.
 
 Skipped test не считается доказательством проверенного поведения. Причина skip
 должна быть конкретной: например, отсутствие `openssl` для TLS integration.

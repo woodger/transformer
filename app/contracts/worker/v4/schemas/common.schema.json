@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v4/common.schema.json",
+  "title": "Transformer worker v4 common definitions",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "byteCount", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "byteCount": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "dataContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "version", "dataContractSha256", "seqLen", "featureDim",
+        "targetSchemaId"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "version": {"type": "integer", "minimum": 1},
+        "dataContractSha256": {"$ref": "#/$defs/sha256"},
+        "seqLen": {"type": "integer", "minimum": 1},
+        "featureDim": {"type": "integer", "minimum": 1},
+        "targetSchemaId": {"const": "inventory.target.v1"}
+      }
+    },
+    "mlContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetSchemaId", "predictionSchemaId", "objectiveId",
+        "objectiveConfigSha256", "checkpointFormat", "targetWidth",
+        "predictionSpace"
+      ],
+      "properties": {
+        "targetSchemaId": {"const": "inventory.target.v1"},
+        "predictionSchemaId": {
+          "const": "transformer.prediction.target-aligned.v1"
+        },
+        "objectiveId": {"const": "transformer.objective.target-aligned.v1"},
+        "objectiveConfigSha256": {"$ref": "#/$defs/sha256"},
+        "checkpointFormat": {"const": "transformer-checkpoint-v3"},
+        "targetWidth": {"const": 6},
+        "predictionSpace": {"const": "target"}
+      }
+    },
+    "modelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seqLen", "hidden", "layers", "dropout", "nhead", "mode",
+        "outDim", "featureDim"
+      ],
+      "properties": {
+        "seqLen": {"type": "integer", "minimum": 1},
+        "hidden": {"type": "integer", "minimum": 1},
+        "layers": {"type": "integer", "minimum": 1},
+        "dropout": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+        "nhead": {"type": "integer", "minimum": 1},
+        "mode": {"enum": ["strict", "relaxed"]},
+        "outDim": {"const": 6},
+        "featureDim": {"type": "integer", "minimum": 1}
+      }
+    },
+    "selectionConfig": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minDelta", "patience"],
+          "properties": {
+            "minDelta": {"type": "number", "minimum": 0},
+            "patience": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
+    "trainingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lr", "batchSize", "epochs", "lossStage", "lossSchedule",
+        "stageSize", "useAmp", "weightDecay", "directLossWeights",
+        "selection", "seed", "deterministic"
+      ],
+      "properties": {
+        "lr": {"type": "number", "exclusiveMinimum": 0},
+        "batchSize": {"type": "integer", "minimum": 1},
+        "epochs": {"type": "integer", "minimum": 1},
+        "lossStage": {"const": 4},
+        "lossSchedule": {"enum": ["none", "epoch", "step"]},
+        "stageSize": {"type": "integer", "minimum": 1},
+        "useAmp": {"type": "boolean"},
+        "weightDecay": {"type": "number", "minimum": 0},
+        "directLossWeights": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "number", "exclusiveMinimum": 0}
+          ],
+          "items": false,
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "selection": {"$ref": "#/$defs/selectionConfig"},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "deterministic": {"type": "boolean"}
+      }
+    },
+    "objectiveConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "objectiveId", "directLosses", "auxiliaryLosses",
+        "stagePolicy", "selection"
+      ],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "objectiveId": {"const": "transformer.objective.target-aligned.v1"},
+        "directLosses": {"type": "array", "minItems": 6, "maxItems": 6},
+        "auxiliaryLosses": {"type": "array"},
+        "stagePolicy": {"type": "object"},
+        "selection": {"type": "object"}
+      }
+    },
+    "checkpointSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled", "objectiveConfigSha256", "bestSelectionScore",
+        "bestFrame", "bestEpoch", "source"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "objectiveConfigSha256": {"$ref": "#/$defs/sha256"},
+        "bestSelectionScore": {"type": ["number", "null"]},
+        "bestFrame": {"type": ["integer", "null"], "minimum": 0},
+        "bestEpoch": {"type": ["integer", "null"], "minimum": 1},
+        "source": {
+          "enum": ["best_selection_score", "last_maximum_stage"]
+        }
+      }
+    },
+    "checkpointMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format", "serviceVersion", "modelConfig", "trainingConfig",
+        "dataContract", "mlContract", "objectiveConfig",
+        "checkpointSelection"
+      ],
+      "properties": {
+        "format": {"const": "transformer-checkpoint-v3"},
+        "serviceVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "modelConfig": {"$ref": "#/$defs/modelConfig"},
+        "trainingConfig": {"$ref": "#/$defs/trainingConfig"},
+        "dataContract": {"$ref": "#/$defs/dataContract"},
+        "mlContract": {"$ref": "#/$defs/mlContract"},
+        "objectiveConfig": {"$ref": "#/$defs/objectiveConfig"},
+        "checkpointSelection": {"$ref": "#/$defs/checkpointSelection"}
+      }
+    }
+  }
+}

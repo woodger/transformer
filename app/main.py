@@ -1,86 +1,166 @@
+from __future__ import annotations
+
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, cast
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.cli.args import parse_args
 
+if TYPE_CHECKING:
+    import torch
 
-def get_device(value):
-    from app.runtime.device import get_device as implementation
+    from app.contracts.worker.v4.config import ModelConfig
+    from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
+    from app.local.fit_stream import FitStreamArguments
+    from app.local.plot_metrics import PlotMetricsArguments
+    from app.local.predict import PredictArguments
+    from app.local.predict_stream import PredictStreamArguments
+    from app.worker.training.trainer import Trainer
+
+
+class CliArguments(Protocol):
+    action: str
+    flight_action: str
+    tokens_action: str
+    migrations_action: str
+    models_action: str
+    subject: str
+    token_id: str
+    model_ref: str
+    discard_undelivered_metrics: bool
+    seed: int
+    deterministic: bool
+    device: str
+    data: str | None
+    metrics_name: str | None
+    model_name: str
+    pred_col: str
+    preds_path: str
+    plots_dir: str
+    host: str | None
+    port: int | None
+    allow_plaintext: bool | None
+    tls_cert_file: str | None
+    tls_key_file: str | None
+    tls_ca_file: str | None
+    tls_require_client_cert: bool | None
+
+
+def get_device(value: str | None) -> torch.device:
+    from app.worker.runtime.device import get_device as implementation
 
     return implementation(value)
 
 
-def configure_reproducibility(seed, deterministic):
-    from app.runtime.reproducibility import configure_reproducibility as implementation
+def configure_reproducibility(seed: int, deterministic: bool) -> None:
+    from app.worker.runtime.reproducibility import (
+        configure_reproducibility as implementation,
+    )
 
     return implementation(seed, deterministic)
 
 
-def build_model(*args, **kwargs):
-    from app.training.factory import build_model as implementation
+def build_model(
+    args_or_config: object,
+    features_cpu: torch.Tensor,
+    targets_cpu: torch.Tensor | None,
+    device: torch.device,
+) -> torch.nn.Module:
+    from app.worker.training.factory import build_model as implementation
 
-    return implementation(*args, **kwargs)
+    return implementation(
+        args_or_config,
+        features_cpu,
+        targets_cpu,
+        device,
+    )
 
 
-def build_trainer(*args, **kwargs):
-    from app.training.factory import build_trainer as implementation
+def build_trainer(
+    args_or_config: object,
+    model: torch.nn.Module,
+    device: torch.device,
+    model_config: ModelConfig | None = None,
+    data_contract: Mapping[str, object] | None = None,
+) -> Trainer:
+    from app.worker.training.factory import build_trainer as implementation
 
-    return implementation(*args, **kwargs)
+    return implementation(
+        args_or_config,
+        model,
+        device,
+        model_config,
+        data_contract,
+    )
 
 
-def fit_stream(args, device):
-    from app.commands.fit_stream import run
+def fit_stream(args: FitStreamArguments, device: torch.device) -> None:
+    from app.local.fit_stream import run
 
     return run(args, device, build_model, build_trainer)
 
 
-def predict_stream(args, device):
-    from app.commands.predict_stream import run
+def predict_stream(
+    args: PredictStreamArguments,
+    device: torch.device,
+) -> None:
+    from app.local.predict_stream import run
 
     return run(args, device, build_model, build_trainer)
 
 
-def run_fit(args, device, model_factory, trainer_factory):
-    from app.commands.fit import run
+def run_fit(
+    args: FitArguments,
+    device: torch.device,
+    model_factory: ModelBuilder,
+    trainer_factory: TrainerBuilder,
+) -> None:
+    from app.local.fit import run
 
     return run(args, device, model_factory, trainer_factory)
 
 
-def run_predict(args, device, model_factory, trainer_factory):
-    from app.commands.predict import run
+def run_predict(
+    args: PredictArguments,
+    device: torch.device,
+    model_factory: ModelBuilder,
+    trainer_factory: TrainerBuilder,
+) -> None:
+    from app.local.predict import run
 
     return run(args, device, model_factory, trainer_factory)
 
 
-def run_plot_metrics(args):
-    from app.commands.plot_metrics import run
+def run_plot_metrics(args: PlotMetricsArguments) -> None:
+    from app.local.plot_metrics import run
 
     return run(args)
 
 
-def run_gmark(args):
-    from app.commands.gmark import run
+def run_gmark(args: object) -> int:
+    from app.local.gmark import run
 
     return run(args)
 
 
-def reset_metrics_log(path):
-    from app.metrics import reset_metrics_log as implementation
+def reset_metrics_log(path: str | None) -> None:
+    from app.worker.metrics import reset_metrics_log as implementation
 
     return implementation(path)
 
 
-def resolve_metrics_path(name):
-    from app.utils import resolve_metrics_path as implementation
+def resolve_metrics_path(name: str | None) -> str | None:
+    from app.worker.metrics.paths import resolve_metrics_path as implementation
 
     return implementation(name)
 
 
-def main():
-    args = parse_args()
+def main() -> None:
+    args = cast(CliArguments, parse_args())
 
     if args.action == "flight" and args.flight_action == "serve":
         from app.service.bootstrap.application import run_from_args
@@ -96,6 +176,12 @@ def main():
 
     if args.action == "db":
         from app.admin.bootstrap.db_migrations import run
+
+        run(args)
+        return
+
+    if args.action == "models":
+        from app.admin.bootstrap.models import run
 
         run(args)
         return

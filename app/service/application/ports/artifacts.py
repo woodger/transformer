@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.service.application.ports.workers import ExecutionInput
+from app.service.domain.json_types import JsonObject
 from app.service.domain.records import ExecutionJobRecord
 
 
@@ -13,13 +14,13 @@ class ArtifactPublisher(Protocol):
         self,
         job: ExecutionJobRecord,
         inputs: tuple[ExecutionInput, ...],
-        result: dict,
+        result: JsonObject,
     ) -> None: ...
 
     def publish_model_from_manifest(
         self,
         job: ExecutionJobRecord,
-        result: dict,
+        result: JsonObject,
     ) -> None: ...
 
     def cleanup_unpublished(self, job: ExecutionJobRecord) -> None: ...

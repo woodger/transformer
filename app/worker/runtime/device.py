@@ -1,6 +1,6 @@
 import torch
 
-from app.config import DEFAULT_DEVICE
+DEFAULT_DEVICE = "cpu"
 
 
 def get_device(device_arg: str | None = None) -> torch.device:

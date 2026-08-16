@@ -52,8 +52,10 @@ base interpreter не допускается.
 ```bash
 ./.venv/bin/python --version
 ./.venv/bin/python -m pip check
-./.venv/bin/python -m pytest -q
 ```
+
+Проверки исходного кода и tests выполняются только по
+[политике тестирования](./testing-policy.md#запуск).
 
 Подробный production-порядок находится в
 [`docs/deployment/systemd.md`](../deployment/systemd.md). Правила запуска

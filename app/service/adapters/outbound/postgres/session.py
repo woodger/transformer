@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
@@ -18,7 +18,7 @@ class Database:
         config: DatabaseConfig,
         *,
         engine: Engine | None = None,
-    ):
+    ) -> None:
         self.config = config
         self.engine = engine or create_engine(
             config.url,
@@ -40,7 +40,7 @@ class Database:
         return self._sessions()
 
     @contextmanager
-    def transaction(self) -> Iterator[Session]:
+    def transaction(self) -> Generator[Session]:
         with self.session() as session:
             with session.begin():
                 yield session

@@ -5,9 +5,14 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import cast
 
 from app.service.application.ports.artifacts import ArtifactPublisher
 from app.service.application.ports.jobs import JobRepository
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
 from app.service.application.ports.workers import (
     AttemptProcess,
     ExecutionPlanBuilder,
@@ -31,7 +36,7 @@ class WorkerAttemptError(Exception):
     message: str
     exit_code: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         Exception.__init__(self, self.message)
 
 
@@ -52,13 +57,13 @@ class WorkerAttemptExecutor:
         subprocess_runner: AttemptProcess,
         artifact_publisher: ArtifactPublisher,
         *,
-        logger,
-        metrics,
+        logger: EventLogger,
+        metrics: OperationalMetricSink,
         retry_notifier: Callable[[str], None] | None = None,
         confirm_device_loss: Callable[[str], bool] | None = None,
         resumable_fit: bool = False,
         monotonic: Callable[[], float] = time.monotonic,
-    ):
+    ) -> None:
         self.ledger = ledger
         self.plan_builder = plan_builder
         self.subprocess_runner = subprocess_runner
@@ -84,9 +89,14 @@ class WorkerAttemptExecutor:
                 active.cancel.set()
 
     def notify_input(self, job_id: str) -> None:
-        notifier = getattr(self.subprocess_runner, "notify_input", None)
+        notifier = cast(
+            object,
+            getattr(self.subprocess_runner, "notify_input", None),
+        )
         if notifier is not None:
-            notifier(job_id)
+            if not callable(notifier):
+                raise TypeError("attempt input notifier must be callable")
+            cast(Callable[[str], None], notifier)(job_id)
 
     def interrupt_for_shutdown(self) -> None:
         """Interrupt all attempts after the worker-pool drain deadline."""
@@ -321,7 +331,7 @@ class WorkerAttemptExecutor:
         transitioned = self.ledger.request_attempt_cancel(
             job.job_id,
             job.attempt,
-            attempt_id=job.attempt_id,
+            attempt_id=_attempt_id(job),
         )
         if transitioned:
             self._record_transition(
@@ -333,7 +343,7 @@ class WorkerAttemptExecutor:
             job.job_id,
             job.attempt,
             ExecutionState.CANCELLED,
-            attempt_id=job.attempt_id,
+            attempt_id=_attempt_id(job),
             exit_code=exit_code,
         )
         self._record_transition(
@@ -375,7 +385,7 @@ class WorkerAttemptExecutor:
                 job.job_id,
                 job.attempt,
                 ExecutionState.FAILED,
-                attempt_id=job.attempt_id,
+                attempt_id=_attempt_id(job),
                 error_code=failure.code,
                 error_message=failure.message,
                 exit_code=failure.exit_code,
@@ -427,7 +437,7 @@ class WorkerAttemptExecutor:
             self.ledger.schedule_retry(
                 job.job_id,
                 job.attempt,
-                attempt_id=job.attempt_id,
+                attempt_id=_attempt_id(job),
                 error_code=failure.code,
                 error_message=failure.message,
                 exit_code=failure.exit_code,
@@ -497,3 +507,9 @@ class WorkerAttemptExecutor:
             ErrorCode.INTERNAL,
             "worker execution failed internally",
         )
+
+
+def _attempt_id(job: ExecutionJobRecord) -> str:
+    if job.attempt_id is None:
+        raise ValueError("claimed worker job has no attempt identity")
+    return job.attempt_id

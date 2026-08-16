@@ -13,7 +13,7 @@ from app.service.domain.access import AccessTokenRecord
 
 
 class AccessTokenStore:
-    def __init__(self, database: Database):
+    def __init__(self, database: Database) -> None:
         self.database = database
 
     def issue(self, subject: str) -> AccessTokenRecord:
@@ -80,12 +80,15 @@ def _generate_token() -> str:
     return f"a.{encoded}"
 
 
-def _validate_subject(subject: str) -> None:
+def _validate_subject(raw_subject: object) -> None:
     if (
-        not isinstance(subject, str)
-        or not subject
-        or len(subject) > 256
-        or any(ord(character) < 32 or ord(character) == 127 for character in subject)
+        not isinstance(raw_subject, str)
+        or not raw_subject
+        or len(raw_subject) > 256
+        or any(
+            ord(character) < 32 or ord(character) == 127
+            for character in raw_subject
+        )
     ):
         raise ValueError(
             "subject must be 1-256 characters without control characters"

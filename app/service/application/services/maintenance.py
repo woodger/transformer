@@ -5,11 +5,27 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 from app.service.application.ports.maintenance import (
+    MaintenanceArtifactStore,
     MaintenanceRepository,
     RetentionArtifactStore,
 )
+from app.service.application.ports.models import ModelDeletionRepository
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
+from app.service.application.ports.operations import DiskUsage
+
+
+class MaintenanceConfig(Protocol):
+    @property
+    def retention_seconds(self) -> float: ...
+
+    @property
+    def input_idle_timeout_seconds(self) -> float: ...
 
 
 @dataclass(frozen=True)
@@ -23,6 +39,10 @@ class MaintenanceResult:
     missing_job_directories: tuple[str, ...]
     failed_job_directories: tuple[str, ...]
     pending_job_directories: tuple[str, ...]
+    completed_model_deletions: tuple[str, ...]
+    removed_model_directories: tuple[str, ...]
+    missing_model_directories: tuple[str, ...]
+    failed_model_directories: tuple[str, ...]
 
 
 class MaintenanceService:
@@ -36,26 +56,26 @@ class MaintenanceService:
     The in-memory pending set only closes retry gaps while this process remains
     alive; it is deliberately not treated as durable state.
 
-    Model directories are never considered here. Published model generations
-    outlive the producing job; PostgreSQL clears their optional provenance link
-    when that retained job is removed.
+    Published model generations outlive the producing job. Their directories
+    are removed only after an explicit PostgreSQL deletion request; the model
+    tombstone is finalized only after the filesystem operation succeeds.
     """
 
     def __init__(
         self,
-        config,
+        config: MaintenanceConfig,
         ledger: MaintenanceRepository,
-        spool: RetentionArtifactStore,
+        spool: MaintenanceArtifactStore,
         recovery_store: RetentionArtifactStore | None = None,
         *,
+        model_deletions: ModelDeletionRepository | None = None,
         interval_seconds: float = 60.0,
         queue_reconciler: Callable[[], None] | None = None,
-        logger,
-        metrics,
-    ):
+        logger: EventLogger,
+        metrics: OperationalMetricSink,
+    ) -> None:
         if (
             isinstance(interval_seconds, bool)
-            or not isinstance(interval_seconds, (int, float))
             or not math.isfinite(interval_seconds)
             or interval_seconds <= 0
         ):
@@ -67,6 +87,7 @@ class MaintenanceService:
         self.ledger = ledger
         self.spool = spool
         self.recovery_store = recovery_store
+        self.model_deletions = model_deletions
         self.interval_seconds = float(interval_seconds)
         self._queue_reconciler = queue_reconciler
         self.logger = logger
@@ -120,7 +141,6 @@ class MaintenanceService:
         timestamp = time.time() if now is None else now
         if (
             isinstance(timestamp, bool)
-            or not isinstance(timestamp, (int, float))
             or not math.isfinite(timestamp)
         ):
             raise ValueError("now must be a finite number")
@@ -128,10 +148,8 @@ class MaintenanceService:
         cutoff = timestamp - self.config.retention_seconds
         if self._queue_reconciler is not None:
             self._queue_reconciler()
-        usage = None
-        disk_usage = getattr(self.spool, "disk_usage", None)
-        if disk_usage is not None:
-            usage = disk_usage()
+        usage = _optional_disk_usage(self.spool)
+        if usage is not None:
             self.metrics.set("diskTotalBytes", usage.total)
             self.metrics.set("diskUsedBytes", usage.used)
             self.metrics.set("diskFreeBytes", usage.free)
@@ -200,6 +218,29 @@ class MaintenanceService:
                         errorType=type(exc).__name__,
                     )
 
+        completed_models: list[str] = []
+        removed_models: list[str] = []
+        missing_models: list[str] = []
+        failed_models: list[str] = []
+        if self.model_deletions is not None:
+            for model_ref in self.model_deletions.pending_deletions():
+                directory = self.spool.model_directory(model_ref)
+                try:
+                    existed = self.spool.remove(directory)
+                except OSError as exc:
+                    failed_models.append(model_ref)
+                    self.logger.event(
+                        "flight.maintenance.model_directory_failed",
+                        modelRef=model_ref,
+                        errorType=type(exc).__name__,
+                    )
+                    continue
+                if self.model_deletions.complete_deletion(model_ref):
+                    completed_models.append(model_ref)
+                (removed_models if existed else missing_models).append(
+                    model_ref
+                )
+
         with self._pending_lock:
             still_pending = tuple(sorted(self._pending_job_directories))
         result = MaintenanceResult(
@@ -212,6 +253,10 @@ class MaintenanceService:
             missing_job_directories=tuple(missing),
             failed_job_directories=tuple(failed),
             pending_job_directories=still_pending,
+            completed_model_deletions=tuple(completed_models),
+            removed_model_directories=tuple(removed_models),
+            missing_model_directories=tuple(missing_models),
+            failed_model_directories=tuple(failed_models),
         )
         log_fields = {
             "expiredTickets": expired_tickets,
@@ -222,6 +267,10 @@ class MaintenanceService:
             "failedJobDirectories": len(failed),
             "removedRecoveryDirectories": recovery_removed,
             "failedRecoveryDirectories": recovery_failed,
+            "completedModelDeletions": len(completed_models),
+            "removedModelDirectories": len(removed_models),
+            "missingModelDirectories": len(missing_models),
+            "failedModelDirectories": len(failed_models),
         }
         if usage is not None:
             log_fields.update(
@@ -243,6 +292,7 @@ class MaintenanceService:
         self.metrics.add("expiredTickets", expired_tickets)
         self.metrics.add("inputTimeouts", len(expired_input_jobs))
         self.metrics.add("retainedJobsDeleted", len(deleted_jobs))
+        self.metrics.add("modelsDeleted", len(completed_models))
         return result
 
     def _loop(self) -> None:
@@ -255,6 +305,15 @@ class MaintenanceService:
                     errorType=type(exc).__name__,
                 )
             self._stop.wait(self.interval_seconds)
+
+
+def _optional_disk_usage(store: object) -> DiskUsage | None:
+    reader = cast(object, getattr(store, "disk_usage", None))
+    if reader is None:
+        return None
+    if not callable(reader):
+        raise TypeError("artifact disk_usage must be callable")
+    return cast(Callable[[], DiskUsage], reader)()
 
 
 __all__ = ["MaintenanceResult", "MaintenanceService"]

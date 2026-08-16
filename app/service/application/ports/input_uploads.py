@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import BinaryIO, Protocol
 
-from app.service.application.input_models import (
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,
@@ -53,11 +53,15 @@ class InputArtifactStore(Protocol):
         upload_token: str,
     ) -> str: ...
 
-    def create_temporary(self, destination: str): ...
+    def create_temporary(self, destination: str) -> tuple[BinaryIO, str]: ...
 
-    def durable_create(self, temporary: str, destination: str) -> None: ...
+    def durable_create(
+        self,
+        temporary_path: str,
+        destination: str,
+    ) -> str: ...
 
-    def relative_path(self, path: str) -> str: ...
+    def relative_path(self, absolute_path: str) -> str: ...
 
     def absolute_path(self, relative_path: str) -> str: ...
 

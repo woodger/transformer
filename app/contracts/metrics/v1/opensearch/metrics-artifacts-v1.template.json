@@ -1,0 +1,34 @@
+{
+  "index_patterns": ["metrics-artifacts-v1"],
+  "priority": 300,
+  "template": {
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "schema": {"type": "keyword"},
+        "artifactId": {"type": "keyword"},
+        "documentSha256": {"type": "keyword"},
+        "deploymentId": {"type": "keyword"},
+        "kind": {"type": "keyword"},
+        "owner": {"type": "keyword"},
+        "runId": {"type": "keyword"},
+        "transformerJobId": {"type": "keyword"},
+        "attemptId": {"type": "keyword"},
+        "attempt": {"type": "integer"},
+        "modelRef": {"type": "keyword"},
+        "format": {"type": "keyword"},
+        "mediaType": {"type": "keyword"},
+        "bytes": {"type": "long"},
+        "rowCount": {"type": "integer"},
+        "sha256": {"type": "keyword"},
+        "transformerVersion": {"type": "keyword"},
+        "transformerGitCommit": {"type": "keyword"}
+      }
+    }
+  },
+  "_meta": {
+    "contract": "inventory.metrics.artifact.v1",
+    "owner": "transformer"
+  }
+}

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from app.contracts.worker.v3.config import ModelConfig, TrainConfig
+from app.contracts.worker.v4.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
+from app.service.domain.json_types import JsonObject
+from app.service.domain.model import ModelLifecycleState
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +24,8 @@ class ExecutionJobRecord:
     prediction_column: str
     model_config: ModelConfig | None
     training_config: TrainConfig | None
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
     config_hash: str
     manifest_sha256: str | None
     feature_dim: int
@@ -74,13 +75,13 @@ class JobRecord:
     selected_device: str | None
     resolved_model_ref: str | None
     prediction_column: str
-    data_contract: dict[str, Any]
-    ml_contract: dict[str, Any]
-    progress: dict[str, Any]
+    data_contract: JsonObject
+    ml_contract: JsonObject
+    progress: JsonObject
     attempt: int
     error_code: str | None
     error_message: str | None
-    result: dict[str, Any] | None
+    result: JsonObject | None
     created_at: float
     updated_at: float
     input_closed_at: float | None
@@ -133,7 +134,7 @@ class StagedPredictionOutput:
     schema_fingerprint: str
     relative_path: str
 
-    def ledger_record(self) -> dict:
+    def ledger_record(self) -> JsonObject:
         return {
             "ordinal": self.ordinal,
             "rows": self.rows,
@@ -160,6 +161,16 @@ class TrainingRecoveryCheckpointRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class TrainingMetricIntervalRecord:
+    job_id: str
+    generation: int
+    attempt: int
+    attempt_id: str
+    metrics: JsonObject
+    recorded_at: float
+
+
+@dataclass(frozen=True, slots=True)
 class StatusRecoveryRecord:
     checkpoint: TrainingRecoveryCheckpointRecord | None
     retry_count: int
@@ -181,8 +192,8 @@ class ModelArtifactRecord:
     checkpoint_path: str
     byte_count: int
     sha256: str
-    data_contract: dict[str, Any] | None
-    ml_contract: dict[str, Any] | None
+    data_contract: JsonObject | None
+    ml_contract: JsonObject | None
     objective_config_sha256: str | None
 
 
@@ -196,11 +207,52 @@ class PublishedModelRecord:
     metadata_path: str
     byte_count: int
     sha256: str
-    metadata: dict[str, Any]
-    data_contract: dict[str, Any] | None
-    ml_contract: dict[str, Any] | None
+    metadata: JsonObject
+    data_contract: JsonObject | None
+    ml_contract: JsonObject | None
     objective_config_sha256: str | None
     producing_job_id: str | None
+    created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ModelLifecycleRecord:
+    model_ref: str
+    owner_subject: str
+    label: str
+    generation: int
+    state: ModelLifecycleState
+    metrics_delivery_status: str | None
+    created_at: float
+    deletion_requested_at: float | None
+    deleted_at: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelMetricsArtifactRecord:
+    model_ref: str
+    format: str
+    media_type: str
+    relative_path: str
+    byte_count: int
+    sha256: str
+    row_count: int
+    job_id: str
+    attempt_id: str
+    attempt: int
+    application_version: str
+    git_commit: str
+    created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class MetricsOutboxRecord:
+    artifact: ModelMetricsArtifactRecord
+    projection_version: str
+    status: str
+    cursor: int
+    attempts: int
+    next_attempt_at: float
     created_at: float
 
 

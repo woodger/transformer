@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.service.application.ports.operations import DiskUsage
+
 
 class MaintenanceRepository(Protocol):
     def delete_expired_tickets(self, *, now: float) -> int: ...
@@ -19,11 +21,19 @@ class MaintenanceRepository(Protocol):
 
 
 class RetentionArtifactStore(Protocol):
-    def disk_usage(self): ...
+    def disk_usage(self) -> DiskUsage: ...
 
     def job_directory(self, job_id: str) -> str: ...
 
     def remove(self, path: str) -> bool: ...
 
 
-__all__ = ["MaintenanceRepository", "RetentionArtifactStore"]
+class MaintenanceArtifactStore(RetentionArtifactStore, Protocol):
+    def model_directory(self, model_ref: str) -> str: ...
+
+
+__all__ = [
+    "MaintenanceArtifactStore",
+    "MaintenanceRepository",
+    "RetentionArtifactStore",
+]

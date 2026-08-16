@@ -1,12 +1,15 @@
 import json
 import math
 import os
+from collections.abc import Mapping, Sequence
+from typing import cast
 
+from app.contracts.json_types import JsonObject, JsonValue
+from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.metrics.types import TrainMetrics
-from app.worker.runtime.checkpoints.atomic import atomic_output_path
 
 
-def reset_metrics_log(path: str):
+def reset_metrics_log(path: str | None) -> None:
     if path is None:
         return
 
@@ -19,7 +22,11 @@ def reset_metrics_log(path: str):
             pass
 
 
-def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):
+def append_metrics_jsonl(
+    path: str | None,
+    metrics: TrainMetrics,
+    **extra: JsonValue,
+) -> None:
     if path is None:
         return
 
@@ -39,22 +46,34 @@ def append_metrics_jsonl(path: str, metrics: TrainMetrics, **extra):
         f.write("\n")
 
 
-def load_metrics_jsonl(path: str) -> list[dict]:
-    rows = []
+def load_metrics_jsonl(path: str) -> list[JsonObject]:
+    rows: list[JsonObject] = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
-                rows.append(json.loads(line))
+                document: object = json.loads(line)
+                value = _json_safe(document)
+                if not isinstance(value, dict):
+                    raise ValueError("metrics JSONL row must be an object")
+                rows.append(value)
 
     return rows
 
 
-def _json_safe(value):
+def _json_safe(value: object) -> JsonValue:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
     if isinstance(value, float):
         return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {key: _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_safe(item) for item in value]
-    return value
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        if not all(isinstance(key, str) for key in mapping):
+            raise TypeError("metrics object field names must be strings")
+        return {
+            cast(str, key): _json_safe(item)
+            for key, item in mapping.items()
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_json_safe(item) for item in cast(Sequence[object], value)]
+    raise TypeError(f"metrics value is not JSON-compatible: {type(value).__name__}")

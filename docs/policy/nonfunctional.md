@@ -28,6 +28,8 @@
 - fit payload и completed-epoch recovery checkpoints остаются в project
   `recovery/`;
 - успешно опубликованные checkpoints остаются в project `models/`;
+- immutable training metrics artifact живёт вместе с model generation, а его
+  OpenSearch projection доставляется через PostgreSQL outbox;
 - потеря runtime storage инвалидирует prediction jobs, но не fit с целыми
   persistent recovery artifacts;
 - fit возобновляется только с зарегистрированной границы полной глобальной
@@ -41,6 +43,8 @@
 
 - bearer authentication действует для каждого Flight transport;
 - plaintext разрешается только явно;
+- сбой OpenSearch не меняет результат fit или model lifecycle; runtime writer
+  использует HTTPS, trusted CA и least-privilege non-admin identity;
 - paths и subprocess arguments не принимаются из network request произвольно;
 - service не опрашивает PostgreSQL на каждом RPC или в idle worker loop;
 - SIGTERM, cancellation и process-group cleanup не оставляют активных workers;

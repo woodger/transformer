@@ -117,6 +117,8 @@ Prediction использует созданный checkpoint:
   PostgreSQL, tokens, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
+- [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка
+  model-owned training metrics после durable publication.
 
 ## Проверка изменений
 
@@ -124,7 +126,6 @@ PostgreSQL integration tests требуют отдельную базу, имя 
 `transformer_test`. Pytest создаёт в ней одноразовую schema и удаляет её после
 session; production database намеренно отклоняется.
 
-```bash
-./.venv/bin/python -m ruff check .
-POSTGRES_DB=transformer_test ./.venv/bin/python -m pytest -q
-```
+Быстрый цикл, resource markers и полный набор команд находятся в единственном
+нормативном источнике —
+[политике тестирования](./policy/testing-policy.md#запуск).

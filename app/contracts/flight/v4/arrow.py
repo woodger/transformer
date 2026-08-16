@@ -2,12 +2,46 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
 TARGET_WIDTH = 6
+
+
+class _NumpyConvertible(Protocol):
+    def to_numpy(self, *, zero_copy_only: bool) -> np.ndarray: ...
+
+
+class _FlatPredictionArray(Protocol):
+    def is_null(self) -> _NumpyConvertible: ...
+
+    def to_numpy(self, *, zero_copy_only: bool) -> np.ndarray: ...
+
+
+class _PredictionArray(Protocol):
+    def is_null(self) -> _NumpyConvertible: ...
+
+    def flatten(self) -> _FlatPredictionArray: ...
+
+
+class _PredictionBatch(Protocol):
+    @property
+    def num_rows(self) -> int: ...
+
+    def column(self, index: int) -> _PredictionArray: ...
+
+
+class _PredictionReader(Protocol):
+    @property
+    def schema(self) -> pa.Schema: ...
+
+    @property
+    def num_record_batches(self) -> int: ...
+
+    def get_batch(self, index: int) -> _PredictionBatch: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +59,7 @@ def validate_prediction_file(
     rows = 0
     batches = 0
     with pa.memory_map(path, "r") as source:
-        reader = ipc.RecordBatchFileReader(source)
+        reader = cast(_PredictionReader, ipc.RecordBatchFileReader(source))
         schema = reader.schema
         _validate_prediction_schema(schema, prediction_column)
         for index in range(reader.num_record_batches):
@@ -101,7 +135,7 @@ def canonical_input_schema(operation: str, source_width: int) -> pa.Schema:
 
 
 def canonical_prediction_schema(prediction_column: str) -> pa.Schema:
-    if not isinstance(prediction_column, str) or not prediction_column:
+    if type(prediction_column) is not str or not prediction_column:
         raise ValueError("prediction_column must be a non-empty string")
     return pa.schema([
         pa.field(
@@ -148,7 +182,7 @@ def _type_without_metadata(value_type: pa.DataType) -> pa.DataType:
     )
 
 
-def _first_true(values) -> int | None:
+def _first_true(values: np.ndarray) -> int | None:
     indices = np.flatnonzero(values)
     return None if indices.size == 0 else int(indices[0])
 
@@ -158,7 +192,11 @@ def validate_target_space_values(values: np.ndarray) -> None:
         raise ValueError(f"target-space values must have width {TARGET_WIDTH}")
     if values.shape[0] == 0:
         return
-    nonfinite_row = _first_true(~np.isfinite(values).all(axis=1))
+    nonfinite_mask = cast(
+        np.ndarray,
+        ~np.isfinite(values).all(axis=1),
+    )
+    nonfinite_row = _first_true(nonfinite_mask)
     if nonfinite_row is not None:
         raise ValueError(
             f"target-space values must be finite at row {nonfinite_row + 1}"

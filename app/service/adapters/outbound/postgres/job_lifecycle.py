@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from app.service.application.job_models import (
+from sqlalchemy.orm import Session
+
+from app.contracts.json_types import JsonObject, JsonValue
+from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.mapping import (
+    row_integer,
+    row_json_object,
+    row_optional_string,
+    row_string,
+)
+from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
     CloseInputCommand,
@@ -35,7 +45,7 @@ class JobActionNames:
 class PostgresJobLifecycle:
     """Keep idempotency and job mutation transactions inside PostgreSQL."""
 
-    def __init__(self, ledger, action_names: JobActionNames):
+    def __init__(self, ledger: Ledger, action_names: JobActionNames) -> None:
         self.ledger = ledger
         self.action_names = action_names
 
@@ -58,7 +68,7 @@ class PostgresJobLifecycle:
         if replay is not None:
             _require_request_hash(replay, command.request_hash)
             return LifecycleMutation(
-                _decode_created(replay["response"]),
+                _decode_created(row_json_object(replay, "response")),
                 replayed=True,
             )
 
@@ -66,14 +76,14 @@ class PostgresJobLifecycle:
         if identity is not None:
             _require_matching_identity(identity, command)
             return LifecycleMutation(
-                _decode_created(identity["create_result"]),
+                _decode_created(row_json_object(identity, "create_result")),
                 replayed=True,
             )
 
         preflight()
         created = False
 
-        def mutation(connection):
+        def mutation(connection: Session) -> tuple[JsonObject, str | None]:
             nonlocal created
             self.ledger.lock_job_identity(
                 command.job_id,
@@ -85,7 +95,10 @@ class PostgresJobLifecycle:
             )
             if durable_identity is not None:
                 _require_matching_identity(durable_identity, command)
-                return durable_identity["create_result"], command.job_id
+                return (
+                    row_json_object(durable_identity, "create_result"),
+                    command.job_id,
+                )
 
             active = self.ledger.active_job_count(
                 command.owner_subject,
@@ -142,7 +155,7 @@ class PostgresJobLifecycle:
     ) -> LifecycleMutation[JobAcquired]:
         cleanup: tuple[tuple[str, str], ...] = ()
 
-        def mutation(connection):
+        def mutation(connection: Session) -> tuple[JsonObject, str | None]:
             nonlocal cleanup
             job, cleanup = self.ledger.acquire_job(
                 command.job_id,
@@ -157,12 +170,15 @@ class PostgresJobLifecycle:
             )
             result = JobAcquired(
                 request_id=command.request_id,
-                job_id=job["job_id"],
-                revision=job["revision"],
-                client_execution_id=job["client_execution_id"],
-                fencing_token=job["fencing_token"],
+                job_id=row_string(job, "job_id"),
+                revision=row_integer(job, "revision"),
+                client_execution_id=row_string(
+                    job,
+                    "client_execution_id",
+                ),
+                fencing_token=row_integer(job, "fencing_token"),
             )
-            return _encode_acquired(result), job["job_id"]
+            return _encode_acquired(result), row_string(job, "job_id")
 
         document, replayed = self.ledger.run_idempotent(
             owner_subject=command.owner_subject,
@@ -185,7 +201,7 @@ class PostgresJobLifecycle:
     ) -> LifecycleMutation[InputClosed]:
         queued = False
 
-        def mutation(connection):
+        def mutation(connection: Session) -> tuple[JsonObject, str | None]:
             nonlocal queued
             current = self.ledger.get_job(
                 command.job_id,
@@ -196,9 +212,9 @@ class PostgresJobLifecycle:
             if current is None:
                 raise not_found("job not found")
             selected = select_device(
-                current["requested_device"],
-                current["selected_device"],
-                current["operation"],
+                row_string(current, "requested_device"),
+                row_optional_string(current, "selected_device"),
+                row_string(current, "operation"),
                 command.total_rows,
             )
             job, repeated = self.ledger.close_input(
@@ -214,23 +230,26 @@ class PostgresJobLifecycle:
             )
             queued = (
                 not repeated
-                and current["execution_state"]
+                and row_string(current, "execution_state")
                 == ExecutionState.WAITING_INPUT.value
-                and job["execution_state"] == ExecutionState.QUEUED.value
+                and row_string(job, "execution_state")
+                == ExecutionState.QUEUED.value
             )
             result = InputClosed(
                 request_id=command.request_id,
-                job_id=job["job_id"],
-                revision=job["revision"],
-                input_state=InputState(job["input_state"]),
-                input_revision=job["input_revision"],
-                payload_count=job["payload_count"],
-                total_rows=job["total_rows"],
-                total_bytes=job["total_bytes"],
-                manifest_sha256=job["manifest_sha256"],
-                execution_state=ExecutionState(job["execution_state"]),
+                job_id=row_string(job, "job_id"),
+                revision=row_integer(job, "revision"),
+                input_state=InputState(row_string(job, "input_state")),
+                input_revision=row_integer(job, "input_revision"),
+                payload_count=row_integer(job, "payload_count"),
+                total_rows=row_integer(job, "total_rows"),
+                total_bytes=row_integer(job, "total_bytes"),
+                manifest_sha256=row_string(job, "manifest_sha256"),
+                execution_state=ExecutionState(
+                    row_string(job, "execution_state")
+                ),
             )
-            return _encode_closed(result), job["job_id"]
+            return _encode_closed(result), row_string(job, "job_id")
 
         document, replayed = self.ledger.run_idempotent(
             owner_subject=command.owner_subject,
@@ -257,7 +276,7 @@ class PostgresJobLifecycle:
         notify = False
         cleanup: tuple[tuple[str, str], ...] = ()
 
-        def mutation(connection):
+        def mutation(connection: Session) -> tuple[JsonObject, str | None]:
             nonlocal notify, cleanup
             job, notify, cleanup = self.ledger.cancel_job(
                 command.job_id,
@@ -268,12 +287,14 @@ class PostgresJobLifecycle:
             )
             result = JobCancelled(
                 request_id=command.request_id,
-                job_id=job["job_id"],
-                revision=job["revision"],
-                input_state=InputState(job["input_state"]),
-                execution_state=ExecutionState(job["execution_state"]),
+                job_id=row_string(job, "job_id"),
+                revision=row_integer(job, "revision"),
+                input_state=InputState(row_string(job, "input_state")),
+                execution_state=ExecutionState(
+                    row_string(job, "execution_state")
+                ),
             )
-            return _encode_cancelled(result), job["job_id"]
+            return _encode_cancelled(result), row_string(job, "job_id")
 
         document, replayed = self.ledger.run_idempotent(
             owner_subject=command.owner_subject,
@@ -294,37 +315,56 @@ class PostgresJobLifecycle:
             notify_worker=not replayed and notify,
         )
 
-    def _resolve_model(self, command, connection):
+    def _resolve_model(
+        self,
+        command: CreateJobCommand,
+        connection: Session,
+    ) -> PublishedModelRecord:
+        model_ref = command.model_ref
+        if model_ref is None:
+            raise ValueError("predict command requires a model reference")
         if command.model_selector == "alias":
             model = self.ledger.resolve_published_model_alias(
                 command.owner_subject,
-                command.model_ref,
+                model_ref,
                 connection=connection,
+                for_update=True,
             )
         else:
             model = self.ledger.get_published_model(
-                command.model_ref,
+                model_ref,
                 owner_subject=command.owner_subject,
                 connection=connection,
+                for_update=True,
             )
         if model is None:
             raise not_found("model generation not found")
         return model
 
-def _require_request_hash(record: dict, request_hash: str) -> None:
-    if record["request_hash"] != request_hash:
+def _require_request_hash(
+    record: Mapping[str, object],
+    request_hash: str,
+) -> None:
+    if row_string(record, "request_hash") != request_hash:
         raise conflict("idempotency key was used for a different request")
 
 
-def _require_matching_identity(identity: dict, command) -> None:
+def _require_matching_identity(
+    identity: Mapping[str, object],
+    command: CreateJobCommand,
+) -> None:
     if (
-        identity["owner_subject"] != command.owner_subject
-        or identity["create_hash"] != command.request_hash
+        row_string(identity, "owner_subject") != command.owner_subject
+        or row_string(identity, "create_hash") != command.request_hash
     ):
         raise conflict("jobId has already been used for a different request")
 
 
-def _require_current_fence(ledger, command, connection) -> None:
+def _require_current_fence(
+    ledger: Ledger,
+    command: CloseInputCommand | CancelJobCommand,
+    connection: Session,
+) -> None:
     job = ledger.get_job(
         command.job_id,
         owner_subject=command.owner_subject,
@@ -334,8 +374,9 @@ def _require_current_fence(ledger, command, connection) -> None:
     if job is None:
         raise not_found("job not found")
     if (
-        job["client_execution_id"] != command.client_execution_id
-        or job["fencing_token"] != command.fencing_token
+        row_string(job, "client_execution_id")
+        != command.client_execution_id
+        or row_integer(job, "fencing_token") != command.fencing_token
     ):
         raise ServiceError(
             ErrorCode.STALE_FENCE,
@@ -343,11 +384,13 @@ def _require_current_fence(ledger, command, connection) -> None:
         )
 
 
-def _locations(values) -> tuple[ArtifactLocation, ...]:
+def _locations(
+    values: tuple[tuple[str, str], ...],
+) -> tuple[ArtifactLocation, ...]:
     return tuple(ArtifactLocation(*value) for value in values)
 
 
-def _encode_created(result: JobCreated) -> dict:
+def _encode_created(result: JobCreated) -> JsonObject:
     return {
         "result_type": "job_created",
         "request_id": result.request_id,
@@ -369,48 +412,61 @@ def _encode_created(result: JobCreated) -> dict:
     }
 
 
-def _decode_created(document: dict) -> JobCreated:
+def _decode_created(document: JsonObject) -> JobCreated:
     if document.get("result_type") == "job_created":
         return JobCreated(
-            request_id=document["request_id"],
-            job_id=document["job_id"],
-            operation=document["operation"],
-            revision=document["revision"],
-            input_state=InputState(document["input_state"]),
-            input_revision=document["input_revision"],
-            next_input_ordinal=document["next_input_ordinal"],
-            execution_state=ExecutionState(document["execution_state"]),
-            client_execution_id=document["client_execution_id"],
-            fencing_token=document["fencing_token"],
-            requested_device=document["requested_device"],
-            selected_device=document["selected_device"],
-            resolved_model_ref=document.get("resolved_model_ref"),
-            data_contract=dict(document["data_contract"]),
-            ml_contract=dict(document["ml_contract"]),
-            limits=_decode_limits(document["limits"]),
+            request_id=_string(document, "request_id"),
+            job_id=_string(document, "job_id"),
+            operation=_string(document, "operation"),
+            revision=_integer(document, "revision"),
+            input_state=InputState(_string(document, "input_state")),
+            input_revision=_integer(document, "input_revision"),
+            next_input_ordinal=_integer(document, "next_input_ordinal"),
+            execution_state=ExecutionState(
+                _string(document, "execution_state")
+            ),
+            client_execution_id=_string(
+                document,
+                "client_execution_id",
+            ),
+            fencing_token=_integer(document, "fencing_token"),
+            requested_device=_string(document, "requested_device"),
+            selected_device=_optional_string(document, "selected_device"),
+            resolved_model_ref=_optional_string(
+                document,
+                "resolved_model_ref",
+            ),
+            data_contract=_object(document, "data_contract"),
+            ml_contract=_object(document, "ml_contract"),
+            limits=_decode_limits(_object(document, "limits")),
         )
-    ownership = document["ownership"]
+    ownership = _object(document, "ownership")
+    input_document = _object(document, "input")
+    execution = _object(document, "execution")
+    device = _object(document, "device")
     return JobCreated(
-        request_id=document["requestId"],
-        job_id=document["jobId"],
-        operation=document["operation"],
-        revision=document["revision"],
-        input_state=InputState(document["input"]["state"]),
-        input_revision=document["input"]["revision"],
-        next_input_ordinal=document["input"]["nextOrdinal"],
-        execution_state=ExecutionState(document["execution"]["state"]),
-        client_execution_id=ownership["clientExecutionId"],
-        fencing_token=int(ownership["fencingToken"]),
-        requested_device=document["device"]["requested"],
-        selected_device=document["device"].get("selected"),
-        resolved_model_ref=document.get("resolvedModelRef"),
-        data_contract=_wire_data_contract(document["dataContract"]),
-        ml_contract=dict(document["mlContract"]),
-        limits=_wire_limits(document["limits"]),
+        request_id=_string(document, "requestId"),
+        job_id=_string(document, "jobId"),
+        operation=_string(document, "operation"),
+        revision=_integer(document, "revision"),
+        input_state=InputState(_string(input_document, "state")),
+        input_revision=_integer(input_document, "revision"),
+        next_input_ordinal=_integer(input_document, "nextOrdinal"),
+        execution_state=ExecutionState(_string(execution, "state")),
+        client_execution_id=_string(ownership, "clientExecutionId"),
+        fencing_token=_integer_text(ownership, "fencingToken"),
+        requested_device=_string(device, "requested"),
+        selected_device=_optional_string(device, "selected"),
+        resolved_model_ref=_optional_string(document, "resolvedModelRef"),
+        data_contract=_wire_data_contract(
+            _object(document, "dataContract")
+        ),
+        ml_contract=_object(document, "mlContract"),
+        limits=_wire_limits(_object(document, "limits")),
     )
 
 
-def _encode_acquired(result: JobAcquired) -> dict:
+def _encode_acquired(result: JobAcquired) -> JsonObject:
     return {
         "result_type": "job_acquired",
         "request_id": result.request_id,
@@ -421,25 +477,29 @@ def _encode_acquired(result: JobAcquired) -> dict:
     }
 
 
-def _decode_acquired(document: dict) -> JobAcquired:
+def _decode_acquired(document: JsonObject) -> JobAcquired:
     if document.get("result_type") == "job_acquired":
         return JobAcquired(
-            request_id=document["request_id"],
-            job_id=document["job_id"],
-            revision=document["revision"],
-            client_execution_id=document["client_execution_id"],
-            fencing_token=document["fencing_token"],
+            request_id=_string(document, "request_id"),
+            job_id=_string(document, "job_id"),
+            revision=_integer(document, "revision"),
+            client_execution_id=_string(
+                document,
+                "client_execution_id",
+            ),
+            fencing_token=_integer(document, "fencing_token"),
         )
+    ownership = _object(document, "ownership")
     return JobAcquired(
-        request_id=document["requestId"],
-        job_id=document["jobId"],
-        revision=document["revision"],
-        client_execution_id=document["ownership"]["clientExecutionId"],
-        fencing_token=int(document["ownership"]["fencingToken"]),
+        request_id=_string(document, "requestId"),
+        job_id=_string(document, "jobId"),
+        revision=_integer(document, "revision"),
+        client_execution_id=_string(ownership, "clientExecutionId"),
+        fencing_token=_integer_text(ownership, "fencingToken"),
     )
 
 
-def _encode_closed(result: InputClosed) -> dict:
+def _encode_closed(result: InputClosed) -> JsonObject:
     return {
         "result_type": "input_closed",
         "request_id": result.request_id,
@@ -455,36 +515,39 @@ def _encode_closed(result: InputClosed) -> dict:
     }
 
 
-def _decode_closed(document: dict) -> InputClosed:
+def _decode_closed(document: JsonObject) -> InputClosed:
     if document.get("result_type") == "input_closed":
         return InputClosed(
-            request_id=document["request_id"],
-            job_id=document["job_id"],
-            revision=document["revision"],
-            input_state=InputState(document["input_state"]),
-            input_revision=document["input_revision"],
-            payload_count=document["payload_count"],
-            total_rows=document["total_rows"],
-            total_bytes=document["total_bytes"],
-            manifest_sha256=document["manifest_sha256"],
-            execution_state=ExecutionState(document["execution_state"]),
+            request_id=_string(document, "request_id"),
+            job_id=_string(document, "job_id"),
+            revision=_integer(document, "revision"),
+            input_state=InputState(_string(document, "input_state")),
+            input_revision=_integer(document, "input_revision"),
+            payload_count=_integer(document, "payload_count"),
+            total_rows=_integer(document, "total_rows"),
+            total_bytes=_integer(document, "total_bytes"),
+            manifest_sha256=_string(document, "manifest_sha256"),
+            execution_state=ExecutionState(
+                _string(document, "execution_state")
+            ),
         )
-    input_document = document["input"]
+    input_document = _object(document, "input")
+    execution = _object(document, "execution")
     return InputClosed(
-        request_id=document["requestId"],
-        job_id=document["jobId"],
-        revision=document["revision"],
-        input_state=InputState(input_document["state"]),
-        input_revision=input_document["revision"],
-        payload_count=input_document["payloadCount"],
-        total_rows=input_document["totalRows"],
-        total_bytes=input_document["totalBytes"],
-        manifest_sha256=input_document["manifestSha256"],
-        execution_state=ExecutionState(document["execution"]["state"]),
+        request_id=_string(document, "requestId"),
+        job_id=_string(document, "jobId"),
+        revision=_integer(document, "revision"),
+        input_state=InputState(_string(input_document, "state")),
+        input_revision=_integer(input_document, "revision"),
+        payload_count=_integer(input_document, "payloadCount"),
+        total_rows=_integer(input_document, "totalRows"),
+        total_bytes=_integer(input_document, "totalBytes"),
+        manifest_sha256=_string(input_document, "manifestSha256"),
+        execution_state=ExecutionState(_string(execution, "state")),
     )
 
 
-def _encode_cancelled(result: JobCancelled) -> dict:
+def _encode_cancelled(result: JobCancelled) -> JsonObject:
     return {
         "result_type": "job_cancelled",
         "request_id": result.request_id,
@@ -495,62 +558,156 @@ def _encode_cancelled(result: JobCancelled) -> dict:
     }
 
 
-def _decode_cancelled(document: dict) -> JobCancelled:
+def _decode_cancelled(document: JsonObject) -> JobCancelled:
     if document.get("result_type") == "job_cancelled":
         return JobCancelled(
-            request_id=document["request_id"],
-            job_id=document["job_id"],
-            revision=document["revision"],
-            input_state=InputState(document["input_state"]),
-            execution_state=ExecutionState(document["execution_state"]),
+            request_id=_string(document, "request_id"),
+            job_id=_string(document, "job_id"),
+            revision=_integer(document, "revision"),
+            input_state=InputState(_string(document, "input_state")),
+            execution_state=ExecutionState(
+                _string(document, "execution_state")
+            ),
         )
+    input_document = _object(document, "input")
+    execution = _object(document, "execution")
     return JobCancelled(
-        request_id=document["requestId"],
-        job_id=document["jobId"],
-        revision=document["revision"],
-        input_state=InputState(document["input"]["state"]),
-        execution_state=ExecutionState(document["execution"]["state"]),
+        request_id=_string(document, "requestId"),
+        job_id=_string(document, "jobId"),
+        revision=_integer(document, "revision"),
+        input_state=InputState(_string(input_document, "state")),
+        execution_state=ExecutionState(_string(execution, "state")),
     )
 
 
-def _encode_limits(limits: ServiceLimits) -> dict:
+def _encode_limits(limits: ServiceLimits) -> JsonObject:
     return {
-        name: getattr(limits, name)
-        for name in ServiceLimits.__dataclass_fields__
+        "max_message_bytes": limits.max_message_bytes,
+        "target_batch_bytes": limits.target_batch_bytes,
+        "max_batch_bytes": limits.max_batch_bytes,
+        "max_payload_bytes": limits.max_payload_bytes,
+        "max_rows_per_payload": limits.max_rows_per_payload,
+        "max_payloads_per_job": limits.max_payloads_per_job,
+        "max_job_bytes": limits.max_job_bytes,
+        "max_active_jobs_per_subject": limits.max_active_jobs_per_subject,
+        "max_page_items": limits.max_page_items,
+        "input_idle_timeout_seconds": limits.input_idle_timeout_seconds,
     }
 
 
-def _decode_limits(document: dict) -> ServiceLimits:
-    return ServiceLimits(**{
-        name: document[name]
-        for name in ServiceLimits.__dataclass_fields__
-    })
-
-
-def _wire_limits(document: dict) -> ServiceLimits:
+def _decode_limits(document: JsonObject) -> ServiceLimits:
     return ServiceLimits(
-        max_message_bytes=document["maxMessageBytes"],
-        target_batch_bytes=document["targetBatchBytes"],
-        max_batch_bytes=document["maxBatchBytes"],
-        max_payload_bytes=document["maxPayloadBytes"],
-        max_rows_per_payload=document["maxRowsPerPayload"],
-        max_payloads_per_job=document["maxPayloadsPerJob"],
-        max_job_bytes=document["maxJobBytes"],
-        max_active_jobs_per_subject=document["maxActiveJobsPerSubject"],
-        max_page_items=document["maxPageItems"],
-        input_idle_timeout_seconds=document["inputIdleTimeoutSeconds"],
+        max_message_bytes=_integer(document, "max_message_bytes"),
+        target_batch_bytes=_integer(document, "target_batch_bytes"),
+        max_batch_bytes=_integer(document, "max_batch_bytes"),
+        max_payload_bytes=_integer(document, "max_payload_bytes"),
+        max_rows_per_payload=_integer(document, "max_rows_per_payload"),
+        max_payloads_per_job=_integer(document, "max_payloads_per_job"),
+        max_job_bytes=_integer(document, "max_job_bytes"),
+        max_active_jobs_per_subject=_integer(
+            document,
+            "max_active_jobs_per_subject",
+        ),
+        max_page_items=_integer(document, "max_page_items"),
+        input_idle_timeout_seconds=_number(
+            document,
+            "input_idle_timeout_seconds",
+        ),
     )
 
 
-def _wire_data_contract(document: dict) -> dict:
+def _wire_limits(document: JsonObject) -> ServiceLimits:
+    return ServiceLimits(
+        max_message_bytes=_integer(document, "maxMessageBytes"),
+        target_batch_bytes=_integer(document, "targetBatchBytes"),
+        max_batch_bytes=_integer(document, "maxBatchBytes"),
+        max_payload_bytes=_integer(document, "maxPayloadBytes"),
+        max_rows_per_payload=_integer(document, "maxRowsPerPayload"),
+        max_payloads_per_job=_integer(document, "maxPayloadsPerJob"),
+        max_job_bytes=_integer(document, "maxJobBytes"),
+        max_active_jobs_per_subject=_integer(
+            document,
+            "maxActiveJobsPerSubject",
+        ),
+        max_page_items=_integer(document, "maxPageItems"),
+        input_idle_timeout_seconds=_number(
+            document,
+            "inputIdleTimeoutSeconds",
+        ),
+    )
+
+
+def _wire_data_contract(document: JsonObject) -> JsonObject:
     return {
-        "id": document["id"],
-        "version": document["version"],
-        "data_contract_sha256": document["dataContractSha256"],
-        "seq_len": document["seqLen"],
-        "feature_dim": document["featureDim"],
-        "target_schema_id": document["targetSchemaId"],
+        "id": _string(document, "id"),
+        "version": _integer(document, "version"),
+        "data_contract_sha256": _string(
+            document,
+            "dataContractSha256",
+        ),
+        "seq_len": _integer(document, "seqLen"),
+        "feature_dim": _integer(document, "featureDim"),
+        "target_schema_id": _string(document, "targetSchemaId"),
     }
+
+
+def _string(document: JsonObject, key: str) -> str:
+    value = _value(document, key)
+    if not isinstance(value, str):
+        raise ValueError(f"stored result field {key} must be a string")
+    return value
+
+
+def _optional_string(document: JsonObject, key: str) -> str | None:
+    value = document.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(
+            f"stored result field {key} must be a string or null"
+        )
+    return value
+
+
+def _integer(document: JsonObject, key: str) -> int:
+    value = _value(document, key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"stored result field {key} must be an integer")
+    return value
+
+
+def _integer_text(document: JsonObject, key: str) -> int:
+    value = _value(document, key)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ValueError(
+            f"stored result field {key} must encode an integer"
+        )
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"stored result field {key} must encode an integer"
+        ) from exc
+
+
+def _number(document: JsonObject, key: str) -> float:
+    value = _value(document, key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"stored result field {key} must be numeric")
+    return float(value)
+
+
+def _object(document: JsonObject, key: str) -> JsonObject:
+    value = _value(document, key)
+    if not isinstance(value, dict):
+        raise ValueError(f"stored result field {key} must be an object")
+    return value
+
+
+def _value(document: JsonObject, key: str) -> JsonValue:
+    if key not in document:
+        raise ValueError(f"stored result field {key} is missing")
+    return document[key]
 
 
 __all__ = ["JobActionNames", "PostgresJobLifecycle"]

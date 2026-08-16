@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
     CloseInputCommand,
@@ -19,12 +19,17 @@ from app.service.application.ports.job_lifecycle import (
     JobLifecycleStore,
     ModelArtifactVerifier,
 )
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
 from app.service.application.services.model_contract import (
     verify_model_semantics,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.policies import resolve_device
+from app.service.domain.records import PublishedModelRecord
 
 
 class CreateJobAction:
@@ -39,9 +44,9 @@ class CreateJobAction:
         cuda_available: Callable[[], bool],
         is_draining: Callable[[], bool],
         model_verifier: ModelArtifactVerifier,
-        metrics,
-        logger,
-    ):
+        metrics: OperationalMetricSink,
+        logger: EventLogger,
+    ) -> None:
         self.store = store
         self.max_active_jobs = max_active_jobs
         self.limits = limits
@@ -65,7 +70,9 @@ class CreateJobAction:
                     "explicit CUDA device is not available",
                 )
 
-        def prepare(model) -> JobCreationPreparation:
+        def prepare(
+            model: PublishedModelRecord | None,
+        ) -> JobCreationPreparation:
             model_config = command.model_config
             resolved_model_ref = None
             if command.operation == "predict":
@@ -145,8 +152,8 @@ class AcquireJobAction:
         *,
         acquire_grace_seconds: float,
         artifact_cleaner: CandidateArtifactCleaner,
-        logger,
-    ):
+        logger: EventLogger,
+    ) -> None:
         self.store = store
         self.acquire_grace_seconds = acquire_grace_seconds
         self._artifact_cleaner = artifact_cleaner
@@ -179,9 +186,9 @@ class InputCloseAction:
         *,
         cuda_available: Callable[[], bool],
         queue_notifier: Callable[[str], None],
-        metrics,
-        logger,
-    ):
+        metrics: OperationalMetricSink,
+        logger: EventLogger,
+    ) -> None:
         self.store = store
         self._cuda_available = cuda_available
         self._queue_notifier = queue_notifier
@@ -229,9 +236,9 @@ class CancelJobAction:
         *,
         cancel_notifier: Callable[[str], None],
         artifact_cleaner: CandidateArtifactCleaner,
-        metrics,
-        logger,
-    ):
+        metrics: OperationalMetricSink,
+        logger: EventLogger,
+    ) -> None:
         self.store = store
         self._cancel_notifier = cancel_notifier
         self._artifact_cleaner = artifact_cleaner

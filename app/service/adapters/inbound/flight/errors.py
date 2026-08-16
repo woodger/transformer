@@ -1,3 +1,5 @@
+from typing import Protocol, cast
+
 import pyarrow as pa
 import pyarrow.flight as flight
 
@@ -22,6 +24,10 @@ __all__ = [
 ]
 
 
+class _ExceptionFactory(Protocol):
+    def __call__(self, message: str) -> Exception: ...
+
+
 def to_flight_exception(error: ServiceError) -> Exception:
     """Map service failures to the closest status exposed by PyArrow 24.
 
@@ -32,17 +38,17 @@ def to_flight_exception(error: ServiceError) -> Exception:
     """
     text = error.safe_text()
     if error.code == ErrorCode.UNAUTHENTICATED:
-        return flight.FlightUnauthenticatedError(text)
+        return _flight_exception("FlightUnauthenticatedError", text)
     if error.code == ErrorCode.PERMISSION_DENIED:
-        return flight.FlightUnauthorizedError(text)
+        return _flight_exception("FlightUnauthorizedError", text)
     if error.code == ErrorCode.NOT_FOUND:
         return pa.ArrowKeyError(text)
     if error.code in (ErrorCode.RESOURCE_EXHAUSTED, ErrorCode.DISK_FULL):
         return pa.ArrowCapacityError(text)
     if error.code == ErrorCode.CANCELLED:
-        return flight.FlightCancelledError(text)
+        return _flight_exception("FlightCancelledError", text)
     if error.code in (ErrorCode.UNAVAILABLE, ErrorCode.DEVICE_UNAVAILABLE):
-        return flight.FlightUnavailableError(text)
+        return _flight_exception("FlightUnavailableError", text)
     if error.code in (
         ErrorCode.INTERNAL,
         ErrorCode.DEVICE_LOST,
@@ -55,5 +61,11 @@ def to_flight_exception(error: ServiceError) -> Exception:
         ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
         ErrorCode.RECOVERY_INPUT_UNAVAILABLE,
     ):
-        return flight.FlightInternalError(text)
+        return _flight_exception("FlightInternalError", text)
     return pa.ArrowInvalid(text)
+
+
+def _flight_exception(name: str, message: str) -> Exception:
+    """Construct a runtime Flight exception missing from PyArrow's stubs."""
+    factory = cast(_ExceptionFactory, vars(flight)[name])
+    return factory(message)

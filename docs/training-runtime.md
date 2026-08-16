@@ -176,3 +176,8 @@ CUDA synchronization. Loss/gradient scalars объединяются в один
 ```
 
 `plot-metrics` создаёт отдельный SVG для каждого доступного числового поля.
+
+Flight fit дополнительно сохраняет завершённые global epochs как обязательный
+immutable `models/{modelRef}/metrics.jsonl`. Durable boundary, OpenSearch
+projection и различие между `step` и фактическими AMP optimizer updates
+зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md).

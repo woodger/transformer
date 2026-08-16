@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, cast, overload
 
 import torch
 import torch.nn.functional as F
 
-from app.config import LOSS_SCHEDULE, LOSS_STAGE, STAGE_SIZE
-from app.contracts.worker.v3.config import DEFAULT_DIRECT_LOSS_WEIGHTS
+from app.contracts.worker.v4.config import (
+    DEFAULT_DIRECT_LOSS_WEIGHTS,
+    DEFAULT_LOSS_SCHEDULE,
+    DEFAULT_LOSS_STAGE,
+    DEFAULT_STAGE_SIZE,
+)
 from app.worker.model.transformer import public_predictions
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LossStageDefinition:
     stage: int
     name: str
@@ -56,7 +61,15 @@ _LOSS_STATISTIC_NAMES = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class MaterializedLossStatistics:
+    """Host-side scalar metrics produced by one synchronized transfer."""
+
+    parts: dict[str, float | int]
+    grad_norm: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class LossStatistics:
     """Device-resident row-normalized statistics awaiting one host transfer."""
 
@@ -66,23 +79,45 @@ class LossStatistics:
     def materialize(
         self,
         grad_norm: torch.Tensor | None = None,
-    ) -> dict[str, float | int] | tuple[dict[str, float | int], float]:
+    ) -> MaterializedLossStatistics:
         device_values = self.values
         if grad_norm is not None:
             device_values = (*device_values, grad_norm.detach())
-        host_values = torch.stack(tuple(
-            value.detach().reshape(())
-            for value in device_values
-        )).cpu().tolist()
-        parts = dict(zip(
+        # PyTorch types ``Tensor.tolist`` as a list of unknown depth. The
+        # stacked tensor is one-dimensional by construction here.
+        host_values = cast(
+            list[float],
+            torch.stack(tuple(
+                value.detach().reshape(())
+                for value in device_values
+            )).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
+        )
+        parts: dict[str, float | int] = dict(zip(
             _LOSS_STATISTIC_NAMES,
             host_values[:len(_LOSS_STATISTIC_NAMES)],
             strict=True,
         ))
         parts["loss_stage"] = self.loss_stage
-        if grad_norm is None:
-            return parts
-        return parts, host_values[-1]
+        return MaterializedLossStatistics(
+            parts=parts,
+            grad_norm=None if grad_norm is None else host_values[-1],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LossEvaluation:
+    """Differentiable loss paired with device-resident statistics."""
+
+    loss: torch.Tensor
+    statistics: LossStatistics
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializedLossEvaluation:
+    """Differentiable loss paired with host-side scalar statistics."""
+
+    loss: torch.Tensor
+    statistics: MaterializedLossStatistics
 
 
 def validate_loss_stage(loss_stage: int) -> int:
@@ -106,9 +141,9 @@ def validate_loss_schedule(loss_schedule: str) -> str:
 
 def resolve_loss_stage(
     progress: int,
-    loss_schedule: str = LOSS_SCHEDULE,
-    stage_size: int = STAGE_SIZE,
-    max_stage: int = LOSS_STAGE,
+    loss_schedule: str = DEFAULT_LOSS_SCHEDULE,
+    stage_size: int = DEFAULT_STAGE_SIZE,
+    max_stage: int = DEFAULT_LOSS_STAGE,
 ) -> int:
     max_stage = validate_loss_stage(max_stage)
     loss_schedule = validate_loss_schedule(loss_schedule)
@@ -123,13 +158,50 @@ def active_loss_components(loss_stage: int) -> tuple[str, ...]:
     return LOSS_STAGE_DEFINITIONS[loss_stage - 1].components
 
 
+@overload
 def combined_loss(
-    output: torch.Tensor,
+    model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int = LOSS_STAGE,
+    loss_stage: int = DEFAULT_LOSS_STAGE,
+    direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
+    return_parts: Literal[False] = False,
+    return_statistics: Literal[False] = False,
+) -> torch.Tensor: ...
+
+
+@overload
+def combined_loss(
+    model_output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int,
+    direct_loss_weights: tuple[float, ...],
+    return_parts: Literal[True],
+    return_statistics: Literal[False] = False,
+) -> MaterializedLossEvaluation: ...
+
+
+@overload
+def combined_loss(
+    model_output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int,
+    direct_loss_weights: tuple[float, ...],
+    return_parts: Literal[False] = False,
+    return_statistics: Literal[True] = True,
+) -> LossEvaluation: ...
+
+
+def combined_loss(
+    model_output: torch.Tensor,
+    targets: torch.Tensor,
+    loss_stage: int = DEFAULT_LOSS_STAGE,
     direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
     return_parts: bool = False,
     return_statistics: bool = False,
+) -> (
+    torch.Tensor
+    | MaterializedLossEvaluation
+    | LossEvaluation
 ):
     """Evaluate the target-aligned staged objective.
 
@@ -142,22 +214,22 @@ def combined_loss(
         raise ValueError(
             "return_parts and return_statistics are mutually exclusive"
         )
-    if output.ndim != 2 or output.shape[1] != 7:
+    if model_output.ndim != 2 or model_output.shape[1] != 7:
         raise ValueError("model output must have shape [rows, 7]")
-    if targets.ndim != 2 or targets.shape != (output.shape[0], 6):
+    if targets.ndim != 2 or targets.shape != (model_output.shape[0], 6):
         raise ValueError("targets must have shape [rows, 6]")
     if len(direct_loss_weights) != 6:
         raise ValueError("direct_loss_weights must contain six values")
 
     loss_stage = validate_loss_stage(loss_stage)
     active = frozenset(active_loss_components(loss_stage))
-    mean_return = output[:, 0]
-    sigma_return = output[:, 1]
-    take_profit_logit = output[:, 2]
-    stop_loss_logit = output[:, 3]
-    next_volatility = output[:, 4]
-    hitting_probability_logit = output[:, 5]
-    return_scale = output[:, 6]
+    mean_return = model_output[:, 0]
+    sigma_return = model_output[:, 1]
+    take_profit_logit = model_output[:, 2]
+    stop_loss_logit = model_output[:, 3]
+    next_volatility = model_output[:, 4]
+    hitting_probability_logit = model_output[:, 5]
+    return_scale = model_output[:, 6]
 
     direct_rows = (
         F.smooth_l1_loss(mean_return, targets[:, 0], reduction="none"),
@@ -184,7 +256,7 @@ def combined_loss(
     )
     direct_means = tuple(values.mean() for values in direct_rows)
 
-    loss = output.new_tensor(0.0)
+    loss = model_output.new_tensor(0.0)
     for index, direct in enumerate(direct_means):
         if f"L{index}" in active:
             loss = loss + float(direct_loss_weights[index]) * direct
@@ -198,7 +270,7 @@ def combined_loss(
     if "nll" in active:
         loss = loss + loss_nll
 
-    predictions = public_predictions(output)
+    predictions = public_predictions(model_output)
     ev = predictions[:, 2] - predictions[:, 3]
     risk_penalty = return_scale.detach() * torch.abs(ev)
     loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_penalty)
@@ -223,5 +295,8 @@ def combined_loss(
         loss_stage=loss_stage,
     )
     if return_statistics:
-        return loss, statistics
-    return loss, statistics.materialize()
+        return LossEvaluation(loss=loss, statistics=statistics)
+    return MaterializedLossEvaluation(
+        loss=loss,
+        statistics=statistics.materialize(),
+    )

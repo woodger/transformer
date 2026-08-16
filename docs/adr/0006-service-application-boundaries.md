@@ -3,6 +3,7 @@
 - Статус: принято
 - Дата: 2026-08-12
 - Уточняет: service boundaries из ADR 0004
+- Текущая публичная версия Flight определяется ADR 0007
 
 ## Контекст
 
@@ -14,8 +15,10 @@ Inbound adapters одновременно координировали ledger, a
 job lifecycle. Формальный import graph был направлен внутрь, но прикладная
 граница оставалась неполной.
 
-Flight v3 является текущим штатным публичным контрактом. Решение не вводит
-Flight v2 dispatcher, aliases, fallback или иной v2 compatibility surface.
+На момент принятия решения Flight v3 был штатным публичным контрактом. ADR 0007
+заменил публичную границу на Flight v4, не изменив описанные здесь service
+boundaries. Runtime не содержит compatibility surface, aliases или fallback
+для прежних версий Flight.
 
 ## Решение
 
@@ -42,12 +45,15 @@ PostgreSQL adapter владеет:
 - fencing checks непосредственно перед mutation commit;
 - преобразованием строк и page projections PostgreSQL в domain/application
   records;
-- декодированием ранее записанного результата Flight v3 при точном replay.
+- декодированием ранее записанного idempotency result текущего Flight-контракта
+  при точном replay.
 
-Последний пункт сохраняет уже зафиксированные v3 idempotency results во время
-внутреннего рефакторинга. Он не является поддержкой старой версии протокола.
+На момент рефакторинга последний пункт сохранял уже зафиксированные v3
+idempotency results. Миграция `0006` удалила прежние records; тот же
+архитектурный инвариант действует для Flight v4 и не является поддержкой старой
+версии протокола.
 
-Composition roots `service/bootstrap/job_control.py` и
+Composition roots `service/bootstrap/control_plane.py` и
 `service/bootstrap/data_plane.py` являются единственными местами сборки этих
 use cases и adapters. Inbound adapters не импортируют outbound implementations
 и не получают raw ledger.
@@ -87,13 +93,17 @@ application executor может напрямую зависеть от PyArrow, 
 нарушают service boundary. Дополнительные worker ports/adapters не вводятся без
 измеримой проблемы, второго runtime implementation или отдельной задачи.
 
-## Compatibility facades
+## Compatibility facades на момент принятия
 
 `app.flight` временно сохраняет старые Python import paths и конструкторы для
 внутренних consumers и тестов. Эти файлы только делегируют сборку текущим
 composition roots и не содержат job lifecycle или protocol dispatcher.
 Standalone file/stream CLI остаётся действующим локальным интерфейсом и не
 является альтернативной реализацией Flight job lifecycle.
+
+После миграции всех production- и test-imports эти фасады удалены решением
+[ADR 0008](./0008-project-layout-by-runtime-owner.md). Текущая архитектура не
+имеет второй карты legacy import paths.
 
 ## Последствия
 

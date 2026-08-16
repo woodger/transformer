@@ -1,7 +1,15 @@
 from __future__ import annotations
 
-from app.contracts.worker.v3.config import ModelConfig
-from app.service.application.input_models import (
+from collections.abc import Mapping
+
+from app.contracts.worker.v4.config import ModelConfig
+from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.mapping import (
+    row_integer,
+    row_optional_string,
+    row_string,
+)
+from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
     InputUploadAuthorization,
@@ -12,7 +20,12 @@ from app.service.domain.job import InputState
 
 
 class PostgresInputUploadStore:
-    def __init__(self, ledger, *, schema_ids: dict[str, str]):
+    def __init__(
+        self,
+        ledger: Ledger,
+        *,
+        schema_ids: dict[str, str],
+    ) -> None:
         self.ledger = ledger
         self.schema_ids = dict(schema_ids)
 
@@ -34,17 +47,17 @@ class PostgresInputUploadStore:
                 "job model configuration is unavailable"
             )
         return InputUploadJob(
-            job_id=value["job_id"],
-            owner_subject=value["owner_subject"],
-            operation=value["operation"],
-            input_state=InputState(value["input_state"]),
-            requested_device=value["requested_device"],
-            selected_device=value["selected_device"],
-            client_execution_id=value["client_execution_id"],
-            fencing_token=value["fencing_token"],
-            input_revision=value["input_revision"],
-            next_input_ordinal=value["next_input_ordinal"],
-            data_contract_sha256=value["data_contract_sha256"],
+            job_id=row_string(value, "job_id"),
+            owner_subject=row_string(value, "owner_subject"),
+            operation=row_string(value, "operation"),
+            input_state=InputState(row_string(value, "input_state")),
+            requested_device=row_string(value, "requested_device"),
+            selected_device=row_optional_string(value, "selected_device"),
+            client_execution_id=row_string(value, "client_execution_id"),
+            fencing_token=row_integer(value, "fencing_token"),
+            input_revision=row_integer(value, "input_revision"),
+            next_input_ordinal=row_integer(value, "next_input_ordinal"),
+            data_contract_sha256=row_string(value, "data_contract_sha256"),
             model_config=model_config,
         )
 
@@ -126,27 +139,54 @@ class PostgresInputUploadStore:
         return _committed_input(value)
 
 
-def _committed_input(value: dict) -> CommittedInput:
+def _committed_input(value: Mapping[str, object]) -> CommittedInput:
     return CommittedInput(
-        job_id=value["job_id"],
-        payload_id=value["payload_id"],
-        ordinal=value["ordinal"],
-        schema_id=value["schema_id"],
-        data_contract_sha256=value["data_contract_sha256"],
-        rows=value["rows"],
-        batches=value["batches"],
-        byte_count=value["bytes"],
-        sha256=value["sha256"],
-        schema_fingerprint=value["schema_fingerprint"],
-        relative_path=value["relative_path"],
-        storage_class=value["storage_class"],
-        source_width=value["source_width"],
-        feature_dim=value["feature_dim"],
-        input_revision=value.get("input_revision", 0),
-        next_input_ordinal=value.get("next_input_ordinal", 0),
-        queued=value.get("queued", False),
-        frontier_advanced=value.get("frontier_advanced", False),
+        job_id=row_string(value, "job_id"),
+        payload_id=row_string(value, "payload_id"),
+        ordinal=row_integer(value, "ordinal"),
+        schema_id=row_string(value, "schema_id"),
+        data_contract_sha256=row_string(value, "data_contract_sha256"),
+        rows=row_integer(value, "rows"),
+        batches=row_integer(value, "batches"),
+        byte_count=row_integer(value, "bytes"),
+        sha256=row_string(value, "sha256"),
+        schema_fingerprint=row_string(value, "schema_fingerprint"),
+        relative_path=row_string(value, "relative_path"),
+        storage_class=row_string(value, "storage_class"),
+        source_width=row_integer(value, "source_width"),
+        feature_dim=row_integer(value, "feature_dim"),
+        input_revision=_integer_or_default(value, "input_revision", 0),
+        next_input_ordinal=_integer_or_default(
+            value,
+            "next_input_ordinal",
+            0,
+        ),
+        queued=_boolean_or_default(value, "queued", False),
+        frontier_advanced=_boolean_or_default(
+            value,
+            "frontier_advanced",
+            False,
+        ),
     )
+
+
+def _integer_or_default(
+    value: Mapping[str, object],
+    key: str,
+    default: int,
+) -> int:
+    return default if key not in value else row_integer(value, key)
+
+
+def _boolean_or_default(
+    value: Mapping[str, object],
+    key: str,
+    default: bool,
+) -> bool:
+    item = value.get(key, default)
+    if not isinstance(item, bool):
+        raise ValueError(f"database field {key} must be a boolean")
+    return item
 
 
 __all__ = ["PostgresInputUploadStore"]

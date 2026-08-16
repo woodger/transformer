@@ -16,12 +16,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Тема | Основной источник |
 | --- | --- |
 | Назначение, навигация и общий CLI | `readme.md` |
-| Локальный quick start и проверка working copy | `docs/getting-started.md` |
+| Локальный quick start | `docs/getting-started.md` |
 | Local CLI commands, options и artifact paths | `docs/cli/index.md` |
 | Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
 | Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
-| Конфигурация Ruff, pytest и Alembic | `pyproject.toml` |
+| Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
+| Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
+| Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |
@@ -31,7 +33,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный Flight v4 contract | `app/contracts/flight/v4/` |
-| Нормативный worker v3 contract | `app/contracts/worker/v3/` |
+| Нормативный worker v4 contract | `app/contracts/worker/v4/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -57,9 +59,10 @@ CLI help является публичным контрактом.
 
 Источники:
 
-- `app/cli/help.py` — parser metadata, descriptions и rendering;
+- `app/cli/parser.py` и `app/cli/parsers/` — parser tree и command groups;
+- `app/cli/formatting.py` и `app/cli/options.py` — rendering и общие options;
 - `app/cli/args.py` — parsing entry;
-- `app/commands/` и `app/admin/` — command behavior;
+- `app/local/` и `app/admin/` — command behavior;
 - process roots в `app/service/bootstrap/`, `app/worker/bootstrap/` и
   `app/admin/bootstrap/` — resource lifecycle.
 
@@ -80,8 +83,9 @@ transformer <command> --help
 ## Environment
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
-группам переменных. Фактические правила parsing и defaults находятся в
-`app/config.py`, `app/service/bootstrap/config.py` и
+группам переменных. Фактические правила parsing и defaults находятся у
+владельцев runtime: `app/local/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v4/config.py` и
 `app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:
@@ -171,3 +175,7 @@ protocol, checkpoint или архитектурную границу, соот�
 завершением проверяются links, команды, paths, version markers и отсутствие
 секретов. Deployment-команда считается документированной только после
 успешной проверки на целевом host environment.
+
+Команды Ruff, Pyright и pytest для проверки изменений публикуются только в
+`docs/policy/testing-policy.md`. Guides и другие policies ссылаются на него и
+не создают сокращённую или альтернативную последовательность.

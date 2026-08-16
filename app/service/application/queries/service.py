@@ -2,15 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.service.application.job_models import ServiceLimits
+from app.service.application.messages.jobs import ServiceLimits
 from app.service.application.ports.devices import (
     WorkerCapabilities,
     WorkerCapabilitySnapshot,
 )
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
 from app.service.application.ports.operations import (
+    DiskUsage,
     ServiceHealthRepository,
     StorageUsageReader,
 )
+from app.service.domain.json_types import JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,11 +41,11 @@ class ServiceHealth:
     device_inventory: WorkerCapabilitySnapshot
     runtime_storage: StorageUsage
     recovery_storage: StorageUsage
-    metrics: dict
+    metrics: JsonObject
 
 
 class ServiceAvailability:
-    def __init__(self):
+    def __init__(self) -> None:
         self._draining = False
 
     @property
@@ -61,9 +67,9 @@ class ServiceStatusQuery:
         availability: ServiceAvailability,
         cpu_capacity: int,
         limits: ServiceLimits,
-        metrics,
-        logger,
-    ):
+        metrics: OperationalMetricSink,
+        logger: EventLogger,
+    ) -> None:
         self.health_repository = health_repository
         self.runtime_storage = runtime_storage
         self.recovery_storage = recovery_storage
@@ -115,7 +121,7 @@ class ServiceStatusQuery:
         )
 
 
-def _usage(value) -> StorageUsage:
+def _usage(value: DiskUsage) -> StorageUsage:
     return StorageUsage(value.total, value.used, value.free)
 
 

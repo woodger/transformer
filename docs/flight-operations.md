@@ -52,6 +52,8 @@ PostgreSQL является единственным долговечным ис
 - metadata inputs/outputs, idempotency records и output tickets;
 - зарегистрированных generations training recovery и истории retry;
 - metadata опубликованных моделей и owner-scoped aliases моделей;
+- committed epoch metrics, metadata model-owned metrics artifacts и состояние
+  OpenSearch outbox;
 - API access tokens;
 - текущей storage epoch runtime.
 
@@ -90,15 +92,18 @@ Fit inputs и восстанавливаемое состояние обучен
   {modelRef}/
     checkpoint.pth
     metadata.json
+    metrics.jsonl
 ```
 
 Файлы сначала записываются рядом с конечным расположением, синхронизируются
 через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
 Recovery checkpoint становится видимым только после надёжной записи файла и
-регистрации его generation в PostgreSQL. При публикации модели checkpoint
-успешной attempt сначала копируется в `models/`, а metadata фиксируются в
-PostgreSQL только после успешной публикации в filesystem. Неуспешные и
-прерванные attempts не создают generation модели.
+регистрации его generation и полной epoch metric в одной транзакции
+PostgreSQL. При публикации модели checkpoint успешной attempt и собранный
+`metrics.jsonl` сначала копируются в `models/`, а model/artifact metadata и
+OpenSearch outbox фиксируются одной terminal transaction только после
+успешной публикации в filesystem. Неуспешные и прерванные attempts не создают
+generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
 `service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
@@ -158,6 +163,16 @@ Transformer, сохраните резервную копию PostgreSQL и mode
 обновления одновременно запускаются только Inventory v4 и Transformer v4;
 модели требуется переобучить.
 
+Revision `0007` добавляет committed training intervals, metadata metrics
+artifact и delivery outbox. Flight v4 wire schema не меняется. Настройка
+OpenSearch выполняется отдельно по
+[`deployment/opensearch.md`](deployment/opensearch.md); недоступность
+OpenSearch не блокирует fit и публикацию модели.
+
+Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
+опубликованных model generations и состояние `CANCELLED` для явно отброшенной
+metrics delivery. Публичный Flight v4 не меняется.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -201,7 +216,8 @@ PostgreSQL остаётся единственным источником ист
 
 Приоритет конфигурации сервиса от низшего к высшему:
 
-1. параметры в `app/config.py` и остальные встроенные значения;
+1. параметры в `app/service/bootstrap/config.py` и остальные встроенные
+   значения;
 2. поддерживаемые переменные окружения `TRANSFORMER_*`;
 3. явно переданные options `flight serve`.
 
@@ -217,7 +233,8 @@ CLI предоставляет только overrides endpoint и transport:
 --tls-require-client-cert
 ```
 
-Следующие параметры сервиса задаются в `app/config.py`, а не через окружение:
+Следующие параметры сервиса задаются в
+`app/service/bootstrap/config.py`, а не через окружение:
 
 | Параметр Python | По умолчанию | Назначение |
 | --- | --- | --- |
@@ -323,7 +340,8 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    predictions как `FAILED / EXECUTION_INTERRUPTED`, а прерванные
    `CANCELLING` jobs завершает как `CANCELLED`;
 7. удаляет незавершённые upload reservations и unpublished/orphan artifacts;
-8. сверяет постоянные каталоги моделей с metadata PostgreSQL;
+8. сверяет постоянные каталоги моделей с metadata PostgreSQL, сохраняя
+   `AVAILABLE` и ожидающие удаления `DELETING` generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
 10. загружает cache API tokens и запускает notification listener;
@@ -366,7 +384,20 @@ terminal state. Каталоги опубликованных моделей н�
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
 а точный lost-create replay остаётся разрешимым. В v4 нет сетевого action для
-удаления модели.
+удаления модели; оператор использует локальную команду `models delete`.
+
+Удаление model generation имеет отдельную durable boundary. PostgreSQL
+transaction блокирует новые predict, проверяет отсутствие активных predict
+jobs, снимает только alias, который указывает на эту generation, и фиксирует
+`DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
+удаления переводит строку в `DELETED`. При filesystem error состояние остаётся
+`DELETING` для следующей попытки. Tombstone модели не удаляется: generation и
+`modelRef` не переиспользуются, а alias не откатывается на предыдущую
+generation.
+
+Pending или blocked OpenSearch outbox по умолчанию блокирует удаление. Option
+`--discard-undelivered-metrics` явно переводит такую запись в `CANCELLED`;
+доставленные или уже принятые OpenSearch documents команда не удаляет.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -447,7 +478,8 @@ filesystem, credentials и stderr subprocess не должны попадать 
 - Transformer владеет checkpoints; клиенты получают только opaque значения
   `modelRef`.
 - Output tickets краткоживущие и не являются ссылками на модель.
-- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в `app/config.py`; option
-  `--allow-plaintext` может включить её для одного процесса.
+- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в
+  `app/service/bootstrap/config.py`; option `--allow-plaintext` может включить
+  её для одного процесса.
 - Interoperability Node → PyArrow и физическое поведение CUDA требуют отдельной
   проверки в целевом окружении.

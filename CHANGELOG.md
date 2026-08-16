@@ -7,6 +7,70 @@
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-16
+
+### Added
+
+- Добавлены штатные `models list` и `models delete`: удаление опубликованной
+  generation проходит через durable `DELETING`/`DELETED` lifecycle, блокируется
+  активными prediction jobs и сохраняет identity tombstone без alias fallback.
+- Добавлена централизованная training telemetry: committed epoch metrics
+  сохраняются вместе с recovery checkpoint, успешная модель получает
+  immutable `metrics.jsonl`, а PostgreSQL outbox доставляет детерминированные
+  `inventory.metrics.v1` points и artifact metadata в OpenSearch вне
+  критического пути fit.
+- Добавлены strict JSON Schemas и OpenSearch index templates для metrics v1,
+  cross-language golden `eventId`, HTTPS publisher с bounded Bulk create,
+  conflict integrity check, retry/backoff и health gauges backlog.
+- Добавлены политика Python types и tensor runtime contracts и поэтапный
+  Pyright strict baseline для admin/CLI, contracts, service domain/application,
+  worker и типизированных outbound process/artifact boundaries.
+- Pytest tests размечаются по внешним ресурсам `gpu` и `postgres`; быстрый
+  CPU-набор не требует CUDA или PostgreSQL.
+
+### Changed
+
+- Внутренний worker process contract повышен до v4: checkpoint event атомарно
+  связывает recovery generation с полной метрикой завершённой global epoch.
+  Публичный Flight v4 не изменён.
+- Структурная валидация Flight action requests и DoPut metadata переведена на
+  нормативные JSON Schema Draft 2020-12 через `jsonschema`; Python ingress
+  оставляет только семантические инварианты и mapping в типизированные DTO.
+- Структура Python-кода приведена к одному каноническому пути на
+  ответственность: local CLI вынесен в `app/local`, service outbound adapters
+  названы по capabilities, PostgreSQL ledger и application DTO сгруппированы,
+  worker checkpoints и batching получили собственных владельцев.
+- CLI parser разделён на command-group parsers, formatting и options; общий
+  `app/config.py` удалён, а defaults размещены у local/service/worker owners.
+- Pytest suite разделён на `unit`, `contract`, `integration` и `architecture`
+  с общими fixtures в `tests/support`; архитектурные тесты запрещают возврат
+  прежних compatibility paths.
+- Model input явно проверяет форму `[batch, sequence, features]`, immutable
+  `seq_len`/`feature_dim` и `float32`; mask semantics и семь внутренних heads
+  закреплены в типизированных сигнатурах и docstrings.
+- В orchestration и boundary code безымянные `X`/`Y`/`x`/`pred` заменены на
+  `features`, `targets` и `predictions`; wire fields и CLI options сохранены.
+- Pyright strict scope расширен на Flight ingress, PostgreSQL adapters и
+  service bootstrap; dynamic PyArrow/ORM boundaries локализованы и сразу
+  переводятся в типизированные records, mappings и JSON-документы.
+- Ruff `ANN` закрепляет явные типы параметров и результатов production-кода;
+  исключения ограничены tests и двумя dynamic boundaries.
+- `Trainer` принимает единый immutable `TrainConfig`; дублирующие параметры
+  optimizer, schedule, AMP, selection и seed удалены из его конструктора.
+- Удалены compatibility facades `app.flight`, `app.database` и прежние
+  ML-пакеты: service и worker теперь имеют по одному каноническому import path.
+- Команды проверки изменений собраны в одной политике тестирования; удалены
+  ненормативные ML-заметки с устаревшими конфигурационными рекомендациями.
+
+### Fixed
+
+- ORM-модели сохраняют recursive `JsonValue` в runtime namespace, поэтому
+  SQLAlchemy корректно разрешает postponed `Mapped[JsonObject]` annotations
+  при запуске Alembic на Python 3.14.
+- Metrics v1 использует два обычных versioned OpenSearch index вместо data
+  streams: повторный Bulk `create` сохраняет глобальный конфликт `_id`, а
+  проверка `documentSha256` выполняется пакетным `_mget` по concrete index.
+
 ## [0.1.10] - 2026-08-12
 
 ### Added
@@ -416,7 +480,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/woodger/transformer/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/woodger/transformer/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/woodger/transformer/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/woodger/transformer/compare/v0.1.7...v0.1.8

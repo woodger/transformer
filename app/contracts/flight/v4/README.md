@@ -45,6 +45,14 @@ UTF-8, содержащий:
 `action-result.schema.json` содержит закрытое объединение всех результатов
 actions. Эталонные документы находятся в `fixtures/json/`.
 
+На runtime-границе каждый action request и DoPut metadata сначала проверяются
+соответствующей JSON Schema Draft 2020-12 через `jsonschema`. Эти versioned
+schemas являются единственным источником структурных правил: required и
+unknown fields, JSON types, enum, patterns, ranges и взаимоисключающие формы
+запросов не дублируются Python-проверками. После schema validation inbound
+adapter выполняет только семантические проверки между полями, нормализацию
+identity и mapping в типизированные внутренние DTO.
+
 ## Состояние
 
 V4 предоставляет две независимые оси состояния:

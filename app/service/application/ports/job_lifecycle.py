@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
-from app.service.application.job_models import (
+from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
     CloseInputCommand,

@@ -46,7 +46,7 @@ Python modules и packages используют `snake_case`:
 ```text
 app/worker/training/loss_scheduler.py
 app/service/adapters/outbound/postgres/token_cache.py
-tests/test_checkpoint_storage.py
+tests/unit/worker/test_checkpoint_storage.py
 ```
 
 Markdown-документы используют устойчивые существующие имена, для новых

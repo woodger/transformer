@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from app.config import CONTEXT_MODE
+from app.contracts.worker.v4.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -20,9 +20,12 @@ def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
 
 
 class TradingHead(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim: int) -> None:
         super().__init__()
+        if hidden_dim <= 0:
+            raise ValueError("hidden_dim must be a positive integer")
 
+        self.hidden_dim = hidden_dim
         self.shared = nn.Sequential(
             nn.Linear(hidden_dim, 128),
             nn.GELU(),
@@ -41,8 +44,12 @@ class TradingHead(nn.Module):
 
         self.vol_head = nn.Linear(128, 1)
 
-    def forward(self, x):
-        h = self.shared(x)
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Map floating [batch, hidden] states to seven internal model heads."""
+
+        if hidden_states.ndim != 2 or hidden_states.shape[1] != self.hidden_dim:
+            raise ValueError("hidden states must have shape [batch, hidden]")
+        h = self.shared(hidden_states)
 
         mean_return = torch.tanh(self.mean_head(h))
         sigma_return = torch.sigmoid(self.sigma_head(h))
@@ -77,20 +84,34 @@ class TransformerModel(nn.Module):
 
     def __init__(
         self,
-        input_dim,
-        seq_len,
-        hidden_dim,
-        layers,
-        dropout,
-        out_dim,
-        nhead=8,
-        context_mode=CONTEXT_MODE,
-    ):
+        input_dim: int,
+        seq_len: int,
+        hidden_dim: int,
+        layers: int,
+        dropout: float,
+        out_dim: int,
+        nhead: int = 8,
+        context_mode: str = DEFAULT_CONTEXT_MODE,
+    ) -> None:
         super().__init__()
 
-        assert hidden_dim % nhead == 0
+        if input_dim <= 0:
+            raise ValueError("input_dim must be a positive integer")
+        if seq_len <= 0:
+            raise ValueError("seq_len must be a positive integer")
+        if hidden_dim <= 0:
+            raise ValueError("hidden_dim must be a positive integer")
+        if layers <= 0:
+            raise ValueError("layers must be a positive integer")
+        if nhead <= 0 or hidden_dim % nhead != 0:
+            raise ValueError("hidden_dim must be divisible by a positive nhead")
+        if not 0 <= dropout < 1:
+            raise ValueError("dropout must be in the range [0, 1)")
+        if out_dim <= 0:
+            raise ValueError("out_dim must be a positive integer")
 
         self.input_dim = input_dim
+        self.seq_len = seq_len
         self.context_mode = validate_context_mode(context_mode)
         self.input_proj = nn.Linear(
             context_input_dim(input_dim, self.context_mode),
@@ -113,38 +134,67 @@ class TransformerModel(nn.Module):
 
         self.head = TradingHead(hidden_dim)
 
-    def forward(self, x):
-        x, key_padding_mask = prepare_context_input(x, self.context_mode)
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """Build seven internal heads from float32 model input.
 
-        x = self.input_proj(x)
-        x = self.pos(x)
+        Args:
+            features: Tensor [batch, sequence, features]. Sequence and feature
+                dimensions must match the immutable model configuration. NaN
+                values are interpreted according to ``context_mode``.
 
-        enc = self.encoder(
-            x,
-            src_key_padding_mask=key_padding_mask
+        Returns:
+            Tensor [batch, 7]: six public target heads followed by the private
+            Gaussian return scale. Probability heads remain logits here.
+        """
+
+        if features.ndim != 3:
+            raise ValueError("features must have shape [batch, sequence, features]")
+        if features.shape[1] != self.seq_len:
+            raise ValueError("sequence length differs from model configuration")
+        if features.shape[2] != self.input_dim:
+            raise ValueError("feature dimension differs from model configuration")
+        if features.dtype != torch.float32:
+            raise ValueError("features must use float32")
+
+        prepared_context = prepare_context_input(
+            features,
+            self.context_mode,
         )
 
-        last_unmasked_indices = _last_unmasked_indices(key_padding_mask)
+        encoded_features = self.input_proj(prepared_context.features)
+        encoded_features = self.pos(encoded_features)
 
-        batch_idx = torch.arange(x.size(0), device=x.device)
+        enc = self.encoder(
+            encoded_features,
+            src_key_padding_mask=prepared_context.key_padding_mask
+        )
+
+        last_unmasked_indices = _last_unmasked_indices(
+            prepared_context.key_padding_mask
+        )
+
+        batch_idx = torch.arange(
+            encoded_features.size(0),
+            device=encoded_features.device,
+        )
         last_valid = enc[batch_idx, last_unmasked_indices]
 
         return self.head(last_valid)
 
 
-def public_predictions(output: torch.Tensor) -> torch.Tensor:
+def public_predictions(model_output: torch.Tensor) -> torch.Tensor:
     """Convert the worker's seven-head output to the six target-space values."""
 
-    if output.ndim != 2 or output.shape[1] != 7:
+    if model_output.ndim != 2 or model_output.shape[1] != 7:
         raise ValueError("model output must have shape [rows, 7]")
     return torch.stack(
         (
-            output[:, 0],
-            output[:, 1],
-            torch.sigmoid(output[:, 2]),
-            torch.sigmoid(output[:, 3]),
-            output[:, 4],
-            torch.sigmoid(output[:, 5]),
+            model_output[:, 0],
+            model_output[:, 1],
+            torch.sigmoid(model_output[:, 2]),
+            torch.sigmoid(model_output[:, 3]),
+            model_output[:, 4],
+            torch.sigmoid(model_output[:, 5]),
         ),
         dim=1,
     )

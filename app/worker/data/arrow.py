@@ -1,73 +1,164 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+from types import TracebackType
+from typing import TYPE_CHECKING, BinaryIO, Protocol, Self, cast
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.flight.v4.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     canonical_prediction_schema,
     validate_target_space_values,
 )
-from app.worker.runtime.checkpoints.atomic import atomic_output_path
+from app.worker.checkpoints.atomic import atomic_output_path
+from app.worker.data.tensors import TrainingBatch
 
 if TYPE_CHECKING:
     import torch
 
 FRAME_HEADER_BYTES = 8
+DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024
 FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
-def table_to_tensors(table):
-    source_values, target_values = _validated_arrow_columns(
+class _NumpyConvertible(Protocol):
+    def to_numpy(self, *, zero_copy_only: bool) -> np.ndarray: ...
+
+
+class _FlatArray(_NumpyConvertible, Protocol):
+    def is_null(self) -> _NumpyConvertible: ...
+
+
+class _ListArray(Protocol):
+    def __len__(self) -> int: ...
+
+    @property
+    def offsets(self) -> _NumpyConvertible: ...
+
+    def is_null(self) -> _NumpyConvertible: ...
+
+    def flatten(self) -> _FlatArray: ...
+
+
+class _ChunkedArray(Protocol):
+    @property
+    def chunks(self) -> Sequence[_ListArray]: ...
+
+
+class _ArrowTable(Protocol):
+    @property
+    def schema(self) -> pa.Schema: ...
+
+    @property
+    def num_rows(self) -> int: ...
+
+    def column(self, name: str | int) -> _ChunkedArray: ...
+
+
+class _ArrowReader(Protocol):
+    @property
+    def schema(self) -> pa.Schema: ...
+
+    def read_all(self) -> pa.Table: ...
+
+
+class _ArrowWriter(Protocol):
+    def __enter__(self) -> Self: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
+
+    def write_table(self, table: pa.Table) -> None: ...
+
+
+class _ListType(Protocol):
+    @property
+    def value_type(self) -> pa.DataType: ...
+
+    @property
+    def list_size(self) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedArrowColumns:
+    features: np.ndarray
+    targets: np.ndarray | None
+
+
+def table_to_tensors(table: pa.Table) -> TrainingBatch:
+    columns = _validated_arrow_columns(
         table,
         require_target=True,
     )
-    X = _list_values_to_tensor(source_values)
-    Y = _list_values_to_tensor(target_values)
+    features = _list_values_to_tensor(columns.features)
+    if columns.targets is None:
+        raise AssertionError("fit Arrow validation did not return targets")
+    targets = _list_values_to_tensor(columns.targets)
 
-    return X, Y
-
-
-def table_to_source_tensor(table):
-    source_values, _ = _validated_arrow_columns(table, require_target=False)
-    return _list_values_to_tensor(source_values)
+    return TrainingBatch(features=features, targets=targets)
 
 
-def validate_arrow_table(table, require_target: bool = False):
+def table_to_source_tensor(table: pa.Table) -> torch.Tensor:
+    columns = _validated_arrow_columns(table, require_target=False)
+    return _list_values_to_tensor(columns.features)
+
+
+def validate_arrow_table(
+    table: pa.Table,
+    require_target: bool = False,
+) -> None:
     _validated_arrow_columns(table, require_target=require_target)
 
 
-def _validated_arrow_columns(table, require_target: bool):
-    source_values = _validate_list_column(table, "src", allow_nan=True)
+def _validated_arrow_columns(
+    table: pa.Table,
+    require_target: bool,
+) -> _ValidatedArrowColumns:
+    typed_table = cast(_ArrowTable, table)
+    source_values = _validate_list_column(
+        typed_table,
+        "src",
+        allow_nan=True,
+    )
     target_values = None
     if require_target:
         target_values = _validate_list_column(
-            table,
+            typed_table,
             "tgt",
             allow_nan=False,
             expected_width=TARGET_WIDTH,
         )
         _validate_target_values(target_values)
 
-    return source_values, target_values
+    return _ValidatedArrowColumns(
+        features=source_values,
+        targets=target_values,
+    )
 
 
-def read_arrow(path):
+def read_arrow(
+    path: str | os.PathLike[str],
+) -> TrainingBatch:
     with open(path, "rb") as f:
-        reader = ipc.RecordBatchFileReader(f)
+        reader = cast(_ArrowReader, ipc.RecordBatchFileReader(f))
         table = reader.read_all()
 
     return table_to_tensors(table)
 
 
-def read_source_arrow(path):
+def read_source_arrow(path: str | os.PathLike[str]) -> torch.Tensor:
     with open(path, "rb") as f:
-        reader = ipc.RecordBatchFileReader(f)
+        reader = cast(_ArrowReader, ipc.RecordBatchFileReader(f))
         table = reader.read_all()
 
     return table_to_source_tensor(table)
@@ -78,7 +169,7 @@ def read_committed_fit_arrow(
     *,
     expected_rows: int,
     source_width: int,
-):
+) -> TrainingBatch:
     """Replay one service-validated immutable fit artifact.
 
     The service validates values before durable commit and the worker verifies
@@ -93,9 +184,9 @@ def read_committed_fit_arrow(
         source_width=source_width,
         require_target=True,
     )
-    return (
-        _committed_column_to_tensor(table, "src", source_width),
-        _committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
+    return TrainingBatch(
+        features=_committed_column_to_tensor(table, "src", source_width),
+        targets=_committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
     )
 
 
@@ -104,7 +195,7 @@ def read_committed_source_arrow(
     *,
     expected_rows: int,
     source_width: int,
-):
+) -> torch.Tensor:
     """Read one service-validated immutable prediction input artifact."""
 
     table = _read_committed_table(
@@ -122,7 +213,7 @@ def _read_committed_table(
     expected_rows: int,
     source_width: int,
     require_target: bool,
-):
+) -> _ArrowTable:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
     if source_width <= 0:
@@ -134,12 +225,12 @@ def _read_committed_table(
     )
 
     with open(path, "rb") as source:
-        reader = ipc.RecordBatchFileReader(source)
+        reader = cast(_ArrowReader, ipc.RecordBatchFileReader(source))
         if not reader.schema.equals(expected_schema, check_metadata=False):
             raise ValueError(
                 "Committed Arrow physical schema differs from the worker contract"
             )
-        table = reader.read_all()
+        table = cast(_ArrowTable, reader.read_all())
 
     if table.num_rows != expected_rows:
         raise ValueError(
@@ -149,7 +240,11 @@ def _read_committed_table(
     return table
 
 
-def _committed_column_to_tensor(table, name: str, width: int):
+def _committed_column_to_tensor(
+    table: _ArrowTable,
+    name: str,
+    width: int,
+) -> torch.Tensor:
     values = np.empty((table.num_rows, width), dtype=np.float32)
     row_offset = 0
     for chunk in table.column(name).chunks:
@@ -163,12 +258,12 @@ def _committed_column_to_tensor(table, name: str, width: int):
 
 
 def _validate_list_column(
-    table,
+    table: _ArrowTable,
     name: str,
     *,
     allow_nan: bool,
     expected_width: int | None = None,
-):
+) -> np.ndarray:
     column_index = table.schema.get_field_index(name)
     if column_index < 0:
         raise ValueError(f"Arrow table must contain '{name}' column")
@@ -183,13 +278,14 @@ def _validate_list_column(
             f"Arrow column '{name}' must be a list<float32> or list<float64> column"
         )
 
-    if column_type.value_type not in (pa.float32(), pa.float64()):
+    list_type = cast(_ListType, column_type)
+    if list_type.value_type not in (pa.float32(), pa.float64()):
         raise ValueError(
             f"Arrow column '{name}' must be a list<float32> or list<float64> column"
         )
 
-    width = column_type.list_size if pa.types.is_fixed_size_list(column_type) else None
-    chunks = []
+    width = list_type.list_size if pa.types.is_fixed_size_list(column_type) else None
+    chunks: list[tuple[int, int, np.ndarray]] = []
     row_offset = 0
 
     for chunk in table.column(column_index).chunks:
@@ -214,6 +310,9 @@ def _validate_list_column(
                     f"Arrow column '{name}' has inconsistent list length at row "
                     f"{row_offset + inconsistent + 1}"
                 )
+
+        if width is None:
+            raise ValueError(f"Arrow column '{name}' list width is unavailable")
 
         flat = chunk.flatten()
         null_value = _first_true(flat.is_null().to_numpy(zero_copy_only=False))
@@ -260,29 +359,32 @@ def _validate_list_column(
         empty_width = width if width is not None else expected_width
         return np.empty((0, empty_width or 0), dtype=np.float32)
 
+    if width is None:
+        raise ValueError(f"Arrow column '{name}' list width is unavailable")
     values = np.empty((table.num_rows, width), dtype=np.float32)
     for offset, rows, flat_values in chunks:
         values[offset:offset + rows] = flat_values.reshape(rows, width)
     return values
 
 
-def _list_values_to_tensor(values):
+def _list_values_to_tensor(values: np.ndarray) -> torch.Tensor:
     import torch
 
-    return torch.from_numpy(values)
+    # PyTorch leaves the ndarray parameter unknown in its public type surface.
+    return torch.from_numpy(values)  # pyright: ignore[reportUnknownMemberType]
 
 
-def _validate_target_values(values):
+def _validate_target_values(values: np.ndarray) -> None:
     validate_target_space_values(values)
 
 
-def _first_true(values) -> int | None:
+def _first_true(values: np.ndarray) -> int | None:
     indices = np.flatnonzero(values)
     return None if indices.size == 0 else int(indices[0])
 
 
-def _read_exact(stream, size):
-    chunks = []
+def _read_exact(stream: BinaryIO, size: int) -> bytes:
+    chunks: list[bytes] = []
     remaining = size
 
     while remaining > 0:
@@ -296,7 +398,10 @@ def _read_exact(stream, size):
     return b"".join(chunks)
 
 
-def iter_framed_arrow(stream, max_frame_bytes=DEFAULT_MAX_FRAME_BYTES):
+def iter_framed_arrow(
+    stream: BinaryIO,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+) -> Iterator[pa.Table]:
     if max_frame_bytes <= 0:
         raise ValueError("max_frame_bytes must be greater than zero")
 
@@ -319,43 +424,56 @@ def iter_framed_arrow(stream, max_frame_bytes=DEFAULT_MAX_FRAME_BYTES):
             )
 
         payload = _read_exact(stream, payload_size)
-        reader = ipc.RecordBatchFileReader(pa.BufferReader(payload))
+        reader = cast(
+            _ArrowReader,
+            ipc.RecordBatchFileReader(pa.BufferReader(payload)),
+        )
 
         yield reader.read_all()
 
 
 def write_arrow(
     path: str,
-    preds: torch.Tensor,
+    predictions: torch.Tensor,
     col_name: str,
     expected_rows: int | None = None,
-):
-    table = predictions_to_table(preds, col_name, expected_rows=expected_rows)
+) -> None:
+    table = predictions_to_table(
+        predictions,
+        col_name,
+        expected_rows=expected_rows,
+    )
 
     with atomic_output_path(path) as temporary_path:
         with pa.OSFile(temporary_path, "wb") as sink:
-            with ipc.new_file(sink, table.schema) as writer:
+            with cast(
+                _ArrowWriter,
+                ipc.new_file(  # pyright: ignore[reportUnknownMemberType]
+                    sink,
+                    cast(_ArrowTable, table).schema,
+                ),
+            ) as writer:
                 writer.write_table(table)
 
 
 def predictions_to_table(
-    preds: torch.Tensor,
+    predictions: torch.Tensor,
     col_name: str,
     expected_rows: int | None = None,
-):
+) -> pa.Table:
     import torch
 
-    if preds.ndim != 2 or preds.shape[1] != TARGET_WIDTH:
+    if predictions.ndim != 2 or predictions.shape[1] != TARGET_WIDTH:
         raise ValueError(
             f"Predictions must have shape [rows, {TARGET_WIDTH}], "
-            f"got {list(preds.shape)}"
+            f"got {list(predictions.shape)}"
         )
-    if expected_rows is not None and preds.shape[0] != expected_rows:
+    if expected_rows is not None and predictions.shape[0] != expected_rows:
         raise ValueError(
-            f"Predictions row count {preds.shape[0]} does not match input row "
+            f"Predictions row count {predictions.shape[0]} does not match input row "
             f"count {expected_rows}"
         )
-    arr = preds.detach().cpu().to(dtype=torch.float32).numpy()
+    arr = predictions.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
     validate_target_space_values(arr)
@@ -366,7 +484,7 @@ def predictions_to_table(
     return pa.Table.from_arrays([column], schema=schema)
 
 
-def empty_predictions_table(col_name: str):
+def empty_predictions_table(col_name: str) -> pa.Table:
     schema = canonical_prediction_schema(col_name)
     return pa.Table.from_arrays(
         [pa.array([], type=schema.field(0).type)],
@@ -374,9 +492,15 @@ def empty_predictions_table(col_name: str):
     )
 
 
-def write_framed_arrow(stream, table):
+def write_framed_arrow(stream: BinaryIO, table: pa.Table) -> None:
     sink = pa.BufferOutputStream()
-    with ipc.new_file(sink, table.schema) as writer:
+    with cast(
+        _ArrowWriter,
+        ipc.new_file(  # pyright: ignore[reportUnknownMemberType]
+            sink,
+            cast(_ArrowTable, table).schema,
+        ),
+    ) as writer:
         writer.write_table(table)
 
     payload = sink.getvalue()

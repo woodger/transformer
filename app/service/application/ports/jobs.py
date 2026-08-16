@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from app.service.domain.job import ErrorCode, ExecutionState
+from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
@@ -35,10 +36,10 @@ class JobRepository(Protocol):
     def update_progress(
         self,
         job_id: str,
-        progress: dict,
+        progress: JsonObject,
         *,
         attempt_id: str,
-    ) -> dict: ...
+    ) -> Mapping[str, object]: ...
 
     def finish_attempt(
         self,
@@ -50,7 +51,7 @@ class JobRepository(Protocol):
         error_code: ErrorCode | None = None,
         error_message: str | None = None,
         exit_code: int | None = None,
-    ) -> dict: ...
+    ) -> Mapping[str, object]: ...
 
     def latest_recovery_checkpoint(
         self,
@@ -74,7 +75,7 @@ class JobRepository(Protocol):
         error_code: ErrorCode,
         error_message: str,
         exit_code: int | None = None,
-    ) -> dict: ...
+    ) -> Mapping[str, object]: ...
 
 
 __all__ = ["JobRepository"]

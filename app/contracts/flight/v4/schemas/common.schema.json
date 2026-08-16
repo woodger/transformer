@@ -3,7 +3,11 @@
   "$id": "https://transformer.local/contracts/flight/v4/common.schema.json",
   "title": "Transformer Flight v4 common definitions",
   "$defs": {
-    "uuid": {"type": "string", "format": "uuid"},
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "label": {
       "type": "string",

@@ -1,0 +1,55 @@
+{
+  "index_patterns": ["metrics-points-v1"],
+  "priority": 300,
+  "template": {
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "schema": {"type": "keyword"},
+        "eventId": {"type": "keyword"},
+        "documentSha256": {"type": "keyword"},
+        "deploymentId": {"type": "keyword"},
+        "runId": {"type": "keyword"},
+        "source": {"type": "keyword"},
+        "eventKind": {"type": "keyword"},
+        "transformerJobId": {"type": "keyword"},
+        "attemptId": {"type": "keyword"},
+        "attempt": {"type": "integer"},
+        "modelRef": {"type": "keyword"},
+        "frame": {"type": "integer"},
+        "epoch": {"type": "integer"},
+        "step": {"type": "long"},
+        "lossStage": {"type": "integer"},
+        "targetIndex": {"type": "integer"},
+        "dataContractSha256": {"type": "keyword"},
+        "objectiveConfigSha256": {"type": "keyword"},
+        "checkpointFormat": {"type": "keyword"},
+        "transformerVersion": {"type": "keyword"},
+        "transformerGitCommit": {"type": "keyword"},
+        "metric": {
+          "type": "object",
+          "dynamic": "strict",
+          "properties": {
+            "name": {"type": "keyword"},
+            "value": {"type": "double"},
+            "unit": {"type": "keyword"}
+          }
+        },
+        "attributes": {
+          "type": "object",
+          "dynamic": "strict",
+          "properties": {
+            "checkpointBest": {"type": "boolean"},
+            "shouldStop": {"type": "boolean"},
+            "bestSelectionScore": {"type": "double"}
+          }
+        }
+      }
+    }
+  },
+  "_meta": {
+    "contract": "inventory.metrics.point.v1",
+    "owner": "transformer"
+  }
+}
