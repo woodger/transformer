@@ -132,8 +132,6 @@ cases, которые определяют операции с access tokens. Al
   OpenSearch projection, golden identity и strict index templates;
 - `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
   counters и статистика training targets;
-- readers v1 сохраняются только для уже зафиксированных outbox entries и не
-  используются при публикации новых моделей;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
   `attempt` остаётся положительным job-local ordinal;

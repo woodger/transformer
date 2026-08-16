@@ -19,6 +19,7 @@ from app.service.adapters.outbound.postgres.models import (
     MetricsOutboxEntry,
     ModelAlias,
     ModelMetricsArtifact,
+    ModelRunSummaryArtifact,
     PublishedModel,
 )
 from app.service.adapters.outbound.postgres.published_models import (
@@ -75,6 +76,7 @@ def _seed_model(
             ))
         if outbox_status is not None:
             job_id = str(uuid.uuid4())
+            attempt_id = str(uuid.uuid4())
             session.add(ModelMetricsArtifact(
                 model_ref=model_ref,
                 format="transformer.training-metrics.v2",
@@ -84,9 +86,23 @@ def _seed_model(
                 sha256="b" * 64,
                 row_count=1,
                 job_id=job_id,
-                attempt_id=str(uuid.uuid4()),
+                attempt_id=attempt_id,
                 attempt=1,
-                application_version="0.1.10",
+                application_version="0.1.12",
+                git_commit="0" * 40,
+                created_at=now,
+            ))
+            session.add(ModelRunSummaryArtifact(
+                model_ref=model_ref,
+                format="transformer.fit-run-summary.v2",
+                media_type="application/json",
+                relative_path=f"{model_ref}/run-summary.json",
+                bytes=10,
+                sha256="c" * 64,
+                job_id=job_id,
+                attempt_id=attempt_id,
+                attempt=1,
+                application_version="0.1.12",
                 git_commit="0" * 40,
                 created_at=now,
             ))
@@ -151,6 +167,7 @@ def test_model_deletion_requires_explicit_metrics_discard_and_keeps_tombstone(
     with postgres_database.session() as session:
         assert session.get(PublishedModel, model_ref) is not None
         assert session.get(ModelMetricsArtifact, model_ref) is None
+        assert session.get(ModelRunSummaryArtifact, model_ref) is None
         assert session.get(MetricsOutboxEntry, model_ref) is None
 
 

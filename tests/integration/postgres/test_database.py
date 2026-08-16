@@ -213,7 +213,7 @@ def test_fit_run_summary_migration_refuses_data_losing_rollback(
                         sha256, job_id, attempt_id, attempt,
                         application_version, git_commit, created_at
                     ) VALUES (
-                        :model_ref, 'transformer.fit-run-summary.v1',
+                        :model_ref, 'transformer.fit-run-summary.v2',
                         'application/json', 'models/test/run-summary.json', 1,
                         :sha256, :job_id, :attempt_id, 1,
                         '0.1.12', :git_commit, now()

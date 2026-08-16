@@ -67,9 +67,10 @@ values и равенство `count == inputRows` до terminal transaction.
 - outbox projection `inventory.metrics.v3`.
 
 Новые документы доставляются в обычные индексы `metrics-points-v2`,
-`metrics-artifacts-v2` и `metrics-runs-v2`. Readers v1 остаются только для
-доставки уже зафиксированных outbox entries. Новые fit runs всегда используют
-v2 artifacts и projection v3.
+`metrics-artifacts-v2` и `metrics-runs-v2`. Экспериментальные артефакты v1,
+записи outbox и индексы удаляются при атомарном переключении; слой
+совместимости для них не сохраняется. Все запуски fit используют артефакты v2
+и проекцию v3.
 
 Epoch metric и recovery checkpoint по-прежнему фиксируются одной транзакцией
 PostgreSQL. Target statistics входят в terminal summary; summary metadata,
@@ -78,8 +79,8 @@ model generation, outbox и `SUCCEEDED` фиксируются существу�
 недоступность не влияет на fit.
 
 Публичный Flight v4 и PostgreSQL schema не меняются. Перед развёртыванием
-worker v6 активные fit jobs следует завершить или отменить: checkpoint-aligned
-строки v1 и v2 нельзя смешивать в одном immutable epoch artifact.
+worker v6 активные fit jobs следует завершить или отменить, а созданные
+экспериментальной версией модели и телеметрию удалить.
 
 ## Последствия
 

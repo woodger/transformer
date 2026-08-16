@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-16
+
 ### Added
 
 - Успешный fit публикует model-owned `run-summary.json` v2 с lifecycle
@@ -31,9 +33,14 @@
 - Нефинитная gradient norm одного batch больше не уничтожает статистику
   остальных batch-ей epoch. `globalTrainingStep` по-прежнему означает число
   завершённых training batches.
+- Механизмы чтения экспериментальных metrics v1 и маршрутизация прежних
+  записей outbox удалены; текущий runtime поддерживает только артефакты v2 и
+  проекцию `inventory.metrics.v3`.
 
 ### Fixed
 
+- Штатное удаление модели теперь очищает metadata model-owned
+  `run-summary.json` вместе с checkpoint, epoch metrics и outbox.
 - Conflict verification использует поддерживаемую OpenSearch форму `_mget`
   `docs` с per-document `_source`; повторная доставка идентичных metrics
   documents больше не блокируется ответом HTTP 400.
@@ -511,7 +518,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/woodger/transformer/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/woodger/transformer/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/woodger/transformer/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/woodger/transformer/compare/v0.1.8...v0.1.9

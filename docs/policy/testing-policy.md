@@ -121,7 +121,7 @@ blocker.
 
 ```text
 tests/unit/{cli,local,service,worker}
-tests/contract/{flight_v4,worker_v6,metrics_v1,metrics_v2,metrics_fit_run_v1,metrics_fit_run_v2}
+tests/contract/{flight_v4,worker_v6,metrics_v2,metrics_fit_run_v2}
 tests/integration/{flight,postgres,worker_process}
 tests/architecture
 tests/support

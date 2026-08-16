@@ -82,11 +82,8 @@ Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Н�
 rollover policy: проверка повторного `create` и `_mget` требует одного concrete
 index на каждую versioned projection.
 
-При обновлении не удаляйте существующие v1 indices, пока в PostgreSQL остаются
-недоставленные outbox entries `inventory.metrics.v1` или
-`inventory.metrics.v2`: publisher маршрутизирует такие записи в прежние
-indices. Новые модели создают только projection `inventory.metrics.v3` и
-записываются в v2 indices.
+Transformer публикует только projection `inventory.metrics.v3` в v2 indices.
+Поддержки прежних экспериментальных артефактов, записей outbox и индексов нет.
 
 ## Настроить Transformer
 

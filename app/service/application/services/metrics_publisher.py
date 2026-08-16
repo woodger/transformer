@@ -5,6 +5,8 @@ import threading
 import time
 from collections.abc import Callable
 
+from app.contracts.metrics.fit_run.v2 import RUN_INDEX
+from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.application.ports.metrics import (
     BlockedMetricsDeliveryError,
     MetricsArtifactProjection,
@@ -103,7 +105,7 @@ class MetricsPublisher:
             if cursor < len(points):
                 chunk = points[cursor:cursor + _MAX_BULK_DOCUMENTS]
                 self.sink.create_documents(
-                    self.projection.point_index(entry),
+                    POINT_INDEX,
                     chunk,
                     id_field="eventId",
                 )
@@ -119,7 +121,7 @@ class MetricsPublisher:
                 deployment_id=self.deployment_id,
             )
             self.sink.create_documents(
-                self.projection.artifact_index(entry),
+                ARTIFACT_INDEX,
                 (artifact,),
                 id_field="artifactId",
             )
@@ -127,19 +129,17 @@ class MetricsPublisher:
                 entry,
                 deployment_id=self.deployment_id,
             )
-            if run_summary is not None:
-                self.sink.create_documents(
-                    self.projection.run_summary_index(entry),
-                    (run_summary,),
-                    id_field="summaryId",
-                )
+            self.sink.create_documents(
+                RUN_INDEX,
+                (run_summary,),
+                id_field="summaryId",
+            )
             if self.outbox.complete(
                 entry.artifact.model_ref,
                 expected_cursor=cursor,
             ):
                 self.metrics.add("metricsArtifactsDelivered")
-                if run_summary is not None:
-                    self.metrics.add("metricsRunSummariesDelivered")
+                self.metrics.add("metricsRunSummariesDelivered")
                 self.logger.event(
                     "metrics.artifact.delivered",
                     modelRef=entry.artifact.model_ref,

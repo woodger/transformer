@@ -3,12 +3,7 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v1 import RUN_INDEX as LEGACY_RUN_INDEX
 from app.contracts.metrics.fit_run.v2 import RUN_INDEX
-from app.contracts.metrics.v1 import (
-    ARTIFACT_INDEX as LEGACY_ARTIFACT_INDEX,
-    POINT_INDEX as LEGACY_POINT_INDEX,
-)
 from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.metrics_projection import (
@@ -36,7 +31,7 @@ from tests.support.flight_v4_helpers import (
 def _entry() -> MetricsOutboxRecord:
     artifact = ModelMetricsArtifactRecord(
         model_ref="mdl_" + "1" * 32,
-        format="transformer.training-metrics.v1",
+        format="transformer.training-metrics.v2",
         media_type="application/x-ndjson",
         relative_path="mdl/metrics.jsonl",
         byte_count=100,
@@ -51,7 +46,7 @@ def _entry() -> MetricsOutboxRecord:
     )
     return MetricsOutboxRecord(
         artifact=artifact,
-        projection_version="inventory.metrics.v1",
+        projection_version="inventory.metrics.v3",
         status="PENDING",
         cursor=0,
         attempts=0,
@@ -69,37 +64,15 @@ class _Logger:
 
 
 class _Projection:
-    def __init__(self, point_count: int, *, with_run_summary: bool = False) -> None:
+    def __init__(self, point_count: int) -> None:
         self._points = tuple(
             {"eventId": f"{index:064x}"}
             for index in range(point_count)
         )
-        self._with_run_summary = with_run_summary
 
     def points(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
         return self._points
-
-    def point_index(self, entry):
-        return (
-            POINT_INDEX
-            if entry.projection_version == "inventory.metrics.v3"
-            else LEGACY_POINT_INDEX
-        )
-
-    def artifact_index(self, entry):
-        return (
-            ARTIFACT_INDEX
-            if entry.projection_version == "inventory.metrics.v3"
-            else LEGACY_ARTIFACT_INDEX
-        )
-
-    def run_summary_index(self, entry):
-        return (
-            RUN_INDEX
-            if entry.projection_version == "inventory.metrics.v3"
-            else LEGACY_RUN_INDEX
-        )
 
     def artifact_document(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
@@ -107,9 +80,7 @@ class _Projection:
 
     def run_summary_document(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
-        if self._with_run_summary:
-            return {"summaryId": "e" * 64}
-        return None
+        return {"summaryId": "e" * 64}
 
 
 class _Outbox:
@@ -190,9 +161,10 @@ def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
         publisher.shutdown(2.0)
 
     assert sink.calls == [
-        (LEGACY_POINT_INDEX, 500, "eventId"),
-        (LEGACY_POINT_INDEX, 1, "eventId"),
-        (LEGACY_ARTIFACT_INDEX, 1, "artifactId"),
+        (POINT_INDEX, 500, "eventId"),
+        (POINT_INDEX, 1, "eventId"),
+        (ARTIFACT_INDEX, 1, "artifactId"),
+        (RUN_INDEX, 1, "summaryId"),
     ]
     assert outbox.maintenance_runs >= 1
 
@@ -220,33 +192,6 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
 
     assert outbox.retry_delay == 1.0
     assert outbox.entry.cursor == 0
-
-
-def test_current_projection_delivers_one_terminal_run_summary():
-    entry = replace(
-        _entry(),
-        projection_version="inventory.metrics.v3",
-    )
-    outbox = _Outbox(entry)
-    sink = _Sink()
-    publisher = MetricsPublisher(
-        outbox,
-        _Projection(1, with_run_summary=True),
-        sink,
-        deployment_id="hp800g9.home",
-        logger=_Logger(),
-        metrics=OperationalMetrics(),
-    ).start()
-    try:
-        assert outbox.delivered.wait(2.0)
-    finally:
-        publisher.shutdown(2.0)
-
-    assert sink.calls == [
-        (POINT_INDEX, 1, "eventId"),
-        (ARTIFACT_INDEX, 1, "artifactId"),
-        (RUN_INDEX, 1, "summaryId"),
-    ]
 
 
 def test_current_projection_verifies_immutable_run_summary(tmp_path):
@@ -304,7 +249,6 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         deployment_id="hp800g9.home",
     )
 
-    assert document is not None
     assert points
     assert document["runId"] == entry.artifact.job_id
     assert document["modelRef"] == entry.artifact.model_ref
