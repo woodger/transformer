@@ -75,11 +75,39 @@ def test_configuration_accepts_trusted_lan_http_without_security_settings(
         deployment_id="hp800g9.home",
     )
 
-    with pytest.raises(ValueError, match="must not configure"):
+
+def test_configuration_accepts_authenticated_http_without_ca(tmp_path):
+    values = {
+        "OPENSEARCH_ENDPOINT": "http://hp260g9.home:9200",
+        "OPENSEARCH_USERNAME": "admin",
+        "OPENSEARCH_PASSWORD": "secret",
+        "OPENSEARCH_DEPLOYMENT_ID": "hp800g9.home",
+    }
+
+    config = load_opensearch_metrics_config(
+        environ=values,
+        env_file=tmp_path / "absent.env",
+    )
+
+    assert config == OpenSearchMetricsConfig(
+        endpoint="http://hp260g9.home:9200",
+        deployment_id="hp800g9.home",
+        username="admin",
+        password="secret",
+    )
+    assert "secret" not in repr(config)
+
+    with pytest.raises(ValueError, match="both username and password"):
         OpenSearchMetricsConfig(
             endpoint="http://hp260g9.home:9200",
             deployment_id="hp800g9.home",
             username="unexpected",
+        )
+    with pytest.raises(ValueError, match="must not configure a CA"):
+        OpenSearchMetricsConfig(
+            endpoint="http://hp260g9.home:9200",
+            deployment_id="hp800g9.home",
+            ca_file="unexpected.pem",
         )
 
 
@@ -119,8 +147,18 @@ def test_configuration_preserves_authenticated_https_profile(
         )
 
 
-def test_http_client_omits_authentication_and_uses_plain_connection(
+@pytest.mark.parametrize(
+    ("username", "password", "authorization"),
+    (
+        (None, None, None),
+        ("admin", "secret", "Basic YWRtaW46c2VjcmV0"),
+    ),
+)
+def test_http_client_uses_plain_connection_with_optional_authentication(
     monkeypatch,
+    username,
+    password,
+    authorization,
 ):
     requests = []
     connections = []
@@ -162,6 +200,8 @@ def test_http_client_omits_authentication_and_uses_plain_connection(
     client = OpenSearchMetricsClient(OpenSearchMetricsConfig(
         endpoint="http://hp260g9.home:9200",
         deployment_id="hp800g9.home",
+        username=username,
+        password=password,
     ))
 
     client.create_documents(
@@ -172,9 +212,10 @@ def test_http_client_omits_authentication_and_uses_plain_connection(
 
     assert connections == [("hp260g9.home", 9200, 3.0)]
     assert requests[0][0:2] == ("POST", "/_bulk")
-    assert requests[0][3] == {
-        "Content-Type": "application/x-ndjson",
-    }
+    expected_headers = {"Content-Type": "application/x-ndjson"}
+    if authorization is not None:
+        expected_headers["Authorization"] = authorization
+    assert requests[0][3] == expected_headers
 
 
 def test_bulk_uses_create_and_accepts_only_identical_conflicts():
@@ -211,6 +252,14 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
         }
     }
     assert requests[1][1] == "/metrics-points-v1/_mget"
+    assert json.loads(requests[1][2]) == {
+        "docs": [
+            {
+                "_id": identifier,
+                "_source": ["documentSha256"],
+            }
+        ]
+    }
 
 
 def test_conflicting_document_with_different_digest_blocks_delivery():

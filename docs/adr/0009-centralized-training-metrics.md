@@ -105,10 +105,12 @@ Templates и обычные versioned indices `metrics-points-v1` и
 ## Подключение
 
 Текущее развёртывание находится в полностью доверенной локальной сети и
-использует HTTP без TLS и authentication. Runtime-конфигурация содержит только
-OpenSearch endpoint и стабильный `deploymentId`. Templates и indices
-по-прежнему создаёт оператор до запуска publisher-а; publisher выполняет только
-Bulk create и exact `_mget` для двух metrics indices.
+использует HTTP без REST TLS, но с существующей OpenSearch Basic Auth.
+Runtime-конфигурация содержит endpoint, полную пару username/password и
+стабильный `deploymentId`; CA для HTTP не задаётся. Анонимный HTTP остаётся
+допустимым профилем для доверенных deployments. Templates и indices по-прежнему
+создаёт оператор до запуска publisher-а; publisher выполняет только Bulk create
+и exact `_mget` для двух metrics indices.
 
 Transformer сохраняет прежний HTTPS-профиль для других сред, но он не является
 частью текущего deployment. Arrow data, stack traces и filesystem paths не

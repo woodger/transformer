@@ -9,10 +9,16 @@
 
 ### Changed
 
-- OpenSearch publisher поддерживает trusted-LAN HTTP-профиль без credentials и
-  CA; достаточно `OPENSEARCH_ENDPOINT` и `OPENSEARCH_DEPLOYMENT_ID`. Оба metrics
-  index template задают `number_of_replicas: 0` для текущего single-node
-  deployment. Строгий HTTPS-профиль сохранён.
+- OpenSearch publisher поддерживает trusted-LAN HTTP как без authentication,
+  так и с полной парой Basic Auth credentials; CA для HTTP запрещён. Оба
+  metrics index template задают `number_of_replicas: 0` для текущего
+  single-node deployment. Строгий HTTPS-профиль сохранён.
+
+### Fixed
+
+- Conflict verification использует поддерживаемую OpenSearch форму `_mget`
+  `docs` с per-document `_source`; повторная доставка идентичных metrics
+  documents больше не блокируется ответом HTTP 400.
 
 ## [0.1.11] - 2026-08-16
 

@@ -52,14 +52,20 @@ class OpenSearchMetricsConfig:
             raise ValueError("OPENSEARCH_ENDPOINT has an invalid port") from exc
         if _DEPLOYMENT_ID.fullmatch(self.deployment_id) is None:
             raise ValueError("OPENSEARCH_DEPLOYMENT_ID is invalid")
-        security_values = (self.username, self.password, self.ca_file)
+        credentials = (self.username, self.password)
         if parsed.scheme == "http":
-            if any(security_values):
+            if self.ca_file is not None:
                 raise ValueError(
-                    "HTTP OpenSearch must not configure credentials or CA"
+                    "HTTP OpenSearch must not configure a CA file"
+                )
+            if any(value is not None for value in credentials) and not all(
+                credentials
+            ):
+                raise ValueError(
+                    "HTTP OpenSearch requires both username and password"
                 )
             return
-        if not all(security_values):
+        if not all((*credentials, self.ca_file)):
             raise ValueError(
                 "HTTPS OpenSearch requires username, password and CA file"
             )

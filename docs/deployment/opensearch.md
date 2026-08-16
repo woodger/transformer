@@ -13,7 +13,7 @@ templates — в
 http://hp260g9.home:9200
 ```
 
-TLS, authentication, пользователи и роли для него не настраиваются.
+REST TLS отключён, OpenSearch требует существующую Basic Auth.
 
 ## Подготовить templates и индексы
 
@@ -26,8 +26,11 @@ TLS, authentication, пользователи и роли для него не �
 
 ```bash
 search_endpoint=http://hp260g9.home:9200
+read -r -s -p 'OpenSearch password: ' OPENSEARCH_PASSWORD
+printf '\n'
 
 curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
   "$search_endpoint/_index_template/metrics-points-v1" \
@@ -35,6 +38,7 @@ curl --fail --silent --show-error \
   @app/contracts/metrics/v1/opensearch/metrics-points-v1.template.json
 
 curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
   "$search_endpoint/_index_template/metrics-artifacts-v1" \
@@ -42,12 +46,16 @@ curl --fail --silent --show-error \
   @app/contracts/metrics/v1/opensearch/metrics-artifacts-v1.template.json
 
 curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
   "$search_endpoint/metrics-points-v1"
 
 curl --fail --silent --show-error \
+  --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
   "$search_endpoint/metrics-artifacts-v1"
+
+unset OPENSEARCH_PASSWORD
 ```
 
 Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Не
@@ -61,12 +69,15 @@ index на каждую versioned projection.
 
 ```dotenv
 OPENSEARCH_ENDPOINT=http://hp260g9.home:9200
+OPENSEARCH_USERNAME=admin
+OPENSEARCH_PASSWORD=<пароль OpenSearch>
 OPENSEARCH_DEPLOYMENT_ID=hp800g9.home
 ```
 
-Для HTTP-профиля не задавайте `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` и
-`OPENSEARCH_CA_FILE`. `deploymentId` различает установки Transformer в общей
-платформе и участвует в semantic identity каждого point.
+HTTP-профиль допускает либо отсутствие credentials, либо полную пару
+`OPENSEARCH_USERNAME`/`OPENSEARCH_PASSWORD`; CA для него не задаётся. Текущий
+deployment использует Basic Auth. `deploymentId` различает установки
+Transformer в общей платформе и участвует в semantic identity каждого point.
 
 Версия приложения и Git commit записываются в каждый artifact и point. При
 развёртывании из Git checkout commit определяется автоматически. Если каталог
