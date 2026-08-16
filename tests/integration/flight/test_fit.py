@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
+import pytest
 
-from app.contracts.worker.v5.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.worker.v6.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -266,7 +267,7 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
         assert pending is not None
         assert pending.artifact.model_ref == status["results"]["modelRef"]
         assert pending.artifact.job_id == job_id
-        assert pending.projection_version == "inventory.metrics.v2"
+        assert pending.projection_version == "inventory.metrics.v3"
         assert pending.run_summary is not None
         backlog_entries, backlog_bytes, backlog_age = outbox.backlog()
         assert backlog_entries == 1
@@ -286,10 +287,15 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
             for line in metrics_bytes.decode("utf-8").splitlines()
         ]
         assert len(metrics_rows) == pending.artifact.row_count == 1
-        assert metrics_rows[0]["format"] == "transformer.training-metrics.v1"
+        assert metrics_rows[0]["format"] == "transformer.training-metrics.v2"
         assert metrics_rows[0]["jobId"] == job_id
         assert metrics_rows[0]["modelRef"] == status["results"]["modelRef"]
         assert metrics_rows[0]["epoch"] == 1
+        assert metrics_rows[0]["trainingBatchesCompleted"] == 1
+        assert metrics_rows[0]["optimizerUpdatesApplied"] == 1
+        assert metrics_rows[0]["optimizerUpdatesSkipped"] == 0
+        assert metrics_rows[0]["finiteGradientBatches"] == 1
+        assert metrics_rows[0]["nonFiniteGradientBatches"] == 0
         summary_path = application.spool.model_absolute_path(
             pending.run_summary.relative_path
         )
@@ -298,7 +304,7 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
             pending.run_summary.sha256
         )
         summary = json.loads(summary_bytes)
-        assert summary["format"] == "transformer.fit-run-summary.v1"
+        assert summary["format"] == "transformer.fit-run-summary.v2"
         assert summary["jobId"] == job_id
         assert summary["modelRef"] == status["results"]["modelRef"]
         assert summary["counts"] == {
@@ -308,6 +314,27 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
             "inputRows": 2,
             "inputBytes": first["bytes"] + second["bytes"],
         }
+        assert [item["name"] for item in summary["targetStatistics"]] == [
+            "meanReturn",
+            "sigmaReturn",
+            "probTP",
+            "probSL",
+            "volatilityNext",
+            "hittingProbTP",
+        ]
+        assert all(
+            item["count"] == 2 for item in summary["targetStatistics"]
+        )
+        mean_return = summary["targetStatistics"][0]
+        assert mean_return["targetIndex"] == 0
+        assert mean_return["name"] == "meanReturn"
+        assert mean_return["count"] == 2
+        assert mean_return["min"] == pytest.approx(0.02)
+        assert mean_return["max"] == pytest.approx(0.05)
+        assert mean_return["mean"] == pytest.approx(0.035)
+        assert mean_return["std"] == pytest.approx(0.015)
+        assert mean_return["zeroCount"] == 0
+        assert mean_return["oneCount"] == 0
         assert all(
             isinstance(value, (int, float)) and value >= 0
             for value in summary["durations"].values()

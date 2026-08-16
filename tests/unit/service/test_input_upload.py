@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v5.config import ModelConfig
+from app.contracts.worker.v6.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,

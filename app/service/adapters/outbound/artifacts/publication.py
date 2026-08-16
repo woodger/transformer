@@ -12,15 +12,16 @@ from typing import BinaryIO, Protocol, cast
 
 from app.contracts.flight.v4.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v5 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v5.config import (
+from app.contracts.worker.v6 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v6.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v5.objective import (
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
+    DIRECT_LOSSES,
     ml_contract,
     objective_config,
     objective_config_sha256,
@@ -343,16 +344,28 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit worker artifact integrity check failed",
                 )
-        self._publish_model(
-            job,
-            _object(
+        try:
+            checkpoint_metadata = _object(
                 result.get("checkpointMetadata"),
                 "fit checkpoint metadata",
-            ),
-            _nonnegative_number(
+            )
+            checkpoint_serialization_ms = _nonnegative_number(
                 result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
-            ),
+            )
+            target_statistics = _target_statistics(
+                result.get("targetStatistics")
+            )
+        except ValueError as exc:
+            raise WorkerArtifactError(
+                ErrorCode.MALFORMED_OUTPUT,
+                "fit worker result contains invalid metadata",
+            ) from exc
+        self._publish_model(
+            job,
+            checkpoint_metadata,
+            checkpoint_serialization_ms,
+            target_statistics,
         )
 
     def _publish_model(
@@ -360,6 +373,7 @@ class WorkerArtifactPublisher:
         job: ExecutionJobRecord,
         checkpoint_metadata: JsonObject,
         terminal_checkpoint_serialization_ms: float,
+        target_statistics: list[JsonObject],
     ) -> None:
         attempt_path = self.spool.attempt_checkpoint_path(
             job.job_id, job.attempt
@@ -536,6 +550,7 @@ class WorkerArtifactPublisher:
                 terminal_checkpoint_publication_ms=(
                     terminal_checkpoint_publication_ms
                 ),
+                target_statistics=target_statistics,
             )
             run_summary_metadata: JsonObject = {
                 "format": run_summary.format,
@@ -790,6 +805,69 @@ def _validate_worker_selection(
     return result
 
 
+def _target_statistics(value: object) -> list[JsonObject]:
+    if not isinstance(value, list):
+        raise ValueError("fit target statistics must contain six targets")
+    items = cast(list[object], value)
+    if len(items) != len(DIRECT_LOSSES):
+        raise ValueError("fit target statistics must contain six targets")
+    statistics: list[JsonObject] = []
+    required = {
+        "targetIndex",
+        "name",
+        "count",
+        "min",
+        "max",
+        "mean",
+        "std",
+        "zeroCount",
+        "oneCount",
+    }
+    for index, ((_, semantic, _), item) in enumerate(
+        zip(DIRECT_LOSSES, items, strict=True)
+    ):
+        document = _object(item, "fit target statistic")
+        if (
+            set(document) != required
+            or _integer(document.get("targetIndex"), "target index") != index
+            or document.get("name") != semantic
+        ):
+            raise ValueError("fit target statistic identity is invalid")
+        count = _integer(document.get("count"), "target count")
+        zero_count = _integer(document.get("zeroCount"), "target zero count")
+        one_count = _integer(document.get("oneCount"), "target one count")
+        minimum = _finite_number(document.get("min"), "target minimum")
+        maximum = _finite_number(document.get("max"), "target maximum")
+        mean = _finite_number(document.get("mean"), "target mean")
+        standard_deviation = _nonnegative_number(
+            document.get("std"),
+            "target standard deviation",
+        )
+        lower = -1.0 if index == 0 else 0.0
+        if (
+            count <= 0
+            or zero_count < 0
+            or one_count < 0
+            or zero_count > count
+            or one_count > count
+            or zero_count + one_count > count
+            or not lower <= minimum <= mean <= maximum <= 1.0
+        ):
+            raise ValueError("fit target statistic values are invalid")
+        statistics.append({
+            "targetIndex": index,
+            "name": semantic,
+            "count": count,
+            "min": minimum,
+            "max": maximum,
+            "mean": mean,
+            "std": standard_deviation,
+            "zeroCount": zero_count,
+            "oneCount": one_count,
+        })
+    return statistics
+
+
 def _object(value: object, label: str) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
@@ -819,6 +897,16 @@ def _nonnegative_number(value: object, label: str) -> float:
         or value < 0
     ):
         raise ValueError(f"{label} must be a finite non-negative number")
+    return float(value)
+
+
+def _finite_number(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise ValueError(f"{label} must be a finite number")
     return float(value)
 
 

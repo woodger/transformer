@@ -6,7 +6,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.worker.v5.config import (
+from app.contracts.worker.v6.config import (
     DEFAULT_DIRECT_LOSS_WEIGHTS,
     DEFAULT_LOSS_SCHEDULE,
     DEFAULT_LOSS_STAGE,

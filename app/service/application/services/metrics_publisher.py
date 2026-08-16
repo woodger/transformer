@@ -5,8 +5,6 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.fit_run.v1 import RUN_INDEX
-from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.application.ports.metrics import (
     BlockedMetricsDeliveryError,
     MetricsArtifactProjection,
@@ -105,7 +103,7 @@ class MetricsPublisher:
             if cursor < len(points):
                 chunk = points[cursor:cursor + _MAX_BULK_DOCUMENTS]
                 self.sink.create_documents(
-                    POINT_INDEX,
+                    self.projection.point_index(entry),
                     chunk,
                     id_field="eventId",
                 )
@@ -121,7 +119,7 @@ class MetricsPublisher:
                 deployment_id=self.deployment_id,
             )
             self.sink.create_documents(
-                ARTIFACT_INDEX,
+                self.projection.artifact_index(entry),
                 (artifact,),
                 id_field="artifactId",
             )
@@ -131,7 +129,7 @@ class MetricsPublisher:
             )
             if run_summary is not None:
                 self.sink.create_documents(
-                    RUN_INDEX,
+                    self.projection.run_summary_index(entry),
                     (run_summary,),
                     id_field="summaryId",
                 )

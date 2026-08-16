@@ -10,11 +10,11 @@ from app.contracts.flight.v4.codec import (
     validate_request_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v5.config import (
+from app.contracts.worker.v6.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,

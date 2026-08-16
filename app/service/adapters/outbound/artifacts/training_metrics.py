@@ -8,7 +8,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 
-from app.contracts.metrics.v1 import (
+from app.contracts.metrics.v2 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     build_training_record,

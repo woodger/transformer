@@ -13,7 +13,7 @@ from referencing.jsonschema import Schema, SchemaRegistry
 from app.contracts.json_types import JsonObject
 
 CONTRACT_NAME = "transformer-worker"
-CONTRACT_VERSION = 5
+CONTRACT_VERSION = 6
 MAX_EVENT_BYTES = 1024 * 1024
 
 _SCHEMA_DIRECTORY = Path(__file__).with_name("schemas")
@@ -59,6 +59,8 @@ def validate_document(document: object, schema_name: str) -> JsonObject:
         location = ".".join(str(part) for part in error.absolute_path)
         prefix = f"{location}: " if location else ""
         raise WorkerContractError(f"{prefix}{error.message}")
+    if schema_name == "training-metrics":
+        _validate_training_metric_invariants(typed_document)
     return typed_document
 
 
@@ -171,6 +173,65 @@ def _canonical_uuid(value: str, label: str) -> str:
     if str(parsed) != value.lower():
         raise WorkerContractError(f"{label} must be a canonical UUID")
     return str(parsed)
+
+
+def _validate_training_metric_invariants(document: JsonObject) -> None:
+    batches = _metric_integer(document, "batches")
+    completed = _metric_integer(document, "trainingBatchesCompleted")
+    applied = _metric_integer(document, "optimizerUpdatesApplied")
+    skipped = _metric_integer(document, "optimizerUpdatesSkipped")
+    overflows = _metric_integer(document, "ampOverflowBatches")
+    finite = _metric_integer(document, "finiteGradientBatches")
+    non_finite = _metric_integer(document, "nonFiniteGradientBatches")
+    if completed != batches:
+        raise WorkerContractError(
+            "trainingBatchesCompleted differs from batches"
+        )
+    if completed != applied + skipped:
+        raise WorkerContractError(
+            "optimizer update counts differ from completed batches"
+        )
+    if completed != finite + non_finite:
+        raise WorkerContractError(
+            "gradient counts differ from completed batches"
+        )
+    if overflows > skipped or overflows > non_finite:
+        raise WorkerContractError("AMP overflow counts are inconsistent")
+    statistics = tuple(
+        document[field]
+        for field in (
+            "preClipGradientNormMean",
+            "preClipGradientNormMax",
+            "preClipGradientNormP95",
+        )
+    )
+    if finite == 0:
+        if any(value is not None for value in statistics):
+            raise WorkerContractError(
+                "gradient statistics require a finite gradient batch"
+            )
+        return
+    if any(value is None for value in statistics):
+        raise WorkerContractError("gradient statistics are incomplete")
+    mean, maximum, percentile = (
+        _metric_number(value, "gradient statistic")
+        for value in statistics
+    )
+    if mean > maximum or percentile > maximum:
+        raise WorkerContractError("gradient statistics are inconsistent")
+
+
+def _metric_integer(document: JsonObject, field: str) -> int:
+    value = document[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise WorkerContractError(f"{field} must be an integer")
+    return value
+
+
+def _metric_number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise WorkerContractError(f"{label} must be a number")
+    return float(value)
 
 
 def _load_schema(name: str) -> Schema:

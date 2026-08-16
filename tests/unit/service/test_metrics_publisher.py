@@ -3,8 +3,13 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v1 import RUN_INDEX
-from app.contracts.metrics.v1 import ARTIFACT_INDEX, POINT_INDEX
+from app.contracts.metrics.fit_run.v1 import RUN_INDEX as LEGACY_RUN_INDEX
+from app.contracts.metrics.fit_run.v2 import RUN_INDEX
+from app.contracts.metrics.v1 import (
+    ARTIFACT_INDEX as LEGACY_ARTIFACT_INDEX,
+    POINT_INDEX as LEGACY_POINT_INDEX,
+)
+from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.metrics_projection import (
     ModelMetricsProjection,
@@ -74,6 +79,27 @@ class _Projection:
     def points(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
         return self._points
+
+    def point_index(self, entry):
+        return (
+            POINT_INDEX
+            if entry.projection_version == "inventory.metrics.v3"
+            else LEGACY_POINT_INDEX
+        )
+
+    def artifact_index(self, entry):
+        return (
+            ARTIFACT_INDEX
+            if entry.projection_version == "inventory.metrics.v3"
+            else LEGACY_ARTIFACT_INDEX
+        )
+
+    def run_summary_index(self, entry):
+        return (
+            RUN_INDEX
+            if entry.projection_version == "inventory.metrics.v3"
+            else LEGACY_RUN_INDEX
+        )
 
     def artifact_document(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
@@ -164,9 +190,9 @@ def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
         publisher.shutdown(2.0)
 
     assert sink.calls == [
-        (POINT_INDEX, 500, "eventId"),
-        (POINT_INDEX, 1, "eventId"),
-        (ARTIFACT_INDEX, 1, "artifactId"),
+        (LEGACY_POINT_INDEX, 500, "eventId"),
+        (LEGACY_POINT_INDEX, 1, "eventId"),
+        (LEGACY_ARTIFACT_INDEX, 1, "artifactId"),
     ]
     assert outbox.maintenance_runs >= 1
 
@@ -199,7 +225,7 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
 def test_current_projection_delivers_one_terminal_run_summary():
     entry = replace(
         _entry(),
-        projection_version="inventory.metrics.v2",
+        projection_version="inventory.metrics.v3",
     )
     outbox = _Outbox(entry)
     sink = _Sink()
@@ -247,6 +273,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         entry,
         artifact=replace(
             entry.artifact,
+            format="transformer.training-metrics.v2",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
             sha256=artifact.sha256,
@@ -255,7 +282,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=ModelRunSummaryArtifactRecord(
             model_ref=entry.artifact.model_ref,
-            format="transformer.fit-run-summary.v1",
+            format="transformer.fit-run-summary.v2",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -267,7 +294,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="inventory.metrics.v2",
+        projection_version="inventory.metrics.v3",
     )
 
     projection = ModelMetricsProjection(spool)

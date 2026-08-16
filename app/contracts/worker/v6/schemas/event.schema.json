@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/worker/v5/event.schema.json",
-  "title": "Transformer worker v5 event envelope",
+  "$id": "https://transformer.local/contracts/worker/v6/event.schema.json",
+  "title": "Transformer worker v6 event envelope",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,13 +10,13 @@
   ],
   "properties": {
     "contract": {"const": "transformer-worker"},
-    "protocolVersion": {"const": 5},
+    "protocolVersion": {"const": 6},
     "jobId": {
-      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/uuid"
     },
     "attempt": {"type": "integer", "minimum": 1},
     "attemptId": {
-      "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/uuid"
+      "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/uuid"
     },
     "sequence": {"type": "integer", "minimum": 1},
     "type": {
@@ -109,11 +109,11 @@
               "globalStep": {"type": "integer", "minimum": 0},
               "trainingComplete": {"type": "boolean"},
               "artifact": {
-                "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/artifact"
+                "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/artifact"
               },
               "checkpointSerializationMs": {"type": "number", "minimum": 0},
               "metrics": {
-                "$ref": "https://transformer.local/contracts/worker/v5/training-metrics.schema.json"
+                "$ref": "https://transformer.local/contracts/worker/v6/training-metrics.schema.json"
               }
             }
           }
@@ -130,7 +130,7 @@
             "required": ["resultManifest"],
             "properties": {
               "resultManifest": {
-                "$ref": "https://transformer.local/contracts/worker/v5/common.schema.json#/$defs/artifact"
+                "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/artifact"
               }
             }
           }

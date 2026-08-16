@@ -10,7 +10,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import torch
 
-from app.contracts.worker.v5.objective import (
+from app.contracts.worker.v6.objective import (
     ml_contract,
     objective_config,
 )
@@ -149,13 +149,13 @@ def _publish_seed_model(ledger, models_dir, runtime_dir):
         byte_count=len(checkpoint_bytes),
         sha256=hashlib.sha256(checkpoint_bytes).hexdigest(),
         metrics_path=metrics_artifact.relative_path,
-        metrics_format="transformer.training-metrics.v1",
+        metrics_format="transformer.training-metrics.v2",
         metrics_media_type="application/x-ndjson",
         metrics_byte_count=metrics_artifact.byte_count,
         metrics_sha256=metrics_artifact.sha256,
         metrics_row_count=metrics_artifact.row_count,
         run_summary_path=run_summary.relative_path,
-        run_summary_format="transformer.fit-run-summary.v1",
+        run_summary_format="transformer.fit-run-summary.v2",
         run_summary_media_type="application/json",
         run_summary_byte_count=run_summary.byte_count,
         run_summary_sha256=run_summary.sha256,

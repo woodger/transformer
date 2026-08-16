@@ -4,7 +4,7 @@ from typing import Protocol
 
 import torch
 
-from app.contracts.worker.v5.config import ModelConfig
+from app.contracts.worker.v6.config import ModelConfig
 from app.worker.data.arrow import read_arrow
 from app.worker.data.tensors import TrainingBatch, reshape_source
 from app.worker.training.factory import build_model, build_trainer

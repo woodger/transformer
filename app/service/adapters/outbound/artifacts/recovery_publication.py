@@ -10,8 +10,8 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v5 import WorkerContractError, validate_document
-from app.contracts.worker.v5.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v6 import WorkerContractError, validate_document
+from app.contracts.worker.v6.objective import TRAINING_RECOVERY_FORMAT
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,

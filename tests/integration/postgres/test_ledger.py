@@ -4,8 +4,8 @@ import uuid
 
 import pytest
 
-from app.contracts.worker.v5.config import ModelConfig, TrainConfig
-from app.contracts.worker.v5.objective import (
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import (
     TRAINING_RECOVERY_FORMAT,
     ml_contract,
 )

@@ -1,4 +1,4 @@
-# Контракт процесса Transformer worker v5
+# Контракт процесса Transformer worker v6
 
 Этот каталог содержит нормативный внутренний контракт между сервисом
 Transformer и одной короткоживущей попыткой ML worker-а. Контракт не зависит от
@@ -12,7 +12,7 @@ schema из Flight v4.
 
 ```text
 transformer-worker run
-  --contract-version=5
+  --contract-version=6
   --job-id=<uuid>
   --attempt=<positive-integer>
   --attempt-id=<uuid>
@@ -27,7 +27,7 @@ fence не существует.
 Возможности проверяются через тот же executable:
 
 ```text
-transformer-worker inspect --contract-version=5
+transformer-worker inspect --contract-version=6
 ```
 
 ## Каналы
@@ -73,6 +73,12 @@ input-idle timer сервиса.
 транзакцией PostgreSQL. Поэтому восстановленная attempt не теряет метрики уже
 зафиксированных эпох и не может заменить их другими значениями.
 
+Epoch telemetry отдельно фиксирует завершённые training batches, фактически
+выполненные и пропущенные optimizer updates, AMP overflow и количество
+finite/non-finite gradient norms. Mean, max и nearest-rank P95 считаются только
+по конечным pre-clip norms; non-finite batch не отравляет статистику остальных
+batch-ей. Число `step` сохраняет семантику завершённых training batches.
+
 Каждое checkpoint-событие дополнительно содержит monotonic
 `checkpointSerializationMs`; сервис измеряет durable copy как
 `checkpointPublicationMs` и сохраняет оба значения рядом с epoch interval.
@@ -98,6 +104,13 @@ meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
 
 Probability logits преобразуются через sigmoid до записи Arrow. Worker
 проверяет finite values и диапазоны target-space до terminal result.
+
+Успешный fit result дополнительно содержит `targetStatistics`: шесть записей в
+порядке public targets с count, min, max, mean, population std, zeroCount и
+oneCount. Worker считает их по Float32-значениям каждого ordinal immutable
+manifest ровно один раз в рамках attempt. После recovery новая attempt
+пересчитывает summary из тех же artifacts, но наружу публикуется только
+terminal result текущей attempt.
 
 ## Жизненный цикл artifacts и семантика завершения
 

@@ -58,6 +58,12 @@ class MetricsOutboxRepository(Protocol):
 
 
 class MetricsArtifactProjection(Protocol):
+    def point_index(self, entry: MetricsOutboxRecord) -> str: ...
+
+    def artifact_index(self, entry: MetricsOutboxRecord) -> str: ...
+
+    def run_summary_index(self, entry: MetricsOutboxRecord) -> str: ...
+
     def points(
         self,
         entry: MetricsOutboxRecord,

@@ -7,8 +7,8 @@ from typing import cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v5.config import ModelConfig, TrainConfig
-from app.contracts.worker.v5.objective import (
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
     TARGET_SCHEMA_ID,
     ml_contract,

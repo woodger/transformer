@@ -77,7 +77,7 @@ def _seed_model(
             job_id = str(uuid.uuid4())
             session.add(ModelMetricsArtifact(
                 model_ref=model_ref,
-                format="transformer.training-metrics.v1",
+                format="transformer.training-metrics.v2",
                 media_type="application/x-ndjson",
                 relative_path=f"{model_ref}/metrics.jsonl",
                 bytes=10,
@@ -93,7 +93,7 @@ def _seed_model(
             session.flush()
             session.add(MetricsOutboxEntry(
                 model_ref=model_ref,
-                projection_version="inventory.metrics.v1",
+                projection_version="inventory.metrics.v3",
                 status=outbox_status,
                 cursor=0,
                 attempts=0,
@@ -304,13 +304,13 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         byte_count=len(checkpoint),
         sha256=hashlib.sha256(checkpoint).hexdigest(),
         metrics_path=metrics.relative_path,
-        metrics_format="transformer.training-metrics.v1",
+        metrics_format="transformer.training-metrics.v2",
         metrics_media_type="application/x-ndjson",
         metrics_byte_count=metrics.byte_count,
         metrics_sha256=metrics.sha256,
         metrics_row_count=metrics.row_count,
         run_summary_path=run_summary.relative_path,
-        run_summary_format="transformer.fit-run-summary.v1",
+        run_summary_format="transformer.fit-run-summary.v2",
         run_summary_media_type="application/json",
         run_summary_byte_count=run_summary.byte_count,
         run_summary_sha256=run_summary.sha256,

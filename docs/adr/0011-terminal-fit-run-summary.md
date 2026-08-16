@@ -4,6 +4,9 @@
 
 Принято, 2026-08-16.
 
+Формат v1 расширен статистикой training targets в
+[ADR 0012](0012-gradient-and-target-telemetry.md).
+
 ## Контекст
 
 Checkpoint-aligned epoch metrics описывают обучение, но не позволяют увидеть

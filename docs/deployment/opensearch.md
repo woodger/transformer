@@ -3,10 +3,14 @@
 > Type: Operations. Настройка OpenSearch projection Transformer.
 
 Источник истины и границы решения описаны в
-[ADR 0009](../adr/0009-centralized-training-metrics.md), нормативные schemas и
-templates — в
+[ADR 0009](../adr/0009-centralized-training-metrics.md) и
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Прежние contracts
 [`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md) и
-[`app/contracts/metrics/fit_run/v1`](../../app/contracts/metrics/fit_run/v1/README.md).
+[`app/contracts/metrics/fit_run/v1`](../../app/contracts/metrics/fit_run/v1/README.md)
+сохранены только для доставки уже зафиксированных outbox entries. Текущие
+schemas и templates находятся в
+[`app/contracts/metrics/v2`](../../app/contracts/metrics/v2/README.md) и
+[`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 
 Текущее развёртывание использует доверенную локальную сеть:
 
@@ -21,8 +25,8 @@ REST TLS отключён, OpenSearch требует существующую Ba
 Операцию выполняет администратор OpenSearch до включения publisher-а.
 
 Обычный index и data stream не могут одновременно использовать одно имя. Если
-в кластере уже существуют data streams `metrics-points-v1`,
-`metrics-artifacts-v1` или `metrics-runs-v1`, сначала остановите publisher и
+в кластере уже существуют data streams `metrics-points-v2`,
+`metrics-artifacts-v2` или `metrics-runs-v2`, сначала остановите publisher и
 отдельно решите вопрос
 сохранения их данных. Эта инструкция намеренно ничего не удаляет.
 
@@ -35,40 +39,40 @@ curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-points-v1" \
+  "$search_endpoint/_index_template/metrics-points-v2" \
   --data-binary \
-  @app/contracts/metrics/v1/opensearch/metrics-points-v1.template.json
+  @app/contracts/metrics/v2/opensearch/metrics-points-v2.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-artifacts-v1" \
+  "$search_endpoint/_index_template/metrics-artifacts-v2" \
   --data-binary \
-  @app/contracts/metrics/v1/opensearch/metrics-artifacts-v1.template.json
+  @app/contracts/metrics/v2/opensearch/metrics-artifacts-v2.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-runs-v1" \
+  "$search_endpoint/_index_template/metrics-runs-v2" \
   --data-binary \
-  @app/contracts/metrics/fit_run/v1/opensearch/metrics-runs-v1.template.json
+  @app/contracts/metrics/fit_run/v2/opensearch/metrics-runs-v2.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-points-v1"
+  "$search_endpoint/metrics-points-v2"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-artifacts-v1"
+  "$search_endpoint/metrics-artifacts-v2"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-runs-v1"
+  "$search_endpoint/metrics-runs-v2"
 
 unset OPENSEARCH_PASSWORD
 ```
@@ -77,6 +81,12 @@ Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Н�
 преобразуйте индексы в data streams и не назначайте им rollover alias или ISM
 rollover policy: проверка повторного `create` и `_mget` требует одного concrete
 index на каждую versioned projection.
+
+При обновлении не удаляйте существующие v1 indices, пока в PostgreSQL остаются
+недоставленные outbox entries `inventory.metrics.v1` или
+`inventory.metrics.v2`: publisher маршрутизирует такие записи в прежние
+indices. Новые модели создают только projection `inventory.metrics.v3` и
+записываются в v2 indices.
 
 ## Настроить Transformer
 

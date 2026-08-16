@@ -8,8 +8,8 @@ from alembic import command
 from sqlalchemy import create_engine, text
 from sqlalchemy.schema import DropSchema
 
-from app.contracts.worker.v5.config import TrainConfig
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.worker.v6.config import TrainConfig
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.migrations import (

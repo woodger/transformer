@@ -13,12 +13,12 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v5.config import (
+from app.contracts.worker.v6.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v5.objective import objective_config_sha256
+from app.contracts.worker.v6.objective import objective_config_sha256
 from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
 from app.worker.metrics import TrainMetrics, append_metrics_jsonl
@@ -136,6 +136,10 @@ class Trainer:
             lr=train_config.lr,
             weight_decay=train_config.weight_decay,
         )
+        self._optimizer_updates_applied_total = 0
+        self.optimizer.register_step_post_hook(
+            self._record_optimizer_update,
+        )
 
         if train_config.use_amp and device.type != "cuda":
             print("AMP requested but CUDA not available — disabled")
@@ -153,6 +157,14 @@ class Trainer:
             return torch.autocast(device_type="cuda", enabled=True)
         else:
             return nullcontext()
+
+    def _record_optimizer_update(
+        self,
+        _optimizer: torch.optim.Optimizer,
+        _args: tuple[object, ...],
+        _kwargs: dict[str, object],
+    ) -> None:
+        self._optimizer_updates_applied_total += 1
 
     def _train_loaders(
         self,
@@ -219,8 +231,15 @@ class Trainer:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), GRAD_CLIP_NORM
                     )
+                    updates_before = self._optimizer_updates_applied_total
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
+                    updates_after = self._optimizer_updates_applied_total
+                    if updates_after not in (updates_before, updates_before + 1):
+                        raise AssertionError(
+                            "one training batch applied multiple optimizer updates"
+                        )
+                    optimizer_update_applied = updates_after > updates_before
                     materialized_statistics = (
                         loss_evaluation.statistics.materialize(grad_norm)
                     )
@@ -234,6 +253,10 @@ class Trainer:
                         rows=batch_rows,
                         loss_parts=loss_parts,
                         grad_norm=grad_norm_value,
+                        optimizer_update_applied=optimizer_update_applied,
+                        amp_overflow=(
+                            self.use_amp and not optimizer_update_applied
+                        ),
                         **missingness_ratios,
                     )
                     metrics.train_step_ms += (
@@ -244,6 +267,7 @@ class Trainer:
                     batches.close()
 
         metrics.elapsed_ms = (time.perf_counter() - started) * 1000
+        metrics.finalize_gradient_statistics()
         return metrics
 
     def _train_loader(self, loader: TrainingBatches) -> TrainMetrics:

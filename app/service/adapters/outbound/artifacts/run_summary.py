@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v1 import (
+from app.contracts.metrics.fit_run.v2 import (
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_summary,
@@ -45,6 +45,7 @@ def publish_fit_run_summary(
     git_commit: str,
     terminal_checkpoint_serialization_ms: float,
     terminal_checkpoint_publication_ms: float,
+    target_statistics: list[JsonObject],
 ) -> StagedFitRunSummary:
     serialization_ms = source.checkpoint_serialization_ms + _duration(
         terminal_checkpoint_serialization_ms,
@@ -111,6 +112,7 @@ def publish_fit_run_summary(
             "inputRows": source.input_rows,
             "inputBytes": source.input_bytes,
         },
+        target_statistics=target_statistics,
     )
     spool.atomic_write_json(destination, document)
     byte_count = os.path.getsize(destination)

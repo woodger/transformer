@@ -5,6 +5,8 @@
 Принято, 2026-08-15. Уточнено 2026-08-16: projection использует обычные
 versioned indices вместо data streams, а текущее развёртывание подключается к
 OpenSearch по trusted-LAN HTTP-профилю.
+Контракт v1 расширен без изменения durability boundary в
+[ADR 0012](0012-gradient-and-target-telemetry.md).
 
 ## Контекст
 

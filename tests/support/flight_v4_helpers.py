@@ -5,12 +5,12 @@ import json
 import uuid
 from dataclasses import dataclass
 
-from app.contracts.metrics.fit_run.v1 import build_run_summary
-from app.contracts.metrics.v1 import (
+from app.contracts.metrics.fit_run.v2 import build_run_summary
+from app.contracts.metrics.v2 import (
     build_training_record,
 )
-from app.contracts.worker.v5.config import ModelConfig, TrainConfig
-from app.contracts.worker.v5.objective import (
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config_sha256,
@@ -167,7 +167,15 @@ def create_test_metrics_artifact(
         "volatility_next_rmse": 0.1,
         "hitting_prob_tp_rmse": 0.1,
         "selection_score": None,
-        "grad_norm": 1.0,
+        "trainingBatchesCompleted": 1,
+        "optimizerUpdatesApplied": 1,
+        "optimizerUpdatesSkipped": 0,
+        "ampOverflowBatches": 0,
+        "finiteGradientBatches": 1,
+        "nonFiniteGradientBatches": 0,
+        "preClipGradientNormMean": 1.0,
+        "preClipGradientNormMax": 1.0,
+        "preClipGradientNormP95": 1.0,
         "nan_ratio": 0.0,
         "masked_token_ratio": 0.0,
         "complete_token_ratio": 1.0,
@@ -259,6 +267,27 @@ def create_test_run_summary_artifact(
             "inputRows": 1,
             "inputBytes": 1,
         },
+        target_statistics=[
+            {
+                "targetIndex": index,
+                "name": name,
+                "count": 1,
+                "min": 0.0,
+                "max": 0.0,
+                "mean": 0.0,
+                "std": 0.0,
+                "zeroCount": 1,
+                "oneCount": 0,
+            }
+            for index, name in enumerate((
+                "meanReturn",
+                "sigmaReturn",
+                "probTP",
+                "probSL",
+                "volatilityNext",
+                "hittingProbTP",
+            ))
+        ],
     )
     payload = json.dumps(
         summary,

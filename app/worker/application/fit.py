@@ -5,10 +5,10 @@ import time
 from collections.abc import Iterator
 from dataclasses import replace
 
-from app.contracts.json_types import JsonObject
-from app.contracts.worker.v5 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v5.config import ModelConfig, TrainConfig
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.worker.v6 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -39,7 +39,11 @@ from app.worker.data.tensors import (
     validate_feature_dim,
     validate_target_dim,
 )
-from app.worker.metrics import TrainMetrics, reset_metrics_log
+from app.worker.metrics import (
+    TargetStatisticsAccumulator,
+    TrainMetrics,
+    reset_metrics_log,
+)
 from app.worker.runtime.device import get_device
 from app.worker.runtime.reproducibility import configure_reproducibility
 from app.worker.training.factory import build_model, build_trainer
@@ -67,10 +71,12 @@ def execute_fit(
     expected_feature_dim = integer_field(data_contract, "featureDim")
     expected_target_dim = 6
     committed_inputs = CommittedInputArtifacts()
+    target_statistics = TargetStatisticsAccumulator()
 
     def read_payload(item: JsonObject) -> TrainingBatch:
         if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
             raise ValueError("fit input schemaId is invalid")
+        ordinal = integer_field(item, "ordinal")
         path = committed_inputs.path(item)
         batch = read_committed_fit_arrow(
             path,
@@ -83,6 +89,7 @@ def execute_fit(
         )
         validate_feature_dim(batch.features, expected_feature_dim)
         validate_target_dim(batch.targets, expected_target_dim)
+        target_statistics.update(ordinal, batch.targets)
         return batch
 
     stream = iter(input_stream.items())
@@ -260,15 +267,30 @@ def execute_fit(
     checkpoint_serialization_ms = (
         time.monotonic() - serialization_started
     ) * 1000.0
+    if not input_stream.closed:
+        raise ValueError("fit result requires a closed immutable input")
+    for item in input_stream.inputs:
+        ordinal = integer_field(item, "ordinal")
+        if not target_statistics.contains(ordinal):
+            read_payload(item)
+    expected_target_rows = sum(
+        integer_field(item, "rows") for item in input_stream.inputs
+    )
+    if target_statistics.count != expected_target_rows:
+        raise ValueError("target statistics row count differs from the manifest")
+    target_statistics_documents: list[JsonValue] = []
+    target_statistics_documents.extend(target_statistics.to_documents())
     result = result_identity(manifest)
-    result.update({
+    result_fields: JsonObject = {
         "inputRevision": input_stream.input_revision,
         "manifestSha256": input_stream.manifest_sha256,
         "artifacts": [],
         "checkpoint": artifact_document(checkpoint_path),
         "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
         "checkpointSerializationMs": checkpoint_serialization_ms,
-    })
+        "targetStatistics": target_statistics_documents,
+    }
+    result.update(result_fields)
     validate_document(result, "result-manifest")
     return result
 

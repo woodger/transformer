@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v1 import PROJECTION_VERSION
+from app.contracts.metrics.fit_run.v2 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,

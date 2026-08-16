@@ -52,8 +52,8 @@ checkpoint selection использует только прямые `L0…L5`.
 
 - `none` — stage 4 активен с первого optimizer step;
 - `epoch` — stage повышается каждые `--stage-size` epochs;
-- `step` — stage повышается каждые `--stage-size` optimizer steps и может
-  смениться внутри epoch.
+- `step` — stage повышается каждые `--stage-size` завершённых training
+  batches и может смениться внутри epoch.
 
 Stage 4 непосредственно обучает все шесть public heads. Запуск, в котором не
 завершилась ни одна полная epoch stage 4, считается ошибочным и не публикует
@@ -141,7 +141,7 @@ Recovery другого objective, data contract или immutable input manifest
 Компактная строка epoch выглядит так:
 
 ```text
-epoch=4 selection=0.1842 loss=0.233100 mean_mae=0.012 sigma_mae=0.021 tp_mae=0.11 sl_mae=0.10 vol_mae=0.03 hit_mae=0.09 grad=1.000 rows=67249 batches=263 time=181.7s stage=4/4
+epoch=4 selection=0.1842 loss=0.233100 mean_mae=0.012 sigma_mae=0.021 tp_mae=0.11 sl_mae=0.10 vol_mae=0.03 hit_mae=0.09 grad_mean=1.000 rows=67249 batches=263 time=181.7s stage=4/4
 ```
 
 `selection=n/a` означает, что текущая epoch не является полной epoch
@@ -152,7 +152,12 @@ JSONL содержит:
 - `loss`, `loss_l0…loss_l5`, `loss_nll`, `loss_ev`;
 - по каждой public semantic поля `<name>_mae` и `<name>_rmse`;
 - `selection_score`, `checkpoint_best`, `best_selection_score`;
-- `grad_norm`, `rows`, `batches`, `step`, `lr`;
+- `trainingBatchesCompleted`, `optimizerUpdatesApplied`,
+  `optimizerUpdatesSkipped`, `ampOverflowBatches`;
+- `finiteGradientBatches`, `nonFiniteGradientBatches`,
+  `preClipGradientNormMean`, `preClipGradientNormMax`,
+  `preClipGradientNormP95`;
+- `rows`, `batches`, `step`, `lr`;
 - `loss_stage`, `minimum_loss_stage`, `maximum_loss_stage`;
 - `nan_ratio`, `masked_token_ratio`, `complete_token_ratio`,
   `partial_token_ratio`, `empty_token_ratio`;
@@ -163,6 +168,20 @@ JSONL содержит:
 CUDA synchronization. Loss/gradient scalars объединяются в один CUDA tensor и
 переносятся на CPU одной операцией за batch. Wall-clock поля исключены из
 критерия deterministic equivalence.
+
+`step` и `trainingBatchesCompleted` означают число завершённых training
+batches. Фактически применённые optimizer updates считаются отдельно: при AMP
+overflow GradScaler пропускает update. Инварианты epoch:
+
+```text
+trainingBatchesCompleted
+  = optimizerUpdatesApplied + optimizerUpdatesSkipped
+  = finiteGradientBatches + nonFiniteGradientBatches
+```
+
+Mean, max и P95 считаются только по finite pre-clip gradient norms. P95
+использует nearest-rank policy; если все norms non-finite, эти три поля равны
+`null`.
 
 Сохранение и визуализация:
 
@@ -180,4 +199,7 @@ CUDA synchronization. Loss/gradient scalars объединяются в один
 Flight fit дополнительно сохраняет завершённые global epochs как обязательный
 immutable `models/{modelRef}/metrics.jsonl`. Durable boundary, OpenSearch
 projection и различие между `step` и фактическими AMP optimizer updates
-зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md).
+зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md) и
+[ADR 0012](./adr/0012-gradient-and-target-telemetry.md). Успешная модель также
+получает `run-summary.json` со статистикой шести targets по всему immutable
+dataset; она считается один раз на dataset, а не на каждую epoch.

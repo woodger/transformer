@@ -2,8 +2,8 @@ from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
-from app.contracts.worker.v5.config import ModelConfig, TrainConfig
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.worker.v6.config import ModelConfig, TrainConfig
+from app.contracts.worker.v6.objective import ml_contract
 from app.service.adapters.outbound.postgres.mapping import (
     execution_job_from_mapping,
     recoverable_attempt_from_mapping,

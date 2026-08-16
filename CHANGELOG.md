@@ -9,13 +9,15 @@
 
 ### Added
 
-- Успешный fit публикует model-owned `run-summary.json` с lifecycle durations,
-  количеством attempts/recoveries и итоговыми input counters. Terminal outbox
-  доставляет одну идемпотентную проекцию `inventory.metrics.fit-run.v1` в
-  обычный индекс `metrics-runs-v1`.
-- Внутренний worker process contract повышен до v5: recovery и terminal
-  checkpoints передают monotonic время сериализации, а service отдельно
-  измеряет durable publication.
+- Успешный fit публикует model-owned `run-summary.json` v2 с lifecycle
+  durations, количеством attempts/recoveries, input counters и статистикой
+  всех шести target-ов по принятому immutable dataset.
+- Epoch telemetry различает завершённые training batches, применённые и
+  пропущенные optimizer updates, AMP overflow и finite/non-finite gradients;
+  для конечных pre-clip gradient norms публикуются mean, max и P95.
+- Внутренний worker process contract повышен до v6. Новые metrics contracts
+  используют проекцию `inventory.metrics.v3` и обычные индексы
+  `metrics-points-v2`, `metrics-artifacts-v2` и `metrics-runs-v2`.
 
 ### Changed
 
@@ -26,6 +28,9 @@
 - PostgreSQL сохраняет lifecycle/recovery state и checkpoint-aligned epoch
   metrics как источник истины; OpenSearch остаётся post-commit аналитической
   проекцией и не участвует в результате fit.
+- Нефинитная gradient norm одного batch больше не уничтожает статистику
+  остальных batch-ей epoch. `globalTrainingStep` по-прежнему означает число
+  завершённых training batches.
 
 ### Fixed
 

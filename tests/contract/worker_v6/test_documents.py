@@ -12,7 +12,7 @@ from app.contracts.flight.v4.constants import (
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
 )
-from app.contracts.worker.v5 import (
+from app.contracts.worker.v6 import (
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
@@ -23,8 +23,8 @@ from app.contracts.worker.v5 import (
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v5.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v5.objective import ml_contract
+from app.contracts.worker.v6.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v6.objective import ml_contract
 from app.project import PROJECT_ROOT
 from app.worker.application.inputs import DurableInputStream
 
@@ -32,7 +32,7 @@ SCHEMA_ROOT = (
     PROJECT_ROOT / "app"
     / "contracts"
     / "worker"
-    / "v5"
+    / "v6"
     / "schemas"
 )
 JOB_ID = "00000000-0000-4000-8000-000000000001"
@@ -71,6 +71,60 @@ def _data_contract() -> dict:
     }
 
 
+def _training_metrics() -> dict:
+    return {
+        "mode": "fit-stream",
+        "frame": None,
+        "epoch": 1,
+        "step": 2,
+        "rows": 4,
+        "batches": 2,
+        "lr": 0.001,
+        "loss_stage": 4,
+        "minimum_loss_stage": 4,
+        "maximum_loss_stage": 4,
+        "loss": 0.5,
+        **{f"loss_l{index}": 0.1 for index in range(6)},
+        "loss_nll": 0.1,
+        "loss_ev": 0.1,
+        **{
+            f"{semantic}_{metric}": 0.1
+            for semantic in (
+                "mean_return",
+                "sigma_return",
+                "prob_tp",
+                "prob_sl",
+                "volatility_next",
+                "hitting_prob_tp",
+            )
+            for metric in ("mae", "rmse")
+        },
+        "selection_score": None,
+        "trainingBatchesCompleted": 2,
+        "optimizerUpdatesApplied": 1,
+        "optimizerUpdatesSkipped": 1,
+        "ampOverflowBatches": 1,
+        "finiteGradientBatches": 1,
+        "nonFiniteGradientBatches": 1,
+        "preClipGradientNormMean": 2.0,
+        "preClipGradientNormMax": 2.0,
+        "preClipGradientNormP95": 2.0,
+        "nan_ratio": 0.0,
+        "masked_token_ratio": 0.0,
+        "complete_token_ratio": 1.0,
+        "partial_token_ratio": 0.0,
+        "empty_token_ratio": 0.0,
+        "input_pipeline_ms": 1.0,
+        "missing_stats_ms": 1.0,
+        "host_to_device_ms": 1.0,
+        "train_step_ms": 1.0,
+        "elapsed_ms": 4.0,
+        "checkpoint_best": False,
+        "should_stop": False,
+        "best_selection_score": None,
+    }
+
+
 def _input(ordinal: int, *, revision: int, rows: int, byte_count: int) -> dict:
     return {
         "schemaId": FIT_INPUT_SCHEMA_ID,
@@ -89,7 +143,7 @@ def _input(ordinal: int, *, revision: int, rows: int, byte_count: int) -> dict:
 def _fit_manifest(*, closed: bool = False) -> dict:
     return {
         "contract": "transformer-worker",
-        "protocolVersion": 5,
+        "protocolVersion": 6,
         "jobId": JOB_ID,
         "attempt": 1,
         "attemptId": ATTEMPT_ID,
@@ -126,7 +180,7 @@ class _Emitter:
         self.events.append(("ack", payload))
 
 
-def test_worker_v5_schemas_are_valid_draft_2020_12_documents():
+def test_worker_v6_schemas_are_valid_draft_2020_12_documents():
     schemas = sorted(SCHEMA_ROOT.glob("*.schema.json"))
     assert {path.name for path in schemas} == {
         "arrow-manifest.schema.json",
@@ -142,12 +196,34 @@ def test_worker_v5_schemas_are_valid_draft_2020_12_documents():
         Draft202012Validator.check_schema(json.loads(path.read_text()))
 
 
-def test_worker_v5_pins_flight_v4_arrow_schema_ids():
+def test_worker_v6_pins_flight_v4_arrow_schema_ids():
     assert (
         FIT_INPUT_SCHEMA_ID,
         PREDICT_INPUT_SCHEMA_ID,
         PREDICTION_OUTPUT_SCHEMA_ID,
     ) == (FIT_SCHEMA_ID, PREDICT_SCHEMA_ID, PREDICTION_SCHEMA_ID)
+
+
+def test_training_metrics_enforce_batch_and_gradient_invariants():
+    metrics = _training_metrics()
+    assert validate_document(metrics, "training-metrics") is metrics
+
+    invalid = {**metrics, "optimizerUpdatesSkipped": 0}
+    with pytest.raises(WorkerContractError, match="optimizer update counts"):
+        validate_document(invalid, "training-metrics")
+
+    all_overflow = {
+        **metrics,
+        "optimizerUpdatesApplied": 0,
+        "optimizerUpdatesSkipped": 2,
+        "ampOverflowBatches": 2,
+        "finiteGradientBatches": 0,
+        "nonFiniteGradientBatches": 2,
+        "preClipGradientNormMean": None,
+        "preClipGradientNormMax": None,
+        "preClipGradientNormP95": None,
+    }
+    assert validate_document(all_overflow, "training-metrics") is all_overflow
 
 
 def test_command_manifest_separates_internal_attempt_from_external_fence():
