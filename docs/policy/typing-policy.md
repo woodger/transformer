@@ -107,8 +107,8 @@ Ruff с набором правил `ANN` отдельно требует явн
 forwarding аргументов `argparse` в `app/cli/options.py` и ленивый PyTorch runtime
 команды `gmark`, который сохраняет изоляцию control plane от Torch/CUDA.
 
-Pyright запускается после Ruff и до относящихся pytest tests. Точные команды и
-полный порядок задаёт [политика тестирования](./testing-policy.md#статическая-проверка).
+Pyright дополняет pytest и не образует отдельный test profile. Штатные pytest
+команды задаёт [политика тестирования](./testing-policy.md#запуск).
 Изменение только документации не требует type check, если оно не меняет
 Python/config examples.
 

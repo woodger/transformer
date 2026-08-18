@@ -30,6 +30,10 @@
   attempt-local metrics-файл и OpenSearch projection `metrics-artifacts-v2`.
   Текущая централизованная проекция содержит только epoch points и terminal run
   summary; Flight v4 и ML objective не изменены.
+- Pytest сведён к двум явным режимам: самодостаточный основной набор и отдельно
+  `gpu`. Временный PostgreSQL profile, скрытая fixture-маркировка и зависимые от
+  внешней инфраструктуры тесты удалены до проектирования полноценного
+  integration environment.
 
 ## [0.1.12] - 2026-08-16
 

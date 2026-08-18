@@ -1,11 +1,5 @@
 import json
-import os
-import queue
-import signal
-import subprocess
-import sys
 import threading
-import time
 import uuid
 from dataclasses import replace
 from types import SimpleNamespace
@@ -13,7 +7,6 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-from app.project import PROJECT_ROOT
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -24,7 +17,6 @@ from app.service.adapters.inbound.flight.documents import (
 )
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import OperationalMetrics
-from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.application.services.worker_pool import WorkerPool
 from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
@@ -219,168 +211,3 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         "toState": "RUNNING",
         "queueWaitSeconds": 5.25,
     }
-
-
-def test_service_cli_owns_no_cuda_runtime_and_drains_cleanly(
-    tmp_path,
-    postgres_config,
-    postgres_database,
-):
-    runtime_dir = tmp_path / "runtime"
-    models_dir = tmp_path / "models"
-    service_code = """
-import json
-import os
-import sys
-from dataclasses import replace
-from app.service.adapters.outbound.postgres.config import load_database_config
-import app.service.bootstrap.application as application_module
-from app.service.bootstrap.config import FlightServiceConfig
-
-def run_from_args(args):
-    database_config = replace(
-        load_database_config(),
-        schema=os.environ["TRANSFORMER_TEST_SCHEMA"],
-    )
-    config = FlightServiceConfig(
-        runtime_dir=os.environ["TRANSFORMER_TEST_RUNTIME_DIR"],
-        host=args.host,
-        port=args.port,
-        allow_plaintext=args.allow_plaintext,
-    ).validate()
-    application = application_module.FlightApplication.build(
-        config,
-        database_config=database_config,
-        models_dir=os.environ["TRANSFORMER_TEST_MODELS_DIR"],
-        bearer_tokens={"secret": "inventory"},
-    )
-
-    descriptors = []
-    for descriptor in os.listdir("/proc/self/fd"):
-        try:
-            target = os.readlink(f"/proc/self/fd/{descriptor}")
-        except FileNotFoundError:
-            continue
-        if target.startswith("/dev/nvidia"):
-            descriptors.append(target)
-    mapping_markers = (
-        "libtorch",
-        "libcuda",
-        "libcud",
-        "libnvidia",
-        "/site-packages/cuda/",
-    )
-    with open("/proc/self/maps", encoding="utf-8") as mappings_file:
-        mappings = sorted({
-            line.split()[-1]
-            for line in mappings_file
-            if any(marker in line.lower() for marker in mapping_markers)
-        })
-    modules = sorted(
-        name for name in sys.modules
-        if name in ("torch", "cuda")
-        or name.startswith(("torch.", "cuda."))
-    )
-    print(json.dumps({
-        "event": "test.service.process_boundary",
-        "mlModules": modules,
-        "cudaMappings": mappings,
-        "nvidiaDescriptors": sorted(descriptors),
-    }), file=sys.stderr, flush=True)
-    application.serve()
-
-application_module.run_from_args = run_from_args
-sys.argv = [
-    "transformer",
-    "flight",
-    "serve",
-    "--host=127.0.0.1",
-    "--port=0",
-    "--allow-plaintext",
-]
-from app.main import main
-main()
-"""
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            service_code,
-        ],
-        cwd=PROJECT_ROOT,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-        env={
-            **os.environ,
-            "TRANSFORMER_TEST_SCHEMA": postgres_config.schema,
-            "TRANSFORMER_TEST_RUNTIME_DIR": str(runtime_dir),
-            "TRANSFORMER_TEST_MODELS_DIR": str(models_dir),
-        },
-    )
-    lines = queue.Queue()
-
-    def drain_stderr():
-        for line in process.stderr:
-            lines.put(line)
-
-    pump = threading.Thread(target=drain_stderr, daemon=True)
-    pump.start()
-    events = []
-    try:
-        deadline = time.monotonic() + 15.0
-        while time.monotonic() < deadline:
-            try:
-                line = lines.get(timeout=0.2)
-            except queue.Empty:
-                if process.poll() is not None:
-                    break
-                continue
-            event = json.loads(line)
-            events.append(event)
-            if event.get("event") == "flight.service.serving":
-                break
-        assert any(
-            event.get("event") == "flight.service.serving" for event in events
-        ), events
-        boundary = next(
-            event
-            for event in events
-            if event.get("event") == "test.service.process_boundary"
-        )
-        assert boundary["mlModules"] == []
-        assert boundary["cudaMappings"] == []
-        assert boundary["nvidiaDescriptors"] == []
-
-        process.send_signal(signal.SIGTERM)
-        try:
-            return_code = process.wait(timeout=15.0)
-        except subprocess.TimeoutExpired:
-            while not lines.empty():
-                events.append(json.loads(lines.get_nowait()))
-            pytest.fail(f"Flight service did not stop after SIGTERM: {events!r}")
-        assert return_code == 0
-        pump.join(timeout=2.0)
-        assert not pump.is_alive()
-        while not lines.empty():
-            events.append(json.loads(lines.get_nowait()))
-    finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait(timeout=5.0)
-        if pump.is_alive():
-            pump.join(timeout=2.0)
-        assert not pump.is_alive()
-
-    names = [event.get("event") for event in events]
-    assert "flight.service.signal" in names
-    assert "flight.service.draining" in names
-    assert "flight.service.stopped" in names
-    assert names.index("flight.service.serving") < names.index("flight.service.signal")
-    assert names.index("flight.service.signal") < names.index("flight.service.stopped")
-
-    replacement = Spool(runtime_dir).initialize()
-    replacement.acquire_lock()
-    replacement.release_lock()

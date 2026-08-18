@@ -5,7 +5,6 @@ import pytest
 import app.admin.bootstrap.auth_tokens as auth_tokens_command
 import app.admin.bootstrap.db_migrations as migrations_command
 from app.service.adapters.outbound.postgres.migrations import MigrationStatus
-from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 
 
 def test_auth_token_command_closes_database_after_store_error(monkeypatch):
@@ -44,87 +43,6 @@ def test_auth_token_command_closes_database_after_store_error(monkeypatch):
         )
 
     assert closed == [True]
-
-
-def test_auth_token_issue_prints_new_credential_once(
-    monkeypatch,
-    capsys,
-    postgres_config,
-    postgres_database,
-):
-    monkeypatch.setattr(
-        auth_tokens_command,
-        "load_database_config",
-        lambda: postgres_config,
-    )
-
-    auth_tokens_command.run(
-        SimpleNamespace(tokens_action="issue", subject="inventory")
-    )
-
-    lines = capsys.readouterr().out.splitlines()
-    token_id = lines[0].removeprefix("Token ID: ")
-    token = lines[2].removeprefix("Token: ")
-    assert lines == [
-        f"Token ID: {token_id}",
-        "Subject: inventory",
-        f"Token: {token}",
-    ]
-    assert token.startswith("a.")
-    assert len(token) == 88
-    assert "\n".join(lines).count(token) == 1
-    listed = AccessTokenStore(postgres_database).list()
-    assert [(record.token_id, record.subject) for record in listed] == [
-        (token_id, "inventory")
-    ]
-
-
-def test_auth_token_list_prints_metadata_without_credentials(
-    monkeypatch,
-    capsys,
-    postgres_config,
-    postgres_database,
-):
-    issued = AccessTokenStore(postgres_database).issue("inventory")
-    monkeypatch.setattr(
-        auth_tokens_command,
-        "load_database_config",
-        lambda: postgres_config,
-    )
-
-    auth_tokens_command.run(SimpleNamespace(tokens_action="list"))
-
-    output = capsys.readouterr().out
-    assert output.splitlines()[0] == "TOKEN ID\tSUBJECT\tCREATED AT\tSTATUS"
-    assert f"{issued.token_id}\tinventory\t" in output
-    assert output.rstrip().endswith("\tactive")
-    assert issued.token not in output
-
-
-def test_auth_token_revoke_prints_id_and_persists_revocation(
-    monkeypatch,
-    capsys,
-    postgres_config,
-    postgres_database,
-):
-    store = AccessTokenStore(postgres_database)
-    issued = store.issue("inventory")
-    monkeypatch.setattr(
-        auth_tokens_command,
-        "load_database_config",
-        lambda: postgres_config,
-    )
-
-    auth_tokens_command.run(
-        SimpleNamespace(
-            tokens_action="revoke",
-            token_id=issued.token_id,
-        )
-    )
-
-    assert capsys.readouterr().out == f"Revoked token: {issued.token_id}\n"
-    assert store.list()[0].revoked_at is not None
-    assert store.active_credentials() == []
 
 
 @pytest.mark.parametrize(
