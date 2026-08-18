@@ -703,7 +703,7 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
 
 @pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_cuda_amp_training_updates_parameters():
+def test_cuda_amp_recovers_scale_and_updates_parameters():
     batch = make_dummy_data(n=4)
     model = new_model().to("cuda")
     trainer = Trainer(
@@ -722,9 +722,22 @@ def test_cuda_amp_training_updates_parameters():
         for name, value in model.state_dict().items()
     }
 
-    metrics = trainer.fit_batch(batch)
+    for epoch in range(32):
+        metrics = trainer.fit_batch(batch, epoch=epoch)
+        telemetry = metrics.telemetry
 
-    assert metrics.rows == 4
+        assert metrics.rows == 4
+        assert telemetry is not None
+        assert telemetry.training_batches_completed == 1
+        assert (
+            telemetry.optimizer_updates_applied
+            + telemetry.optimizer_updates_skipped
+        ) == 1
+        if telemetry.optimizer_updates_applied == 1:
+            break
+    else:
+        pytest.fail("CUDA AMP scale did not recover after 32 training batches")
+
     assert any(
         not torch.equal(before[name], value)
         for name, value in model.state_dict().items()
