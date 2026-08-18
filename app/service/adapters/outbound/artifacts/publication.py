@@ -49,6 +49,8 @@ from app.service.domain.records import (
 )
 
 _COPY_CHUNK_BYTES = 1024 * 1024
+_METRICS_OUTBOX_ENTRY_LIMIT = 10_000
+_METRICS_OUTBOX_BYTE_LIMIT = 10 * 1024 * 1024 * 1024
 
 
 class _PublicationLedger(Protocol):
@@ -75,6 +77,18 @@ class _PublicationLedger(Protocol):
         metadata_path: str,
         byte_count: int,
         sha256: str,
+        metadata: JsonObject,
+        result: JsonObject,
+        now: float | None = None,
+    ) -> Mapping[str, object]: ...
+
+    def register_model_metrics(
+        self,
+        *,
+        model_ref: str,
+        job_id: str,
+        attempt_id: str,
+        attempt: int,
         metrics_path: str,
         metrics_format: str,
         metrics_media_type: str,
@@ -88,10 +102,10 @@ class _PublicationLedger(Protocol):
         run_summary_sha256: str,
         application_version: str,
         git_commit: str,
-        metadata: JsonObject,
-        result: JsonObject,
+        max_outbox_entries: int,
+        max_outbox_bytes: int,
         now: float | None = None,
-    ) -> Mapping[str, object]: ...
+    ) -> bool: ...
 
     def fit_run_summary_source(
         self,
@@ -349,6 +363,14 @@ class WorkerArtifactPublisher:
                 result.get("checkpointMetadata"),
                 "fit checkpoint metadata",
             )
+        except ValueError as exc:
+            raise WorkerArtifactError(
+                ErrorCode.MALFORMED_OUTPUT,
+                "fit worker result contains invalid checkpoint metadata",
+            ) from exc
+        checkpoint_serialization_ms: float | None = None
+        target_statistics: list[JsonObject] | None = None
+        try:
             checkpoint_serialization_ms = _nonnegative_number(
                 result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
@@ -357,10 +379,11 @@ class WorkerArtifactPublisher:
                 result.get("targetStatistics")
             )
         except ValueError as exc:
-            raise WorkerArtifactError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "fit worker result contains invalid metadata",
-            ) from exc
+            self._record_telemetry_failure(
+                job,
+                phase="worker-result",
+                exc=exc,
+            )
         self._publish_model(
             job,
             checkpoint_metadata,
@@ -372,8 +395,8 @@ class WorkerArtifactPublisher:
         self,
         job: ExecutionJobRecord,
         checkpoint_metadata: JsonObject,
-        terminal_checkpoint_serialization_ms: float,
-        target_statistics: list[JsonObject],
+        terminal_checkpoint_serialization_ms: float | None,
+        target_statistics: list[JsonObject] | None,
     ) -> None:
         attempt_path = self.spool.attempt_checkpoint_path(
             job.job_id, job.attempt
@@ -480,6 +503,98 @@ class WorkerArtifactPublisher:
                 "fit subprocess created an invalid checkpoint",
             ) from exc
         try:
+            checkpoint_publication_started = self._monotonic()
+            with open(attempt_path, "rb") as source:
+                with self.spool.staged_file(checkpoint_path) as (target, _):
+                    shutil.copyfileobj(source, target, _COPY_CHUNK_BYTES)
+            terminal_checkpoint_publication_ms += (
+                self._monotonic() - checkpoint_publication_started
+            ) * 1000.0
+            metadata: JsonObject = {
+                "modelRef": model_ref,
+                "label": job.model_label,
+                # Internal snake_case copies let predict create resolve a generation
+                # without depending on the public status document representation.
+                "model_config": actual_model.to_dict(),
+                "train_config": actual_train.to_dict(),
+                "data_contract": dict(job.data_contract),
+                "ml_contract": expected_ml_contract,
+                "objective_config": expected_objective,
+                "data_schema": data_schema,
+                "checkpoint": safe_checkpoint,
+            }
+            self.spool.atomic_write_json(metadata_path, metadata)
+            self.ledger.publish_model(
+                job.job_id,
+                job.attempt,
+                attempt_id=_attempt_id(job),
+                model_ref=model_ref,
+                label=_model_label(job),
+                generation=None,
+                checkpoint_path=self.spool.model_relative_path(checkpoint_path),
+                metadata_path=self.spool.model_relative_path(metadata_path),
+                byte_count=byte_count,
+                sha256=digest,
+                metadata=metadata,
+                result={
+                    "modelRef": model_ref,
+                    "checkpoint": safe_checkpoint,
+                },
+            )
+            self.metrics.add("checkpointBytes", byte_count)
+            self._publish_optional_model_metrics(
+                job,
+                model_ref=model_ref,
+                metrics_path=metrics_path,
+                run_summary_path=run_summary_path,
+                expected_ml_contract=expected_ml_contract,
+                terminal_checkpoint_serialization_ms=(
+                    terminal_checkpoint_serialization_ms
+                ),
+                terminal_checkpoint_publication_ms=(
+                    terminal_checkpoint_publication_ms
+                ),
+                target_statistics=target_statistics,
+            )
+            self.logger.event(
+                "flight.model.published",
+                jobId=job.job_id,
+                modelRef=model_ref,
+                bytes=byte_count,
+                sha256=digest,
+            )
+        except BaseException:
+            current = self.ledger.get_execution_job(job.job_id)
+            if (
+                current is None
+                or current.execution_state != ExecutionState.SUCCEEDED
+            ):
+                self.spool.remove(model_directory)
+            raise
+
+    def _publish_optional_model_metrics(
+        self,
+        job: ExecutionJobRecord,
+        *,
+        model_ref: str,
+        metrics_path: str,
+        run_summary_path: str,
+        expected_ml_contract: JsonObject,
+        terminal_checkpoint_serialization_ms: float | None,
+        terminal_checkpoint_publication_ms: float,
+        target_statistics: list[JsonObject] | None,
+    ) -> None:
+        if (
+            terminal_checkpoint_serialization_ms is None
+            or target_statistics is None
+        ):
+            return
+        try:
+            summary_source = self.ledger.fit_run_summary_source(
+                job.job_id,
+                job.attempt,
+                attempt_id=_attempt_id(job),
+            )
             training_metrics = publish_training_metrics(
                 self.spool,
                 metrics_path,
@@ -497,36 +612,6 @@ class WorkerArtifactPublisher:
                 checkpoint_format=CHECKPOINT_FORMAT,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
-            )
-        except (OSError, TypeError, ValueError) as exc:
-            self.spool.remove(model_directory)
-            raise WorkerArtifactError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "committed training metrics could not be published",
-            ) from exc
-        training_metrics_metadata: JsonObject = {
-            "format": training_metrics.format,
-            "mediaType": training_metrics.media_type,
-            "bytes": training_metrics.byte_count,
-            "sha256": training_metrics.sha256,
-            "rowCount": training_metrics.row_count,
-            "jobId": job.job_id,
-            "attemptId": _attempt_id(job),
-            "attempt": job.attempt,
-            "modelRef": model_ref,
-        }
-        try:
-            checkpoint_publication_started = self._monotonic()
-            with open(attempt_path, "rb") as source:
-                with self.spool.staged_file(checkpoint_path) as (target, _):
-                    shutil.copyfileobj(source, target, _COPY_CHUNK_BYTES)
-            terminal_checkpoint_publication_ms += (
-                self._monotonic() - checkpoint_publication_started
-            ) * 1000.0
-            summary_source = self.ledger.fit_run_summary_source(
-                job.job_id,
-                job.attempt,
-                attempt_id=_attempt_id(job),
             )
             run_summary = publish_fit_run_summary(
                 self.spool,
@@ -552,43 +637,11 @@ class WorkerArtifactPublisher:
                 ),
                 target_statistics=target_statistics,
             )
-            run_summary_metadata: JsonObject = {
-                "format": run_summary.format,
-                "mediaType": run_summary.media_type,
-                "bytes": run_summary.byte_count,
-                "sha256": run_summary.sha256,
-                "jobId": job.job_id,
-                "attemptId": _attempt_id(job),
-                "attempt": job.attempt,
-                "modelRef": model_ref,
-            }
-            metadata: JsonObject = {
-                "modelRef": model_ref,
-                "label": job.model_label,
-                # Internal snake_case copies let predict create resolve a generation
-                # without depending on the public status document representation.
-                "model_config": actual_model.to_dict(),
-                "train_config": actual_train.to_dict(),
-                "data_contract": dict(job.data_contract),
-                "ml_contract": expected_ml_contract,
-                "objective_config": expected_objective,
-                "data_schema": data_schema,
-                "checkpoint": safe_checkpoint,
-                "training_metrics": training_metrics_metadata,
-                "fit_run_summary": run_summary_metadata,
-            }
-            self.spool.atomic_write_json(metadata_path, metadata)
-            self.ledger.publish_model(
-                job.job_id,
-                job.attempt,
-                attempt_id=_attempt_id(job),
+            registered = self.ledger.register_model_metrics(
                 model_ref=model_ref,
-                label=_model_label(job),
-                generation=None,
-                checkpoint_path=self.spool.model_relative_path(checkpoint_path),
-                metadata_path=self.spool.model_relative_path(metadata_path),
-                byte_count=byte_count,
-                sha256=digest,
+                job_id=job.job_id,
+                attempt_id=_attempt_id(job),
+                attempt=job.attempt,
                 metrics_path=self.spool.model_relative_path(metrics_path),
                 metrics_format=training_metrics.format,
                 metrics_media_type=training_metrics.media_type,
@@ -604,34 +657,62 @@ class WorkerArtifactPublisher:
                 run_summary_sha256=run_summary.sha256,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
-                metadata=metadata,
-                result={
-                    "modelRef": model_ref,
-                    "checkpoint": safe_checkpoint,
-                },
+                max_outbox_entries=_METRICS_OUTBOX_ENTRY_LIMIT,
+                max_outbox_bytes=_METRICS_OUTBOX_BYTE_LIMIT,
                 now=summary_source.publication_boundary_at,
             )
-            self.metrics.add("checkpointBytes", byte_count)
+        except Exception as exc:
+            self._discard_telemetry_files(metrics_path, run_summary_path)
+            self._record_telemetry_failure(
+                job,
+                phase="model-artifact",
+                exc=exc,
+            )
+            return
+        if registered:
             self.metrics.add(
                 "trainingMetricsArtifactBytes",
                 training_metrics.byte_count,
             )
-            self.metrics.add("fitRunSummaryArtifactBytes", run_summary.byte_count)
-            self.logger.event(
-                "flight.model.published",
-                jobId=job.job_id,
-                modelRef=model_ref,
-                bytes=byte_count,
-                sha256=digest,
+            self.metrics.add(
+                "fitRunSummaryArtifactBytes",
+                run_summary.byte_count,
             )
-        except BaseException:
-            current = self.ledger.get_execution_job(job.job_id)
-            if (
-                current is None
-                or current.execution_state != ExecutionState.SUCCEEDED
-            ):
-                self.spool.remove(model_directory)
-            raise
+            return
+        self._discard_telemetry_files(metrics_path, run_summary_path)
+        self.metrics.add("trainingTelemetryDropped")
+        self.logger.event(
+            "metrics.outbox.dropped",
+            jobId=job.job_id,
+            modelRef=model_ref,
+        )
+
+    def _record_telemetry_failure(
+        self,
+        job: ExecutionJobRecord,
+        *,
+        phase: str,
+        exc: Exception,
+    ) -> None:
+        self.metrics.add("trainingTelemetryCollectionErrors")
+        self.logger.event(
+            "metrics.collection.failed",
+            jobId=job.job_id,
+            phase=phase,
+            errorType=type(exc).__name__,
+        )
+
+    def _discard_telemetry_files(self, *paths: str) -> None:
+        for path in paths:
+            try:
+                self.spool.remove(path)
+            except OSError as exc:
+                self.metrics.add("trainingTelemetryCleanupErrors")
+                self.logger.event(
+                    "metrics.cleanup.failed",
+                    artifact=os.path.basename(path),
+                    errorType=type(exc).__name__,
+                )
 
     def cleanup_unpublished(self, job: ExecutionJobRecord) -> None:
         try:

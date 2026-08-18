@@ -6,7 +6,7 @@
 
 ## Durable artifact
 
-Каждая успешно опубликованная fit generation содержит неизменяемый файл:
+Успешная fit generation при доступной telemetry содержит неизменяемый файл:
 
 ```text
 models/{modelRef}/metrics.jsonl
@@ -28,11 +28,12 @@ training batches. При AMP оно не заявляется как точно�
 выполненных optimizer updates: `GradScaler` может пропустить update при
 overflow. Payload и RecordBatch boundaries на `step` не влияют.
 
-Recovery checkpoint и строка epoch становятся видимыми в одной транзакции
-PostgreSQL. Поэтому новая attempt сохраняет уже зафиксированные строки прежних
-attempts. Итоговый artifact собирается по generation `1..N`, проверяется и
-публикуется вместе с model generation. Artifact живёт не меньше модели и не
-зависит от terminal job spool.
+Recovery checkpoint становится видимым независимо от строки epoch. Метрика
+сохраняется best effort отдельной транзакцией PostgreSQL; новая attempt может
+использовать уже зафиксированные строки прежних attempts. Итоговый artifact
+собирается по generation `1..N` только после model publication. Если полный
+набор недоступен или повреждён, telemetry отбрасывается, а модель остаётся
+успешно опубликованной.
 
 Новые epoch fields проецируются в OpenSearch так:
 
@@ -98,11 +99,12 @@ semantic event в новом backing index. Обычный index сохраня�
 
 ## Outbox
 
-Terminal PostgreSQL transaction атомарно фиксирует model generation, metadata
-metrics artifact и outbox pointer. Publisher отправляет только документы,
-детерминированно восстановленные из неизменяемого artifact. Network errors,
-HTTP 408/429/5xx и потерянный response повторяются; schema, mapping и integrity
-errors блокируют запись outbox для оператора.
+После terminal transaction model generation отдельная best-effort transaction
+фиксирует metadata metrics artifact и outbox pointer. Publisher отправляет
+только документы, детерминированно восстановленные из неизменяемого artifact.
+Network errors, HTTP 408/429/5xx и потерянный response повторяются в пределах
+конечного retry budget; schema, mapping и integrity errors переводят запись в
+terminal `BLOCKED` до retention cleanup.
 
 В v2 централизуются только метрики успешно опубликованных fit runs. Метрики
 окончательно `FAILED` или `CANCELLED` attempts остаются attempt-local и не

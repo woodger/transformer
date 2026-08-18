@@ -196,10 +196,12 @@ Mean, max и P95 считаются только по finite pre-clip gradient n
 
 `plot-metrics` создаёт отдельный SVG для каждого доступного числового поля.
 
-Flight fit дополнительно сохраняет завершённые global epochs как обязательный
-immutable `models/{modelRef}/metrics.jsonl`. Durable boundary, OpenSearch
+Flight fit best effort сохраняет завершённые global epochs в immutable
+`models/{modelRef}/metrics.jsonl`. Durable boundary, OpenSearch
 projection и различие между `step` и фактическими AMP optimizer updates
 зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md) и
 [ADR 0012](./adr/0012-gradient-and-target-telemetry.md). Успешная модель также
-получает `run-summary.json` со статистикой шести targets по всему immutable
-dataset; она считается один раз на dataset, а не на каждую epoch.
+может получить `run-summary.json` со статистикой шести targets по всему
+immutable dataset; она считается один раз на dataset, а не на каждую epoch.
+Отсутствие или повреждение telemetry не меняет результат fit и model
+publication.

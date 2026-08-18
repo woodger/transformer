@@ -15,15 +15,15 @@ recovery, публикацию checkpoint и модели. Восстанавл�
 Inventory из `job.status` нельзя, а отправка событий из hot loop или worker-а
 сделала бы OpenSearch частью training path.
 
-Часть контрольных данных уже находится в PostgreSQL. Это не случайное
-аналитическое хранилище: job, attempts, inputs, recovery checkpoints и epoch
-intervals участвуют в fencing, recovery, проверке полноты и terminal
-транзакции. Их перенос в OpenSearch нарушил бы прикладную atomicity.
+Часть контрольных данных уже находится в PostgreSQL. Job, attempts, inputs и
+recovery checkpoints участвуют в fencing и recovery и не переносятся в
+OpenSearch. Best-effort epoch intervals хранятся рядом только для построения
+model-owned telemetry artifact и не являются прикладным состоянием.
 
 ## Решение
 
-Для каждой успешно опубликованной модели создаётся второй неизменяемый
-model-owned artifact:
+Для успешно опубликованной модели сервис best effort создаёт второй
+неизменяемый model-owned artifact:
 
 ```text
 models/{modelRef}/metrics.jsonl
@@ -50,16 +50,14 @@ timestamps. `publishedAt` — логическая граница terminal publi
 зафиксированная перед одной PostgreSQL-транзакцией; время фактического commit в
 immutable artifact не включается.
 
-Terminal sequence:
+Последовательность разделена прикладной границей:
 
 ```text
 worker completed
-  → durable checkpoint + metrics.jsonl + run-summary.json + metadata.json
-  → одна PostgreSQL transaction
-       model generation
-       оба artifact metadata
-       outbox inventory.metrics.v2
-       job SUCCEEDED
+  → durable checkpoint + metadata.json
+  → PostgreSQL transaction: model generation + job SUCCEEDED
+  → best-effort metrics.jsonl + run-summary.json
+  → отдельная PostgreSQL transaction: artifact metadata + outbox
   → post-commit OpenSearch publisher
        epoch points + artifact metadata + fit run summary
 ```
@@ -79,8 +77,9 @@ intervals удаляются вместе с terminal job по действую�
 lifecycle-решений.
 
 Недоступность OpenSearch не влияет на `SUCCEEDED`; outbox повторяет доставку.
-Повреждённый или неполный локальный summary, напротив, блокирует model
-publication как нарушение внутреннего контракта.
+Повреждённый, неполный или отсутствующий локальный summary логируется и
+отбрасывается после прикладного commit. Модель остаётся опубликованной и
+доступной.
 
 ## Последствия
 
@@ -89,5 +88,6 @@ metadata terminal summary. Перед migration следует завершит�
 уже активные fit attempts: прежний worker contract не создаёт обязательные
 timing values.
 
-Публикуются только успешные fit runs. Failed/cancelled attempt telemetry,
-row/batch events, host metrics и изменение Flight остаются вне решения.
+Публикуются только успешные fit runs, для которых удалось сформировать
+telemetry. Failed/cancelled attempt telemetry, row/batch events, host metrics и
+изменение Flight остаются вне решения.

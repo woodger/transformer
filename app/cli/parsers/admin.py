@@ -144,7 +144,10 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
     delete.add_argument(
         "--discard-undelivered-metrics",
         action="store_true",
-        help="Cancel pending or blocked OpenSearch metrics delivery.",
+        help=(
+            "Compatibility option; model deletion always cancels "
+            "undelivered metrics."
+        ),
     )
     delete.set_defaults(data=None, metrics_name=None)
 

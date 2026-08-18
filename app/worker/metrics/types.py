@@ -77,7 +77,7 @@ class TrainMetrics:
         self,
         rows: int,
         loss_parts: dict[str, float],
-        grad_norm: float,
+        grad_norm: float | None,
         optimizer_update_applied: bool,
         amp_overflow: bool,
         nan_ratio: float,
@@ -111,13 +111,15 @@ class TrainMetrics:
             )) / total_rows
             setattr(self, rmse_name, math.sqrt(max(0.0, mse)))
 
-        gradient_is_finite = math.isfinite(grad_norm)
-        if gradient_is_finite and grad_norm < 0:
-            raise ValueError("pre-clip gradient norm must not be negative")
-        if amp_overflow and (optimizer_update_applied or gradient_is_finite):
-            raise ValueError(
-                "AMP overflow requires a skipped update and non-finite gradient"
+        finite_gradient_norm = (
+            grad_norm
+            if (
+                grad_norm is not None
+                and math.isfinite(grad_norm)
+                and grad_norm >= 0
             )
+            else None
+        )
         self.training_batches_completed += 1
         if optimizer_update_applied:
             self.optimizer_updates_applied += 1
@@ -125,9 +127,9 @@ class TrainMetrics:
             self.optimizer_updates_skipped += 1
         if amp_overflow:
             self.amp_overflow_batches += 1
-        if gradient_is_finite:
+        if finite_gradient_norm is not None:
             self.finite_gradient_batches += 1
-            self._finite_gradient_norms.append(grad_norm)
+            self._finite_gradient_norms.append(finite_gradient_norm)
         else:
             self.non_finite_gradient_batches += 1
         self.nan_ratio = average(self.nan_ratio, nan_ratio)
@@ -174,47 +176,6 @@ class TrainMetrics:
             self.pre_clip_gradient_norm_mean = None
             self.pre_clip_gradient_norm_max = None
             self.pre_clip_gradient_norm_p95 = None
-        self._validate_gradient_telemetry()
-
-    def _validate_gradient_telemetry(self) -> None:
-        if self.training_batches_completed != self.batches:
-            raise ValueError(
-                "training batch telemetry differs from the epoch batch count"
-            )
-        if self.training_batches_completed != (
-            self.optimizer_updates_applied + self.optimizer_updates_skipped
-        ):
-            raise ValueError("optimizer update telemetry is inconsistent")
-        if self.training_batches_completed != (
-            self.finite_gradient_batches + self.non_finite_gradient_batches
-        ):
-            raise ValueError("gradient batch telemetry is inconsistent")
-        if (
-            self.amp_overflow_batches > self.optimizer_updates_skipped
-            or self.amp_overflow_batches > self.non_finite_gradient_batches
-        ):
-            raise ValueError("AMP overflow telemetry is inconsistent")
-        statistics = (
-            self.pre_clip_gradient_norm_mean,
-            self.pre_clip_gradient_norm_max,
-            self.pre_clip_gradient_norm_p95,
-        )
-        if self.finite_gradient_batches == 0:
-            if any(value is not None for value in statistics):
-                raise ValueError(
-                    "gradient statistics require at least one finite batch"
-                )
-            return
-        if any(
-            value is None or not math.isfinite(value) or value < 0
-            for value in statistics
-        ):
-            raise ValueError("finite gradient statistics are incomplete")
-        mean, maximum, percentile = statistics
-        if mean is None or maximum is None or percentile is None:
-            raise AssertionError("gradient statistics were not narrowed")
-        if mean > maximum or percentile > maximum:
-            raise ValueError("gradient statistics are inconsistent")
 
     def direct_losses(self) -> tuple[float, ...]:
         if self.rows <= 0:

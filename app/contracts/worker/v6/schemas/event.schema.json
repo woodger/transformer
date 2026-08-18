@@ -100,8 +100,7 @@
             "additionalProperties": false,
             "required": [
               "generation", "completedEpochs", "globalStep",
-              "trainingComplete", "artifact", "checkpointSerializationMs",
-              "metrics"
+              "trainingComplete", "artifact"
             ],
             "properties": {
               "generation": {"type": "integer", "minimum": 1},
@@ -111,10 +110,8 @@
               "artifact": {
                 "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/artifact"
               },
-              "checkpointSerializationMs": {"type": "number", "minimum": 0},
-              "metrics": {
-                "$ref": "https://transformer.local/contracts/worker/v6/training-metrics.schema.json"
-              }
+              "checkpointSerializationMs": {},
+              "metrics": {}
             }
           }
         }

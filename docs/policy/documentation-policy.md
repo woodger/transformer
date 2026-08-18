@@ -24,6 +24,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
 | Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
+| Best-effort границы metrics и OpenSearch | `docs/metrics.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML architecture и training decisions | профильные документы в `docs/` |

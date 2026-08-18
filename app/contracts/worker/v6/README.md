@@ -68,10 +68,13 @@ input-idle timer сервиса.
 падает при открытом input, новая attempt повторяет эту незавершённую epoch с
 начала. После EOF checkpoints остаются snapshots полных global epochs.
 
-Событие `checkpoint` атомарно связывает recovery generation с полной строкой
-`training-metrics.schema.json`. Сервис сохраняет checkpoint и метрику одной
-транзакцией PostgreSQL. Поэтому восстановленная attempt не теряет метрики уже
-зафиксированных эпох и не может заменить их другими значениями.
+Событие `checkpoint` обязательно содержит только recovery identity и artifact.
+Строка `training-metrics.schema.json` и checkpoint timings являются
+необязательной telemetry. Сервис сначала фиксирует checkpoint, затем best
+effort сохраняет метрику отдельной транзакцией PostgreSQL. Сбой telemetry не
+отменяет recovery generation и не завершает обучение ошибкой.
+Envelope намеренно не отклоняет core event из-за содержимого optional полей;
+сервис отдельно проверяет их строгими telemetry schemas перед сохранением.
 
 Epoch telemetry отдельно фиксирует завершённые training batches, фактически
 выполненные и пропущенные optimizer updates, AMP overflow и количество
@@ -79,7 +82,7 @@ finite/non-finite gradient norms. Mean, max и nearest-rank P95 считаютс
 по конечным pre-clip norms; non-finite batch не отравляет статистику остальных
 batch-ей. Число `step` сохраняет семантику завершённых training batches.
 
-Каждое checkpoint-событие дополнительно содержит monotonic
+При успешном сборе checkpoint-событие дополнительно содержит monotonic
 `checkpointSerializationMs`; сервис измеряет durable copy как
 `checkpointPublicationMs` и сохраняет оба значения рядом с epoch interval.
 Terminal fit result содержит такое же время сериализации итогового checkpoint.
@@ -105,12 +108,13 @@ meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
 Probability logits преобразуются через sigmoid до записи Arrow. Worker
 проверяет finite values и диапазоны target-space до terminal result.
 
-Успешный fit result дополнительно содержит `targetStatistics`: шесть записей в
-порядке public targets с count, min, max, mean, population std, zeroCount и
-oneCount. Worker считает их по Float32-значениям каждого ordinal immutable
-manifest ровно один раз в рамках attempt. После recovery новая attempt
-пересчитывает summary из тех же artifacts, но наружу публикуется только
-terminal result текущей attempt.
+Успешный fit result может дополнительно содержать `targetStatistics`: шесть
+записей в порядке public targets с count, min, max, mean, population std,
+zeroCount и oneCount. Worker считает их best effort по Float32-значениям
+каждого ordinal immutable manifest ровно один раз в рамках attempt. После
+recovery новая attempt пересчитывает summary из тех же artifacts, но наружу
+публикуется только terminal result текущей attempt. Ошибка этого расчёта не
+делает core result некорректным.
 
 ## Жизненный цикл artifacts и семантика завершения
 

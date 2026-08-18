@@ -345,6 +345,12 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
         workspace / "worker-result.json",
         "result-manifest",
     )
+    core_result = {
+        key: value
+        for key, value in result_manifest.items()
+        if key not in {"checkpointSerializationMs", "targetStatistics"}
+    }
+    assert validate_document(core_result, "result-manifest") is core_result
     assert result_manifest["inputRevision"] == 2
     assert result_manifest["manifestSha256"] == MANIFEST_SHA256
     assert result_manifest["artifacts"] == []

@@ -45,6 +45,15 @@ class MetricsOutboxRepository(Protocol):
         error_message: str,
     ) -> bool: ...
 
+    def discard(
+        self,
+        model_ref: str,
+        *,
+        expected_cursor: int,
+        error_code: str,
+        error_message: str,
+    ) -> bool: ...
+
     def complete(
         self,
         model_ref: str,
@@ -52,7 +61,7 @@ class MetricsOutboxRepository(Protocol):
         expected_cursor: int,
     ) -> bool: ...
 
-    def purge_delivered(self, *, older_than_seconds: float) -> int: ...
+    def purge_terminal(self, *, older_than_seconds: float) -> int: ...
 
     def backlog(self) -> tuple[int, int, float | None]: ...
 

@@ -100,6 +100,30 @@ def test_application_is_runnable_and_owns_runtime_directory(tmp_path):
     replacement.shutdown()
 
 
+def test_invalid_metrics_configuration_does_not_block_service_startup(
+    tmp_path,
+    monkeypatch,
+):
+    def fail_metrics_configuration():
+        raise ValueError("invalid optional metrics configuration")
+
+    monkeypatch.setattr(
+        application_module,
+        "load_opensearch_metrics_config",
+        fail_metrics_configuration,
+    )
+
+    application = FlightApplication.build(
+        config(tmp_path),
+        bearer_tokens={"secret": "inventory"},
+    )
+    try:
+        assert application.metrics_publisher is None
+        assert application.maintenance.running is True
+    finally:
+        application.shutdown()
+
+
 def test_application_uses_database_token_cache_without_query_per_rpc(
     tmp_path,
     monkeypatch,

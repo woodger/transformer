@@ -128,8 +128,8 @@ publication продолжает создавать durable artifact и outbox b
 
 После короткого fit проверьте:
 
-- модель содержит `models/{modelRef}/metrics.jsonl` и
-  `models/{modelRef}/run-summary.json`;
+- при успешном сборе telemetry модель содержит
+  `models/{modelRef}/metrics.jsonl` и `models/{modelRef}/run-summary.json`;
 - health показывает gauges `metricsOutboxEntries`, `metricsOutboxBytes` и
   `metricsOutboxOldestAgeSeconds`;
 - журнал содержит `metrics.artifact.delivered`;
@@ -139,4 +139,12 @@ publication продолжает создавать durable artifact и outbox b
 
 `metrics.delivery.retry_scheduled` означает временную ошибку.
 `metrics.delivery.blocked` означает schema/mapping/integrity error: такая entry
-автоматически не повторяется, пока причина не диагностирована.
+автоматически не повторяется и удаляется после terminal retention.
+`metrics.delivery.dropped` означает исчерпание retry budget;
+`metrics.outbox.dropped` — отказ admission из-за заполненного outbox.
+
+Некорректная конфигурация отключает publisher и создаёт
+`metrics.publisher.disabled`, но не блокирует запуск сервиса. Одна entry
+повторяется не больше 288 раз и не дольше 24 часов. Admission outbox ограничен
+10 000 entries и 10 GiB; сбой или потеря telemetry не меняют fit outcome и
+model lifecycle.

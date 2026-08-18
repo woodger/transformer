@@ -243,6 +243,14 @@ def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
         completed_epochs=1,
         global_step=10,
         training_complete=False,
+        now=6.0,
+    )
+    postgres_ledger.register_training_metric_interval(
+        job_id=job["job_id"],
+        attempt=first_attempt.attempt,
+        attempt_id=first_attempt.attempt_id,
+        generation=1,
+        global_step=10,
         metrics={"epoch": 1, "step": 10, "elapsed_ms": 100.0},
         checkpoint_serialization_ms=11.0,
         checkpoint_publication_ms=12.0,
@@ -280,6 +288,14 @@ def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
         completed_epochs=2,
         global_step=20,
         training_complete=True,
+        now=10.0,
+    )
+    postgres_ledger.register_training_metric_interval(
+        job_id=job["job_id"],
+        attempt=second_attempt.attempt,
+        attempt_id=second_attempt.attempt_id,
+        generation=2,
+        global_step=20,
         metrics={"epoch": 2, "step": 20, "elapsed_ms": 200.0},
         checkpoint_serialization_ms=13.0,
         checkpoint_publication_ms=14.0,

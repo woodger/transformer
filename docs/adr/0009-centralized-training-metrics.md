@@ -7,10 +7,12 @@ versioned indices вместо data streams, а текущее развёрты�
 OpenSearch по trusted-LAN HTTP-профилю.
 Контракт v1 расширен без изменения durability boundary в
 [ADR 0012](0012-gradient-and-target-telemetry.md).
+Уточнено 2026-08-17: telemetry является строго best effort и не входит в
+transaction прикладного checkpoint или model generation.
 
 ## Контекст
 
-Worker уже вычисляет полные epoch-level training metrics, но attempt-local
+Worker уже вычисляет epoch-level training metrics, но attempt-local
 `metrics.jsonl` находится в runtime spool и удаляется вместе с terminal job.
 Чтение stdout, отправка из optimizer loop или непосредственный сетевой доступ
 worker-а не дают надёжной связи с опубликованной model generation и делают
@@ -24,9 +26,9 @@ Transformer. Он не заменяет PostgreSQL как источник ис�
 
 Принимается отдельный интеграционный контракт
 `transformer.training-metrics.v1` → `inventory.metrics.v1`. Публичный Flight v4
-не меняется. Внутренний worker process contract был повышен до v4, поскольку
-событие `checkpoint` теперь обязательно содержит полную метрику той же global
-epoch. Terminal fit summary и timing boundaries развиваются отдельным
+не меняется. Внутренний worker process contract был повышен до v4. Core
+checkpoint event остаётся строгим, а метрика той же global epoch передаётся
+как необязательная telemetry. Terminal fit summary и timing boundaries развиваются отдельным
 [ADR 0011](0011-terminal-fit-run-summary.md), который повышает внутренний
 контракт до v5 без изменения Flight v4.
 
@@ -35,15 +37,14 @@ Durable flow:
 ```text
 worker завершил global epoch
   → fsync recovery checkpoint
-  → checkpoint event + полная epoch metric
-  → одна PostgreSQL transaction
-       recovery generation + metric interval + job progress
+  → checkpoint event
+  → PostgreSQL transaction: recovery generation
+  → best-effort PostgreSQL transaction: metric interval + job progress
   → terminal worker checkpoint
   → models/{modelRef}/checkpoint.pth
      models/{modelRef}/metadata.json
-     models/{modelRef}/metrics.jsonl
-  → одна PostgreSQL transaction
-       model generation + artifact metadata + outbox + SUCCEEDED
+  → PostgreSQL transaction: model generation + SUCCEEDED
+  → best-effort models/{modelRef}/metrics.jsonl + artifact metadata + outbox
   → background publisher
   → OpenSearch Bulk create
 ```
@@ -51,8 +52,9 @@ worker завершил global epoch
 Filesystem и PostgreSQL не образуют распределённую транзакцию. Файлы сначала
 публикуются через fsync и atomic rename, затем становятся видимыми в БД.
 Падение до database commit оставляет только orphan model directory, который
-удаляет startup reconciliation. После database commit outbox можно повторить
-из immutable artifact.
+удаляет startup reconciliation. После прикладного commit модель остаётся
+успешно опубликованной даже при потере telemetry. Зарегистрированный outbox
+можно повторить из immutable artifact.
 
 ## Identity и данные
 
@@ -74,10 +76,10 @@ updates при AMP overflow. Эта семантика сохраняет сущ
 
 ## Доставка
 
-Publisher не запускается, если OpenSearch полностью не настроен. Частичная или
-небезопасная конфигурация блокирует startup как ошибка deployment. При штатной
-конфигурации недоступность OpenSearch не блокирует startup, fit или model
-publication.
+Publisher не запускается, если OpenSearch полностью не настроен. Ошибочная
+конфигурация отключает только publisher, регистрируется в operational
+logs/counters и не блокирует startup. При штатной конфигурации недоступность
+OpenSearch не блокирует startup, fit или model publication.
 
 Bulk request ограничен 500 документами и 2 MiB. Доставка использует `create` и
 детерминированный `_id`. HTTP 409 проверяется через `_mget` и
@@ -85,10 +87,12 @@ Bulk request ограничен 500 документами и 2 MiB. Доста�
 backoff и jitter от одной секунды до пяти минут. Остальные ошибки переводят
 outbox entry в `BLOCKED` и требуют вмешательства оператора.
 
-Pending/blocked outbox entries не удаляются. Доставленные записи хранятся семь
-дней. Health metrics показывают число, bytes и возраст backlog; пороги
-10 000 entries, 10 GiB или 30 дней создают явное событие, но не меняют
-результат fit.
+Одна запись повторяется не более 288 раз и не дольше 24 часов, после чего
+переходит в `CANCELLED`. `BLOCKED`, `CANCELLED` и `DELIVERED` записи хранятся
+семь дней. Admission новых записей ограничен 10 000 entries и 10 GiB; при
+исчерпании бюджета telemetry отбрасывается после публикации модели. Health
+metrics показывают число, bytes и возраст backlog, а превышение диагностических
+порогов создаёт operational event.
 
 ## Индексы OpenSearch
 
@@ -131,8 +135,8 @@ Transformer сохраняет прежний HTTPS-профиль для дру
 
 ## Последствия
 
-Metrics artifact становится обязательной частью новой model publication.
-Повреждённая или неполная epoch metric завершает fit ошибкой до model
-generation. Уже опубликованная модель остаётся доступной, если OpenSearch или
-metrics projection позже недоступны. Migration `0007` добавляет durable epoch
-intervals, model artifact metadata и outbox без изменения Flight v4 schema.
+Metrics artifact является необязательной model-owned telemetry. Повреждённая,
+неполная или отсутствующая epoch metric логируется и отбрасывается, но не
+меняет recovery, fit outcome или model generation. Migration `0007` добавляет
+best-effort epoch intervals, model artifact metadata и outbox без изменения
+Flight v4 schema.

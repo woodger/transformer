@@ -384,6 +384,27 @@ def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
     assert document["preClipGradientNormP95"] == pytest.approx(3.0)
 
 
+def test_invalid_gradient_telemetry_does_not_interrupt_metric_aggregation():
+    metrics = TrainMetrics()
+
+    metrics.update(
+        rows=1,
+        loss_parts=_loss_parts(1.0),
+        grad_norm=-1.0,
+        optimizer_update_applied=True,
+        amp_overflow=True,
+        nan_ratio=0.0,
+    )
+    document = metrics.to_dict()
+
+    assert document["trainingBatchesCompleted"] == 1
+    assert document["optimizerUpdatesApplied"] == 1
+    assert document["ampOverflowBatches"] == 1
+    assert document["finiteGradientBatches"] == 0
+    assert document["nonFiniteGradientBatches"] == 1
+    assert document["preClipGradientNormMean"] is None
+
+
 def test_amp_overflow_counts_a_skipped_update_and_keeps_later_gradient():
     batch = make_dummy_data(n=4)
     model = new_model()

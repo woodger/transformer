@@ -59,9 +59,6 @@ class RecoveryLedgerSlice:
         completed_epochs: int,
         global_step: int,
         training_complete: bool,
-        metrics: JsonObject,
-        checkpoint_serialization_ms: float,
-        checkpoint_publication_ms: float,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
         positive(attempt, "attempt")
@@ -81,26 +78,6 @@ class RecoveryLedgerSlice:
             raise ValueError("training_complete must be a boolean")
         if format != TRAINING_RECOVERY_FORMAT:
             raise ValueError("unsupported training recovery format")
-        for value, label in (
-            (checkpoint_serialization_ms, "checkpoint_serialization_ms"),
-            (checkpoint_publication_ms, "checkpoint_publication_ms"),
-        ):
-            raw_value = cast(object, value)
-            if (
-                isinstance(raw_value, bool)
-                or not isinstance(raw_value, (int, float))
-                or not math.isfinite(raw_value)
-                or raw_value < 0
-            ):
-                raise ValueError(f"{label} must be finite and non-negative")
-        metrics_value = json_value(metrics)
-        if (
-            metrics_value.get("epoch") != generation
-            or metrics_value.get("step") != global_step
-        ):
-            raise ValueError(
-                "training metrics identity differs from recovery progress"
-            )
         validate_relative_path(relative_path)
         digest(sha256, "sha256")
         created_at = timestamp_now(now)
@@ -139,32 +116,16 @@ class RecoveryLedgerSlice:
                 (job_id, generation),
             )
             if existing is not None:
-                existing_metrics = session.get(
-                    TrainingMetricInterval,
-                    (job_id, generation),
-                )
-                if (
-                    _same_checkpoint(
-                        existing,
-                        attempt=attempt,
-                        format=format,
-                        relative_path=relative_path,
-                        byte_count=byte_count,
-                        sha256=sha256,
-                        completed_epochs=completed_epochs,
-                        global_step=global_step,
-                        training_complete=training_complete,
-                    )
-                    and existing_metrics is not None
-                    and _same_metrics(
-                        existing_metrics,
-                        attempt=attempt,
-                        attempt_id=attempt_id,
-                        metrics=metrics_value,
-                        checkpoint_serialization_ms=float(
-                            checkpoint_serialization_ms
-                        ),
-                    )
+                if _same_checkpoint(
+                    existing,
+                    attempt=attempt,
+                    format=format,
+                    relative_path=relative_path,
+                    byte_count=byte_count,
+                    sha256=sha256,
+                    completed_epochs=completed_epochs,
+                    global_step=global_step,
+                    training_complete=training_complete,
                 ):
                     return _record(existing), True
                 raise conflict(
@@ -202,23 +163,108 @@ class RecoveryLedgerSlice:
                 created_at=created_at,
             )
             session.add(record)
+            job.revision += 1
+            job.updated_at = created_at
+            session.flush()
+            return _record(record), False
+
+    def register_metric_interval(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        attempt_id: str,
+        generation: int,
+        global_step: int,
+        metrics: JsonObject,
+        checkpoint_serialization_ms: float,
+        checkpoint_publication_ms: float,
+        now: float | None = None,
+    ) -> bool:
+        """Persist optional epoch telemetry after its recovery checkpoint."""
+        positive(attempt, "attempt")
+        attempt_id = canonical_uuid(attempt_id, "attempt_id")
+        positive(generation, "generation")
+        raw_global_step = cast(object, global_step)
+        if (
+            isinstance(raw_global_step, bool)
+            or not isinstance(raw_global_step, int)
+            or raw_global_step < 0
+        ):
+            raise ValueError("global_step must be a non-negative integer")
+        for value, label in (
+            (checkpoint_serialization_ms, "checkpoint_serialization_ms"),
+            (checkpoint_publication_ms, "checkpoint_publication_ms"),
+        ):
+            raw_value = cast(object, value)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (int, float))
+                or not math.isfinite(raw_value)
+                or raw_value < 0
+            ):
+                raise ValueError(f"{label} must be finite and non-negative")
+        metrics_value = json_value(metrics)
+        if (
+            metrics_value.get("epoch") != generation
+            or metrics_value.get("step") != global_step
+        ):
+            raise ValueError(
+                "training metrics identity differs from recovery progress"
+            )
+        recorded_at = timestamp_now(now)
+        with self.database.transaction() as session:
+            checkpoint = session.get(
+                TrainingRecoveryCheckpoint,
+                (job_id, generation),
+            )
+            if (
+                checkpoint is None
+                or checkpoint.attempt != attempt
+                or checkpoint.global_step != global_step
+            ):
+                raise failed_precondition(
+                    "training metrics require the matching recovery checkpoint"
+                )
+            attempt_record = session.get(JobAttempt, (job_id, attempt))
+            if (
+                attempt_record is None
+                or attempt_record.attempt_id != attempt_id
+            ):
+                raise failed_precondition(
+                    "training metrics attempt identity differs"
+                )
+            existing = session.get(
+                TrainingMetricInterval,
+                (job_id, generation),
+            )
+            if existing is not None:
+                if _same_metrics(
+                    existing,
+                    attempt=attempt,
+                    attempt_id=attempt_id,
+                    metrics=metrics_value,
+                    checkpoint_serialization_ms=(
+                        checkpoint_serialization_ms
+                    ),
+                ):
+                    return True
+                raise conflict("training metric interval already exists")
             session.add(TrainingMetricInterval(
                 job_id=job_id,
                 generation=generation,
                 attempt=attempt,
                 attempt_id=attempt_id,
                 metrics=metrics_value,
-                checkpoint_serialization_ms=float(
-                    checkpoint_serialization_ms
-                ),
-                checkpoint_publication_ms=float(checkpoint_publication_ms),
-                recorded_at=created_at,
+                checkpoint_serialization_ms=checkpoint_serialization_ms,
+                checkpoint_publication_ms=checkpoint_publication_ms,
+                recorded_at=recorded_at,
             ))
-            job.progress = metrics_value
-            job.revision += 1
-            job.updated_at = created_at
+            job = session.get(Job, job_id)
+            if job is not None:
+                job.progress = metrics_value
             session.flush()
-            return _record(record), False
+            return False
 
     def list_metrics(
         self,

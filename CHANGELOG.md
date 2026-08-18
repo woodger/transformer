@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Training telemetry приведена к политике best effort: recovery checkpoint и
+  model generation фиксируются независимо от epoch metrics, metrics artifacts
+  и OpenSearch outbox. Сбой или отсутствие telemetry больше не меняет результат
+  fit и не блокирует удаление модели.
+- OpenSearch publisher отключается при ошибочной конфигурации, использует
+  конечный retry budget и bounded admission для outbox; terminal delivery
+  entries очищаются по retention policy.
+- Поля telemetry во внутреннем worker v6 стали необязательными. Core checkpoint
+  и fit result остаются строгими, публичный Flight v4 не изменён.
+
 ## [0.1.12] - 2026-08-16
 
 ### Added

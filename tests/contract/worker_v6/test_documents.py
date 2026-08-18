@@ -279,6 +279,29 @@ def test_worker_event_and_control_envelopes_are_equality_fenced_and_sequenced():
             parser(partial)
 
 
+def test_checkpoint_event_accepts_missing_optional_telemetry():
+    event = encode_event(
+        job_id=JOB_ID,
+        attempt=1,
+        attempt_id=ATTEMPT_ID,
+        sequence=1,
+        event_type="checkpoint",
+        payload={
+            "generation": 1,
+            "completedEpochs": 1,
+            "globalStep": 2,
+            "trainingComplete": False,
+            "artifact": {
+                "path": "/tmp/checkpoint.pth",
+                "byteCount": 10,
+                "sha256": SHA256,
+            },
+        },
+    )
+
+    assert parse_event(event)["payload"]["generation"] == 1
+
+
 def test_durable_input_stream_blocks_at_frontier_then_accepts_eof():
     committed = encode_control_message(
         job_id=JOB_ID,

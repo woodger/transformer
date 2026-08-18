@@ -52,9 +52,10 @@ recovery пересчитывает значения из тех же durable ar
 result текущей attempt попадает в model publication, поэтому повторного
 durable учёта нет.
 
-Target statistics становятся обязательной частью model-owned
-`run-summary.json`. Service повторно проверяет identity, диапазоны, finite
-values и равенство `count == inputRows` до terminal transaction.
+Target statistics входят в model-owned `run-summary.json`, если worker смог их
+собрать. Service повторно проверяет identity, диапазоны, finite values и
+равенство `count == inputRows`; невалидная telemetry отбрасывается после
+прикладной terminal transaction и не меняет fit outcome.
 
 ## Версирование и durable boundary
 
@@ -72,11 +73,11 @@ values и равенство `count == inputRows` до terminal transaction.
 совместимости для них не сохраняется. Все запуски fit используют артефакты v2
 и проекцию v3.
 
-Epoch metric и recovery checkpoint по-прежнему фиксируются одной транзакцией
-PostgreSQL. Target statistics входят в terminal summary; summary metadata,
-model generation, outbox и `SUCCEEDED` фиксируются существующей terminal
-транзакцией `publish_model`. OpenSearch остаётся post-commit проекцией и его
-недоступность не влияет на fit.
+Recovery checkpoint фиксируется отдельной прикладной транзакцией PostgreSQL;
+epoch metric сохраняется best effort после неё. Model generation и `SUCCEEDED`
+фиксируются до попытки создать target statistics summary, artifact metadata и
+outbox. OpenSearch остаётся post-commit проекцией и его недоступность не влияет
+на fit.
 
 Публичный Flight v4 и PostgreSQL schema не меняются. Перед развёртыванием
 worker v6 активные fit jobs следует завершить или отменить, а созданные
@@ -84,7 +85,8 @@ worker v6 активные fit jobs следует завершить или о�
 
 ## Последствия
 
-По `modelRef` в `metrics-runs-v2` однозначно находится один successful run
-summary с training target statistics. Inventory может вычислить training-mean
-baseline без повторного чтения dataset. Failed/cancelled attempt telemetry,
-row/batch events и отправка из ML worker остаются вне решения.
+При успешной публикации telemetry по `modelRef` в `metrics-runs-v2` однозначно
+находится один run summary с training target statistics. При её отсутствии
+baseline недоступен; модель и fit остаются корректными. Failed/cancelled
+attempt telemetry, row/batch events и отправка из ML worker остаются вне
+решения.

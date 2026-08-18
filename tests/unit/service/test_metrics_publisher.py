@@ -120,6 +120,22 @@ class _Outbox:
     def block(self, *_args, **_kwargs):
         raise AssertionError("delivery must not be blocked")
 
+    def discard(
+        self,
+        model_ref,
+        *,
+        expected_cursor,
+        error_code,
+        error_message,
+    ):
+        assert model_ref == self.entry.artifact.model_ref
+        assert self.entry.cursor == expected_cursor
+        assert error_code == "DELIVERY_EXPIRED"
+        assert error_message
+        self.entry = replace(self.entry, status="CANCELLED")
+        self.delivered.set()
+        return True
+
     def complete(self, model_ref, *, expected_cursor):
         if self.entry.cursor != expected_cursor:
             return False
@@ -127,7 +143,7 @@ class _Outbox:
         self.delivered.set()
         return True
 
-    def purge_delivered(self, *, older_than_seconds):
+    def purge_terminal(self, *, older_than_seconds):
         assert older_than_seconds > 0
         return 0
 
@@ -184,6 +200,7 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
         logger=_Logger(),
         metrics=OperationalMetrics(),
         random_value=lambda: 0.5,
+        wall_clock=lambda: 2.0,
     ).start()
     try:
         assert outbox.retried.wait(2.0)
@@ -192,6 +209,104 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
 
     assert outbox.retry_delay == 1.0
     assert outbox.entry.cursor == 0
+
+
+def test_retryable_delivery_is_discarded_after_the_retry_budget():
+    class RetrySink:
+        def create_documents(self, _index, _documents, *, id_field):
+            assert id_field == "eventId"
+            raise RetryableMetricsDeliveryError("still unavailable")
+
+    outbox = _Outbox(replace(_entry(), attempts=287))
+    publisher = MetricsPublisher(
+        outbox,
+        _Projection(1),
+        RetrySink(),
+        deployment_id="hp800g9.home",
+        logger=_Logger(),
+        metrics=OperationalMetrics(),
+        wall_clock=lambda: 2.0,
+    ).start()
+    try:
+        assert outbox.delivered.wait(2.0)
+    finally:
+        publisher.shutdown(2.0)
+
+    assert outbox.entry.status == "CANCELLED"
+    assert outbox.retry_delay is None
+
+
+def test_unexpected_delivery_failure_is_blocked_instead_of_retried_forever():
+    class BrokenProjection(_Projection):
+        def points(self, _entry, *, deployment_id):
+            assert deployment_id == "hp800g9.home"
+            raise RuntimeError("unexpected projection failure")
+
+    class BlockingOutbox(_Outbox):
+        def block(
+            self,
+            model_ref,
+            *,
+            expected_cursor,
+            error_code,
+            error_message,
+        ):
+            assert model_ref == self.entry.artifact.model_ref
+            assert expected_cursor == self.entry.cursor
+            assert error_code == "DELIVERY_INTERNAL"
+            assert error_message
+            self.entry = replace(self.entry, status="BLOCKED")
+            self.delivered.set()
+            return True
+
+    outbox = BlockingOutbox(_entry())
+    publisher = MetricsPublisher(
+        outbox,
+        BrokenProjection(1),
+        _Sink(),
+        deployment_id="hp800g9.home",
+        logger=_Logger(),
+        metrics=OperationalMetrics(),
+    ).start()
+    try:
+        assert outbox.delivered.wait(2.0)
+    finally:
+        publisher.shutdown(2.0)
+
+    assert outbox.entry.status == "BLOCKED"
+
+
+def test_shutdown_timeout_does_not_fail_the_service():
+    class BlockingSink:
+        def __init__(self) -> None:
+            self.entered = threading.Event()
+            self.release = threading.Event()
+
+        def create_documents(self, _index, _documents, *, id_field):
+            assert id_field == "eventId"
+            self.entered.set()
+            self.release.wait(2.0)
+
+    sink = BlockingSink()
+    logger = _Logger()
+    publisher = MetricsPublisher(
+        _Outbox(_entry()),
+        _Projection(1),
+        sink,
+        deployment_id="hp800g9.home",
+        logger=logger,
+        metrics=OperationalMetrics(),
+    ).start()
+    assert sink.entered.wait(2.0)
+
+    publisher.shutdown(0.0)
+    sink.release.set()
+    publisher.shutdown(2.0)
+
+    assert any(
+        event == "metrics.publisher.drain_exceeded"
+        for event, _fields in logger.events
+    )
 
 
 def test_current_projection_verifies_immutable_run_summary(tmp_path):

@@ -126,6 +126,28 @@ class PostgresMetricsOutbox:
             row.updated_at = datetime.now(UTC)
             return True
 
+    def discard(
+        self,
+        model_ref: str,
+        *,
+        expected_cursor: int,
+        error_code: str,
+        error_message: str,
+    ) -> bool:
+        with self.database.transaction() as session:
+            row = session.get(
+                MetricsOutboxEntry,
+                model_ref,
+                with_for_update=True,
+            )
+            if row is None or not _owns(row, expected_cursor):
+                return False
+            row.status = "CANCELLED"
+            row.last_error_code = error_code[:64]
+            row.last_error_message = error_message[:1024]
+            row.updated_at = datetime.now(UTC)
+            return True
+
     def complete(
         self,
         model_ref: str,
@@ -149,13 +171,17 @@ class PostgresMetricsOutbox:
             row.updated_at = now
             return True
 
-    def purge_delivered(self, *, older_than_seconds: float) -> int:
+    def purge_terminal(self, *, older_than_seconds: float) -> int:
         cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
         with self.database.transaction() as session:
             rows = session.scalars(
                 select(MetricsOutboxEntry).where(
-                    MetricsOutboxEntry.status == "DELIVERED",
-                    MetricsOutboxEntry.delivered_at < cutoff,
+                    MetricsOutboxEntry.status.in_((
+                        "BLOCKED",
+                        "CANCELLED",
+                        "DELIVERED",
+                    )),
+                    MetricsOutboxEntry.updated_at < cutoff,
                 )
                 .with_for_update()
             ).all()

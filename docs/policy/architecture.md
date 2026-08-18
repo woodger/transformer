@@ -148,7 +148,7 @@ PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
 tokens, published metadata и состояния metrics outbox. OpenSearch является
-восстанавливаемой аналитической проекцией, а не частью model/job lifecycle.
+best-effort аналитической проекцией, а не частью model/job lifecycle.
 SQLite и dual-write запрещены.
 
 PostgreSQL-транзакция не охватывает filesystem или subprocess. Artifact

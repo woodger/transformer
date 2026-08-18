@@ -43,10 +43,20 @@ class _RecoveryLedger(Protocol):
         completed_epochs: int,
         global_step: int,
         training_complete: bool,
+    ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
+
+    def register_training_metric_interval(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        attempt_id: str,
+        generation: int,
+        global_step: int,
         metrics: JsonObject,
         checkpoint_serialization_ms: float,
         checkpoint_publication_ms: float,
-    ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
+    ) -> bool: ...
 
     def prune_recovery_checkpoints(
         self,
@@ -121,6 +131,8 @@ class RecoveryCheckpointPublisher:
             "training_complete",
             "bytes",
             "sha256",
+        }
+        optional = {
             "metrics",
             "checkpoint_serialization_ms",
             "checkpoint_publication_ms",
@@ -130,7 +142,7 @@ class RecoveryCheckpointPublisher:
             if publication_started is None
             else required - {"checkpoint_publication_ms"}
         )
-        if set(event) != expected_fields:
+        if not required <= set(event) <= expected_fields | optional:
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit subprocess emitted an invalid recovery event",
@@ -190,32 +202,57 @@ class RecoveryCheckpointPublisher:
             event["training_complete"],
             "training complete",
         )
-        try:
-            interval_metrics = validate_document(
-                event["metrics"],
-                "training-metrics",
-            )
-        except WorkerContractError as exc:
-            raise WorkerRecoveryError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "fit subprocess emitted invalid training metrics",
-            ) from exc
+        interval_metrics: JsonObject | None = None
+        checkpoint_serialization_ms: float | None = None
+        if "metrics" in event:
+            try:
+                interval_metrics = validate_document(
+                    event["metrics"],
+                    "training-metrics",
+                )
+                checkpoint_serialization_ms = _nonnegative_number(
+                    event.get("checkpoint_serialization_ms"),
+                    "checkpoint serialization duration",
+                )
+            except (WorkerContractError, WorkerRecoveryError) as exc:
+                self.metrics.add("trainingTelemetryCollectionErrors")
+                self.logger.event(
+                    "metrics.collection.failed",
+                    jobId=job.job_id,
+                    phase="recovery-checkpoint",
+                    errorType=type(exc).__name__,
+                )
+                interval_metrics = None
+                checkpoint_serialization_ms = None
         if completed_epochs != generation:
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit recovery checkpoint metadata is inconsistent",
             )
-        checkpoint_publication_ms = (
-            _nonnegative_number(
-                event["checkpoint_publication_ms"],
-                "checkpoint publication duration",
-            )
-            if publication_started is None
-            else _nonnegative_number(
-                (self._monotonic() - publication_started) * 1000.0,
-                "checkpoint publication duration",
-            )
-        )
+        checkpoint_publication_ms: float | None = None
+        if interval_metrics is not None:
+            try:
+                checkpoint_publication_ms = (
+                    _nonnegative_number(
+                        event.get("checkpoint_publication_ms"),
+                        "checkpoint publication duration",
+                    )
+                    if publication_started is None
+                    else _nonnegative_number(
+                        (self._monotonic() - publication_started) * 1000.0,
+                        "checkpoint publication duration",
+                    )
+                )
+            except WorkerRecoveryError as exc:
+                self.metrics.add("trainingTelemetryCollectionErrors")
+                self.logger.event(
+                    "metrics.collection.failed",
+                    jobId=job.job_id,
+                    phase="recovery-checkpoint",
+                    errorType=type(exc).__name__,
+                )
+                interval_metrics = None
+                checkpoint_serialization_ms = None
         _, replayed = self.ledger.register_recovery_checkpoint(
             job_id=job.job_id,
             attempt=job.attempt,
@@ -228,13 +265,29 @@ class RecoveryCheckpointPublisher:
             completed_epochs=completed_epochs,
             global_step=global_step,
             training_complete=training_complete,
-            metrics=interval_metrics,
-            checkpoint_serialization_ms=_nonnegative_number(
-                event["checkpoint_serialization_ms"],
-                "checkpoint serialization duration",
-            ),
-            checkpoint_publication_ms=checkpoint_publication_ms,
         )
+        if interval_metrics is not None:
+            assert checkpoint_serialization_ms is not None
+            assert checkpoint_publication_ms is not None
+            try:
+                self.ledger.register_training_metric_interval(
+                    job_id=job.job_id,
+                    attempt=job.attempt,
+                    attempt_id=_attempt_id(job),
+                    generation=generation,
+                    global_step=global_step,
+                    metrics=interval_metrics,
+                    checkpoint_serialization_ms=checkpoint_serialization_ms,
+                    checkpoint_publication_ms=checkpoint_publication_ms,
+                )
+            except Exception as exc:
+                self.metrics.add("trainingTelemetryCollectionErrors")
+                self.logger.event(
+                    "metrics.collection.failed",
+                    jobId=job.job_id,
+                    phase="recovery-persistence",
+                    errorType=type(exc).__name__,
+                )
         if not replayed:
             self.metrics.add("recoveryCheckpointsPublished")
             self.metrics.add("recoveryCheckpointBytes", byte_count)
@@ -273,10 +326,12 @@ class RecoveryCheckpointPublisher:
             "globalStep",
             "trainingComplete",
             "artifact",
-            "checkpointSerializationMs",
-            "metrics",
         }
-        if set(event) != required or self.spool is None:
+        optional = {"checkpointSerializationMs", "metrics"}
+        if (
+            not required <= set(event) <= required | optional
+            or self.spool is None
+        ):
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
                 "fit worker emitted an invalid checkpoint event",
@@ -334,7 +389,7 @@ class RecoveryCheckpointPublisher:
                 ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
                 "fit worker checkpoint could not be published",
             ) from exc
-        return {
+        published: JsonObject = {
             "format": TRAINING_RECOVERY_FORMAT,
             "generation": generation,
             "completed_epochs": _positive_integer(
@@ -354,15 +409,14 @@ class RecoveryCheckpointPublisher:
                 artifact.get("sha256"),
                 "worker checkpoint sha256",
             ),
-            "checkpoint_serialization_ms": _nonnegative_number(
-                event["checkpointSerializationMs"],
-                "worker checkpoint serialization duration",
-            ),
-            "metrics": _object(
-                event["metrics"],
-                "worker checkpoint metrics",
-            ),
         }
+        if "checkpointSerializationMs" in event:
+            published["checkpoint_serialization_ms"] = event[
+                "checkpointSerializationMs"
+            ]
+        if "metrics" in event:
+            published["metrics"] = event["metrics"]
+        return published
 
 
 def _sha256_file(path: str) -> str:

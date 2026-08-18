@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import replace
@@ -72,6 +73,18 @@ def execute_fit(
     expected_target_dim = 6
     committed_inputs = CommittedInputArtifacts()
     target_statistics = TargetStatisticsAccumulator()
+    target_statistics_available = True
+
+    def disable_target_statistics(exc: Exception) -> None:
+        nonlocal target_statistics_available
+        if not target_statistics_available:
+            return
+        target_statistics_available = False
+        print(
+            "training target telemetry disabled: " + type(exc).__name__,
+            file=sys.stderr,
+            flush=True,
+        )
 
     def read_payload(item: JsonObject) -> TrainingBatch:
         if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
@@ -89,7 +102,11 @@ def execute_fit(
         )
         validate_feature_dim(batch.features, expected_feature_dim)
         validate_target_dim(batch.targets, expected_target_dim)
-        target_statistics.update(ordinal, batch.targets)
+        if target_statistics_available:
+            try:
+                target_statistics.update(ordinal, batch.targets)
+            except Exception as exc:
+                disable_target_statistics(exc)
         return batch
 
     stream = iter(input_stream.items())
@@ -105,7 +122,16 @@ def execute_fit(
 
     actual_config = replace(model_config, feature_dim=expected_feature_dim)
     model = build_model(actual_config, first.features, first.targets, device)
-    metrics_path = os.path.join(workspace, "metrics.jsonl")
+    metrics_path: str | None = os.path.join(workspace, "metrics.jsonl")
+    try:
+        reset_metrics_log(metrics_path)
+    except Exception as exc:
+        metrics_path = None
+        print(
+            "training metrics log disabled: " + type(exc).__name__,
+            file=sys.stderr,
+            flush=True,
+        )
     trainer = build_trainer(
         train_config,
         model,
@@ -114,7 +140,6 @@ def execute_fit(
         data_contract=data_contract,
         metrics_path=metrics_path,
     )
-    reset_metrics_log(metrics_path)
 
     recovery_value = manifest.get("recovery")
     recovery = (
@@ -210,32 +235,30 @@ def execute_fit(
         checkpoint_serialization_ms = (
             time.monotonic() - serialization_started
         ) * 1000.0
-        committed_metrics = object_document(
-            json_safe(metrics.to_dict(
-                mode="fit-stream",
-                frame=None,
-                epoch=epoch + 1,
-                selection_score=monitor_payload["selection_score"],
-                checkpoint_best=monitor_payload["checkpoint_best"],
-                should_stop=monitor_payload["should_stop"],
-                best_selection_score=monitor_payload[
-                    "best_selection_score"
-                ],
-            )),
-            "committed fit metrics",
-        )
-        validate_document(committed_metrics, "training-metrics")
-        trainer.record_metrics(
-            metrics,
-            mode="fit-stream",
-            frame=None,
-            epoch=epoch + 1,
-            selection_score=monitor_payload["selection_score"],
-            checkpoint_best=monitor_payload["checkpoint_best"],
-            should_stop=monitor_payload["should_stop"],
-            best_selection_score=monitor_payload["best_selection_score"],
-        )
-        emitter.checkpoint({
+        metrics_payload = {
+            "mode": "fit-stream",
+            "frame": None,
+            "epoch": epoch + 1,
+            "selection_score": monitor_payload["selection_score"],
+            "checkpoint_best": monitor_payload["checkpoint_best"],
+            "should_stop": monitor_payload["should_stop"],
+            "best_selection_score": monitor_payload["best_selection_score"],
+        }
+        committed_metrics: JsonObject | None = None
+        try:
+            committed_metrics = object_document(
+                json_safe(metrics.to_dict(**metrics_payload)),
+                "committed fit metrics",
+            )
+            validate_document(committed_metrics, "training-metrics")
+            trainer.record_metrics(metrics, **metrics_payload)
+        except Exception as exc:
+            print(
+                "training epoch telemetry disabled: " + type(exc).__name__,
+                file=sys.stderr,
+                flush=True,
+            )
+        checkpoint_event: JsonObject = {
             "generation": integer_field(event, "generation"),
             "completedEpochs": integer_field(event, "completed_epochs"),
             "globalStep": integer_field(event, "global_step"),
@@ -245,8 +268,10 @@ def execute_fit(
             ),
             "artifact": artifact_document(checkpoint_path),
             "checkpointSerializationMs": checkpoint_serialization_ms,
-            "metrics": committed_metrics,
-        })
+        }
+        if committed_metrics is not None:
+            checkpoint_event["metrics"] = committed_metrics
+        emitter.checkpoint(checkpoint_event)
 
     if not trainer.training_complete:
         if trainer.state.global_epoch == 0:
@@ -269,17 +294,25 @@ def execute_fit(
     ) * 1000.0
     if not input_stream.closed:
         raise ValueError("fit result requires a closed immutable input")
-    for item in input_stream.inputs:
-        ordinal = integer_field(item, "ordinal")
-        if not target_statistics.contains(ordinal):
-            read_payload(item)
-    expected_target_rows = sum(
-        integer_field(item, "rows") for item in input_stream.inputs
-    )
-    if target_statistics.count != expected_target_rows:
-        raise ValueError("target statistics row count differs from the manifest")
-    target_statistics_documents: list[JsonValue] = []
-    target_statistics_documents.extend(target_statistics.to_documents())
+    target_statistics_documents: list[JsonValue] | None = None
+    if target_statistics_available:
+        try:
+            for item in input_stream.inputs:
+                ordinal = integer_field(item, "ordinal")
+                if not target_statistics.contains(ordinal):
+                    read_payload(item)
+            expected_target_rows = sum(
+                integer_field(item, "rows") for item in input_stream.inputs
+            )
+            if target_statistics.count != expected_target_rows:
+                raise ValueError(
+                    "target statistics row count differs from the manifest"
+                )
+            target_statistics_documents = list(
+                target_statistics.to_documents()
+            )
+        except Exception as exc:
+            disable_target_statistics(exc)
     result = result_identity(manifest)
     result_fields: JsonObject = {
         "inputRevision": input_stream.input_revision,
@@ -288,8 +321,9 @@ def execute_fit(
         "checkpoint": artifact_document(checkpoint_path),
         "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
         "checkpointSerializationMs": checkpoint_serialization_ms,
-        "targetStatistics": target_statistics_documents,
     }
+    if target_statistics_documents is not None:
+        result_fields["targetStatistics"] = target_statistics_documents
     result.update(result_fields)
     validate_document(result, "result-manifest")
     return result

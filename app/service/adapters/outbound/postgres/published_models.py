@@ -57,6 +57,7 @@ class PublishedModelStore:
         *,
         discard_undelivered_metrics: bool,
     ) -> ModelLifecycleRecord:
+        del discard_undelivered_metrics
         model_ref = _model_ref(model_ref)
         with self.database.transaction() as session:
             # Publication uses the same transaction-scoped generation lock.
@@ -99,16 +100,6 @@ class PublishedModelStore:
                 raise ModelDeletionBlocked(
                     f"model generation has {active_jobs} active predict job(s): "
                     f"{model_ref}"
-                )
-
-            if (
-                outbox is not None
-                and outbox.status in _UNDELIVERED_METRICS_STATES
-                and not discard_undelivered_metrics
-            ):
-                raise ModelDeletionBlocked(
-                    "model generation has undelivered training metrics "
-                    f"({outbox.status}): {model_ref}"
                 )
 
             now = datetime.now(UTC)

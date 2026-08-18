@@ -259,20 +259,13 @@ lifecycle state и состояние доставки training metrics:
 переиспользуются.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
-Оно также по умолчанию отклоняется при `PENDING` или `BLOCKED` доставке metrics.
-Если потеря ещё не доставленной telemetry осознанно допустима, её можно явно
-отменить:
+Состояние доставки metrics удаление не блокирует: `PENDING` или `BLOCKED`
+запись автоматически становится `CANCELLED`. Уже созданные документы
+OpenSearch не удаляются, а publisher может завершить Bulk request, начатый до
+commit удаления.
 
-```bash
-./.venv/bin/python ./app/main.py models delete \
-  mdl_ead8077a4cba4455920d718532551248 \
-  --discard-undelivered-metrics
-```
-
-Уже созданные документы OpenSearch не удаляются. При явной отмене publisher
-может успеть завершить уже начатый Bulk request; операция означает отказ от
-гарантии полной доставки локальной metrics projection, а не очистку
-OpenSearch.
+Compatibility option `--discard-undelivered-metrics` по-прежнему принимается
+старыми operator scripts, но больше не меняет поведение команды.
 
 ## Пути и запись артефактов
 

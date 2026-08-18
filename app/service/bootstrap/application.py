@@ -199,23 +199,53 @@ class FlightApplication:
             published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)
-            metrics_config = load_opensearch_metrics_config()
-            if metrics_config is None:
-                backlog_entries, backlog_bytes, backlog_age = (
-                    metrics_outbox.backlog()
+            metrics_configuration_failed = False
+            try:
+                metrics_config = load_opensearch_metrics_config()
+                metrics_client = (
+                    None
+                    if metrics_config is None
+                    else OpenSearchMetricsClient(metrics_config)
                 )
-                metrics.set("metricsOutboxEntries", backlog_entries)
-                metrics.set("metricsOutboxBytes", backlog_bytes)
-                metrics.set("metricsOutboxOldestAgeSeconds", backlog_age)
+            except Exception as exc:
+                metrics_configuration_failed = True
+                metrics_config = None
+                metrics_client = None
+                metrics.add("metricsPublisherConfigurationErrors")
                 logger.event(
                     "metrics.publisher.disabled",
-                    pendingEntries=backlog_entries,
+                    reason="invalid-configuration",
+                    errorType=type(exc).__name__,
                 )
+            if metrics_config is None:
+                try:
+                    backlog_entries, backlog_bytes, backlog_age = (
+                        metrics_outbox.backlog()
+                    )
+                    metrics.set("metricsOutboxEntries", backlog_entries)
+                    metrics.set("metricsOutboxBytes", backlog_bytes)
+                    metrics.set("metricsOutboxOldestAgeSeconds", backlog_age)
+                except Exception as exc:
+                    backlog_entries = 0
+                    metrics.add("metricsPublisherInternalErrors")
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        reason="outbox-unavailable",
+                        errorType=type(exc).__name__,
+                    )
+                    metrics_configuration_failed = True
+                if not metrics_configuration_failed:
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        pendingEntries=backlog_entries,
+                    )
             else:
+                if metrics_client is None:
+                    raise AssertionError("configured metrics client is unavailable")
                 metrics_publisher = MetricsPublisher(
                     metrics_outbox,
                     ModelMetricsProjection(spool),
-                    OpenSearchMetricsClient(metrics_config),
+                    metrics_client,
                     deployment_id=metrics_config.deployment_id,
                     logger=logger,
                     metrics=metrics,
@@ -354,7 +384,17 @@ class FlightApplication:
                 metrics_publisher,
             )
             if metrics_publisher is not None:
-                metrics_publisher.start()
+                try:
+                    metrics_publisher.start()
+                except Exception as exc:
+                    metrics.add("metricsPublisherInternalErrors")
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        reason="startup-failed",
+                        errorType=type(exc).__name__,
+                    )
+                    metrics_publisher = None
+                    application.metrics_publisher = None
             worker.start()
             maintenance.start()
             for job_id in interrupted_jobs:

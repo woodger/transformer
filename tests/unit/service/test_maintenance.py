@@ -17,8 +17,6 @@ from tests.support.flight_v4_helpers import (
     close_input,
     commit_input,
     create_fit,
-    create_test_metrics_artifact,
-    create_test_run_summary_artifact,
     internal_data_contract,
     model_config,
 )
@@ -337,20 +335,6 @@ def test_published_model_outlives_its_producing_job(
     spool.atomic_write_bytes(checkpoint, b"checkpoint")
     spool.atomic_write_json(metadata_path, {"modelRef": model_ref})
     raw = Path(checkpoint).read_bytes()
-    metrics_artifact = create_test_metrics_artifact(
-        spool,
-        model_ref=model_ref,
-        job_id=job["job_id"],
-        attempt_id=running.attempt_id,
-        attempt=running.attempt,
-    )
-    run_summary = create_test_run_summary_artifact(
-        spool,
-        model_ref=model_ref,
-        job_id=job["job_id"],
-        attempt_id=running.attempt_id,
-        attempt=running.attempt,
-    )
     postgres_ledger.publish_model(
         job["job_id"],
         running.attempt,
@@ -362,19 +346,6 @@ def test_published_model_outlives_its_producing_job(
         metadata_path=spool.model_relative_path(metadata_path),
         byte_count=len(raw),
         sha256=hashlib.sha256(raw).hexdigest(),
-        metrics_path=metrics_artifact.relative_path,
-        metrics_format="transformer.training-metrics.v2",
-        metrics_media_type="application/x-ndjson",
-        metrics_byte_count=metrics_artifact.byte_count,
-        metrics_sha256=metrics_artifact.sha256,
-        metrics_row_count=metrics_artifact.row_count,
-        run_summary_path=run_summary.relative_path,
-        run_summary_format="transformer.fit-run-summary.v2",
-        run_summary_media_type="application/json",
-        run_summary_byte_count=run_summary.byte_count,
-        run_summary_sha256=run_summary.sha256,
-        application_version="0.1.10",
-        git_commit="0" * 40,
         metadata={
             "model_config": model_config().to_dict(),
             "data_contract": internal_data_contract(),

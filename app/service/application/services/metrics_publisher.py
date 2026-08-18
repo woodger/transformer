@@ -21,10 +21,12 @@ from app.service.application.ports.observability import (
 from app.service.domain.records import MetricsOutboxRecord
 
 _MAX_BULK_DOCUMENTS = 500
-_DELIVERED_RETENTION_SECONDS = 7 * 24 * 60 * 60
+_TERMINAL_RETENTION_SECONDS = 7 * 24 * 60 * 60
 _BACKLOG_ENTRY_LIMIT = 10_000
 _BACKLOG_BYTE_LIMIT = 10 * 1024 * 1024 * 1024
 _BACKLOG_AGE_LIMIT_SECONDS = 30 * 24 * 60 * 60
+_MAX_DELIVERY_ATTEMPTS = 288
+_MAX_DELIVERY_AGE_SECONDS = 24 * 60 * 60
 
 
 class MetricsPublisher:
@@ -41,6 +43,7 @@ class MetricsPublisher:
         metrics: OperationalMetricSink,
         random_value: Callable[[], float] = random.random,
         monotonic: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self.outbox = outbox
         self.projection = projection
@@ -50,6 +53,7 @@ class MetricsPublisher:
         self.metrics = metrics
         self._random = random_value
         self._monotonic = monotonic
+        self._wall_clock = wall_clock
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -59,7 +63,7 @@ class MetricsPublisher:
         self._thread = threading.Thread(
             target=self._run,
             name="transformer-metrics-publisher",
-            daemon=False,
+            daemon=True,
         )
         self._thread.start()
         return self
@@ -70,7 +74,8 @@ class MetricsPublisher:
         if thread is not None:
             thread.join(timeout)
             if thread.is_alive():
-                raise TimeoutError("metrics publisher did not stop before timeout")
+                self.metrics.add("metricsPublisherDrainExceeded")
+                self.logger.event("metrics.publisher.drain_exceeded")
 
     def _run(self) -> None:
         next_maintenance = 0.0
@@ -147,6 +152,24 @@ class MetricsPublisher:
                     points=cursor,
                 )
         except RetryableMetricsDeliveryError as exc:
+            delivery_age = max(0.0, self._wall_clock() - entry.created_at)
+            if (
+                entry.attempts + 1 >= _MAX_DELIVERY_ATTEMPTS
+                or delivery_age >= _MAX_DELIVERY_AGE_SECONDS
+            ):
+                if self.outbox.discard(
+                    entry.artifact.model_ref,
+                    expected_cursor=cursor,
+                    error_code="DELIVERY_EXPIRED",
+                    error_message="metrics delivery retry budget was exhausted",
+                ):
+                    self.metrics.add("metricsDeliveryDropped")
+                    self.logger.event(
+                        "metrics.delivery.dropped",
+                        modelRef=entry.artifact.model_ref,
+                        attempts=entry.attempts + 1,
+                    )
+                return
             delay = _retry_delay(entry.attempts, self._random())
             if self.outbox.retry(
                 entry.artifact.model_ref,
@@ -174,10 +197,23 @@ class MetricsPublisher:
                     modelRef=entry.artifact.model_ref,
                     errorType=type(exc).__name__,
                 )
+        except Exception as exc:
+            if self.outbox.block(
+                entry.artifact.model_ref,
+                expected_cursor=cursor,
+                error_code="DELIVERY_INTERNAL",
+                error_message=str(exc),
+            ):
+                self.metrics.add("metricsDeliveryBlocked")
+                self.logger.event(
+                    "metrics.delivery.blocked",
+                    modelRef=entry.artifact.model_ref,
+                    errorType=type(exc).__name__,
+                )
 
     def _maintenance(self) -> None:
-        purged = self.outbox.purge_delivered(
-            older_than_seconds=_DELIVERED_RETENTION_SECONDS,
+        purged = self.outbox.purge_terminal(
+            older_than_seconds=_TERMINAL_RETENTION_SECONDS,
         )
         if purged:
             self.metrics.add("metricsOutboxDeliveredPurged", purged)

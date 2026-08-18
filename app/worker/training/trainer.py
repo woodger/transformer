@@ -235,18 +235,12 @@ class Trainer:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     updates_after = self._optimizer_updates_applied_total
-                    if updates_after not in (updates_before, updates_before + 1):
-                        raise AssertionError(
-                            "one training batch applied multiple optimizer updates"
-                        )
                     optimizer_update_applied = updates_after > updates_before
                     materialized_statistics = (
                         loss_evaluation.statistics.materialize(grad_norm)
                     )
                     loss_parts = materialized_statistics.parts
                     grad_norm_value = materialized_statistics.grad_norm
-                    if grad_norm_value is None:
-                        raise AssertionError("gradient norm was not materialized")
                     loss_parts["step"] = self.state.finish_step()
 
                     metrics.update(

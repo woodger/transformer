@@ -36,8 +36,6 @@ from tests.support.flight_v4_helpers import (
     commit_input,
     create_fit,
     create_predict,
-    create_test_metrics_artifact,
-    create_test_run_summary_artifact,
     internal_data_contract,
     model_config,
 )
@@ -122,7 +120,7 @@ def _seed_model(
             ))
 
 
-def test_model_deletion_requires_explicit_metrics_discard_and_keeps_tombstone(
+def test_model_deletion_discards_pending_metrics_and_keeps_tombstone(
     postgres_database,
 ):
     model_ref = f"mdl_{uuid.uuid4().hex}"
@@ -130,18 +128,9 @@ def test_model_deletion_requires_explicit_metrics_discard_and_keeps_tombstone(
     store = PublishedModelStore(postgres_database)
     ledger = Ledger(postgres_database).initialize()
 
-    with pytest.raises(ModelDeletionBlocked, match="undelivered training metrics"):
-        store.request_deletion(
-            model_ref,
-            discard_undelivered_metrics=False,
-        )
-
-    assert ledger.get_model(model_ref) is not None
-    assert ledger.resolve_model_alias("inventory", "daily") is not None
-
     requested = store.request_deletion(
         model_ref,
-        discard_undelivered_metrics=True,
+        discard_undelivered_metrics=False,
     )
     repeated = store.request_deletion(
         model_ref,
@@ -294,21 +283,6 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
     checkpoint = b"checkpoint"
     spool.atomic_write_bytes(checkpoint_path, checkpoint)
     spool.atomic_write_json(metadata_path, {"modelRef": model_ref})
-    metrics = create_test_metrics_artifact(
-        spool,
-        model_ref=model_ref,
-        job_id=job["job_id"],
-        attempt_id=attempt.attempt_id,
-        attempt=attempt.attempt,
-    )
-    run_summary = create_test_run_summary_artifact(
-        spool,
-        model_ref=model_ref,
-        job_id=job["job_id"],
-        attempt_id=attempt.attempt_id,
-        attempt=attempt.attempt,
-    )
-
     ledger.publish_model(
         job["job_id"],
         attempt.attempt,
@@ -320,19 +294,6 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
         metadata_path=spool.model_relative_path(metadata_path),
         byte_count=len(checkpoint),
         sha256=hashlib.sha256(checkpoint).hexdigest(),
-        metrics_path=metrics.relative_path,
-        metrics_format="transformer.training-metrics.v2",
-        metrics_media_type="application/x-ndjson",
-        metrics_byte_count=metrics.byte_count,
-        metrics_sha256=metrics.sha256,
-        metrics_row_count=metrics.row_count,
-        run_summary_path=run_summary.relative_path,
-        run_summary_format="transformer.fit-run-summary.v2",
-        run_summary_media_type="application/json",
-        run_summary_byte_count=run_summary.byte_count,
-        run_summary_sha256=run_summary.sha256,
-        application_version="0.1.10",
-        git_commit="0" * 40,
         metadata={
             "model_config": model_config().to_dict(),
             "data_contract": internal_data_contract(),

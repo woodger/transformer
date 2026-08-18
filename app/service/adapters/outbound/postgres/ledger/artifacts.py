@@ -154,19 +154,6 @@ class ArtifactLedgerSlice:
         metadata_path: str,
         byte_count: int,
         sha256: str,
-        metrics_path: str,
-        metrics_format: str,
-        metrics_media_type: str,
-        metrics_byte_count: int,
-        metrics_sha256: str,
-        metrics_row_count: int,
-        run_summary_path: str,
-        run_summary_format: str,
-        run_summary_media_type: str,
-        run_summary_byte_count: int,
-        run_summary_sha256: str,
-        application_version: str,
-        git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
         now: float | None = None,
@@ -174,30 +161,9 @@ class ArtifactLedgerSlice:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
         validate_relative_path(metadata_path)
-        validate_relative_path(metrics_path)
-        validate_relative_path(run_summary_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
-        if isinstance(metrics_byte_count, bool) or metrics_byte_count <= 0:
-            raise ValueError("metrics_byte_count must be a positive integer")
-        if isinstance(metrics_row_count, bool) or metrics_row_count <= 0:
-            raise ValueError("metrics_row_count must be a positive integer")
-        digest(metrics_sha256, "metrics_sha256")
-        if isinstance(run_summary_byte_count, bool) or run_summary_byte_count <= 0:
-            raise ValueError(
-                "run_summary_byte_count must be a positive integer"
-            )
-        digest(run_summary_sha256, "run_summary_sha256")
-        if not metrics_format or not metrics_media_type or not application_version:
-            raise ValueError("metrics artifact metadata must not be empty")
-        if not run_summary_format or not run_summary_media_type:
-            raise ValueError("run summary artifact metadata must not be empty")
-        if (
-            len(git_commit) != 40
-            or any(character not in "0123456789abcdef" for character in git_commit)
-        ):
-            raise ValueError("git_commit must be a lowercase 40-character digest")
         published_at = timestamp_now(now)
         try:
             with self.database.transaction() as session:
@@ -285,47 +251,6 @@ class ArtifactLedgerSlice:
                     created_at=published_at,
                 ))
                 session.flush()
-                session.add(ModelMetricsArtifact(
-                    model_ref=model_ref,
-                    format=metrics_format,
-                    media_type=metrics_media_type,
-                    relative_path=metrics_path,
-                    bytes=metrics_byte_count,
-                    sha256=metrics_sha256,
-                    row_count=metrics_row_count,
-                    job_id=job_id,
-                    attempt_id=attempt_id,
-                    attempt=attempt,
-                    application_version=application_version,
-                    git_commit=git_commit,
-                    created_at=published_at,
-                ))
-                session.flush()
-                session.add(ModelRunSummaryArtifact(
-                    model_ref=model_ref,
-                    format=run_summary_format,
-                    media_type=run_summary_media_type,
-                    relative_path=run_summary_path,
-                    bytes=run_summary_byte_count,
-                    sha256=run_summary_sha256,
-                    job_id=job_id,
-                    attempt_id=attempt_id,
-                    attempt=attempt,
-                    application_version=application_version,
-                    git_commit=git_commit,
-                    created_at=published_at,
-                ))
-                session.flush()
-                session.add(MetricsOutboxEntry(
-                    model_ref=model_ref,
-                    projection_version=PROJECTION_VERSION,
-                    status="PENDING",
-                    cursor=0,
-                    attempts=0,
-                    next_attempt_at=published_at,
-                    created_at=published_at,
-                    updated_at=published_at,
-                ))
                 alias = session.get(
                     ModelAlias,
                     (job.owner_subject, label),
@@ -371,6 +296,137 @@ class ArtifactLedgerSlice:
                 "model publication violated persistence invariants"
             ) from exc
 
+    def register_model_metrics(
+        self,
+        *,
+        model_ref: str,
+        job_id: str,
+        attempt_id: str,
+        attempt: int,
+        metrics_path: str,
+        metrics_format: str,
+        metrics_media_type: str,
+        metrics_byte_count: int,
+        metrics_sha256: str,
+        metrics_row_count: int,
+        run_summary_path: str,
+        run_summary_format: str,
+        run_summary_media_type: str,
+        run_summary_byte_count: int,
+        run_summary_sha256: str,
+        application_version: str,
+        git_commit: str,
+        max_outbox_entries: int,
+        max_outbox_bytes: int,
+        now: float | None = None,
+    ) -> bool:
+        """Register optional telemetry after model publication.
+
+        Returning ``False`` drops the projection at the bounded outbox
+        admission boundary without changing the published model.
+        """
+        attempt_id = canonical_uuid(attempt_id, "attempt_id")
+        validate_relative_path(metrics_path)
+        validate_relative_path(run_summary_path)
+        positive_values = (
+            (attempt, "attempt"),
+            (metrics_byte_count, "metrics_byte_count"),
+            (metrics_row_count, "metrics_row_count"),
+            (run_summary_byte_count, "run_summary_byte_count"),
+            (max_outbox_entries, "max_outbox_entries"),
+            (max_outbox_bytes, "max_outbox_bytes"),
+        )
+        for value, label in positive_values:
+            if isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{label} must be a positive integer")
+        digest(metrics_sha256, "metrics_sha256")
+        digest(run_summary_sha256, "run_summary_sha256")
+        if not all((metrics_format, metrics_media_type, run_summary_format,
+                    run_summary_media_type, application_version)):
+            raise ValueError("metrics artifact metadata must not be empty")
+        if (
+            len(git_commit) != 40
+            or any(character not in "0123456789abcdef" for character in git_commit)
+        ):
+            raise ValueError("git_commit must be a lowercase 40-character digest")
+        created_at = timestamp_now(now)
+        with self.database.transaction() as session:
+            model = session.get(PublishedModel, model_ref, with_for_update=True)
+            if (
+                model is None
+                or model.lifecycle_state != ModelLifecycleState.AVAILABLE.value
+                or model.producing_job_id != job_id
+            ):
+                return False
+            advisory_lock(session, "metrics-outbox-admission")
+            queued_entries, queued_bytes = session.execute(
+                select(
+                    func.count(MetricsOutboxEntry.model_ref),
+                    func.coalesce(
+                        func.sum(
+                            ModelMetricsArtifact.bytes
+                            + ModelRunSummaryArtifact.bytes
+                        ),
+                        0,
+                    ),
+                )
+                .join(
+                    ModelMetricsArtifact,
+                    ModelMetricsArtifact.model_ref == MetricsOutboxEntry.model_ref,
+                )
+                .join(
+                    ModelRunSummaryArtifact,
+                    ModelRunSummaryArtifact.model_ref == MetricsOutboxEntry.model_ref,
+                )
+            ).one()
+            new_bytes = metrics_byte_count + run_summary_byte_count
+            if (
+                int(queued_entries) >= max_outbox_entries
+                or int(queued_bytes) + new_bytes > max_outbox_bytes
+            ):
+                return False
+            session.add(ModelMetricsArtifact(
+                model_ref=model_ref,
+                format=metrics_format,
+                media_type=metrics_media_type,
+                relative_path=metrics_path,
+                bytes=metrics_byte_count,
+                sha256=metrics_sha256,
+                row_count=metrics_row_count,
+                job_id=job_id,
+                attempt_id=attempt_id,
+                attempt=attempt,
+                application_version=application_version,
+                git_commit=git_commit,
+                created_at=created_at,
+            ))
+            session.add(ModelRunSummaryArtifact(
+                model_ref=model_ref,
+                format=run_summary_format,
+                media_type=run_summary_media_type,
+                relative_path=run_summary_path,
+                bytes=run_summary_byte_count,
+                sha256=run_summary_sha256,
+                job_id=job_id,
+                attempt_id=attempt_id,
+                attempt=attempt,
+                application_version=application_version,
+                git_commit=git_commit,
+                created_at=created_at,
+            ))
+            session.add(MetricsOutboxEntry(
+                model_ref=model_ref,
+                projection_version=PROJECTION_VERSION,
+                status="PENDING",
+                cursor=0,
+                attempts=0,
+                next_attempt_at=created_at,
+                created_at=created_at,
+                updated_at=created_at,
+            ))
+            session.flush()
+            return True
+
     def fit_run_summary_source(
         self,
         job_id: str,
@@ -380,19 +436,30 @@ class ArtifactLedgerSlice:
         now: float | None = None,
     ) -> FitRunSummarySource:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
-        publication_boundary = timestamp_now(now)
         with self.database.session() as session:
             job = session.get(Job, job_id)
             if (
                 job is None
                 or job.operation != "fit"
-                or job.execution_state != ExecutionState.RUNNING.value
+                or job.execution_state not in (
+                    ExecutionState.RUNNING.value,
+                    ExecutionState.SUCCEEDED.value,
+                )
                 or job.input_state != InputState.CLOSED.value
                 or job.attempt != attempt
                 or job.input_closed_at is None
             ):
                 raise failed_precondition(
-                    "fit run summary requires the active closed attempt"
+                    "fit run summary requires the completed closed attempt"
+                )
+            publication_boundary = (
+                timestamp_now(now)
+                if job.execution_state == ExecutionState.RUNNING.value
+                else job.finished_at
+            )
+            if publication_boundary is None:
+                raise failed_precondition(
+                    "fit publication boundary is unavailable"
                 )
             attempts = session.scalars(
                 select(JobAttempt)

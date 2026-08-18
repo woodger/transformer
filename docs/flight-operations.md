@@ -395,9 +395,11 @@ jobs, снимает только alias, который указывает на 
 `modelRef` не переиспользуются, а alias не откатывается на предыдущую
 generation.
 
-Pending или blocked OpenSearch outbox по умолчанию блокирует удаление. Option
-`--discard-undelivered-metrics` явно переводит такую запись в `CANCELLED`;
-доставленные или уже принятые OpenSearch documents команда не удаляет.
+Pending или blocked OpenSearch outbox не блокирует удаление. Запись
+автоматически переводится в `CANCELLED`; доставленные или уже принятые
+OpenSearch documents команда не удаляет. Compatibility option
+`--discard-undelivered-metrics` по-прежнему принимается, но не меняет это
+поведение.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
