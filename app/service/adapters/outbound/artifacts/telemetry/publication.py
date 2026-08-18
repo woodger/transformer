@@ -3,10 +3,10 @@ from __future__ import annotations
 import math
 import os
 from contextlib import AbstractContextManager
-from typing import BinaryIO, Protocol, cast
+from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6.objective import CHECKPOINT_FORMAT, DIRECT_LOSSES
+from app.contracts.worker.v6.objective import CHECKPOINT_FORMAT
 from app.service.adapters.outbound.artifacts.telemetry.run_summary import (
     publish_fit_run_summary,
 )
@@ -37,17 +37,17 @@ class _TelemetrySpool(Protocol):
         document: JsonObject,
     ) -> str: ...
 
-    def model_metrics_path(self, model_ref: str) -> str: ...
+    def telemetry_metrics_path(self, job_id: str) -> str: ...
 
-    def model_run_summary_path(self, model_ref: str) -> str: ...
+    def telemetry_run_summary_path(self, job_id: str) -> str: ...
 
-    def model_relative_path(self, absolute_path: str) -> str: ...
+    def telemetry_relative_path(self, absolute_path: str) -> str: ...
 
     def remove(self, path: str) -> bool: ...
 
 
-class ModelTelemetryPublisher:
-    """Finalize optional model-owned telemetry after core model publication."""
+class FitRunTelemetryPublisher:
+    """Finalize optional run-owned telemetry after core model publication."""
 
     def __init__(
         self,
@@ -72,15 +72,12 @@ class ModelTelemetryPublisher:
         worker_result: JsonObject,
         model: PublishedModelArtifacts,
     ) -> None:
-        metrics_path = self.spool.model_metrics_path(model.model_ref)
-        run_summary_path = self.spool.model_run_summary_path(model.model_ref)
+        metrics_path = self.spool.telemetry_metrics_path(job.job_id)
+        run_summary_path = self.spool.telemetry_run_summary_path(job.job_id)
         try:
             checkpoint_serialization_ms = _nonnegative_number(
                 worker_result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
-            )
-            target_statistics = _target_statistics(
-                worker_result.get("targetStatistics")
             )
             summary_source = self.repository.fit_run_summary(
                 job.job_id,
@@ -127,20 +124,19 @@ class ModelTelemetryPublisher:
                 terminal_checkpoint_publication_ms=(
                     model.checkpoint_publication_ms
                 ),
-                target_statistics=target_statistics,
             )
-            registered = self.repository.register_model_artifacts(
+            registered = self.repository.register_run_artifacts(
                 model_ref=model.model_ref,
                 job_id=job.job_id,
                 attempt_id=_attempt_id(job),
                 attempt=job.attempt,
-                metrics_path=self.spool.model_relative_path(metrics_path),
+                metrics_path=self.spool.telemetry_relative_path(metrics_path),
                 metrics_format=training_metrics.format,
                 metrics_media_type=training_metrics.media_type,
                 metrics_byte_count=training_metrics.byte_count,
                 metrics_sha256=training_metrics.sha256,
                 metrics_row_count=training_metrics.row_count,
-                run_summary_path=self.spool.model_relative_path(
+                run_summary_path=self.spool.telemetry_relative_path(
                     run_summary_path
                 ),
                 run_summary_format=run_summary.format,
@@ -194,87 +190,9 @@ class ModelTelemetryPublisher:
                 )
 
 
-def _target_statistics(value: object) -> list[JsonObject]:
-    if not isinstance(value, list):
-        raise ValueError("fit target statistics must contain six targets")
-    items = cast(list[object], value)
-    if len(items) != len(DIRECT_LOSSES):
-        raise ValueError("fit target statistics must contain six targets")
-    statistics: list[JsonObject] = []
-    required = {
-        "targetIndex",
-        "name",
-        "count",
-        "min",
-        "max",
-        "mean",
-        "std",
-        "zeroCount",
-        "oneCount",
-    }
-    for index, ((_, semantic, _), item) in enumerate(
-        zip(DIRECT_LOSSES, items, strict=True)
-    ):
-        document = _object(item, "fit target statistic")
-        if (
-            set(document) != required
-            or _integer(document.get("targetIndex"), "target index") != index
-            or document.get("name") != semantic
-        ):
-            raise ValueError("fit target statistic identity is invalid")
-        count = _integer(document.get("count"), "target count")
-        zero_count = _integer(document.get("zeroCount"), "target zero count")
-        one_count = _integer(document.get("oneCount"), "target one count")
-        minimum = _finite_number(document.get("min"), "target minimum")
-        maximum = _finite_number(document.get("max"), "target maximum")
-        mean = _finite_number(document.get("mean"), "target mean")
-        standard_deviation = _nonnegative_number(
-            document.get("std"),
-            "target standard deviation",
-        )
-        lower = -1.0 if index == 0 else 0.0
-        if (
-            count <= 0
-            or zero_count < 0
-            or one_count < 0
-            or zero_count > count
-            or one_count > count
-            or zero_count + one_count > count
-            or not lower <= minimum <= mean <= maximum <= 1.0
-        ):
-            raise ValueError("fit target statistic values are invalid")
-        statistics.append({
-            "targetIndex": index,
-            "name": semantic,
-            "count": count,
-            "min": minimum,
-            "max": maximum,
-            "mean": mean,
-            "std": standard_deviation,
-            "zeroCount": zero_count,
-            "oneCount": one_count,
-        })
-    return statistics
-
-
-def _object(value: object, label: str) -> JsonObject:
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be an object")
-    mapping = cast(dict[object, object], value)
-    if not all(isinstance(key, str) for key in mapping):
-        raise ValueError(f"{label} keys must be strings")
-    return cast(JsonObject, dict(mapping))
-
-
 def _string(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{label} must be a non-empty string")
-    return value
-
-
-def _integer(value: object, label: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{label} must be an integer")
     return value
 
 
@@ -289,20 +207,10 @@ def _nonnegative_number(value: object, label: str) -> float:
     return float(value)
 
 
-def _finite_number(value: object, label: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-    ):
-        raise ValueError(f"{label} must be a finite number")
-    return float(value)
-
-
 def _attempt_id(job: ExecutionJobRecord) -> str:
     if job.attempt_id is None:
         raise ValueError("worker attempt identity is unavailable")
     return job.attempt_id
 
 
-__all__ = ["ModelTelemetryPublisher"]
+__all__ = ["FitRunTelemetryPublisher"]

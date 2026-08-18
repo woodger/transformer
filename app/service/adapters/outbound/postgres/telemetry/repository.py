@@ -17,14 +17,14 @@ from app.service.adapters.outbound.postgres.ledger.support import (
     validate_relative_path,
 )
 from app.service.adapters.outbound.postgres.models import (
+    FitRunSummaryArtifact,
     Job,
     JobAttempt,
     JobInput,
     MetricsOutboxEntry,
-    ModelMetricsArtifact,
-    ModelRunSummaryArtifact,
     PublishedModel,
     TrainingMetricInterval,
+    TrainingMetricsArtifact,
     TrainingRecoveryCheckpoint,
 )
 from app.service.adapters.outbound.postgres.session import Database
@@ -34,7 +34,6 @@ from app.service.application.telemetry.records import (
 )
 from app.service.domain.errors import conflict, failed_precondition
 from app.service.domain.job import ExecutionState, InputState
-from app.service.domain.model import ModelLifecycleState
 
 
 class PostgresTrainingTelemetry:
@@ -263,7 +262,7 @@ class PostgresTrainingTelemetry:
                 input_bytes=job.total_bytes,
             )
 
-    def register_model_artifacts(
+    def register_run_artifacts(
         self,
         *,
         model_ref: str,
@@ -325,31 +324,30 @@ class PostgresTrainingTelemetry:
             model = session.get(PublishedModel, model_ref, with_for_update=True)
             if (
                 model is None
-                or model.lifecycle_state != ModelLifecycleState.AVAILABLE.value
                 or model.producing_job_id != job_id
             ):
                 return False
             advisory_lock(session, "metrics-outbox-admission")
             queued_entries, queued_bytes = session.execute(
                 select(
-                    func.count(MetricsOutboxEntry.model_ref),
+                    func.count(MetricsOutboxEntry.job_id),
                     func.coalesce(
                         func.sum(
-                            ModelMetricsArtifact.bytes
-                            + ModelRunSummaryArtifact.bytes
+                            TrainingMetricsArtifact.bytes
+                            + FitRunSummaryArtifact.bytes
                         ),
                         0,
                     ),
                 )
                 .join(
-                    ModelMetricsArtifact,
-                    ModelMetricsArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    TrainingMetricsArtifact,
+                    TrainingMetricsArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
                 .join(
-                    ModelRunSummaryArtifact,
-                    ModelRunSummaryArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    FitRunSummaryArtifact,
+                    FitRunSummaryArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
             ).one()
             new_bytes = metrics_byte_count + run_summary_byte_count
@@ -358,7 +356,8 @@ class PostgresTrainingTelemetry:
                 or int(queued_bytes) + new_bytes > max_outbox_bytes
             ):
                 return False
-            session.add(ModelMetricsArtifact(
+            session.add(TrainingMetricsArtifact(
+                job_id=job_id,
                 model_ref=model_ref,
                 format=metrics_format,
                 media_type=metrics_media_type,
@@ -366,21 +365,20 @@ class PostgresTrainingTelemetry:
                 bytes=metrics_byte_count,
                 sha256=metrics_sha256,
                 row_count=metrics_row_count,
-                job_id=job_id,
                 attempt_id=attempt_id,
                 attempt=attempt,
                 application_version=application_version,
                 git_commit=git_commit,
                 created_at=created_at,
             ))
-            session.add(ModelRunSummaryArtifact(
+            session.add(FitRunSummaryArtifact(
+                job_id=job_id,
                 model_ref=model_ref,
                 format=run_summary_format,
                 media_type=run_summary_media_type,
                 relative_path=run_summary_path,
                 bytes=run_summary_byte_count,
                 sha256=run_summary_sha256,
-                job_id=job_id,
                 attempt_id=attempt_id,
                 attempt=attempt,
                 application_version=application_version,
@@ -389,7 +387,7 @@ class PostgresTrainingTelemetry:
             ))
             session.flush()
             session.add(MetricsOutboxEntry(
-                model_ref=model_ref,
+                job_id=job_id,
                 projection_version=PROJECTION_VERSION,
                 status="PENDING",
                 cursor=0,

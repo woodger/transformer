@@ -10,9 +10,6 @@ from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
 )
 from app.service.adapters.outbound.postgres.session import Database
-from app.service.adapters.outbound.postgres.telemetry import (
-    PostgresMetricsOutbox,
-)
 from app.service.application.commands.models import ModelAdministration
 from app.service.domain.model import ModelDeletionBlocked
 
@@ -20,7 +17,6 @@ from app.service.domain.model import ModelDeletionBlocked
 class ModelArguments(Protocol):
     models_action: str
     model_ref: str
-    discard_undelivered_metrics: bool
 
 
 def run(args: ModelArguments) -> None:
@@ -28,19 +24,11 @@ def run(args: ModelArguments) -> None:
     require_current_schema(config)
     database = Database(config)
     try:
-        administration = ModelAdministration(
-            PublishedModelStore(database),
-            PostgresMetricsOutbox(database),
-        )
+        administration = ModelAdministration(PublishedModelStore(database))
         if args.models_action == "list":
             print_list(administration.list())
             return
-        print_deletion(administration.delete(
-            args.model_ref,
-            discard_undelivered_metrics=(
-                args.discard_undelivered_metrics
-            ),
-        ))
+        print_deletion(administration.delete(args.model_ref))
     except (LookupError, ValueError, ModelDeletionBlocked) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

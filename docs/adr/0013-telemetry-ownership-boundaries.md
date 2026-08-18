@@ -58,7 +58,6 @@ status. Он может отсутствовать без потери recovery 
 - AMP, optimizer и gradient counters;
 - per-target MAE/RMSE;
 - missing-data ratios и phase timings;
-- target statistics;
 - JSONL, console formatting и локальными plots.
 
 `ObservedTrainingEpoch` расширяет core result наблюдениями только на runtime
@@ -85,23 +84,19 @@ service/adapters/outbound/opensearch/
 Общий PostgreSQL ledger не предоставляет metrics API. Service domain не
 содержит telemetry records. Core `WorkerArtifactPublisher` публикует checkpoint
 и model generation, после чего возвращает минимальный immutable результат
-необязательному `ModelTelemetryPublisher`. Любая его ошибка наблюдаема, но не
+необязательному `FitRunTelemetryPublisher`. Любая его ошибка наблюдаема, но не
 изменяет уже зафиксированный `SUCCEEDED`.
 
-Статус доставки не является полем `ModelLifecycleRecord`. Административный
-query при необходимости объединяет model lifecycle и telemetry projection на
-application boundary. Удаление модели не зависит от наличия или состояния
-telemetry; очистка связанных строк в PostgreSQL является только referential
-cleanup.
+Статус доставки не является полем `ModelLifecycleRecord` и не присоединяется к
+административному представлению модели. Удаление модели не зависит от наличия
+или состояния telemetry.
 
 ## Что не меняется
 
 - публичный Flight v4;
-- worker process v6 envelope и имена его wire-полей;
-- metrics v2, fit-run v2 и OpenSearch document schemas;
-- PostgreSQL schema и Alembic revision;
-- filesystem layout опубликованной модели;
-- CLI и локальный формат `metrics.jsonl`.
+- worker process остаётся v6; checkpoint и core result fields не меняются;
+- публичные training metric names и fit-run lifecycle fields;
+- локальный CLI-формат `metrics.jsonl`.
 
 ## Контроль
 

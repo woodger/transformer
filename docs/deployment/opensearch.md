@@ -4,11 +4,8 @@
 
 Источник истины и границы решения описаны в
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Прежние contracts
-[`app/contracts/metrics/v1`](../../app/contracts/metrics/v1/README.md) и
-[`app/contracts/metrics/fit_run/v1`](../../app/contracts/metrics/fit_run/v1/README.md)
-сохранены только для доставки уже зафиксированных outbox entries. Текущие
-schemas и templates находятся в
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md) и
+[ADR 0014](../adr/0014-run-owned-telemetry.md). Текущие schemas и templates находятся в
 [`app/contracts/metrics/v2`](../../app/contracts/metrics/v2/README.md) и
 [`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 
@@ -26,7 +23,7 @@ REST TLS отключён, OpenSearch требует существующую Ba
 
 Обычный index и data stream не могут одновременно использовать одно имя. Если
 в кластере уже существуют data streams `metrics-points-v2`,
-`metrics-artifacts-v2` или `metrics-runs-v2`, сначала остановите publisher и
+`metrics-runs-v2`, сначала остановите publisher и
 отдельно решите вопрос
 сохранения их данных. Эта инструкция намеренно ничего не удаляет.
 
@@ -47,14 +44,6 @@ curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-artifacts-v2" \
-  --data-binary \
-  @app/contracts/metrics/v2/opensearch/metrics-artifacts-v2.template.json
-
-curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
-  --header 'Content-Type: application/json' \
-  --request PUT \
   "$search_endpoint/_index_template/metrics-runs-v2" \
   --data-binary \
   @app/contracts/metrics/fit_run/v2/opensearch/metrics-runs-v2.template.json
@@ -63,11 +52,6 @@ curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
   "$search_endpoint/metrics-points-v2"
-
-curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
-  --request PUT \
-  "$search_endpoint/metrics-artifacts-v2"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
@@ -112,8 +96,8 @@ TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 
 Если ни одной `OPENSEARCH_*` переменной нет, publisher выключен, но model
 publication продолжает создавать durable artifact и outbox backlog. Частичная
-или смешанная конфигурация считается ошибкой deployment и не позволяет
-запустить service.
+или смешанная конфигурация считается ошибкой deployment и оставляет publisher
+выключенным; service продолжает работать.
 
 После изменения `.env` перезапустите service. Migrations применяются отдельно:
 
@@ -122,19 +106,20 @@ publication продолжает создавать durable artifact и outbox b
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0009`.
+Текущий head — `0010`.
 
 ## Проверить работу
 
 После короткого fit проверьте:
 
-- при успешном сборе telemetry модель содержит
-  `models/{modelRef}/metrics.jsonl` и `models/{modelRef}/run-summary.json`;
+- при успешном сборе telemetry run содержит
+  `telemetry/{jobId}/metrics.jsonl` и
+  `telemetry/{jobId}/run-summary.json`;
 - health показывает gauges `metricsOutboxEntries`, `metricsOutboxBytes` и
   `metricsOutboxOldestAgeSeconds`;
-- журнал содержит `metrics.artifact.delivered`;
-- поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points,
-  один artifact document и один terminal fit run summary;
+- журнал содержит `metrics.run.delivered`;
+- поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points и
+  один terminal fit run summary;
 - повторная доставка не создаёт второй документ с тем же `_id`.
 
 `metrics.delivery.retry_scheduled` означает временную ошибку.

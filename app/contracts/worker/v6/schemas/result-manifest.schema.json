@@ -36,8 +36,7 @@
     "checkpointMetadata": {
       "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/checkpointMetadata"
     },
-    "checkpointSerializationMs": {},
-    "targetStatistics": {}
+    "checkpointSerializationMs": {}
   },
   "allOf": [
     {
@@ -53,8 +52,7 @@
           "anyOf": [
             {"required": ["checkpoint"]},
             {"required": ["checkpointMetadata"]},
-            {"required": ["checkpointSerializationMs"]},
-            {"required": ["targetStatistics"]}
+            {"required": ["checkpointSerializationMs"]}
           ]
         }
       }

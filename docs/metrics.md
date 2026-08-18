@@ -44,12 +44,12 @@ service/adapters/outbound/opensearch/
 Service domain и общий PostgreSQL ledger не владеют telemetry records или
 metrics API. Core model publisher не строит metrics artifacts. После
 прикладной публикации модели отдельный telemetry publisher может создать
-model-owned artifacts и outbox.
+run-owned artifacts и outbox с identity `jobId`.
 
 Job progress содержит только `completedEpochs` и `globalStep`. Полный epoch
 document не является состоянием job и не возвращается через Flight status.
-Статус доставки OpenSearch присоединяется к административному представлению
-модели только на application boundary.
+Административный lifecycle моделей не знает о доставке OpenSearch. Удаление
+модели не отменяет и не удаляет telemetry run.
 
 Подробное решение зафиксировано в
 [ADR 0013](./adr/0013-telemetry-ownership-boundaries.md).
@@ -66,7 +66,7 @@ document не является состоянием job и не возвраща
 
 Прикладные checkpoint, model generation и terminal state фиксируются без
 зависимости от telemetry. Epoch metrics сохраняются отдельной best-effort
-операцией после recovery checkpoint, а model-owned metrics artifacts и outbox —
+операцией после recovery checkpoint, а run-owned metrics artifacts и outbox —
 после публикации модели.
 
 Отсутствующая, повреждённая или отброшенная telemetry не должна:
@@ -79,6 +79,11 @@ document не является состоянием job и не возвраща
 Некорректная конфигурация publisher-а отключает только доставку метрик и
 фиксируется в operational logs/counters. Outbox имеет ограничение по числу
 записей и объёму, конечный retry budget и срок хранения terminal entries.
+После terminal retention metadata и файлы run-owned telemetry удаляются вместе.
+
+Transformer не вычисляет статистики значений training targets для Consumer и
+не проектирует metadata локального artifact в отдельный OpenSearch index.
+Централизованная проекция состоит из epoch points и terminal run summary.
 
 ### Согласованность между проектами
 

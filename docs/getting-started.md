@@ -118,7 +118,7 @@ Prediction использует созданный checkpoint:
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка
-  model-owned training metrics после durable publication.
+  run-owned training metrics после durable publication.
 
 ## Проверка изменений
 

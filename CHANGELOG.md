@@ -22,6 +22,14 @@
   владельцев. Worker observations перенесены в `app/worker/telemetry`, а
   service records, artifacts, PostgreSQL repository и publisher — в явный
   telemetry slice; domain и общий ledger больше не содержат metrics API.
+- Durable telemetry теперь принадлежит fit run (`jobId`) и хранится в
+  отдельном `telemetry/<jobId>/`; удаление и список моделей не читают outbox.
+  Миграция 0010 удаляет прежние model-owned metadata/outbox и снимает
+  зависимость от model lifecycle; committed epoch intervals сохраняются.
+- Удалены Consumer-owned statistics исходных training targets, неиспользуемый
+  attempt-local metrics-файл и OpenSearch projection `metrics-artifacts-v2`.
+  Текущая централизованная проекция содержит только epoch points и terminal run
+  summary; Flight v4 и ML objective не изменены.
 
 ## [0.1.12] - 2026-08-16
 

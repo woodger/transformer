@@ -10,7 +10,6 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from app.contracts.metrics.v2 import (
-    build_artifact_document,
     build_training_record,
     project_training_points,
     validate_training_record,
@@ -103,7 +102,6 @@ def test_metrics_json_schemas_and_opensearch_templates_are_closed():
     for name in (
         "training-record.schema.json",
         "point.schema.json",
-        "artifact.schema.json",
     ):
         schema = json.loads((CONTRACT_ROOT / name).read_text(encoding="utf-8"))
         Draft202012Validator.check_schema(schema)
@@ -213,24 +211,3 @@ def test_event_identity_has_a_cross_language_golden_digest():
     assert point["eventId"] == (
         "f5aafc3d308eb869fba699efe25bc593701805244c32f5d9ef39afa1b653578f"
     )
-
-
-def test_artifact_document_contains_metadata_but_no_storage_path():
-    document = build_artifact_document(
-        deployment_id=DEPLOYMENT_ID,
-        model_ref=MODEL_REF,
-        job_id=JOB_ID,
-        attempt_id=ATTEMPT_ID,
-        attempt=1,
-        application_version="0.1.10",
-        git_commit="c" * 40,
-        byte_count=1234,
-        sha256="d" * 64,
-        row_count=3,
-        created_at=1_786_809_330.123,
-    )
-
-    assert document["schema"] == "inventory.metrics.artifact.v2"
-    assert document["runId"] == JOB_ID
-    assert "path" not in document
-    assert "relativePath" not in document

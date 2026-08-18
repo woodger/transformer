@@ -110,6 +110,13 @@ class FlightServiceConfig:
         )
 
     @property
+    def telemetry_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.models_dir),
+            "telemetry",
+        )
+
+    @property
     def lock_path(self) -> str:
         return os.path.join(self.runtime_dir, "service.lock")
 

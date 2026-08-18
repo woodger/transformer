@@ -16,7 +16,6 @@ from app.contracts.metrics.fit_run.v2 import (
 from app.contracts.metrics.v2 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
-    build_artifact_document,
     project_training_points,
     validate_training_record,
 )
@@ -25,14 +24,14 @@ from app.service.application.telemetry.records import MetricsOutboxRecord
 _COPY_CHUNK_BYTES = 1024 * 1024
 
 
-class _ModelStorage(Protocol):
-    def model_absolute_path(self, relative_path: object) -> str: ...
+class _TelemetryStorage(Protocol):
+    def telemetry_absolute_path(self, relative_path: object) -> str: ...
 
 
-class ModelMetricsProjection:
-    """Project one verified immutable model artifact into OpenSearch documents."""
+class TrainingMetricsProjection:
+    """Project one verified immutable fit-run artifact into OpenSearch."""
 
-    def __init__(self, storage: _ModelStorage) -> None:
+    def __init__(self, storage: _TelemetryStorage) -> None:
         self.storage = storage
 
     def points(
@@ -51,27 +50,6 @@ class ModelMetricsProjection:
             )
         )
 
-    def artifact_document(
-        self,
-        entry: MetricsOutboxRecord,
-        *,
-        deployment_id: str,
-    ) -> JsonObject:
-        artifact = entry.artifact
-        return build_artifact_document(
-            deployment_id=deployment_id,
-            model_ref=artifact.model_ref,
-            job_id=artifact.job_id,
-            attempt_id=artifact.attempt_id,
-            attempt=artifact.attempt,
-            application_version=artifact.application_version,
-            git_commit=artifact.git_commit,
-            byte_count=artifact.byte_count,
-            sha256=artifact.sha256,
-            row_count=artifact.row_count,
-            created_at=artifact.created_at,
-        )
-
     def run_summary_document(
         self,
         entry: MetricsOutboxRecord,
@@ -86,16 +64,16 @@ class ModelMetricsProjection:
         if (
             artifact.format != SUMMARY_FORMAT
             or artifact.media_type != SUMMARY_MEDIA_TYPE
-            or artifact.model_ref != entry.artifact.model_ref
-            or artifact.job_id != entry.artifact.job_id
-            or artifact.attempt_id != entry.artifact.attempt_id
-            or artifact.attempt != entry.artifact.attempt
+            or artifact.model_ref != entry.training_metrics.model_ref
+            or artifact.job_id != entry.training_metrics.job_id
+            or artifact.attempt_id != entry.training_metrics.attempt_id
+            or artifact.attempt != entry.training_metrics.attempt
             or artifact.application_version
-            != entry.artifact.application_version
-            or artifact.git_commit != entry.artifact.git_commit
+            != entry.training_metrics.application_version
+            or artifact.git_commit != entry.training_metrics.git_commit
         ):
             raise ValueError("fit run summary metadata is inconsistent")
-        path = self.storage.model_absolute_path(artifact.relative_path)
+        path = self.storage.telemetry_absolute_path(artifact.relative_path)
         if (
             os.path.getsize(path) != artifact.byte_count
             or _sha256_file(path) != artifact.sha256
@@ -124,7 +102,7 @@ class ModelMetricsProjection:
         )
 
     def _rows(self, entry: MetricsOutboxRecord) -> tuple[JsonObject, ...]:
-        artifact = entry.artifact
+        artifact = entry.training_metrics
         if entry.projection_version != PROJECTION_VERSION:
             raise ValueError("unsupported metrics projection version")
         if entry.run_summary is None:
@@ -134,7 +112,7 @@ class ModelMetricsProjection:
             or artifact.media_type != ARTIFACT_MEDIA_TYPE
         ):
             raise ValueError("unsupported training metrics artifact format")
-        path = self.storage.model_absolute_path(artifact.relative_path)
+        path = self.storage.telemetry_absolute_path(artifact.relative_path)
         if (
             os.path.getsize(path) != artifact.byte_count
             or _sha256_file(path) != artifact.sha256
@@ -178,4 +156,4 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-__all__ = ["ModelMetricsProjection"]
+__all__ = ["TrainingMetricsProjection"]

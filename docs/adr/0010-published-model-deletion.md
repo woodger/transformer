@@ -45,15 +45,10 @@ Filesystem error оставляет `DELETING` и повторяется. Startu
 
 ## Training metrics
 
-Outbox не блокирует удаление модели. Запись в `PENDING` или `BLOCKED`
-автоматически переводится в `CANCELLED`; publisher больше не принимает её как
-pending, а финализация удаления каскадно удаляет локальную artifact metadata и
-outbox. Уже доставленные OpenSearch documents не удаляются. Bulk request,
-начатый до commit отмены, может завершиться.
-
-Option `--discard-undelivered-metrics` остаётся принимаемым для совместимости
-существующих operator scripts, но не меняет поведение: недоставленная telemetry
-всегда уступает model lifecycle.
+Run-owned telemetry не является частью модели. Удаление модели не читает и не
+изменяет outbox; pending доставка продолжается независимо, а terminal telemetry
+очищается по собственной retention policy. Уже доставленные OpenSearch
+documents не удаляются.
 
 ## Граница API
 

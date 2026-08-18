@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
 from app.service.adapters.outbound.postgres.models import (
+    FitRunSummaryArtifact,
     MetricsOutboxEntry,
-    ModelMetricsArtifact,
-    ModelRunSummaryArtifact,
+    TrainingMetricsArtifact,
 )
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.application.telemetry.records import (
+    FitRunSummaryArtifactRecord,
     MetricsOutboxRecord,
-    ModelMetricsArtifactRecord,
-    ModelRunSummaryArtifactRecord,
+    TelemetryArtifactCleanup,
+    TrainingMetricsArtifactRecord,
 )
 
 
@@ -30,18 +30,18 @@ class PostgresMetricsOutbox:
             row = session.execute(
                 select(
                     MetricsOutboxEntry,
-                    ModelMetricsArtifact,
-                    ModelRunSummaryArtifact,
+                    TrainingMetricsArtifact,
+                    FitRunSummaryArtifact,
                 )
                 .join(
-                    ModelMetricsArtifact,
-                    ModelMetricsArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    TrainingMetricsArtifact,
+                    TrainingMetricsArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
                 .outerjoin(
-                    ModelRunSummaryArtifact,
-                    ModelRunSummaryArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    FitRunSummaryArtifact,
+                    FitRunSummaryArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
                 .where(
                     MetricsOutboxEntry.status == "PENDING",
@@ -56,7 +56,7 @@ class PostgresMetricsOutbox:
 
     def advance(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         cursor: int,
@@ -66,7 +66,7 @@ class PostgresMetricsOutbox:
         with self.database.transaction() as session:
             row = session.get(
                 MetricsOutboxEntry,
-                model_ref,
+                job_id,
                 with_for_update=True,
             )
             if row is None or not _owns(row, expected_cursor):
@@ -80,7 +80,7 @@ class PostgresMetricsOutbox:
 
     def retry(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         delay_seconds: float,
@@ -93,7 +93,7 @@ class PostgresMetricsOutbox:
         with self.database.transaction() as session:
             row = session.get(
                 MetricsOutboxEntry,
-                model_ref,
+                job_id,
                 with_for_update=True,
             )
             if row is None or not _owns(row, expected_cursor):
@@ -107,7 +107,7 @@ class PostgresMetricsOutbox:
 
     def block(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         error_code: str,
@@ -116,7 +116,7 @@ class PostgresMetricsOutbox:
         with self.database.transaction() as session:
             row = session.get(
                 MetricsOutboxEntry,
-                model_ref,
+                job_id,
                 with_for_update=True,
             )
             if row is None or not _owns(row, expected_cursor):
@@ -129,7 +129,7 @@ class PostgresMetricsOutbox:
 
     def discard(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         error_code: str,
@@ -138,7 +138,7 @@ class PostgresMetricsOutbox:
         with self.database.transaction() as session:
             row = session.get(
                 MetricsOutboxEntry,
-                model_ref,
+                job_id,
                 with_for_update=True,
             )
             if row is None or not _owns(row, expected_cursor):
@@ -151,7 +151,7 @@ class PostgresMetricsOutbox:
 
     def complete(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
     ) -> bool:
@@ -159,7 +159,7 @@ class PostgresMetricsOutbox:
         with self.database.transaction() as session:
             row = session.get(
                 MetricsOutboxEntry,
-                model_ref,
+                job_id,
                 with_for_update=True,
             )
             if row is None or not _owns(row, expected_cursor):
@@ -172,11 +172,30 @@ class PostgresMetricsOutbox:
             row.updated_at = now
             return True
 
-    def purge_terminal(self, *, older_than_seconds: float) -> int:
+    def purge_terminal(
+        self,
+        *,
+        older_than_seconds: float,
+    ) -> tuple[TelemetryArtifactCleanup, ...]:
         cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
         with self.database.transaction() as session:
-            rows = session.scalars(
-                select(MetricsOutboxEntry).where(
+            rows = session.execute(
+                select(
+                    MetricsOutboxEntry,
+                    TrainingMetricsArtifact,
+                    FitRunSummaryArtifact,
+                )
+                .join(
+                    TrainingMetricsArtifact,
+                    TrainingMetricsArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
+                )
+                .outerjoin(
+                    FitRunSummaryArtifact,
+                    FitRunSummaryArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
+                )
+                .where(
                     MetricsOutboxEntry.status.in_((
                         "BLOCKED",
                         "CANCELLED",
@@ -184,36 +203,55 @@ class PostgresMetricsOutbox:
                     )),
                     MetricsOutboxEntry.updated_at < cutoff,
                 )
-                .with_for_update()
+                .with_for_update(of=MetricsOutboxEntry)
             ).all()
-            for row in rows:
-                session.delete(row)
-            return len(rows)
+            cleanups = tuple(
+                TelemetryArtifactCleanup(
+                    job_id=outbox.job_id,
+                    relative_paths=tuple(
+                        path
+                        for path in (
+                            training.relative_path,
+                            None if summary is None else summary.relative_path,
+                        )
+                        if path is not None
+                    ),
+                )
+                for outbox, training, summary in rows
+            )
+            for outbox, _training, _summary in rows:
+                session.delete(outbox)
+            session.flush()
+            for _outbox, training, summary in rows:
+                if summary is not None:
+                    session.delete(summary)
+                session.delete(training)
+            return cleanups
 
     def backlog(self) -> tuple[int, int, float | None]:
         now = datetime.now(UTC)
         with self.database.session() as session:
             count, byte_count, oldest = session.execute(
                 select(
-                    func.count(MetricsOutboxEntry.model_ref),
+                    func.count(MetricsOutboxEntry.job_id),
                     func.coalesce(
                         func.sum(
-                            ModelMetricsArtifact.bytes
-                            + func.coalesce(ModelRunSummaryArtifact.bytes, 0)
+                            TrainingMetricsArtifact.bytes
+                            + func.coalesce(FitRunSummaryArtifact.bytes, 0)
                         ),
                         0,
                     ),
                     func.min(MetricsOutboxEntry.created_at),
                 )
                 .outerjoin(
-                    ModelRunSummaryArtifact,
-                    ModelRunSummaryArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    FitRunSummaryArtifact,
+                    FitRunSummaryArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
                 .join(
-                    ModelMetricsArtifact,
-                    ModelMetricsArtifact.model_ref
-                    == MetricsOutboxEntry.model_ref,
+                    TrainingMetricsArtifact,
+                    TrainingMetricsArtifact.job_id
+                    == MetricsOutboxEntry.job_id,
                 )
                 .where(
                     MetricsOutboxEntry.status.in_(("PENDING", "BLOCKED"))
@@ -222,20 +260,9 @@ class PostgresMetricsOutbox:
         age = None if oldest is None else max(0.0, (now - oldest).total_seconds())
         return int(count), int(byte_count), age
 
-    def delivery_statuses(
-        self,
-        model_refs: Sequence[str],
-    ) -> dict[str, str]:
-        if not model_refs:
-            return {}
+    def retained_run_ids(self) -> set[str]:
         with self.database.session() as session:
-            rows = session.execute(
-                select(
-                    MetricsOutboxEntry.model_ref,
-                    MetricsOutboxEntry.status,
-                ).where(MetricsOutboxEntry.model_ref.in_(model_refs))
-            ).all()
-            return {model_ref: status for model_ref, status in rows}
+            return set(session.scalars(select(TrainingMetricsArtifact.job_id)))
 
 
 def _owns(row: MetricsOutboxEntry, expected_cursor: int) -> bool:
@@ -247,11 +274,11 @@ def _owns(row: MetricsOutboxEntry, expected_cursor: int) -> bool:
 
 def _record(
     outbox: MetricsOutboxEntry,
-    artifact: ModelMetricsArtifact,
-    run_summary: ModelRunSummaryArtifact | None,
+    artifact: TrainingMetricsArtifact,
+    run_summary: FitRunSummaryArtifact | None,
 ) -> MetricsOutboxRecord:
     return MetricsOutboxRecord(
-        artifact=ModelMetricsArtifactRecord(
+        training_metrics=TrainingMetricsArtifactRecord(
             model_ref=artifact.model_ref,
             format=artifact.format,
             media_type=artifact.media_type,
@@ -269,7 +296,7 @@ def _record(
         run_summary=(
             None
             if run_summary is None
-            else ModelRunSummaryArtifactRecord(
+            else FitRunSummaryArtifactRecord(
                 model_ref=run_summary.model_ref,
                 format=run_summary.format,
                 media_type=run_summary.media_type,

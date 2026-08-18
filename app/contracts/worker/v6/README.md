@@ -112,14 +112,6 @@ meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
 Probability logits преобразуются через sigmoid до записи Arrow. Worker
 проверяет finite values и диапазоны target-space до terminal result.
 
-Успешный fit result может дополнительно содержать `targetStatistics`: шесть
-записей в порядке public targets с count, min, max, mean, population std,
-zeroCount и oneCount. Worker считает их best effort по Float32-значениям
-каждого ordinal immutable manifest ровно один раз в рамках attempt. После
-recovery новая attempt пересчитывает summary из тех же artifacts, но наружу
-публикуется только terminal result текущей attempt. Ошибка этого расчёта не
-делает core result некорректным.
-
 ## Жизненный цикл artifacts и семантика завершения
 
 Worker пишет только внутри workspace своей attempt. Перед упоминанием artifact

@@ -213,10 +213,10 @@ def create_test_metrics_artifact(
         )
         + "\n"
     ).encode("utf-8")
-    path = spool.model_metrics_path(model_ref)
+    path = spool.telemetry_metrics_path(job_id)
     spool.atomic_write_bytes(path, payload)
     return TestMetricsArtifact(
-        relative_path=spool.model_relative_path(path),
+        relative_path=spool.telemetry_relative_path(path),
         byte_count=len(payload),
         sha256=hashlib.sha256(payload).hexdigest(),
         row_count=1,
@@ -267,27 +267,6 @@ def create_test_run_summary_artifact(
             "inputRows": 1,
             "inputBytes": 1,
         },
-        target_statistics=[
-            {
-                "targetIndex": index,
-                "name": name,
-                "count": 1,
-                "min": 0.0,
-                "max": 0.0,
-                "mean": 0.0,
-                "std": 0.0,
-                "zeroCount": 1,
-                "oneCount": 0,
-            }
-            for index, name in enumerate((
-                "meanReturn",
-                "sigmaReturn",
-                "probTP",
-                "probSL",
-                "volatilityNext",
-                "hittingProbTP",
-            ))
-        ],
     )
     payload = json.dumps(
         summary,
@@ -296,10 +275,10 @@ def create_test_run_summary_artifact(
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    path = spool.model_run_summary_path(model_ref)
+    path = spool.telemetry_run_summary_path(job_id)
     spool.atomic_write_bytes(path, payload)
     return TestRunSummaryArtifact(
-        relative_path=spool.model_relative_path(path),
+        relative_path=spool.telemetry_relative_path(path),
         byte_count=len(payload),
         sha256=hashlib.sha256(payload).hexdigest(),
     )

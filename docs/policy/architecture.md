@@ -13,7 +13,8 @@
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
 [ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
 telemetry от core state закреплено в
-[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md).
+[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
+persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md).
 
 ## Процессы и composition roots
 
@@ -26,7 +27,7 @@ app/main.py                         ленивый CLI dispatcher
 
 app/contracts/flight/v4            публичный Flight contract
 app/contracts/worker/v6            внутренний process contract
-app/contracts/metrics/v2           текущие artifact и OpenSearch documents
+app/contracts/metrics/v2           epoch artifact и OpenSearch points
 app/contracts/metrics/fit_run/v2   terminal fit summary
 ```
 
@@ -106,7 +107,7 @@ Checkpoints принадлежат `app/worker/checkpoints/`, а не generic ru
 реализацию целиком.
 
 Core результат global epoch находится в `app/worker/training/epoch.py` и не
-зависит от telemetry. AMP/gradient counters, phase timings, target statistics,
+зависит от telemetry. AMP/gradient counters, phase timings,
 JSONL и plots принадлежат `app/worker/telemetry/`. Job progress хранит только
 `completedEpochs` и `globalStep`; полный metrics document является
 необязательным наблюдением.
@@ -142,7 +143,7 @@ cases, которые определяют операции с access tokens. Al
 - `app/contracts/metrics/v2/` — текущий immutable epoch artifact, закрытая
   OpenSearch projection, golden identity и strict index templates;
 - `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
-  counters и статистика training targets;
+  durations и counters;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
   `attempt` остаётся положительным job-local ordinal;
@@ -158,7 +159,8 @@ cases, которые определяют операции с access tokens. Al
 PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
-tokens, published metadata и состояния metrics outbox. OpenSearch является
+tokens и published metadata. Отдельный telemetry slice владеет epoch intervals,
+run artifact metadata и metrics outbox. OpenSearch является
 best-effort аналитической проекцией, а не частью model/job lifecycle.
 SQLite и dual-write запрещены.
 
@@ -179,6 +181,8 @@ Ownership хранения:
   epoch и boot-scoped CUDA quarantine;
 - `recovery/` — persistent fit inputs и completed-global-epoch checkpoints;
 - `models/` — только успешно опубликованные immutable model generations;
+- `telemetry/` — run-owned best-effort artifacts до завершения outbox
+  retention;
 - RAM — FIFO queues, token digest cache и active process handles.
 
 ## Обязательные dependency rules

@@ -4,8 +4,8 @@
 
 Принято, 2026-08-16.
 
-Формат v1 расширен статистикой training targets в
-[ADR 0012](0012-gradient-and-target-telemetry.md).
+Формат v1 заменён текущим v2; окончательная ownership boundary уточнена в
+[ADR 0014](0014-run-owned-telemetry.md).
 
 ## Контекст
 
@@ -18,16 +18,16 @@ Inventory из `job.status` нельзя, а отправка событий и�
 Часть контрольных данных уже находится в PostgreSQL. Job, attempts, inputs и
 recovery checkpoints участвуют в fencing и recovery и не переносятся в
 OpenSearch. Best-effort epoch intervals хранятся рядом только для построения
-model-owned telemetry artifact и не являются прикладным состоянием.
+run-owned telemetry artifact и не являются прикладным состоянием.
 
 ## Решение
 
 Для успешно опубликованной модели сервис best effort создаёт второй
-неизменяемый model-owned artifact:
+неизменяемый run-owned artifact:
 
 ```text
-models/{modelRef}/metrics.jsonl
-models/{modelRef}/run-summary.json
+telemetry/{jobId}/metrics.jsonl
+telemetry/{jobId}/run-summary.json
 ```
 
 `run-summary.json` имеет формат `transformer.fit-run-summary.v1`. Он содержит
@@ -59,7 +59,7 @@ worker completed
   → best-effort metrics.jsonl + run-summary.json
   → отдельная PostgreSQL transaction: artifact metadata + outbox
   → post-commit OpenSearch publisher
-       epoch points + artifact metadata + fit run summary
+       epoch points + fit run summary
 ```
 
 Внутренний worker contract повышается до v5. Публичный Flight v4 не меняется.
@@ -72,7 +72,7 @@ rollover.
 
 PostgreSQL остаётся источником истины для lifecycle и recovery. Epoch
 intervals удаляются вместе с terminal job по действующей retention policy
-только после того, как из них опубликован model-owned artifact. OpenSearch
+только после того, как из них опубликован run-owned artifact. OpenSearch
 хранит производную аналитическую проекцию и не используется для принятия
 lifecycle-решений.
 

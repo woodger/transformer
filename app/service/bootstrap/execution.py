@@ -16,7 +16,7 @@ from app.service.adapters.outbound.artifacts.recovery_publication import (
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.publication import (
-    ModelTelemetryPublisher,
+    FitRunTelemetryPublisher,
 )
 from app.service.adapters.outbound.cuda.inventory import (
     static_cuda_inventory,
@@ -89,7 +89,7 @@ class WorkerPool(WorkerScheduler):
         self._fit_telemetry_publisher = (
             None
             if telemetry is None
-            else ModelTelemetryPublisher(
+            else FitRunTelemetryPublisher(
                 telemetry,
                 spool,
                 logger=logger,

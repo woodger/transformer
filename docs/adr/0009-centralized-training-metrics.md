@@ -44,7 +44,7 @@ worker завершил global epoch
   → models/{modelRef}/checkpoint.pth
      models/{modelRef}/metadata.json
   → PostgreSQL transaction: model generation + SUCCEEDED
-  → best-effort models/{modelRef}/metrics.jsonl + artifact metadata + outbox
+  → best-effort telemetry/{jobId}/metrics.jsonl + metadata + outbox
   → background publisher
   → OpenSearch Bulk create
 ```
@@ -135,7 +135,7 @@ Transformer сохраняет прежний HTTPS-профиль для дру
 
 ## Последствия
 
-Metrics artifact является необязательной model-owned telemetry. Повреждённая,
+Metrics artifact является необязательной run-owned telemetry. Повреждённая,
 неполная или отсутствующая epoch metric логируется и отбрасывается, но не
 меняет recovery, fit outcome или model generation. Migration `0007` добавляет
 best-effort epoch intervals, model artifact metadata и outbox без изменения

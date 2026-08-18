@@ -6,10 +6,10 @@
 
 ## Durable artifact
 
-Успешная fit generation при доступной telemetry содержит неизменяемый файл:
+Успешный fit run при доступной telemetry содержит неизменяемый файл:
 
 ```text
-models/{modelRef}/metrics.jsonl
+telemetry/{jobId}/metrics.jsonl
 ```
 
 Одна строка соответствует одной завершённой global epoch. Строка проверяется
@@ -30,7 +30,7 @@ overflow. Payload и RecordBatch boundaries на `step` не влияют.
 
 Recovery checkpoint становится видимым независимо от строки epoch. Метрика
 сохраняется best effort отдельной транзакцией PostgreSQL; новая attempt может
-использовать уже зафиксированные строки прежних attempts. Итоговый artifact
+использовать уже зафиксированные строки прежних attempts. Итоговый run-owned artifact
 собирается по generation `1..N` только после model publication. Если полный
 набор недоступен или повреждён, telemetry отбрасывается, а модель остаётся
 успешно опубликованной.
@@ -53,8 +53,8 @@ Recovery checkpoint становится видимым независимо о�
 
 Широкая строка artifact преобразуется в закрытый набор узких документов
 `inventory.metrics.point.v2`, проверяемых по `point.schema.json`. Metadata
-artifact публикуется отдельно по `artifact.schema.json`; bytes и абсолютные
-filesystem paths в OpenSearch не передаются.
+локального artifact нужна только outbox для проверки целостности и отдельно в
+OpenSearch не публикуется. Bytes и filesystem paths наружу не передаются.
 
 `eventId` вычисляется как SHA-256 RFC 8785/JCS-массива:
 
@@ -75,14 +75,13 @@ Node.js-скрипт `fixtures/event_id_sha256.mjs` фиксирует межъ�
 ## Индексы OpenSearch
 
 Оператор заранее устанавливает strict templates из `opensearch/` и создаёт
-два обычных versioned index:
+один обычный versioned index для epoch points:
 
 ```text
 metrics-points-v2
-metrics-artifacts-v2
 ```
 
-Оба template задают `number_of_replicas: 0`: текущая платформа является
+Template задаёт `number_of_replicas: 0`: текущая платформа является
 одиночным узлом и не должна оставлять индексы в состоянии `yellow` из-за
 невозможной replica allocation.
 
@@ -100,17 +99,17 @@ semantic event в новом backing index. Обычный index сохраня�
 ## Outbox
 
 После terminal transaction model generation отдельная best-effort transaction
-фиксирует metadata metrics artifact и outbox pointer. Publisher отправляет
+фиксирует metadata run-owned metrics artifact и outbox pointer. Publisher отправляет
 только документы, детерминированно восстановленные из неизменяемого artifact.
 Network errors, HTTP 408/429/5xx и потерянный response повторяются в пределах
 конечного retry budget; schema, mapping и integrity errors переводят запись в
 terminal `BLOCKED` до retention cleanup.
 
 В v2 централизуются только метрики успешно опубликованных fit runs. Метрики
-окончательно `FAILED` или `CANCELLED` attempts остаются attempt-local и не
-публикуются.
+окончательно `FAILED` или `CANCELLED` attempts не публикуются и удаляются
+вместе со штатным job retention.
 
-Итоговые lifecycle durations, counters и статистика training targets успешного
-fit принадлежат контракту [`fit_run/v2`](../fit_run/v2/README.md) и индексу
-`metrics-runs-v2`. Все три документа доставляются одной outbox projection
+Итоговые lifecycle durations и counters успешного fit принадлежат контракту
+[`fit_run/v2`](../fit_run/v2/README.md) и индексу `metrics-runs-v2`. Epoch
+points и terminal run summary доставляются одной outbox projection
 `inventory.metrics.v3`.

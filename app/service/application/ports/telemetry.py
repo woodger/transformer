@@ -7,6 +7,7 @@ from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.telemetry.records import (
     FitRunSummarySource,
     MetricsOutboxRecord,
+    TelemetryArtifactCleanup,
     TrainingMetricIntervalRecord,
 )
 from app.service.domain.json_types import JsonObject
@@ -26,7 +27,7 @@ class MetricsOutboxRepository(Protocol):
 
     def advance(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         cursor: int,
@@ -34,7 +35,7 @@ class MetricsOutboxRepository(Protocol):
 
     def retry(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         delay_seconds: float,
@@ -44,7 +45,7 @@ class MetricsOutboxRepository(Protocol):
 
     def block(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         error_code: str,
@@ -53,7 +54,7 @@ class MetricsOutboxRepository(Protocol):
 
     def discard(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
         error_code: str,
@@ -62,27 +63,27 @@ class MetricsOutboxRepository(Protocol):
 
     def complete(
         self,
-        model_ref: str,
+        job_id: str,
         *,
         expected_cursor: int,
     ) -> bool: ...
 
-    def purge_terminal(self, *, older_than_seconds: float) -> int: ...
+    def purge_terminal(
+        self,
+        *,
+        older_than_seconds: float,
+    ) -> tuple[TelemetryArtifactCleanup, ...]: ...
 
     def backlog(self) -> tuple[int, int, float | None]: ...
 
-    def delivery_statuses(
+    def retained_run_ids(self) -> set[str]: ...
+
+
+class TelemetryArtifactStorage(Protocol):
+    def remove_telemetry_artifacts(
         self,
-        model_refs: Sequence[str],
-    ) -> dict[str, str]: ...
-
-
-class ModelTelemetryQuery(Protocol):
-    def delivery_statuses(
-        self,
-        model_refs: Sequence[str],
-    ) -> dict[str, str]: ...
-
+        relative_paths: Sequence[str],
+    ) -> None: ...
 
 class MetricsArtifactProjection(Protocol):
     def points(
@@ -91,13 +92,6 @@ class MetricsArtifactProjection(Protocol):
         *,
         deployment_id: str,
     ) -> tuple[JsonObject, ...]: ...
-
-    def artifact_document(
-        self,
-        entry: MetricsOutboxRecord,
-        *,
-        deployment_id: str,
-    ) -> JsonObject: ...
 
     def run_summary_document(
         self,
@@ -146,7 +140,7 @@ class TrainingTelemetryRepository(Protocol):
         attempt_id: str,
     ) -> FitRunSummarySource: ...
 
-    def register_model_artifacts(
+    def register_run_artifacts(
         self,
         *,
         model_ref: str,
@@ -187,7 +181,7 @@ __all__ = [
     "MetricsArtifactProjection",
     "MetricsDocumentSink",
     "MetricsOutboxRepository",
-    "ModelTelemetryQuery",
     "RetryableMetricsDeliveryError",
+    "TelemetryArtifactStorage",
     "TrainingTelemetryRepository",
 ]

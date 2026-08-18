@@ -31,7 +31,6 @@ class CliArguments(Protocol):
     subject: str
     token_id: str
     model_ref: str
-    discard_undelivered_metrics: bool
     seed: int
     deterministic: bool
     device: str

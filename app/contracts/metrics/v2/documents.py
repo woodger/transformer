@@ -17,9 +17,7 @@ ARTIFACT_FORMAT = "transformer.training-metrics.v2"
 ARTIFACT_MEDIA_TYPE = "application/x-ndjson"
 PROJECTION_VERSION = "inventory.metrics.v3"
 POINT_DOCUMENT_SCHEMA = "inventory.metrics.point.v2"
-ARTIFACT_DOCUMENT_SCHEMA = "inventory.metrics.artifact.v2"
 POINT_INDEX = "metrics-points-v2"
-ARTIFACT_INDEX = "metrics-artifacts-v2"
 
 _SCHEMA_PATH = Path(__file__).with_name("training-record.schema.json")
 _TRAINING_RECORD_SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -29,12 +27,6 @@ _TRAINING_RECORD_VALIDATOR = Draft202012Validator(
 )
 _POINT_VALIDATOR = Draft202012Validator(
     json.loads(Path(__file__).with_name("point.schema.json").read_text(
-        encoding="utf-8"
-    )),
-    format_checker=FormatChecker(),
-)
-_ARTIFACT_VALIDATOR = Draft202012Validator(
-    json.loads(Path(__file__).with_name("artifact.schema.json").read_text(
         encoding="utf-8"
     )),
     format_checker=FormatChecker(),
@@ -276,14 +268,6 @@ def validate_point_document(document: object) -> JsonObject:
     return _validate_document(document, _POINT_VALIDATOR, "metrics point")
 
 
-def validate_artifact_document(document: object) -> JsonObject:
-    return _validate_document(
-        document,
-        _ARTIFACT_VALIDATOR,
-        "metrics artifact",
-    )
-
-
 def project_training_points(
     record: JsonObject,
     *,
@@ -357,51 +341,6 @@ def project_training_points(
         point["documentSha256"] = _document_sha256(point)
         points.append(validate_point_document(point))
     return tuple(points)
-
-
-def build_artifact_document(
-    *,
-    deployment_id: str,
-    model_ref: str,
-    job_id: str,
-    attempt_id: str,
-    attempt: int,
-    application_version: str,
-    git_commit: str,
-    byte_count: int,
-    sha256: str,
-    row_count: int,
-    created_at: float,
-) -> JsonObject:
-    artifact_id = _jcs_sha256([
-        ARTIFACT_DOCUMENT_SCHEMA,
-        "transformer",
-        deployment_id,
-        model_ref,
-        "training-metrics",
-    ])
-    document: JsonObject = {
-        "@timestamp": _utc_timestamp(created_at),
-        "schema": ARTIFACT_DOCUMENT_SCHEMA,
-        "artifactId": artifact_id,
-        "deploymentId": deployment_id,
-        "kind": "training-metrics",
-        "owner": "transformer",
-        "runId": job_id,
-        "transformerJobId": job_id,
-        "attemptId": attempt_id,
-        "attempt": attempt,
-        "modelRef": model_ref,
-        "format": ARTIFACT_FORMAT,
-        "mediaType": ARTIFACT_MEDIA_TYPE,
-        "bytes": byte_count,
-        "rowCount": row_count,
-        "sha256": sha256,
-        "transformerVersion": application_version,
-        "transformerGitCommit": git_commit,
-    }
-    document["documentSha256"] = _document_sha256(document)
-    return validate_artifact_document(document)
 
 
 def _validate_document(

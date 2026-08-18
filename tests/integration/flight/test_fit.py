@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.flight as flight
-import pytest
 
 from app.contracts.worker.v6.config import TrainConfig, train_config_to_manifest
 from app.contracts.worker.v6.objective import ml_contract
@@ -273,28 +272,28 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
             assert time.monotonic() < deadline
             time.sleep(0.02)
         assert pending is not None
-        assert pending.artifact.model_ref == status["results"]["modelRef"]
-        assert pending.artifact.job_id == job_id
+        assert pending.training_metrics.model_ref == status["results"]["modelRef"]
+        assert pending.training_metrics.job_id == job_id
         assert pending.projection_version == "inventory.metrics.v3"
         assert pending.run_summary is not None
         backlog_entries, backlog_bytes, backlog_age = outbox.backlog()
         assert backlog_entries == 1
         assert backlog_bytes == (
-            pending.artifact.byte_count + pending.run_summary.byte_count
+            pending.training_metrics.byte_count + pending.run_summary.byte_count
         )
         assert backlog_age is not None and backlog_age >= 0
-        metrics_path = application.spool.model_absolute_path(
-            pending.artifact.relative_path
+        metrics_path = application.spool.telemetry_absolute_path(
+            pending.training_metrics.relative_path
         )
         metrics_bytes = Path(metrics_path).read_bytes()
         assert hashlib.sha256(metrics_bytes).hexdigest() == (
-            pending.artifact.sha256
+            pending.training_metrics.sha256
         )
         metrics_rows = [
             json.loads(line)
             for line in metrics_bytes.decode("utf-8").splitlines()
         ]
-        assert len(metrics_rows) == pending.artifact.row_count == 1
+        assert len(metrics_rows) == pending.training_metrics.row_count == 1
         assert metrics_rows[0]["format"] == "transformer.training-metrics.v2"
         assert metrics_rows[0]["jobId"] == job_id
         assert metrics_rows[0]["modelRef"] == status["results"]["modelRef"]
@@ -304,7 +303,7 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
         assert metrics_rows[0]["optimizerUpdatesSkipped"] == 0
         assert metrics_rows[0]["finiteGradientBatches"] == 1
         assert metrics_rows[0]["nonFiniteGradientBatches"] == 0
-        summary_path = application.spool.model_absolute_path(
+        summary_path = application.spool.telemetry_absolute_path(
             pending.run_summary.relative_path
         )
         summary_bytes = Path(summary_path).read_bytes()
@@ -322,27 +321,6 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
             "inputRows": 2,
             "inputBytes": first["bytes"] + second["bytes"],
         }
-        assert [item["name"] for item in summary["targetStatistics"]] == [
-            "meanReturn",
-            "sigmaReturn",
-            "probTP",
-            "probSL",
-            "volatilityNext",
-            "hittingProbTP",
-        ]
-        assert all(
-            item["count"] == 2 for item in summary["targetStatistics"]
-        )
-        mean_return = summary["targetStatistics"][0]
-        assert mean_return["targetIndex"] == 0
-        assert mean_return["name"] == "meanReturn"
-        assert mean_return["count"] == 2
-        assert mean_return["min"] == pytest.approx(0.02)
-        assert mean_return["max"] == pytest.approx(0.05)
-        assert mean_return["mean"] == pytest.approx(0.035)
-        assert mean_return["std"] == pytest.approx(0.015)
-        assert mean_return["zeroCount"] == 0
-        assert mean_return["oneCount"] == 0
         assert all(
             isinstance(value, (int, float)) and value >= 0
             for value in summary["durations"].values()

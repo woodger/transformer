@@ -52,7 +52,7 @@ PostgreSQL является единственным долговечным ис
 - metadata inputs/outputs, idempotency records и output tickets;
 - зарегистрированных generations training recovery и истории retry;
 - metadata опубликованных моделей и owner-scoped aliases моделей;
-- committed epoch metrics, metadata model-owned metrics artifacts и состояние
+- committed epoch metrics, metadata run-owned metrics artifacts и состояние
   OpenSearch outbox;
 - API access tokens;
 - текущей storage epoch runtime.
@@ -68,7 +68,6 @@ Filesystem runtime намеренно является временным:
     jobs/{jobId}/
       inputs/{ordinal}-{payloadId}-{uploadToken}.arrow  # только prediction
       attempts/{attempt}/
-        metrics.jsonl
         stdout.log
         stderr.log
         outputs/{ordinal}.arrow
@@ -92,18 +91,26 @@ Fit inputs и восстанавливаемое состояние обучен
   {modelRef}/
     checkpoint.pth
     metadata.json
+```
+
+Успешный fit может независимо получить best-effort telemetry run:
+
+```text
+<project-root>/telemetry/
+  {jobId}/
     metrics.jsonl
+    run-summary.json
 ```
 
 Файлы сначала записываются рядом с конечным расположением, синхронизируются
 через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
 Recovery checkpoint становится видимым только после надёжной записи файла и
-регистрации его generation и полной epoch metric в одной транзакции
-PostgreSQL. При публикации модели checkpoint успешной attempt и собранный
-`metrics.jsonl` сначала копируются в `models/`, а model/artifact metadata и
-OpenSearch outbox фиксируются одной terminal transaction только после
-успешной публикации в filesystem. Неуспешные и прерванные attempts не создают
-generation модели.
+регистрации его generation. Epoch telemetry фиксируется отдельной best-effort
+транзакцией PostgreSQL. При публикации модели checkpoint successful attempt и
+metadata атомарно публикуются в `models/`; только после прикладного commit
+service может собрать файлы в `telemetry/` и зарегистрировать отдельный
+OpenSearch outbox. Ошибка telemetry не меняет model generation или terminal
+state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
 `service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
@@ -172,6 +179,12 @@ OpenSearch не блокирует fit и публикацию модели.
 Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
 опубликованных model generations и состояние `CANCELLED` для явно отброшенной
 metrics delivery. Публичный Flight v4 не меняется.
+
+Revision `0009` добавляет timing boundaries terminal fit summary. Revision
+`0010` переносит durable telemetry в отдельный run-owned lifecycle с ключом
+`jobId` и удаляет экспериментальные model-owned artifact metadata и outbox.
+Committed epoch intervals и model generations сохраняются. Публичный Flight v4
+не меняется.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -395,11 +408,9 @@ jobs, снимает только alias, который указывает на 
 `modelRef` не переиспользуются, а alias не откатывается на предыдущую
 generation.
 
-Pending или blocked OpenSearch outbox не блокирует удаление. Запись
-автоматически переводится в `CANCELLED`; доставленные или уже принятые
-OpenSearch documents команда не удаляет. Compatibility option
-`--discard-undelivered-metrics` по-прежнему принимается, но не меняет это
-поведение.
+OpenSearch outbox не участвует в удалении модели. Pending run продолжает
+доставляться, а terminal telemetry очищается по собственной retention policy.
+Уже принятые OpenSearch documents команда модели не удаляет.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из

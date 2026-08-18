@@ -14,7 +14,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
-    ModelMetricsProjection,
+    TrainingMetricsProjection,
 )
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
@@ -171,9 +171,18 @@ class FlightApplication:
             else model_path.__fspath__()
         )
         effective_models_dir = os.path.abspath(model_path_text)
+        telemetry_dir = (
+            config.telemetry_dir
+            if models_dir is None
+            else os.path.join(
+                os.path.dirname(effective_models_dir),
+                "telemetry",
+            )
+        )
         spool = Spool(
             config.runtime_dir,
             effective_models_dir,
+            telemetry_dir,
         ).initialize()
         recovery_dir = (
             config.recovery_dir
@@ -246,8 +255,9 @@ class FlightApplication:
                     raise AssertionError("configured metrics client is unavailable")
                 metrics_publisher = MetricsPublisher(
                     metrics_outbox,
-                    ModelMetricsProjection(spool),
+                    TrainingMetricsProjection(spool),
                     metrics_client,
+                    spool,
                     deployment_id=metrics_config.deployment_id,
                     logger=logger,
                     metrics=metrics,
@@ -286,8 +296,14 @@ class FlightApplication:
                 known_job_ids=ledger.active_recovery_job_ids(),
                 temporary_paths=recovery_temporary_paths,
             )
+            removed_legacy_telemetry = (
+                spool.cleanup_legacy_model_telemetry()
+            )
             removed_models = spool.reconcile_model_directories(
                 published_models.retained_model_refs()
+            )
+            removed_telemetry_runs = spool.reconcile_telemetry_directories(
+                metrics_outbox.retained_run_ids()
             )
             if token_cache is None and bearer_tokens is not None:
                 token_cache = InMemoryAccessTokenCache(bearer_tokens)
@@ -444,6 +460,8 @@ class FlightApplication:
                 ),
                 removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
+                removedLegacyTelemetry=len(removed_legacy_telemetry),
+                removedTelemetryRuns=len(removed_telemetry_runs),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
                     recovery_precleaned

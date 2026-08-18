@@ -4,11 +4,11 @@ import threading
 from dataclasses import replace
 
 from app.contracts.metrics.fit_run.v2 import RUN_INDEX
-from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
+from app.contracts.metrics.v2 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
-    ModelMetricsProjection,
+    TrainingMetricsProjection,
 )
 from app.service.application.ports.telemetry import (
     RetryableMetricsDeliveryError,
@@ -18,9 +18,10 @@ from app.service.application.telemetry.publisher import (
     _retry_delay,
 )
 from app.service.application.telemetry.records import (
+    FitRunSummaryArtifactRecord,
     MetricsOutboxRecord,
-    ModelMetricsArtifactRecord,
-    ModelRunSummaryArtifactRecord,
+    TelemetryArtifactCleanup,
+    TrainingMetricsArtifactRecord,
 )
 from tests.support.flight_v4_helpers import (
     create_test_metrics_artifact,
@@ -29,11 +30,13 @@ from tests.support.flight_v4_helpers import (
 
 
 def _entry() -> MetricsOutboxRecord:
-    artifact = ModelMetricsArtifactRecord(
+    artifact = TrainingMetricsArtifactRecord(
         model_ref="mdl_" + "1" * 32,
         format="transformer.training-metrics.v2",
         media_type="application/x-ndjson",
-        relative_path="mdl/metrics.jsonl",
+        relative_path=(
+            "11111111-1111-4111-8111-111111111111/metrics.jsonl"
+        ),
         byte_count=100,
         sha256="2" * 64,
         row_count=1,
@@ -45,7 +48,7 @@ def _entry() -> MetricsOutboxRecord:
         created_at=1.0,
     )
     return MetricsOutboxRecord(
-        artifact=artifact,
+        training_metrics=artifact,
         projection_version="inventory.metrics.v3",
         status="PENDING",
         cursor=0,
@@ -74,10 +77,6 @@ class _Projection:
         assert deployment_id == "hp800g9.home"
         return self._points
 
-    def artifact_document(self, _entry, *, deployment_id):
-        assert deployment_id == "hp800g9.home"
-        return {"artifactId": "f" * 64}
-
     def run_summary_document(self, _entry, *, deployment_id):
         assert deployment_id == "hp800g9.home"
         return {"summaryId": "e" * 64}
@@ -94,7 +93,8 @@ class _Outbox:
     def next_pending(self):
         return self.entry if self.entry.status == "PENDING" else None
 
-    def advance(self, model_ref, *, expected_cursor, cursor):
+    def advance(self, job_id, *, expected_cursor, cursor):
+        assert job_id == self.entry.training_metrics.job_id
         if self.entry.cursor != expected_cursor:
             return False
         self.entry = replace(self.entry, cursor=cursor)
@@ -102,13 +102,14 @@ class _Outbox:
 
     def retry(
         self,
-        model_ref,
+        job_id,
         *,
         expected_cursor,
         delay_seconds,
         error_code,
         error_message,
     ):
+        assert job_id == self.entry.training_metrics.job_id
         assert self.entry.cursor == expected_cursor
         assert error_code == "DELIVERY_RETRYABLE"
         assert error_message
@@ -122,13 +123,13 @@ class _Outbox:
 
     def discard(
         self,
-        model_ref,
+        job_id,
         *,
         expected_cursor,
         error_code,
         error_message,
     ):
-        assert model_ref == self.entry.artifact.model_ref
+        assert job_id == self.entry.training_metrics.job_id
         assert self.entry.cursor == expected_cursor
         assert error_code == "DELIVERY_EXPIRED"
         assert error_message
@@ -136,7 +137,8 @@ class _Outbox:
         self.delivered.set()
         return True
 
-    def complete(self, model_ref, *, expected_cursor):
+    def complete(self, job_id, *, expected_cursor):
+        assert job_id == self.entry.training_metrics.job_id
         if self.entry.cursor != expected_cursor:
             return False
         self.entry = replace(self.entry, status="DELIVERED")
@@ -145,7 +147,10 @@ class _Outbox:
 
     def purge_terminal(self, *, older_than_seconds):
         assert older_than_seconds > 0
-        return 0
+        return ()
+
+    def retained_run_ids(self):
+        return {self.entry.training_metrics.job_id}
 
     def backlog(self):
         self.maintenance_runs += 1
@@ -160,13 +165,22 @@ class _Sink:
         self.calls.append((index, len(documents), id_field))
 
 
-def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
+class _Storage:
+    def __init__(self) -> None:
+        self.removed: list[tuple[str, ...]] = []
+
+    def remove_telemetry_artifacts(self, relative_paths):
+        self.removed.append(tuple(relative_paths))
+
+
+def test_publisher_delivers_bounded_point_chunks_before_run_summary():
     outbox = _Outbox(_entry())
     sink = _Sink()
     publisher = MetricsPublisher(
         outbox,
         _Projection(501),
         sink,
+        _Storage(),
         deployment_id="hp800g9.home",
         logger=_Logger(),
         metrics=OperationalMetrics(),
@@ -179,10 +193,54 @@ def test_publisher_delivers_bounded_point_chunks_before_artifact_metadata():
     assert sink.calls == [
         (POINT_INDEX, 500, "eventId"),
         (POINT_INDEX, 1, "eventId"),
-        (ARTIFACT_INDEX, 1, "artifactId"),
         (RUN_INDEX, 1, "summaryId"),
     ]
     assert outbox.maintenance_runs >= 1
+
+
+def test_terminal_retention_removes_only_the_run_artifacts():
+    entry = replace(_entry(), status="DELIVERED")
+
+    class RetentionOutbox(_Outbox):
+        def __init__(self, retained: MetricsOutboxRecord) -> None:
+            super().__init__(retained)
+            self.purged = threading.Event()
+
+        def purge_terminal(self, *, older_than_seconds):
+            assert older_than_seconds > 0
+            if self.purged.is_set():
+                return ()
+            self.purged.set()
+            return (
+                TelemetryArtifactCleanup(
+                    job_id=self.entry.training_metrics.job_id,
+                    relative_paths=(
+                        self.entry.training_metrics.relative_path,
+                        f"{self.entry.training_metrics.job_id}/run-summary.json",
+                    ),
+                ),
+            )
+
+    outbox = RetentionOutbox(entry)
+    storage = _Storage()
+    publisher = MetricsPublisher(
+        outbox,
+        _Projection(1),
+        _Sink(),
+        storage,
+        deployment_id="hp800g9.home",
+        logger=_Logger(),
+        metrics=OperationalMetrics(),
+    ).start()
+    try:
+        assert outbox.purged.wait(2.0)
+    finally:
+        publisher.shutdown(2.0)
+
+    assert storage.removed == [(
+        entry.training_metrics.relative_path,
+        f"{entry.training_metrics.job_id}/run-summary.json",
+    )]
 
 
 def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
@@ -196,6 +254,7 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
         outbox,
         _Projection(1),
         RetrySink(),
+        _Storage(),
         deployment_id="hp800g9.home",
         logger=_Logger(),
         metrics=OperationalMetrics(),
@@ -222,6 +281,7 @@ def test_retryable_delivery_is_discarded_after_the_retry_budget():
         outbox,
         _Projection(1),
         RetrySink(),
+        _Storage(),
         deployment_id="hp800g9.home",
         logger=_Logger(),
         metrics=OperationalMetrics(),
@@ -245,13 +305,13 @@ def test_unexpected_delivery_failure_is_blocked_instead_of_retried_forever():
     class BlockingOutbox(_Outbox):
         def block(
             self,
-            model_ref,
+            job_id,
             *,
             expected_cursor,
             error_code,
             error_message,
         ):
-            assert model_ref == self.entry.artifact.model_ref
+            assert job_id == self.entry.training_metrics.job_id
             assert expected_cursor == self.entry.cursor
             assert error_code == "DELIVERY_INTERNAL"
             assert error_message
@@ -264,6 +324,7 @@ def test_unexpected_delivery_failure_is_blocked_instead_of_retried_forever():
         outbox,
         BrokenProjection(1),
         _Sink(),
+        _Storage(),
         deployment_id="hp800g9.home",
         logger=_Logger(),
         metrics=OperationalMetrics(),
@@ -293,6 +354,7 @@ def test_shutdown_timeout_does_not_fail_the_service():
         _Outbox(_entry()),
         _Projection(1),
         sink,
+        _Storage(),
         deployment_id="hp800g9.home",
         logger=logger,
         metrics=OperationalMetrics(),
@@ -317,22 +379,22 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
     entry = _entry()
     artifact = create_test_metrics_artifact(
         spool,
-        model_ref=entry.artifact.model_ref,
-        job_id=entry.artifact.job_id,
-        attempt_id=entry.artifact.attempt_id,
-        attempt=entry.artifact.attempt,
+        model_ref=entry.training_metrics.model_ref,
+        job_id=entry.training_metrics.job_id,
+        attempt_id=entry.training_metrics.attempt_id,
+        attempt=entry.training_metrics.attempt,
     )
     summary = create_test_run_summary_artifact(
         spool,
-        model_ref=entry.artifact.model_ref,
-        job_id=entry.artifact.job_id,
-        attempt_id=entry.artifact.attempt_id,
-        attempt=entry.artifact.attempt,
+        model_ref=entry.training_metrics.model_ref,
+        job_id=entry.training_metrics.job_id,
+        attempt_id=entry.training_metrics.attempt_id,
+        attempt=entry.training_metrics.attempt,
     )
     current = replace(
         entry,
-        artifact=replace(
-            entry.artifact,
+        training_metrics=replace(
+            entry.training_metrics,
             format="transformer.training-metrics.v2",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
@@ -340,24 +402,24 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             row_count=artifact.row_count,
             git_commit="0" * 40,
         ),
-        run_summary=ModelRunSummaryArtifactRecord(
-            model_ref=entry.artifact.model_ref,
+        run_summary=FitRunSummaryArtifactRecord(
+            model_ref=entry.training_metrics.model_ref,
             format="transformer.fit-run-summary.v2",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
             sha256=summary.sha256,
-            job_id=entry.artifact.job_id,
-            attempt_id=entry.artifact.attempt_id,
-            attempt=entry.artifact.attempt,
-            application_version=entry.artifact.application_version,
+            job_id=entry.training_metrics.job_id,
+            attempt_id=entry.training_metrics.attempt_id,
+            attempt=entry.training_metrics.attempt,
+            application_version=entry.training_metrics.application_version,
             git_commit="0" * 40,
             created_at=10.0,
         ),
         projection_version="inventory.metrics.v3",
     )
 
-    projection = ModelMetricsProjection(spool)
+    projection = TrainingMetricsProjection(spool)
     points = projection.points(current, deployment_id="hp800g9.home")
     document = projection.run_summary_document(
         current,
@@ -365,8 +427,8 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
     )
 
     assert points
-    assert document["runId"] == entry.artifact.job_id
-    assert document["modelRef"] == entry.artifact.model_ref
+    assert document["runId"] == entry.training_metrics.job_id
+    assert document["modelRef"] == entry.training_metrics.model_ref
 
 
 def test_retry_delay_remains_inside_the_operational_bounds():

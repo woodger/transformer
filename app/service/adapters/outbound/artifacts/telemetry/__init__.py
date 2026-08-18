@@ -1,8 +1,8 @@
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
-    ModelMetricsProjection,
+    TrainingMetricsProjection,
 )
 from app.service.adapters.outbound.artifacts.telemetry.publication import (
-    ModelTelemetryPublisher,
+    FitRunTelemetryPublisher,
 )
 
-__all__ = ["ModelMetricsProjection", "ModelTelemetryPublisher"]
+__all__ = ["FitRunTelemetryPublisher", "TrainingMetricsProjection"]

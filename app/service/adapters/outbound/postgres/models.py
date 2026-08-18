@@ -500,40 +500,43 @@ class PublishedModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class ModelMetricsArtifact(Base):
-    __tablename__ = "model_metrics_artifacts"
+class TrainingMetricsArtifact(Base):
+    __tablename__ = "training_metrics_artifacts"
     __table_args__ = (
         UniqueConstraint(
             "relative_path",
-            name="model_metrics_artifacts_relative_path_uq",
+            name="training_metrics_artifacts_relative_path_uq",
+        ),
+        UniqueConstraint(
+            "model_ref",
+            name="training_metrics_artifacts_model_ref_uq",
         ),
         CheckConstraint(
             "bytes > 0",
-            name="model_metrics_artifacts_bytes_ck",
+            name="training_metrics_artifacts_bytes_ck",
         ),
         CheckConstraint(
             "row_count > 0",
-            name="model_metrics_artifacts_rows_ck",
+            name="training_metrics_artifacts_rows_ck",
         ),
         CheckConstraint(
             "attempt > 0",
-            name="model_metrics_artifacts_attempt_ck",
+            name="training_metrics_artifacts_attempt_ck",
         ),
         {"schema": SCHEMA},
     )
 
-    model_ref: Mapped[str] = mapped_column(
-        String(128),
-        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+    job_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False),
         primary_key=True,
     )
+    model_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     format: Mapped[str] = mapped_column(String(64), nullable=False)
     media_type: Mapped[str] = mapped_column(String(128), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)
     application_version: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -544,35 +547,38 @@ class ModelMetricsArtifact(Base):
     )
 
 
-class ModelRunSummaryArtifact(Base):
-    __tablename__ = "model_run_summary_artifacts"
+class FitRunSummaryArtifact(Base):
+    __tablename__ = "fit_run_summary_artifacts"
     __table_args__ = (
         UniqueConstraint(
             "relative_path",
-            name="model_run_summary_artifacts_relative_path_uq",
+            name="fit_run_summary_artifacts_relative_path_uq",
+        ),
+        UniqueConstraint(
+            "model_ref",
+            name="fit_run_summary_artifacts_model_ref_uq",
         ),
         CheckConstraint(
             "bytes > 0",
-            name="model_run_summary_artifacts_bytes_ck",
+            name="fit_run_summary_artifacts_bytes_ck",
         ),
         CheckConstraint(
             "attempt > 0",
-            name="model_run_summary_artifacts_attempt_ck",
+            name="fit_run_summary_artifacts_attempt_ck",
         ),
         {"schema": SCHEMA},
     )
 
-    model_ref: Mapped[str] = mapped_column(
-        String(128),
-        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
+    job_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False),
         primary_key=True,
     )
+    model_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     format: Mapped[str] = mapped_column(String(64), nullable=False)
     media_type: Mapped[str] = mapped_column(String(128), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)
     application_version: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -602,10 +608,10 @@ class MetricsOutboxEntry(Base):
         {"schema": SCHEMA},
     )
 
-    model_ref: Mapped[str] = mapped_column(
-        String(128),
+    job_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False),
         ForeignKey(
-            f"{SCHEMA}.model_metrics_artifacts.model_ref",
+            f"{SCHEMA}.training_metrics_artifacts.job_id",
             ondelete="CASCADE",
         ),
         primary_key=True,

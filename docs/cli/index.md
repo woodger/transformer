@@ -236,8 +236,8 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 ## Опубликованные модели
 
-Список model generations включает точный `modelRef`, owner, label, generation,
-lifecycle state и состояние доставки training metrics:
+Список model generations включает точный `modelRef`, owner, label, generation
+и lifecycle state:
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
@@ -259,13 +259,8 @@ lifecycle state и состояние доставки training metrics:
 переиспользуются.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
-Состояние доставки metrics удаление не блокирует: `PENDING` или `BLOCKED`
-запись автоматически становится `CANCELLED`. Уже созданные документы
-OpenSearch не удаляются, а publisher может завершить Bulk request, начатый до
-commit удаления.
-
-Compatibility option `--discard-undelivered-metrics` по-прежнему принимается
-старыми operator scripts, но больше не меняет поведение команды.
+Run telemetry имеет собственный lifecycle: удаление модели не отменяет её
+доставку и не удаляет уже созданные документы OpenSearch.
 
 ## Пути и запись артефактов
 

@@ -40,7 +40,7 @@ class FitRunSummarySource:
 
 
 @dataclass(frozen=True, slots=True)
-class ModelMetricsArtifactRecord:
+class TrainingMetricsArtifactRecord:
     model_ref: str
     format: str
     media_type: str
@@ -57,7 +57,7 @@ class ModelMetricsArtifactRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class ModelRunSummaryArtifactRecord:
+class FitRunSummaryArtifactRecord:
     model_ref: str
     format: str
     media_type: str
@@ -74,20 +74,27 @@ class ModelRunSummaryArtifactRecord:
 
 @dataclass(frozen=True, slots=True)
 class MetricsOutboxRecord:
-    artifact: ModelMetricsArtifactRecord
+    training_metrics: TrainingMetricsArtifactRecord
     projection_version: str
     status: str
     cursor: int
     attempts: int
     next_attempt_at: float
     created_at: float
-    run_summary: ModelRunSummaryArtifactRecord | None = None
+    run_summary: FitRunSummaryArtifactRecord | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TelemetryArtifactCleanup:
+    job_id: str
+    relative_paths: tuple[str, ...]
 
 
 __all__ = [
+    "FitRunSummaryArtifactRecord",
     "FitRunSummarySource",
     "MetricsOutboxRecord",
-    "ModelMetricsArtifactRecord",
-    "ModelRunSummaryArtifactRecord",
+    "TelemetryArtifactCleanup",
     "TrainingMetricIntervalRecord",
+    "TrainingMetricsArtifactRecord",
 ]

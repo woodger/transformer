@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 
 from app.contracts.metrics.fit_run.v2 import RUN_INDEX
-from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
+from app.contracts.metrics.v2 import POINT_INDEX
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -17,6 +17,7 @@ from app.service.application.ports.telemetry import (
     MetricsDocumentSink,
     MetricsOutboxRepository,
     RetryableMetricsDeliveryError,
+    TelemetryArtifactStorage,
 )
 from app.service.application.telemetry.records import MetricsOutboxRecord
 
@@ -37,6 +38,7 @@ class MetricsPublisher:
         outbox: MetricsOutboxRepository,
         projection: MetricsArtifactProjection,
         sink: MetricsDocumentSink,
+        storage: TelemetryArtifactStorage,
         *,
         deployment_id: str,
         logger: EventLogger,
@@ -48,6 +50,7 @@ class MetricsPublisher:
         self.outbox = outbox
         self.projection = projection
         self.sink = sink
+        self.storage = storage
         self.deployment_id = deployment_id
         self.logger = logger
         self.metrics = metrics
@@ -115,21 +118,12 @@ class MetricsPublisher:
                     id_field="eventId",
                 )
                 if self.outbox.advance(
-                    entry.artifact.model_ref,
+                    entry.training_metrics.job_id,
                     expected_cursor=cursor,
                     cursor=cursor + len(chunk),
                 ):
                     self.metrics.add("metricsPointsDelivered", len(chunk))
                 return
-            artifact = self.projection.artifact_document(
-                entry,
-                deployment_id=self.deployment_id,
-            )
-            self.sink.create_documents(
-                ARTIFACT_INDEX,
-                (artifact,),
-                id_field="artifactId",
-            )
             run_summary = self.projection.run_summary_document(
                 entry,
                 deployment_id=self.deployment_id,
@@ -140,15 +134,14 @@ class MetricsPublisher:
                 id_field="summaryId",
             )
             if self.outbox.complete(
-                entry.artifact.model_ref,
+                entry.training_metrics.job_id,
                 expected_cursor=cursor,
             ):
-                self.metrics.add("metricsArtifactsDelivered")
                 self.metrics.add("metricsRunSummariesDelivered")
                 self.logger.event(
-                    "metrics.artifact.delivered",
-                    modelRef=entry.artifact.model_ref,
-                    runId=entry.artifact.job_id,
+                    "metrics.run.delivered",
+                    modelRef=entry.training_metrics.model_ref,
+                    runId=entry.training_metrics.job_id,
                     points=cursor,
                 )
         except RetryableMetricsDeliveryError as exc:
@@ -158,7 +151,7 @@ class MetricsPublisher:
                 or delivery_age >= _MAX_DELIVERY_AGE_SECONDS
             ):
                 if self.outbox.discard(
-                    entry.artifact.model_ref,
+                    entry.training_metrics.job_id,
                     expected_cursor=cursor,
                     error_code="DELIVERY_EXPIRED",
                     error_message="metrics delivery retry budget was exhausted",
@@ -166,13 +159,14 @@ class MetricsPublisher:
                     self.metrics.add("metricsDeliveryDropped")
                     self.logger.event(
                         "metrics.delivery.dropped",
-                        modelRef=entry.artifact.model_ref,
+                        modelRef=entry.training_metrics.model_ref,
+                        runId=entry.training_metrics.job_id,
                         attempts=entry.attempts + 1,
                     )
                 return
             delay = _retry_delay(entry.attempts, self._random())
             if self.outbox.retry(
-                entry.artifact.model_ref,
+                entry.training_metrics.job_id,
                 expected_cursor=cursor,
                 delay_seconds=delay,
                 error_code="DELIVERY_RETRYABLE",
@@ -181,12 +175,13 @@ class MetricsPublisher:
                 self.metrics.add("metricsDeliveryRetries")
                 self.logger.event(
                     "metrics.delivery.retry_scheduled",
-                    modelRef=entry.artifact.model_ref,
+                    modelRef=entry.training_metrics.model_ref,
+                    runId=entry.training_metrics.job_id,
                     delaySeconds=delay,
                 )
         except (BlockedMetricsDeliveryError, OSError, TypeError, ValueError) as exc:
             if self.outbox.block(
-                entry.artifact.model_ref,
+                entry.training_metrics.job_id,
                 expected_cursor=cursor,
                 error_code="DELIVERY_INTEGRITY",
                 error_message=str(exc),
@@ -194,12 +189,13 @@ class MetricsPublisher:
                 self.metrics.add("metricsDeliveryBlocked")
                 self.logger.event(
                     "metrics.delivery.blocked",
-                    modelRef=entry.artifact.model_ref,
+                    modelRef=entry.training_metrics.model_ref,
+                    runId=entry.training_metrics.job_id,
                     errorType=type(exc).__name__,
                 )
         except Exception as exc:
             if self.outbox.block(
-                entry.artifact.model_ref,
+                entry.training_metrics.job_id,
                 expected_cursor=cursor,
                 error_code="DELIVERY_INTERNAL",
                 error_message=str(exc),
@@ -207,16 +203,29 @@ class MetricsPublisher:
                 self.metrics.add("metricsDeliveryBlocked")
                 self.logger.event(
                     "metrics.delivery.blocked",
-                    modelRef=entry.artifact.model_ref,
+                    modelRef=entry.training_metrics.model_ref,
+                    runId=entry.training_metrics.job_id,
                     errorType=type(exc).__name__,
                 )
 
     def _maintenance(self) -> None:
-        purged = self.outbox.purge_terminal(
+        cleanups = self.outbox.purge_terminal(
             older_than_seconds=_TERMINAL_RETENTION_SECONDS,
         )
-        if purged:
-            self.metrics.add("metricsOutboxDeliveredPurged", purged)
+        for cleanup in cleanups:
+            try:
+                self.storage.remove_telemetry_artifacts(
+                    cleanup.relative_paths
+                )
+            except (OSError, ValueError) as exc:
+                self.metrics.add("trainingTelemetryCleanupErrors")
+                self.logger.event(
+                    "metrics.cleanup.failed",
+                    runId=cleanup.job_id,
+                    errorType=type(exc).__name__,
+                )
+        if cleanups:
+            self.metrics.add("metricsOutboxTerminalPurged", len(cleanups))
         entries, byte_count, oldest_age = self.outbox.backlog()
         self.metrics.set("metricsOutboxEntries", entries)
         self.metrics.set("metricsOutboxBytes", byte_count)

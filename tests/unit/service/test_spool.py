@@ -16,7 +16,11 @@ def spool(tmp_path):
 
 
 def test_runtime_directory_lock_excludes_second_service(spool):
-    second = Spool(spool.runtime_dir).initialize()
+    second = Spool(
+        spool.runtime_dir,
+        spool.models_dir,
+        spool.telemetry_dir,
+    ).initialize()
 
     spool.acquire_lock()
     try:
@@ -27,6 +31,21 @@ def test_runtime_directory_lock_excludes_second_service(spool):
 
     second.acquire_lock()
     second.release_lock()
+
+
+def test_run_telemetry_uses_an_independent_storage_root(spool):
+    job_id = str(uuid.uuid4())
+    path = spool.telemetry_metrics_path(job_id)
+
+    assert os.path.commonpath((spool.telemetry_dir, path)) == spool.telemetry_dir
+    assert os.path.commonpath((spool.models_dir, path)) != spool.models_dir
+    assert spool.telemetry_relative_path(path) == f"{job_id}/metrics.jsonl"
+    assert spool.telemetry_absolute_path(
+        f"{job_id}/metrics.jsonl"
+    ) == path
+
+    with pytest.raises(ValueError, match="path traversal"):
+        spool.telemetry_absolute_path("../models/checkpoint.pth")
 
 
 def test_staged_file_atomically_replaces_target_and_removes_temporary(spool):
@@ -144,12 +163,10 @@ def test_startup_reconcile_removes_unpublished_attempt_results_for_known_job(spo
     checkpoint = spool.attempt_checkpoint_path(job_id, 1)
     stdout = spool.attempt_stdout_path(job_id, 1)
     stderr = spool.attempt_stderr_path(job_id, 1)
-    metrics = spool.attempt_metrics_path(job_id, 1)
     spool.atomic_write_bytes(output, b"unpublished output")
     spool.atomic_write_bytes(checkpoint, b"unpublished checkpoint")
     spool.atomic_write_bytes(stdout, b"diagnostic stdout")
     spool.atomic_write_bytes(stderr, b"diagnostic stderr")
-    spool.atomic_write_bytes(metrics, b'{"epoch":1}\n')
 
     result = spool.reconcile(set(), known_job_ids={job_id})
 
@@ -157,9 +174,58 @@ def test_startup_reconcile_removes_unpublished_attempt_results_for_known_job(spo
     assert not os.path.exists(checkpoint)
     assert os.path.isfile(stdout)
     assert os.path.isfile(stderr)
-    assert os.path.isfile(metrics)
     assert spool.relative_path(output) in result["removed"]
     assert spool.relative_path(checkpoint) in result["removed"]
+
+
+def test_run_telemetry_reconcile_uses_run_identity(spool):
+    retained_job_id = str(uuid.uuid4())
+    orphan_job_id = str(uuid.uuid4())
+    retained = spool.telemetry_metrics_path(retained_job_id)
+    orphan = spool.telemetry_run_summary_path(orphan_job_id)
+    spool.atomic_write_bytes(retained, b"retained")
+    spool.atomic_write_bytes(orphan, b"orphan")
+
+    removed = spool.reconcile_telemetry_directories({retained_job_id})
+
+    assert os.path.isfile(retained)
+    assert not os.path.exists(spool.telemetry_run_directory(orphan_job_id))
+    assert removed == (orphan_job_id,)
+
+
+def test_legacy_model_telemetry_cleanup_keeps_model_artifacts(spool):
+    model_ref = "mdl_" + uuid.uuid4().hex
+    metrics_path = os.path.join(
+        spool.model_directory(model_ref),
+        "metrics.jsonl",
+    )
+    summary_path = os.path.join(
+        spool.model_directory(model_ref),
+        "run-summary.json",
+    )
+    legacy_run_path = os.path.join(
+        spool.models_dir,
+        "_telemetry",
+        str(uuid.uuid4()),
+        "metrics.jsonl",
+    )
+    checkpoint_path = spool.model_checkpoint_path(model_ref)
+    spool.atomic_write_bytes(metrics_path, b"legacy metrics")
+    spool.atomic_write_bytes(summary_path, b"legacy summary")
+    spool.atomic_write_bytes(legacy_run_path, b"legacy run")
+    spool.atomic_write_bytes(checkpoint_path, b"checkpoint")
+
+    removed = spool.cleanup_legacy_model_telemetry()
+
+    assert removed == (
+        "_telemetry",
+        f"{model_ref}/metrics.jsonl",
+        f"{model_ref}/run-summary.json",
+    )
+    assert not os.path.exists(metrics_path)
+    assert not os.path.exists(summary_path)
+    assert not os.path.exists(legacy_run_path)
+    assert os.path.isfile(checkpoint_path)
 
 
 def test_preledger_cleanup_removes_only_temporary_artifacts(spool):

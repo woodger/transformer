@@ -47,7 +47,7 @@ def publish_training_metrics(
     git_commit: str,
 ) -> StagedTrainingMetrics:
     if not intervals:
-        raise ValueError("published model requires committed training metrics")
+        raise ValueError("fit run telemetry requires committed epoch metrics")
     expected_generations = list(range(1, len(intervals) + 1))
     if [item.generation for item in intervals] != expected_generations:
         raise ValueError("committed training metric generations are incomplete")

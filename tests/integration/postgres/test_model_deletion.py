@@ -13,11 +13,11 @@ from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.models import (
+    FitRunSummaryArtifact,
     MetricsOutboxEntry,
     ModelAlias,
-    ModelMetricsArtifact,
-    ModelRunSummaryArtifact,
     PublishedModel,
+    TrainingMetricsArtifact,
 )
 from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
@@ -48,7 +48,7 @@ def _seed_model(
     generation: int = 1,
     alias: bool = True,
     outbox_status: str | None = None,
-) -> None:
+) -> str | None:
     now = datetime.now(UTC)
     with database.transaction() as session:
         session.add(PublishedModel(
@@ -75,29 +75,29 @@ def _seed_model(
         if outbox_status is not None:
             job_id = str(uuid.uuid4())
             attempt_id = str(uuid.uuid4())
-            session.add(ModelMetricsArtifact(
+            session.add(TrainingMetricsArtifact(
+                job_id=job_id,
                 model_ref=model_ref,
                 format="transformer.training-metrics.v2",
                 media_type="application/x-ndjson",
-                relative_path=f"{model_ref}/metrics.jsonl",
+                relative_path=f"{job_id}/metrics.jsonl",
                 bytes=10,
                 sha256="b" * 64,
                 row_count=1,
-                job_id=job_id,
                 attempt_id=attempt_id,
                 attempt=1,
                 application_version="0.1.12",
                 git_commit="0" * 40,
                 created_at=now,
             ))
-            session.add(ModelRunSummaryArtifact(
+            session.add(FitRunSummaryArtifact(
+                job_id=job_id,
                 model_ref=model_ref,
                 format="transformer.fit-run-summary.v2",
                 media_type="application/json",
-                relative_path=f"{model_ref}/run-summary.json",
+                relative_path=f"{job_id}/run-summary.json",
                 bytes=10,
                 sha256="c" * 64,
-                job_id=job_id,
                 attempt_id=attempt_id,
                 attempt=1,
                 application_version="0.1.12",
@@ -106,7 +106,7 @@ def _seed_model(
             ))
             session.flush()
             session.add(MetricsOutboxEntry(
-                model_ref=model_ref,
+                job_id=job_id,
                 projection_version="inventory.metrics.v3",
                 status=outbox_status,
                 cursor=0,
@@ -118,34 +118,38 @@ def _seed_model(
                     now if outbox_status == "DELIVERED" else None
                 ),
             ))
+            return job_id
+    return None
 
 
-def test_model_deletion_discards_pending_metrics_and_keeps_tombstone(
+def test_model_deletion_keeps_run_telemetry_and_model_tombstone(
     postgres_database,
 ):
     model_ref = f"mdl_{uuid.uuid4().hex}"
-    _seed_model(postgres_database, model_ref, outbox_status="PENDING")
+    telemetry_job_id = _seed_model(
+        postgres_database,
+        model_ref,
+        outbox_status="PENDING",
+    )
+    assert telemetry_job_id is not None
     store = PublishedModelStore(postgres_database)
     ledger = Ledger(postgres_database).initialize()
 
-    requested = store.request_deletion(
-        model_ref,
-        discard_undelivered_metrics=False,
-    )
-    repeated = store.request_deletion(
-        model_ref,
-        discard_undelivered_metrics=False,
-    )
+    requested = store.request_deletion(model_ref)
+    repeated = store.request_deletion(model_ref)
 
     assert requested.state == ModelLifecycleState.DELETING
-    assert PostgresMetricsOutbox(postgres_database).delivery_statuses(
-        (model_ref,)
-    ) == {model_ref: "CANCELLED"}
+    pending = PostgresMetricsOutbox(postgres_database).next_pending()
+    assert pending is not None
+    assert pending.training_metrics.job_id == telemetry_job_id
     assert repeated.state == ModelLifecycleState.DELETING
     assert ledger.get_model(model_ref) is None
     assert ledger.resolve_model_alias("inventory", "daily") is None
     assert store.retained_model_refs() == {model_ref}
-    assert PostgresMetricsOutbox(postgres_database).backlog() == (0, 0, None)
+    backlog_entries, backlog_bytes, _oldest_age = (
+        PostgresMetricsOutbox(postgres_database).backlog()
+    )
+    assert (backlog_entries, backlog_bytes) == (1, 20)
 
     assert store.complete_deletion(model_ref) is True
     assert store.complete_deletion(model_ref) is False
@@ -157,9 +161,39 @@ def test_model_deletion_discards_pending_metrics_and_keeps_tombstone(
 
     with postgres_database.session() as session:
         assert session.get(PublishedModel, model_ref) is not None
-        assert session.get(ModelMetricsArtifact, model_ref) is None
-        assert session.get(ModelRunSummaryArtifact, model_ref) is None
-        assert session.get(MetricsOutboxEntry, model_ref) is None
+        assert session.get(TrainingMetricsArtifact, telemetry_job_id) is not None
+        assert session.get(FitRunSummaryArtifact, telemetry_job_id) is not None
+        assert session.get(MetricsOutboxEntry, telemetry_job_id) is not None
+
+
+def test_terminal_telemetry_retention_does_not_change_the_model(
+    postgres_database,
+):
+    model_ref = f"mdl_{uuid.uuid4().hex}"
+    job_id = _seed_model(
+        postgres_database,
+        model_ref,
+        outbox_status="DELIVERED",
+    )
+    assert job_id is not None
+
+    cleanups = PostgresMetricsOutbox(postgres_database).purge_terminal(
+        older_than_seconds=0,
+    )
+
+    assert len(cleanups) == 1
+    assert cleanups[0].job_id == job_id
+    assert cleanups[0].relative_paths == (
+        f"{job_id}/metrics.jsonl",
+        f"{job_id}/run-summary.json",
+    )
+    with postgres_database.session() as session:
+        model = session.get(PublishedModel, model_ref)
+        assert model is not None
+        assert model.lifecycle_state == ModelLifecycleState.AVAILABLE.value
+        assert session.get(TrainingMetricsArtifact, job_id) is None
+        assert session.get(FitRunSummaryArtifact, job_id) is None
+        assert session.get(MetricsOutboxEntry, job_id) is None
 
 
 def test_model_deletion_is_blocked_by_active_predict_job(
@@ -172,20 +206,14 @@ def test_model_deletion_is_blocked_by_active_predict_job(
     store = PublishedModelStore(postgres_database)
 
     with pytest.raises(ModelDeletionBlocked, match="active predict job"):
-        store.request_deletion(
-            model_ref,
-            discard_undelivered_metrics=False,
-        )
+        store.request_deletion(model_ref)
 
     ledger.transition_job(
         job["job_id"],
         ExecutionState.CANCELLED,
         updates={"finished_at": datetime.now(UTC).timestamp()},
     )
-    requested = store.request_deletion(
-        model_ref,
-        discard_undelivered_metrics=False,
-    )
+    requested = store.request_deletion(model_ref)
 
     assert requested.state == ModelLifecycleState.DELETING
 
@@ -199,20 +227,14 @@ def test_deleting_non_current_generation_does_not_change_alias(
     _seed_model(postgres_database, current_ref, generation=2, alias=True)
     store = PublishedModelStore(postgres_database)
 
-    store.request_deletion(
-        old_ref,
-        discard_undelivered_metrics=False,
-    )
+    store.request_deletion(old_ref)
 
     with postgres_database.session() as session:
         alias = session.scalar(select(ModelAlias))
         assert alias is not None
         assert alias.model_ref == current_ref
 
-    store.request_deletion(
-        current_ref,
-        discard_undelivered_metrics=False,
-    )
+    store.request_deletion(current_ref)
 
     with postgres_database.session() as session:
         assert session.scalar(select(ModelAlias)) is None
@@ -233,10 +255,7 @@ def test_maintenance_removes_model_directory_and_finalizes_database_state(
     model_directory = Path(spool.model_directory(model_ref))
     model_directory.mkdir()
     (model_directory / "checkpoint.pth").write_bytes(b"checkpoint")
-    store.request_deletion(
-        model_ref,
-        discard_undelivered_metrics=False,
-    )
+    store.request_deletion(model_ref)
     maintenance = MaintenanceService(
         SimpleNamespace(
             retention_seconds=60,
@@ -263,10 +282,7 @@ def test_deleted_tombstone_keeps_next_generation_monotonic(
     deleted_ref = f"mdl_{uuid.uuid4().hex}"
     _seed_model(postgres_database, deleted_ref, generation=1)
     store = PublishedModelStore(postgres_database)
-    store.request_deletion(
-        deleted_ref,
-        discard_undelivered_metrics=False,
-    )
+    store.request_deletion(deleted_ref)
     store.complete_deletion(deleted_ref)
 
     ledger = Ledger(postgres_database).initialize()

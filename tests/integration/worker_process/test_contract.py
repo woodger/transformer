@@ -348,7 +348,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     core_result = {
         key: value
         for key, value in result_manifest.items()
-        if key not in {"checkpointSerializationMs", "targetStatistics"}
+        if key != "checkpointSerializationMs"
     }
     assert validate_document(core_result, "result-manifest") is core_result
     assert result_manifest["inputRevision"] == 2
@@ -357,27 +357,6 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert result_manifest["checkpointMetadata"]["dataContract"] == _data_contract()
     assert Path(result_manifest["checkpoint"]["path"]).is_file()
     assert result_manifest["checkpointSerializationMs"] >= 0
-    target_statistics = result_manifest["targetStatistics"]
-    expected_targets = (
-        ("meanReturn", 0.0),
-        ("sigmaReturn", 0.0),
-        ("probTP", 0.0),
-        ("probSL", 0.0),
-        ("volatilityNext", 0.2),
-        ("hittingProbTP", 1.0),
-    )
-    for index, ((name, value), statistic) in enumerate(
-        zip(expected_targets, target_statistics, strict=True)
-    ):
-        assert statistic["targetIndex"] == index
-        assert statistic["name"] == name
-        assert statistic["count"] == 4
-        assert statistic["min"] == pytest.approx(value)
-        assert statistic["max"] == pytest.approx(value)
-        assert statistic["mean"] == pytest.approx(value)
-        assert statistic["std"] == pytest.approx(0.0)
-        assert statistic["zeroCount"] == (4 if value == 0.0 else 0)
-        assert statistic["oneCount"] == (4 if value == 1.0 else 0)
 
 
 def test_service_rejects_progress_after_attempt_ownership_changes():
