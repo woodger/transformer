@@ -234,6 +234,12 @@ def execute_fit(
             "generation": integer_field(event, "generation"),
             "completedEpochs": integer_field(event, "completed_epochs"),
             "globalStep": integer_field(event, "global_step"),
+            "progress": {
+                "epoch": epoch + 1,
+                "step": metrics.step,
+                "loss_stage": metrics.loss_stage,
+                "loss": metrics.loss,
+            },
             "trainingComplete": boolean_value(
                 event.get("training_complete"),
                 "training_complete",

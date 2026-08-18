@@ -46,8 +46,11 @@ metrics API. Core model publisher не строит metrics artifacts. Посл�
 прикладной публикации модели отдельный telemetry publisher может создать
 run-owned artifacts и outbox с identity `jobId`.
 
-Job progress содержит только `completedEpochs` и `globalStep`. Полный epoch
-document не является состоянием job и не возвращается через Flight status.
+Job progress содержит только checkpoint-aligned core-поля `epoch`, `step`,
+`loss_stage` и `loss`. Они фиксируются атомарно с recovery checkpoint и
+возвращаются через Flight status. AMP, gradient, per-target metrics, timings и
+полный epoch document не являются состоянием job. Поля `completedEpochs` и
+`globalStep` остаются в `recovery.latestCheckpoint` как fallback.
 Административный lifecycle моделей не знает о доставке OpenSearch. Удаление
 модели не отменяет и не удаляет telemetry run.
 

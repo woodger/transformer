@@ -43,13 +43,18 @@ Recovery transaction обновляет в job только компактный
 
 ```json
 {
-  "completedEpochs": 4,
-  "globalStep": 2940
+  "epoch": 4,
+  "step": 2940,
+  "loss_stage": 4,
+  "loss": -3.149016
 }
 ```
 
-Полный epoch metrics document не является job state и не попадает в Flight
-status. Он может отсутствовать без потери recovery generation.
+Progress обновляется атомарно с recovery checkpoint полной global epoch.
+`epoch` совпадает с `completedEpochs`, а `step` — с `globalStep` из
+`recovery.latestCheckpoint`; эти recovery-поля остаются fallback для Consumer.
+AMP, gradient, per-target metrics и timings не являются job state и не попадают
+в Flight status. Они могут отсутствовать без потери recovery generation.
 
 ### Telemetry
 
@@ -94,7 +99,7 @@ service/adapters/outbound/opensearch/
 ## Что не меняется
 
 - публичный Flight v4;
-- worker process остаётся v6; checkpoint и core result fields не меняются;
+- worker process остаётся v6; checkpoint несёт компактный core progress;
 - публичные training metric names и fit-run lifecycle fields;
 - локальный CLI-формат `metrics.jsonl`.
 
@@ -113,5 +118,7 @@ Architecture tests проверяют:
 Telemetry становится отдельным наблюдателем прикладных границ, а не частью
 самих границ. Потеря наблюдений может уменьшить диагностическую полноту, но не
 повреждает ML-state и не меняет результат job. Новые telemetry-поля должны
-добавляться в этот slice; добавление их в domain records, job progress или
-core artifact publication требует нового архитектурного решения.
+добавляться в этот slice. `job.progress` ограничен четырьмя core-полями
+`epoch`, `step`, `loss_stage`, `loss`; расширение этого набора наблюдениями
+либо добавление telemetry в domain records и core artifact publication требует
+нового архитектурного решения.

@@ -201,6 +201,27 @@ def test_golden_json_documents_match_schemas_and_runtime_parser():
     assert upload["data_contract_sha256"] == "a" * 64
 
 
+def test_status_exposes_only_operation_specific_compact_progress():
+    schema = read_contract_schema("status-result.schema.json")
+    status = _read_json("status.result.json")
+
+    validate_contract_document(status, schema)
+
+    pending_fit = deepcopy(status)
+    pending_fit["progress"] = {}
+    validate_contract_document(pending_fit, schema)
+
+    predict = deepcopy(status)
+    predict["operation"] = "predict"
+    predict["progress"] = {"ordinal": 0, "rows": 3}
+    validate_contract_document(predict, schema)
+
+    extended = deepcopy(status)
+    extended["progress"]["grad_norm"] = 1.0
+    with pytest.raises(ValidationError):
+        validate_contract_document(extended, schema)
+
+
 def test_fit_objective_fixture_pins_the_cross_language_digest():
     fixture = _read_json("objective-config.fit.json")
     validate_contract_document(

@@ -262,6 +262,12 @@ durable dataset.
 отсчитывается только после подтверждения worker-ом ожидания следующего
 непрерывного ordinal; фиксация вне порядка не продлевает timeout.
 
+После каждой зафиксированной fit epoch `job.status.progress` содержит только
+`epoch`, global `step`, `loss_stage` и `loss`. Эти четыре поля фиксируются
+атомарно с recovery checkpoint. Расширенная telemetry обучения в status не
+публикуется; `recovery.latestCheckpoint.completedEpochs` и `globalStep` можно
+использовать как fallback.
+
 При одинаковых упорядоченных данных, seed, deterministic-конфигурации и
 hardware/runtime отложенная потоковая подача и полностью закрытый вход должны
 давать одинаковый порядок строк и shuffle, optimizer steps, ML-state после

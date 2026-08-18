@@ -313,6 +313,23 @@ execution.state:
 в `pollAfterMs`. Размер status ограничен; он содержит счётчики, а не все input
 или output receipts.
 
+Для выполняющегося fit после каждой durable global epoch status возвращает
+компактный live progress:
+
+```json
+{
+  "epoch": 4,
+  "step": 2940,
+  "loss_stage": 4,
+  "loss": -3.149016
+}
+```
+
+Он фиксируется атомарно с recovery checkpoint. AMP, gradient, target metrics и
+timings остаются только в telemetry. Если core progress ещё недоступен,
+Inventory может использовать `recovery.latestCheckpoint.completedEpochs` и
+`globalStep` как fallback.
+
 До EOF после сбоя fit attempt незавершённая нулевая epoch повторяется с начала;
 надёжно зафиксированные inputs сохраняются. После EOF recovery checkpoints
 находятся на границах полных global epochs. Inventory должен корректно

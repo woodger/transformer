@@ -30,12 +30,19 @@ class _Ledger:
     def __init__(self, job: ExecutionJobRecord) -> None:
         self.job = job
         self.checkpoints = 0
+        self.progress: dict[str, object] | None = None
 
     def get_execution_job(self, job_id: str) -> ExecutionJobRecord | None:
         return self.job if job_id == self.job.job_id else None
 
     def register_recovery_checkpoint(self, **fields):
         self.checkpoints += 1
+        self.progress = {
+            "epoch": fields["completed_epochs"],
+            "step": fields["global_step"],
+            "loss_stage": fields["loss_stage"],
+            "loss": fields["loss"],
+        }
         return TrainingRecoveryCheckpointRecord(
             job_id=fields["job_id"],
             generation=fields["generation"],
@@ -126,6 +133,12 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         "generation": 1,
         "completed_epochs": 1,
         "global_step": 2,
+        "progress": {
+            "epoch": 1,
+            "step": 2,
+            "loss_stage": 4,
+            "loss": -3.149016,
+        },
         "training_complete": False,
         "bytes": len(checkpoint),
         "sha256": hashlib.sha256(checkpoint).hexdigest(),
@@ -135,6 +148,12 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     })
 
     assert ledger.checkpoints == 1
+    assert ledger.progress == {
+        "epoch": 1,
+        "step": 2,
+        "loss_stage": 4,
+        "loss": -3.149016,
+    }
     assert telemetry.metric_intervals == 1
     assert any(
         event == "metrics.collection.failed"

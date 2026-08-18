@@ -100,12 +100,23 @@
             "additionalProperties": false,
             "required": [
               "generation", "completedEpochs", "globalStep",
-              "trainingComplete", "artifact"
+              "progress", "trainingComplete", "artifact"
             ],
             "properties": {
               "generation": {"type": "integer", "minimum": 1},
               "completedEpochs": {"type": "integer", "minimum": 1},
               "globalStep": {"type": "integer", "minimum": 0},
+              "progress": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["epoch", "step", "loss_stage", "loss"],
+                "properties": {
+                  "epoch": {"type": "integer", "minimum": 1},
+                  "step": {"type": "integer", "minimum": 0},
+                  "loss_stage": {"type": "integer", "minimum": 1, "maximum": 4},
+                  "loss": {"type": "number"}
+                }
+              },
               "trainingComplete": {"type": "boolean"},
               "artifact": {
                 "$ref": "https://transformer.local/contracts/worker/v6/common.schema.json#/$defs/artifact"

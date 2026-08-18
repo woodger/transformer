@@ -4,6 +4,32 @@
   "title": "transformer.v4.job.status result",
   "type": "object",
   "additionalProperties": false,
+  "$defs": {
+    "emptyProgress": {
+      "type": "object",
+      "maxProperties": 0
+    },
+    "fitProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "step", "loss_stage", "loss"],
+      "properties": {
+        "epoch": {"type": "integer", "minimum": 1},
+        "step": {"type": "integer", "minimum": 0},
+        "loss_stage": {"type": "integer", "minimum": 1, "maximum": 4},
+        "loss": {"type": "number"}
+      }
+    },
+    "predictProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "rows"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "rows": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
   "required": [
     "contract", "version", "requestId", "jobId", "operation", "revision",
     "input", "execution", "ownership", "timestamps", "device",
@@ -142,5 +168,33 @@
       }
     },
     "pollAfterMs": {"type": "integer", "minimum": 0}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"operation": {"const": "fit"}}},
+      "then": {
+        "properties": {
+          "progress": {
+            "oneOf": [
+              {"$ref": "#/$defs/emptyProgress"},
+              {"$ref": "#/$defs/fitProgress"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "predict"}}},
+      "then": {
+        "properties": {
+          "progress": {
+            "oneOf": [
+              {"$ref": "#/$defs/emptyProgress"},
+              {"$ref": "#/$defs/predictProgress"}
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

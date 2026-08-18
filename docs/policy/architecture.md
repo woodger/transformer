@@ -109,8 +109,8 @@ Checkpoints принадлежат `app/worker/checkpoints/`, а не generic ru
 Core результат global epoch находится в `app/worker/training/epoch.py` и не
 зависит от telemetry. AMP/gradient counters, phase timings,
 JSONL и plots принадлежат `app/worker/telemetry/`. Job progress хранит только
-`completedEpochs` и `globalStep`; полный metrics document является
-необязательным наблюдением.
+checkpoint-aligned `epoch`, `step`, `loss_stage`, `loss`; полный metrics
+document является необязательным наблюдением.
 
 ## Local CLI
 

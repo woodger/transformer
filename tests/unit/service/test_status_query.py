@@ -49,7 +49,12 @@ def _job(**overrides):
             "targetSchemaId": "inventory.target.v1",
             "objectiveId": "transformer.objective.target-aligned.v1",
         },
-        progress={"epoch": 2},
+        progress={
+            "epoch": 2,
+            "step": 6,
+            "loss_stage": 4,
+            "loss": -3.149016,
+        },
         attempt=2,
         error_code=None,
         error_message=None,
@@ -132,6 +137,12 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     }
     assert result["execution"] == {"state": "SUCCEEDED", "attempt": 2}
     assert result["ownership"]["fencingToken"] == "7"
+    assert result["progress"] == {
+        "epoch": 2,
+        "step": 6,
+        "loss_stage": 4,
+        "loss": -3.149016,
+    }
     assert result["results"] == {
         "outputCount": 0,
         "modelRef": "mdl_generation",

@@ -290,6 +290,12 @@ def test_checkpoint_event_accepts_missing_optional_telemetry():
             "generation": 1,
             "completedEpochs": 1,
             "globalStep": 2,
+            "progress": {
+                "epoch": 1,
+                "step": 2,
+                "loss_stage": 4,
+                "loss": -3.149016,
+            },
             "trainingComplete": False,
             "artifact": {
                 "path": "/tmp/checkpoint.pth",
@@ -299,7 +305,9 @@ def test_checkpoint_event_accepts_missing_optional_telemetry():
         },
     )
 
-    assert parse_event(event)["payload"]["generation"] == 1
+    payload = parse_event(event)["payload"]
+    assert payload["generation"] == 1
+    assert payload["progress"]["loss_stage"] == 4
 
 
 def test_durable_input_stream_blocks_at_frontier_then_accepts_eof():

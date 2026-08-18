@@ -43,6 +43,8 @@ class _RecoveryLedger(Protocol):
         sha256: str,
         completed_epochs: int,
         global_step: int,
+        loss_stage: int,
+        loss: float,
         training_complete: bool,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
 
@@ -118,6 +120,7 @@ class RecoveryCheckpointPublisher:
             "generation",
             "completed_epochs",
             "global_step",
+            "progress",
             "training_complete",
             "bytes",
             "sha256",
@@ -188,6 +191,11 @@ class RecoveryCheckpointPublisher:
             event["global_step"],
             "global step",
         )
+        progress = _core_progress(
+            event["progress"],
+            completed_epochs=completed_epochs,
+            global_step=global_step,
+        )
         training_complete = _boolean(
             event["training_complete"],
             "training complete",
@@ -254,6 +262,11 @@ class RecoveryCheckpointPublisher:
             sha256=digest,
             completed_epochs=completed_epochs,
             global_step=global_step,
+            loss_stage=_positive_integer(
+                progress["loss_stage"],
+                "progress loss_stage",
+            ),
+            loss=_finite_number(progress["loss"], "progress loss"),
             training_complete=training_complete,
         )
         if interval_metrics is not None and self.telemetry is not None:
@@ -314,6 +327,7 @@ class RecoveryCheckpointPublisher:
             "generation",
             "completedEpochs",
             "globalStep",
+            "progress",
             "trainingComplete",
             "artifact",
         }
@@ -390,6 +404,7 @@ class RecoveryCheckpointPublisher:
                 event["globalStep"],
                 "worker checkpoint globalStep",
             ),
+            "progress": event["progress"],
             "training_complete": _boolean(
                 event["trainingComplete"],
                 "worker checkpoint trainingComplete",
@@ -453,6 +468,55 @@ def _nonnegative_number(value: object, label: str) -> float:
             f"{label} must be a finite non-negative number",
         )
     return float(value)
+
+
+def _finite_number(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise WorkerRecoveryError(
+            ErrorCode.MALFORMED_OUTPUT,
+            f"{label} must be a finite number",
+        )
+    return float(value)
+
+
+def _core_progress(
+    value: object,
+    *,
+    completed_epochs: int,
+    global_step: int,
+) -> JsonObject:
+    progress = _object(value, "recovery progress")
+    if set(progress) != {"epoch", "step", "loss_stage", "loss"}:
+        raise WorkerRecoveryError(
+            ErrorCode.MALFORMED_OUTPUT,
+            "recovery progress has invalid fields",
+        )
+    epoch = _positive_integer(progress["epoch"], "progress epoch")
+    step = _nonnegative_integer(progress["step"], "progress step")
+    loss_stage = _positive_integer(
+        progress["loss_stage"],
+        "progress loss_stage",
+    )
+    loss = _finite_number(progress["loss"], "progress loss")
+    if (
+        epoch != completed_epochs
+        or step != global_step
+        or loss_stage > 4
+    ):
+        raise WorkerRecoveryError(
+            ErrorCode.MALFORMED_OUTPUT,
+            "recovery progress differs from checkpoint metadata",
+        )
+    return {
+        "epoch": epoch,
+        "step": step,
+        "loss_stage": loss_stage,
+        "loss": loss,
+    }
 
 
 def _positive_integer(value: object, label: str) -> int:

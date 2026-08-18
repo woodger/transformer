@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import cast
 
 from sqlalchemy import select
@@ -51,6 +52,8 @@ class RecoveryLedgerSlice:
         sha256: str,
         completed_epochs: int,
         global_step: int,
+        loss_stage: int,
+        loss: float,
         training_complete: bool,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
@@ -66,6 +69,20 @@ class RecoveryLedgerSlice:
             or raw_global_step < 0
         ):
             raise ValueError("global_step must be a non-negative integer")
+        raw_loss_stage = cast(object, loss_stage)
+        if (
+            isinstance(raw_loss_stage, bool)
+            or not isinstance(raw_loss_stage, int)
+            or not 1 <= raw_loss_stage <= 4
+        ):
+            raise ValueError("loss_stage must be an integer from 1 to 4")
+        raw_loss = cast(object, loss)
+        if (
+            isinstance(raw_loss, bool)
+            or not isinstance(raw_loss, (int, float))
+            or not math.isfinite(raw_loss)
+        ):
+            raise ValueError("loss must be a finite number")
         raw_training_complete = cast(object, training_complete)
         if not isinstance(raw_training_complete, bool):
             raise ValueError("training_complete must be a boolean")
@@ -158,8 +175,10 @@ class RecoveryLedgerSlice:
             session.add(record)
             job.revision += 1
             job.progress = {
-                "completedEpochs": completed_epochs,
-                "globalStep": global_step,
+                "epoch": completed_epochs,
+                "step": global_step,
+                "loss_stage": loss_stage,
+                "loss": float(loss),
             }
             job.updated_at = created_at
             session.flush()

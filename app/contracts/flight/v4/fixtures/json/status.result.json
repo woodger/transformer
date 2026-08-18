@@ -48,7 +48,12 @@
   },
   "resolvedModelRef": null,
   "predictionColumn": "out",
-  "progress": {"epoch": 25, "step": 25, "loss": -3.149016},
+  "progress": {
+    "epoch": 25,
+    "step": 25,
+    "loss_stage": 4,
+    "loss": -3.149016
+  },
   "recovery": {
     "latestCheckpoint": {
       "generation": 25,

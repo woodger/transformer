@@ -39,6 +39,10 @@
 
 ### Fixed
 
+- В `job.status` восстановлен checkpoint-aligned live progress fit:
+  `epoch`, `step`, `loss_stage`, `loss`. Он фиксируется атомарно с recovery
+  checkpoint, а расширенная training telemetry остаётся best effort и не
+  попадает в прикладное состояние job.
 - GPU test допускает штатные AMP scale backoffs на первых batch-ах, но требует
   восстановления `GradScaler`, применённого optimizer update и фактического
   изменения параметров модели.

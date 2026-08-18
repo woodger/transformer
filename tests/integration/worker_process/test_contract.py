@@ -331,6 +331,12 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert checkpoint_event["completedEpochs"] == 1
     assert checkpoint_event["trainingComplete"] is True
     assert checkpoint_event["checkpointSerializationMs"] >= 0
+    assert checkpoint_event["progress"] == {
+        "epoch": 1,
+        "step": checkpoint_event["globalStep"],
+        "loss_stage": checkpoint_event["metrics"]["loss_stage"],
+        "loss": checkpoint_event["metrics"]["loss"],
+    }
     assert validate_document(
         checkpoint_event["metrics"],
         "training-metrics",

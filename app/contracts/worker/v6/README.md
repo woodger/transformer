@@ -68,11 +68,12 @@ input-idle timer сервиса.
 падает при открытом input, новая attempt повторяет эту незавершённую epoch с
 начала. После EOF checkpoints остаются snapshots полных global epochs.
 
-Событие `checkpoint` обязательно содержит только recovery identity и artifact.
-Строка `training-metrics.schema.json` и checkpoint timings являются
-необязательной telemetry. Сервис сначала фиксирует checkpoint, затем best
-effort сохраняет метрику отдельной транзакцией PostgreSQL. Сбой telemetry не
-отменяет recovery generation и не завершает обучение ошибкой.
+Событие `checkpoint` обязательно содержит recovery identity, artifact и
+компактный core progress `epoch`, `step`, `loss_stage`, `loss`. Сервис атомарно
+фиксирует checkpoint и этот progress в одной транзакции PostgreSQL. Строка
+`training-metrics.schema.json` и checkpoint timings являются необязательной
+telemetry, которую сервис сохраняет отдельной best-effort операцией. Сбой
+telemetry не отменяет recovery generation и не завершает обучение ошибкой.
 Envelope намеренно не отклоняет core event из-за содержимого optional полей;
 сервис отдельно проверяет их строгими telemetry schemas перед сохранением.
 
