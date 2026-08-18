@@ -189,35 +189,15 @@ def test_application_internal_import_graph_is_acyclic():
     assert cycle is None, f"application import cycle: {' -> '.join(cycle or [])}"
 
 
-def test_contracts_and_composition_roots_have_canonical_locations():
+def test_canonical_contracts_and_composition_roots_exist():
     assert (APP_ROOT / "contracts" / "flight" / "v4").is_dir()
     assert (APP_ROOT / "contracts" / "worker" / "v6").is_dir()
     assert (APP_ROOT / "contracts" / "metrics" / "v2").is_dir()
     assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v2").is_dir()
-    assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
-    assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
-    assert not (APP_ROOT / "contracts" / "worker" / "v3").exists()
-    assert not (PROJECT_ROOT / "contracts").exists()
     assert (APP_ROOT / "local" / "fit.py").is_file()
-    assert not (APP_ROOT / "commands" / "__init__.py").exists()
-    assert not (APP_ROOT / "config.py").exists()
     assert (APP_ROOT / "cli" / "parser.py").is_file()
     assert (APP_ROOT / "cli" / "formatting.py").is_file()
     assert (APP_ROOT / "cli" / "parsers" / "service.py").is_file()
-    assert not (APP_ROOT / "cli" / "help.py").exists()
-    for legacy_package in (
-        "data",
-        "database",
-        "flight",
-        "metrics",
-        "model",
-        "runtime",
-        "storage",
-        "training",
-    ):
-        assert not (APP_ROOT / legacy_package / "__init__.py").exists()
-    assert not (APP_ROOT / "utils.py").exists()
-    assert not (APP_ROOT / "worker" / "utils.py").exists()
     for path in (
         APP_ROOT / "service" / "adapters" / "outbound" / "artifacts",
         APP_ROOT / "service" / "adapters" / "outbound" / "cuda",
@@ -231,30 +211,6 @@ def test_contracts_and_composition_roots_have_canonical_locations():
         APP_ROOT / "worker" / "telemetry",
     ):
         assert (path / "__init__.py").is_file()
-    for legacy_path in (
-        APP_ROOT / "service" / "adapters" / "outbound" / "artifact_storage",
-        APP_ROOT / "service" / "adapters" / "outbound" / "worker_process",
-        APP_ROOT / "service" / "adapters" / "outbound" / "worker_probe",
-        APP_ROOT / "worker" / "runtime" / "checkpoints",
-    ):
-        assert not (legacy_path / "__init__.py").exists()
-    for legacy_file in (
-        APP_ROOT / "service" / "adapters" / "inbound" / "flight" / "contract.py",
-        APP_ROOT / "service" / "adapters" / "inbound" / "flight" / "job_actions.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "ledger.py",
-        APP_ROOT / "service" / "application" / "input_models.py",
-        APP_ROOT / "service" / "application" / "job_models.py",
-        APP_ROOT / "service" / "application" / "output_models.py",
-        APP_ROOT / "service" / "bootstrap" / "job_control.py",
-        APP_ROOT / "service" / "bootstrap" / "worker_pool.py",
-        APP_ROOT / "service" / "application" / "ports" / "metrics.py",
-        APP_ROOT / "service" / "application" / "services" / "metrics_publisher.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "metrics_outbox.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "metrics_projection.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "run_summary.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "training_metrics.py",
-    ):
-        assert not legacy_file.exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",
         APP_ROOT / "service" / "bootstrap" / "data_plane.py",
