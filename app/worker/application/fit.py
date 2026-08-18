@@ -40,13 +40,14 @@ from app.worker.data.tensors import (
     validate_feature_dim,
     validate_target_dim,
 )
-from app.worker.metrics import (
-    TargetStatisticsAccumulator,
-    TrainMetrics,
-    reset_metrics_log,
-)
 from app.worker.runtime.device import get_device
 from app.worker.runtime.reproducibility import configure_reproducibility
+from app.worker.telemetry import (
+    TargetStatisticsAccumulator,
+    epoch_telemetry_document,
+    reset_metrics_log,
+)
+from app.worker.telemetry.epoch import ObservedTrainingEpoch
 from app.worker.training.factory import build_model, build_trainer
 from app.worker.training.trainer import SelectionPayload
 
@@ -209,7 +210,7 @@ def execute_fit(
 
     def on_epoch_committed(
         epoch: int,
-        metrics: TrainMetrics,
+        metrics: ObservedTrainingEpoch,
         monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:
@@ -246,8 +247,14 @@ def execute_fit(
         }
         committed_metrics: JsonObject | None = None
         try:
+            telemetry_document = epoch_telemetry_document(
+                metrics,
+                **metrics_payload,
+            )
+            if telemetry_document is None:
+                raise ValueError("training epoch telemetry is unavailable")
             committed_metrics = object_document(
-                json_safe(metrics.to_dict(**metrics_payload)),
+                json_safe(telemetry_document),
                 "committed fit metrics",
             )
             validate_document(committed_metrics, "training-metrics")

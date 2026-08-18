@@ -4,32 +4,39 @@ from app.contracts.worker.v6.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )
-from app.worker.metrics import TrainMetrics
+from app.worker.telemetry import (
+    EpochTelemetry,
+    ObservedTrainingEpoch,
+    format_epoch_console_line,
+)
 from app.worker.training.trainer import Trainer
 
 
 def test_console_line_is_compact_and_human_readable():
-    metrics = TrainMetrics(
+    metrics = ObservedTrainingEpoch(
         rows=67249,
         batches=263,
         loss=-3.149016,
-        mean_return_mae=0.0225603,
-        sigma_return_mae=0.0231593,
-        prob_tp_mae=0.12,
-        prob_sl_mae=0.13,
-        volatility_next_mae=0.14,
-        hitting_prob_tp_mae=0.15,
-        training_batches_completed=263,
-        optimizer_updates_applied=263,
-        finite_gradient_batches=263,
-        pre_clip_gradient_norm_mean=476.013,
-        pre_clip_gradient_norm_max=500.0,
-        pre_clip_gradient_norm_p95=490.0,
-        elapsed_ms=181677,
         loss_stage=1,
+        telemetry=EpochTelemetry(
+            mean_return_mae=0.0225603,
+            sigma_return_mae=0.0231593,
+            prob_tp_mae=0.12,
+            prob_sl_mae=0.13,
+            volatility_next_mae=0.14,
+            hitting_prob_tp_mae=0.15,
+            training_batches_completed=263,
+            optimizer_updates_applied=263,
+            finite_gradient_batches=263,
+            pre_clip_gradient_norm_mean=476.013,
+            pre_clip_gradient_norm_max=500.0,
+            pre_clip_gradient_norm_p95=490.0,
+            elapsed_ms=181677,
+        ),
     )
 
-    output = metrics.console_line(
+    output = format_epoch_console_line(
+        metrics,
         frame=1,
         epoch=2,
         selection_score=3.8270289599977505,
@@ -51,9 +58,10 @@ def test_console_line_is_compact_and_human_readable():
 
 
 def test_console_line_reports_unavailable_selection_score():
-    metrics = TrainMetrics(loss_stage=1)
+    metrics = ObservedTrainingEpoch(loss_stage=1)
 
-    assert "selection=n/a" in metrics.console_line(
+    assert "selection=n/a" in format_epoch_console_line(
+        metrics,
         epoch=1,
         selection_score=None,
         max_loss_stage=4,

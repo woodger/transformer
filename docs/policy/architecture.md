@@ -11,7 +11,9 @@
 [ADR 0008](../adr/0008-project-layout-by-runtime-owner.md), а граница
 централизованных training metrics — в
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md).
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
+telemetry от core state закреплено в
+[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md).
 
 ## Процессы и composition roots
 
@@ -39,7 +41,7 @@ server, Arrow/Torch worker runtime или модель.
 service/adapters/inbound/flight
               │
               ▼
-service/application/{commands,queries,services,ports}
+service/application/{commands,queries,services,ports,telemetry}
               │
               ▼
 service/domain
@@ -54,6 +56,9 @@ service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 - `service/application` содержит типизированные commands, queries, нейтральные
   results, scheduler orchestration и capability-oriented ports. Он зависит
   только от domain и внутренних worker/metrics contracts.
+- `service/application/telemetry` содержит только best-effort records и
+  доставку наблюдений. Telemetry records не размещаются в domain, а её
+  persistence API не добавляется в общий job ledger.
 - inbound Flight adapter проверяет структуру wire DTO нормативными JSON Schema
   Draft 2020-12, затем выполняет семантическую валидацию и mapping и
   преобразует application results и errors в Flight documents и Arrow status.
@@ -74,7 +79,7 @@ Ports называются по возможностям: `JobLifecycleStore`, `
 
 ## Worker
 
-`app/worker/` владеет Arrow-to-tensor data path, model, training, metrics,
+`app/worker/` владеет Arrow-to-tensor data path, model, training, telemetry,
 device/reproducibility runtime и checkpoint staging. Один процесс обслуживает
 ровно один execution attempt. Worker:
 
@@ -99,6 +104,12 @@ Checkpoints принадлежат `app/worker/checkpoints/`, а не generic ru
 Подготовка batch и prefetch принадлежат `app/worker/training/batching.py`;
 исполнитель attempt только выбирает fit/predict use case и не содержит их
 реализацию целиком.
+
+Core результат global epoch находится в `app/worker/training/epoch.py` и не
+зависит от telemetry. AMP/gradient counters, phase timings, target statistics,
+JSONL и plots принадлежат `app/worker/telemetry/`. Job progress хранит только
+`completedEpochs` и `globalStep`; полный metrics document является
+необязательным наблюдением.
 
 ## Local CLI
 
@@ -177,6 +188,9 @@ Ownership хранения:
 - application не зависит от публичного Flight contract;
 - application может зависеть от внутреннего metrics contract для
   детерминированной outbox projection;
+- service domain и общий PostgreSQL ledger не содержат telemetry records и
+  telemetry capabilities;
+- core training epoch и core model publication не импортируют telemetry;
 - adapters зависят от application/domain, но не от другого направления
   transport-а;
 - service не импортирует `app.worker` implementation;
@@ -204,7 +218,14 @@ Ownership хранения:
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
 - OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
+- metrics artifacts —
+  `app/service/adapters/outbound/artifacts/telemetry/`;
+- metrics persistence и outbox —
+  `app/service/adapters/outbound/postgres/telemetry/`;
+- telemetry records и delivery orchestration —
+  `app/service/application/telemetry/`;
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в `app/worker/`;
+- worker runtime observations, JSONL и plots — `app/worker/telemetry/`;
 - local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;
 - runtime wiring — composition root конкретного процесса.

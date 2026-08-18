@@ -6,7 +6,7 @@ from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
 from app.worker.checkpoints.atomic import atomic_output_path
-from app.worker.metrics.types import TrainMetrics
+from app.worker.telemetry.epoch import ObservedTrainingEpoch, epoch_telemetry_document
 
 
 def reset_metrics_log(path: str | None) -> None:
@@ -22,34 +22,37 @@ def reset_metrics_log(path: str | None) -> None:
             pass
 
 
-def append_metrics_jsonl(
+def append_epoch_telemetry(
     path: str | None,
-    metrics: TrainMetrics,
+    result: ObservedTrainingEpoch,
     **extra: JsonValue,
 ) -> None:
     if path is None:
+        return
+    document = epoch_telemetry_document(result, **extra)
+    if document is None:
         return
 
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
 
-    payload = _json_safe(metrics.to_dict(**extra))
-    with open(path, "a", encoding="utf-8") as f:
+    payload = _json_safe(document)
+    with open(path, "a", encoding="utf-8") as output:
         json.dump(
             payload,
-            f,
+            output,
             allow_nan=False,
             ensure_ascii=False,
             sort_keys=True,
         )
-        f.write("\n")
+        output.write("\n")
 
 
 def load_metrics_jsonl(path: str) -> list[JsonObject]:
     rows: list[JsonObject] = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
+    with open(path, encoding="utf-8") as source:
+        for line in source:
             line = line.strip()
             if line:
                 document: object = json.loads(line)
@@ -76,4 +79,9 @@ def _json_safe(value: object) -> JsonValue:
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return [_json_safe(item) for item in cast(Sequence[object], value)]
-    raise TypeError(f"metrics value is not JSON-compatible: {type(value).__name__}")
+    raise TypeError(
+        f"metrics value is not JSON-compatible: {type(value).__name__}"
+    )
+
+
+__all__ = ["append_epoch_telemetry", "load_metrics_jsonl", "reset_metrics_log"]

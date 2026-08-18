@@ -63,13 +63,11 @@ from app.service.domain.policies import decide_cancel, validate_execution_transi
 from app.service.domain.records import (
     CommittedInputRecord,
     ExecutionJobRecord,
-    FitRunSummarySource,
     ModelArtifactRecord,
     PublishedModelRecord,
     RecoverableAttemptRecord,
     StatusRecoveryRecord,
     StatusSnapshot,
-    TrainingMetricIntervalRecord,
     TrainingRecoveryCheckpointRecord,
 )
 
@@ -1050,37 +1048,6 @@ class Ledger:
             now=now,
         )
 
-    def register_training_metric_interval(
-        self,
-        *,
-        job_id: str,
-        attempt: int,
-        attempt_id: str,
-        generation: int,
-        global_step: int,
-        metrics: JsonObject,
-        checkpoint_serialization_ms: float,
-        checkpoint_publication_ms: float,
-        now: float | None = None,
-    ) -> bool:
-        return self._recovery.register_metric_interval(
-            job_id=job_id,
-            attempt=attempt,
-            attempt_id=attempt_id,
-            generation=generation,
-            global_step=global_step,
-            metrics=metrics,
-            checkpoint_serialization_ms=checkpoint_serialization_ms,
-            checkpoint_publication_ms=checkpoint_publication_ms,
-            now=now,
-        )
-
-    def list_training_metrics(
-        self,
-        job_id: str,
-    ) -> list[TrainingMetricIntervalRecord]:
-        return self._recovery.list_metrics(job_id)
-
     def latest_recovery_checkpoint(
         self,
         job_id: str,
@@ -1183,68 +1150,6 @@ class Ledger:
             sha256=sha256,
             metadata=metadata,
             result=result,
-            now=now,
-        )
-
-    def register_model_metrics(
-        self,
-        *,
-        model_ref: str,
-        job_id: str,
-        attempt_id: str,
-        attempt: int,
-        metrics_path: str,
-        metrics_format: str,
-        metrics_media_type: str,
-        metrics_byte_count: int,
-        metrics_sha256: str,
-        metrics_row_count: int,
-        run_summary_path: str,
-        run_summary_format: str,
-        run_summary_media_type: str,
-        run_summary_byte_count: int,
-        run_summary_sha256: str,
-        application_version: str,
-        git_commit: str,
-        max_outbox_entries: int,
-        max_outbox_bytes: int,
-        now: float | None = None,
-    ) -> bool:
-        return self._artifacts.register_model_metrics(
-            model_ref=model_ref,
-            job_id=job_id,
-            attempt_id=attempt_id,
-            attempt=attempt,
-            metrics_path=metrics_path,
-            metrics_format=metrics_format,
-            metrics_media_type=metrics_media_type,
-            metrics_byte_count=metrics_byte_count,
-            metrics_sha256=metrics_sha256,
-            metrics_row_count=metrics_row_count,
-            run_summary_path=run_summary_path,
-            run_summary_format=run_summary_format,
-            run_summary_media_type=run_summary_media_type,
-            run_summary_byte_count=run_summary_byte_count,
-            run_summary_sha256=run_summary_sha256,
-            application_version=application_version,
-            git_commit=git_commit,
-            max_outbox_entries=max_outbox_entries,
-            max_outbox_bytes=max_outbox_bytes,
-            now=now,
-        )
-
-    def fit_run_summary_source(
-        self,
-        job_id: str,
-        attempt: int,
-        *,
-        attempt_id: str,
-        now: float | None = None,
-    ) -> FitRunSummarySource:
-        return self._artifacts.fit_run_summary_source(
-            job_id,
-            attempt,
-            attempt_id=attempt_id,
             now=now,
         )
 

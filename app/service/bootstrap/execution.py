@@ -15,6 +15,9 @@ from app.service.adapters.outbound.artifacts.recovery_publication import (
 )
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
+from app.service.adapters.outbound.artifacts.telemetry.publication import (
+    ModelTelemetryPublisher,
+)
 from app.service.adapters.outbound.cuda.inventory import (
     static_cuda_inventory,
 )
@@ -25,6 +28,7 @@ from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessRunner,
 )
 from app.service.application.ports.devices import DeviceLeaseManager
+from app.service.application.ports.telemetry import TrainingTelemetryRepository
 from app.service.application.services.attempt_executor import (
     WorkerAttemptExecutor,
 )
@@ -43,6 +47,7 @@ class WorkerPool(WorkerScheduler):
         spool: Spool,
         recovery_store: RecoveryStore | None = None,
         *,
+        telemetry: TrainingTelemetryRepository | None = None,
         logger: JsonLogger | None = None,
         metrics: OperationalMetrics | None = None,
         popen_factory: PopenFactory = subprocess.Popen,
@@ -79,9 +84,19 @@ class WorkerPool(WorkerScheduler):
             spool,
             logger=logger,
             metrics=metrics,
-            application_version=build_identity.application_version,
-            git_commit=build_identity.git_commit,
             max_payload_bytes=config.max_payload_bytes,
+        )
+        self._fit_telemetry_publisher = (
+            None
+            if telemetry is None
+            else ModelTelemetryPublisher(
+                telemetry,
+                spool,
+                logger=logger,
+                metrics=metrics,
+                application_version=build_identity.application_version,
+                git_commit=build_identity.git_commit,
+            )
         )
         self._recovery_publisher = (
             None
@@ -90,6 +105,7 @@ class WorkerPool(WorkerScheduler):
                 ledger,
                 recovery_store,
                 spool,
+                telemetry=telemetry,
                 logger=logger,
                 metrics=metrics,
             )
@@ -115,6 +131,7 @@ class WorkerPool(WorkerScheduler):
             self._plan_builder,
             self._subprocess_runner,
             self._artifact_publisher,
+            fit_telemetry_publisher=self._fit_telemetry_publisher,
             logger=logger,
             metrics=metrics,
             retry_notifier=self.notify_queued,

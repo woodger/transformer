@@ -26,6 +26,34 @@ OpenSearch используется только как механизм наб�
 * Предпочитать инструментирование существующих границ выполнения, а не перестраивать код приложения ради сбора метрик.
 * Не расширять сбор метрик на несвязанные компоненты без предварительного согласования изменения области задачи.
 
+### Структурные владельцы
+
+Telemetry образует отдельный наблюдающий slice и не является частью ML-state
+или lifecycle модели:
+
+```text
+worker/training/epoch.py                 core результат global epoch
+worker/telemetry/                        необязательные runtime-наблюдения
+service/application/telemetry/           records и delivery orchestration
+service/application/ports/telemetry.py   capability boundaries
+service/adapters/outbound/artifacts/telemetry/
+service/adapters/outbound/postgres/telemetry/
+service/adapters/outbound/opensearch/
+```
+
+Service domain и общий PostgreSQL ledger не владеют telemetry records или
+metrics API. Core model publisher не строит metrics artifacts. После
+прикладной публикации модели отдельный telemetry publisher может создать
+model-owned artifacts и outbox.
+
+Job progress содержит только `completedEpochs` и `globalStep`. Полный epoch
+document не является состоянием job и не возвращается через Flight status.
+Статус доставки OpenSearch присоединяется к административному представлению
+модели только на application boundary.
+
+Подробное решение зафиксировано в
+[ADR 0013](./adr/0013-telemetry-ownership-boundaries.md).
+
 ### Надёжность
 
 Метрики являются вспомогательными observability-данными и собираются по принципу best effort.

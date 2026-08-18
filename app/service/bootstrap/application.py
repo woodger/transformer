@@ -11,11 +11,11 @@ from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.adapters.outbound.artifacts.metrics_projection import (
-    ModelMetricsProjection,
-)
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
+from app.service.adapters.outbound.artifacts.telemetry.projection import (
+    ModelMetricsProjection,
+)
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
 )
@@ -31,13 +31,14 @@ from app.service.adapters.outbound.postgres.config import (
 )
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import row_string
-from app.service.adapters.outbound.postgres.metrics_outbox import (
-    PostgresMetricsOutbox,
-)
 from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
 )
 from app.service.adapters.outbound.postgres.session import Database
+from app.service.adapters.outbound.postgres.telemetry import (
+    PostgresMetricsOutbox,
+    PostgresTrainingTelemetry,
+)
 from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCache,
     AccessTokenCacheService,
@@ -45,7 +46,7 @@ from app.service.adapters.outbound.postgres.token_cache import (
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
-from app.service.application.services.metrics_publisher import MetricsPublisher
+from app.service.application.telemetry.publisher import MetricsPublisher
 from app.service.bootstrap.build_identity import load_build_identity
 from app.service.bootstrap.config import FlightServiceConfig, load_config
 from app.service.bootstrap.control_plane import build_job_coordinator
@@ -199,6 +200,7 @@ class FlightApplication:
             published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)
+            training_telemetry = PostgresTrainingTelemetry(ledger.database)
             metrics_configuration_failed = False
             try:
                 metrics_config = load_opensearch_metrics_config()
@@ -310,6 +312,7 @@ class FlightApplication:
                 ledger,
                 spool,
                 recovery_store,
+                telemetry=training_telemetry,
                 metrics=metrics,
                 logger=logger,
                 device_inventory=device_inventory,

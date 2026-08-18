@@ -10,6 +10,9 @@ from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
 )
 from app.service.adapters.outbound.postgres.session import Database
+from app.service.adapters.outbound.postgres.telemetry import (
+    PostgresMetricsOutbox,
+)
 from app.service.application.commands.models import ModelAdministration
 from app.service.domain.model import ModelDeletionBlocked
 
@@ -25,7 +28,10 @@ def run(args: ModelArguments) -> None:
     require_current_schema(config)
     database = Database(config)
     try:
-        administration = ModelAdministration(PublishedModelStore(database))
+        administration = ModelAdministration(
+            PublishedModelStore(database),
+            PostgresMetricsOutbox(database),
+        )
         if args.models_action == "list":
             print_list(administration.list())
             return

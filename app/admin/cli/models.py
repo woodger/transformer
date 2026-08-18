@@ -3,17 +3,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from app.service.application.commands.models import ModelAdministrationRecord
 from app.service.domain.records import ModelLifecycleRecord
 
 
-def print_list(records: Sequence[ModelLifecycleRecord]) -> None:
+def print_list(records: Sequence[ModelAdministrationRecord]) -> None:
     print("MODEL REF\tOWNER\tLABEL\tGENERATION\tSTATE\tMETRICS\tCREATED AT")
     for record in records:
+        model = record.model
         metrics = record.metrics_delivery_status or "-"
-        created_at = datetime.fromtimestamp(record.created_at, UTC).isoformat()
+        created_at = datetime.fromtimestamp(model.created_at, UTC).isoformat()
         print(
-            f"{record.model_ref}\t{record.owner_subject}\t{record.label}\t"
-            f"{record.generation}\t{record.state.value}\t{metrics}\t{created_at}"
+            f"{model.model_ref}\t{model.owner_subject}\t{model.label}\t"
+            f"{model.generation}\t{model.state.value}\t{metrics}\t{created_at}"
         )
 
 

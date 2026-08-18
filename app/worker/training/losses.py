@@ -43,30 +43,21 @@ LOSS_STAGE_DEFINITIONS = (
 
 LOSS_STAGES = len(LOSS_STAGE_DEFINITIONS)
 LOSS_SCHEDULES = ("none", "epoch", "step")
-_SEMANTIC_NAMES = (
-    "mean_return",
-    "sigma_return",
-    "prob_tp",
-    "prob_sl",
-    "volatility_next",
-    "hitting_prob_tp",
-)
 _LOSS_STATISTIC_NAMES = (
     "loss",
     *(f"loss_l{index}" for index in range(6)),
     "loss_nll",
     "loss_ev",
-    *(f"{name}_mae" for name in _SEMANTIC_NAMES),
-    *(f"{name}_mse" for name in _SEMANTIC_NAMES),
 )
 
 
 @dataclass(frozen=True, slots=True)
 class MaterializedLossStatistics:
-    """Host-side scalar metrics produced by one synchronized transfer."""
+    """Host-side core statistics and optional opaque observations."""
 
     parts: dict[str, float | int]
     grad_norm: float | None
+    observations: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +70,9 @@ class LossStatistics:
     def materialize(
         self,
         grad_norm: torch.Tensor | None = None,
+        observations: tuple[torch.Tensor, ...] = (),
     ) -> MaterializedLossStatistics:
-        device_values = self.values
+        device_values = (*self.values, *observations)
         if grad_norm is not None:
             device_values = (*device_values, grad_norm.detach())
         # PyTorch types ``Tensor.tolist`` as a list of unknown depth. The
@@ -92,15 +84,20 @@ class LossStatistics:
                 for value in device_values
             )).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
         )
+        core_count = len(_LOSS_STATISTIC_NAMES)
+        observation_count = len(observations)
         parts: dict[str, float | int] = dict(zip(
             _LOSS_STATISTIC_NAMES,
-            host_values[:len(_LOSS_STATISTIC_NAMES)],
+            host_values[:core_count],
             strict=True,
         ))
         parts["loss_stage"] = self.loss_stage
         return MaterializedLossStatistics(
             parts=parts,
             grad_norm=None if grad_norm is None else host_values[-1],
+            observations=tuple(
+                host_values[core_count:core_count + observation_count]
+            ),
         )
 
 
@@ -280,17 +277,12 @@ def combined_loss(
     if not return_parts and not return_statistics:
         return loss
 
-    errors = predictions.detach().float() - targets.detach().float()
-    absolute_errors = errors.abs()
-    squared_errors = errors.square()
     statistics = LossStatistics(
         values=(
             loss.detach(),
             *(value.detach() for value in direct_means),
             loss_nll.detach(),
             loss_ev.detach(),
-            *(absolute_errors[:, index].mean() for index in range(6)),
-            *(squared_errors[:, index].mean() for index in range(6)),
         ),
         loss_stage=loss_stage,
     )

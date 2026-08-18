@@ -6,18 +6,18 @@ from dataclasses import replace
 from app.contracts.metrics.fit_run.v2 import RUN_INDEX
 from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
-from app.service.adapters.outbound.artifacts.metrics_projection import (
+from app.service.adapters.outbound.artifacts.spool import Spool
+from app.service.adapters.outbound.artifacts.telemetry.projection import (
     ModelMetricsProjection,
 )
-from app.service.adapters.outbound.artifacts.spool import Spool
-from app.service.application.ports.metrics import (
+from app.service.application.ports.telemetry import (
     RetryableMetricsDeliveryError,
 )
-from app.service.application.services.metrics_publisher import (
+from app.service.application.telemetry.publisher import (
     MetricsPublisher,
     _retry_delay,
 )
-from app.service.domain.records import (
+from app.service.application.telemetry.records import (
     MetricsOutboxRecord,
     ModelMetricsArtifactRecord,
     ModelRunSummaryArtifactRecord,

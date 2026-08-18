@@ -21,7 +21,7 @@ from app.service.adapters.inbound.flight.constants import (
     INPUT_CLOSE_ACTION,
     STATUS_ACTION,
 )
-from app.service.adapters.outbound.postgres.metrics_outbox import (
+from app.service.adapters.outbound.postgres.telemetry import (
     PostgresMetricsOutbox,
 )
 from app.service.bootstrap.application import FlightApplication
@@ -154,7 +154,12 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
     tmp_path,
     postgres_config,
     postgres_ledger,
+    monkeypatch,
 ):
+    monkeypatch.setattr(
+        "app.service.bootstrap.application.load_opensearch_metrics_config",
+        lambda: None,
+    )
     config = _service_config(tmp_path)
     application = FlightApplication.build(
         config,
@@ -263,7 +268,10 @@ def test_real_cpu_v4_fit_starts_before_eof_and_publishes_after_close(
         assert hashlib.sha256(Path(checkpoint_path).read_bytes()).hexdigest() == model["sha256"]
 
         outbox = PostgresMetricsOutbox(application.ledger.database)
-        pending = outbox.next_pending()
+        deadline = time.monotonic() + 5
+        while (pending := outbox.next_pending()) is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
         assert pending is not None
         assert pending.artifact.model_ref == status["results"]["modelRef"]
         assert pending.artifact.job_id == job_id

@@ -4,7 +4,7 @@ import os
 
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
-from app.worker.metrics.io import load_metrics_jsonl
+from app.worker.telemetry.io import load_metrics_jsonl
 
 PLOT_METRICS = (
     "loss",

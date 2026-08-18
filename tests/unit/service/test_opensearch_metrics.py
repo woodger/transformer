@@ -12,7 +12,7 @@ from app.service.adapters.outbound.opensearch.config import (
     OpenSearchMetricsConfig,
     load_opensearch_metrics_config,
 )
-from app.service.application.ports.metrics import (
+from app.service.application.ports.telemetry import (
     BlockedMetricsDeliveryError,
     RetryableMetricsDeliveryError,
 )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -10,7 +11,7 @@ from app.service.adapters.outbound.postgres.models import (
     ModelRunSummaryArtifact,
 )
 from app.service.adapters.outbound.postgres.session import Database
-from app.service.domain.records import (
+from app.service.application.telemetry.records import (
     MetricsOutboxRecord,
     ModelMetricsArtifactRecord,
     ModelRunSummaryArtifactRecord,
@@ -220,6 +221,21 @@ class PostgresMetricsOutbox:
             ).one()
         age = None if oldest is None else max(0.0, (now - oldest).total_seconds())
         return int(count), int(byte_count), age
+
+    def delivery_statuses(
+        self,
+        model_refs: Sequence[str],
+    ) -> dict[str, str]:
+        if not model_refs:
+            return {}
+        with self.database.session() as session:
+            rows = session.execute(
+                select(
+                    MetricsOutboxEntry.model_ref,
+                    MetricsOutboxEntry.status,
+                ).where(MetricsOutboxEntry.model_ref.in_(model_refs))
+            ).all()
+            return {model_ref: status for model_ref, status in rows}
 
 
 def _owns(row: MetricsOutboxEntry, expected_cursor: int) -> bool:

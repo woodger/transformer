@@ -37,19 +37,15 @@ class PublishedModelStore:
 
     def list_models(self) -> list[ModelLifecycleRecord]:
         with self.database.session() as session:
-            rows = session.execute(
-                select(PublishedModel, MetricsOutboxEntry.status)
-                .outerjoin(
-                    MetricsOutboxEntry,
-                    MetricsOutboxEntry.model_ref == PublishedModel.model_ref,
-                )
+            rows = session.scalars(
+                select(PublishedModel)
                 .order_by(
                     PublishedModel.owner_subject,
                     PublishedModel.label,
                     PublishedModel.generation,
                 )
             ).all()
-            return [_record(model, status) for model, status in rows]
+            return [_record(model) for model in rows]
 
     def request_deletion(
         self,
@@ -84,10 +80,7 @@ class PublishedModelStore:
             )
             state = ModelLifecycleState(model.lifecycle_state)
             if state != ModelLifecycleState.AVAILABLE:
-                return _record(
-                    model,
-                    None if outbox is None else outbox.status,
-                )
+                return _record(model)
 
             active_jobs = session.scalar(
                 select(func.count(Job.job_id)).where(
@@ -126,10 +119,7 @@ class PublishedModelStore:
             model.deletion_requested_at = now
             model.deleted_at = None
             session.flush()
-            return _record(
-                model,
-                None if outbox is None else outbox.status,
-            )
+            return _record(model)
 
     def pending_deletions(self, *, limit: int = 100) -> tuple[str, ...]:
         if isinstance(limit, bool) or limit <= 0:
@@ -212,7 +202,6 @@ def _model_ref(value: object) -> str:
 
 def _record(
     model: PublishedModel,
-    metrics_delivery_status: str | None,
 ) -> ModelLifecycleRecord:
     return ModelLifecycleRecord(
         model_ref=model.model_ref,
@@ -220,7 +209,6 @@ def _record(
         label=model.label,
         generation=model.generation,
         state=ModelLifecycleState(model.lifecycle_state),
-        metrics_delivery_status=metrics_delivery_status,
         created_at=model.created_at.timestamp(),
         deletion_requested_at=(
             None

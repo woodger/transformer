@@ -13,7 +13,7 @@ from app.contracts.metrics.fit_run.v2 import (
     SUMMARY_MEDIA_TYPE,
     build_run_summary,
 )
-from app.service.domain.records import FitRunSummarySource
+from app.service.application.telemetry.records import FitRunSummarySource
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 

@@ -18,6 +18,10 @@
   entries очищаются по retention policy.
 - Поля telemetry во внутреннем worker v6 стали необязательными. Core checkpoint
   и fit result остаются строгими, публичный Flight v4 не изменён.
+- Training state, compact job progress и telemetry разделены на независимых
+  владельцев. Worker observations перенесены в `app/worker/telemetry`, а
+  service records, artifacts, PostgreSQL repository и publisher — в явный
+  telemetry slice; domain и общий ledger больше не содержат metrics API.
 
 ## [0.1.12] - 2026-08-16
 

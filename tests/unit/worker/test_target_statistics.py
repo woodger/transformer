@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from app.worker.metrics import TargetStatisticsAccumulator
+from app.worker.telemetry import TargetStatisticsAccumulator
 
 
 def test_target_statistics_use_float32_values_and_population_std():

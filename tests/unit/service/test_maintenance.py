@@ -362,7 +362,6 @@ def test_published_model_outlives_its_producing_job(
     assert model["producing_job_id"] is None
     assert Path(checkpoint).is_file()
     assert Path(metadata_path).is_file()
-    assert Path(spool.model_metrics_path(model_ref)).is_file()
 
 
 def test_periodic_maintenance_shutdown_waits_for_active_mutation():

@@ -20,7 +20,7 @@ from app.contracts.metrics.v2 import (
     project_training_points,
     validate_training_record,
 )
-from app.service.domain.records import MetricsOutboxRecord
+from app.service.application.telemetry.records import MetricsOutboxRecord
 
 _COPY_CHUNK_BYTES = 1024 * 1024
 

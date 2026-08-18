@@ -13,6 +13,7 @@ from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
 )
+from app.service.application.ports.telemetry import FitTelemetryPublisher
 from app.service.application.ports.workers import (
     AttemptProcess,
     ExecutionPlanBuilder,
@@ -57,6 +58,7 @@ class WorkerAttemptExecutor:
         subprocess_runner: AttemptProcess,
         artifact_publisher: ArtifactPublisher,
         *,
+        fit_telemetry_publisher: FitTelemetryPublisher | None = None,
         logger: EventLogger,
         metrics: OperationalMetricSink,
         retry_notifier: Callable[[str], None] | None = None,
@@ -68,6 +70,7 @@ class WorkerAttemptExecutor:
         self.plan_builder = plan_builder
         self.subprocess_runner = subprocess_runner
         self.artifact_publisher = artifact_publisher
+        self.fit_telemetry_publisher = fit_telemetry_publisher
         self.logger = logger
         self.metrics = metrics
         self.retry_notifier = retry_notifier
@@ -179,10 +182,29 @@ class WorkerAttemptExecutor:
                         result.result_manifest,
                     )
                 else:
-                    self.artifact_publisher.publish_model_from_manifest(
-                        job,
-                        result.result_manifest,
+                    published_model = (
+                        self.artifact_publisher.publish_model_from_manifest(
+                            job,
+                            result.result_manifest,
+                        )
                     )
+                    if self.fit_telemetry_publisher is not None:
+                        try:
+                            self.fit_telemetry_publisher.publish(
+                                job,
+                                result.result_manifest,
+                                published_model,
+                            )
+                        except Exception as exc:
+                            self.metrics.add(
+                                "trainingTelemetryCollectionErrors"
+                            )
+                            self.logger.event(
+                                "metrics.collection.failed",
+                                jobId=job.job_id,
+                                phase="model-artifact",
+                                errorType=type(exc).__name__,
+                            )
             except AttemptExecutionError as exc:
                 raise WorkerAttemptError(exc.code, exc.message) from exc
             self._record_transition(

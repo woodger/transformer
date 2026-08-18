@@ -192,7 +192,8 @@ def test_application_internal_import_graph_is_acyclic():
 def test_contracts_and_composition_roots_have_canonical_locations():
     assert (APP_ROOT / "contracts" / "flight" / "v4").is_dir()
     assert (APP_ROOT / "contracts" / "worker" / "v6").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "v1").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "v2").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v2").is_dir()
     assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
     assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
     assert not (APP_ROOT / "contracts" / "worker" / "v3").exists()
@@ -222,8 +223,12 @@ def test_contracts_and_composition_roots_have_canonical_locations():
         APP_ROOT / "service" / "adapters" / "outbound" / "cuda",
         APP_ROOT / "service" / "adapters" / "outbound" / "worker",
         APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "ledger",
+        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "telemetry",
+        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "telemetry",
         APP_ROOT / "service" / "application" / "messages",
+        APP_ROOT / "service" / "application" / "telemetry",
         APP_ROOT / "worker" / "checkpoints",
+        APP_ROOT / "worker" / "telemetry",
     ):
         assert (path / "__init__.py").is_file()
     for legacy_path in (
@@ -242,6 +247,12 @@ def test_contracts_and_composition_roots_have_canonical_locations():
         APP_ROOT / "service" / "application" / "output_models.py",
         APP_ROOT / "service" / "bootstrap" / "job_control.py",
         APP_ROOT / "service" / "bootstrap" / "worker_pool.py",
+        APP_ROOT / "service" / "application" / "ports" / "metrics.py",
+        APP_ROOT / "service" / "application" / "services" / "metrics_publisher.py",
+        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "metrics_outbox.py",
+        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "metrics_projection.py",
+        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "run_summary.py",
+        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "training_metrics.py",
     ):
         assert not legacy_file.exists()
     for path in (
@@ -253,6 +264,40 @@ def test_contracts_and_composition_roots_have_canonical_locations():
         APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
     ):
         assert path.is_file()
+
+
+def test_telemetry_does_not_own_core_training_or_service_state():
+    protected_modules = (
+        "app.worker.training.epoch",
+        "app.service.domain.records",
+        "app.service.adapters.outbound.artifacts.publication",
+    )
+    modules = _application_modules()
+    violations = []
+    for module in protected_modules:
+        for dependency in _imports(modules[module], module):
+            if _is_within(dependency, "app.worker.telemetry") or _is_within(
+                dependency,
+                "app.service.application.telemetry",
+            ):
+                violations.append(f"{module} -> {dependency}")
+
+    for module, path in modules.items():
+        if not _is_within(
+            module,
+            "app.service.adapters.outbound.postgres.ledger",
+        ):
+            continue
+        for dependency in _imports(path, module):
+            if _is_within(
+                dependency,
+                "app.service.application.telemetry",
+            ):
+                violations.append(f"{module} -> {dependency}")
+
+    assert violations == [], "telemetry owns core state:\n" + "\n".join(
+        sorted(violations)
+    )
 
 
 def test_service_application_job_api_is_transport_neutral():

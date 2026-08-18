@@ -16,6 +16,7 @@ from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
 )
+from app.service.application.ports.telemetry import TrainingTelemetryRepository
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.job import ErrorCode, InputState
 from app.service.domain.records import (
@@ -44,19 +45,6 @@ class _RecoveryLedger(Protocol):
         global_step: int,
         training_complete: bool,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
-
-    def register_training_metric_interval(
-        self,
-        *,
-        job_id: str,
-        attempt: int,
-        attempt_id: str,
-        generation: int,
-        global_step: int,
-        metrics: JsonObject,
-        checkpoint_serialization_ms: float,
-        checkpoint_publication_ms: float,
-    ) -> bool: ...
 
     def prune_recovery_checkpoints(
         self,
@@ -103,6 +91,7 @@ class RecoveryCheckpointPublisher:
         recovery_store: _RecoveryStore,
         spool: _AttemptSpool | None = None,
         *,
+        telemetry: TrainingTelemetryRepository | None = None,
         logger: EventLogger,
         metrics: OperationalMetricSink,
         monotonic: Callable[[], float] = time.monotonic,
@@ -110,6 +99,7 @@ class RecoveryCheckpointPublisher:
         self.ledger = ledger
         self.recovery_store = recovery_store
         self.spool = spool
+        self.telemetry = telemetry
         self.logger = logger
         self.metrics = metrics
         self._monotonic = monotonic
@@ -230,7 +220,7 @@ class RecoveryCheckpointPublisher:
                 "fit recovery checkpoint metadata is inconsistent",
             )
         checkpoint_publication_ms: float | None = None
-        if interval_metrics is not None:
+        if interval_metrics is not None and self.telemetry is not None:
             try:
                 checkpoint_publication_ms = (
                     _nonnegative_number(
@@ -266,11 +256,11 @@ class RecoveryCheckpointPublisher:
             global_step=global_step,
             training_complete=training_complete,
         )
-        if interval_metrics is not None:
+        if interval_metrics is not None and self.telemetry is not None:
             assert checkpoint_serialization_ms is not None
             assert checkpoint_publication_ms is not None
             try:
-                self.ledger.register_training_metric_interval(
+                self.telemetry.record_epoch_interval(
                     job_id=job.job_id,
                     attempt=job.attempt,
                     attempt_id=_attempt_id(job),

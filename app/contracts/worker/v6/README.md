@@ -82,6 +82,10 @@ finite/non-finite gradient norms. Mean, max и nearest-rank P95 считаютс
 по конечным pre-clip norms; non-finite batch не отравляет статистику остальных
 batch-ей. Число `step` сохраняет семантику завершённых training batches.
 
+В worker implementation core результат epoch находится в `training/epoch.py`,
+а optional observations — в `telemetry/`. Recovery state не восстанавливает
+telemetry и не использует её для optimizer, selection или terminal outcome.
+
 При успешном сборе checkpoint-событие дополнительно содержит monotonic
 `checkpointSerializationMs`; сервис измеряет durable copy как
 `checkpointPublicationMs` и сохраняет оба значения рядом с epoch interval.

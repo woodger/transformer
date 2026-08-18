@@ -7,18 +7,18 @@ from collections.abc import Callable
 
 from app.contracts.metrics.fit_run.v2 import RUN_INDEX
 from app.contracts.metrics.v2 import ARTIFACT_INDEX, POINT_INDEX
-from app.service.application.ports.metrics import (
+from app.service.application.ports.observability import (
+    EventLogger,
+    OperationalMetricSink,
+)
+from app.service.application.ports.telemetry import (
     BlockedMetricsDeliveryError,
     MetricsArtifactProjection,
     MetricsDocumentSink,
     MetricsOutboxRepository,
     RetryableMetricsDeliveryError,
 )
-from app.service.application.ports.observability import (
-    EventLogger,
-    OperationalMetricSink,
-)
-from app.service.domain.records import MetricsOutboxRecord
+from app.service.application.telemetry.records import MetricsOutboxRecord
 
 _MAX_BULK_DOCUMENTS = 500
 _TERMINAL_RETENTION_SECONDS = 7 * 24 * 60 * 60

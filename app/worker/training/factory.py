@@ -3,8 +3,8 @@ from typing import cast
 
 import torch
 
-from app.worker.metrics.paths import resolve_metrics_path
 from app.worker.model.transformer import TransformerModel
+from app.worker.telemetry.paths import resolve_metrics_path
 from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,

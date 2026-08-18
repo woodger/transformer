@@ -11,6 +11,9 @@ from app.contracts.worker.v6.objective import (
 )
 from app.service.adapters.inbound.flight.constants import FIT_SCHEMA_ID
 from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.telemetry import (
+    PostgresTrainingTelemetry,
+)
 from app.service.domain.errors import ServiceError
 from app.service.domain.input_manifest import manifest_sha256
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
@@ -208,6 +211,7 @@ def test_status_counts_process_failure_that_restarts_open_fit(postgres_ledger):
 
 
 def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
+    telemetry = PostgresTrainingTelemetry(postgres_ledger.database)
     job, execution_id = _create_fit(postgres_ledger, now=1.0)
     _reserve_and_commit(
         postgres_ledger,
@@ -245,7 +249,7 @@ def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
         training_complete=False,
         now=6.0,
     )
-    postgres_ledger.register_training_metric_interval(
+    telemetry.record_epoch_interval(
         job_id=job["job_id"],
         attempt=first_attempt.attempt,
         attempt_id=first_attempt.attempt_id,
@@ -290,7 +294,7 @@ def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
         training_complete=True,
         now=10.0,
     )
-    postgres_ledger.register_training_metric_interval(
+    telemetry.record_epoch_interval(
         job_id=job["job_id"],
         attempt=second_attempt.attempt,
         attempt_id=second_attempt.attempt_id,
@@ -308,7 +312,7 @@ def test_fit_run_summary_counts_recovery_intervals_once(postgres_ledger):
         now=11.0,
     )
 
-    summary = postgres_ledger.fit_run_summary_source(
+    summary = telemetry.fit_run_summary(
         job["job_id"],
         second_attempt.attempt,
         attempt_id=second_attempt.attempt_id,

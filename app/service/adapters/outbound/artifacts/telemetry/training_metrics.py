@@ -13,7 +13,7 @@ from app.contracts.metrics.v2 import (
     ARTIFACT_MEDIA_TYPE,
     build_training_record,
 )
-from app.service.domain.records import TrainingMetricIntervalRecord
+from app.service.application.telemetry.records import TrainingMetricIntervalRecord
 
 
 class _MetricsSpool(Protocol):

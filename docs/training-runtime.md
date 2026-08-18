@@ -138,6 +138,17 @@ Recovery другого objective, data contract или immutable input manifest
 
 ## Метрики
 
+Результат global epoch, влияющий на selection и recovery, отделён от
+необязательной telemetry. Core значения находятся в `worker/training/epoch.py`,
+а AMP/gradient counters, per-target errors, phase timings, JSONL и plots — в
+`worker/telemetry/`. Ошибка observability отключает запись текущей epoch, но не
+меняет optimizer, checkpoint selection или результат fit.
+
+Core loss scalars и optional target/gradient observations по-прежнему
+объединяются в одну CUDA→CPU передачу. Если optional часть не может быть
+материализована, trainer повторяет только core transfer и продолжает обучение
+без telemetry текущей epoch.
+
 Компактная строка epoch выглядит так:
 
 ```text

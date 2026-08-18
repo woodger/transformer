@@ -9,6 +9,7 @@ import pytest
 import torch
 from torch import nn
 
+import app.worker.training.trainer as trainer_module
 from app.contracts.worker.v6.config import (
     CheckpointSelectionConfig,
     ModelConfig,
@@ -21,12 +22,19 @@ from app.contracts.worker.v6.objective import (
 )
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.tensors import TrainingBatch
-from app.worker.metrics import TrainMetrics, append_metrics_jsonl, plot_metrics
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility
+from app.worker.telemetry import (
+    EpochTelemetry,
+    ObservedTrainingEpoch,
+    append_epoch_telemetry,
+    epoch_telemetry_document,
+    plot_metrics,
+)
 from app.worker.training import batching as batching_module
 from app.worker.training.batching import BatchPrefetcher
 from app.worker.training.early_stopping import SelectionState
+from app.worker.training.epoch import TrainingEpochResult
 from app.worker.training.factory import build_trainer
 from app.worker.training.losses import resolve_loss_stage
 from app.worker.training.run_config import model_config_from_args
@@ -188,12 +196,14 @@ def test_fit_batch_reports_six_target_metrics():
 
     assert metrics.rows == batch.features.size(0)
     assert metrics.batches == 4
-    assert metrics.training_batches_completed == 4
-    assert metrics.optimizer_updates_applied == 4
-    assert metrics.optimizer_updates_skipped == 0
-    assert metrics.amp_overflow_batches == 0
-    assert metrics.finite_gradient_batches == 4
-    assert metrics.non_finite_gradient_batches == 0
+    telemetry = metrics.telemetry
+    assert telemetry is not None
+    assert telemetry.training_batches_completed == 4
+    assert telemetry.optimizer_updates_applied == 4
+    assert telemetry.optimizer_updates_skipped == 0
+    assert telemetry.amp_overflow_batches == 0
+    assert telemetry.finite_gradient_batches == 4
+    assert telemetry.non_finite_gradient_batches == 0
     assert metrics.loss_stage == 4
     for semantic in (
         "mean_return",
@@ -203,8 +213,42 @@ def test_fit_batch_reports_six_target_metrics():
         "volatility_next",
         "hitting_prob_tp",
     ):
-        assert getattr(metrics, f"{semantic}_mae") >= 0
-        assert getattr(metrics, f"{semantic}_rmse") >= 0
+        assert getattr(telemetry, f"{semantic}_mae") >= 0
+        assert getattr(telemetry, f"{semantic}_rmse") >= 0
+
+
+def test_target_error_telemetry_failure_does_not_interrupt_training(
+    monkeypatch,
+    capsys,
+):
+    class BrokenTargetErrorObservation:
+        @staticmethod
+        def evaluate(*_args):
+            raise RuntimeError("injected telemetry failure")
+
+    monkeypatch.setattr(
+        trainer_module,
+        "TargetErrorObservation",
+        BrokenTargetErrorObservation,
+    )
+    batch = make_dummy_data(n=4)
+    trainer = Trainer(
+        model=new_model(),
+        device=torch.device("cpu"),
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=1,
+            loss_schedule="none",
+        ),
+    )
+
+    result = trainer.fit_batch(batch)
+
+    assert result.rows == 4
+    assert result.batches == 1
+    assert result.telemetry is None
+    assert "training epoch telemetry disabled" in capsys.readouterr().err
 
 
 def test_predict_batches_model_and_returns_only_public_target_space():
@@ -333,29 +377,21 @@ def test_selection_rejects_nonfinite_score():
 
 
 def test_train_metrics_uses_global_row_weighted_direct_losses():
-    first = TrainMetrics()
+    first = TrainingEpochResult()
     first.update(
         rows=1,
         loss_parts=_loss_parts(1.0),
-        grad_norm=1.0,
-        optimizer_update_applied=True,
-        amp_overflow=False,
-        nan_ratio=0.0,
     )
     first.update(
         rows=3,
         loss_parts=_loss_parts(3.0),
-        grad_norm=1.0,
-        optimizer_update_applied=True,
-        amp_overflow=False,
-        nan_ratio=0.0,
     )
 
     assert first.direct_losses() == pytest.approx((2.5,) * 6)
 
 
 def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
-    metrics = TrainMetrics()
+    metrics = ObservedTrainingEpoch(telemetry=EpochTelemetry())
     for gradient, applied, overflow in (
         (1.0, True, False),
         (float("inf"), False, True),
@@ -365,13 +401,19 @@ def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
         metrics.update(
             rows=1,
             loss_parts=_loss_parts(1.0),
+        )
+        assert metrics.telemetry is not None
+        metrics.telemetry.observe_batch(
+            rows=1,
+            target_errors=_loss_parts(1.0),
             grad_norm=gradient,
             optimizer_update_applied=applied,
             amp_overflow=overflow,
             nan_ratio=0.0,
         )
 
-    document = metrics.to_dict()
+    document = epoch_telemetry_document(metrics)
+    assert document is not None
 
     assert document["trainingBatchesCompleted"] == 4
     assert document["optimizerUpdatesApplied"] == 3
@@ -385,17 +427,23 @@ def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
 
 
 def test_invalid_gradient_telemetry_does_not_interrupt_metric_aggregation():
-    metrics = TrainMetrics()
+    metrics = ObservedTrainingEpoch(telemetry=EpochTelemetry())
 
     metrics.update(
         rows=1,
         loss_parts=_loss_parts(1.0),
+    )
+    assert metrics.telemetry is not None
+    metrics.telemetry.observe_batch(
+        rows=1,
+        target_errors=_loss_parts(1.0),
         grad_norm=-1.0,
         optimizer_update_applied=True,
         amp_overflow=True,
         nan_ratio=0.0,
     )
-    document = metrics.to_dict()
+    document = epoch_telemetry_document(metrics)
+    assert document is not None
 
     assert document["trainingBatchesCompleted"] == 1
     assert document["optimizerUpdatesApplied"] == 1
@@ -444,14 +492,16 @@ def test_amp_overflow_counts_a_skipped_update_and_keeps_later_gradient():
         for hook in gradient_hooks:
             hook.remove()
 
-    assert metrics.training_batches_completed == 2
-    assert metrics.optimizer_updates_applied == 1
-    assert metrics.optimizer_updates_skipped == 1
-    assert metrics.amp_overflow_batches == 1
-    assert metrics.finite_gradient_batches == 1
-    assert metrics.non_finite_gradient_batches == 1
-    assert metrics.pre_clip_gradient_norm_mean is not None
-    assert math.isfinite(metrics.pre_clip_gradient_norm_mean)
+    telemetry = metrics.telemetry
+    assert telemetry is not None
+    assert telemetry.training_batches_completed == 2
+    assert telemetry.optimizer_updates_applied == 1
+    assert telemetry.optimizer_updates_skipped == 1
+    assert telemetry.amp_overflow_batches == 1
+    assert telemetry.finite_gradient_batches == 1
+    assert telemetry.non_finite_gradient_batches == 1
+    assert telemetry.pre_clip_gradient_norm_mean is not None
+    assert math.isfinite(telemetry.pre_clip_gradient_norm_mean)
 
 
 def test_closed_batch_prefetch_prepares_exactly_one_batch_ahead():
@@ -604,18 +654,20 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
 
 def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
     path = tmp_path / "metrics.jsonl"
-    metrics = TrainMetrics(
+    metrics = ObservedTrainingEpoch(
         rows=4,
         batches=1,
         loss_l0=0.2,
-        training_batches_completed=1,
-        optimizer_updates_applied=1,
-        finite_gradient_batches=1,
-        pre_clip_gradient_norm_mean=1.0,
-        pre_clip_gradient_norm_max=1.0,
-        pre_clip_gradient_norm_p95=1.0,
+        telemetry=EpochTelemetry(
+            training_batches_completed=1,
+            optimizer_updates_applied=1,
+            finite_gradient_batches=1,
+            pre_clip_gradient_norm_mean=1.0,
+            pre_clip_gradient_norm_max=1.0,
+            pre_clip_gradient_norm_p95=1.0,
+        ),
     )
-    append_metrics_jsonl(str(path), metrics, mode="fit")
+    append_epoch_telemetry(str(path), metrics, mode="fit")
 
     row = json.loads(path.read_text().strip())
 
@@ -636,8 +688,11 @@ def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
 def test_plot_metrics_writes_target_metric_svg(tmp_path):
     path = tmp_path / "metrics.jsonl"
     output = tmp_path / "plots"
-    metrics = TrainMetrics(rows=2, mean_return_mae=0.25)
-    append_metrics_jsonl(str(path), metrics, mode="fit")
+    metrics = ObservedTrainingEpoch(
+        rows=2,
+        telemetry=EpochTelemetry(mean_return_mae=0.25),
+    )
+    append_epoch_telemetry(str(path), metrics, mode="fit")
 
     paths = plot_metrics(str(path), str(output))
 
@@ -708,8 +763,11 @@ def _loss_parts(value: float) -> dict:
     }
 
 
-def _semantic_metrics(metrics: TrainMetrics) -> dict:
+def _semantic_metrics(metrics: TrainingEpochResult) -> dict:
     result = asdict(metrics)
+    telemetry = result["telemetry"]
+    if telemetry is None:
+        return result
     for field in (
         "input_pipeline_ms",
         "missing_stats_ms",
@@ -717,7 +775,7 @@ def _semantic_metrics(metrics: TrainMetrics) -> dict:
         "train_step_ms",
         "elapsed_ms",
     ):
-        result.pop(field)
+        telemetry.pop(field)
     return result
 
 

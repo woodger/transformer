@@ -17,7 +17,6 @@ def _record(state=ModelLifecycleState.AVAILABLE):
         label="daily",
         generation=3,
         state=state,
-        metrics_delivery_status="DELIVERED",
         created_at=1.0,
         deletion_requested_at=None,
         deleted_at=None,
@@ -45,6 +44,15 @@ def _wire(monkeypatch, store):
         models_command,
         "PublishedModelStore",
         lambda _database: store,
+    )
+    monkeypatch.setattr(
+        models_command,
+        "PostgresMetricsOutbox",
+        lambda _database: SimpleNamespace(
+            delivery_statuses=lambda model_refs: {
+                model_ref: "DELIVERED" for model_ref in model_refs
+            }
+        ),
     )
     return closed
 

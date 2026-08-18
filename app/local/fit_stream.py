@@ -27,7 +27,8 @@ from app.worker.data.tensors import (
     validate_feature_dim,
     validate_target_dim,
 )
-from app.worker.metrics import TrainMetrics
+from app.worker.telemetry import format_epoch_console_line
+from app.worker.telemetry.epoch import ObservedTrainingEpoch
 from app.worker.training.factory import build_model, build_trainer
 from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import SelectionPayload, Trainer
@@ -132,14 +133,15 @@ def run(
 
         def on_epoch(
             epoch: int,
-            metrics: TrainMetrics,
+            metrics: ObservedTrainingEpoch,
             monitor_payload: SelectionPayload,
             current_frame: int = frame,
             current_trainer: Trainer = active_trainer,
         ) -> None:
             nonlocal trained_epochs
             trained_epochs += 1
-            print(metrics.console_line(
+            print(format_epoch_console_line(
+                metrics,
                 frame=current_frame,
                 epoch=epoch + 1,
                 **_metrics_context(current_trainer),
@@ -299,12 +301,13 @@ def _run_spooled(
 
     def on_epoch(
         epoch: int,
-        metrics: TrainMetrics,
+        metrics: ObservedTrainingEpoch,
         monitor_payload: SelectionPayload,
     ) -> None:
         nonlocal trained_epochs
         trained_epochs += 1
-        print(metrics.console_line(
+        print(format_epoch_console_line(
+            metrics,
             epoch=epoch + 1,
             **_metrics_context(trainer),
             selection_score=monitor_payload["selection_score"],
@@ -324,7 +327,7 @@ def _run_spooled(
 
     def on_epoch_committed(
         _epoch: int,
-        _metrics: TrainMetrics,
+        _metrics: ObservedTrainingEpoch,
         _monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:

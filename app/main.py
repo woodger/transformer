@@ -148,13 +148,13 @@ def run_gmark(args: object) -> int:
 
 
 def reset_metrics_log(path: str | None) -> None:
-    from app.worker.metrics import reset_metrics_log as implementation
+    from app.worker.telemetry import reset_metrics_log as implementation
 
     return implementation(path)
 
 
 def resolve_metrics_path(name: str | None) -> str | None:
-    from app.worker.metrics.paths import resolve_metrics_path as implementation
+    from app.worker.telemetry.paths import resolve_metrics_path as implementation
 
     return implementation(name)
 

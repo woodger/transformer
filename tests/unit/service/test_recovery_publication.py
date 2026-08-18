@@ -30,7 +30,6 @@ class _Ledger:
     def __init__(self, job: ExecutionJobRecord) -> None:
         self.job = job
         self.checkpoints = 0
-        self.metric_intervals = 0
 
     def get_execution_job(self, job_id: str) -> ExecutionJobRecord | None:
         return self.job if job_id == self.job.job_id else None
@@ -50,10 +49,6 @@ class _Ledger:
             training_complete=fields["training_complete"],
         ), False
 
-    def register_training_metric_interval(self, **_fields):
-        self.metric_intervals += 1
-        raise RuntimeError("injected telemetry persistence failure")
-
     def prune_recovery_checkpoints(
         self,
         _job_id: str,
@@ -62,6 +57,15 @@ class _Ledger:
     ) -> list[str]:
         assert keep == 2
         return []
+
+
+class _Telemetry:
+    def __init__(self) -> None:
+        self.metric_intervals = 0
+
+    def record_epoch_interval(self, **_fields):
+        self.metric_intervals += 1
+        raise RuntimeError("injected telemetry persistence failure")
 
 
 def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
@@ -102,6 +106,7 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     checkpoint = b"recovery checkpoint"
     Path(checkpoint_path).write_bytes(checkpoint)
     ledger = _Ledger(job)
+    telemetry = _Telemetry()
     logger = _Logger()
     monkeypatch.setattr(
         publication_module,
@@ -111,6 +116,7 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     publisher = RecoveryCheckpointPublisher(
         ledger,
         recovery_store,
+        telemetry=telemetry,
         logger=logger,
         metrics=OperationalMetrics(),
     )
@@ -129,7 +135,7 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     })
 
     assert ledger.checkpoints == 1
-    assert ledger.metric_intervals == 1
+    assert telemetry.metric_intervals == 1
     assert any(
         event == "metrics.collection.failed"
         and fields["phase"] == "recovery-persistence"

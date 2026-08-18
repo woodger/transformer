@@ -38,8 +38,8 @@ Durable flow:
 worker завершил global epoch
   → fsync recovery checkpoint
   → checkpoint event
-  → PostgreSQL transaction: recovery generation
-  → best-effort PostgreSQL transaction: metric interval + job progress
+  → PostgreSQL transaction: recovery generation + compact job progress
+  → best-effort PostgreSQL transaction: metric interval
   → terminal worker checkpoint
   → models/{modelRef}/checkpoint.pth
      models/{modelRef}/metadata.json
@@ -140,3 +140,6 @@ Metrics artifact является необязательной model-owned telem
 меняет recovery, fit outcome или model generation. Migration `0007` добавляет
 best-effort epoch intervals, model artifact metadata и outbox без изменения
 Flight v4 schema.
+
+Структурные владельцы core state и telemetry уточнены в
+[ADR 0013](0013-telemetry-ownership-boundaries.md).

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import math
 from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.json_types import JsonObject
 from app.contracts.worker.v6.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
@@ -13,7 +11,6 @@ from app.service.adapters.outbound.postgres.ledger.support import (
     canonical_uuid,
     decode,
     digest,
-    json_value,
     now as timestamp_now,
     positive,
     validate_relative_path,
@@ -23,7 +20,6 @@ from app.service.adapters.outbound.postgres.models import (
     Job,
     JobAttempt,
     JobInput,
-    TrainingMetricInterval,
     TrainingRecoveryCheckpoint,
 )
 from app.service.domain.errors import (
@@ -32,10 +28,7 @@ from app.service.domain.errors import (
     not_found,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
-from app.service.domain.records import (
-    TrainingMetricIntervalRecord,
-    TrainingRecoveryCheckpointRecord,
-)
+from app.service.domain.records import TrainingRecoveryCheckpointRecord
 
 
 class RecoveryLedgerSlice:
@@ -164,119 +157,13 @@ class RecoveryLedgerSlice:
             )
             session.add(record)
             job.revision += 1
+            job.progress = {
+                "completedEpochs": completed_epochs,
+                "globalStep": global_step,
+            }
             job.updated_at = created_at
             session.flush()
             return _record(record), False
-
-    def register_metric_interval(
-        self,
-        *,
-        job_id: str,
-        attempt: int,
-        attempt_id: str,
-        generation: int,
-        global_step: int,
-        metrics: JsonObject,
-        checkpoint_serialization_ms: float,
-        checkpoint_publication_ms: float,
-        now: float | None = None,
-    ) -> bool:
-        """Persist optional epoch telemetry after its recovery checkpoint."""
-        positive(attempt, "attempt")
-        attempt_id = canonical_uuid(attempt_id, "attempt_id")
-        positive(generation, "generation")
-        raw_global_step = cast(object, global_step)
-        if (
-            isinstance(raw_global_step, bool)
-            or not isinstance(raw_global_step, int)
-            or raw_global_step < 0
-        ):
-            raise ValueError("global_step must be a non-negative integer")
-        for value, label in (
-            (checkpoint_serialization_ms, "checkpoint_serialization_ms"),
-            (checkpoint_publication_ms, "checkpoint_publication_ms"),
-        ):
-            raw_value = cast(object, value)
-            if (
-                isinstance(raw_value, bool)
-                or not isinstance(raw_value, (int, float))
-                or not math.isfinite(raw_value)
-                or raw_value < 0
-            ):
-                raise ValueError(f"{label} must be finite and non-negative")
-        metrics_value = json_value(metrics)
-        if (
-            metrics_value.get("epoch") != generation
-            or metrics_value.get("step") != global_step
-        ):
-            raise ValueError(
-                "training metrics identity differs from recovery progress"
-            )
-        recorded_at = timestamp_now(now)
-        with self.database.transaction() as session:
-            checkpoint = session.get(
-                TrainingRecoveryCheckpoint,
-                (job_id, generation),
-            )
-            if (
-                checkpoint is None
-                or checkpoint.attempt != attempt
-                or checkpoint.global_step != global_step
-            ):
-                raise failed_precondition(
-                    "training metrics require the matching recovery checkpoint"
-                )
-            attempt_record = session.get(JobAttempt, (job_id, attempt))
-            if (
-                attempt_record is None
-                or attempt_record.attempt_id != attempt_id
-            ):
-                raise failed_precondition(
-                    "training metrics attempt identity differs"
-                )
-            existing = session.get(
-                TrainingMetricInterval,
-                (job_id, generation),
-            )
-            if existing is not None:
-                if _same_metrics(
-                    existing,
-                    attempt=attempt,
-                    attempt_id=attempt_id,
-                    metrics=metrics_value,
-                    checkpoint_serialization_ms=(
-                        checkpoint_serialization_ms
-                    ),
-                ):
-                    return True
-                raise conflict("training metric interval already exists")
-            session.add(TrainingMetricInterval(
-                job_id=job_id,
-                generation=generation,
-                attempt=attempt,
-                attempt_id=attempt_id,
-                metrics=metrics_value,
-                checkpoint_serialization_ms=checkpoint_serialization_ms,
-                checkpoint_publication_ms=checkpoint_publication_ms,
-                recorded_at=recorded_at,
-            ))
-            job = session.get(Job, job_id)
-            if job is not None:
-                job.progress = metrics_value
-            session.flush()
-            return False
-
-    def list_metrics(
-        self,
-        job_id: str,
-    ) -> list[TrainingMetricIntervalRecord]:
-        with self.database.session() as session:
-            rows = session.scalars(
-                select(TrainingMetricInterval)
-                .where(TrainingMetricInterval.job_id == job_id)
-                .order_by(TrainingMetricInterval.generation)
-            )
-            return [_metrics_record(row) for row in rows]
 
     def latest_checkpoint(
         self,
@@ -527,44 +414,6 @@ def _record(
         completed_epochs=value.completed_epochs,
         global_step=value.global_step,
         training_complete=value.training_complete,
-    )
-
-
-def _metrics_record(
-    value: TrainingMetricInterval,
-) -> TrainingMetricIntervalRecord:
-    if (
-        value.checkpoint_serialization_ms is None
-        or value.checkpoint_publication_ms is None
-    ):
-        raise ValueError(
-            "training metric interval predates checkpoint timing contract"
-        )
-    return TrainingMetricIntervalRecord(
-        job_id=value.job_id,
-        generation=value.generation,
-        attempt=value.attempt,
-        attempt_id=value.attempt_id,
-        metrics=dict(value.metrics),
-        recorded_at=value.recorded_at.timestamp(),
-        checkpoint_serialization_ms=value.checkpoint_serialization_ms,
-        checkpoint_publication_ms=value.checkpoint_publication_ms,
-    )
-
-
-def _same_metrics(
-    value: TrainingMetricInterval,
-    *,
-    attempt: int,
-    attempt_id: str,
-    metrics: JsonObject,
-    checkpoint_serialization_ms: float,
-) -> bool:
-    return (
-        value.attempt == attempt
-        and value.attempt_id == attempt_id
-        and value.metrics == metrics
-        and value.checkpoint_serialization_ms == checkpoint_serialization_ms
     )
 
 
