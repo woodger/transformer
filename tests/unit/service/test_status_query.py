@@ -39,17 +39,23 @@ def _job(**overrides):
         prediction_column="predictions",
         data_contract={
             "id": "inventory.learning-dataset",
-            "version": 1,
+            "version": 2,
+            "profile": "research-dividend-events-v2",
             "data_contract_sha256": "b" * 64,
             "seq_len": 2,
             "feature_dim": 2,
-            "target_schema_id": "inventory.target.v1",
+            "target_schema_id": "inventory.target.v2",
         },
         ml_contract={
-            "targetSchemaId": "inventory.target.v1",
-            "objectiveId": "transformer.objective.target-aligned.v1",
+            "targetSchemaId": "inventory.target.v2",
+            "objectiveId": "transformer.objective.target-aligned.v2",
         },
-        progress={"epoch": 2},
+        progress={
+            "epoch": 2,
+            "step": 6,
+            "loss_stage": 4,
+            "loss": -3.149016,
+        },
         attempt=2,
         error_code=None,
         error_message=None,
@@ -101,7 +107,7 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v3",
+            format="transformer-training-recovery-v4",
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,
@@ -132,6 +138,12 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     }
     assert result["execution"] == {"state": "SUCCEEDED", "attempt": 2}
     assert result["ownership"]["fencingToken"] == "7"
+    assert result["progress"] == {
+        "epoch": 2,
+        "step": 6,
+        "loss_stage": 4,
+        "loss": -3.149016,
+    }
     assert result["results"] == {
         "outputCount": 0,
         "modelRef": "mdl_generation",

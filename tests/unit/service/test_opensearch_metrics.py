@@ -12,7 +12,7 @@ from app.service.adapters.outbound.opensearch.config import (
     OpenSearchMetricsConfig,
     load_opensearch_metrics_config,
 )
-from app.service.application.ports.metrics import (
+from app.service.application.ports.telemetry import (
     BlockedMetricsDeliveryError,
     RetryableMetricsDeliveryError,
 )
@@ -22,7 +22,7 @@ def _document(identifier: str, digest: str) -> dict[str, object]:
     return {
         "eventId": identifier,
         "documentSha256": digest,
-        "schema": "inventory.metrics.point.v2",
+        "schema": "inventory.metrics.point.v3",
     }
 
 
@@ -205,7 +205,7 @@ def test_http_client_uses_plain_connection_with_optional_authentication(
     ))
 
     client.create_documents(
-        "metrics-points-v2",
+        "metrics-points-v3",
         (_document("a" * 64, "b" * 64),),
         id_field="eventId",
     )
@@ -239,7 +239,7 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
     ])
 
     client.create_documents(
-        "metrics-points-v2",
+        "metrics-points-v3",
         (_document(identifier, digest),),
         id_field="eventId",
     )
@@ -248,10 +248,10 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
     assert json.loads(bulk_lines[0]) == {
         "create": {
             "_id": identifier,
-            "_index": "metrics-points-v2",
+            "_index": "metrics-points-v3",
         }
     }
-    assert requests[1][1] == "/metrics-points-v2/_mget"
+    assert requests[1][1] == "/metrics-points-v3/_mget"
     assert json.loads(requests[1][2]) == {
         "docs": [
             {
@@ -279,7 +279,7 @@ def test_conflicting_document_with_different_digest_blocks_delivery():
 
     with pytest.raises(BlockedMetricsDeliveryError, match="integrity"):
         client.create_documents(
-            "metrics-points-v2",
+            "metrics-points-v3",
             (_document(identifier, "b" * 64),),
             id_field="eventId",
         )
@@ -292,7 +292,7 @@ def test_retryable_bulk_item_does_not_report_the_chunk_as_delivered():
 
     with pytest.raises(RetryableMetricsDeliveryError, match="status 429"):
         client.create_documents(
-            "metrics-points-v2",
+            "metrics-points-v3",
             (_document("a" * 64, "b" * 64),),
             id_field="eventId",
         )

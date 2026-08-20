@@ -13,7 +13,7 @@ from app.cli.args import parse_args
 if TYPE_CHECKING:
     import torch
 
-    from app.contracts.worker.v6.config import ModelConfig
+    from app.contracts.worker.v7.config import ModelConfig
     from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
     from app.local.fit_stream import FitStreamArguments
     from app.local.plot_metrics import PlotMetricsArguments
@@ -31,7 +31,6 @@ class CliArguments(Protocol):
     subject: str
     token_id: str
     model_ref: str
-    discard_undelivered_metrics: bool
     seed: int
     deterministic: bool
     device: str
@@ -148,13 +147,13 @@ def run_gmark(args: object) -> int:
 
 
 def reset_metrics_log(path: str | None) -> None:
-    from app.worker.metrics import reset_metrics_log as implementation
+    from app.worker.telemetry import reset_metrics_log as implementation
 
     return implementation(path)
 
 
 def resolve_metrics_path(name: str | None) -> str | None:
-    from app.worker.metrics.paths import resolve_metrics_path as implementation
+    from app.worker.telemetry.paths import resolve_metrics_path as implementation
 
     return implementation(name)
 

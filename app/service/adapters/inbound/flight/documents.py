@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol, cast, runtime_checkable
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     ModelConfig,
     TrainConfig,
     train_config_to_manifest,
@@ -125,6 +125,7 @@ def data_contract_to_api(contract: Mapping[str, object]) -> JsonObject:
     return {
         "id": cast(JsonValue, contract.get("id")),
         "version": cast(JsonValue, contract.get("version")),
+        "profile": cast(JsonValue, contract.get("profile")),
         "dataContractSha256": cast(
             JsonValue,
             contract.get(

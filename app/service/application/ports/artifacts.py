@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from app.service.application.ports.workers import ExecutionInput
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import ExecutionJobRecord
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedModelArtifacts:
+    """Core model publication result exposed to optional observers."""
+
+    model_ref: str
+    ml_contract: JsonObject
+    checkpoint_publication_ms: float
 
 
 class ArtifactPublisher(Protocol):
@@ -21,9 +31,9 @@ class ArtifactPublisher(Protocol):
         self,
         job: ExecutionJobRecord,
         result: JsonObject,
-    ) -> None: ...
+    ) -> PublishedModelArtifacts: ...
 
     def cleanup_unpublished(self, job: ExecutionJobRecord) -> None: ...
 
 
-__all__ = ["ArtifactPublisher"]
+__all__ = ["ArtifactPublisher", "PublishedModelArtifacts"]

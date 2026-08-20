@@ -13,16 +13,8 @@ class ModelAdministration:
     def list(self) -> list[ModelLifecycleRecord]:
         return self.store.list_models()
 
-    def delete(
-        self,
-        model_ref: str,
-        *,
-        discard_undelivered_metrics: bool = False,
-    ) -> ModelLifecycleRecord:
-        return self.store.request_deletion(
-            model_ref,
-            discard_undelivered_metrics=discard_undelivered_metrics,
-        )
+    def delete(self, model_ref: str) -> ModelLifecycleRecord:
+        return self.store.request_deletion(model_ref)
 
 
 __all__ = ["ModelAdministration"]

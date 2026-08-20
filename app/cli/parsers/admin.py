@@ -141,11 +141,6 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
         metavar="MODEL_REF",
         help="Exact published model reference; aliases are not accepted.",
     )
-    delete.add_argument(
-        "--discard-undelivered-metrics",
-        action="store_true",
-        help="Cancel pending or blocked OpenSearch metrics delivery.",
-    )
     delete.set_defaults(data=None, metrics_name=None)
 
 

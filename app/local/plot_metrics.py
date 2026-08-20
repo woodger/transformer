@@ -1,7 +1,7 @@
 from typing import Protocol
 
-from app.worker.metrics import plot_metrics
-from app.worker.metrics.paths import resolve_metrics_path
+from app.worker.telemetry import plot_metrics
+from app.worker.telemetry.paths import resolve_metrics_path
 
 
 class PlotMetricsArguments(Protocol):

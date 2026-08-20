@@ -3,7 +3,7 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.objective import (
     CHECKPOINT_FORMAT,
     OBJECTIVE_ID,
     PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
@@ -238,7 +238,7 @@ class JobCoordinator:
                 "checkpointFormat": CHECKPOINT_FORMAT,
                 "targetWidth": TARGET_WIDTH,
                 "predictionSpace": "target",
-                "objectiveConfigSchemaVersion": 1,
+                "objectiveConfigSchemaVersion": 2,
             },
             limits=limits_to_api(capabilities.limits),
             devices={

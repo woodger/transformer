@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TypedDict, cast
 
-from app.contracts.flight.v4.constants import MAX_PAYLOADS_PER_JOB
+from app.contracts.flight.v5.constants import MAX_PAYLOADS_PER_JOB
 from app.project import PROJECT_NAME, PROJECT_ROOT
 
 HOST_DEFAULT = "127.0.0.1"
@@ -107,6 +107,13 @@ class FlightServiceConfig:
         return os.path.join(
             os.path.dirname(self.models_dir),
             "recovery",
+        )
+
+    @property
+    def telemetry_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.models_dir),
+            "telemetry",
         )
 
     @property

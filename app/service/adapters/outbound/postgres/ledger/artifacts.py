@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -11,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v2 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -29,15 +27,10 @@ from app.service.adapters.outbound.postgres.mapping import published_model_recor
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobAttempt,
-    JobInput,
     JobOutput,
-    MetricsOutboxEntry,
     ModelAlias,
-    ModelMetricsArtifact,
-    ModelRunSummaryArtifact,
     OutputTicket,
     PublishedModel,
-    TrainingMetricInterval,
 )
 from app.service.domain.errors import (
     ServiceError,
@@ -47,27 +40,7 @@ from app.service.domain.errors import (
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.model import ModelLifecycleState
-from app.service.domain.records import (
-    FitRunSummarySource,
-    ModelArtifactRecord,
-    PublishedModelRecord,
-)
-
-
-def _duration_ms(start: datetime, end: datetime, label: str) -> float:
-    value = (end - start).total_seconds() * 1000.0
-    return _finite_nonnegative(value, label)
-
-
-def _finite_nonnegative(value: object, label: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value < 0
-    ):
-        raise failed_precondition(f"{label} is unavailable or invalid")
-    return float(value)
+from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 
 
 class ArtifactLedgerSlice:
@@ -154,19 +127,6 @@ class ArtifactLedgerSlice:
         metadata_path: str,
         byte_count: int,
         sha256: str,
-        metrics_path: str,
-        metrics_format: str,
-        metrics_media_type: str,
-        metrics_byte_count: int,
-        metrics_sha256: str,
-        metrics_row_count: int,
-        run_summary_path: str,
-        run_summary_format: str,
-        run_summary_media_type: str,
-        run_summary_byte_count: int,
-        run_summary_sha256: str,
-        application_version: str,
-        git_commit: str,
         metadata: JsonObject,
         result: JsonObject,
         now: float | None = None,
@@ -174,30 +134,9 @@ class ArtifactLedgerSlice:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
         validate_relative_path(metadata_path)
-        validate_relative_path(metrics_path)
-        validate_relative_path(run_summary_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
-        if isinstance(metrics_byte_count, bool) or metrics_byte_count <= 0:
-            raise ValueError("metrics_byte_count must be a positive integer")
-        if isinstance(metrics_row_count, bool) or metrics_row_count <= 0:
-            raise ValueError("metrics_row_count must be a positive integer")
-        digest(metrics_sha256, "metrics_sha256")
-        if isinstance(run_summary_byte_count, bool) or run_summary_byte_count <= 0:
-            raise ValueError(
-                "run_summary_byte_count must be a positive integer"
-            )
-        digest(run_summary_sha256, "run_summary_sha256")
-        if not metrics_format or not metrics_media_type or not application_version:
-            raise ValueError("metrics artifact metadata must not be empty")
-        if not run_summary_format or not run_summary_media_type:
-            raise ValueError("run summary artifact metadata must not be empty")
-        if (
-            len(git_commit) != 40
-            or any(character not in "0123456789abcdef" for character in git_commit)
-        ):
-            raise ValueError("git_commit must be a lowercase 40-character digest")
         published_at = timestamp_now(now)
         try:
             with self.database.transaction() as session:
@@ -285,47 +224,6 @@ class ArtifactLedgerSlice:
                     created_at=published_at,
                 ))
                 session.flush()
-                session.add(ModelMetricsArtifact(
-                    model_ref=model_ref,
-                    format=metrics_format,
-                    media_type=metrics_media_type,
-                    relative_path=metrics_path,
-                    bytes=metrics_byte_count,
-                    sha256=metrics_sha256,
-                    row_count=metrics_row_count,
-                    job_id=job_id,
-                    attempt_id=attempt_id,
-                    attempt=attempt,
-                    application_version=application_version,
-                    git_commit=git_commit,
-                    created_at=published_at,
-                ))
-                session.flush()
-                session.add(ModelRunSummaryArtifact(
-                    model_ref=model_ref,
-                    format=run_summary_format,
-                    media_type=run_summary_media_type,
-                    relative_path=run_summary_path,
-                    bytes=run_summary_byte_count,
-                    sha256=run_summary_sha256,
-                    job_id=job_id,
-                    attempt_id=attempt_id,
-                    attempt=attempt,
-                    application_version=application_version,
-                    git_commit=git_commit,
-                    created_at=published_at,
-                ))
-                session.flush()
-                session.add(MetricsOutboxEntry(
-                    model_ref=model_ref,
-                    projection_version=PROJECTION_VERSION,
-                    status="PENDING",
-                    cursor=0,
-                    attempts=0,
-                    next_attempt_at=published_at,
-                    created_at=published_at,
-                    updated_at=published_at,
-                ))
                 alias = session.get(
                     ModelAlias,
                     (job.owner_subject, label),
@@ -370,119 +268,6 @@ class ArtifactLedgerSlice:
             raise RuntimeError(
                 "model publication violated persistence invariants"
             ) from exc
-
-    def fit_run_summary_source(
-        self,
-        job_id: str,
-        attempt: int,
-        *,
-        attempt_id: str,
-        now: float | None = None,
-    ) -> FitRunSummarySource:
-        attempt_id = canonical_uuid(attempt_id, "attempt_id")
-        publication_boundary = timestamp_now(now)
-        with self.database.session() as session:
-            job = session.get(Job, job_id)
-            if (
-                job is None
-                or job.operation != "fit"
-                or job.execution_state != ExecutionState.RUNNING.value
-                or job.input_state != InputState.CLOSED.value
-                or job.attempt != attempt
-                or job.input_closed_at is None
-            ):
-                raise failed_precondition(
-                    "fit run summary requires the active closed attempt"
-                )
-            attempts = session.scalars(
-                select(JobAttempt)
-                .where(JobAttempt.job_id == job_id)
-                .order_by(JobAttempt.attempt)
-            ).all()
-            current = attempts[-1] if attempts else None
-            if (
-                current is None
-                or current.attempt != attempt
-                or current.attempt_id != attempt_id
-                or current.worker_completed_at is None
-            ):
-                raise failed_precondition(
-                    "fit worker completion boundary is unavailable"
-                )
-            first_input = session.scalar(
-                select(func.min(JobInput.committed_at)).where(
-                    JobInput.job_id == job_id
-                )
-            )
-            if first_input is None:
-                raise failed_precondition("fit input boundary is unavailable")
-            intervals = session.scalars(
-                select(TrainingMetricInterval)
-                .where(TrainingMetricInterval.job_id == job_id)
-                .order_by(TrainingMetricInterval.generation)
-            ).all()
-            if not intervals:
-                raise failed_precondition("fit training metrics are unavailable")
-
-            queue_wait_ms = 0.0
-            worker_startup_ms = 0.0
-            for item in attempts:
-                startup_end = item.worker_ready_at or item.finished_at
-                if startup_end is None:
-                    raise failed_precondition(
-                        "attempt startup boundary is unavailable"
-                    )
-                queue_wait_ms += _duration_ms(
-                    item.queue_entered_at,
-                    item.claimed_at,
-                    "queue wait",
-                )
-                worker_startup_ms += _duration_ms(
-                    item.claimed_at,
-                    startup_end,
-                    "worker startup",
-                )
-
-            training_ms = 0.0
-            checkpoint_serialization_ms = 0.0
-            checkpoint_publication_ms = 0.0
-            for interval in intervals:
-                elapsed_ms = interval.metrics.get("elapsed_ms")
-                training_ms += _finite_nonnegative(
-                    elapsed_ms,
-                    "training elapsed_ms",
-                )
-                checkpoint_serialization_ms += _finite_nonnegative(
-                    interval.checkpoint_serialization_ms,
-                    "checkpoint serialization duration",
-                )
-                checkpoint_publication_ms += _finite_nonnegative(
-                    interval.checkpoint_publication_ms,
-                    "checkpoint publication duration",
-                )
-
-            return FitRunSummarySource(
-                job_id=job_id,
-                attempt_id=attempt_id,
-                attempt=attempt,
-                created_at=job.created_at.timestamp(),
-                first_input_committed_at=first_input.timestamp(),
-                input_closed_at=job.input_closed_at.timestamp(),
-                worker_completed_at=current.worker_completed_at.timestamp(),
-                publication_boundary_at=publication_boundary.timestamp(),
-                queue_wait_ms=queue_wait_ms,
-                worker_startup_ms=worker_startup_ms,
-                training_ms=training_ms,
-                checkpoint_serialization_ms=checkpoint_serialization_ms,
-                checkpoint_publication_ms=checkpoint_publication_ms,
-                attempt_count=len(attempts),
-                recovery_count=sum(
-                    item.resume_generation is not None for item in attempts
-                ),
-                input_payload_count=job.payload_count,
-                input_rows=job.total_rows,
-                input_bytes=job.total_bytes,
-            )
 
     def get_model(
         self,

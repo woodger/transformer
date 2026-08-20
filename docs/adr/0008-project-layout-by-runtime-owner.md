@@ -3,6 +3,7 @@
 - Статус: принято
 - Дата: 2026-08-13
 - Уточняет: ADR 0004 и ADR 0006
+- Структурная граница telemetry уточнена в ADR 0013
 
 ## Контекст
 
@@ -44,7 +45,7 @@ app/
 │   ├── model/
 │   ├── training/
 │   ├── checkpoints/
-│   ├── metrics/
+│   ├── telemetry/
 │   ├── runtime/
 │   └── bootstrap/
 ├── admin/

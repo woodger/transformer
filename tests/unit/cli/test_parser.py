@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.parser import build_parser
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
@@ -271,7 +271,6 @@ def test_access_and_database_namespaces_are_nested():
         "models",
         "delete",
         "mdl_0123456789abcdef0123456789abcdef",
-        "--discard-undelivered-metrics",
     )
 
     assert (issue.action, issue.auth_action, issue.tokens_action) == (
@@ -290,7 +289,6 @@ def test_access_and_database_namespaces_are_nested():
     assert (models.action, models.models_action) == ("models", "list")
     assert deleted.models_action == "delete"
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
-    assert deleted.discard_undelivered_metrics is True
 
 
 @pytest.mark.parametrize(

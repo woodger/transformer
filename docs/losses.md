@@ -7,27 +7,27 @@ Flight boundary публикует только первые шесть в targe
 
 | Индекс | Public semantic | Внутреннее представление | Диапазон prediction |
 | --- | --- | --- | --- |
-| `0` | `meanReturn` | `tanh(meanHead)` | `[-1, 1]` |
-| `1` | `sigmaReturn` | `sigmoid(sigmaHead)` | `[0, 1]` |
-| `2` | `probTP` | logit; при публикации `sigmoid` | `[0, 1]` |
-| `3` | `probSL` | logit; при публикации `sigmoid` | `[0, 1]` |
-| `4` | `volatilityNext` | `sigmoid(volatilityHead)` | `[0, 1]` |
-| `5` | `hittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
+| `0` | `MeanReturn` | `tanh(meanHead)` | `[-1, 1]` |
+| `1` | `SigmaReturn` | `sigmoid(sigmaHead)` | `[0, 1]` |
+| `2` | `ProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
+| `3` | `ProbSL` | logit; при публикации `sigmoid` | `[0, 1]` |
+| `4` | `VolatilityNext` | `sigmoid(volatilityHead)` | `[0, 1]` |
+| `5` | `HittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
 | private | `returnScale` | `softplus(scaleHead) + 1e-6` | не публикуется |
 
-`sigmaReturn` — нормализованный target Inventory, а не Gaussian scale.
-`probTP` и `probSL` независимы и не обязаны давать сумму `1`.
+`SigmaReturn` — нормализованный target Inventory, а не Gaussian scale.
+`ProbTP` и `ProbSL` независимы и не обязаны давать сумму `1`.
 
 ## Прямые компоненты
 
 Каждая target-координата непосредственно обучает одноимённую public head:
 
 ```text
-L0 = mean(SmoothL1(meanReturn, target[0]))
-L1 = mean(SmoothL1(sigmaReturn, target[1]))
+L0 = mean(SmoothL1(MeanReturn, target[0]))
+L1 = mean(SmoothL1(SigmaReturn, target[1]))
 L2 = mean(BCEWithLogits(probTpLogit, target[2]))
 L3 = mean(BCEWithLogits(probSlLogit, target[3]))
-L4 = mean((log(volatilityNext + 1e-6)
+L4 = mean((log(VolatilityNext + 1e-6)
            - log(target[4] + 1e-6))²)
 L5 = mean(BCEWithLogits(hittingProbTpLogit, target[5]))
 ```
@@ -42,13 +42,13 @@ directLoss = Σ wi × Li
 
 ## Вспомогательные компоненты
 
-Private Gaussian NLL использует только `meanReturn`, `target[0]` и отдельный
+Private Gaussian NLL использует только `MeanReturn`, `target[0]` и отдельный
 `returnScale`:
 
 ```text
 variance = returnScale² + 1e-6
 gaussianNll = mean(0.5 × (
-  (target[0] - meanReturn)² / variance + log(variance)
+  (target[0] - MeanReturn)² / variance + log(variance)
 ))
 ```
 

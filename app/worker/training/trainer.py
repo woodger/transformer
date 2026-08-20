@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import math
 import random
+import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, nullcontext
@@ -12,18 +13,24 @@ from typing import TypedDict, cast
 import numpy as np
 import torch
 
-from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v6.config import (
+from app.contracts.json_types import JsonValue
+from app.contracts.worker.v7.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v6.objective import objective_config_sha256
+from app.contracts.worker.v7.objective import objective_config_sha256
 from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
-from app.worker.metrics import TrainMetrics, append_metrics_jsonl
 from app.worker.model.context import context_missingness_ratios
 from app.worker.model.transformer import public_predictions
+from app.worker.telemetry import (
+    EpochTelemetry,
+    ObservedTrainingEpoch,
+    TargetErrorObservation,
+    append_epoch_telemetry,
+    format_epoch_console_line,
+)
 from app.worker.training.batching import Closable, PayloadBatcher, TrainingBatches
 from app.worker.training.constants import GRAD_CLIP_NORM
 from app.worker.training.early_stopping import SelectionState
@@ -47,9 +54,9 @@ class SelectionPayload(TypedDict):
     best_selection_score: float | None
 
 
-EpochCallback = Callable[[int, TrainMetrics, SelectionPayload], None]
+EpochCallback = Callable[[int, ObservedTrainingEpoch, SelectionPayload], None]
 EpochCommittedCallback = Callable[
-    [int, TrainMetrics, SelectionPayload, bool],
+    [int, ObservedTrainingEpoch, SelectionPayload, bool],
     None,
 ]
 
@@ -96,7 +103,6 @@ class Trainer:
         self.seed = train_config.seed
         self.best_selection_score: float = float("inf")
         self.best_state_dict: dict[str, torch.Tensor] | None = None
-        self.best_metrics: JsonObject | None = None
         self.best_frame: int | None = None
         self.best_epoch: int | None = None
         self.state = TrainingState()
@@ -169,12 +175,13 @@ class Trainer:
     def _train_loaders(
         self,
         loaders: Iterable[TrainingBatches],
-    ) -> TrainMetrics:
+    ) -> ObservedTrainingEpoch:
         self.model.train()
-        metrics = TrainMetrics(
+        epoch_result = ObservedTrainingEpoch(
             lr=self.optimizer.param_groups[0]["lr"],
             step=self.state.train_step,
             loss_stage=self._loss_stage_for(),
+            telemetry=EpochTelemetry(),
         )
         started = time.perf_counter()
 
@@ -188,27 +195,36 @@ class Trainer:
                         batch = next(batches)
                     except StopIteration:
                         break
-                    metrics.input_pipeline_ms += (
-                        time.perf_counter() - phase_started
-                    ) * 1000
+                    telemetry = epoch_result.telemetry
+                    if telemetry is not None:
+                        telemetry.input_pipeline_ms += (
+                            time.perf_counter() - phase_started
+                        ) * 1000
 
                     loss_stage = self._loss_stage_for()
                     batch_rows = batch.features.size(0)
                     phase_started = time.perf_counter()
-                    missingness_ratios = context_missingness_ratios(
-                        batch.features,
-                        self.context_mode,
-                    )
-                    metrics.missing_stats_ms += (
-                        time.perf_counter() - phase_started
-                    ) * 1000
+                    missingness_ratios: dict[str, float] = {}
+                    if telemetry is not None:
+                        try:
+                            missingness_ratios = context_missingness_ratios(
+                                batch.features,
+                                self.context_mode,
+                            )
+                            telemetry.missing_stats_ms += (
+                                time.perf_counter() - phase_started
+                            ) * 1000
+                        except Exception as exc:
+                            self._disable_epoch_telemetry(epoch_result, exc)
 
                     phase_started = time.perf_counter()
                     batch_features = batch.features.to(self.device)
                     batch_targets = batch.targets.to(self.device)
-                    metrics.host_to_device_ms += (
-                        time.perf_counter() - phase_started
-                    ) * 1000
+                    telemetry = epoch_result.telemetry
+                    if telemetry is not None:
+                        telemetry.host_to_device_ms += (
+                            time.perf_counter() - phase_started
+                        ) * 1000
 
                     phase_started = time.perf_counter()
                     self.optimizer.zero_grad()
@@ -224,6 +240,18 @@ class Trainer:
                         )
                         loss = loss_evaluation.loss
 
+                    target_error_observation: TargetErrorObservation | None = None
+                    if epoch_result.telemetry is not None:
+                        try:
+                            target_error_observation = (
+                                TargetErrorObservation.evaluate(
+                                    model_output,
+                                    batch_targets,
+                                )
+                            )
+                        except Exception as exc:
+                            self._disable_epoch_telemetry(epoch_result, exc)
+
                     self.scaler.scale(
                         loss
                     ).backward()  # pyright: ignore[reportUnknownMemberType]
@@ -235,47 +263,88 @@ class Trainer:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     updates_after = self._optimizer_updates_applied_total
-                    if updates_after not in (updates_before, updates_before + 1):
-                        raise AssertionError(
-                            "one training batch applied multiple optimizer updates"
-                        )
                     optimizer_update_applied = updates_after > updates_before
-                    materialized_statistics = (
-                        loss_evaluation.statistics.materialize(grad_norm)
-                    )
+                    try:
+                        materialized_statistics = (
+                            loss_evaluation.statistics.materialize(
+                                (
+                                    grad_norm
+                                    if target_error_observation is not None
+                                    else None
+                                ),
+                                (
+                                    ()
+                                    if target_error_observation is None
+                                    else target_error_observation.values
+                                ),
+                            )
+                        )
+                    except Exception as exc:
+                        if target_error_observation is None:
+                            raise
+                        self._disable_epoch_telemetry(epoch_result, exc)
+                        target_error_observation = None
+                        materialized_statistics = (
+                            loss_evaluation.statistics.materialize()
+                        )
                     loss_parts = materialized_statistics.parts
                     grad_norm_value = materialized_statistics.grad_norm
-                    if grad_norm_value is None:
-                        raise AssertionError("gradient norm was not materialized")
                     loss_parts["step"] = self.state.finish_step()
 
-                    metrics.update(
-                        rows=batch_rows,
-                        loss_parts=loss_parts,
-                        grad_norm=grad_norm_value,
-                        optimizer_update_applied=optimizer_update_applied,
-                        amp_overflow=(
-                            self.use_amp and not optimizer_update_applied
-                        ),
-                        **missingness_ratios,
-                    )
-                    metrics.train_step_ms += (
-                        time.perf_counter() - phase_started
-                    ) * 1000
+                    epoch_result.update(batch_rows, loss_parts)
+                    telemetry = epoch_result.telemetry
+                    if telemetry is not None and target_error_observation is not None:
+                        try:
+                            target_errors = target_error_observation.decode(
+                                materialized_statistics.observations
+                            )
+                            telemetry.observe_batch(
+                                rows=batch_rows,
+                                target_errors=target_errors,
+                                grad_norm=grad_norm_value,
+                                optimizer_update_applied=(
+                                    optimizer_update_applied
+                                ),
+                                amp_overflow=(
+                                    self.use_amp and not optimizer_update_applied
+                                ),
+                                **missingness_ratios,
+                            )
+                            telemetry.train_step_ms += (
+                                time.perf_counter() - phase_started
+                            ) * 1000
+                        except Exception as exc:
+                            self._disable_epoch_telemetry(epoch_result, exc)
             finally:
                 if isinstance(batches, Closable):
                     batches.close()
 
-        metrics.elapsed_ms = (time.perf_counter() - started) * 1000
-        metrics.finalize_gradient_statistics()
-        return metrics
+        telemetry = epoch_result.telemetry
+        if telemetry is not None:
+            telemetry.elapsed_ms = (time.perf_counter() - started) * 1000
+            telemetry.finalize_gradient_statistics()
+        return epoch_result
 
-    def _train_loader(self, loader: TrainingBatches) -> TrainMetrics:
+    @staticmethod
+    def _disable_epoch_telemetry(
+        epoch_result: ObservedTrainingEpoch,
+        exc: Exception,
+    ) -> None:
+        if epoch_result.telemetry is None:
+            return
+        epoch_result.telemetry = None
+        print(
+            "training epoch telemetry disabled: " + type(exc).__name__,
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def _train_loader(self, loader: TrainingBatches) -> ObservedTrainingEpoch:
         return self._train_loaders((loader,))
 
     def _observe_metrics(
         self,
-        metrics: TrainMetrics,
+        metrics: ObservedTrainingEpoch,
         frame: int | None = None,
         epoch: int | None = None,
     ) -> SelectionPayload:
@@ -311,7 +380,6 @@ class Trainer:
                 if checkpoint_best:
                     self.best_selection_score = selection_score
                     self.best_state_dict = self._snapshot_state_dict()
-                    self.best_metrics = metrics.to_dict()
                     self.best_frame = frame
                     self.best_epoch = epoch
 
@@ -332,7 +400,6 @@ class Trainer:
         self.selection_state.begin()
         self.best_selection_score = float("inf")
         self.best_state_dict = None
-        self.best_metrics = None
         self.best_frame = None
         self.best_epoch = None
 
@@ -359,7 +426,7 @@ class Trainer:
         self,
         batch: TrainingBatch,
         epoch: int = 0,
-    ) -> TrainMetrics:
+    ) -> ObservedTrainingEpoch:
         loader = self._batcher.data_loader(batch)
 
         self.state.begin_epoch(epoch)
@@ -370,7 +437,7 @@ class Trainer:
         batch: TrainingBatch,
         on_epoch: EpochCallback | None = None,
         frame: int | None = None,
-    ) -> list[TrainMetrics]:
+    ) -> list[ObservedTrainingEpoch]:
         loader = self._batcher.data_loader(batch)
         return self._fit_loader_epochs(
             lambda: (loader,),
@@ -382,7 +449,7 @@ class Trainer:
         self,
         payloads: TrainingBatchFactory,
         on_epoch: EpochCallback | None = None,
-    ) -> list[TrainMetrics]:
+    ) -> list[ObservedTrainingEpoch]:
         """Train global epochs over a payload-independent row stream.
 
         ``payloads`` is a callable so durable inputs can be reopened for every
@@ -409,8 +476,8 @@ class Trainer:
         *,
         start_epoch: int = 0,
         on_epoch_committed: EpochCommittedCallback | None = None,
-    ) -> list[TrainMetrics]:
-        metrics_rows: list[TrainMetrics] = []
+    ) -> list[ObservedTrainingEpoch]:
+        metrics_rows: list[ObservedTrainingEpoch] = []
         self.state.begin_frame(frame)
         self.training_complete = False
 
@@ -454,7 +521,7 @@ class Trainer:
         *,
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
-    ) -> list[TrainMetrics]:
+    ) -> list[ObservedTrainingEpoch]:
         """Train job-wide epochs and expose only complete recovery boundaries."""
 
         def loaders() -> Iterator[TrainingBatches]:
@@ -477,7 +544,7 @@ class Trainer:
         *,
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
-    ) -> list[TrainMetrics]:
+    ) -> list[ObservedTrainingEpoch]:
         """Train epoch zero from an open stream, then replay closed input.
 
         The first iterable may block at the durable input frontier. Its EOF is
@@ -540,7 +607,10 @@ class Trainer:
                     if self.best_state_dict is None
                     else _tree_to_cpu(self.best_state_dict)
                 ),
-                "best_metrics": copy.deepcopy(self.best_metrics),
+                # Kept as an inert field to preserve the current durable
+                # recovery format. Telemetry is no longer restored into the
+                # training state.
+                "best_metrics": None,
                 "best_frame": self.best_frame,
                 "best_epoch": self.best_epoch,
             },
@@ -704,7 +774,7 @@ class Trainer:
             selection["best_state_dict"],
             "best model state",
         )
-        self.best_metrics = _optional_json_object(selection["best_metrics"])
+        _validate_legacy_best_metrics(selection["best_metrics"])
         self.best_frame = _optional_integer(
             selection["best_frame"],
             "best frame",
@@ -760,12 +830,13 @@ class Trainer:
     ) -> None:
         def on_epoch(
             epoch: int,
-            metrics: TrainMetrics,
+            metrics: ObservedTrainingEpoch,
             selection_payload: SelectionPayload,
         ) -> None:
             stats = parameter_tree_stats(self.model.parameters())
 
-            print(metrics.console_line(
+            print(format_epoch_console_line(
+                metrics,
                 epoch=epoch + 1,
                 norm=f"{stats['norm']:.0f}",
                 **self.metrics_context,
@@ -881,7 +952,7 @@ class Trainer:
 
     def record_metrics(
         self,
-        metrics: TrainMetrics,
+        metrics: ObservedTrainingEpoch,
         **extra: JsonValue,
     ) -> None:
         payload: dict[str, JsonValue] = {
@@ -889,7 +960,7 @@ class Trainer:
             **extra,
         }
         payload.setdefault("context_mode", self.context_mode)
-        append_metrics_jsonl(self.metrics_path, metrics, **payload)
+        append_epoch_telemetry(self.metrics_path, metrics, **payload)
 
 
 def _object_dict(value: object, label: str) -> dict[str, object]:
@@ -920,10 +991,11 @@ def _optional_tensor_state_dict(
     return _tensor_state_dict(value, label)
 
 
-def _optional_json_object(value: object) -> JsonObject | None:
-    if value is None:
-        return None
-    return cast(JsonObject, _object_dict(value, "best metrics"))
+def _validate_legacy_best_metrics(value: object) -> None:
+    if value is not None and not isinstance(value, dict):
+        raise ValueError("best metrics must be an object or null")
+
+
 
 
 def _integer(value: object, label: str) -> int:

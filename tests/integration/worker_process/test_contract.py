@@ -16,20 +16,20 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v6 import (
+from app.contracts.worker.v7 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.objective import (
     ml_contract,
     objective_config_sha256,
 )
@@ -53,11 +53,12 @@ MANIFEST_SHA256 = "d" * 64
 def _data_contract() -> dict:
     return {
         "id": "inventory.learning-dataset",
-        "version": 1,
+        "version": 2,
+        "profile": "research-dividend-events-v2",
         "dataContractSha256": DATA_CONTRACT_SHA256,
         "seqLen": 2,
         "featureDim": 2,
-        "targetSchemaId": "inventory.target.v1",
+        "targetSchemaId": "inventory.target.v2",
     }
 
 
@@ -90,29 +91,6 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
         "rows": rows,
         "artifact": _artifact(path),
     }
-
-
-def test_worker_capabilities_are_reported_through_v6_process_contract():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "app.worker.bootstrap",
-            "inspect",
-            "--contract-version=6",
-        ],
-        cwd=PROJECT_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert result.returncode == 0, result.stderr
-    document = validate_document(json.loads(result.stdout), "capabilities")
-    assert document["contract"] == "transformer-worker"
-    assert document["protocolVersion"] == 6
-    assert document["torchVersion"]
 
 
 def test_worker_verifies_an_immutable_input_receipt_once(tmp_path, monkeypatch):
@@ -152,7 +130,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=6",
+            "--contract-version=7",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -213,7 +191,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 6,
+        "protocolVersion": 7,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -289,7 +267,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 6,
+        "protocolVersion": 7,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -331,6 +309,12 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert checkpoint_event["completedEpochs"] == 1
     assert checkpoint_event["trainingComplete"] is True
     assert checkpoint_event["checkpointSerializationMs"] >= 0
+    assert checkpoint_event["progress"] == {
+        "epoch": 1,
+        "step": checkpoint_event["globalStep"],
+        "loss_stage": checkpoint_event["metrics"]["loss_stage"],
+        "loss": checkpoint_event["metrics"]["loss"],
+    }
     assert validate_document(
         checkpoint_event["metrics"],
         "training-metrics",
@@ -345,33 +329,18 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
         workspace / "worker-result.json",
         "result-manifest",
     )
+    core_result = {
+        key: value
+        for key, value in result_manifest.items()
+        if key != "checkpointSerializationMs"
+    }
+    assert validate_document(core_result, "result-manifest") is core_result
     assert result_manifest["inputRevision"] == 2
     assert result_manifest["manifestSha256"] == MANIFEST_SHA256
     assert result_manifest["artifacts"] == []
     assert result_manifest["checkpointMetadata"]["dataContract"] == _data_contract()
     assert Path(result_manifest["checkpoint"]["path"]).is_file()
     assert result_manifest["checkpointSerializationMs"] >= 0
-    target_statistics = result_manifest["targetStatistics"]
-    expected_targets = (
-        ("meanReturn", 0.0),
-        ("sigmaReturn", 0.0),
-        ("probTP", 0.0),
-        ("probSL", 0.0),
-        ("volatilityNext", 0.2),
-        ("hittingProbTP", 1.0),
-    )
-    for index, ((name, value), statistic) in enumerate(
-        zip(expected_targets, target_statistics, strict=True)
-    ):
-        assert statistic["targetIndex"] == index
-        assert statistic["name"] == name
-        assert statistic["count"] == 4
-        assert statistic["min"] == pytest.approx(value)
-        assert statistic["max"] == pytest.approx(value)
-        assert statistic["mean"] == pytest.approx(value)
-        assert statistic["std"] == pytest.approx(0.0)
-        assert statistic["zeroCount"] == (4 if value == 0.0 else 0)
-        assert statistic["oneCount"] == (4 if value == 1.0 else 0)
 
 
 def test_service_rejects_progress_after_attempt_ownership_changes():
@@ -675,7 +644,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=6",
+            "--contract-version=7",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

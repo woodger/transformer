@@ -4,8 +4,8 @@
 
 Принято, 2026-08-16.
 
-Формат v1 расширен статистикой training targets в
-[ADR 0012](0012-gradient-and-target-telemetry.md).
+Формат v1 заменён текущим v2; окончательная ownership boundary уточнена в
+[ADR 0014](0014-run-owned-telemetry.md).
 
 ## Контекст
 
@@ -15,19 +15,19 @@ recovery, публикацию checkpoint и модели. Восстанавл�
 Inventory из `job.status` нельзя, а отправка событий из hot loop или worker-а
 сделала бы OpenSearch частью training path.
 
-Часть контрольных данных уже находится в PostgreSQL. Это не случайное
-аналитическое хранилище: job, attempts, inputs, recovery checkpoints и epoch
-intervals участвуют в fencing, recovery, проверке полноты и terminal
-транзакции. Их перенос в OpenSearch нарушил бы прикладную atomicity.
+Часть контрольных данных уже находится в PostgreSQL. Job, attempts, inputs и
+recovery checkpoints участвуют в fencing и recovery и не переносятся в
+OpenSearch. Best-effort epoch intervals хранятся рядом только для построения
+run-owned telemetry artifact и не являются прикладным состоянием.
 
 ## Решение
 
-Для каждой успешно опубликованной модели создаётся второй неизменяемый
-model-owned artifact:
+Для успешно опубликованной модели сервис best effort создаёт второй
+неизменяемый run-owned artifact:
 
 ```text
-models/{modelRef}/metrics.jsonl
-models/{modelRef}/run-summary.json
+telemetry/{jobId}/metrics.jsonl
+telemetry/{jobId}/run-summary.json
 ```
 
 `run-summary.json` имеет формат `transformer.fit-run-summary.v1`. Он содержит
@@ -50,18 +50,16 @@ timestamps. `publishedAt` — логическая граница terminal publi
 зафиксированная перед одной PostgreSQL-транзакцией; время фактического commit в
 immutable artifact не включается.
 
-Terminal sequence:
+Последовательность разделена прикладной границей:
 
 ```text
 worker completed
-  → durable checkpoint + metrics.jsonl + run-summary.json + metadata.json
-  → одна PostgreSQL transaction
-       model generation
-       оба artifact metadata
-       outbox inventory.metrics.v2
-       job SUCCEEDED
+  → durable checkpoint + metadata.json
+  → PostgreSQL transaction: model generation + job SUCCEEDED
+  → best-effort metrics.jsonl + run-summary.json
+  → отдельная PostgreSQL transaction: artifact metadata + outbox
   → post-commit OpenSearch publisher
-       epoch points + artifact metadata + fit run summary
+       epoch points + fit run summary
 ```
 
 Внутренний worker contract повышается до v5. Публичный Flight v4 не меняется.
@@ -74,13 +72,14 @@ rollover.
 
 PostgreSQL остаётся источником истины для lifecycle и recovery. Epoch
 intervals удаляются вместе с terminal job по действующей retention policy
-только после того, как из них опубликован model-owned artifact. OpenSearch
+только после того, как из них опубликован run-owned artifact. OpenSearch
 хранит производную аналитическую проекцию и не используется для принятия
 lifecycle-решений.
 
 Недоступность OpenSearch не влияет на `SUCCEEDED`; outbox повторяет доставку.
-Повреждённый или неполный локальный summary, напротив, блокирует model
-publication как нарушение внутреннего контракта.
+Повреждённый, неполный или отсутствующий локальный summary логируется и
+отбрасывается после прикладного commit. Модель остаётся опубликованной и
+доступной.
 
 ## Последствия
 
@@ -89,5 +88,6 @@ metadata terminal summary. Перед migration следует завершит�
 уже активные fit attempts: прежний worker contract не создаёт обязательные
 timing values.
 
-Публикуются только успешные fit runs. Failed/cancelled attempt telemetry,
-row/batch events, host metrics и изменение Flight остаются вне решения.
+Публикуются только успешные fit runs, для которых удалось сформировать
+telemetry. Failed/cancelled attempt telemetry, row/batch events, host metrics и
+изменение Flight остаются вне решения.

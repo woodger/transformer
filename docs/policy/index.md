@@ -13,6 +13,7 @@
 - [Политика тестирования](./testing-policy.md)
 - [Политика ведения документации](./documentation-policy.md)
 - [Нефункциональные требования](./nonfunctional.md)
+- [Политика metrics и OpenSearch](../metrics.md)
 
 ## Политики реализации
 

@@ -10,7 +10,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.contracts.flight.v4.arrow import (
+from app.contracts.flight.v5.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     canonical_prediction_schema,

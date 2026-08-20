@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v5/cancel.schema.json",
+  "title": "transformer.v5.job.cancel request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "idempotencyKey", "jobId",
+    "clientExecutionId", "fencingToken"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 5},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "idempotencyKey": {"$ref": "common.schema.json#/$defs/idempotencyKey"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "fencingToken": {"$ref": "common.schema.json#/$defs/fencingToken"}
+  }
+}

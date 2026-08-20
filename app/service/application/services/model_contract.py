@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import (
     ml_contract,
     objective_config,
 )
@@ -25,10 +25,7 @@ def verify_model_semantics(
             ErrorCode.MODEL_SCHEMA_MISMATCH,
             "model generation belongs to another ML contract",
         )
-    if data_contract is not None and (
-        model.data_contract.get("data_contract_sha256")
-        != data_contract["data_contract_sha256"]
-    ):
+    if data_contract is not None and model.data_contract != data_contract:
         raise ServiceError(
             ErrorCode.MODEL_SCHEMA_MISMATCH,
             "model data contract does not match prediction input",

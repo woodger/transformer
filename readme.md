@@ -7,7 +7,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 
 - local CLI для обучения и prediction из Arrow IPC files;
 - stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v4 service с durable streaming jobs,
+- single-instance Arrow Flight v5 service с durable streaming jobs,
   PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
   scheduling;
 - versioned public Flight и internal worker contracts;
@@ -19,7 +19,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 | --- | --- | --- | --- |
 | File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
 | Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v4 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v4/README.md) |
+| Arrow Flight v5 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v5/README.md) |
 
 ## Быстрый старт
 
@@ -71,9 +71,9 @@ user-site. Полный локальный сценарий находится �
 - [Локальный Arrow и stream contract](./docs/local-arrow-protocol.md)
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
-- [Arrow Flight v4 contract](./app/contracts/flight/v4/README.md)
-- [Worker process contract v6](./app/contracts/worker/v6/README.md)
-- [Training metrics contract v2](./app/contracts/metrics/v2/README.md)
+- [Arrow Flight v5 contract](./app/contracts/flight/v5/README.md)
+- [Worker process contract v7](./app/contracts/worker/v7/README.md)
+- [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
@@ -86,7 +86,7 @@ user-site. Полный локальный сценарий находится �
 app/main.py          # тонкий CLI entrypoint
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # public Flight v4, internal worker v6 и metrics v2
+app/contracts/       # public Flight v5, internal worker v7 и metrics v3
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

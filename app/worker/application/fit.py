@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import replace
 
-from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v6 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.json_types import JsonObject
+from app.contracts.worker.v7 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -39,13 +40,10 @@ from app.worker.data.tensors import (
     validate_feature_dim,
     validate_target_dim,
 )
-from app.worker.metrics import (
-    TargetStatisticsAccumulator,
-    TrainMetrics,
-    reset_metrics_log,
-)
 from app.worker.runtime.device import get_device
 from app.worker.runtime.reproducibility import configure_reproducibility
+from app.worker.telemetry import epoch_telemetry_document
+from app.worker.telemetry.epoch import ObservedTrainingEpoch
 from app.worker.training.factory import build_model, build_trainer
 from app.worker.training.trainer import SelectionPayload
 
@@ -71,12 +69,10 @@ def execute_fit(
     expected_feature_dim = integer_field(data_contract, "featureDim")
     expected_target_dim = 6
     committed_inputs = CommittedInputArtifacts()
-    target_statistics = TargetStatisticsAccumulator()
 
     def read_payload(item: JsonObject) -> TrainingBatch:
         if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
             raise ValueError("fit input schemaId is invalid")
-        ordinal = integer_field(item, "ordinal")
         path = committed_inputs.path(item)
         batch = read_committed_fit_arrow(
             path,
@@ -89,7 +85,6 @@ def execute_fit(
         )
         validate_feature_dim(batch.features, expected_feature_dim)
         validate_target_dim(batch.targets, expected_target_dim)
-        target_statistics.update(ordinal, batch.targets)
         return batch
 
     stream = iter(input_stream.items())
@@ -105,16 +100,13 @@ def execute_fit(
 
     actual_config = replace(model_config, feature_dim=expected_feature_dim)
     model = build_model(actual_config, first.features, first.targets, device)
-    metrics_path = os.path.join(workspace, "metrics.jsonl")
     trainer = build_trainer(
         train_config,
         model,
         device,
         actual_config,
         data_contract=data_contract,
-        metrics_path=metrics_path,
     )
-    reset_metrics_log(metrics_path)
 
     recovery_value = manifest.get("recovery")
     recovery = (
@@ -158,6 +150,8 @@ def execute_fit(
                 raise ValueError("recovery model configuration differs")
             if payload["train_config"] != train_config.to_dict():
                 raise ValueError("recovery training configuration differs")
+            if payload["data_contract"] != data_contract:
+                raise ValueError("recovery data contract differs")
             trainer.load_recovery_state_dict(
                 object_document(payload["trainer_state"], "trainer state")
             )
@@ -184,7 +178,7 @@ def execute_fit(
 
     def on_epoch_committed(
         epoch: int,
-        metrics: TrainMetrics,
+        metrics: ObservedTrainingEpoch,
         monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:
@@ -210,43 +204,54 @@ def execute_fit(
         checkpoint_serialization_ms = (
             time.monotonic() - serialization_started
         ) * 1000.0
-        committed_metrics = object_document(
-            json_safe(metrics.to_dict(
-                mode="fit-stream",
-                frame=None,
-                epoch=epoch + 1,
-                selection_score=monitor_payload["selection_score"],
-                checkpoint_best=monitor_payload["checkpoint_best"],
-                should_stop=monitor_payload["should_stop"],
-                best_selection_score=monitor_payload[
-                    "best_selection_score"
-                ],
-            )),
-            "committed fit metrics",
-        )
-        validate_document(committed_metrics, "training-metrics")
-        trainer.record_metrics(
-            metrics,
-            mode="fit-stream",
-            frame=None,
-            epoch=epoch + 1,
-            selection_score=monitor_payload["selection_score"],
-            checkpoint_best=monitor_payload["checkpoint_best"],
-            should_stop=monitor_payload["should_stop"],
-            best_selection_score=monitor_payload["best_selection_score"],
-        )
-        emitter.checkpoint({
+        metrics_payload = {
+            "mode": "fit-stream",
+            "frame": None,
+            "epoch": epoch + 1,
+            "selection_score": monitor_payload["selection_score"],
+            "checkpoint_best": monitor_payload["checkpoint_best"],
+            "should_stop": monitor_payload["should_stop"],
+            "best_selection_score": monitor_payload["best_selection_score"],
+        }
+        committed_metrics: JsonObject | None = None
+        try:
+            telemetry_document = epoch_telemetry_document(
+                metrics,
+                **metrics_payload,
+            )
+            if telemetry_document is None:
+                raise ValueError("training epoch telemetry is unavailable")
+            committed_metrics = object_document(
+                json_safe(telemetry_document),
+                "committed fit metrics",
+            )
+            validate_document(committed_metrics, "training-metrics")
+        except Exception as exc:
+            print(
+                "training epoch telemetry disabled: " + type(exc).__name__,
+                file=sys.stderr,
+                flush=True,
+            )
+        checkpoint_event: JsonObject = {
             "generation": integer_field(event, "generation"),
             "completedEpochs": integer_field(event, "completed_epochs"),
             "globalStep": integer_field(event, "global_step"),
+            "progress": {
+                "epoch": epoch + 1,
+                "step": metrics.step,
+                "loss_stage": metrics.loss_stage,
+                "loss": metrics.loss,
+            },
             "trainingComplete": boolean_value(
                 event.get("training_complete"),
                 "training_complete",
             ),
             "artifact": artifact_document(checkpoint_path),
             "checkpointSerializationMs": checkpoint_serialization_ms,
-            "metrics": committed_metrics,
-        })
+        }
+        if committed_metrics is not None:
+            checkpoint_event["metrics"] = committed_metrics
+        emitter.checkpoint(checkpoint_event)
 
     if not trainer.training_complete:
         if trainer.state.global_epoch == 0:
@@ -269,17 +274,6 @@ def execute_fit(
     ) * 1000.0
     if not input_stream.closed:
         raise ValueError("fit result requires a closed immutable input")
-    for item in input_stream.inputs:
-        ordinal = integer_field(item, "ordinal")
-        if not target_statistics.contains(ordinal):
-            read_payload(item)
-    expected_target_rows = sum(
-        integer_field(item, "rows") for item in input_stream.inputs
-    )
-    if target_statistics.count != expected_target_rows:
-        raise ValueError("target statistics row count differs from the manifest")
-    target_statistics_documents: list[JsonValue] = []
-    target_statistics_documents.extend(target_statistics.to_documents())
     result = result_identity(manifest)
     result_fields: JsonObject = {
         "inputRevision": input_stream.input_revision,
@@ -288,7 +282,6 @@ def execute_fit(
         "checkpoint": artifact_document(checkpoint_path),
         "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
         "checkpointSerializationMs": checkpoint_serialization_ms,
-        "targetStatistics": target_statistics_documents,
     }
     result.update(result_fields)
     validate_document(result, "result-manifest")

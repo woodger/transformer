@@ -8,12 +8,7 @@ from app.service.domain.records import ModelLifecycleRecord
 class ModelAdministrationStore(Protocol):
     def list_models(self) -> list[ModelLifecycleRecord]: ...
 
-    def request_deletion(
-        self,
-        model_ref: str,
-        *,
-        discard_undelivered_metrics: bool,
-    ) -> ModelLifecycleRecord: ...
+    def request_deletion(self, model_ref: str) -> ModelLifecycleRecord: ...
 
 
 class ModelDeletionRepository(Protocol):

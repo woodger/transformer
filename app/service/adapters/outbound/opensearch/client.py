@@ -12,7 +12,7 @@ from app.contracts.json_types import JsonObject
 from app.service.adapters.outbound.opensearch.config import (
     OpenSearchMetricsConfig,
 )
-from app.service.application.ports.metrics import (
+from app.service.application.ports.telemetry import (
     BlockedMetricsDeliveryError,
     RetryableMetricsDeliveryError,
 )

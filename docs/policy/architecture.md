@@ -6,12 +6,16 @@
 Проект использует Clean Architecture отдельно для каждого исполняемого
 процесса. Нормативные решения и их причины зафиксированы в
 [ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
-[ADR 0006](../adr/0006-service-application-boundaries.md), текущем
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md) и
-[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md), а граница
+[ADR 0006](../adr/0006-service-application-boundaries.md),
+[ADR 0007](../adr/0007-target-aligned-flight-v4.md),
+[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md) и текущем
+[ADR 0015](../adr/0015-unified-indicator-identity-flight-v5.md), а граница
 централизованных training metrics — в
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md).
+[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
+telemetry от core state закреплено в
+[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
+persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md).
 
 ## Процессы и composition roots
 
@@ -22,9 +26,9 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
 
-app/contracts/flight/v4            публичный Flight contract
-app/contracts/worker/v6            внутренний process contract
-app/contracts/metrics/v2           текущие artifact и OpenSearch documents
+app/contracts/flight/v5            публичный Flight contract
+app/contracts/worker/v7            внутренний process contract
+app/contracts/metrics/v3           epoch artifact и OpenSearch points
 app/contracts/metrics/fit_run/v2   terminal fit summary
 ```
 
@@ -39,7 +43,7 @@ server, Arrow/Torch worker runtime или модель.
 service/adapters/inbound/flight
               │
               ▼
-service/application/{commands,queries,services,ports}
+service/application/{commands,queries,services,ports,telemetry}
               │
               ▼
 service/domain
@@ -54,6 +58,9 @@ service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 - `service/application` содержит типизированные commands, queries, нейтральные
   results, scheduler orchestration и capability-oriented ports. Он зависит
   только от domain и внутренних worker/metrics contracts.
+- `service/application/telemetry` содержит только best-effort records и
+  доставку наблюдений. Telemetry records не размещаются в domain, а её
+  persistence API не добавляется в общий job ledger.
 - inbound Flight adapter проверяет структуру wire DTO нормативными JSON Schema
   Draft 2020-12, затем выполняет семантическую валидацию и mapping и
   преобразует application results и errors в Flight documents и Arrow status.
@@ -74,7 +81,7 @@ Ports называются по возможностям: `JobLifecycleStore`, `
 
 ## Worker
 
-`app/worker/` владеет Arrow-to-tensor data path, model, training, metrics,
+`app/worker/` владеет Arrow-to-tensor data path, model, training, telemetry,
 device/reproducibility runtime и checkpoint staging. Один процесс обслуживает
 ровно один execution attempt. Worker:
 
@@ -100,6 +107,12 @@ Checkpoints принадлежат `app/worker/checkpoints/`, а не generic ru
 исполнитель attempt только выбирает fit/predict use case и не содержит их
 реализацию целиком.
 
+Core результат global epoch находится в `app/worker/training/epoch.py` и не
+зависит от telemetry. AMP/gradient counters, phase timings,
+JSONL и plots принадлежат `app/worker/telemetry/`. Job progress хранит только
+checkpoint-aligned `epoch`, `step`, `loss_stage`, `loss`; полный metrics
+document является необязательным наблюдением.
+
 ## Local CLI
 
 `app/local/` владеет локальными file/stream командами, `plot-metrics` и
@@ -111,7 +124,7 @@ local CLI и application use cases сервиса.
 Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
 размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
 service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v6/config.py`. Общий `app/config.py` не
+defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` не
 создаётся.
 
 ## Admin
@@ -123,15 +136,17 @@ cases, которые определяют операции с access tokens. Al
 
 ## Contracts
 
-- `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
-- Flight v4 является текущей штатной архитектурой remote API; дальнейшие
+- `app/contracts/flight/v5/` — нормативные schemas и fixtures публичного API;
+- Flight v5 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v6/` — command/result manifests, capability document,
+- `app/contracts/ml.py` — единая Python identity target, ML-контракта,
+  checkpoint и recovery formats для Flight, worker и telemetry contracts;
+- `app/contracts/worker/v7/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/metrics/v2/` — текущий immutable epoch artifact, закрытая
+- `app/contracts/metrics/v3/` — текущий immutable epoch artifact, закрытая
   OpenSearch projection, golden identity и strict index templates;
 - `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
-  counters и статистика training targets;
+  durations и counters;
 - эти contracts версионируются независимо;
 - worker `attemptId` — UUID execution identity и equality fence; публичный
   `attempt` остаётся положительным job-local ordinal;
@@ -147,8 +162,9 @@ cases, которые определяют операции с access tokens. Al
 PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
-tokens, published metadata и состояния metrics outbox. OpenSearch является
-восстанавливаемой аналитической проекцией, а не частью model/job lifecycle.
+tokens и published metadata. Отдельный telemetry slice владеет epoch intervals,
+run artifact metadata и metrics outbox. OpenSearch является
+best-effort аналитической проекцией, а не частью model/job lifecycle.
 SQLite и dual-write запрещены.
 
 PostgreSQL-транзакция не охватывает filesystem или subprocess. Artifact
@@ -168,6 +184,8 @@ Ownership хранения:
   epoch и boot-scoped CUDA quarantine;
 - `recovery/` — persistent fit inputs и completed-global-epoch checkpoints;
 - `models/` — только успешно опубликованные immutable model generations;
+- `telemetry/` — run-owned best-effort artifacts до завершения outbox
+  retention;
 - RAM — FIFO queues, token digest cache и active process handles.
 
 ## Обязательные dependency rules
@@ -177,12 +195,15 @@ Ownership хранения:
 - application не зависит от публичного Flight contract;
 - application может зависеть от внутреннего metrics contract для
   детерминированной outbox projection;
+- service domain и общий PostgreSQL ledger не содержат telemetry records и
+  telemetry capabilities;
+- core training epoch и core model publication не импортируют telemetry;
 - adapters зависят от application/domain, но не от другого направления
   transport-а;
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v6`;
+- shared service/worker данные находятся только в `app/contracts/worker/v7`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.
@@ -204,7 +225,14 @@ Ownership хранения:
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
 - OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
+- metrics artifacts —
+  `app/service/adapters/outbound/artifacts/telemetry/`;
+- metrics persistence и outbox —
+  `app/service/adapters/outbound/postgres/telemetry/`;
+- telemetry records и delivery orchestration —
+  `app/service/application/telemetry/`;
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в `app/worker/`;
+- worker runtime observations, JSONL и plots — `app/worker/telemetry/`;
 - local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;
 - runtime wiring — composition root конкретного процесса.

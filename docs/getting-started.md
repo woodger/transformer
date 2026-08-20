@@ -112,20 +112,16 @@ Prediction использует созданный checkpoint:
 
 - [`fit-stream` и `predict-stream`](./local-arrow-protocol.md) принимают и
   возвращают framed Arrow payloads через standard streams.
-- [Arrow Flight v4 contract](../app/contracts/flight/v4/README.md) задаёт
+- [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
   PostgreSQL, tokens, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка
-  model-owned training metrics после durable publication.
+  run-owned training metrics после durable publication.
 
 ## Проверка изменений
 
-PostgreSQL integration tests требуют отдельную базу, имя которой начинается с
-`transformer_test`. Pytest создаёт в ней одноразовую schema и удаляет её после
-session; production database намеренно отклоняется.
-
-Быстрый цикл, resource markers и полный набор команд находятся в единственном
-нормативном источнике —
+Основной набор тестов самодостаточен; GPU-сценарии запускаются отдельно. Полный
+набор штатных команд находится в единственном нормативном источнике —
 [политике тестирования](./policy/testing-policy.md#запуск).

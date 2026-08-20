@@ -1,23 +1,24 @@
-# Интеграция Inventory с Transformer Arrow Flight v4
+# Интеграция Inventory с Transformer Arrow Flight v5
 
 > Тип: справочник. Руководство по интеграции Consumer-а с текущим протоколом.
 
 Нормативный wire-контракт находится в
-[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md). JSON Schema и
+[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
 [`руководстве по эксплуатации Flight`](flight-operations.md), а архитектурное
-решения — в [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md) и
-[`ADR 0007`](adr/0007-target-aligned-flight-v4.md).
+решения — в [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md),
+[`ADR 0007`](adr/0007-target-aligned-flight-v4.md) и
+[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md).
 
-Transformer Flight v4 — единственный текущий удалённый API. Inventory должен
-требовать `protocolVersions`, равный `[4]`, и использовать нормативные actions,
-descriptors и семантику состояний v4, описанные ниже. V3 actions, descriptors,
-aliases и fallback отсутствуют.
+Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
+требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,
+descriptors и семантику состояний v5, описанные ниже. V4 actions, descriptors,
+semantic aliases и fallback отсутствуют.
 
 ## Транспорт и аутентификация
 
-Используйте Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. V4 не
+Используйте Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. V5 не
 использует `DoExchange` и `PollFlightInfo`. Каждый RPC содержит:
 
 ```text
@@ -33,7 +34,7 @@ references, status, receipts, tickets и outputs ограничены owner-ом
 ```json
 {
   "contract": "transformer-flight",
-  "version": 4,
+  "version": 5,
   "requestId": "UUID"
 }
 ```
@@ -50,19 +51,19 @@ references, status, receipts, tickets и outputs ограничены owner-ом
 
 | Action | Назначение | Мутация с fencing |
 | --- | --- | --- |
-| `transformer.v4.capabilities` | Версии, схемы, ML-контракт, лимиты и доступная ёмкость | Нет |
-| `transformer.v4.health` | Аутентифицированная проверка liveness/readiness | Нет |
-| `transformer.v4.job.create` | Создать fit- или predict-job с заданной клиентом идентичностью | Начальное владение |
-| `transformer.v4.job.acquire` | Передать владение Inventory и увеличить fence | Compare-and-swap |
-| `transformer.v4.job.status` | Получить ограниченное состояние job и сводку результата | Нет |
-| `transformer.v4.job.inputs.list` | Сверить зафиксированные inputs по revision | Нет |
-| `transformer.v4.job.input.close` | Зафиксировать EOF и неизменяемую сводку входа | Да |
-| `transformer.v4.job.outputs.list` | Получить terminal output receipts | Нет |
-| `transformer.v4.job.cancel` | Отменить нетерминальный job | Да |
-| `transformer.v4.model.describe` | Разрешить ссылку и описать неизменяемую модель | Нет |
+| `transformer.v5.capabilities` | Версии, схемы, ML-контракт, лимиты и доступная ёмкость | Нет |
+| `transformer.v5.health` | Аутентифицированная проверка liveness/readiness | Нет |
+| `transformer.v5.job.create` | Создать fit- или predict-job с заданной клиентом идентичностью | Начальное владение |
+| `transformer.v5.job.acquire` | Передать владение Inventory и увеличить fence | Compare-and-swap |
+| `transformer.v5.job.status` | Получить ограниченное состояние job и сводку результата | Нет |
+| `transformer.v5.job.inputs.list` | Сверить зафиксированные inputs по revision | Нет |
+| `transformer.v5.job.input.close` | Зафиксировать EOF и неизменяемую сводку входа | Да |
+| `transformer.v5.job.outputs.list` | Получить terminal output receipts | Нет |
+| `transformer.v5.job.cancel` | Отменить нетерминальный job | Да |
+| `transformer.v5.model.describe` | Разрешить ссылку и описать неизменяемую модель | Нет |
 
 При запуске вызовите `capabilities` и завершитесь с ошибкой, если
-`protocolVersions` не равен `[4]`. Одновременно проверьте объявленный
+`protocolVersions` не равен `[5]`. Одновременно проверьте объявленный
 `mlContract`; несовпадение semantic IDs является ошибкой совместимости до
 создания job. Эффективные лимиты из ответа являются
 нормативными для текущего runtime; не копируйте значения по умолчанию из
@@ -78,9 +79,9 @@ PostgreSQL следующие значения:
 - `idempotencyKey` для create и неизменяемый документ create.
 
 Fit create соответствует фикстуре
-[`create-fit.request.json`](../app/contracts/flight/v4/fixtures/json/create-fit.request.json).
+[`create-fit.request.json`](../app/contracts/flight/v5/fixtures/json/create-fit.request.json).
 Predict create соответствует
-[`create-predict.request.json`](../app/contracts/flight/v4/fixtures/json/create-predict.request.json).
+[`create-predict.request.json`](../app/contracts/flight/v5/fixtures/json/create-predict.request.json).
 Predict передаёт ровно один `modelRef` или ограниченный owner-ом `modelAlias`.
 Transformer атомарно разрешает alias и возвращает неизменяемый
 `resolvedModelRef`.
@@ -106,32 +107,36 @@ fencingToken    = "1"
 {
   "dataContract": {
     "id": "inventory.learning-dataset",
-    "version": 1,
+    "version": 2,
+    "profile": "research-dividend-events-v2",
     "dataContractSha256": "64 lowercase hex characters",
     "seqLen": 10,
     "featureDim": 891,
-    "targetSchemaId": "inventory.target.v1"
+    "targetSchemaId": "inventory.target.v2"
   }
 }
 ```
 
 Inventory владеет каноническим документом, digest которого указан здесь. В
 документ входят упорядоченные идентичности features, семантика target,
-нормализация, политика missing values и версия профиля. Transformer хранит
-идентичность, но не воспроизводит эту семантику. Predict create должен
-использовать digest, для которого сертифицирована разрешённая модель;
-несовпадение отклоняется до загрузки с `MODEL_SCHEMA_MISMATCH`.
+нормализация, политика missing values и `profile`. Поле `profile` —
+непрозрачная для Transformer, ограниченная и регистрозависимая строка.
+Transformer сохраняет и возвращает её без преобразования; поле входит в
+identity контракта вместе с остальными полями и покрывается digest. Predict
+create должен передать весь точный `dataContract`, для которого сертифицирована
+разрешённая модель. Несовпадение любого поля отклоняется до загрузки с
+`MODEL_SCHEMA_MISMATCH`.
 
 Кроме `dataContract`, каждый create содержит target-aligned `mlContract`:
 
 ```json
 {
   "mlContract": {
-    "targetSchemaId": "inventory.target.v1",
-    "predictionSchemaId": "transformer.prediction.target-aligned.v1",
-    "objectiveId": "transformer.objective.target-aligned.v1",
+    "targetSchemaId": "inventory.target.v2",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v2",
+    "objectiveId": "transformer.objective.target-aligned.v2",
     "objectiveConfigSha256": "64 lowercase hex characters",
-    "checkpointFormat": "transformer-checkpoint-v3",
+    "checkpointFormat": "transformer-checkpoint-v4",
     "targetWidth": 6,
     "predictionSpace": "target"
   }
@@ -140,18 +145,18 @@ Inventory владеет каноническим документом, digest �
 
 Для fit `objectiveConfigSha256` вычисляется по фактической `trainingConfig`.
 Точная форма документа задана
-[`objective-config.schema.json`](../app/contracts/flight/v4/schemas/objective-config.schema.json),
+[`objective-config.schema.json`](../app/contracts/flight/v5/schemas/objective-config.schema.json),
 а нормативная cross-language пара документ/digest — фикстурами
-[`objective-config.fit.json`](../app/contracts/flight/v4/fixtures/json/objective-config.fit.json)
+[`objective-config.fit.json`](../app/contracts/flight/v5/fixtures/json/objective-config.fit.json)
 и create-fit. Документ канонизируется строго по
 [RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), после чего SHA-256
 вычисляется над полученными UTF-8 bytes. В частности, JCS использует
 ECMAScript-сериализацию чисел, поэтому `1.0` и `1` дают одинаковое
 представление. `NaN`, `Infinity` и другие значения вне I-JSON запрещены.
 Нормативный digest fit fixture:
-`2b0039a2a2e39a582185786205c117bac830df2f3b79eadff9fe0af148e1c45c`.
+`ae695d62d643a636d5daaef31275c83eb8baa75e354e70368061c1997b39c2fb`.
 Node.js-проверка находится в
-[`objective_config_sha256.mjs`](../app/contracts/flight/v4/fixtures/objective_config_sha256.mjs).
+[`objective_config_sha256.mjs`](../app/contracts/flight/v5/fixtures/objective_config_sha256.mjs).
 Transformer независимо строит тот же документ и отклоняет несовпадение до
 создания job.
 
@@ -182,7 +187,7 @@ Predict должен передать точный `mlContract`, возвращ�
 
 Token представляет собой каноническую положительную десятичную строку, а не
 JSON integer. При перехвате lease Inventory вызовите
-`transformer.v4.job.acquire` с предыдущим execution ID, ожидаемым token и новым
+`transformer.v5.job.acquire` с предыдущим execution ID, ожидаемым token и новым
 execution ID. Transformer атомарно сравнивает старую пару и возвращает
 следующий token. Сохраните этот ответ до выполнения мутаций от нового claim.
 
@@ -197,7 +202,7 @@ execution ID. Transformer атомарно сравнивает старую п�
 только для транспортного разбиения. Используйте:
 
 ```text
-pathDescriptor("transformer", "v4", "jobs", jobId, "inputs", ordinal)
+pathDescriptor("transformer", "v5", "jobs", jobId, "inputs", ordinal)
 ```
 
 До RecordBatch запишите одно сообщение application metadata:
@@ -205,7 +210,7 @@ pathDescriptor("transformer", "v4", "jobs", jobId, "inputs", ordinal)
 ```json
 {
   "contract": "transformer-flight",
-  "version": 4,
+  "version": 5,
   "jobId": "UUID",
   "clientExecutionId": "UUID",
   "fencingToken": "7",
@@ -243,7 +248,7 @@ inventory.sequence.predict.v2
 
 Если PutResult потерян, не считайте транспортную ошибку доказательством
 неуспешной фиксации. Выполните сверку через
-`transformer.v4.job.inputs.list`. Первая страница передаёт `afterRevision` и
+`transformer.v5.job.inputs.list`. Первая страница передаёт `afterRevision` и
 фиксирует возвращённый `snapshotRevision`. Продолжайте с тем же snapshot и
 возвращённым cursor, пока выполняется:
 
@@ -313,6 +318,23 @@ execution.state:
 в `pollAfterMs`. Размер status ограничен; он содержит счётчики, а не все input
 или output receipts.
 
+Для выполняющегося fit после каждой durable global epoch status возвращает
+компактный live progress:
+
+```json
+{
+  "epoch": 4,
+  "step": 2940,
+  "loss_stage": 4,
+  "loss": -3.149016
+}
+```
+
+Он фиксируется атомарно с recovery checkpoint. AMP, gradient, target metrics и
+timings остаются только в telemetry. Если core progress ещё недоступен,
+Inventory может использовать `recovery.latestCheckpoint.completedEpochs` и
+`globalStep` как fallback.
+
 До EOF после сбоя fit attempt незавершённая нулевая epoch повторяется с начала;
 надёжно зафиксированные inputs сохраняются. После EOF recovery checkpoints
 находятся на границах полных global epochs. Inventory должен корректно
@@ -322,11 +344,11 @@ execution.state:
 
 Результаты доступны только после `execution.state=SUCCEEDED`:
 
-1. Получите все страницы `transformer.v4.job.outputs.list`.
+1. Получите все страницы `transformer.v5.job.outputs.list`.
 2. Для каждого ordinal вызовите `GetFlightInfo` с:
 
    ```text
-   pathDescriptor("transformer", "v4", "jobs", jobId, "outputs", ordinal)
+   pathDescriptor("transformer", "v5", "jobs", jobId, "outputs", ordinal)
    ```
 
 3. До истечения срока действия используйте возвращённый непрозрачный ticket в
@@ -335,7 +357,7 @@ execution.state:
 Схема output:
 
 ```text
-transformer.prediction.target-aligned.v1
+transformer.prediction.target-aligned.v2
   <predictionColumn>: non-null FixedSizeList<Float32>[6]
 ```
 
@@ -343,14 +365,14 @@ transformer.prediction.target-aligned.v1
 
 | Индекс | Семантика | Диапазон |
 | --- | --- | --- |
-| `0` | `meanReturn` | `[-1, 1]` |
-| `1` | `sigmaReturn` | `[0, 1]` |
-| `2` | `probTP` | `[0, 1]` |
-| `3` | `probSL` | `[0, 1]` |
-| `4` | `volatilityNext` | `[0, 1]` |
-| `5` | `hittingProbTP` | `[0, 1]` |
+| `0` | `MeanReturn` | `[-1, 1]` |
+| `1` | `SigmaReturn` | `[0, 1]` |
+| `2` | `ProbTP` | `[0, 1]` |
+| `3` | `ProbSL` | `[0, 1]` |
+| `4` | `VolatilityNext` | `[0, 1]` |
+| `5` | `HittingProbTP` | `[0, 1]` |
 
-Все значения конечны. Координаты `probTP` и `probSL` независимы и не обязаны
+Все значения конечны. Координаты `ProbTP` и `ProbSL` независимы и не обязаны
 давать сумму `1`. Raw logits и private uncertainty scale в output отсутствуют.
 Поэтому Inventory вычисляет per-target метрики напрямую, но не использует
 общую MAE/MSE по шести разнородным координатам как quality score.
@@ -372,10 +394,12 @@ Transformer может готовить результаты локально д
 
 ## Модели
 
-`transformer.v4.model.describe` принимает один `modelRef` или ограниченный
+`transformer.v5.model.describe` принимает один `modelRef` или ограниченный
 owner-ом `modelAlias`. Опубликованные `modelRef` и generation неизменяемы и не
 имеют автоматического TTL. `predictionColumn` относится к prediction job, а не
-к модели.
+к модели. Ответ возвращает полный `dataContract`, включая `profile`, а
+`mlContract.targetSchemaId` и `targetWidth`. Отдельного списка `targets` нет:
+порядок и имена шести координат однозначно определяет `inventory.target.v2`.
 
 Стабильные ошибки lifecycle:
 
@@ -406,7 +430,7 @@ owner-ом `modelAlias`. Опубликованные `modelRef` и generation �
 ## Проверка интеграции
 
 1. Проверьте аутентифицированные `capabilities` и `health`; требуйте
-   `protocolVersions`, равный `[4]`, и точные semantic IDs `mlContract`.
+   `protocolVersions`, равный `[5]`, и точные semantic IDs `mlContract`.
 2. Проверьте идемпотентный повтор create и перехват владения.
 3. Проверьте DoPut с fencing, пагинацию по revision и сверку после потери
    `PutResult`.

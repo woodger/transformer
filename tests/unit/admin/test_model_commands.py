@@ -17,7 +17,6 @@ def _record(state=ModelLifecycleState.AVAILABLE):
         label="daily",
         generation=3,
         state=state,
-        metrics_delivery_status="DELIVERED",
         created_at=1.0,
         deletion_requested_at=None,
         deleted_at=None,
@@ -63,29 +62,24 @@ def test_models_list_prints_lifecycle_metadata_and_closes_database(
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == (
-        "MODEL REF\tOWNER\tLABEL\tGENERATION\tSTATE\tMETRICS\tCREATED AT"
+        "MODEL REF\tOWNER\tLABEL\tGENERATION\tSTATE\tCREATED AT"
     )
     assert lines[1].startswith(
         "mdl_0123456789abcdef0123456789abcdef\tinventory\tdaily\t"
-        "3\tAVAILABLE\tDELIVERED\t"
+        "3\tAVAILABLE\t"
     )
     assert closed == [True]
 
 
-def test_models_delete_forwards_explicit_metrics_discard(
+def test_models_delete_requests_exact_generation(
     monkeypatch,
     capsys,
 ):
     calls = []
 
     class StoreDouble:
-        def request_deletion(
-            self,
-            model_ref,
-            *,
-            discard_undelivered_metrics,
-        ):
-            calls.append((model_ref, discard_undelivered_metrics))
+        def request_deletion(self, model_ref):
+            calls.append(model_ref)
             return _record(ModelLifecycleState.DELETING)
 
     closed = _wire(monkeypatch, StoreDouble())
@@ -94,10 +88,9 @@ def test_models_delete_forwards_explicit_metrics_discard(
     models_command.run(SimpleNamespace(
         models_action="delete",
         model_ref=model_ref,
-        discard_undelivered_metrics=True,
     ))
 
-    assert calls == [(model_ref, True)]
+    assert calls == [model_ref]
     assert capsys.readouterr().out == (
         f"Model: {model_ref}\nState: DELETING\n"
     )
@@ -118,7 +111,6 @@ def test_models_delete_reports_expected_block_without_traceback(
         models_command.run(SimpleNamespace(
             models_action="delete",
             model_ref="mdl_0123456789abcdef0123456789abcdef",
-            discard_undelivered_metrics=False,
         ))
 
     assert exc.value.code == 1

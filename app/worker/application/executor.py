@@ -4,7 +4,7 @@ import os
 from typing import BinaryIO
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6 import validate_document
+from app.contracts.worker.v7 import validate_document
 from app.worker.application.artifacts import (
     artifact_document,
     validate_workspace,

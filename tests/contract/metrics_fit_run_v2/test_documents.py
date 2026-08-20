@@ -22,33 +22,6 @@ CONTRACT_ROOT = (
 JOB_ID = "11111111-1111-4111-8111-111111111111"
 ATTEMPT_ID = "22222222-2222-4222-8222-222222222222"
 MODEL_REF = "mdl_" + "3" * 32
-TARGET_NAMES = (
-    "meanReturn",
-    "sigmaReturn",
-    "probTP",
-    "probSL",
-    "volatilityNext",
-    "hittingProbTP",
-)
-
-
-def _target_statistics(count=1000):
-    return [
-        {
-            "targetIndex": index,
-            "name": name,
-            "count": count,
-            "min": -0.5 if index == 0 else 0.0,
-            "max": 1.0,
-            "mean": 0.25,
-            "std": 0.1,
-            "zeroCount": 10,
-            "oneCount": 5,
-        }
-        for index, name in enumerate(TARGET_NAMES)
-    ]
-
-
 def _summary():
     return build_run_summary(
         recorded_at=1_786_809_330.123,
@@ -58,7 +31,7 @@ def _summary():
         model_ref=MODEL_REF,
         data_contract_sha256="a" * 64,
         objective_config_sha256="b" * 64,
-        checkpoint_format="transformer-checkpoint-v3",
+        checkpoint_format="transformer-checkpoint-v4",
         application_version="0.1.12",
         git_commit="c" * 40,
         milestones={
@@ -86,7 +59,6 @@ def _summary():
             "inputRows": 1000,
             "inputBytes": 9000,
         },
-        target_statistics=_target_statistics(),
     )
 
 
@@ -116,17 +88,6 @@ def test_run_document_is_idempotent_and_does_not_expose_storage_path():
     assert document["schema"] == "inventory.metrics.fit-run.v2"
     assert document["runId"] == JOB_ID
     assert document["counts"]["recoveries"] == 1
-    assert document["targetStatistics"][0] == {
-        "targetIndex": 0,
-        "name": "meanReturn",
-        "count": 1000,
-        "min": -0.5,
-        "max": 1.0,
-        "mean": 0.25,
-        "std": 0.1,
-        "zeroCount": 10,
-        "oneCount": 5,
-    }
     assert "path" not in json.dumps(document)
 
 
@@ -140,18 +101,6 @@ def test_nonfinite_or_extended_summary_is_rejected():
     extended["durations"]["unexpectedMs"] = 1.0
     with pytest.raises(ValueError, match="Additional properties"):
         validate_run_summary(extended)
-
-    inconsistent = deepcopy(_summary())
-    inconsistent["targetStatistics"][0]["count"] = 999
-    with pytest.raises(ValueError, match="differs from input rows"):
-        validate_run_summary(inconsistent)
-
-    overlapping_counts = deepcopy(_summary())
-    overlapping_counts["targetStatistics"][0]["zeroCount"] = 600
-    overlapping_counts["targetStatistics"][0]["oneCount"] = 500
-    with pytest.raises(ValueError, match="value counts differ"):
-        validate_run_summary(overlapping_counts)
-
 
 def test_summary_identity_has_a_cross_language_golden_digest():
     node = shutil.which("node")

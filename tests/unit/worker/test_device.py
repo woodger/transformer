@@ -1,16 +1,37 @@
 import sys
+from types import SimpleNamespace
 
 import pytest
 
 from app import __version__
 from app.cli.args import parse_args
 from app.version import __version__ as runtime_version, version_text
+from app.worker.application.capabilities import inspect_capabilities
 from app.worker.runtime.device import get_device
 
 
 def test_cpu_device():
     device = get_device("cpu")
     assert device.type == "cpu"
+
+
+def test_worker_capabilities_follow_the_v6_contract(monkeypatch):
+    fake_torch = SimpleNamespace(
+        __version__="2.12.0+test",
+        version=SimpleNamespace(cuda="13.0"),
+        cuda=SimpleNamespace(is_available=lambda: False),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    document = inspect_capabilities()
+
+    assert document == {
+        "contract": "transformer-worker",
+        "protocolVersion": 7,
+        "torchVersion": "2.12.0+test",
+        "cudaRuntimeVersion": "13.0",
+        "devices": [],
+    }
 
 
 @pytest.mark.parametrize(

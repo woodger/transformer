@@ -641,6 +641,7 @@ def _wire_data_contract(document: JsonObject) -> JsonObject:
     return {
         "id": _string(document, "id"),
         "version": _integer(document, "version"),
+        "profile": _string(document, "profile"),
         "data_contract_sha256": _string(
             document,
             "dataContractSha256",

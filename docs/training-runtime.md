@@ -9,7 +9,7 @@
 
 ## Checkpoint contract
 
-Текущий формат — `transformer-checkpoint-v3`. Он содержит только закрытый
+Текущий формат — `transformer-checkpoint-v4`. Он содержит только закрытый
 набор полей:
 
 - `state_dict` и версию приложения;
@@ -38,7 +38,7 @@ checkpoint не интерпретируются автоматически. Д�
 Публичный prediction имеет шесть координат в том же порядке, что target:
 
 ```text
-meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
+MeanReturn, SigmaReturn, ProbTP, ProbSL, VolatilityNext, HittingProbTP
 ```
 
 Для каждой координаты JSONL содержит отдельные MAE и RMSE. Общая MAE/MSE по
@@ -110,7 +110,7 @@ replay с проверкой schema и row count.
 
 ## Recovery
 
-Текущий формат — `transformer-training-recovery-v3`. Checkpoint создаётся
+Текущий формат — `transformer-training-recovery-v4`. Checkpoint создаётся
 только на границе завершённой global epoch после EOF и содержит:
 
 - model, optimizer и AMP scaler state;
@@ -137,6 +137,17 @@ Recovery другого objective, data contract или immutable input manifest
 безопасный zero placeholder, чтобы attention не породил non-finite значения.
 
 ## Метрики
+
+Результат global epoch, влияющий на selection и recovery, отделён от
+необязательной telemetry. Core значения находятся в `worker/training/epoch.py`,
+а AMP/gradient counters, per-target errors, phase timings, JSONL и plots — в
+`worker/telemetry/`. Ошибка observability отключает запись текущей epoch, но не
+меняет optimizer, checkpoint selection или результат fit.
+
+Core loss scalars и optional target/gradient observations по-прежнему
+объединяются в одну CUDA→CPU передачу. Если optional часть не может быть
+материализована, trainer повторяет только core transfer и продолжает обучение
+без telemetry текущей epoch.
 
 Компактная строка epoch выглядит так:
 
@@ -196,10 +207,11 @@ Mean, max и P95 считаются только по finite pre-clip gradient n
 
 `plot-metrics` создаёт отдельный SVG для каждого доступного числового поля.
 
-Flight fit дополнительно сохраняет завершённые global epochs как обязательный
-immutable `models/{modelRef}/metrics.jsonl`. Durable boundary, OpenSearch
+Flight fit best effort сохраняет завершённые global epochs в immutable
+`telemetry/{jobId}/metrics.jsonl`. Durable boundary, OpenSearch
 projection и различие между `step` и фактическими AMP optimizer updates
 зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md) и
-[ADR 0012](./adr/0012-gradient-and-target-telemetry.md). Успешная модель также
-получает `run-summary.json` со статистикой шести targets по всему immutable
-dataset; она считается один раз на dataset, а не на каждую epoch.
+[ADR 0012](./adr/0012-gradient-and-target-telemetry.md). Успешный fit также
+может получить run-owned `run-summary.json` с lifecycle durations и counters.
+Отсутствие или повреждение telemetry не меняет результат fit и model
+publication.

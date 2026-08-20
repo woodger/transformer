@@ -4,7 +4,7 @@
 > реализация обязана сохранять шесть target-aligned public coordinates и
 > private uncertainty head из
 > [`ADR 0007`](./adr/0007-target-aligned-flight-v4.md). Примеры ниже созданы до
-> Flight v4 и не задают wire-, checkpoint- или objective-контракт.
+> Flight v5 и не задают wire-, checkpoint- или objective-контракт.
 
 **Что это:**
 Ввести **явный “no-trade” сигнал**.

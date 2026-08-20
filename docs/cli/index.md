@@ -40,7 +40,7 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v4`](../../app/contracts/flight/v4/README.md).
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
 
 ## File commands
 
@@ -236,8 +236,8 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 ## Опубликованные модели
 
-Список model generations включает точный `modelRef`, owner, label, generation,
-lifecycle state и состояние доставки training metrics:
+Список model generations включает точный `modelRef`, owner, label, generation
+и lifecycle state:
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
@@ -259,20 +259,8 @@ lifecycle state и состояние доставки training metrics:
 переиспользуются.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
-Оно также по умолчанию отклоняется при `PENDING` или `BLOCKED` доставке metrics.
-Если потеря ещё не доставленной telemetry осознанно допустима, её можно явно
-отменить:
-
-```bash
-./.venv/bin/python ./app/main.py models delete \
-  mdl_ead8077a4cba4455920d718532551248 \
-  --discard-undelivered-metrics
-```
-
-Уже созданные документы OpenSearch не удаляются. При явной отмене publisher
-может успеть завершить уже начатый Bulk request; операция означает отказ от
-гарантии полной доставки локальной metrics projection, а не очистку
-OpenSearch.
+Run telemetry имеет собственный lifecycle: удаление модели не отменяет её
+доставку и не удаляет уже созданные документы OpenSearch.
 
 ## Пути и запись артефактов
 

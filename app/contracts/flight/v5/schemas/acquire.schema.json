@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v5/acquire.schema.json",
+  "title": "transformer.v5.job.acquire request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "idempotencyKey", "jobId",
+    "previousClientExecutionId", "expectedFencingToken", "clientExecutionId"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 5},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "idempotencyKey": {"$ref": "common.schema.json#/$defs/idempotencyKey"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "previousClientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "expectedFencingToken": {"$ref": "common.schema.json#/$defs/fencingToken"},
+    "clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"}
+  }
+}

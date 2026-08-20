@@ -72,26 +72,34 @@ class RuntimeDirectoryLock:
 
 
 class Spool:
-    """Server-controlled runtime paths and model publication primitives.
+    """Server-controlled runtime, model, and telemetry artifacts.
 
     Unfinished artifacts live below ``runtime_dir``. Successfully validated
-    model generations are copied and atomically published below ``models_dir``.
+    model generations are atomically published below ``models_dir``. Durable
+    best-effort observations live below the independent ``telemetry_dir``.
     """
 
     def __init__(
         self,
         runtime_dir: str,
         models_dir: str | None = None,
+        telemetry_dir: str | None = None,
     ) -> None:
         self.runtime_dir = os.path.abspath(os.fspath(runtime_dir))
         self.models_dir = os.path.abspath(
             os.fspath(models_dir or os.path.join(PROJECT_ROOT, "models"))
         )
-        if os.path.commonpath((self.runtime_dir, self.models_dir)) in (
-            self.runtime_dir,
-            self.models_dir,
+        self.telemetry_dir = os.path.abspath(os.fspath(
+            telemetry_dir
+            or os.path.join(os.path.dirname(self.models_dir), "telemetry")
+        ))
+        roots = (self.runtime_dir, self.models_dir, self.telemetry_dir)
+        if any(
+            os.path.commonpath((left, right)) in (left, right)
+            for index, left in enumerate(roots)
+            for right in roots[index + 1:]
         ):
-            raise ValueError("runtime and model directories must not overlap")
+            raise ValueError("managed storage directories must not overlap")
         self.spool_dir = os.path.join(self.runtime_dir, "spool")
         self.jobs_dir = os.path.join(self.spool_dir, "jobs")
         self.epoch_path = os.path.join(self.runtime_dir, "storage-epoch")
@@ -99,7 +107,13 @@ class Spool:
 
     def initialize(self) -> Spool:
         created: list[str] = []
-        for directory in (self.runtime_dir, self.spool_dir, self.jobs_dir, self.models_dir):
+        for directory in (
+            self.runtime_dir,
+            self.spool_dir,
+            self.jobs_dir,
+            self.models_dir,
+            self.telemetry_dir,
+        ):
             if not os.path.isdir(directory):
                 os.makedirs(directory, exist_ok=True)
                 created.append(directory)
@@ -154,9 +168,6 @@ class Spool:
     def attempt_directory(self, job_id: str, attempt: int) -> str:
         _positive(attempt, "attempt")
         return os.path.join(self.job_directory(job_id), "attempts", str(attempt))
-
-    def attempt_metrics_path(self, job_id: str, attempt: int) -> str:
-        return os.path.join(self.attempt_directory(job_id, attempt), "metrics.jsonl")
 
     def attempt_stdout_path(self, job_id: str, attempt: int) -> str:
         return os.path.join(self.attempt_directory(job_id, attempt), "stdout.log")
@@ -223,11 +234,23 @@ class Spool:
     def model_metadata_path(self, model_ref: str) -> str:
         return os.path.join(self.model_directory(model_ref), "metadata.json")
 
-    def model_metrics_path(self, model_ref: str) -> str:
-        return os.path.join(self.model_directory(model_ref), "metrics.jsonl")
+    def telemetry_run_directory(self, job_id: str) -> str:
+        return os.path.join(
+            self.telemetry_dir,
+            _uuid_component(job_id, "job_id"),
+        )
 
-    def model_run_summary_path(self, model_ref: str) -> str:
-        return os.path.join(self.model_directory(model_ref), "run-summary.json")
+    def telemetry_metrics_path(self, job_id: str) -> str:
+        return os.path.join(
+            self.telemetry_run_directory(job_id),
+            "metrics.jsonl",
+        )
+
+    def telemetry_run_summary_path(self, job_id: str) -> str:
+        return os.path.join(
+            self.telemetry_run_directory(job_id),
+            "run-summary.json",
+        )
 
     def relative_path(self, absolute_path: str) -> str:
         resolved = self._inside_runtime(absolute_path)
@@ -260,6 +283,45 @@ class Spool:
         return self._inside_models(
             os.path.join(self.models_dir, *normalized.split("/"))
         )
+
+    def telemetry_relative_path(self, absolute_path: str) -> str:
+        resolved = self._inside_telemetry(absolute_path)
+        return os.path.relpath(resolved, self.telemetry_dir).replace(
+            os.sep,
+            "/",
+        )
+
+    def telemetry_absolute_path(self, relative_path: object) -> str:
+        if (
+            not isinstance(relative_path, str)
+            or not relative_path
+            or os.path.isabs(relative_path)
+        ):
+            raise ValueError("telemetry path must be a non-empty relative path")
+        normalized = relative_path.replace("\\", "/")
+        if normalized in ("", ".") or ".." in Path(normalized).parts:
+            raise ValueError("telemetry path must not contain path traversal")
+        return self._inside_telemetry(
+            os.path.join(self.telemetry_dir, *normalized.split("/"))
+        )
+
+    def remove_telemetry_artifacts(
+        self,
+        relative_paths: Sequence[str],
+    ) -> None:
+        directories: set[str] = set()
+        for relative_path in relative_paths:
+            absolute_path = self.telemetry_absolute_path(relative_path)
+            directories.add(os.path.dirname(absolute_path))
+            self.remove(absolute_path)
+        for directory in sorted(directories, key=len, reverse=True):
+            if os.path.commonpath((self.telemetry_dir, directory)) != self.telemetry_dir:
+                continue
+            try:
+                os.rmdir(directory)
+            except (FileNotFoundError, OSError):
+                continue
+            fsync_directory(os.path.dirname(directory))
 
     def ensure_parent(self, path: str) -> None:
         path, root = self._inside_managed(path)
@@ -498,17 +560,65 @@ class Spool:
                 removed.append(name)
         return tuple(sorted(removed))
 
+    def cleanup_legacy_model_telemetry(self) -> tuple[str, ...]:
+        """Remove model-owned telemetry retired by migration 0010."""
+
+        removed: list[str] = []
+        for name in os.listdir(self.models_dir):
+            if not name.startswith("mdl_"):
+                continue
+            directory = os.path.join(self.models_dir, name)
+            if not os.path.isdir(directory) or os.path.islink(directory):
+                continue
+            for artifact_name in ("metrics.jsonl", "run-summary.json"):
+                candidate = os.path.join(directory, artifact_name)
+                if self.remove(candidate):
+                    removed.append(self.model_relative_path(candidate))
+        legacy_run_directory = os.path.join(self.models_dir, "_telemetry")
+        if self.remove(legacy_run_directory):
+            removed.append(self.model_relative_path(legacy_run_directory))
+        return tuple(sorted(removed))
+
+    def reconcile_telemetry_directories(
+        self,
+        job_ids: Sequence[str] | set[str],
+    ) -> tuple[str, ...]:
+        known = {_uuid_component(value, "job_id") for value in job_ids}
+        removed: list[str] = []
+        for name in os.listdir(self.telemetry_dir):
+            try:
+                job_id = _uuid_component(name, "job_id")
+            except ValueError:
+                continue
+            if job_id in known:
+                continue
+            candidate = os.path.join(self.telemetry_dir, name)
+            if (
+                os.path.isdir(candidate)
+                and not os.path.islink(candidate)
+                and self.remove(candidate)
+            ):
+                removed.append(job_id)
+        return tuple(sorted(removed))
+
     def _inside_runtime(self, path: str) -> str:
         return self._inside_root(path, self.runtime_dir, "runtime")
 
     def _inside_models(self, path: str) -> str:
         return self._inside_root(path, self.models_dir, "models")
 
+    def _inside_telemetry(self, path: str) -> str:
+        return self._inside_root(path, self.telemetry_dir, "telemetry")
+
     def _inside_managed(self, path: str) -> tuple[str, str]:
         candidate = os.path.abspath(os.fspath(path))
-        for root in (self.runtime_dir, self.models_dir):
+        roots = (
+            (self.runtime_dir, "runtime"),
+            (self.models_dir, "models"),
+            (self.telemetry_dir, "telemetry"),
+        )
+        for root, label in roots:
             if os.path.commonpath((root, candidate)) == root:
-                label = "runtime" if root == self.runtime_dir else "models"
                 return self._inside_root(candidate, root, label), root
         raise ValueError("artifact path escapes managed storage")
 

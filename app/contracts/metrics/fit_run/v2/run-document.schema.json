@@ -9,7 +9,7 @@
     "runId", "source", "eventKind", "transformerJobId", "attemptId", "attempt",
     "modelRef", "dataContractSha256", "objectiveConfigSha256", "checkpointFormat",
     "transformerVersion", "transformerGitCommit", "milestones", "durations",
-    "counts", "targetStatistics", "artifact"
+    "counts", "artifact"
   ],
   "properties": {
     "@timestamp": {"type": "string", "format": "date-time"},
@@ -32,9 +32,6 @@
     "milestones": {"$ref": "run-summary.schema.json#/properties/milestones"},
     "durations": {"$ref": "run-summary.schema.json#/properties/durations"},
     "counts": {"$ref": "run-summary.schema.json#/properties/counts"},
-    "targetStatistics": {
-      "$ref": "run-summary.schema.json#/properties/targetStatistics"
-    },
     "artifact": {
       "type": "object",
       "additionalProperties": false,

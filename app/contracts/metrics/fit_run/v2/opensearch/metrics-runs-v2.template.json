@@ -57,20 +57,6 @@
             "inputBytes": {"type": "long"}
           }
         },
-        "targetStatistics": {
-          "type": "nested", "dynamic": "strict",
-          "properties": {
-            "targetIndex": {"type": "integer"},
-            "name": {"type": "keyword"},
-            "count": {"type": "long"},
-            "min": {"type": "double"},
-            "max": {"type": "double"},
-            "mean": {"type": "double"},
-            "std": {"type": "double"},
-            "zeroCount": {"type": "long"},
-            "oneCount": {"type": "long"}
-          }
-        },
         "artifact": {
           "type": "object", "dynamic": "strict",
           "properties": {

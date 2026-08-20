@@ -5,13 +5,13 @@ import os
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v6 import (
+from app.contracts.worker.v7 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,

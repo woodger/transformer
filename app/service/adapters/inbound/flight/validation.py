@@ -4,17 +4,17 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v4.codec import (
+from app.contracts.flight.v5.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.worker.v7.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -56,6 +56,7 @@ class StatusRequestFields(RequestIdFields):
 class DataContractFields(TypedDict):
     id: str
     version: int
+    profile: str
     data_contract_sha256: str
     seq_len: int
     feature_dim: int
@@ -386,6 +387,7 @@ def _data_contract(document: Mapping[str, object]) -> DataContractFields:
     return {
         "id": _string(document, "id"),
         "version": _integer(document, "version"),
+        "profile": _string(document, "profile"),
         "data_contract_sha256": _string(document, "dataContractSha256"),
         "seq_len": _integer(document, "seqLen"),
         "feature_dim": _integer(document, "featureDim"),

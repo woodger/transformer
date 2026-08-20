@@ -11,11 +11,11 @@ from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.auth import InMemoryAccessTokenCache
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.adapters.outbound.artifacts.metrics_projection import (
-    ModelMetricsProjection,
-)
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
 from app.service.adapters.outbound.artifacts.spool import Spool
+from app.service.adapters.outbound.artifacts.telemetry.projection import (
+    TrainingMetricsProjection,
+)
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
 )
@@ -31,13 +31,14 @@ from app.service.adapters.outbound.postgres.config import (
 )
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import row_string
-from app.service.adapters.outbound.postgres.metrics_outbox import (
-    PostgresMetricsOutbox,
-)
 from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
 )
 from app.service.adapters.outbound.postgres.session import Database
+from app.service.adapters.outbound.postgres.telemetry import (
+    PostgresMetricsOutbox,
+    PostgresTrainingTelemetry,
+)
 from app.service.adapters.outbound.postgres.token_cache import (
     AccessTokenCache,
     AccessTokenCacheService,
@@ -45,7 +46,7 @@ from app.service.adapters.outbound.postgres.token_cache import (
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
-from app.service.application.services.metrics_publisher import MetricsPublisher
+from app.service.application.telemetry.publisher import MetricsPublisher
 from app.service.bootstrap.build_identity import load_build_identity
 from app.service.bootstrap.config import FlightServiceConfig, load_config
 from app.service.bootstrap.control_plane import build_job_coordinator
@@ -170,9 +171,18 @@ class FlightApplication:
             else model_path.__fspath__()
         )
         effective_models_dir = os.path.abspath(model_path_text)
+        telemetry_dir = (
+            config.telemetry_dir
+            if models_dir is None
+            else os.path.join(
+                os.path.dirname(effective_models_dir),
+                "telemetry",
+            )
+        )
         spool = Spool(
             config.runtime_dir,
             effective_models_dir,
+            telemetry_dir,
         ).initialize()
         recovery_dir = (
             config.recovery_dir
@@ -199,23 +209,55 @@ class FlightApplication:
             published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)
-            metrics_config = load_opensearch_metrics_config()
-            if metrics_config is None:
-                backlog_entries, backlog_bytes, backlog_age = (
-                    metrics_outbox.backlog()
+            training_telemetry = PostgresTrainingTelemetry(ledger.database)
+            metrics_configuration_failed = False
+            try:
+                metrics_config = load_opensearch_metrics_config()
+                metrics_client = (
+                    None
+                    if metrics_config is None
+                    else OpenSearchMetricsClient(metrics_config)
                 )
-                metrics.set("metricsOutboxEntries", backlog_entries)
-                metrics.set("metricsOutboxBytes", backlog_bytes)
-                metrics.set("metricsOutboxOldestAgeSeconds", backlog_age)
+            except Exception as exc:
+                metrics_configuration_failed = True
+                metrics_config = None
+                metrics_client = None
+                metrics.add("metricsPublisherConfigurationErrors")
                 logger.event(
                     "metrics.publisher.disabled",
-                    pendingEntries=backlog_entries,
+                    reason="invalid-configuration",
+                    errorType=type(exc).__name__,
                 )
+            if metrics_config is None:
+                try:
+                    backlog_entries, backlog_bytes, backlog_age = (
+                        metrics_outbox.backlog()
+                    )
+                    metrics.set("metricsOutboxEntries", backlog_entries)
+                    metrics.set("metricsOutboxBytes", backlog_bytes)
+                    metrics.set("metricsOutboxOldestAgeSeconds", backlog_age)
+                except Exception as exc:
+                    backlog_entries = 0
+                    metrics.add("metricsPublisherInternalErrors")
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        reason="outbox-unavailable",
+                        errorType=type(exc).__name__,
+                    )
+                    metrics_configuration_failed = True
+                if not metrics_configuration_failed:
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        pendingEntries=backlog_entries,
+                    )
             else:
+                if metrics_client is None:
+                    raise AssertionError("configured metrics client is unavailable")
                 metrics_publisher = MetricsPublisher(
                     metrics_outbox,
-                    ModelMetricsProjection(spool),
-                    OpenSearchMetricsClient(metrics_config),
+                    TrainingMetricsProjection(spool),
+                    metrics_client,
+                    spool,
                     deployment_id=metrics_config.deployment_id,
                     logger=logger,
                     metrics=metrics,
@@ -254,8 +296,14 @@ class FlightApplication:
                 known_job_ids=ledger.active_recovery_job_ids(),
                 temporary_paths=recovery_temporary_paths,
             )
+            removed_legacy_telemetry = (
+                spool.cleanup_legacy_model_telemetry()
+            )
             removed_models = spool.reconcile_model_directories(
                 published_models.retained_model_refs()
+            )
+            removed_telemetry_runs = spool.reconcile_telemetry_directories(
+                metrics_outbox.retained_run_ids()
             )
             if token_cache is None and bearer_tokens is not None:
                 token_cache = InMemoryAccessTokenCache(bearer_tokens)
@@ -280,6 +328,7 @@ class FlightApplication:
                 ledger,
                 spool,
                 recovery_store,
+                telemetry=training_telemetry,
                 metrics=metrics,
                 logger=logger,
                 device_inventory=device_inventory,
@@ -354,7 +403,17 @@ class FlightApplication:
                 metrics_publisher,
             )
             if metrics_publisher is not None:
-                metrics_publisher.start()
+                try:
+                    metrics_publisher.start()
+                except Exception as exc:
+                    metrics.add("metricsPublisherInternalErrors")
+                    logger.event(
+                        "metrics.publisher.disabled",
+                        reason="startup-failed",
+                        errorType=type(exc).__name__,
+                    )
+                    metrics_publisher = None
+                    application.metrics_publisher = None
             worker.start()
             maintenance.start()
             for job_id in interrupted_jobs:
@@ -401,6 +460,8 @@ class FlightApplication:
                 ),
                 removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
+                removedLegacyTelemetry=len(removed_legacy_telemetry),
+                removedTelemetryRuns=len(removed_telemetry_runs),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
                     recovery_precleaned

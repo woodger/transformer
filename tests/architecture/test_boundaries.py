@@ -1,8 +1,10 @@
 import ast
 import importlib.util
 import inspect
+import json
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 from app.project import PROJECT_ROOT
@@ -21,6 +23,7 @@ def _is_within(module: str, package: str) -> bool:
     return module == package or module.startswith(f"{package}.")
 
 
+@cache
 def _application_modules() -> dict[str, Path]:
     return {
         _module_name(path): path
@@ -29,7 +32,8 @@ def _application_modules() -> dict[str, Path]:
     }
 
 
-def _imports(path: Path, module: str) -> set[str]:
+@cache
+def _imports(path: Path, module: str) -> frozenset[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = module if path.name == "__init__.py" else module.rpartition(".")[0]
     imports = set()
@@ -46,7 +50,60 @@ def _imports(path: Path, module: str) -> set[str]:
             imported = node.module
         if imported is not None:
             imports.add(imported)
-    return imports
+    return frozenset(imports)
+
+
+@cache
+def _control_plane_import_snapshots() -> dict[str, dict[str, object]]:
+    program = """
+import json
+import sys
+
+snapshots = {}
+
+from app.cli.parser import build_parser
+parser = build_parser()
+parser.parse_args(["flight", "serve", "--allow-plaintext"])
+parser.parse_args(["db", "migrations", "status"])
+snapshots["cli"] = {
+    "mlModules": sorted(
+        name for name in sys.modules
+        if name in ("torch", "cuda")
+        or name.startswith(("torch.", "cuda."))
+    ),
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+}
+
+import app.admin.bootstrap.db_migrations as admin_module
+admin_module.run = lambda _args: None
+sys.argv = ["transformer", "db", "migrations", "status"]
+from app.main import main
+main()
+snapshots["admin"] = {
+    "torch": "torch" in sys.modules,
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+    "flight": "pyarrow.flight" in sys.modules,
+}
+
+import app.service.bootstrap.application
+snapshots["service"] = {
+    "torch": "torch" in sys.modules,
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+}
+
+print(json.dumps(snapshots, sort_keys=True))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    document = json.loads(result.stdout)
+    assert isinstance(document, dict)
+    return document
 
 
 def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
@@ -189,61 +246,28 @@ def test_application_internal_import_graph_is_acyclic():
     assert cycle is None, f"application import cycle: {' -> '.join(cycle or [])}"
 
 
-def test_contracts_and_composition_roots_have_canonical_locations():
-    assert (APP_ROOT / "contracts" / "flight" / "v4").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v6").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "v1").is_dir()
-    assert not (APP_ROOT / "contracts" / "flight" / "v3").exists()
-    assert not (APP_ROOT / "contracts" / "worker" / "v2").exists()
-    assert not (APP_ROOT / "contracts" / "worker" / "v3").exists()
-    assert not (PROJECT_ROOT / "contracts").exists()
+def test_canonical_contracts_and_composition_roots_exist():
+    assert (APP_ROOT / "contracts" / "flight" / "v5").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v7").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "v3").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v2").is_dir()
     assert (APP_ROOT / "local" / "fit.py").is_file()
-    assert not (APP_ROOT / "commands" / "__init__.py").exists()
-    assert not (APP_ROOT / "config.py").exists()
     assert (APP_ROOT / "cli" / "parser.py").is_file()
     assert (APP_ROOT / "cli" / "formatting.py").is_file()
     assert (APP_ROOT / "cli" / "parsers" / "service.py").is_file()
-    assert not (APP_ROOT / "cli" / "help.py").exists()
-    for legacy_package in (
-        "data",
-        "database",
-        "flight",
-        "metrics",
-        "model",
-        "runtime",
-        "storage",
-        "training",
-    ):
-        assert not (APP_ROOT / legacy_package / "__init__.py").exists()
-    assert not (APP_ROOT / "utils.py").exists()
-    assert not (APP_ROOT / "worker" / "utils.py").exists()
     for path in (
         APP_ROOT / "service" / "adapters" / "outbound" / "artifacts",
         APP_ROOT / "service" / "adapters" / "outbound" / "cuda",
         APP_ROOT / "service" / "adapters" / "outbound" / "worker",
         APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "ledger",
+        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "telemetry",
+        APP_ROOT / "service" / "adapters" / "outbound" / "artifacts" / "telemetry",
         APP_ROOT / "service" / "application" / "messages",
+        APP_ROOT / "service" / "application" / "telemetry",
         APP_ROOT / "worker" / "checkpoints",
+        APP_ROOT / "worker" / "telemetry",
     ):
         assert (path / "__init__.py").is_file()
-    for legacy_path in (
-        APP_ROOT / "service" / "adapters" / "outbound" / "artifact_storage",
-        APP_ROOT / "service" / "adapters" / "outbound" / "worker_process",
-        APP_ROOT / "service" / "adapters" / "outbound" / "worker_probe",
-        APP_ROOT / "worker" / "runtime" / "checkpoints",
-    ):
-        assert not (legacy_path / "__init__.py").exists()
-    for legacy_file in (
-        APP_ROOT / "service" / "adapters" / "inbound" / "flight" / "contract.py",
-        APP_ROOT / "service" / "adapters" / "inbound" / "flight" / "job_actions.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "ledger.py",
-        APP_ROOT / "service" / "application" / "input_models.py",
-        APP_ROOT / "service" / "application" / "job_models.py",
-        APP_ROOT / "service" / "application" / "output_models.py",
-        APP_ROOT / "service" / "bootstrap" / "job_control.py",
-        APP_ROOT / "service" / "bootstrap" / "worker_pool.py",
-    ):
-        assert not legacy_file.exists()
     for path in (
         APP_ROOT / "service" / "bootstrap" / "application.py",
         APP_ROOT / "service" / "bootstrap" / "data_plane.py",
@@ -253,6 +277,40 @@ def test_contracts_and_composition_roots_have_canonical_locations():
         APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
     ):
         assert path.is_file()
+
+
+def test_telemetry_does_not_own_core_training_or_service_state():
+    protected_modules = (
+        "app.worker.training.epoch",
+        "app.service.domain.records",
+        "app.service.adapters.outbound.artifacts.publication",
+    )
+    modules = _application_modules()
+    violations = []
+    for module in protected_modules:
+        for dependency in _imports(modules[module], module):
+            if _is_within(dependency, "app.worker.telemetry") or _is_within(
+                dependency,
+                "app.service.application.telemetry",
+            ):
+                violations.append(f"{module} -> {dependency}")
+
+    for module, path in modules.items():
+        if not _is_within(
+            module,
+            "app.service.adapters.outbound.postgres.ledger",
+        ):
+            continue
+        for dependency in _imports(path, module):
+            if _is_within(
+                dependency,
+                "app.service.application.telemetry",
+            ):
+                violations.append(f"{module} -> {dependency}")
+
+    assert violations == [], "telemetry owns core state:\n" + "\n".join(
+        sorted(violations)
+    )
 
 
 def test_service_application_job_api_is_transport_neutral():
@@ -300,7 +358,7 @@ def test_service_application_job_api_is_transport_neutral():
         for value in sorted(strings & forbidden_wire_values):
             violations.append(f"{relative}: {value}")
         for value in sorted(
-            item for item in strings if item.startswith("transformer.v4.")
+            item for item in strings if item.startswith("transformer.v5.")
         ):
             violations.append(f"{relative}: {value}")
     assert violations == [], "Flight presentation leaked into application:\n" + (
@@ -327,81 +385,23 @@ def test_flight_handlers_receive_use_cases_instead_of_raw_ledger():
     assert violations == []
 
 
-def test_service_and_admin_imports_do_not_initialize_worker_runtime():
-    service_program = """
-import json
-import sys
-import app.service.bootstrap.application
-print(json.dumps({
-    'torch': 'torch' in sys.modules,
-    'worker': any(name.startswith('app.worker') for name in sys.modules),
-}))
-"""
-    service = subprocess.run(
-        [sys.executable, "-c", service_program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert service.stdout.strip() == '{"torch": false, "worker": false}'
+def test_service_import_does_not_initialize_worker_runtime():
+    assert _control_plane_import_snapshots()["service"] == {
+        "torch": False,
+        "worker": False,
+    }
 
-    admin_program = """
-import json
-import sys
-import app.admin.bootstrap.db_migrations as admin_module
 
-def run(_args):
-    print(json.dumps({
-        'torch': 'torch' in sys.modules,
-        'worker': any(name.startswith('app.worker') for name in sys.modules),
-        'flight': 'pyarrow.flight' in sys.modules,
-    }))
-
-admin_module.run = run
-sys.argv = ['transformer', 'db', 'migrations', 'status']
-from app.main import main
-main()
-"""
-    admin = subprocess.run(
-        [sys.executable, "-c", admin_program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert admin.stdout.strip() == (
-        '{"torch": false, "worker": false, "flight": false}'
-    )
+def test_admin_import_does_not_initialize_worker_or_flight_runtime():
+    assert _control_plane_import_snapshots()["admin"] == {
+        "torch": False,
+        "worker": False,
+        "flight": False,
+    }
 
 
 def test_control_plane_cli_parser_does_not_initialize_ml_runtime():
-    program = """
-import json
-import sys
-from app.cli.parser import build_parser
-
-parser = build_parser()
-parser.parse_args(["flight", "serve", "--allow-plaintext"])
-parser.parse_args(["db", "migrations", "status"])
-print(json.dumps({
-    "mlModules": sorted(
-        name for name in sys.modules
-        if name in ("torch", "cuda")
-        or name.startswith(("torch.", "cuda."))
-    ),
-    "worker": any(name.startswith("app.worker") for name in sys.modules),
-}))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-
-    assert result.stdout.strip() == '{"mlModules": [], "worker": false}'
+    assert _control_plane_import_snapshots()["cli"] == {
+        "mlModules": [],
+        "worker": False,
+    }

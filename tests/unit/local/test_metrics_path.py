@@ -1,7 +1,7 @@
 import pytest
 
-import app.worker.metrics.paths as paths_module
-from app.worker.metrics.paths import resolve_metrics_path
+import app.worker.telemetry.paths as paths_module
+from app.worker.telemetry.paths import resolve_metrics_path
 
 
 def test_omitted_metrics_path_remains_disabled():

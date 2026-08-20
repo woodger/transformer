@@ -45,12 +45,10 @@ Filesystem error оставляет `DELETING` и повторяется. Startu
 
 ## Training metrics
 
-Outbox в `PENDING` или `BLOCKED` по умолчанию блокирует удаление. Явный option
-`--discard-undelivered-metrics` переводит запись в `CANCELLED`; publisher больше
-не принимает её как pending, а финализация удаления каскадно удаляет локальную
-artifact metadata и outbox. Уже доставленные OpenSearch documents не удаляются.
-Bulk request, начатый до commit отмены, может завершиться; option означает
-отказ от гарантии полной projection, а не распределённое удаление документов.
+Run-owned telemetry не является частью модели. Удаление модели не читает и не
+изменяет outbox; pending доставка продолжается независимо, а terminal telemetry
+очищается по собственной retention policy. Уже доставленные OpenSearch
+documents не удаляются.
 
 ## Граница API
 
@@ -58,7 +56,7 @@ Flight v4 не меняется. Удаление является operator-owne
 
 ```text
 models list
-models delete MODEL_REF [--discard-undelivered-metrics]
+models delete MODEL_REF
 ```
 
 Удаление по alias намеренно отсутствует: mutable alias недостаточно точен для
@@ -67,6 +65,7 @@ destructive operation.
 ## Последствия
 
 - активная prediction защищает модель от удаления;
+- состояние metrics delivery не препятствует удалению;
 - после `DELETING` новые create и `model.describe` получают `NOT_FOUND`;
 - сбой между filesystem deletion и PostgreSQL finalization безопасно
   восстанавливается следующей maintenance attempt;

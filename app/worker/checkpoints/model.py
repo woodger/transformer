@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from typing import cast
 
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import (
     CHECKPOINT_FORMAT,
+    DATA_CONTRACT_ID,
+    DATA_CONTRACT_VERSION,
     TARGET_SCHEMA_ID,
     ml_contract,
     objective_config,
@@ -22,6 +25,7 @@ from app.worker.checkpoints.atomic import (
 from app.worker.runtime.version import __version__
 
 MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
+_PROFILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class CheckpointFormatMismatch(ValueError):
@@ -185,12 +189,31 @@ def _validate_current_checkpoint(payload: dict[str, object]) -> None:
         if data_contract_value is None
         else _object_dict(data_contract_value, "checkpoint data contract")
     )
-    if data_contract is not None and (
-        data_contract.get("targetSchemaId") != TARGET_SCHEMA_ID
-        or data_contract.get("seqLen") != model_config.seq_len
-        or data_contract.get("featureDim") != model_config.feature_dim
-    ):
-        raise CheckpointCorrupt("Checkpoint data contract is inconsistent")
+    if data_contract is not None:
+        profile = data_contract.get("profile")
+        digest = data_contract.get("dataContractSha256")
+        if (
+            set(data_contract) != {
+                "id",
+                "version",
+                "profile",
+                "dataContractSha256",
+                "seqLen",
+                "featureDim",
+                "targetSchemaId",
+            }
+            or data_contract.get("id") != DATA_CONTRACT_ID
+            or data_contract.get("version") != DATA_CONTRACT_VERSION
+            or not isinstance(profile, str)
+            or _PROFILE.fullmatch(profile) is None
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or data_contract.get("targetSchemaId") != TARGET_SCHEMA_ID
+            or data_contract.get("seqLen") != model_config.seq_len
+            or data_contract.get("featureDim") != model_config.feature_dim
+        ):
+            raise CheckpointCorrupt("Checkpoint data contract is inconsistent")
 
 
 def _data_schema(model_config: ModelConfig) -> JsonObject:

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 2,
+  "objectiveId": "transformer.objective.target-aligned.v2",
+  "directLosses": [
+    {"id": "L0", "targetIndex": 0, "semantic": "MeanReturn", "type": "smooth_l1", "normalization": "global_row_mean", "weight": 1.0},
+    {"id": "L1", "targetIndex": 1, "semantic": "SigmaReturn", "type": "smooth_l1", "normalization": "global_row_mean", "weight": 1.0},
+    {"id": "L2", "targetIndex": 2, "semantic": "ProbTP", "type": "binary_cross_entropy_with_logits", "normalization": "global_row_mean", "weight": 1.0},
+    {"id": "L3", "targetIndex": 3, "semantic": "ProbSL", "type": "binary_cross_entropy_with_logits", "normalization": "global_row_mean", "weight": 1.0},
+    {"id": "L4", "targetIndex": 4, "semantic": "VolatilityNext", "type": "log_mse", "normalization": "global_row_mean", "weight": 1.0},
+    {"id": "L5", "targetIndex": 5, "semantic": "HittingProbTP", "type": "binary_cross_entropy_with_logits", "normalization": "global_row_mean", "weight": 1.0}
+  ],
+  "auxiliaryLosses": [
+    {"id": "gaussianNll", "type": "gaussian_nll", "privateHead": "returnScale", "weight": 1.0},
+    {"id": "expectedValue", "type": "take_profit_minus_stop_loss", "weight": 0.3, "riskPenalty": 0.1}
+  ],
+  "stagePolicy": {
+    "schedule": "epoch",
+    "stageSize": 5,
+    "maximumStage": 4,
+    "stages": {
+      "1": ["L0", "L1", "gaussianNll"],
+      "2": ["L0", "L1", "L2", "L3", "L5", "gaussianNll"],
+      "3": ["L0", "L1", "L2", "L3", "L5", "gaussianNll", "expectedValue"],
+      "4": ["L0", "L1", "L2", "L3", "L4", "L5", "gaussianNll", "expectedValue"]
+    }
+  },
+  "selection": {
+    "enabled": true,
+    "aggregation": "global_row_mean",
+    "weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    "minDelta": 0.0,
+    "patience": 5,
+    "stagePolicy": "maximum_only_reset",
+    "tiePolicy": "earliest",
+    "baselinePolicy": "none",
+    "invalidScorePolicy": "fail_training",
+    "fallbackPolicy": "best_selection_score"
+  }
+}

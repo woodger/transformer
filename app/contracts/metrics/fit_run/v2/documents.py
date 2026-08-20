@@ -14,7 +14,7 @@ from app.contracts.json_types import JsonObject, JsonValue
 
 SUMMARY_FORMAT = "transformer.fit-run-summary.v2"
 SUMMARY_MEDIA_TYPE = "application/json"
-PROJECTION_VERSION = "inventory.metrics.v3"
+PROJECTION_VERSION = "inventory.metrics.v4"
 RUN_DOCUMENT_SCHEMA = "inventory.metrics.fit-run.v2"
 RUN_INDEX = "metrics-runs-v2"
 
@@ -29,9 +29,8 @@ _SUMMARY_VALIDATOR = Draft202012Validator(
 _RUN_SCHEMA = json.loads(
     (_ROOT / "run-document.schema.json").read_text(encoding="utf-8")
 )
-for _field in ("milestones", "durations", "counts", "targetStatistics"):
+for _field in ("milestones", "durations", "counts"):
     _RUN_SCHEMA["properties"][_field] = _SUMMARY_SCHEMA["properties"][_field]
-_RUN_SCHEMA["$defs"] = _SUMMARY_SCHEMA["$defs"]
 _RUN_VALIDATOR = Draft202012Validator(
     _RUN_SCHEMA,
     format_checker=FormatChecker(),
@@ -53,7 +52,6 @@ def build_run_summary(
     milestones: JsonObject,
     durations: JsonObject,
     counts: JsonObject,
-    target_statistics: list[JsonObject],
 ) -> JsonObject:
     return validate_run_summary({
         "format": SUMMARY_FORMAT,
@@ -70,7 +68,6 @@ def build_run_summary(
         "milestones": milestones,
         "durations": durations,
         "counts": counts,
-        "targetStatistics": target_statistics,
     })
 
 
@@ -117,7 +114,6 @@ def build_run_document(
         "milestones": cast(JsonObject, summary["milestones"]),
         "durations": cast(JsonObject, summary["durations"]),
         "counts": cast(JsonObject, summary["counts"]),
-        "targetStatistics": cast(list[JsonValue], summary["targetStatistics"]),
         "artifact": {
             "format": SUMMARY_FORMAT,
             "mediaType": SUMMARY_MEDIA_TYPE,
@@ -158,42 +154,7 @@ def _validate(
         prefix = f"{location}: " if location else ""
         raise ValueError(f"invalid {label}: {prefix}{error.message}")
     _finite(typed, label)
-    _validate_target_statistics(typed, label)
     return typed
-
-
-def _validate_target_statistics(document: JsonObject, label: str) -> None:
-    counts_value = document.get("counts")
-    statistics_value = document.get("targetStatistics")
-    if not isinstance(counts_value, dict) or not isinstance(
-        statistics_value,
-        list,
-    ):
-        raise ValueError(f"invalid {label}: target statistics are unavailable")
-    counts = cast(JsonObject, counts_value)
-    input_rows = _integer(counts, "inputRows")
-    for value in cast(list[JsonValue], statistics_value):
-        if not isinstance(value, dict):
-            raise ValueError(f"invalid {label}: target statistic must be an object")
-        statistic = cast(JsonObject, value)
-        count = _integer(statistic, "count")
-        zero_count = _integer(statistic, "zeroCount")
-        one_count = _integer(statistic, "oneCount")
-        minimum = _number(statistic, "min")
-        maximum = _number(statistic, "max")
-        mean = _number(statistic, "mean")
-        if count != input_rows:
-            raise ValueError(
-                f"invalid {label}: target count differs from input rows"
-            )
-        if (
-            zero_count > count
-            or one_count > count
-            or zero_count + one_count > count
-        ):
-            raise ValueError(f"invalid {label}: target value counts differ")
-        if minimum > mean or mean > maximum:
-            raise ValueError(f"invalid {label}: target moments are inconsistent")
 
 
 def _finite(value: JsonValue, label: str) -> None:
@@ -235,10 +196,3 @@ def _integer(document: JsonObject, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"fit run field {field} must be an integer")
     return value
-
-
-def _number(document: JsonObject, field: str) -> float:
-    value = document[field]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"fit run field {field} must be a number")
-    return float(value)

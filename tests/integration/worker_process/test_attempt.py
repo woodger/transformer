@@ -6,13 +6,15 @@ from types import SimpleNamespace
 from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessError,
 )
+from app.service.application.ports.artifacts import PublishedModelArtifacts
+from app.service.application.ports.workers import ExecutionResult
 from app.service.application.services.attempt_executor import (
     WorkerAttemptExecutor,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 
-ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v1"}
+ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v2"}
 
 
 class _Ledger:
@@ -228,3 +230,61 @@ def test_stale_executor_cannot_mutate_a_new_attempt():
 
     assert ledger.get_execution_job(first.job_id) == second
     assert artifacts.cleaned == [(first.attempt, first.attempt_id)]
+
+
+def test_terminal_telemetry_failure_does_not_change_published_fit():
+    job = replace(_job(), input_state=InputState.CLOSED)
+    ledger = _Ledger(job)
+    observed_metrics = []
+    observed_events = []
+
+    class SuccessfulRunner:
+        def run(self, *_args, **_kwargs):
+            return ExecutionResult(
+                exit_code=0,
+                stderr_tail=b"",
+                result_manifest={"checkpointMetadata": {}},
+            )
+
+    class PublishingArtifacts(_Artifacts):
+        def publish_model_from_manifest(self, current, _result):
+            ledger.current = replace(
+                current,
+                execution_state=ExecutionState.SUCCEEDED,
+            )
+            return PublishedModelArtifacts(
+                model_ref="mdl_test",
+                ml_contract=ML_CONTRACT,
+                checkpoint_publication_ms=1.0,
+            )
+
+    class BrokenTelemetry:
+        def publish(self, *_args):
+            raise RuntimeError("injected telemetry failure")
+
+    executor = WorkerAttemptExecutor(
+        ledger,
+        SimpleNamespace(build=lambda *_args: SimpleNamespace(inputs=())),
+        SuccessfulRunner(),
+        PublishingArtifacts(),
+        fit_telemetry_publisher=BrokenTelemetry(),
+        logger=SimpleNamespace(
+            event=lambda event, **fields: observed_events.append(
+                (event, fields)
+            )
+        ),
+        metrics=SimpleNamespace(
+            add=lambda name, *values: observed_metrics.append((name, values)),
+            record_transition=lambda *_args: None,
+        ),
+    )
+
+    executor.execute(job)
+
+    assert ledger.current.execution_state == ExecutionState.SUCCEEDED
+    assert ("trainingTelemetryCollectionErrors", ()) in observed_metrics
+    assert any(
+        event == "metrics.collection.failed"
+        and fields["phase"] == "model-artifact"
+        for event, fields in observed_events
+    )

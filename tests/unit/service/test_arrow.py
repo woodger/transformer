@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v4.arrow import canonical_input_schema
+from app.contracts.flight.v5.arrow import canonical_input_schema
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,

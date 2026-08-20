@@ -7,6 +7,71 @@
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-20
+
+### Changed
+
+- Flight v5 стал единственным публичным remote contract без v4 compatibility
+  surface. Target identity использует только PascalCase-имена `MeanReturn`,
+  `SigmaReturn`, `ProbTP`, `ProbSL`, `VolatilityNext` и `HittingProbTP`;
+  повышены semantic IDs, checkpoint/recovery formats и worker contract v7.
+- `dataContract` повышен до `inventory.learning-dataset` version 2 и получил
+  обязательный Inventory-owned `profile`. Transformer сохраняет, сравнивает и
+  возвращает весь документ без интерпретации; `model.describe` не дублирует
+  нормативный порядок target отдельным списком.
+- Epoch telemetry использует структурную пару `target.index`/`target.name` и
+  generic metric names. Текущие artifact/point contracts — v3, outbox
+  projection — `inventory.metrics.v4`, OpenSearch epoch index —
+  `metrics-points-v3`.
+- Training telemetry приведена к политике best effort: recovery checkpoint и
+  model generation фиксируются независимо от epoch metrics, metrics artifacts
+  и OpenSearch outbox. Сбой или отсутствие telemetry больше не меняет результат
+  fit и не блокирует удаление модели.
+- OpenSearch publisher отключается при ошибочной конфигурации, использует
+  конечный retry budget и bounded admission для outbox; terminal delivery
+  entries очищаются по retention policy.
+- Поля telemetry во внутреннем worker v7 стали необязательными. Core checkpoint
+  и fit result остаются строгими.
+- Training state, compact job progress и telemetry разделены на независимых
+  владельцев. Worker observations перенесены в `app/worker/telemetry`, а
+  service records, artifacts, PostgreSQL repository и publisher — в явный
+  telemetry slice; domain и общий ledger больше не содержат metrics API.
+- Durable telemetry теперь принадлежит fit run (`jobId`) и хранится в
+  отдельном `telemetry/<jobId>/`; удаление и список моделей не читают outbox.
+  Миграция 0010 удаляет прежние model-owned metadata/outbox и снимает
+  зависимость от model lifecycle; committed epoch intervals сохраняются.
+- Удалены Consumer-owned statistics исходных training targets, неиспользуемый
+  attempt-local metrics-файл и OpenSearch projection `metrics-artifacts-v2`.
+  Текущая централизованная проекция содержит только epoch points и terminal run
+  summary.
+- Pytest сведён к двум явным режимам: самодостаточный основной набор и отдельно
+  `gpu`. Временный PostgreSQL profile, скрытая fixture-маркировка и зависимые от
+  внешней инфраструктуры тесты удалены до проектирования полноценного
+  integration environment.
+- Архитектурная проверка layout фиксирует только наличие текущих canonical
+  locations и больше не проверяет исторические legacy paths.
+- Основной pytest suite ускорен за счёт единого immutable import snapshot,
+  устранения повторного worker inspect и несвязанной ML-инициализации. Worker
+  проверяет command manifest до импорта executor и Torch.
+- Необратимая migration `0011` требует предварительно удалить все модели и
+  очищает несовместимые v4 jobs, recovery, idempotency, aliases и telemetry,
+  сохраняя API tokens и tombstones удалённых model generations.
+
+### Removed
+
+- Удалены Flight v4, worker v6 и metrics v2 contracts; старые actions,
+  descriptor paths, semantic aliases и checkpoint fallback отсутствуют.
+
+### Fixed
+
+- В `job.status` восстановлен checkpoint-aligned live progress fit:
+  `epoch`, `step`, `loss_stage`, `loss`. Он фиксируется атомарно с recovery
+  checkpoint, а расширенная training telemetry остаётся best effort и не
+  попадает в прикладное состояние job.
+- GPU test допускает штатные AMP scale backoffs на первых batch-ах, но требует
+  восстановления `GradScaler`, применённого optimizer update и фактического
+  изменения параметров модели.
+
 ## [0.1.12] - 2026-08-16
 
 ### Added
@@ -518,7 +583,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/woodger/transformer/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/woodger/transformer/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/woodger/transformer/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/woodger/transformer/compare/v0.1.9...v0.1.10
