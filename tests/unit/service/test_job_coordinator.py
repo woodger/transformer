@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import ml_contract
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.messages.jobs import (
@@ -12,7 +12,7 @@ from app.service.application.messages.jobs import (
 from app.service.domain.job import ExecutionState, InputState
 
 
-def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
+def test_create_dispatch_maps_neutral_command_and_result_to_flight_v5():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -65,11 +65,12 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
     execution_id = "00000000-0000-4000-8000-000000000003"
     data_contract = {
         "id": "inventory.learning-dataset",
-        "version": 1,
+        "version": 2,
+        "profile": "research-dividend-events-v2",
         "data_contract_sha256": "a" * 64,
         "seq_len": 2,
         "feature_dim": 1,
-        "target_schema_id": "inventory.target.v1",
+        "target_schema_id": "inventory.target.v2",
     }
     train_config = TrainConfig()
     contract = ml_contract(train_config)
@@ -91,7 +92,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
     }
     document = {
         "contract": "transformer-flight",
-        "version": 4,
+        "version": 5,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -110,7 +111,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 4
+    assert result["version"] == 5
     assert result["jobId"] == job_id
     assert result["ownership"] == {
         "clientExecutionId": execution_id,
@@ -119,7 +120,7 @@ def test_create_dispatch_maps_neutral_command_and_result_to_flight_v4():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v4",
+            "v5",
             "jobs",
             job_id,
             "inputs",

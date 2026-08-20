@@ -13,7 +13,7 @@ from app.contracts.metrics.fit_run.v2 import (
     build_run_document,
     validate_run_summary,
 )
-from app.contracts.metrics.v2 import (
+from app.contracts.metrics.v3 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     project_training_points,

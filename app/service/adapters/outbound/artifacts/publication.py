@@ -10,16 +10,16 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.flight.v4.arrow import validate_prediction_file
+from app.contracts.flight.v5.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v7.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config,
@@ -526,6 +526,7 @@ def _data_contract_to_api(value: JsonObject) -> JsonObject:
     return {
         "id": value["id"],
         "version": value["version"],
+        "profile": value["profile"],
         "dataContractSha256": value["data_contract_sha256"],
         "seqLen": value["seq_len"],
         "featureDim": value["feature_dim"],
@@ -616,7 +617,7 @@ def _canonical_data_schema(model_config: ModelConfig) -> JsonObject:
             "column": "tgt",
             "acceptedElementTypes": ["float32"],
             "width": 6,
-            "targetSchemaId": "inventory.target.v1",
+            "targetSchemaId": "inventory.target.v2",
         },
         "featureDim": feature_dim,
         "modelInputFeatureDim": (

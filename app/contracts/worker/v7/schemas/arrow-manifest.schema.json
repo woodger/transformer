@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v7/arrow-manifest.schema.json",
+  "title": "Transformer worker v7 Arrow artifact manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId", "ordinal", "commitRevision", "dataContractSha256", "rows",
+    "artifact"
+  ],
+  "properties": {
+    "schemaId": {
+      "enum": [
+        "inventory.sequence.fit.v2",
+        "inventory.sequence.predict.v2",
+        "transformer.prediction.target-aligned.v2"
+      ]
+    },
+    "ordinal": {"type": "integer", "minimum": 0},
+    "commitRevision": {"type": "integer", "minimum": 1},
+    "dataContractSha256": {
+      "$ref": "https://transformer.local/contracts/worker/v7/common.schema.json#/$defs/sha256"
+    },
+    "rows": {"type": "integer", "minimum": 0},
+    "artifact": {
+      "$ref": "https://transformer.local/contracts/worker/v7/common.schema.json#/$defs/artifact"
+    }
+  }
+}

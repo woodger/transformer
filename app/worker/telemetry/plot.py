@@ -1,33 +1,23 @@
 import html
 import math
 import os
+from typing import cast
 
 from app.contracts.json_types import JsonObject
+from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.telemetry.io import load_metrics_jsonl
 
 PLOT_METRICS = (
     "loss",
-    "loss_l0",
-    "loss_l1",
-    "loss_l2",
-    "loss_l3",
-    "loss_l4",
-    "loss_l5",
+    *(f"direct.{name}" for name in TARGET_IDENTITIES),
     "loss_nll",
     "loss_ev",
-    "mean_return_mae",
-    "mean_return_rmse",
-    "sigma_return_mae",
-    "sigma_return_rmse",
-    "prob_tp_mae",
-    "prob_tp_rmse",
-    "prob_sl_mae",
-    "prob_sl_rmse",
-    "volatility_next_mae",
-    "volatility_next_rmse",
-    "hitting_prob_tp_mae",
-    "hitting_prob_tp_rmse",
+    *(
+        f"target.{name}.{statistic}"
+        for name in TARGET_IDENTITIES
+        for statistic in ("mae", "rmse")
+    ),
     "selection_score",
     "trainingBatchesCompleted",
     "optimizerUpdatesApplied",
@@ -83,7 +73,7 @@ def _series(
 ) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
     for index, row in enumerate(rows, start=1):
-        value = row.get(metric)
+        value = _metric_value(row, metric)
         if not isinstance(value, (int, float)):
             continue
         value = float(value)
@@ -100,6 +90,44 @@ def _series(
         points.append((x, value))
 
     return points
+
+
+def _metric_value(row: JsonObject, metric: str) -> object:
+    if metric.startswith("direct."):
+        return _structured_metric(
+            row.get("directLosses"),
+            target_name=metric.removeprefix("direct."),
+            field="value",
+        )
+    if metric.startswith("target."):
+        _, target_name, field = metric.split(".", 2)
+        return _structured_metric(
+            row.get("targetMetrics"),
+            target_name=target_name,
+            field=field,
+        )
+    return row.get(metric)
+
+
+def _structured_metric(
+    value: object,
+    *,
+    target_name: str,
+    field: str,
+) -> object:
+    if not isinstance(value, list):
+        return None
+    for item in cast(list[object], value):
+        if not isinstance(item, dict):
+            continue
+        document = cast(JsonObject, item)
+        target = document.get("target")
+        if (
+            isinstance(target, dict)
+            and cast(JsonObject, target).get("name") == target_name
+        ):
+            return document.get(field)
+    return None
 
 
 def _write_svg(

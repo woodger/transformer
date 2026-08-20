@@ -6,7 +6,7 @@
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
 [ADR 0012](../adr/0012-gradient-and-target-telemetry.md) и
 [ADR 0014](../adr/0014-run-owned-telemetry.md). Текущие schemas и templates находятся в
-[`app/contracts/metrics/v2`](../../app/contracts/metrics/v2/README.md) и
+[`app/contracts/metrics/v3`](../../app/contracts/metrics/v3/README.md) и
 [`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 
 Текущее развёртывание использует доверенную локальную сеть:
@@ -22,7 +22,7 @@ REST TLS отключён, OpenSearch требует существующую Ba
 Операцию выполняет администратор OpenSearch до включения publisher-а.
 
 Обычный index и data stream не могут одновременно использовать одно имя. Если
-в кластере уже существуют data streams `metrics-points-v2`,
+в кластере уже существуют data streams `metrics-points-v3`,
 `metrics-runs-v2`, сначала остановите publisher и
 отдельно решите вопрос
 сохранения их данных. Эта инструкция намеренно ничего не удаляет.
@@ -36,9 +36,9 @@ curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-points-v2" \
+  "$search_endpoint/_index_template/metrics-points-v3" \
   --data-binary \
-  @app/contracts/metrics/v2/opensearch/metrics-points-v2.template.json
+  @app/contracts/metrics/v3/opensearch/metrics-points-v3.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
@@ -51,7 +51,7 @@ curl --fail --silent --show-error \
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-points-v2"
+  "$search_endpoint/metrics-points-v3"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
@@ -66,8 +66,9 @@ Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Н�
 rollover policy: проверка повторного `create` и `_mget` требует одного concrete
 index на каждую versioned projection.
 
-Transformer публикует только projection `inventory.metrics.v3` в v2 indices.
-Поддержки прежних экспериментальных артефактов, записей outbox и индексов нет.
+Transformer публикует только projection `inventory.metrics.v4` в текущие
+versioned indices `metrics-points-v3` и `metrics-runs-v2`. Поддержки прежних
+экспериментальных артефактов, записей outbox и индексов нет.
 
 ## Настроить Transformer
 
@@ -106,7 +107,7 @@ publication продолжает создавать durable artifact и outbox b
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0010`.
+Текущий head — `0011`.
 
 ## Проверить работу
 

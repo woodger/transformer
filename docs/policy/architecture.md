@@ -6,9 +6,10 @@
 Проект использует Clean Architecture отдельно для каждого исполняемого
 процесса. Нормативные решения и их причины зафиксированы в
 [ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
-[ADR 0006](../adr/0006-service-application-boundaries.md), текущем
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md) и
-[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md), а граница
+[ADR 0006](../adr/0006-service-application-boundaries.md),
+[ADR 0007](../adr/0007-target-aligned-flight-v4.md),
+[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md) и текущем
+[ADR 0015](../adr/0015-unified-indicator-identity-flight-v5.md), а граница
 централизованных training metrics — в
 [ADR 0009](../adr/0009-centralized-training-metrics.md) и
 [ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
@@ -25,9 +26,9 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth и database commands
 
-app/contracts/flight/v4            публичный Flight contract
-app/contracts/worker/v6            внутренний process contract
-app/contracts/metrics/v2           epoch artifact и OpenSearch points
+app/contracts/flight/v5            публичный Flight contract
+app/contracts/worker/v7            внутренний process contract
+app/contracts/metrics/v3           epoch artifact и OpenSearch points
 app/contracts/metrics/fit_run/v2   terminal fit summary
 ```
 
@@ -123,7 +124,7 @@ local CLI и application use cases сервиса.
 Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
 размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
 service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v6/config.py`. Общий `app/config.py` не
+defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` не
 создаётся.
 
 ## Admin
@@ -135,12 +136,14 @@ cases, которые определяют операции с access tokens. Al
 
 ## Contracts
 
-- `app/contracts/flight/v4/` — нормативные schemas и fixtures публичного API;
-- Flight v4 является текущей штатной архитектурой remote API; дальнейшие
+- `app/contracts/flight/v5/` — нормативные schemas и fixtures публичного API;
+- Flight v5 является текущей штатной архитектурой remote API; дальнейшие
   изменения проектируются от его lifecycle, durability и fencing semantics;
-- `app/contracts/worker/v6/` — command/result manifests, capability document,
+- `app/contracts/ml.py` — единая Python identity target, ML-контракта,
+  checkpoint и recovery formats для Flight, worker и telemetry contracts;
+- `app/contracts/worker/v7/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/metrics/v2/` — текущий immutable epoch artifact, закрытая
+- `app/contracts/metrics/v3/` — текущий immutable epoch artifact, закрытая
   OpenSearch projection, golden identity и strict index templates;
 - `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
   durations и counters;
@@ -200,7 +203,7 @@ Ownership хранения:
 - service не импортирует `app.worker` implementation;
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
-- shared service/worker данные находятся только в `app/contracts/worker/v6`;
+- shared service/worker данные находятся только в `app/contracts/worker/v7`;
 - import graph не содержит циклов;
 - environment, connections, CUDA initialization и filesystem mutation не
   выполняются при import.

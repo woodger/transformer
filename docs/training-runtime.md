@@ -9,7 +9,7 @@
 
 ## Checkpoint contract
 
-Текущий формат — `transformer-checkpoint-v3`. Он содержит только закрытый
+Текущий формат — `transformer-checkpoint-v4`. Он содержит только закрытый
 набор полей:
 
 - `state_dict` и версию приложения;
@@ -38,7 +38,7 @@ checkpoint не интерпретируются автоматически. Д�
 Публичный prediction имеет шесть координат в том же порядке, что target:
 
 ```text
-meanReturn, sigmaReturn, probTP, probSL, volatilityNext, hittingProbTP
+MeanReturn, SigmaReturn, ProbTP, ProbSL, VolatilityNext, HittingProbTP
 ```
 
 Для каждой координаты JSONL содержит отдельные MAE и RMSE. Общая MAE/MSE по
@@ -110,7 +110,7 @@ replay с проверкой schema и row count.
 
 ## Recovery
 
-Текущий формат — `transformer-training-recovery-v3`. Checkpoint создаётся
+Текущий формат — `transformer-training-recovery-v4`. Checkpoint создаётся
 только на границе завершённой global epoch после EOF и содержит:
 
 - model, optimizer и AMP scaler state;

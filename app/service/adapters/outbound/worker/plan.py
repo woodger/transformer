@@ -5,14 +5,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6 import (
+from app.contracts.worker.v7 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -490,6 +490,7 @@ def _data_contract_manifest(value: JsonObject) -> JsonObject:
     return {
         "id": value["id"],
         "version": value["version"],
+        "profile": value["profile"],
         "dataContractSha256": value["data_contract_sha256"],
         "seqLen": value["seq_len"],
         "featureDim": value["feature_dim"],

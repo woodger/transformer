@@ -1,14 +1,16 @@
-# Сервис Transformer Arrow Flight: операционное руководство v4
+# Сервис Transformer Arrow Flight: операционное руководство v5
 
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
 [`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v4`](../app/contracts/flight/v4/README.md). Lifecycle
+[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Lifecycle
 долговечного потока, fencing и семантика восстановления закреплены в
 [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md), а текущий ML-контракт и
 breaking cutover — в
-[`ADR 0007`](adr/0007-target-aligned-flight-v4.md).
+[`ADR 0007`](adr/0007-target-aligned-flight-v4.md), а текущая единая identity
+индикаторов — в
+[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md).
 
 ## Требования к runtime
 
@@ -159,7 +161,7 @@ Transformer использует schema PostgreSQL `transformer`. Сервис �
 `status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
 head. Сервис и команды управления tokens отказываются запускаться при
 отсутствующей или устаревшей schema и предлагают выполнить
-`db migrations apply`. Flight v4 является текущим контрактом schema и runtime;
+`db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
 автоматически migrations не применяются.
 
 Переход на Alembic revision `0006` необратим: он удаляет незавершённые v3
@@ -171,20 +173,31 @@ Transformer, сохраните резервную копию PostgreSQL и mode
 модели требуется переобучить.
 
 Revision `0007` добавляет committed training intervals, metadata metrics
-artifact и delivery outbox. Flight v4 wire schema не меняется. Настройка
+artifact и delivery outbox. Flight v5 wire schema не меняется. Настройка
 OpenSearch выполняется отдельно по
 [`deployment/opensearch.md`](deployment/opensearch.md); недоступность
 OpenSearch не блокирует fit и публикацию модели.
 
 Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
 опубликованных model generations и состояние `CANCELLED` для явно отброшенной
-metrics delivery. Публичный Flight v4 не меняется.
+metrics delivery. Публичный Flight v5 не меняется.
 
 Revision `0009` добавляет timing boundaries terminal fit summary. Revision
 `0010` переносит durable telemetry в отдельный run-owned lifecycle с ключом
 `jobId` и удаляет экспериментальные model-owned artifact metadata и outbox.
-Committed epoch intervals и model generations сохраняются. Публичный Flight v4
+Committed epoch intervals и model generations сохраняются. Публичный Flight v5
 не меняется.
+
+Revision `0011` выполняет breaking cutover на единую PascalCase identity
+индикаторов Flight v5. До обновления checkout, пока v4 schema является текущей,
+штатно удалите все опубликованные модели и дождитесь состояния `DELETED`.
+Затем остановите Inventory и Transformer, разверните v5 и примените migration.
+Если осталась хотя бы одна модель `AVAILABLE` или `DELETING`, migration
+завершится ошибкой, не изменив данные. Она удаляет v4 jobs, recovery,
+idempotency, aliases и run-owned telemetry, но сохраняет API tokens и
+tombstones удалённых моделей с монотонными generation. Downgrade отсутствует.
+После cutover совместно запускаются только Inventory v5 и Transformer v5,
+затем выполняется новый fit.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -263,7 +276,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v4 определяет
+certificate options команды `flight serve`. Flight v5 определяет
 `cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -420,7 +433,7 @@ OpenSearch outbox не участвует в удалении модели. Pend
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v4.health`.
+аутентифицированный Flight action `transformer.v5.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check

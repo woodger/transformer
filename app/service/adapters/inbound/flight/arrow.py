@@ -5,7 +5,7 @@ import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v4.arrow import (
+from app.contracts.flight.v5.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
     schema_fingerprint,

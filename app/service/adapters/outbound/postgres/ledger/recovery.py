@@ -5,7 +5,7 @@ from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.worker.v6.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v7.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,

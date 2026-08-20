@@ -8,8 +8,8 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v6.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.worker.v7.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v7.objective import ml_contract
 from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
@@ -49,7 +49,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 4,
+        "version": 5,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -57,7 +57,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 4,
+        "version": 5,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
@@ -69,11 +69,12 @@ def _create_fit_document(**overrides):
         "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),
         "dataContract": {
             "id": "inventory.learning-dataset",
-            "version": 1,
+            "version": 2,
+            "profile": "research-dividend-events-v2",
             "dataContractSha256": "d" * 64,
             "seqLen": 2,
             "featureDim": 1,
-            "targetSchemaId": "inventory.target.v1",
+            "targetSchemaId": "inventory.target.v2",
         },
         "mlContract": SECURITY_ML_CONTRACT,
     }

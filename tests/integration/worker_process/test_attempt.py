@@ -14,7 +14,7 @@ from app.service.application.services.attempt_executor import (
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 
-ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v1"}
+ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v2"}
 
 
 class _Ledger:

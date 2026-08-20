@@ -33,8 +33,8 @@ identifiers, команды, пути, значения enum и другие э�
 | Архитектурные решения | `docs/adr/` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v4 contract | `app/contracts/flight/v4/` |
-| Нормативный worker v6 contract | `app/contracts/worker/v6/` |
+| Нормативный Flight v5 contract | `app/contracts/flight/v5/` |
+| Нормативный worker v7 contract | `app/contracts/worker/v7/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | История релизов | `CHANGELOG.md` |
 
@@ -87,7 +87,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Фактические правила parsing и defaults находятся у
 владельцев runtime: `app/local/config.py`,
-`app/service/bootstrap/config.py`, `app/contracts/worker/v6/config.py` и
+`app/service/bootstrap/config.py`, `app/contracts/worker/v7/config.py` и
 `app/service/adapters/outbound/postgres/config.py`.
 
 Документация не должна:
@@ -100,8 +100,8 @@ transformer <command> --help
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v4/` нормативны для wire
-format. README или operations guide не могут переопределять их. Flight v4 —
+JSON Schemas и golden fixtures в `app/contracts/flight/v5/` нормативны для wire
+format. README или operations guide не могут переопределять их. Flight v5 —
 единственный текущий remote API contract и базовая точка для дальнейших
 изменений.
 
@@ -115,7 +115,7 @@ format. README или operations guide не могут переопределя�
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v4 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v5 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## ADR

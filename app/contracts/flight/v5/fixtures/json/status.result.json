@@ -1,0 +1,133 @@
+{
+  "contract": "transformer-flight",
+  "version": 5,
+  "requestId": "88888888-8888-4888-8888-888888888888",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "operation": "fit",
+  "revision": 6,
+  "input": {
+    "state": "CLOSED",
+    "revision": 1,
+    "nextOrdinal": 1,
+    "payloadCount": 1,
+    "totalRows": 3,
+    "totalBytes": 1290,
+    "manifestSha256": "fcfd39d5448966758dcbd205409ee7ac7758e6624a332651b2cce632844e84a6"
+  },
+  "execution": {"state": "SUCCEEDED", "attempt": 1},
+  "ownership": {
+    "clientExecutionId": "56565656-5656-4565-8565-565656565656",
+    "fencingToken": "2"
+  },
+  "timestamps": {
+    "createdAt": "2026-08-10T12:00:00Z",
+    "updatedAt": "2026-08-10T12:05:00Z",
+    "inputClosedAt": "2026-08-10T12:00:10Z",
+    "queuedAt": "2026-08-10T12:00:05Z",
+    "startedAt": "2026-08-10T12:00:06Z",
+    "cancelRequestedAt": null,
+    "finishedAt": "2026-08-10T12:05:00Z"
+  },
+  "device": {"requested": "cpu", "selected": "cpu"},
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 2,
+    "profile": "research-dividend-events-v2",
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v2"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v2",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v2",
+    "objectiveId": "transformer.objective.target-aligned.v2",
+    "objectiveConfigSha256": "ae695d62d643a636d5daaef31275c83eb8baa75e354e70368061c1997b39c2fb",
+    "checkpointFormat": "transformer-checkpoint-v4",
+    "targetWidth": 6,
+    "predictionSpace": "target"
+  },
+  "resolvedModelRef": null,
+  "predictionColumn": "out",
+  "progress": {
+    "epoch": 25,
+    "step": 25,
+    "loss_stage": 4,
+    "loss": -3.149016
+  },
+  "recovery": {
+    "latestCheckpoint": {
+      "generation": 25,
+      "completedEpochs": 25,
+      "globalStep": 25,
+      "trainingComplete": true
+    },
+    "resumedFromGeneration": null,
+    "retryCount": 0,
+    "lastRetryCode": null,
+    "boundary": "globalEpoch"
+  },
+  "error": null,
+  "results": {
+    "outputCount": 0,
+    "modelRef": "mdl_01j2x5f4x6h7k8m9n0p1q2r3s4",
+    "checkpoint": {
+      "format": "transformer-checkpoint-v4",
+      "serviceVersion": "0.2.0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 123456,
+      "generation": 1,
+      "modelConfig": {
+        "seqLen": 2,
+        "hidden": 256,
+        "layers": 5,
+        "dropout": 0.1,
+        "nhead": 8,
+        "mode": "relaxed",
+        "outDim": 6,
+        "featureDim": 2
+      },
+      "trainingConfig": {
+        "lr": 0.0005,
+        "batchSize": 256,
+        "epochs": 25,
+        "lossStage": 4,
+        "lossSchedule": "epoch",
+        "stageSize": 5,
+        "useAmp": false,
+        "weightDecay": 0.00001,
+        "directLossWeights": [1, 1, 1, 1, 1, 1],
+        "selection": {"minDelta": 0, "patience": 5},
+        "seed": 42,
+        "deterministic": true
+      },
+      "dataContract": {
+        "id": "inventory.learning-dataset",
+        "version": 2,
+        "profile": "research-dividend-events-v2",
+        "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "seqLen": 2,
+        "featureDim": 2,
+        "targetSchemaId": "inventory.target.v2"
+      },
+      "mlContract": {
+        "targetSchemaId": "inventory.target.v2",
+        "predictionSchemaId": "transformer.prediction.target-aligned.v2",
+        "objectiveId": "transformer.objective.target-aligned.v2",
+        "objectiveConfigSha256": "ae695d62d643a636d5daaef31275c83eb8baa75e354e70368061c1997b39c2fb",
+        "checkpointFormat": "transformer-checkpoint-v4",
+        "targetWidth": 6,
+        "predictionSpace": "target"
+      },
+      "checkpointSelection": {
+        "enabled": true,
+        "objectiveConfigSha256": "ae695d62d643a636d5daaef31275c83eb8baa75e354e70368061c1997b39c2fb",
+        "bestSelectionScore": 0.85,
+        "bestFrame": 1,
+        "bestEpoch": 25,
+        "source": "best_selection_score"
+      }
+    }
+  },
+  "pollAfterMs": 0
+}

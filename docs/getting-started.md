@@ -112,7 +112,7 @@ Prediction использует созданный checkpoint:
 
 - [`fit-stream` и `predict-stream`](./local-arrow-protocol.md) принимают и
   возвращают framed Arrow payloads через standard streams.
-- [Arrow Flight v4 contract](../app/contracts/flight/v4/README.md) задаёт
+- [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
   PostgreSQL, tokens, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production

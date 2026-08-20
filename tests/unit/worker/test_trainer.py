@@ -10,12 +10,12 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config,
@@ -76,11 +76,12 @@ def model_config(*, seq_len=5, feature_dim=4):
 def data_contract(*, seq_len=5, feature_dim=4):
     return {
         "id": "inventory.learning-dataset",
-        "version": 1,
+        "version": 2,
+        "profile": "research-dividend-events-v2",
         "dataContractSha256": "d" * 64,
         "seqLen": seq_len,
         "featureDim": feature_dim,
-        "targetSchemaId": "inventory.target.v1",
+        "targetSchemaId": "inventory.target.v2",
     }
 
 
@@ -671,17 +672,22 @@ def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
 
     row = json.loads(path.read_text().strip())
 
-    assert row["loss_l0"] == pytest.approx(0.2)
-    for semantic in (
-        "mean_return",
-        "sigma_return",
-        "prob_tp",
-        "prob_sl",
-        "volatility_next",
-        "hitting_prob_tp",
-    ):
-        assert f"{semantic}_mae" in row
-        assert f"{semantic}_rmse" in row
+    assert row["directLosses"][0] == {
+        "target": {"index": 0, "name": "MeanReturn"},
+        "value": pytest.approx(0.2),
+    }
+    assert [item["target"]["name"] for item in row["targetMetrics"]] == [
+        "MeanReturn",
+        "SigmaReturn",
+        "ProbTP",
+        "ProbSL",
+        "VolatilityNext",
+        "HittingProbTP",
+    ]
+    assert all(
+        "mae" in item and "rmse" in item
+        for item in row["targetMetrics"]
+    )
     assert "ret_mae_skill" not in row
 
 
@@ -696,7 +702,7 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
 
     paths = plot_metrics(str(path), str(output))
 
-    expected = output / "mean_return_mae.svg"
+    expected = output / "target.MeanReturn.mae.svg"
     assert str(expected) in paths
     assert "<svg" in expected.read_text()
 

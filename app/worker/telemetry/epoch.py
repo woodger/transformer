@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.ml import target_identity
 from app.worker.model.transformer import public_predictions
 from app.worker.training.epoch import DIRECT_LOSS_FIELDS, TrainingEpochResult
 
@@ -209,17 +210,23 @@ def epoch_telemetry_document(
         "rows": result.rows,
         "batches": result.batches,
         "loss": result.loss,
-        **{name: getattr(result, name) for name in DIRECT_LOSS_FIELDS},
+        "directLosses": [
+            {
+                "target": target_identity(index),
+                "value": getattr(result, field_name),
+            }
+            for index, field_name in enumerate(DIRECT_LOSS_FIELDS)
+        ],
         "loss_nll": result.loss_nll,
         "loss_ev": result.loss_ev,
-        **{
-            f"{semantic}_mae": getattr(telemetry, f"{semantic}_mae")
-            for semantic in _SEMANTICS
-        },
-        **{
-            f"{semantic}_rmse": getattr(telemetry, f"{semantic}_rmse")
-            for semantic in _SEMANTICS
-        },
+        "targetMetrics": [
+            {
+                "target": target_identity(index),
+                "mae": getattr(telemetry, f"{semantic}_mae"),
+                "rmse": getattr(telemetry, f"{semantic}_rmse"),
+            }
+            for index, semantic in enumerate(_SEMANTICS)
+        ],
         "selection_score": result.selection_score,
         "trainingBatchesCompleted": telemetry.training_batches_completed,
         "optimizerUpdatesApplied": telemetry.optimizer_updates_applied,

@@ -14,7 +14,7 @@ from app.contracts.json_types import JsonObject, JsonValue
 
 SUMMARY_FORMAT = "transformer.fit-run-summary.v2"
 SUMMARY_MEDIA_TYPE = "application/json"
-PROJECTION_VERSION = "inventory.metrics.v3"
+PROJECTION_VERSION = "inventory.metrics.v4"
 RUN_DOCUMENT_SCHEMA = "inventory.metrics.fit-run.v2"
 RUN_INDEX = "metrics-runs-v2"
 

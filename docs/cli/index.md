@@ -40,7 +40,7 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v4`](../../app/contracts/flight/v4/README.md).
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
 
 ## File commands
 

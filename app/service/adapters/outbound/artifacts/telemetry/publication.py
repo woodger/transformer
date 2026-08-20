@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6.objective import CHECKPOINT_FORMAT
+from app.contracts.worker.v7.objective import CHECKPOINT_FORMAT
 from app.service.adapters.outbound.artifacts.telemetry.run_summary import (
     publish_fit_run_summary,
 )

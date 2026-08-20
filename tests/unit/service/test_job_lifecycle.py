@@ -11,8 +11,8 @@ from app.service.application.messages.jobs import (
 from app.service.domain.job import ExecutionState, InputState
 
 ML_CONTRACT = {
-    "targetSchemaId": "inventory.target.v1",
-    "objectiveId": "transformer.objective.target-aligned.v1",
+    "targetSchemaId": "inventory.target.v2",
+    "objectiveId": "transformer.objective.target-aligned.v2",
 }
 
 
@@ -45,11 +45,12 @@ def test_persisted_v4_wire_result_replays_without_new_mutation():
         resolved_model_ref=None,
         data_contract={
             "id": "inventory.learning-dataset",
-            "version": 1,
+            "version": 2,
+            "profile": "research-dividend-events-v2",
             "data_contract_sha256": "a" * 64,
             "seq_len": 2,
             "feature_dim": 1,
-            "target_schema_id": "inventory.target.v1",
+            "target_schema_id": "inventory.target.v2",
         },
         ml_contract=ML_CONTRACT,
         limits=limits,
@@ -60,7 +61,7 @@ def test_persisted_v4_wire_result_replays_without_new_mutation():
         def lookup_idempotency(self, owner, action, key):
             assert (owner, action, key) == (
                 "inventory",
-                "transformer.v4.job.create",
+                "transformer.v5.job.create",
                 "create:1",
             )
             return {
@@ -71,10 +72,10 @@ def test_persisted_v4_wire_result_replays_without_new_mutation():
     gateway = PostgresJobLifecycle(
         ReplayLedger(),
         JobActionNames(
-            create="transformer.v4.job.create",
-            acquire="transformer.v4.job.acquire",
-            input_close="transformer.v4.job.input.close",
-            cancel="transformer.v4.job.cancel",
+            create="transformer.v5.job.create",
+            acquire="transformer.v5.job.acquire",
+            input_close="transformer.v5.job.input.close",
+            cancel="transformer.v5.job.cancel",
         ),
     )
     command = CreateJobCommand(

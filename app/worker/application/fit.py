@@ -7,9 +7,9 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v6 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v6.config import ModelConfig, TrainConfig
-from app.contracts.worker.v6.objective import ml_contract
+from app.contracts.worker.v7 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v7.objective import ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -150,6 +150,8 @@ def execute_fit(
                 raise ValueError("recovery model configuration differs")
             if payload["train_config"] != train_config.to_dict():
                 raise ValueError("recovery training configuration differs")
+            if payload["data_contract"] != data_contract:
+                raise ValueError("recovery data contract differs")
             trainer.load_recovery_state_dict(
                 object_document(payload["trainer_state"], "trainer state")
             )

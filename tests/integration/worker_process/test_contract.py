@@ -16,20 +16,20 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v6 import (
+from app.contracts.worker.v7 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v6.config import (
+from app.contracts.worker.v7.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v6.objective import (
+from app.contracts.worker.v7.objective import (
     ml_contract,
     objective_config_sha256,
 )
@@ -53,11 +53,12 @@ MANIFEST_SHA256 = "d" * 64
 def _data_contract() -> dict:
     return {
         "id": "inventory.learning-dataset",
-        "version": 1,
+        "version": 2,
+        "profile": "research-dividend-events-v2",
         "dataContractSha256": DATA_CONTRACT_SHA256,
         "seqLen": 2,
         "featureDim": 2,
-        "targetSchemaId": "inventory.target.v1",
+        "targetSchemaId": "inventory.target.v2",
     }
 
 
@@ -129,7 +130,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=6",
+            "--contract-version=7",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -190,7 +191,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 6,
+        "protocolVersion": 7,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -266,7 +267,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 6,
+        "protocolVersion": 7,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -643,7 +644,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=6",
+            "--contract-version=7",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

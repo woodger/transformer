@@ -1,0 +1,12 @@
+{
+  "contract": "transformer-flight",
+  "version": 5,
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "clientExecutionId": "56565656-5656-4565-8565-565656565656",
+  "fencingToken": "2",
+  "payloadId": "66666666-6666-4666-8666-666666666666",
+  "ordinal": 0,
+  "schemaId": "inventory.sequence.fit.v2",
+  "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rows": 3
+}

@@ -31,7 +31,7 @@ def _summary():
         model_ref=MODEL_REF,
         data_contract_sha256="a" * 64,
         objective_config_sha256="b" * 64,
-        checkpoint_format="transformer-checkpoint-v3",
+        checkpoint_format="transformer-checkpoint-v4",
         application_version="0.1.12",
         git_commit="c" * 40,
         milestones={
