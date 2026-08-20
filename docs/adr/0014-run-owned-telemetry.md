@@ -48,7 +48,8 @@ PostgreSQL tables `training_metrics_artifacts`,
 PostgreSQL до штатной job retention.
 
 Удаление модели работает только с checkpoint, model metadata, alias и строкой
-модели. Оно не отменяет доставку и не удаляет run telemetry. Terminal outbox
+модели; минимальный deletion audit не содержит telemetry. Удаление не отменяет
+доставку и не удаляет run telemetry. Terminal outbox
 retention удаляет telemetry metadata и точные локальные файлы; startup
 reconciliation удаляет orphan run-каталоги.
 Startup также удаляет устаревшие server-owned `metrics.jsonl` и

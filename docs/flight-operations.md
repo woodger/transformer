@@ -199,10 +199,11 @@ tombstones удалённых моделей с монотонными generatio
 После cutover совместно запускаются только Inventory v5 и Transformer v5,
 затем выполняется новый fit.
 
-Revision `0012` физически удаляет накопленные model tombstones в состоянии
-`DELETED`, удаляет поле `deleted_at` и оставляет только переход
-`AVAILABLE → DELETING → отсутствие строки`. Она необратима и не меняет Flight
-v5.
+Revision `0012` физически удаляет накопленные строки `DELETED` из `models` и
+удаляет поле `models.deleted_at`. Она необратима. Revision `0013` создаёт
+минимальный `deleted_models` archive для последующих удалений. Ранее очищенные
+revision `0012` timestamps восстановить невозможно. Текущий lifecycle:
+`AVAILABLE → DELETING → audit archive`. Flight v5 не меняется.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -423,8 +424,9 @@ transaction блокирует новые predict, проверяет отсут
 jobs, снимает только alias, который указывает на эту generation, и фиксирует
 `DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
 удаления физически удаляет строку модели. При filesystem error состояние
-остаётся `DELETING` для следующей попытки. Tombstone не сохраняется, модель
-исчезает из `models list`, а generation может быть использована повторно.
+остаётся `DELETING` для следующей попытки. Минимальная identity и timestamps
+попадают в `deleted_models`, поэтому модель исчезает из обычного `models list`,
+но доступна через `models list --deleted`. Generation остаётся монотонным.
 Alias не откатывается на предыдущую generation.
 
 OpenSearch outbox не участвует в удалении модели. Pending run продолжает

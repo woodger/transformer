@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.service.adapters.outbound.postgres.ledger.support import advisory_lock
 from app.service.adapters.outbound.postgres.models import (
+    DeletedModel,
     Job,
     ModelAlias,
     PublishedModel,
@@ -31,11 +32,23 @@ class PublishedModelStore:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def list_models(self) -> list[ModelLifecycleRecord]:
+    def list_models(
+        self,
+        *,
+        deleted: bool = False,
+    ) -> list[ModelLifecycleRecord]:
         with self.database.session() as session:
+            if deleted:
+                deleted_rows = session.scalars(
+                    select(DeletedModel).order_by(
+                        DeletedModel.owner_subject,
+                        DeletedModel.label,
+                        DeletedModel.generation,
+                    )
+                ).all()
+                return [_deleted_record(model) for model in deleted_rows]
             rows = session.scalars(
-                select(PublishedModel)
-                .order_by(
+                select(PublishedModel).order_by(
                     PublishedModel.owner_subject,
                     PublishedModel.label,
                     PublishedModel.generation,
@@ -123,7 +136,21 @@ class PublishedModelStore:
                 raise RuntimeError(
                     f"model generation is not pending deletion: {model_ref}"
                 )
+            requested_at = model.deletion_requested_at
+            if requested_at is None:
+                raise RuntimeError(
+                    f"model deletion timestamp is missing: {model_ref}"
+                )
 
+            session.add(DeletedModel(
+                model_ref=model.model_ref,
+                owner_subject=model.owner_subject,
+                label=model.label,
+                generation=model.generation,
+                created_at=model.created_at,
+                deletion_requested_at=requested_at,
+                deleted_at=datetime.now(UTC),
+            ))
             # The request transaction already removes the current alias. The
             # foreign key cascade is the final guard against a stale alias.
             session.delete(model)
@@ -166,6 +193,20 @@ def _record(
             if model.deletion_requested_at is None
             else model.deletion_requested_at.timestamp()
         ),
+        deleted_at=None,
+    )
+
+
+def _deleted_record(model: DeletedModel) -> ModelLifecycleRecord:
+    return ModelLifecycleRecord(
+        model_ref=model.model_ref,
+        owner_subject=model.owner_subject,
+        label=model.label,
+        generation=model.generation,
+        state=ModelLifecycleState.DELETED,
+        created_at=model.created_at.timestamp(),
+        deletion_requested_at=model.deletion_requested_at.timestamp(),
+        deleted_at=model.deleted_at.timestamp(),
     )
 
 

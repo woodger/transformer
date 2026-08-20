@@ -235,8 +235,9 @@ Node.js; Python и Node.js результаты проверяются одни�
 `resolvedModelRef`. `model.describe` возвращает неизменяемую для существующей
 модели generation, digest checkpoint, конфигурацию модели и полный
 `dataContract`, включая `profile`, без пути на сервере. После штатного hard
-delete строка модели и generation history не сохраняются. Порядок target
-однозначно задаётся `targetSchemaId`; отдельный
+delete рабочая строка и model metadata не сохраняются; отдельный минимальный
+audit record удерживает только identity, timestamps и generation history.
+Порядок target однозначно задаётся `targetSchemaId`; отдельный
 дублирующий список `targets` в ответ не входит. У опубликованных моделей нет
 автоматического TTL. Стабильные ошибки:
 `NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_CORRUPT` и

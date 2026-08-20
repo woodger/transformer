@@ -7,21 +7,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Добавлена команда `models list --deleted`, которая показывает только
+  минимальный audit archive с точным `deleted_at`.
+
 ### Changed
 
 - Штатное удаление модели сохраняет безопасный промежуточный state
   `DELETING`, но после удаления каталога физически удаляет строку модели из
-  PostgreSQL. `models list` больше не содержит удалённые generations.
-- Generation является порядковым номером среди сохранённых моделей и может
-  использоваться повторно после hard delete; точный `modelRef` остаётся
-  identity существующей модели.
+  основной таблицы. Identity и timestamps переносятся в отдельный
+  `deleted_models`; checkpoint metadata и ML contracts не сохраняются.
+- Allocation generation учитывает рабочие модели и audit archive, поэтому
+  номер остаётся монотонным после hard delete.
 
 ### Removed
 
-- Удалены model state `DELETED`, поле `deleted_at` и долговечные model
-  tombstones. Необратимая migration `0012` очищает уже накопленные строки
-  `DELETED`; run-owned telemetry и terminal jobs сохраняют собственную
-  retention policy.
+- Удалены полные tombstones из основной таблицы `models` и её поле
+  `deleted_at`. Необратимая migration `0012` уже очистила прежние строки
+  `DELETED`; migration `0013` создаёт минимальный audit archive только для
+  последующих удалений. Run-owned telemetry и terminal jobs сохраняют
+  собственную retention policy.
 
 ## [0.1.13] - 2026-08-20
 

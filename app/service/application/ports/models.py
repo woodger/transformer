@@ -6,7 +6,11 @@ from app.service.domain.records import ModelLifecycleRecord
 
 
 class ModelAdministrationStore(Protocol):
-    def list_models(self) -> list[ModelLifecycleRecord]: ...
+    def list_models(
+        self,
+        *,
+        deleted: bool = False,
+    ) -> list[ModelLifecycleRecord]: ...
 
     def request_deletion(self, model_ref: str) -> ModelLifecycleRecord: ...
 

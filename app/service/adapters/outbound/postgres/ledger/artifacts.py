@@ -25,6 +25,7 @@ from app.service.adapters.outbound.postgres.ledger.support import (
 )
 from app.service.adapters.outbound.postgres.mapping import published_model_record
 from app.service.adapters.outbound.postgres.models import (
+    DeletedModel,
     Job,
     JobAttempt,
     JobOutput,
@@ -179,23 +180,26 @@ class ArtifactLedgerSlice:
                     job.owner_subject,
                     label,
                 )
-                next_generation_value = session.scalar(
-                    select(
-                        func.coalesce(
-                            func.max(PublishedModel.generation),
-                            0,
-                        )
-                        + 1
-                    ).where(
+                if session.get(DeletedModel, model_ref) is not None:
+                    raise conflict(
+                        "model reference belongs to a deleted generation"
+                    )
+                current_generation = session.scalar(
+                    select(func.max(PublishedModel.generation)).where(
                         PublishedModel.owner_subject == job.owner_subject,
                         PublishedModel.label == label,
                     )
                 )
-                if next_generation_value is None:
-                    raise RuntimeError(
-                        "model generation query did not return a value"
+                deleted_generation = session.scalar(
+                    select(func.max(DeletedModel.generation)).where(
+                        DeletedModel.owner_subject == job.owner_subject,
+                        DeletedModel.label == label,
                     )
-                next_generation = int(next_generation_value)
+                )
+                next_generation = max(
+                    0 if current_generation is None else current_generation,
+                    0 if deleted_generation is None else deleted_generation,
+                ) + 1
                 if generation is None:
                     generation = next_generation
                 elif generation != next_generation:

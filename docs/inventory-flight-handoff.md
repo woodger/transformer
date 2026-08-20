@@ -397,8 +397,9 @@ Transformer может готовить результаты локально д
 `transformer.v5.model.describe` принимает один `modelRef` или ограниченный
 owner-ом `modelAlias`. Пока модель существует, её `modelRef` и generation
 неизменяемы и не имеют автоматического TTL. После штатного hard delete metadata
-модели не сохраняется, а прежний generation может быть использован повторно;
-Consumer должен идентифицировать существующую модель точным `modelRef`.
+модели не сохраняется; минимальный audit record удерживает identity, timestamps
+и монотонность generation, но не разрешается через Flight. Consumer должен
+идентифицировать существующую модель точным `modelRef`.
 `predictionColumn` относится к prediction job, а не к модели. Ответ возвращает
 полный `dataContract`, включая `profile`, а
 `mlContract.targetSchemaId` и `targetWidth`. Отдельного списка `targets` нет:

@@ -107,7 +107,7 @@ publication продолжает создавать durable artifact и outbox b
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0011`.
+Текущий head — `0013`.
 
 ## Проверить работу
 

@@ -214,6 +214,7 @@ class ModelLifecycleRecord:
     state: ModelLifecycleState
     created_at: float
     deletion_requested_at: float | None
+    deleted_at: float | None
 
 
 @dataclass(frozen=True, slots=True)

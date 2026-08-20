@@ -126,6 +126,11 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
         formatter_class=HelpFormatter,
     )
     add_hidden_help_argument(model_list)
+    model_list.add_argument(
+        "--deleted",
+        action="store_true",
+        help="List only completed model deletion records.",
+    )
     model_list.set_defaults(data=None, metrics_name=None)
 
     delete = model_commands.add_parser(
@@ -141,7 +146,7 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
         metavar="MODEL_REF",
         help="Exact published model reference; aliases are not accepted.",
     )
-    delete.set_defaults(data=None, metrics_name=None)
+    delete.set_defaults(data=None, metrics_name=None, deleted=False)
 
 
 __all__ = ["add_admin_parsers"]

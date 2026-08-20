@@ -267,6 +267,7 @@ def test_access_and_database_namespaces_are_nested():
     revoked = parse("auth", "tokens", "revoke", token_id)
     status = parse("db", "migrations", "status")
     models = parse("models", "list")
+    deleted_models = parse("models", "list", "--deleted")
     deleted = parse(
         "models",
         "delete",
@@ -287,6 +288,8 @@ def test_access_and_database_namespaces_are_nested():
         "status",
     )
     assert (models.action, models.models_action) == ("models", "list")
+    assert models.deleted is False
+    assert deleted_models.deleted is True
     assert deleted.models_action == "delete"
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
 

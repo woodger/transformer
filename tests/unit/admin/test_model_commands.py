@@ -11,6 +11,10 @@ from app.service.domain.records import ModelLifecycleRecord
 
 
 def _record(state=ModelLifecycleState.AVAILABLE):
+    deletion_requested_at = (
+        2.0 if state == ModelLifecycleState.DELETED else None
+    )
+    deleted_at = 3.0 if state == ModelLifecycleState.DELETED else None
     return ModelLifecycleRecord(
         model_ref="mdl_0123456789abcdef0123456789abcdef",
         owner_subject="inventory",
@@ -18,7 +22,8 @@ def _record(state=ModelLifecycleState.AVAILABLE):
         generation=3,
         state=state,
         created_at=1.0,
-        deletion_requested_at=None,
+        deletion_requested_at=deletion_requested_at,
+        deleted_at=deleted_at,
     )
 
 
@@ -52,21 +57,39 @@ def test_models_list_prints_lifecycle_metadata_and_closes_database(
     capsys,
 ):
     class StoreDouble:
-        def list_models(self):
+        def list_models(self, *, deleted=False):
+            assert deleted is False
             return [_record()]
 
     closed = _wire(monkeypatch, StoreDouble())
 
-    models_command.run(SimpleNamespace(models_action="list"))
+    models_command.run(SimpleNamespace(models_action="list", deleted=False))
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == (
-        "MODEL REF\tOWNER\tLABEL\tGENERATION\tSTATE\tCREATED AT"
+        "MODEL REF\tOWNER\tLABEL\tGENERATION\tSTATE\t"
+        "CREATED AT\tDELETED AT"
     )
     assert lines[1].startswith(
         "mdl_0123456789abcdef0123456789abcdef\tinventory\tdaily\t"
         "3\tAVAILABLE\t"
     )
+    assert closed == [True]
+
+
+def test_models_list_deleted_selects_audit_archive(monkeypatch, capsys):
+    class StoreDouble:
+        def list_models(self, *, deleted=False):
+            assert deleted is True
+            return [_record(ModelLifecycleState.DELETED)]
+
+    closed = _wire(monkeypatch, StoreDouble())
+
+    models_command.run(SimpleNamespace(models_action="list", deleted=True))
+
+    line = capsys.readouterr().out.splitlines()[1]
+    assert "\tDELETED\t" in line
+    assert line.endswith("1970-01-01T00:00:03+00:00")
     assert closed == [True]
 
 

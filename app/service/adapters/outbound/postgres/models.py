@@ -497,6 +497,41 @@ class PublishedModel(Base):
     )
 
 
+class DeletedModel(Base):
+    __tablename__ = "deleted_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_subject",
+            "label",
+            "generation",
+            name="deleted_models_generation_uq",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="deleted_models_generation_ck",
+        ),
+        Index("deleted_models_deleted_at_idx", "deleted_at", "model_ref"),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(String(128), primary_key=True)
+    owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    label: Mapped[str] = mapped_column(String(256), nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    deletion_requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+
 class TrainingMetricsArtifact(Base):
     __tablename__ = "training_metrics_artifacts"
     __table_args__ = (

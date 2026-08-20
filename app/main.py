@@ -31,6 +31,7 @@ class CliArguments(Protocol):
     subject: str
     token_id: str
     model_ref: str
+    deleted: bool
     seed: int
     deterministic: bool
     device: str

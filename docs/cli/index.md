@@ -257,9 +257,15 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 физически удаляет строку модели из PostgreSQL. После завершения модель исчезает
 из `models list`, а повторный запрос возвращает `model generation not found`.
 
-Удалённая generation не сохраняет tombstone. Её порядковый номер может быть
-использован повторно после удаления; долговечной identity существующей модели
-является только точный `modelRef`.
+Минимальная identity и timestamps доступны отдельно:
+
+```bash
+./.venv/bin/python ./app/main.py models list --deleted
+```
+
+Опция показывает только удалённые модели и заполняет колонку `DELETED AT`.
+Checkpoint paths, hashes, contracts и metadata в archive не сохраняются.
+Generation остаётся монотонным и не используется повторно.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
 Run telemetry имеет собственный lifecycle: удаление модели не отменяет её
