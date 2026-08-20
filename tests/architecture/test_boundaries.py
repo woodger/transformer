@@ -1,8 +1,10 @@
 import ast
 import importlib.util
 import inspect
+import json
 import subprocess
 import sys
+from functools import cache
 from pathlib import Path
 
 from app.project import PROJECT_ROOT
@@ -21,6 +23,7 @@ def _is_within(module: str, package: str) -> bool:
     return module == package or module.startswith(f"{package}.")
 
 
+@cache
 def _application_modules() -> dict[str, Path]:
     return {
         _module_name(path): path
@@ -29,7 +32,8 @@ def _application_modules() -> dict[str, Path]:
     }
 
 
-def _imports(path: Path, module: str) -> set[str]:
+@cache
+def _imports(path: Path, module: str) -> frozenset[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = module if path.name == "__init__.py" else module.rpartition(".")[0]
     imports = set()
@@ -46,7 +50,60 @@ def _imports(path: Path, module: str) -> set[str]:
             imported = node.module
         if imported is not None:
             imports.add(imported)
-    return imports
+    return frozenset(imports)
+
+
+@cache
+def _control_plane_import_snapshots() -> dict[str, dict[str, object]]:
+    program = """
+import json
+import sys
+
+snapshots = {}
+
+from app.cli.parser import build_parser
+parser = build_parser()
+parser.parse_args(["flight", "serve", "--allow-plaintext"])
+parser.parse_args(["db", "migrations", "status"])
+snapshots["cli"] = {
+    "mlModules": sorted(
+        name for name in sys.modules
+        if name in ("torch", "cuda")
+        or name.startswith(("torch.", "cuda."))
+    ),
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+}
+
+import app.admin.bootstrap.db_migrations as admin_module
+admin_module.run = lambda _args: None
+sys.argv = ["transformer", "db", "migrations", "status"]
+from app.main import main
+main()
+snapshots["admin"] = {
+    "torch": "torch" in sys.modules,
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+    "flight": "pyarrow.flight" in sys.modules,
+}
+
+import app.service.bootstrap.application
+snapshots["service"] = {
+    "torch": "torch" in sys.modules,
+    "worker": any(name.startswith("app.worker") for name in sys.modules),
+}
+
+print(json.dumps(snapshots, sort_keys=True))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    document = json.loads(result.stdout)
+    assert isinstance(document, dict)
+    return document
 
 
 def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
@@ -328,81 +385,23 @@ def test_flight_handlers_receive_use_cases_instead_of_raw_ledger():
     assert violations == []
 
 
-def test_service_and_admin_imports_do_not_initialize_worker_runtime():
-    service_program = """
-import json
-import sys
-import app.service.bootstrap.application
-print(json.dumps({
-    'torch': 'torch' in sys.modules,
-    'worker': any(name.startswith('app.worker') for name in sys.modules),
-}))
-"""
-    service = subprocess.run(
-        [sys.executable, "-c", service_program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert service.stdout.strip() == '{"torch": false, "worker": false}'
+def test_service_import_does_not_initialize_worker_runtime():
+    assert _control_plane_import_snapshots()["service"] == {
+        "torch": False,
+        "worker": False,
+    }
 
-    admin_program = """
-import json
-import sys
-import app.admin.bootstrap.db_migrations as admin_module
 
-def run(_args):
-    print(json.dumps({
-        'torch': 'torch' in sys.modules,
-        'worker': any(name.startswith('app.worker') for name in sys.modules),
-        'flight': 'pyarrow.flight' in sys.modules,
-    }))
-
-admin_module.run = run
-sys.argv = ['transformer', 'db', 'migrations', 'status']
-from app.main import main
-main()
-"""
-    admin = subprocess.run(
-        [sys.executable, "-c", admin_program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert admin.stdout.strip() == (
-        '{"torch": false, "worker": false, "flight": false}'
-    )
+def test_admin_import_does_not_initialize_worker_or_flight_runtime():
+    assert _control_plane_import_snapshots()["admin"] == {
+        "torch": False,
+        "worker": False,
+        "flight": False,
+    }
 
 
 def test_control_plane_cli_parser_does_not_initialize_ml_runtime():
-    program = """
-import json
-import sys
-from app.cli.parser import build_parser
-
-parser = build_parser()
-parser.parse_args(["flight", "serve", "--allow-plaintext"])
-parser.parse_args(["db", "migrations", "status"])
-print(json.dumps({
-    "mlModules": sorted(
-        name for name in sys.modules
-        if name in ("torch", "cuda")
-        or name.startswith(("torch.", "cuda."))
-    ),
-    "worker": any(name.startswith("app.worker") for name in sys.modules),
-}))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", program],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-
-    assert result.stdout.strip() == '{"mlModules": [], "worker": false}'
+    assert _control_plane_import_snapshots()["cli"] == {
+        "mlModules": [],
+        "worker": False,
+    }

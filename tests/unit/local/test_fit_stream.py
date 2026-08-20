@@ -241,6 +241,11 @@ def test_fit_stream_applies_max_frame_bytes(monkeypatch):
 def test_main_rejects_data_path_for_fit_stream(monkeypatch):
     args = make_args(action="fit-stream", data="train.arrow", device="cpu")
     monkeypatch.setattr(main_module, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        main_module,
+        "configure_reproducibility",
+        lambda seed, deterministic: None,
+    )
     monkeypatch.setattr(main_module, "get_device", lambda device: torch.device("cpu"))
 
     with pytest.raises(ValueError, match="data path is not supported"):

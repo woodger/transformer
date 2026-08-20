@@ -92,29 +92,6 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
     }
 
 
-def test_worker_capabilities_are_reported_through_v6_process_contract():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "app.worker.bootstrap",
-            "inspect",
-            "--contract-version=6",
-        ],
-        cwd=PROJECT_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-    assert result.returncode == 0, result.stderr
-    document = validate_document(json.loads(result.stdout), "capabilities")
-    assert document["contract"] == "transformer-worker"
-    assert document["protocolVersion"] == 6
-    assert document["torchVersion"]
-
-
 def test_worker_verifies_an_immutable_input_receipt_once(tmp_path, monkeypatch):
     input_path = tmp_path / "input.arrow"
     _write_input(input_path, [[1.0, 2.0, 3.0, 4.0]], fit=False)

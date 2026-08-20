@@ -36,6 +36,9 @@
   integration environment.
 - Архитектурная проверка layout фиксирует только наличие текущих canonical
   locations и больше не проверяет исторические legacy paths.
+- Основной pytest suite ускорен за счёт единого immutable import snapshot,
+  устранения повторного worker inspect и несвязанной ML-инициализации. Worker
+  проверяет command manifest до импорта executor и Torch.
 
 ### Fixed
 
