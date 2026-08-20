@@ -19,7 +19,6 @@ def _record(state=ModelLifecycleState.AVAILABLE):
         state=state,
         created_at=1.0,
         deletion_requested_at=None,
-        deleted_at=None,
     )
 
 

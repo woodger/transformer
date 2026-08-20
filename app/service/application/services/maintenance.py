@@ -58,7 +58,7 @@ class MaintenanceService:
 
     Published model generations outlive the producing job. Their directories
     are removed only after an explicit PostgreSQL deletion request; the model
-    tombstone is finalized only after the filesystem operation succeeds.
+    row is purged only after the filesystem operation succeeds.
     """
 
     def __init__(

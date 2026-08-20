@@ -232,9 +232,11 @@ Node.js; Python и Node.js результаты проверяются одни�
 максимальном loss stage.
 
 `modelAlias` ограничен owner-ом и во время create атомарно разрешается в
-`resolvedModelRef`. `model.describe` возвращает неизменяемую generation, digest
-checkpoint, конфигурацию модели и полный `dataContract`, включая `profile`, без
-пути на сервере. Порядок target однозначно задаётся `targetSchemaId`; отдельный
+`resolvedModelRef`. `model.describe` возвращает неизменяемую для существующей
+модели generation, digest checkpoint, конфигурацию модели и полный
+`dataContract`, включая `profile`, без пути на сервере. После штатного hard
+delete строка модели и generation history не сохраняются. Порядок target
+однозначно задаётся `targetSchemaId`; отдельный
 дублирующий список `targets` в ответ не входит. У опубликованных моделей нет
 автоматического TTL. Стабильные ошибки:
 `NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_CORRUPT` и

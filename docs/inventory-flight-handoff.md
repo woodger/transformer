@@ -395,9 +395,12 @@ Transformer может готовить результаты локально д
 ## Модели
 
 `transformer.v5.model.describe` принимает один `modelRef` или ограниченный
-owner-ом `modelAlias`. Опубликованные `modelRef` и generation неизменяемы и не
-имеют автоматического TTL. `predictionColumn` относится к prediction job, а не
-к модели. Ответ возвращает полный `dataContract`, включая `profile`, а
+owner-ом `modelAlias`. Пока модель существует, её `modelRef` и generation
+неизменяемы и не имеют автоматического TTL. После штатного hard delete metadata
+модели не сохраняется, а прежний generation может быть использован повторно;
+Consumer должен идентифицировать существующую модель точным `modelRef`.
+`predictionColumn` относится к prediction job, а не к модели. Ответ возвращает
+полный `dataContract`, включая `profile`, а
 `mlContract.targetSchemaId` и `targetWidth`. Отдельного списка `targets` нет:
 порядок и имена шести координат однозначно определяет `inventory.target.v2`.
 

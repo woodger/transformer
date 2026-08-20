@@ -91,7 +91,6 @@ class PublishedModelStore:
 
             model.lifecycle_state = ModelLifecycleState.DELETING.value
             model.deletion_requested_at = now
-            model.deleted_at = None
             session.flush()
             return _record(model)
 
@@ -118,24 +117,16 @@ class PublishedModelStore:
         with self.database.transaction() as session:
             model = session.get(PublishedModel, model_ref, with_for_update=True)
             if model is None:
-                raise LookupError(f"model generation not found: {model_ref}")
-            state = ModelLifecycleState(model.lifecycle_state)
-            if state == ModelLifecycleState.DELETED:
                 return False
+            state = ModelLifecycleState(model.lifecycle_state)
             if state != ModelLifecycleState.DELETING:
                 raise RuntimeError(
                     f"model generation is not pending deletion: {model_ref}"
                 )
 
-            aliases = session.scalars(
-                select(ModelAlias)
-                .where(ModelAlias.model_ref == model_ref)
-                .with_for_update()
-            ).all()
-            for alias in aliases:
-                session.delete(alias)
-            model.lifecycle_state = ModelLifecycleState.DELETED.value
-            model.deleted_at = datetime.now(UTC)
+            # The request transaction already removes the current alias. The
+            # foreign key cascade is the final guard against a stale alias.
+            session.delete(model)
             session.flush()
             return True
 
@@ -174,9 +165,6 @@ def _record(
             None
             if model.deletion_requested_at is None
             else model.deletion_requested_at.timestamp()
-        ),
-        deleted_at=(
-            None if model.deleted_at is None else model.deleted_at.timestamp()
         ),
     )
 

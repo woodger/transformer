@@ -447,11 +447,9 @@ class PublishedModel(Base):
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
             "(lifecycle_state = 'AVAILABLE' "
-            "AND deletion_requested_at IS NULL AND deleted_at IS NULL) OR "
+            "AND deletion_requested_at IS NULL) OR "
             "(lifecycle_state = 'DELETING' "
-            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL) OR "
-            "(lifecycle_state = 'DELETED' "
-            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)",
+            "AND deletion_requested_at IS NOT NULL)",
             name="models_lifecycle_ck",
         ),
         CheckConstraint(
@@ -497,7 +495,6 @@ class PublishedModel(Base):
     deletion_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TrainingMetricsArtifact(Base):

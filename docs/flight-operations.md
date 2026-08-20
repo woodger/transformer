@@ -199,6 +199,11 @@ tombstones удалённых моделей с монотонными generatio
 После cutover совместно запускаются только Inventory v5 и Transformer v5,
 затем выполняется новый fit.
 
+Revision `0012` физически удаляет накопленные model tombstones в состоянии
+`DELETED`, удаляет поле `deleted_at` и оставляет только переход
+`AVAILABLE → DELETING → отсутствие строки`. Она необратима и не меняет Flight
+v5.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -409,17 +414,18 @@ idempotency record. Recovery inputs/checkpoints удаляются после п
 terminal state. Каталоги опубликованных моделей не удаляются вместе с job, а
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
-а точный lost-create replay остаётся разрешимым. В v4 нет сетевого action для
-удаления модели; оператор использует локальную команду `models delete`.
+а точный lost-create replay остаётся разрешимым. Во Flight v5 нет сетевого
+action для удаления модели; оператор использует локальную команду
+`models delete`.
 
 Удаление model generation имеет отдельную durable boundary. PostgreSQL
 transaction блокирует новые predict, проверяет отсутствие активных predict
 jobs, снимает только alias, который указывает на эту generation, и фиксирует
 `DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
-удаления переводит строку в `DELETED`. При filesystem error состояние остаётся
-`DELETING` для следующей попытки. Tombstone модели не удаляется: generation и
-`modelRef` не переиспользуются, а alias не откатывается на предыдущую
-generation.
+удаления физически удаляет строку модели. При filesystem error состояние
+остаётся `DELETING` для следующей попытки. Tombstone не сохраняется, модель
+исчезает из `models list`, а generation может быть использована повторно.
+Alias не откатывается на предыдущую generation.
 
 OpenSearch outbox не участвует в удалении модели. Pending run продолжает
 доставляться, а terminal telemetry очищается по собственной retention policy.

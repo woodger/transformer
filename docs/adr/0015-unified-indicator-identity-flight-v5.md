@@ -129,6 +129,9 @@ Migration сохраняет API access tokens и tombstones удалённых 
 idempotency results, aliases, run-owned telemetry и outbox. Downgrade не
 поддерживается.
 
+Следующая revision `0012` и ADR 0016 удаляют сохранённые model tombstones;
+это не меняет предусловие cutover revision `0011`.
+
 После cutover требуется новый fit и новый `modelRef`. Checkpoint v3 и recovery
 v3 не сертифицируются и завершаются стабильной ошибкой несовместимости.
 
