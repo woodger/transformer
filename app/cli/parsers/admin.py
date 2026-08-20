@@ -121,15 +121,15 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
     model_list = model_commands.add_parser(
         "list",
         add_help=False,
-        help="List published model generations and lifecycle state.",
-        description="List published model generations and lifecycle state.",
+        help="List available published model generations.",
+        description="List available published model generations.",
         formatter_class=HelpFormatter,
     )
     add_hidden_help_argument(model_list)
     model_list.add_argument(
         "--deleted",
         action="store_true",
-        help="List only completed model deletion records.",
+        help="List models being deleted and completed deletion records.",
     )
     model_list.set_defaults(data=None, metrics_name=None)
 

@@ -58,7 +58,7 @@ archive не переносятся. Это audit удаления, а не до
 
 ## CLI
 
-Обычная команда показывает только строки основной таблицы `models`:
+Обычная команда показывает только доступные модели (`AVAILABLE`):
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
@@ -70,9 +70,11 @@ archive не переносятся. Это audit удаления, а не до
 ./.venv/bin/python ./app/main.py models list --deleted
 ```
 
-Опция `--deleted` является фильтром и показывает только audit records. Колонка
-`DELETED AT` заполнена только для архивных записей. После завершения deletion
-повторная команда `models delete MODEL_REF` возвращает
+Опция `--deleted` является фильтром удаления. Она показывает как ожидающие
+физической очистки модели (`DELETING`), так и завершённые audit records
+(`DELETED`). Колонка `DELETED AT` остаётся пустой до завершения очистки и
+заполняется только для архивной записи. После завершения deletion повторная
+команда `models delete MODEL_REF` возвращает
 `model generation not found`.
 
 ## Generation
@@ -107,8 +109,9 @@ Hard delete удаляет принадлежащие модели данные:
 
 ## Последствия
 
-- `models list` содержит только существующие и ожидающие удаления модели;
-- `models list --deleted` даёт явный минимальный audit с `deleted_at`;
+- `models list` содержит только доступные модели;
+- `models list --deleted` показывает незавершённую очистку и минимальный audit
+  с `deleted_at` после её завершения;
 - PostgreSQL не хранит payload или metadata удалённых моделей;
 - generation остаётся монотонным;
 - активный predict по-прежнему блокирует удаление;

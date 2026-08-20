@@ -11,6 +11,7 @@ from app.service.adapters.outbound.postgres.models import (
 from app.service.adapters.outbound.postgres.published_models import (
     PublishedModelStore,
 )
+from app.service.domain.model import ModelLifecycleState
 
 
 class SessionDouble:
@@ -43,6 +44,108 @@ class DatabaseDouble:
     @contextmanager
     def transaction(self):
         yield self.session
+
+
+class ListingSessionDouble:
+    def __init__(self, *, available, deleting, deleted):
+        self.available = available
+        self.deleting = deleting
+        self.deleted = deleted
+
+    def scalars(self, statement):
+        entity = statement.column_descriptions[0]["entity"]
+        if entity is DeletedModel:
+            return SimpleNamespace(all=lambda: self.deleted)
+        assert entity is PublishedModel
+        parameter_values = set(statement.compile().params.values())
+        if ModelLifecycleState.AVAILABLE.value in parameter_values:
+            return SimpleNamespace(all=lambda: self.available)
+        if ModelLifecycleState.DELETING.value in parameter_values:
+            return SimpleNamespace(all=lambda: self.deleting)
+        raise AssertionError("published model listing must filter lifecycle state")
+
+
+class ListingDatabaseDouble:
+    def __init__(self, session):
+        self.listing_session = session
+
+    @contextmanager
+    def session(self):
+        yield self.listing_session
+
+
+def _model(*, generation, lifecycle_state):
+    return SimpleNamespace(
+        model_ref=f"mdl_{generation:032x}",
+        owner_subject="inventory",
+        label="daily",
+        generation=generation,
+        created_at=datetime(2026, 8, 20, tzinfo=UTC),
+        lifecycle_state=lifecycle_state,
+        deletion_requested_at=(
+            None
+            if lifecycle_state == ModelLifecycleState.AVAILABLE.value
+            else datetime(2026, 8, 20, 1, tzinfo=UTC)
+        ),
+        deleted_at=datetime(2026, 8, 20, 2, tzinfo=UTC),
+    )
+
+
+def test_model_lists_separate_available_and_deletion_lifecycle():
+    available = _model(
+        generation=1,
+        lifecycle_state=ModelLifecycleState.AVAILABLE.value,
+    )
+    deleting = _model(
+        generation=2,
+        lifecycle_state=ModelLifecycleState.DELETING.value,
+    )
+    deleted = _model(
+        generation=3,
+        lifecycle_state=ModelLifecycleState.DELETED.value,
+    )
+    session = ListingSessionDouble(
+        available=[available],
+        deleting=[deleting],
+        deleted=[deleted],
+    )
+    store = PublishedModelStore(ListingDatabaseDouble(session))
+
+    current_records = store.list_models()
+    deletion_records = store.list_models(deleted=True)
+
+    assert [record.state for record in current_records] == [
+        ModelLifecycleState.AVAILABLE
+    ]
+    assert [record.state for record in deletion_records] == [
+        ModelLifecycleState.DELETING,
+        ModelLifecycleState.DELETED,
+    ]
+    assert deletion_records[0].deleted_at is None
+    assert deletion_records[1].deleted_at is not None
+
+
+def test_deleted_list_prefers_archive_during_completion_race():
+    deleting = _model(
+        generation=2,
+        lifecycle_state=ModelLifecycleState.DELETING.value,
+    )
+    deleted = _model(
+        generation=2,
+        lifecycle_state=ModelLifecycleState.DELETED.value,
+    )
+    session = ListingSessionDouble(
+        available=[],
+        deleting=[deleting],
+        deleted=[deleted],
+    )
+    store = PublishedModelStore(ListingDatabaseDouble(session))
+
+    records = store.list_models(deleted=True)
+
+    assert len(records) == 1
+    assert records[0].state == ModelLifecycleState.DELETED
+    assert records[0].deleted_at is not None
 
 
 def test_completed_deletion_physically_removes_model_row():

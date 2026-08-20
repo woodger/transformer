@@ -39,6 +39,18 @@ class PublishedModelStore:
     ) -> list[ModelLifecycleRecord]:
         with self.database.session() as session:
             if deleted:
+                pending_rows = session.scalars(
+                    select(PublishedModel)
+                    .where(
+                        PublishedModel.lifecycle_state
+                        == ModelLifecycleState.DELETING.value
+                    )
+                    .order_by(
+                        PublishedModel.owner_subject,
+                        PublishedModel.label,
+                        PublishedModel.generation,
+                    )
+                ).all()
                 deleted_rows = session.scalars(
                     select(DeletedModel).order_by(
                         DeletedModel.owner_subject,
@@ -46,9 +58,24 @@ class PublishedModelStore:
                         DeletedModel.generation,
                     )
                 ).all()
-                return [_deleted_record(model) for model in deleted_rows]
+                records_by_ref = {
+                    model.model_ref: _record(model) for model in pending_rows
+                }
+                # READ COMMITTED may observe the same generation before and
+                # after maintenance moves it between the two tables. Prefer
+                # the completed archive record in that harmless race.
+                records_by_ref.update({
+                    model.model_ref: _deleted_record(model)
+                    for model in deleted_rows
+                })
+                return sorted(records_by_ref.values(), key=_record_sort_key)
             rows = session.scalars(
-                select(PublishedModel).order_by(
+                select(PublishedModel)
+                .where(
+                    PublishedModel.lifecycle_state
+                    == ModelLifecycleState.AVAILABLE.value
+                )
+                .order_by(
                     PublishedModel.owner_subject,
                     PublishedModel.label,
                     PublishedModel.generation,
@@ -208,6 +235,12 @@ def _deleted_record(model: DeletedModel) -> ModelLifecycleRecord:
         deletion_requested_at=model.deletion_requested_at.timestamp(),
         deleted_at=model.deleted_at.timestamp(),
     )
+
+
+def _record_sort_key(
+    model: ModelLifecycleRecord,
+) -> tuple[str, str, int]:
+    return (model.owner_subject, model.label, model.generation)
 
 
 __all__ = ["PublishedModelStore"]

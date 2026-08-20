@@ -9,8 +9,8 @@
 
 ### Added
 
-- Добавлена команда `models list --deleted`, которая показывает только
-  минимальный audit archive с точным `deleted_at`.
+- Добавлена команда `models list --deleted`, которая показывает ожидающие
+  очистки модели и минимальный audit archive с точным `deleted_at`.
 
 ### Changed
 
@@ -20,6 +20,8 @@
   `deleted_models`; checkpoint metadata и ML contracts не сохраняются.
 - Allocation generation учитывает рабочие модели и audit archive, поэтому
   номер остаётся монотонным после hard delete.
+- Обычный `models list` показывает только `AVAILABLE`; модели в `DELETING`
+  доступны через явный фильтр `--deleted`.
 
 ### Removed
 

@@ -425,8 +425,10 @@ jobs, снимает только alias, который указывает на 
 `DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
 удаления физически удаляет строку модели. При filesystem error состояние
 остаётся `DELETING` для следующей попытки. Минимальная identity и timestamps
-попадают в `deleted_models`, поэтому модель исчезает из обычного `models list`,
-но доступна через `models list --deleted`. Generation остаётся монотонным.
+попадают в `deleted_models`. Модель исчезает из обычного `models list` сразу
+после фиксации `DELETING`, но остаётся наблюдаемой через
+`models list --deleted`: сначала без `deleted_at`, затем как завершённая audit
+record. Generation остаётся монотонным.
 Alias не откатывается на предыдущую generation.
 
 OpenSearch outbox не участвует в удалении модели. Pending run продолжает

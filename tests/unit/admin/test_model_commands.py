@@ -12,7 +12,7 @@ from app.service.domain.records import ModelLifecycleRecord
 
 def _record(state=ModelLifecycleState.AVAILABLE):
     deletion_requested_at = (
-        2.0 if state == ModelLifecycleState.DELETED else None
+        2.0 if state != ModelLifecycleState.AVAILABLE else None
     )
     deleted_at = 3.0 if state == ModelLifecycleState.DELETED else None
     return ModelLifecycleRecord(
@@ -90,6 +90,22 @@ def test_models_list_deleted_selects_audit_archive(monkeypatch, capsys):
     line = capsys.readouterr().out.splitlines()[1]
     assert "\tDELETED\t" in line
     assert line.endswith("1970-01-01T00:00:03+00:00")
+    assert closed == [True]
+
+
+def test_models_list_deleted_includes_pending_deletion(monkeypatch, capsys):
+    class StoreDouble:
+        def list_models(self, *, deleted=False):
+            assert deleted is True
+            return [_record(ModelLifecycleState.DELETING)]
+
+    closed = _wire(monkeypatch, StoreDouble())
+
+    models_command.run(SimpleNamespace(models_action="list", deleted=True))
+
+    line = capsys.readouterr().out.splitlines()[1]
+    assert "\tDELETING\t" in line
+    assert line.endswith("\t")
     assert closed == [True]
 
 

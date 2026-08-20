@@ -236,8 +236,8 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 ## Опубликованные модели
 
-Список model generations включает точный `modelRef`, owner, label, generation
-и lifecycle state:
+Список доступных model generations включает точный `modelRef`, owner, label,
+generation и lifecycle state:
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
@@ -263,9 +263,11 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 ./.venv/bin/python ./app/main.py models list --deleted
 ```
 
-Опция показывает только удалённые модели и заполняет колонку `DELETED AT`.
-Checkpoint paths, hashes, contracts и metadata в archive не сохраняются.
-Generation остаётся монотонным и не используется повторно.
+Опция показывает модели в процессе удаления (`DELETING`) и завершённые
+удаления (`DELETED`). Для `DELETING` колонка `DELETED AT` остаётся пустой; она
+заполняется после физической очистки и переноса identity в archive. Checkpoint
+paths, hashes, contracts и metadata в archive не сохраняются. Generation
+остаётся монотонным и не используется повторно.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
 Run telemetry имеет собственный lifecycle: удаление модели не отменяет её
