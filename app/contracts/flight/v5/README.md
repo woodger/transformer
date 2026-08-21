@@ -7,7 +7,9 @@ Transformer, не зависящий от языка реализации. JSON 
 target-aligned ML-контракт — в
 [ADR 0007](../../../../docs/adr/0007-target-aligned-flight-v4.md), а единая
 identity индикаторов — в
-[ADR 0015](../../../../docs/adr/0015-unified-indicator-identity-flight-v5.md).
+[ADR 0015](../../../../docs/adr/0015-unified-indicator-identity-flight-v5.md),
+а transport authentication — в
+[ADR 0017](../../../../docs/adr/0017-ory-hydra-flight-authentication.md).
 
 ## Конверт и аутентификация
 
@@ -18,8 +20,11 @@ UTF-8, содержащий:
 {"contract":"transformer-flight","version":5,"requestId":"UUID"}
 ```
 
-Для каждого RPC требуется заголовок `authorization: Bearer TOKEN`. Мутации
-также содержат `idempotencyKey`. Канонический хеш запроса — SHA-256 от
+Для каждого RPC требуется `authorization: Bearer TOKEN` с opaque OAuth access
+token. Transformer выполняет Hydra introspection при входе в RPC; owner
+identity равна точному `client_id`. Требуются audience `transformer` и scope
+`transformer:invoke`. Мутации также содержат `idempotencyKey`. Канонический хеш
+запроса — SHA-256 от
 компактного JSON с отсортированными ключами после удаления `requestId` и
 `idempotencyKey`. Точный повтор возвращает зафиксированный результат;
 повторное использование ключа для другого запроса отклоняется.
@@ -232,9 +237,12 @@ Node.js; Python и Node.js результаты проверяются одни�
 максимальном loss stage.
 
 `modelAlias` ограничен owner-ом и во время create атомарно разрешается в
-`resolvedModelRef`. `model.describe` возвращает неизменяемую generation, digest
-checkpoint, конфигурацию модели и полный `dataContract`, включая `profile`, без
-пути на сервере. Порядок target однозначно задаётся `targetSchemaId`; отдельный
+`resolvedModelRef`. `model.describe` возвращает неизменяемую для существующей
+модели generation, digest checkpoint, конфигурацию модели и полный
+`dataContract`, включая `profile`, без пути на сервере. После штатного hard
+delete рабочая строка и model metadata не сохраняются; отдельный минимальный
+audit record удерживает только identity, timestamps и generation history.
+Порядок target однозначно задаётся `targetSchemaId`; отдельный
 дублирующий список `targets` в ответ не входит. У опубликованных моделей нет
 автоматического TTL. Стабильные ошибки:
 `NOT_FOUND`, `MODEL_UNAVAILABLE`, `MODEL_CORRUPT` и

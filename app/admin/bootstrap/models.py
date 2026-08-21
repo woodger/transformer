@@ -17,6 +17,7 @@ from app.service.domain.model import ModelDeletionBlocked
 class ModelArguments(Protocol):
     models_action: str
     model_ref: str
+    deleted: bool
 
 
 def run(args: ModelArguments) -> None:
@@ -26,7 +27,7 @@ def run(args: ModelArguments) -> None:
     try:
         administration = ModelAdministration(PublishedModelStore(database))
         if args.models_action == "list":
-            print_list(administration.list())
+            print_list(administration.list(deleted=args.deleted))
             return
         print_deletion(administration.delete(args.model_ref))
     except (LookupError, ValueError, ModelDeletionBlocked) as exc:

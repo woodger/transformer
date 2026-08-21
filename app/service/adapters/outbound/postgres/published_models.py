@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.service.adapters.outbound.postgres.ledger.support import advisory_lock
 from app.service.adapters.outbound.postgres.models import (
+    DeletedModel,
     Job,
     ModelAlias,
     PublishedModel,
@@ -31,10 +32,49 @@ class PublishedModelStore:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def list_models(self) -> list[ModelLifecycleRecord]:
+    def list_models(
+        self,
+        *,
+        deleted: bool = False,
+    ) -> list[ModelLifecycleRecord]:
         with self.database.session() as session:
+            if deleted:
+                pending_rows = session.scalars(
+                    select(PublishedModel)
+                    .where(
+                        PublishedModel.lifecycle_state
+                        == ModelLifecycleState.DELETING.value
+                    )
+                    .order_by(
+                        PublishedModel.owner_subject,
+                        PublishedModel.label,
+                        PublishedModel.generation,
+                    )
+                ).all()
+                deleted_rows = session.scalars(
+                    select(DeletedModel).order_by(
+                        DeletedModel.owner_subject,
+                        DeletedModel.label,
+                        DeletedModel.generation,
+                    )
+                ).all()
+                records_by_ref = {
+                    model.model_ref: _record(model) for model in pending_rows
+                }
+                # READ COMMITTED may observe the same generation before and
+                # after maintenance moves it between the two tables. Prefer
+                # the completed archive record in that harmless race.
+                records_by_ref.update({
+                    model.model_ref: _deleted_record(model)
+                    for model in deleted_rows
+                })
+                return sorted(records_by_ref.values(), key=_record_sort_key)
             rows = session.scalars(
                 select(PublishedModel)
+                .where(
+                    PublishedModel.lifecycle_state
+                    == ModelLifecycleState.AVAILABLE.value
+                )
                 .order_by(
                     PublishedModel.owner_subject,
                     PublishedModel.label,
@@ -91,7 +131,6 @@ class PublishedModelStore:
 
             model.lifecycle_state = ModelLifecycleState.DELETING.value
             model.deletion_requested_at = now
-            model.deleted_at = None
             session.flush()
             return _record(model)
 
@@ -118,24 +157,30 @@ class PublishedModelStore:
         with self.database.transaction() as session:
             model = session.get(PublishedModel, model_ref, with_for_update=True)
             if model is None:
-                raise LookupError(f"model generation not found: {model_ref}")
-            state = ModelLifecycleState(model.lifecycle_state)
-            if state == ModelLifecycleState.DELETED:
                 return False
+            state = ModelLifecycleState(model.lifecycle_state)
             if state != ModelLifecycleState.DELETING:
                 raise RuntimeError(
                     f"model generation is not pending deletion: {model_ref}"
                 )
+            requested_at = model.deletion_requested_at
+            if requested_at is None:
+                raise RuntimeError(
+                    f"model deletion timestamp is missing: {model_ref}"
+                )
 
-            aliases = session.scalars(
-                select(ModelAlias)
-                .where(ModelAlias.model_ref == model_ref)
-                .with_for_update()
-            ).all()
-            for alias in aliases:
-                session.delete(alias)
-            model.lifecycle_state = ModelLifecycleState.DELETED.value
-            model.deleted_at = datetime.now(UTC)
+            session.add(DeletedModel(
+                model_ref=model.model_ref,
+                owner_subject=model.owner_subject,
+                label=model.label,
+                generation=model.generation,
+                created_at=model.created_at,
+                deletion_requested_at=requested_at,
+                deleted_at=datetime.now(UTC),
+            ))
+            # The request transaction already removes the current alias. The
+            # foreign key cascade is the final guard against a stale alias.
+            session.delete(model)
             session.flush()
             return True
 
@@ -175,10 +220,27 @@ def _record(
             if model.deletion_requested_at is None
             else model.deletion_requested_at.timestamp()
         ),
-        deleted_at=(
-            None if model.deleted_at is None else model.deleted_at.timestamp()
-        ),
+        deleted_at=None,
     )
+
+
+def _deleted_record(model: DeletedModel) -> ModelLifecycleRecord:
+    return ModelLifecycleRecord(
+        model_ref=model.model_ref,
+        owner_subject=model.owner_subject,
+        label=model.label,
+        generation=model.generation,
+        state=ModelLifecycleState.DELETED,
+        created_at=model.created_at.timestamp(),
+        deletion_requested_at=model.deletion_requested_at.timestamp(),
+        deleted_at=model.deleted_at.timestamp(),
+    )
+
+
+def _record_sort_key(
+    model: ModelLifecycleRecord,
+) -> tuple[str, str, int]:
+    return (model.owner_subject, model.label, model.generation)
 
 
 __all__ = ["PublishedModelStore"]

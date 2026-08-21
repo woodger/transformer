@@ -4,68 +4,8 @@ from app.cli.parsers import SubparserTarget
 
 
 def add_admin_parsers(subparsers: SubparserTarget) -> None:
-    _add_auth_parsers(subparsers)
     _add_database_parsers(subparsers)
     _add_model_parsers(subparsers)
-
-
-def _add_auth_parsers(subparsers: SubparserTarget) -> None:
-    auth = subparsers.add_parser(
-        "auth",
-        help="API access commands.",
-        formatter_class=HelpFormatter,
-    )
-    auth_commands = auth.add_subparsers(
-        dest="auth_action",
-        required=True,
-        title="Commands",
-        metavar="COMMAND",
-    )
-    tokens = auth_commands.add_parser(
-        "tokens",
-        help="API access token commands.",
-        formatter_class=HelpFormatter,
-    )
-    token_commands = tokens.add_subparsers(
-        dest="tokens_action",
-        required=True,
-        title="Commands",
-        metavar="COMMAND",
-    )
-    issue = token_commands.add_parser(
-        "issue",
-        add_help=False,
-        description="Issue an API access token and print its credential.",
-        formatter_class=HelpFormatter,
-    )
-    add_hidden_help_argument(issue)
-    issue.add_argument(
-        "--subject",
-        required=True,
-        help="Authenticated subject associated with the token.",
-    )
-    issue.set_defaults(data=None, metrics_name=None)
-    token_list = token_commands.add_parser(
-        "list",
-        add_help=False,
-        description="List API access token metadata without credentials.",
-        formatter_class=HelpFormatter,
-    )
-    add_hidden_help_argument(token_list)
-    token_list.set_defaults(data=None, metrics_name=None)
-    revoke = token_commands.add_parser(
-        "revoke",
-        add_help=False,
-        description="Revoke an API access token by ID.",
-        formatter_class=HelpFormatter,
-    )
-    add_hidden_help_argument(revoke)
-    revoke.add_argument(
-        "token_id",
-        metavar="TOKEN_ID",
-        help="API access token UUID.",
-    )
-    revoke.set_defaults(data=None, metrics_name=None)
 
 
 def _add_database_parsers(subparsers: SubparserTarget) -> None:
@@ -121,11 +61,16 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
     model_list = model_commands.add_parser(
         "list",
         add_help=False,
-        help="List published model generations and lifecycle state.",
-        description="List published model generations and lifecycle state.",
+        help="List available published model generations.",
+        description="List available published model generations.",
         formatter_class=HelpFormatter,
     )
     add_hidden_help_argument(model_list)
+    model_list.add_argument(
+        "--deleted",
+        action="store_true",
+        help="List models being deleted and completed deletion records.",
+    )
     model_list.set_defaults(data=None, metrics_name=None)
 
     delete = model_commands.add_parser(
@@ -141,7 +86,7 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
         metavar="MODEL_REF",
         help="Exact published model reference; aliases are not accepted.",
     )
-    delete.set_defaults(data=None, metrics_name=None)
+    delete.set_defaults(data=None, metrics_name=None, deleted=False)
 
 
 __all__ = ["add_admin_parsers"]

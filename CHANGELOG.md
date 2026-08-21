@@ -7,6 +7,44 @@
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-21
+
+### Added
+
+- Добавлена команда `models list --deleted`, которая показывает ожидающие
+  очистки модели и минимальный audit archive с точным `deleted_at`.
+
+### Changed
+
+- Flight transport authentication переведена на introspection opaque OAuth
+  access tokens Ory Hydra. Каждый новый RPC требует `active=true`,
+  `token_type=Bearer`, audience `transformer` и scope
+  `transformer:invoke`; точный `client_id` является owner identity. Flight v5
+  и persisted job/model contracts не изменены. Runtime принимает базовый
+  Hydra Admin API URL через `HYDRA_ENDPOINT`; introspection path зафиксирован
+  в adapter. Решения авторизации кэшируются в ограниченном локальном
+  для процесса LRU: успех до 15 секунд и `exp`, окончательный отказ на
+  2 секунды; одновременные промахи объединяются в одну introspection.
+- Штатное удаление модели сохраняет безопасный промежуточный state
+  `DELETING`, но после удаления каталога физически удаляет строку модели из
+  основной таблицы. Identity и timestamps переносятся в отдельный
+  `deleted_models`; checkpoint metadata и ML contracts не сохраняются.
+- Allocation generation учитывает рабочие модели и audit archive, поэтому
+  номер остаётся монотонным после hard delete.
+- Обычный `models list` показывает только `AVAILABLE`; модели в `DELETING`
+  доступны через явный фильтр `--deleted`.
+
+### Removed
+
+- Удалены локальная выдача/отзыв API tokens, PostgreSQL token cache и fallback
+  на credentials формата `a.<base64url>`. Необратимая migration `0014` удаляет
+  таблицу `api_access_tokens` и её `LISTEN/NOTIFY` trigger.
+- Удалены полные tombstones из основной таблицы `models` и её поле
+  `deleted_at`. Необратимая migration `0012` уже очистила прежние строки
+  `DELETED`; migration `0013` создаёт минимальный audit archive только для
+  последующих удалений. Run-owned telemetry и terminal jobs сохраняют
+  собственную retention policy.
+
 ## [0.1.13] - 2026-08-20
 
 ### Changed
@@ -583,7 +621,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/woodger/transformer/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/woodger/transformer/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/woodger/transformer/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/woodger/transformer/compare/v0.1.10...v0.1.11

@@ -63,7 +63,7 @@ def test_ledger_row_is_deleted_before_job_directory_is_touched():
     ]
 
 
-def test_model_tombstone_is_finalized_after_directory_removal():
+def test_model_row_is_purged_after_directory_removal():
     model_ref = f"mdl_{uuid.uuid4().hex}"
     events = []
 
@@ -116,7 +116,7 @@ def test_model_tombstone_is_finalized_after_directory_removal():
     assert result.removed_model_directories == (model_ref,)
 
 
-def test_missing_model_directory_still_finalizes_pending_tombstone():
+def test_missing_model_directory_still_purges_pending_model_row():
     model_ref = f"mdl_{uuid.uuid4().hex}"
     completed = []
 

@@ -447,11 +447,9 @@ class PublishedModel(Base):
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
             "(lifecycle_state = 'AVAILABLE' "
-            "AND deletion_requested_at IS NULL AND deleted_at IS NULL) OR "
+            "AND deletion_requested_at IS NULL) OR "
             "(lifecycle_state = 'DELETING' "
-            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL) OR "
-            "(lifecycle_state = 'DELETED' "
-            "AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)",
+            "AND deletion_requested_at IS NOT NULL)",
             name="models_lifecycle_ck",
         ),
         CheckConstraint(
@@ -497,7 +495,41 @@ class PublishedModel(Base):
     deletion_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DeletedModel(Base):
+    __tablename__ = "deleted_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_subject",
+            "label",
+            "generation",
+            name="deleted_models_generation_uq",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="deleted_models_generation_ck",
+        ),
+        Index("deleted_models_deleted_at_idx", "deleted_at", "model_ref"),
+        {"schema": SCHEMA},
+    )
+
+    model_ref: Mapped[str] = mapped_column(String(128), primary_key=True)
+    owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
+    label: Mapped[str] = mapped_column(String(256), nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    deletion_requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
 
 
 class TrainingMetricsArtifact(Base):
@@ -699,29 +731,6 @@ class OutputTicket(Base):
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class ApiAccessToken(Base):
-    __tablename__ = "api_access_tokens"
-    __table_args__ = (
-        UniqueConstraint("token", name="api_access_tokens_token_uq"),
-        CheckConstraint(
-            "token ~ '^a\\.[A-Za-z0-9_-]{86}$'",
-            name="api_access_tokens_format_ck",
-        ),
-        Index(
-            "api_access_tokens_active_idx",
-            "revoked_at",
-            postgresql_where=text("revoked_at IS NULL"),
-        ),
-        {"schema": SCHEMA},
-    )
-
-    token_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
-    token: Mapped[str] = mapped_column(String(88), nullable=False)
-    subject: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RuntimeState(Base):

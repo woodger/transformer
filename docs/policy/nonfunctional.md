@@ -42,7 +42,8 @@
 
 ## Безопасность и эксплуатация
 
-- bearer authentication действует для каждого Flight transport;
+- opaque bearer access token проверяется через Ory Hydra в начале каждого
+  Flight RPC; owner identity равна точному OAuth `client_id`;
 - plaintext разрешается только явно;
 - сбой сбора, конфигурации или доставки telemetry не меняет результат fit,
   model lifecycle, startup или shutdown; transport profile определяется

@@ -32,11 +32,13 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
-| `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
 | `models list\|delete` | Просматривать и удалять опубликованные model generations |
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
-`flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки PostgreSQL.
+`flight serve`, `models` и `db migrations` требуют настройки PostgreSQL.
+`flight serve` дополнительно требует базовый адрес Ory Hydra
+Admin API;
+Transformer не содержит CLI для выдачи OAuth credentials.
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
@@ -236,8 +238,8 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 ## Опубликованные модели
 
-Список model generations включает точный `modelRef`, owner, label, generation
-и lifecycle state:
+Список доступных model generations включает точный `modelRef`, owner, label,
+generation и lifecycle state:
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
@@ -253,10 +255,21 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 Команда атомарно переводит доступную модель в `DELETING` и снимает alias,
 если он всё ещё указывает на эту generation. Новые prediction jobs после этого
-модель не видят. Каталог удаляет maintenance-процесс Flight service, затем
-состояние становится `DELETED`. Повторный запрос идемпотентен; строка-tombstone
-остаётся в PostgreSQL, поэтому `modelRef` и номер generation не
-переиспользуются.
+модель не видят. Maintenance-процесс Flight service удаляет каталог, затем
+физически удаляет строку модели из PostgreSQL. После завершения модель исчезает
+из `models list`, а повторный запрос возвращает `model generation not found`.
+
+Минимальная identity и timestamps доступны отдельно:
+
+```bash
+./.venv/bin/python ./app/main.py models list --deleted
+```
+
+Опция показывает модели в процессе удаления (`DELETING`) и завершённые
+удаления (`DELETED`). Для `DELETING` колонка `DELETED AT` остаётся пустой; она
+заполняется после физической очистки и переноса identity в archive. Checkpoint
+paths, hashes, contracts и metadata в archive не сохраняются. Generation
+остаётся монотонным и не используется повторно.
 
 Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
 Run telemetry имеет собственный lifecycle: удаление модели не отменяет её

@@ -47,8 +47,9 @@ PostgreSQL tables `training_metrics_artifacts`,
 и перенос скрытых путей не сохраняются. Committed epoch intervals остаются в
 PostgreSQL до штатной job retention.
 
-Удаление модели работает только с checkpoint, model metadata, aliases и
-tombstone. Оно не отменяет доставку и не удаляет run telemetry. Terminal outbox
+Удаление модели работает только с checkpoint, model metadata, alias и строкой
+модели; минимальный deletion audit не содержит telemetry. Удаление не отменяет
+доставку и не удаляет run telemetry. Terminal outbox
 retention удаляет telemetry metadata и точные локальные файлы; startup
 reconciliation удаляет orphan run-каталоги.
 Startup также удаляет устаревшие server-owned `metrics.jsonl` и
