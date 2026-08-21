@@ -7,7 +7,9 @@ Transformer, не зависящий от языка реализации. JSON 
 target-aligned ML-контракт — в
 [ADR 0007](../../../../docs/adr/0007-target-aligned-flight-v4.md), а единая
 identity индикаторов — в
-[ADR 0015](../../../../docs/adr/0015-unified-indicator-identity-flight-v5.md).
+[ADR 0015](../../../../docs/adr/0015-unified-indicator-identity-flight-v5.md),
+а transport authentication — в
+[ADR 0017](../../../../docs/adr/0017-ory-hydra-flight-authentication.md).
 
 ## Конверт и аутентификация
 
@@ -18,8 +20,11 @@ UTF-8, содержащий:
 {"contract":"transformer-flight","version":5,"requestId":"UUID"}
 ```
 
-Для каждого RPC требуется заголовок `authorization: Bearer TOKEN`. Мутации
-также содержат `idempotencyKey`. Канонический хеш запроса — SHA-256 от
+Для каждого RPC требуется `authorization: Bearer TOKEN` с opaque OAuth access
+token. Transformer выполняет Hydra introspection при входе в RPC; owner
+identity равна точному `client_id`. Требуются audience `transformer` и scope
+`transformer:invoke`. Мутации также содержат `idempotencyKey`. Канонический хеш
+запроса — SHA-256 от
 компактного JSON с отсортированными ключами после удаления `requestId` и
 `idempotencyKey`. Точный повтор возвращает зафиксированный результат;
 повторное использование ключа для другого запроса отклоняется.

@@ -1,4 +1,3 @@
-import hashlib
 import re
 import time
 from collections.abc import Mapping, Sequence
@@ -7,14 +6,15 @@ from typing import NoReturn, Protocol, cast
 import pyarrow.flight as flight
 
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.domain.access import AuthIdentity
+from app.service.application.ports.authentication import (
+    AccessTokenAuthenticator,
+    AuthenticationUnavailableError,
+    InsufficientAccessError,
+    InvalidAccessTokenError,
+)
 
 MIDDLEWARE_KEY = "auth"
 _BEARER_TOKEN = re.compile(r"^[\x21-\x7e]{1,4096}$")
-
-
-class _TokenCache(Protocol):
-    def lookup(self, token: str) -> AuthIdentity | None: ...
 
 
 class _CallContext(Protocol):
@@ -30,16 +30,18 @@ class BearerAuthMiddleware(
 ):
     def __init__(
         self,
-        subject: str,
+        owner_subject: str,
         method: str,
         metrics: OperationalMetrics,
         logger: JsonLogger,
+        *,
+        started: float,
     ) -> None:
-        self.subject = subject
+        self.owner_subject = owner_subject
         self.method = method
         self._metrics = metrics
         self._logger = logger
-        self._started = time.monotonic()
+        self._started = started
 
     def call_completed(self, exception: BaseException | None) -> None:
         elapsed = time.monotonic() - self._started
@@ -58,13 +60,11 @@ class BearerAuthMiddlewareFactory(
 ):
     def __init__(
         self,
-        token_cache: _TokenCache | dict[str, str],
+        authenticator: AccessTokenAuthenticator,
         metrics: OperationalMetrics,
         logger: JsonLogger,
     ) -> None:
-        if isinstance(token_cache, dict):
-            token_cache = InMemoryAccessTokenCache(token_cache)
-        self._token_cache: _TokenCache = token_cache
+        self._authenticator = authenticator
         self._metrics = metrics
         self._logger = logger
 
@@ -77,51 +77,104 @@ class BearerAuthMiddlewareFactory(
         method = str(cast(object, getattr(info, "method", "unknown")))
         value = _single_authorization_header(headers)
         if value is None:
-            self._reject(method, started, "missing bearer authorization metadata")
+            self._reject(
+                method,
+                started,
+                "UNAUTHENTICATED",
+                "missing bearer authorization metadata",
+                "FlightUnauthenticatedError",
+            )
         scheme, separator, token = value.partition(" ")
         if (
             separator != " "
             or scheme.lower() != "bearer"
             or not _BEARER_TOKEN.fullmatch(token)
         ):
-            self._reject(method, started, "invalid bearer authorization metadata")
+            self._reject(
+                method,
+                started,
+                "UNAUTHENTICATED",
+                "invalid bearer authorization metadata",
+                "FlightUnauthenticatedError",
+            )
 
-        identity = self._token_cache.lookup(token)
-        if identity is None:
-            self._reject(method, started, "invalid bearer credential")
+        try:
+            principal = self._authenticator.authenticate(token)
+        except InvalidAccessTokenError:
+            self._reject(
+                method,
+                started,
+                "UNAUTHENTICATED",
+                "invalid bearer credential",
+                "FlightUnauthenticatedError",
+            )
+        except InsufficientAccessError:
+            self._reject(
+                method,
+                started,
+                "PERMISSION_DENIED",
+                "bearer credential lacks required permission",
+                "FlightUnauthorizedError",
+            )
+        except AuthenticationUnavailableError:
+            self._reject(
+                method,
+                started,
+                "UNAVAILABLE",
+                "authentication service is unavailable",
+                "FlightUnavailableError",
+            )
+        except Exception:
+            # Fail closed and never expose an adapter error that could contain
+            # the credential or the introspection request body.
+            self._reject(
+                method,
+                started,
+                "UNAVAILABLE",
+                "authentication service is unavailable",
+                "FlightUnavailableError",
+            )
 
         return BearerAuthMiddleware(
-            subject=identity.subject,
+            owner_subject=principal.owner_subject,
             method=method,
             metrics=self._metrics,
             logger=self._logger,
+            started=started,
         )
 
-    def _reject(self, method: str, started: float, message: str) -> NoReturn:
+    def _reject(
+        self,
+        method: str,
+        started: float,
+        status: str,
+        message: str,
+        exception_name: str,
+    ) -> NoReturn:
         elapsed = time.monotonic() - started
-        self._metrics.record_rpc(method, "UNAUTHENTICATED", elapsed)
+        self._metrics.record_rpc(method, status, elapsed)
         self._logger.event(
             "flight.rpc.completed",
             method=method,
-            status="UNAUTHENTICATED",
+            status=status,
             latencyMs=round(elapsed * 1000.0, 3),
         )
-        # Never include the supplied authorization value in logs or errors.
-        raise _unauthenticated_exception(f"UNAUTHENTICATED: {message}")
+        raise _flight_exception(exception_name, f"{status}: {message}")
 
 
-def authenticated_subject(context: _CallContext) -> str:
+def authenticated_owner_subject(context: _CallContext) -> str:
     middleware = context.get_middleware(MIDDLEWARE_KEY)
-    subject = (
+    owner_subject = (
         None
         if middleware is None
-        else cast(object, getattr(middleware, "subject", None))
+        else cast(object, getattr(middleware, "owner_subject", None))
     )
-    if not isinstance(subject, str) or not subject:
-        raise _unauthenticated_exception(
-            "UNAUTHENTICATED: authentication middleware is unavailable"
+    if not isinstance(owner_subject, str) or not owner_subject:
+        raise _flight_exception(
+            "FlightUnauthenticatedError",
+            "UNAUTHENTICATED: authentication middleware is unavailable",
         )
-    return subject
+    return owner_subject
 
 
 def _single_authorization_header(
@@ -146,56 +199,7 @@ def _single_authorization_header(
     return value if isinstance(value, str) else None
 
 
-def _validate_credential(token: object, subject: object) -> None:
-    if not isinstance(token, str) or not _BEARER_TOKEN.fullmatch(token):
-        raise ValueError(
-            "bearer token must contain 1-4096 non-whitespace printable ASCII characters"
-        )
-    if (
-        not isinstance(subject, str)
-        or not subject
-        or len(subject) > 256
-        or any(ord(character) < 32 or ord(character) == 127 for character in subject)
-    ):
-        raise ValueError(
-            "bearer subject must be 1-256 characters without control characters"
-        )
-
-
-def validate_bearer_credentials(tokens: object) -> dict[str, str]:
-    if not isinstance(tokens, dict) or not tokens:
-        raise ValueError("at least one bearer token is required")
-    credentials = cast(dict[object, object], tokens)
-    for token, subject in credentials.items():
-        _validate_credential(token, subject)
-    return {
-        cast(str, token): cast(str, subject)
-        for token, subject in credentials.items()
-    }
-
-
-class InMemoryAccessTokenCache:
-    """Small injection seam used by isolated middleware/server tests."""
-
-    def __init__(self, tokens: dict[str, str]) -> None:
-        credentials = validate_bearer_credentials(tokens)
-        self._entries = {
-            hashlib.sha256(token.encode("ascii")).hexdigest(): AuthIdentity(
-                token_id="in-memory",
-                subject=subject,
-            )
-            for token, subject in credentials.items()
-        }
-
-    def lookup(self, token: str) -> AuthIdentity | None:
-        digest = hashlib.sha256(token.encode("ascii")).hexdigest()
-        return self._entries.get(digest)
-
-
-def _unauthenticated_exception(message: str) -> Exception:
-    """Construct the runtime exception omitted by PyArrow's public stubs."""
-    factory = cast(
-        _FlightExceptionFactory,
-        vars(flight)["FlightUnauthenticatedError"],
-    )
+def _flight_exception(name: str, message: str) -> Exception:
+    """Construct a runtime exception omitted by PyArrow's public stubs."""
+    factory = cast(_FlightExceptionFactory, vars(flight)[name])
     return factory(message)

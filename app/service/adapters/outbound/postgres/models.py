@@ -733,29 +733,6 @@ class OutputTicket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class ApiAccessToken(Base):
-    __tablename__ = "api_access_tokens"
-    __table_args__ = (
-        UniqueConstraint("token", name="api_access_tokens_token_uq"),
-        CheckConstraint(
-            "token ~ '^a\\.[A-Za-z0-9_-]{86}$'",
-            name="api_access_tokens_format_ck",
-        ),
-        Index(
-            "api_access_tokens_active_idx",
-            "revoked_at",
-            postgresql_where=text("revoked_at IS NULL"),
-        ),
-        {"schema": SCHEMA},
-    )
-
-    token_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
-    token: Mapped[str] = mapped_column(String(88), nullable=False)
-    subject: Mapped[str] = mapped_column(String(256), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
 class RuntimeState(Base):
     __tablename__ = "runtime_state"
     __table_args__ = ({"schema": SCHEMA},)

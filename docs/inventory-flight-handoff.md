@@ -9,7 +9,9 @@
 [`руководстве по эксплуатации Flight`](flight-operations.md), а архитектурное
 решения — в [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md),
 [`ADR 0007`](adr/0007-target-aligned-flight-v4.md) и
-[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md).
+[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md). Transport
+authentication закреплена в
+[`ADR 0017`](adr/0017-ory-hydra-flight-authentication.md).
 
 Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,
@@ -22,12 +24,24 @@ semantic aliases и fallback отсутствуют.
 использует `DoExchange` и `PollFlightInfo`. Каждый RPC содержит:
 
 ```text
-authorization: Bearer a.<base64url>
+authorization: Bearer <opaque-access-token>
 ```
 
-Credential представляет одного owner subject. Jobs, model aliases, model
-references, status, receipts, tickets и outputs ограничены owner-ом. Никогда не
-записывайте bearer credential или непрозрачный output ticket в логи.
+Inventory получает token у Ory Hydra через `client_credentials` и явно
+запрашивает `audience=transformer` и `scope=transformer:invoke`. Token должен
+быть opaque. Transformer выполняет introspection в начале каждого RPC и
+использует точный `client_id` как owner. Все краткоживущие tokens client-а
+`inventory` видят один owner-scoped state; token другого `client_id` его не
+видит. Refresh token не принимается.
+
+Уже начатый streaming RPC завершается без повторной проверки срока жизни
+token. Для следующего RPC Inventory передаёт действующий token, при
+необходимости — вновь полученный для того же `client_id`. Bearer credential и
+opaque output ticket не записываются в логи.
+
+Inactive/expired/revoked token возвращает `UNAUTHENTICATED`, недостаточные
+audience/scope — `PERMISSION_DENIED`, а timeout, outage или malformed response
+Hydra — `UNAVAILABLE`. Локальные tokens Transformer и fallback отсутствуют.
 
 Каждый документ action начинается с:
 

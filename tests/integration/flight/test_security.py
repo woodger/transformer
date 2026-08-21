@@ -10,7 +10,6 @@ import pytest
 
 from app.contracts.worker.v7.config import TrainConfig, train_config_to_manifest
 from app.contracts.worker.v7.objective import ml_contract
-from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -27,10 +26,10 @@ from app.service.adapters.inbound.flight.output import (
     _stream_batches,
 )
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
-from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.errors import ServiceError
 from app.service.domain.records import OutputRecord
+from tests.support.authentication import StaticAccessTokenAuthenticator
 
 SECURITY_TRAIN_CONFIG = TrainConfig(
     epochs=1,
@@ -128,7 +127,7 @@ def protected_server(tmp_path):
             allow_plaintext=True,
         ),
         coordinator,
-        {"secret": "inventory"},
+        StaticAccessTokenAuthenticator({"secret": "inventory"}),
         upload_handler=upload,
         output_handler=output,
     )
@@ -204,24 +203,6 @@ def test_paths_and_arbitrary_cli_arguments_are_rejected_before_dispatch(
         ))
 
     assert coordinator.calls == []
-
-
-@pytest.mark.parametrize(
-    ("tokens", "message"),
-    [
-        ({"has whitespace": "inventory"}, "printable ASCII"),
-        ({"café": "inventory"}, "printable ASCII"),
-        ({"secret": "inventory\nadmin"}, "control characters"),
-        ({"x" * 4097: "inventory"}, "printable ASCII"),
-    ],
-)
-def test_bearer_credentials_reject_unsafe_header_and_subject_values(tokens, message):
-    with pytest.raises(ValueError, match=message):
-        BearerAuthMiddlewareFactory(
-            tokens,
-            OperationalMetrics(),
-            JsonLogger("transformer.flight.security-test"),
-        )
 
 
 def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_path):

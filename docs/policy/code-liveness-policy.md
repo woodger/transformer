@@ -15,7 +15,7 @@
 - `app/main.py` и зарегистрированные CLI commands;
 - `app/service/bootstrap/application.py` и Flight server wiring;
 - `app/worker/bootstrap/` и один worker process на attempt;
-- `app/admin/bootstrap/` для auth/database commands;
+- `app/admin/bootstrap/` для database/model commands;
 - package imports и `__init__.py` exports;
 - systemd entrypoint и documented operator commands.
 

@@ -14,6 +14,11 @@
 
 ### Changed
 
+- Flight transport authentication переведена на introspection opaque OAuth
+  access tokens Ory Hydra. Каждый новый RPC требует `active=true`,
+  `token_type=Bearer`, audience `transformer` и scope
+  `transformer:invoke`; точный `client_id` является owner identity. Flight v5
+  и persisted job/model contracts не изменены.
 - Штатное удаление модели сохраняет безопасный промежуточный state
   `DELETING`, но после удаления каталога физически удаляет строку модели из
   основной таблицы. Identity и timestamps переносятся в отдельный
@@ -25,6 +30,9 @@
 
 ### Removed
 
+- Удалены локальная выдача/отзыв API tokens, PostgreSQL token cache и fallback
+  на credentials формата `a.<base64url>`. Необратимая migration `0014` удаляет
+  таблицу `api_access_tokens` и её `LISTEN/NOTIFY` trigger.
 - Удалены полные tombstones из основной таблицы `models` и её поле
   `deleted_at`. Необратимая migration `0012` уже очистила прежние строки
   `DELETED`; migration `0013` создаёт минимальный audit archive только для

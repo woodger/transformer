@@ -2,47 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import app.admin.bootstrap.auth_tokens as auth_tokens_command
 import app.admin.bootstrap.db_migrations as migrations_command
 from app.service.adapters.outbound.postgres.migrations import MigrationStatus
-
-
-def test_auth_token_command_closes_database_after_store_error(monkeypatch):
-    closed = []
-
-    class DatabaseDouble:
-        def __init__(self, config):
-            self.config = config
-
-        def close(self):
-            closed.append(True)
-
-    class FailingStore:
-        def __init__(self, database):
-            self.database = database
-
-        def issue(self, subject):
-            raise RuntimeError("injected token store failure")
-
-    monkeypatch.setattr(
-        auth_tokens_command,
-        "load_database_config",
-        lambda: object(),
-    )
-    monkeypatch.setattr(
-        auth_tokens_command,
-        "require_current_schema",
-        lambda config: None,
-    )
-    monkeypatch.setattr(auth_tokens_command, "Database", DatabaseDouble)
-    monkeypatch.setattr(auth_tokens_command, "AccessTokenStore", FailingStore)
-
-    with pytest.raises(RuntimeError, match="token store failure"):
-        auth_tokens_command.run(
-            SimpleNamespace(tokens_action="issue", subject="inventory")
-        )
-
-    assert closed == [True]
 
 
 @pytest.mark.parametrize(

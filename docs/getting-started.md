@@ -37,46 +37,20 @@ systemd — [deployment guide](./deployment/systemd.md).
 `./.venv/bin/python ./app/main.py <command> --help`. Краткая карта команд и их
 поведение собраны в [справочнике CLI](./cli/index.md).
 
-## Создать API-токен
+## Настроить аутентификацию Flight
 
-После настройки PostgreSQL и применения migrations выпустите bearer token для
-клиентского service identity:
+Transformer не выдаёт и не хранит API credentials. Для запуска Flight service
+задайте административный endpoint Ory Hydra introspection:
 
-```bash
-./.venv/bin/python ./app/main.py auth tokens issue \
-  --subject=inventory-production
+```dotenv
+ORY_HYDRA_INTROSPECTION_ENDPOINT=http://hp260g9.home:4445/admin/oauth2/introspect
 ```
 
-Команда выводит token ID, subject и новый credential вида `a.<base64url>`.
-Сохраните credential в secret storage клиентского приложения; не помещайте его
-в repository, логи или server `.env`. Перезапуск Transformer не требуется:
-token cache обновляется автоматически.
-
-## Отозвать API-токен
-
-Сначала найдите token ID без раскрытия credentials:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens list
-```
-
-Затем отзовите токен по его ID:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke <token-id>
-```
-
-Например:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke \
-  35dc6236-cfb9-4ac7-80db-320db21ef463
-```
-
-Используйте именно token ID, а не credential вида `a.<base64url>`. Перезапуск
-Transformer не требуется: token cache обновляется автоматически. Подробности
-управления токенами находятся в
-[Flight runbook](./flight-operations.md#api-access-tokens).
+Клиент получает opaque access token через OAuth `client_credentials` с явными
+`audience=transformer` и `scope=transformer:invoke`. Client secret принадлежит
+клиентскому приложению и не передаётся Transformer. Настройка client-а, error
+semantics и порядок cutover описаны в
+[Flight runbook](./flight-operations.md#ory-hydra).
 
 ## Локальное обучение и prediction
 
@@ -114,7 +88,7 @@ Prediction использует созданный checkpoint:
   возвращают framed Arrow payloads через standard streams.
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
-  PostgreSQL, tokens, recovery, TLS и lifecycle service.
+  PostgreSQL, OAuth, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка

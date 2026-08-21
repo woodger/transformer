@@ -260,11 +260,7 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
         parse("gmark", *option)
 
 
-def test_access_and_database_namespaces_are_nested():
-    issue = parse("auth", "tokens", "issue", "--subject", "inventory")
-    listed = parse("auth", "tokens", "list")
-    token_id = "12345678-1234-4234-8234-123456789abc"
-    revoked = parse("auth", "tokens", "revoke", token_id)
+def test_database_and_model_namespaces_are_nested():
     status = parse("db", "migrations", "status")
     models = parse("models", "list")
     deleted_models = parse("models", "list", "--deleted")
@@ -274,14 +270,6 @@ def test_access_and_database_namespaces_are_nested():
         "mdl_0123456789abcdef0123456789abcdef",
     )
 
-    assert (issue.action, issue.auth_action, issue.tokens_action) == (
-        "auth",
-        "tokens",
-        "issue",
-    )
-    assert issue.subject == "inventory"
-    assert listed.tokens_action == "list"
-    assert revoked.token_id == token_id
     assert (status.action, status.db_action, status.migrations_action) == (
         "db",
         "migrations",
@@ -303,8 +291,6 @@ def test_access_and_database_namespaces_are_nested():
         ("predict",),
         ("fit-stream",),
         ("flight",),
-        ("auth",),
-        ("auth", "tokens"),
         ("db",),
         ("db", "migrations"),
         ("models",),
@@ -482,9 +468,6 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("gmark", "--help"),
         ("flight", "--help"),
         ("flight", "serve", "--help"),
-        ("auth", "tokens", "issue", "--help"),
-        ("auth", "tokens", "list", "--help"),
-        ("auth", "tokens", "revoke", "--help"),
         ("models", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
@@ -511,9 +494,6 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("predict-stream", "--help"),
         ("gmark", "--help"),
         ("flight", "serve", "--help"),
-        ("auth", "tokens", "issue", "--help"),
-        ("auth", "tokens", "list", "--help"),
-        ("auth", "tokens", "revoke", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),

@@ -8,7 +8,7 @@ import pyarrow.flight as flight
 from app.service.adapters.inbound.flight.auth import (
     MIDDLEWARE_KEY,
     BearerAuthMiddlewareFactory,
-    authenticated_subject,
+    authenticated_owner_subject,
 )
 from app.service.adapters.inbound.flight.configuration import FlightServerConfig
 from app.service.adapters.inbound.flight.constants import (
@@ -39,7 +39,7 @@ from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
 )
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
-from app.service.domain.access import AuthIdentity
+from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
     CAPABILITIES_ACTION: "Return Flight v5 capabilities and limits.",
@@ -53,10 +53,6 @@ ACTION_DESCRIPTIONS = {
     CANCEL_ACTION: "Cancel a job.",
     MODEL_DESCRIBE_ACTION: "Describe one immutable model generation.",
 }
-
-
-class _TokenCache(Protocol):
-    def lookup(self, token: str) -> AuthIdentity | None: ...
 
 
 class _CallContext(Protocol):
@@ -90,7 +86,7 @@ class TransformerFlightServer(
         self,
         config: FlightServerConfig,
         coordinator: JobCoordinator,
-        token_cache: _TokenCache | dict[str, str],
+        authenticator: AccessTokenAuthenticator,
         *,
         upload_handler: UploadHandler | None = None,
         output_handler: OutputHandler | None = None,
@@ -105,7 +101,7 @@ class TransformerFlightServer(
         self.logger = logger or JsonLogger()
         middleware = {
             MIDDLEWARE_KEY: BearerAuthMiddlewareFactory(
-                token_cache,
+                authenticator,
                 self.metrics,
                 self.logger,
             )
@@ -117,7 +113,7 @@ class TransformerFlightServer(
         )
 
     def list_actions(self, context: _CallContext) -> list[object]:
-        authenticated_subject(context)
+        authenticated_owner_subject(context)
         action_type = cast(_ActionTypeFactory, vars(flight)["ActionType"])
         return [
             action_type(name, ACTION_DESCRIPTIONS[name])
@@ -132,7 +128,7 @@ class TransformerFlightServer(
         started = time.monotonic()
         request: ValidatedActionRequest | None = None
         try:
-            owner = authenticated_subject(context)
+            owner = authenticated_owner_subject(context)
             if action.type not in ACTIONS:
                 raise invalid(f"unsupported action: {action.type}")
             document = parse_action_body(action.body)
@@ -163,7 +159,7 @@ class TransformerFlightServer(
         writer: PutMetadataWriter,
     ) -> None:
         try:
-            owner = authenticated_subject(context)
+            owner = authenticated_owner_subject(context)
             if self.upload_handler is None:
                 raise invalid("uploads are not configured")
             self.upload_handler.handle(owner, descriptor, reader, writer)
@@ -180,7 +176,7 @@ class TransformerFlightServer(
         descriptor: object,
     ) -> object:
         try:
-            owner = authenticated_subject(context)
+            owner = authenticated_owner_subject(context)
             if self.output_handler is None:
                 raise invalid("outputs are not configured")
             return self.output_handler.get_flight_info(owner, descriptor)
@@ -197,7 +193,7 @@ class TransformerFlightServer(
         ticket: object,
     ) -> object:
         try:
-            owner = authenticated_subject(context)
+            owner = authenticated_owner_subject(context)
             if self.output_handler is None:
                 raise invalid("outputs are not configured")
             return self.output_handler.do_get(context, owner, ticket)

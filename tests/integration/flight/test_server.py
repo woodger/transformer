@@ -15,6 +15,7 @@ from app.service.adapters.inbound.flight.documents import (
 )
 from app.service.adapters.inbound.flight.server import TransformerFlightServer
 from app.service.bootstrap.config import FlightServiceConfig
+from tests.support.authentication import StaticAccessTokenAuthenticator
 
 
 class StubCoordinator:
@@ -61,7 +62,7 @@ def control_server(tmp_path):
             allow_plaintext=True,
         ),
         coordinator,
-        {"secret": "inventory"},
+        StaticAccessTokenAuthenticator({"secret": "inventory"}),
     )
     client = flight.FlightClient(("localhost", server.port))
     try:

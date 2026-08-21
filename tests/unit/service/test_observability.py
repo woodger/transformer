@@ -21,6 +21,7 @@ from app.service.application.services.worker_pool import WorkerPool
 from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
+from tests.support.authentication import StaticAccessTokenAuthenticator
 
 
 class RecordingLogger:
@@ -65,7 +66,7 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
             allow_plaintext=True,
         ),
         CapabilityCoordinator(),
-        {"secret": "inventory"},
+        StaticAccessTokenAuthenticator({"secret": "inventory"}),
         metrics=metrics,
         logger=logger,
     )
