@@ -26,7 +26,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 Из корня проекта создайте чистое virtual environment и установите
 зафиксированные зависимости:
 
-```bash
+```sh
 /usr/bin/python3 -m venv --clear .venv
 ./.venv/bin/python -m pip install -r requirements.txt
 ./.venv/bin/python ./app/main.py --help
@@ -42,7 +42,7 @@ user-site. Полный локальный сценарий находится �
 
 Справка:
 
-```bash
+```sh
 ./.venv/bin/python ./app/main.py --help
 ./.venv/bin/python ./app/main.py --version
 ./.venv/bin/python ./app/main.py <command> --help

@@ -231,7 +231,8 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 
 `HYDRA_ENDPOINT` задаёт базовый адрес Hydra Admin API; path
 `/admin/oauth2/introspect` фиксирован в adapter. Audience `transformer`, scope
-`transformer:invoke` и timeout 3000 ms
+`transformer:invoke`, timeout 3000 ms, TTL кэша authorization 15/2 секунды
+и его предел в 1024 записи
 зафиксированы в Transformer и не имеют environment overrides. При старте
 валидируется конфигурация endpoint, но сетевой запрос выполняется только в
 начале нового RPC.
@@ -244,9 +245,15 @@ Transformer его не получает.
 Introspection отправляет form-urlencoded поле `token` в Hydra Admin API.
 Положительный ответ должен подтвердить `active=true`,
 `token_type=Bearer`, точные audience/scope и непустой `client_id`.
-Последний без преобразований становится `owner_subject`. Ответы кэшироваться
-не будут: новый RPC всегда видит актуальный отзыв token. Уже авторизованный
-streaming RPC продолжает работу до своей обычной границы завершения.
+Последний без преобразований становится `owner_subject`.
+
+Успешная authorization кэшируется на 15 секунд, но не дольше `exp`;
+неактивный token и недостаточные полномочия — на 2 секунды. Кэш имеет
+1024 LRU-записи, а одновременные промахи для одного token выполняют одну
+introspection. Исходный token не хранится в ключе кэша. Ошибки Hydra и
+malformed responses не кэшируются; просроченная запись не используется
+как fallback. Уже авторизованный streaming RPC продолжает работу до своей
+обычной границы завершения.
 
 Ошибки различаются следующим образом:
 

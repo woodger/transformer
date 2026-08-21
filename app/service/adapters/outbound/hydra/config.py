@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -25,8 +26,30 @@ _FORBIDDEN_CONFIGURATION_KEYS = (
 
 
 @dataclass(frozen=True, slots=True)
+class HydraAuthorizationCacheConfig:
+    positive_ttl_seconds: float = 15.0
+    negative_ttl_seconds: float = 2.0
+    max_entries: int = 1024
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("positive_ttl_seconds", self.positive_ttl_seconds),
+            ("negative_ttl_seconds", self.negative_ttl_seconds),
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"Hydra authorization cache {name} is invalid")
+        if isinstance(self.max_entries, bool) or self.max_entries <= 0:
+            raise ValueError(
+                "Hydra authorization cache max_entries is invalid"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class HydraIntrospectionConfig:
     endpoint: str
+    authorization_cache: HydraAuthorizationCacheConfig = field(
+        default_factory=HydraAuthorizationCacheConfig
+    )
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.endpoint)
@@ -87,6 +110,7 @@ __all__ = [
     "INTROSPECTION_TIMEOUT_SECONDS",
     "REQUIRED_AUDIENCE",
     "REQUIRED_SCOPE",
+    "HydraAuthorizationCacheConfig",
     "HydraIntrospectionConfig",
     "load_hydra_introspection_config",
 ]

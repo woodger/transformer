@@ -50,6 +50,9 @@ runtime-настройкой.
 audience = transformer
 scope = transformer:invoke
 timeout = 3000 ms
+positive authorization cache TTL = 15 s
+negative authorization cache TTL = 2 s
+authorization cache capacity = 1024 entries
 ```
 
 Introspection выполняется `POST` с `Content-Type:
@@ -64,13 +67,25 @@ application/x-www-form-urlencoded`; body содержит только поле 
 - `scope` — space-separated строку с точным элементом `transformer:invoke`;
 - `exp`, если поле присутствует, — целое значение Unix time в будущем.
 
-Owner identity равна точному `client_id`. Access token, его digest и `sub` не
-являются identity и не сохраняются. Поэтому новый token того же OAuth client
-видит те же jobs, models, aliases и outputs, а другой `client_id` — нет.
+Owner identity равна точному `client_id`. Access token, его обычный digest и
+`sub` не являются identity и не сохраняются в persistent state. Поэтому
+новый token того же OAuth client видит те же jobs, models, aliases и
+outputs, а другой `client_id` — нет.
 
 Один RPC авторизуется только при входе. Истечение или отзыв token во время уже
 начатого streaming RPC не обрывает его; следующий RPC снова выполняет
-introspection. Cache в первой реализации отсутствует.
+authorization. Успешное introspection-решение кэшируется не более 15 секунд
+и никогда не дольше `exp`. Неактивные, истёкшие или не являющиеся access token
+credentials, а также решения о недостаточных полномочиях кэшируются на 2 секунды.
+Сетевая ошибка, timeout, non-2xx и malformed/incomplete response не
+кэшируются.
+
+Кэш локален для процесса и ограничен 1024 LRU-записями. Ключом служит
+HMAC-SHA-256 от token со случайным локальным для процесса ключом; исходный token не
+хранится в ключах кэша и не логируется. Одновременные промахи кэша для одного
+token
+объединяются в одну introspection. Просроченная запись не используется как
+fallback при отказе Hydra.
 
 Стабильное отображение ошибок:
 
@@ -93,8 +108,11 @@ Inventory на OAuth client `inventory`.
 ## Последствия
 
 - Flight v5, Arrow/ML/worker contracts и persisted job lifecycle не меняются.
-- Доступность Hydra становится обязательной для начала нового Flight RPC, но её
-  сбой не изменяет уже зафиксированное прикладное состояние.
+- При недоступности Hydra новый Flight RPC может начаться только по ещё
+  действующей положительной записи кэша; промах кэша или истёкшая запись
+  дают `UNAVAILABLE`. Сбой не изменяет уже зафиксированное прикладное состояние.
+- Отзыв token становится видим Transformer не позднее чем через 15 секунд;
+  перезапуск сервиса немедленно очищает локальный кэш.
 - Transformer не хранит client secret и не управляет OAuth clients.
 - Inventory запрашивает token с явными `audience=transformer` и
   `scope=transformer:invoke`; регистрация client задаёт разрешённые значения,

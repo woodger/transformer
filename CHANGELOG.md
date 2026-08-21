@@ -20,7 +20,9 @@
   `transformer:invoke`; точный `client_id` является owner identity. Flight v5
   и persisted job/model contracts не изменены. Runtime принимает базовый
   Hydra Admin API URL через `HYDRA_ENDPOINT`; introspection path зафиксирован
-  в adapter.
+  в adapter. Решения авторизации кэшируются в ограниченном локальном
+  для процесса LRU: успех до 15 секунд и `exp`, окончательный отказ на
+  2 секунды; одновременные промахи объединяются в одну introspection.
 - Штатное удаление модели сохраняет безопасный промежуточный state
   `DELETING`, но после удаления каталога физически удаляет строку модели из
   основной таблицы. Identity и timestamps переносятся в отдельный

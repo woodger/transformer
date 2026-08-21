@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import hmac
 import http.client
 import json
+import secrets
 import ssl
+import threading
 import time
+from collections import OrderedDict
+from concurrent.futures import Future
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import cast
 from urllib.parse import urlencode, urlsplit
 
@@ -26,6 +33,26 @@ _MAX_RESPONSE_BYTES = 64 * 1024
 _ACCESS_TOKEN_TYPE = "bearer"
 
 
+class _AuthorizationDecision(Enum):
+    ALLOW = auto()
+    INVALID = auto()
+    DENIED = auto()
+    UNAVAILABLE = auto()
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthorizationResult:
+    decision: _AuthorizationDecision
+    principal: AuthenticatedPrincipal | None = None
+    expires_at: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthorizationCacheEntry:
+    result: _AuthorizationResult
+    deadline: float
+
+
 class HydraAccessTokenAuthenticator:
     """Authenticate one opaque access token through Hydra introspection."""
 
@@ -41,16 +68,80 @@ class HydraAccessTokenAuthenticator:
         self._tls_context = (
             ssl.create_default_context() if self._use_tls else None
         )
+        self._cache_secret = secrets.token_bytes(32)
+        self._cache_lock = threading.Lock()
+        self._cache: OrderedDict[bytes, _AuthorizationCacheEntry] = (
+            OrderedDict()
+        )
+        self._inflight: dict[bytes, Future[_AuthorizationResult]] = {}
 
     def authenticate(self, access_token: str) -> AuthenticatedPrincipal:
-        document = self._introspect(access_token)
+        cache_key = hmac.digest(
+            self._cache_secret,
+            access_token.encode("utf-8"),
+            "sha256",
+        )
+        result = self._cached_result(cache_key)
+        if result is None:
+            result = self._authorize_singleflight(cache_key, access_token)
+        return _resolve_authorization(result)
+
+    def _authorize_singleflight(
+        self,
+        cache_key: bytes,
+        access_token: str,
+    ) -> _AuthorizationResult:
+        with self._cache_lock:
+            cached = self._cached_result_locked(
+                cache_key,
+                monotonic_now=time.monotonic(),
+                wall_now=time.time(),
+            )
+            if cached is not None:
+                return cached
+            pending = self._inflight.get(cache_key)
+            if pending is None:
+                pending = Future[_AuthorizationResult]()
+                self._inflight[cache_key] = pending
+                is_leader = True
+            else:
+                is_leader = False
+
+        if not is_leader:
+            return pending.result()
+
+        try:
+            result = self._authorize_uncached(access_token)
+        except BaseException as exc:
+            with self._cache_lock:
+                pending.set_exception(exc)
+                self._inflight.pop(cache_key, None)
+            raise
+
+        with self._cache_lock:
+            self._store_result_locked(cache_key, result)
+            pending.set_result(result)
+            self._inflight.pop(cache_key, None)
+        return result
+
+    def _authorize_uncached(self, access_token: str) -> _AuthorizationResult:
+        try:
+            document = self._introspect(access_token)
+            return self._authorization_result(document)
+        except AuthenticationUnavailableError:
+            return _AuthorizationResult(_AuthorizationDecision.UNAVAILABLE)
+
+    def _authorization_result(
+        self,
+        document: JsonObject,
+    ) -> _AuthorizationResult:
         active = document.get("active")
         if not isinstance(active, bool):
             raise AuthenticationUnavailableError(
                 "Hydra introspection response is incomplete"
             )
         if not active:
-            raise InvalidAccessTokenError("access token is inactive")
+            return _AuthorizationResult(_AuthorizationDecision.INVALID)
 
         token_type = document.get("token_type")
         if not isinstance(token_type, str) or not token_type:
@@ -58,7 +149,7 @@ class HydraAccessTokenAuthenticator:
                 "Hydra introspection response has no token type"
             )
         if token_type.casefold() != _ACCESS_TOKEN_TYPE:
-            raise InvalidAccessTokenError("credential is not an access token")
+            return _AuthorizationResult(_AuthorizationDecision.INVALID)
 
         client_id = document.get("client_id")
         if not _valid_owner_subject(client_id):
@@ -77,9 +168,7 @@ class HydraAccessTokenAuthenticator:
                 "Hydra introspection response has an invalid scope"
             )
         if REQUIRED_AUDIENCE not in audiences or REQUIRED_SCOPE not in scopes:
-            raise InsufficientAccessError(
-                "access token lacks the required audience or scope"
-            )
+            return _AuthorizationResult(_AuthorizationDecision.DENIED)
 
         expires_at = document.get("exp")
         if expires_at is not None:
@@ -88,9 +177,77 @@ class HydraAccessTokenAuthenticator:
                     "Hydra introspection response has an invalid expiry"
                 )
             if expires_at <= int(time.time()):
-                raise InvalidAccessTokenError("access token is expired")
+                return _AuthorizationResult(_AuthorizationDecision.INVALID)
 
-        return AuthenticatedPrincipal(owner_subject=cast(str, client_id))
+        return _AuthorizationResult(
+            decision=_AuthorizationDecision.ALLOW,
+            principal=AuthenticatedPrincipal(
+                owner_subject=cast(str, client_id)
+            ),
+            expires_at=expires_at,
+        )
+
+    def _cached_result(
+        self,
+        cache_key: bytes,
+    ) -> _AuthorizationResult | None:
+        with self._cache_lock:
+            return self._cached_result_locked(
+                cache_key,
+                monotonic_now=time.monotonic(),
+                wall_now=time.time(),
+            )
+
+    def _cached_result_locked(
+        self,
+        cache_key: bytes,
+        *,
+        monotonic_now: float,
+        wall_now: float,
+    ) -> _AuthorizationResult | None:
+        entry = self._cache.get(cache_key)
+        if entry is None:
+            return None
+        expires_at = entry.result.expires_at
+        if (
+            monotonic_now >= entry.deadline
+            or expires_at is not None
+            and wall_now >= expires_at
+        ):
+            del self._cache[cache_key]
+            return None
+        self._cache.move_to_end(cache_key)
+        return entry.result
+
+    def _store_result_locked(
+        self,
+        cache_key: bytes,
+        result: _AuthorizationResult,
+    ) -> None:
+        cache_config = self.config.authorization_cache
+        if result.decision is _AuthorizationDecision.ALLOW:
+            ttl_seconds = cache_config.positive_ttl_seconds
+            if result.expires_at is not None:
+                ttl_seconds = min(
+                    ttl_seconds,
+                    result.expires_at - time.time(),
+                )
+        elif result.decision in {
+            _AuthorizationDecision.INVALID,
+            _AuthorizationDecision.DENIED,
+        }:
+            ttl_seconds = cache_config.negative_ttl_seconds
+        else:
+            return
+        if ttl_seconds <= 0:
+            return
+        self._cache[cache_key] = _AuthorizationCacheEntry(
+            result=result,
+            deadline=time.monotonic() + ttl_seconds,
+        )
+        self._cache.move_to_end(cache_key)
+        while len(self._cache) > cache_config.max_entries:
+            self._cache.popitem(last=False)
 
     def _introspect(self, access_token: str) -> JsonObject:
         body = urlencode({"token": access_token}).encode("ascii")
@@ -149,6 +306,26 @@ class HydraAccessTokenAuthenticator:
                 "Hydra introspection response is not an object"
             )
         return cast(JsonObject, decoded)
+
+
+def _resolve_authorization(
+    result: _AuthorizationResult,
+) -> AuthenticatedPrincipal:
+    if result.decision is _AuthorizationDecision.ALLOW:
+        if result.principal is None:
+            raise AuthenticationUnavailableError(
+                "cached authorization result is incomplete"
+            )
+        return result.principal
+    if result.decision is _AuthorizationDecision.INVALID:
+        raise InvalidAccessTokenError("access token is inactive")
+    if result.decision is _AuthorizationDecision.DENIED:
+        raise InsufficientAccessError(
+            "access token lacks the required audience or scope"
+        )
+    raise AuthenticationUnavailableError(
+        "Hydra introspection is unavailable"
+    )
 
 
 def _audiences(value: object) -> set[str]:
