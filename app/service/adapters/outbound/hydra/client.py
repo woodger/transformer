@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urlsplit
 
 from app.contracts.json_types import JsonObject
 from app.service.adapters.outbound.hydra.config import (
+    INTROSPECTION_PATH,
     INTROSPECTION_TIMEOUT_SECONDS,
     REQUIRED_AUDIENCE,
     REQUIRED_SCOPE,
@@ -36,7 +37,7 @@ class HydraAccessTokenAuthenticator:
         self._host = parsed.hostname
         self._use_tls = parsed.scheme == "https"
         self._port = parsed.port or (443 if self._use_tls else 80)
-        self._path = parsed.path
+        self._path = INTROSPECTION_PATH
         self._tls_context = (
             ssl.create_default_context() if self._use_tls else None
         )

@@ -18,7 +18,9 @@
   access tokens Ory Hydra. Каждый новый RPC требует `active=true`,
   `token_type=Bearer`, audience `transformer` и scope
   `transformer:invoke`; точный `client_id` является owner identity. Flight v5
-  и persisted job/model contracts не изменены.
+  и persisted job/model contracts не изменены. Runtime принимает базовый
+  Hydra Admin API URL через `HYDRA_ENDPOINT`; introspection path зафиксирован
+  в adapter.
 - Штатное удаление модели сохраняет безопасный промежуточный state
   `DELETING`, но после удаления каталога физически удаляет строку модели из
   основной таблицы. Identity и timestamps переносятся в отдельный

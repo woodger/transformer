@@ -40,11 +40,14 @@ systemd — [deployment guide](./deployment/systemd.md).
 ## Настроить аутентификацию Flight
 
 Transformer не выдаёт и не хранит API credentials. Для запуска Flight service
-задайте административный endpoint Ory Hydra introspection:
+задайте базовый адрес Ory Hydra Admin API:
 
 ```dotenv
-ORY_HYDRA_INTROSPECTION_ENDPOINT=http://hp260g9.home:4445/admin/oauth2/introspect
+HYDRA_ENDPOINT=http://hp260g9.home:4445
 ```
+
+Transformer сам использует фиксированный path
+`/admin/oauth2/introspect`.
 
 Клиент получает opaque access token через OAuth `client_credentials` с явными
 `audience=transformer` и `scope=transformer:invoke`. Client secret принадлежит

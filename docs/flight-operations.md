@@ -226,10 +226,12 @@ Bearer authentication обязательна для каждого Flight RPC, �
 выдаёт, не хранит и не отзывает credentials. В `.env` сервиса задаётся только:
 
 ```dotenv
-ORY_HYDRA_INTROSPECTION_ENDPOINT=http://hp260g9.home:4445/admin/oauth2/introspect
+HYDRA_ENDPOINT=http://hp260g9.home:4445
 ```
 
-Audience `transformer`, scope `transformer:invoke` и timeout 3000 ms
+`HYDRA_ENDPOINT` задаёт базовый адрес Hydra Admin API; path
+`/admin/oauth2/introspect` фиксирован в adapter. Audience `transformer`, scope
+`transformer:invoke` и timeout 3000 ms
 зафиксированы в Transformer и не имеют environment overrides. При старте
 валидируется конфигурация endpoint, но сетевой запрос выполняется только в
 начале нового RPC.
@@ -239,8 +241,8 @@ Inventory использует постоянный OAuth client `inventory`, fl
 передаёт требуемые audience и scope. Client secret хранится только у Inventory;
 Transformer его не получает.
 
-Introspection отправляет form-urlencoded поле `token` в административный
-endpoint Hydra. Положительный ответ должен подтвердить `active=true`,
+Introspection отправляет form-urlencoded поле `token` в Hydra Admin API.
+Положительный ответ должен подтвердить `active=true`,
 `token_type=Bearer`, точные audience/scope и непустой `client_id`.
 Последний без преобразований становится `owner_subject`. Ответы кэшироваться
 не будут: новый RPC всегда видит актуальный отзыв token. Уже авторизованный

@@ -10,7 +10,8 @@ from dotenv import dotenv_values
 
 from app.project import PROJECT_ROOT
 
-INTROSPECTION_ENVIRONMENT_VARIABLE = "ORY_HYDRA_INTROSPECTION_ENDPOINT"
+HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE = "HYDRA_ENDPOINT"
+INTROSPECTION_PATH = "/admin/oauth2/introspect"
 REQUIRED_AUDIENCE = "transformer"
 REQUIRED_SCOPE = "transformer:invoke"
 INTROSPECTION_TIMEOUT_SECONDS = 3.0
@@ -36,17 +37,17 @@ class HydraIntrospectionConfig:
             or parsed.password is not None
             or parsed.query
             or parsed.fragment
-            or parsed.path != "/admin/oauth2/introspect"
+            or parsed.path not in {"", "/"}
         ):
             raise ValueError(
-                f"{INTROSPECTION_ENVIRONMENT_VARIABLE} must be an HTTP(S) "
-                "URL ending in /admin/oauth2/introspect"
+                f"{HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE} must be an HTTP(S) "
+                "Hydra Admin API base URL"
             )
         try:
             _ = parsed.port
         except ValueError as exc:
             raise ValueError(
-                f"{INTROSPECTION_ENVIRONMENT_VARIABLE} has an invalid port"
+                f"{HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE} has an invalid port"
             ) from exc
 
 
@@ -72,16 +73,17 @@ def load_hydra_introspection_config(
             "Hydra audience, scope and timeout are fixed by Transformer: "
             + ", ".join(forbidden)
         )
-    endpoint = values.get(INTROSPECTION_ENVIRONMENT_VARIABLE)
+    endpoint = values.get(HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE)
     if not endpoint:
         raise ValueError(
-            f"{INTROSPECTION_ENVIRONMENT_VARIABLE} is required"
+            f"{HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE} is required"
         )
     return HydraIntrospectionConfig(endpoint=endpoint.rstrip("/"))
 
 
 __all__ = [
-    "INTROSPECTION_ENVIRONMENT_VARIABLE",
+    "HYDRA_ENDPOINT_ENVIRONMENT_VARIABLE",
+    "INTROSPECTION_PATH",
     "INTROSPECTION_TIMEOUT_SECONDS",
     "REQUIRED_AUDIENCE",
     "REQUIRED_SCOPE",

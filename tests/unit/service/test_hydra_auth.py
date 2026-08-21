@@ -76,23 +76,19 @@ def _install_http_response(monkeypatch, payload, *, status=200, connect_error=No
 
 def _authenticator():
     return HydraAccessTokenAuthenticator(HydraIntrospectionConfig(
-        "http://hp260g9.home:4445/admin/oauth2/introspect"
+        "http://hp260g9.home:4445"
     ))
 
 
-def test_configuration_accepts_only_the_introspection_endpoint(tmp_path):
+def test_configuration_accepts_only_the_hydra_admin_endpoint(tmp_path):
     config = load_hydra_introspection_config(
         environ={
-            "ORY_HYDRA_INTROSPECTION_ENDPOINT": (
-                "http://hp260g9.home:4445/admin/oauth2/introspect"
-            ),
+            "HYDRA_ENDPOINT": "http://hp260g9.home:4445",
         },
         env_file=tmp_path / "absent.env",
     )
 
-    assert config.endpoint == (
-        "http://hp260g9.home:4445/admin/oauth2/introspect"
-    )
+    assert config.endpoint == "http://hp260g9.home:4445"
 
 
 @pytest.mark.parametrize(
@@ -100,12 +96,17 @@ def test_configuration_accepts_only_the_introspection_endpoint(tmp_path):
     [
         {},
         {
-            "ORY_HYDRA_INTROSPECTION_ENDPOINT": "http://hp260g9.home:4445/",
-        },
-        {
             "ORY_HYDRA_INTROSPECTION_ENDPOINT": (
                 "http://hp260g9.home:4445/admin/oauth2/introspect"
             ),
+        },
+        {
+            "HYDRA_ENDPOINT": (
+                "http://hp260g9.home:4445/admin/oauth2/introspect"
+            ),
+        },
+        {
+            "HYDRA_ENDPOINT": "http://hp260g9.home:4445",
             "ORY_HYDRA_SCOPE": "configurable:scope",
         },
     ],

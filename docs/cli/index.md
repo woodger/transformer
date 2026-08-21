@@ -36,7 +36,8 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
 `flight serve`, `models` и `db migrations` требуют настройки PostgreSQL.
-`flight serve` дополнительно требует endpoint Ory Hydra introspection;
+`flight serve` дополнительно требует базовый адрес Ory Hydra
+Admin API;
 Transformer не содержит CLI для выдачи OAuth credentials.
 Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является

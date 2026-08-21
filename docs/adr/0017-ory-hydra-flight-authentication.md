@@ -36,8 +36,12 @@ Flight RPC
 Единственная runtime-настройка Transformer:
 
 ```dotenv
-ORY_HYDRA_INTROSPECTION_ENDPOINT=http://hp260g9.home:4445/admin/oauth2/introspect
+HYDRA_ENDPOINT=http://hp260g9.home:4445
 ```
+
+Это базовый адрес Hydra Admin API. Путь
+`/admin/oauth2/introspect` фиксирован внутри outbound adapter и не является
+runtime-настройкой.
 
 Следующие значения являются частью реализации Transformer и не настраиваются
 через environment:
