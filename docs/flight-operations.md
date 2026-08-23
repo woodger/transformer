@@ -212,6 +212,11 @@ trigger и функцию. Удалённые credential восстановит�
 `0015` создаёт новую пустую таблицу API tokens с digest-only хранением и
 возвращает notification trigger. Owner-scoped jobs/models не изменяются:
 строковый `owner_subject` продолжает хранить точный subject credential.
+Revision `0016` исправляет database, отмеченные как `0015`, но физически
+сохранившие историческую колонку `token`: существующие credentials заменяются
+их SHA-256 digests без изменения metadata или revoke status, raw-колонка
+удаляется, а notification objects пересоздаются. Для уже корректной
+digest-only таблицы conversion является no-op.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications

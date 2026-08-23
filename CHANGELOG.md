@@ -16,6 +16,10 @@
 - Migration `0015` создаёт новую таблицу API tokens и `LISTEN/NOTIFY` trigger.
   PostgreSQL хранит только SHA-256 digest credential; исходный bearer
   показывается один раз при выпуске.
+- Migration `0016` нормализует database, уже отмеченные revision `0015`, но
+  сохранившие историческую raw-колонку `token`: существующие credentials
+  переводятся в digests без изменения ID, subject, timestamps или revoke
+  status, после чего raw bearer удаляется.
 
 ### Changed
 

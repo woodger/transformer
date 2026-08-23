@@ -56,7 +56,10 @@ notification после issue/revoke; listener полностью перечит
 
 Migration `0014` и ADR 0017 остаются в истории применённых изменений.
 Migration `0015` создаёт новую пустую digest-only таблицу и notification
-objects. Credentials, удалённые migration `0014`, не восстанавливаются.
+objects. Migration `0016` нормализует физическую schema, если database уже
+отмечена как `0015`, но сохранила историческую raw-колонку: существующие
+credentials переводятся в digests без изменения identity или revoke status.
+Credentials, удалённые migration `0014`, не восстанавливаются.
 
 Ory Hydra adapters, `HYDRA_ENDPOINT`, `auth clients` и OAuth-specific runtime
 configuration удаляются. Flight v5 wire schemas, worker contract и persisted
