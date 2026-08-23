@@ -53,11 +53,13 @@ Transformer сам использует фиксированный path
 Создать OAuth client Consumer-а можно отдельной короткоживущей admin-командой:
 
 ```bash
-./.venv/bin/python ./app/main.py auth clients create consumer
+./.venv/bin/python ./app/main.py auth clients create consumer \
+  --name="Consumer Transformer"
 ./.venv/bin/python ./app/main.py auth clients list
 ```
 
-Успешный `create` печатает точные client credentials один раз. Сохраните их
+`--name` необязателен и по умолчанию равен `CLIENT_ID`. Успешный `create`
+печатает точные client credentials один раз. Сохраните их
 непосредственно в secret store Consumer-а; Transformer их не сохраняет и
 Flight service их не получает. Consumer самостоятельно запрашивает
 short-lived opaque access tokens через OAuth `client_credentials` с явными

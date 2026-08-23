@@ -262,6 +262,13 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
 
 def test_admin_namespaces_are_nested():
     created = parse("auth", "clients", "create", "consumer")
+    named_client = parse(
+        "auth",
+        "clients",
+        "create",
+        "inventory",
+        "--name=Inventory Transformer",
+    )
     client_list = parse("auth", "clients", "list")
     deleted_client = parse("auth", "clients", "delete", "consumer")
     status = parse("db", "migrations", "status")
@@ -277,6 +284,11 @@ def test_admin_namespaces_are_nested():
         "auth",
         "create",
         "consumer",
+    )
+    assert created.name is None
+    assert (named_client.client_id, named_client.name) == (
+        "inventory",
+        "Inventory Transformer",
     )
     assert (client_list.action, client_list.clients_action) == ("auth", "list")
     assert (

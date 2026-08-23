@@ -44,6 +44,10 @@ def _add_auth_parsers(subparsers: SubparserTarget) -> None:
         metavar="CLIENT_ID",
         help="Stable OAuth client ID and Transformer owner identity.",
     )
+    create.add_argument(
+        "--name",
+        help="Human-readable OAuth client name; defaults to CLIENT_ID.",
+    )
     create.set_defaults(data=None, metrics_name=None)
 
     client_list = client_commands.add_parser(

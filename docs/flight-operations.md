@@ -242,26 +242,43 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 через Transformer CLI:
 
 ```bash
-./.venv/bin/python ./app/main.py auth clients create inventory
+./.venv/bin/python ./app/main.py auth clients create inventory \
+  --name="Inventory Transformer"
 ./.venv/bin/python ./app/main.py auth clients list
 ./.venv/bin/python ./app/main.py auth clients delete inventory
 ```
 
 `create` создаёт client с точными `client_credentials`, opaque token strategy,
 audience `transformer`, scope `transformer:invoke` и token endpoint method
-`client_secret_basic`. `Client ID` в output и positional `CLIENT_ID` у
-`delete` равны точному Hydra `client_id`. Client secret печатается только в
-успешном output `create`; Transformer не сохраняет его и не включает в errors
-или logs. Consumer хранит client credentials и самостоятельно получает
-short-lived access tokens через Hydra Public API.
+`client_secret_basic`. Обязательный positional `CLIENT_ID` без преобразований
+передаётся как Hydra `client_id`; необязательный `--name` задаёт `client_name`
+и по умолчанию равен `CLIENT_ID`. Client secret печатается только в успешном
+output `create`; Transformer не сохраняет его и не включает в errors или logs.
+Consumer хранит client credentials и самостоятельно получает short-lived
+access tokens через Hydra Public API. Конфликт существующего `client_id`
+завершает `create` ошибкой без cleanup или изменения существующего client-а.
 
-`list` запрашивает все страницы только для Transformer-managed owner marker,
-никогда не получает secrets или access tokens и показывает drift обязательной
-конфигурации как `misconfigured`. `delete` сначала проверяет owner marker,
+Каждый созданный client получает фиксированные маркеры:
+
+```json
+{
+  "owner": "transformer-auth-clients",
+  "metadata": {
+    "managed_by": "transformer-auth-clients",
+    "schema_version": 1
+  }
+}
+```
+
+`list` запрашивает все страницы по owner, но показывает только clients с обоими
+точными маркерами, включая display name; secrets и access tokens он не
+получает. Drift обязательной OAuth-конфигурации показывается как
+`misconfigured`. `delete` проверяет оба маркера до первого delete-запроса,
 удаляет access tokens, удаляет client и повторно очищает tokens, закрывая
-возможность выдать новый token в промежутке. PostgreSQL, Flight application и
-worker в этих командах не инициализируются. Hydra Admin API должен оставаться
-доступен только доверенному operator boundary.
+возможность выдать новый token в промежутке. Client с несовпадающим owner или
+metadata CLI не удаляет. PostgreSQL, Flight application и worker в этих
+командах не инициализируются. Hydra Admin API должен оставаться доступен только
+доверенному operator boundary.
 
 Inventory использует постоянный OAuth client `inventory`, flow
 `client_credentials` и opaque access tokens. При запросе token клиент явно

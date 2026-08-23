@@ -4,7 +4,7 @@ import http.client
 import json
 import ssl
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TypeGuard, cast
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from app.contracts.json_types import JsonObject
@@ -18,6 +18,8 @@ from app.service.domain.authentication import is_valid_owner_subject
 _CLIENTS_PATH = "/admin/clients"
 _TOKENS_PATH = "/admin/oauth2/tokens"
 _MANAGED_OWNER = "transformer-auth-clients"
+_MANAGED_BY = "transformer-auth-clients"
+_MANAGED_SCHEMA_VERSION = 1
 _PAGE_SIZE = 100
 _MAX_RESPONSE_BYTES = 1024 * 1024
 
@@ -29,6 +31,7 @@ class HydraAdministrationError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class OAuthClientRecord:
     client_id: str
+    client_name: str
     created_at: str
     ready: bool
 
@@ -36,6 +39,7 @@ class OAuthClientRecord:
 @dataclass(frozen=True, slots=True)
 class CreatedOAuthClient:
     client_id: str
+    client_name: str
     client_secret: str = field(repr=False)
 
 
@@ -76,15 +80,24 @@ class HydraOAuthClientAdministration:
             ssl.create_default_context() if self._use_tls else None
         )
 
-    def create(self, client_id: str) -> CreatedOAuthClient:
+    def create(
+        self,
+        client_id: str,
+        client_name: str,
+    ) -> CreatedOAuthClient:
         _require_client_id(client_id)
+        _require_client_name(client_name)
         body = json.dumps(
             {
                 "access_token_strategy": "opaque",
                 "audience": [REQUIRED_AUDIENCE],
                 "client_id": client_id,
-                "client_name": client_id,
+                "client_name": client_name,
                 "grant_types": ["client_credentials"],
+                "metadata": {
+                    "managed_by": _MANAGED_BY,
+                    "schema_version": _MANAGED_SCHEMA_VERSION,
+                },
                 "owner": _MANAGED_OWNER,
                 "response_types": ["token"],
                 "scope": REQUIRED_SCOPE,
@@ -113,6 +126,7 @@ class HydraOAuthClientAdministration:
             )
         return CreatedOAuthClient(
             client_id=client_id,
+            client_name=client_name,
             client_secret=client_secret,
         )
 
@@ -133,7 +147,11 @@ class HydraOAuthClientAdministration:
             )
             _require_status(response, {200}, "list OAuth clients")
             documents = _decode_array(response.payload)
-            records.extend(_client_record(document) for document in documents)
+            records.extend(
+                _client_record(document)
+                for document in documents
+                if _is_managed_client(document)
+            )
             next_token = _next_page_token(response.link)
             if next_token is None:
                 break
@@ -154,7 +172,7 @@ class HydraOAuthClientAdministration:
             return client_id
         _require_status(response, {200}, "read OAuth client")
         document = _decode_object(response.payload)
-        if document.get("owner") != _MANAGED_OWNER:
+        if not _is_managed_client(document):
             raise HydraAdministrationError(
                 f"Hydra OAuth client is not managed by Transformer: {client_id}"
             )
@@ -221,6 +239,22 @@ def _require_client_id(client_id: str) -> None:
         raise ValueError("OAuth client ID is invalid")
 
 
+def _require_client_name(client_name: str) -> None:
+    if not _is_valid_client_name(client_name):
+        raise ValueError("OAuth client name is invalid")
+
+
+def _is_valid_client_name(value: object) -> TypeGuard[str]:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and not any(
+            ord(character) < 32 or ord(character) == 127
+            for character in value
+        )
+    )
+
+
 def _require_status(
     response: _Response,
     expected: set[int],
@@ -260,19 +294,35 @@ def _decode_json(payload: bytes) -> object:
 
 def _client_record(document: JsonObject) -> OAuthClientRecord:
     client_id = document.get("client_id")
+    client_name = document.get("client_name")
     created_at = document.get("created_at")
-    if not is_valid_owner_subject(client_id) or not isinstance(created_at, str):
+    if (
+        not is_valid_owner_subject(client_id)
+        or not _is_valid_client_name(client_name)
+        or not isinstance(created_at, str)
+    ):
         raise HydraAdministrationError(
             "Hydra OAuth client document is incomplete"
         )
-    if document.get("owner") != _MANAGED_OWNER:
-        raise HydraAdministrationError(
-            "Hydra returned an OAuth client outside the requested owner"
-        )
     return OAuthClientRecord(
         client_id=client_id,
+        client_name=client_name,
         created_at=created_at,
         ready=_has_transformer_access(document),
+    )
+
+
+def _is_managed_client(document: JsonObject) -> bool:
+    metadata = document.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    schema_version = metadata.get("schema_version")
+    return (
+        document.get("owner") == _MANAGED_OWNER
+        and metadata.get("managed_by") == _MANAGED_BY
+        and isinstance(schema_version, int)
+        and not isinstance(schema_version, bool)
+        and schema_version == _MANAGED_SCHEMA_VERSION
     )
 
 

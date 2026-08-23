@@ -29,6 +29,7 @@ class CliArguments(Protocol):
     migrations_action: str
     models_action: str
     client_id: str
+    name: str | None
     model_ref: str
     deleted: bool
     seed: int

@@ -34,12 +34,16 @@ Flight RPC
 `DoGet`. Worker не получает token и не знает о Hydra.
 
 Отдельный короткоживущий admin CLI `auth clients` может создавать, перечислять
-и удалять помеченные Transformer OAuth clients через Hydra Admin API. Он фиксирует
+и удалять помеченные Transformer OAuth clients через Hydra Admin API. Он
+требует явный `client_id`, принимает необязательный display name, фиксирует
 `client_credentials`, opaque token strategy, audience `transformer` и scope
 `transformer:invoke`, возвращает client secret только в успешном output
-`create` и не сохраняет его. Consumer самостоятельно получает short-lived
-access tokens через `client_credentials`. Flight process не импортирует этот
-adapter и не получает права на client administration через application ports.
+`create` и не сохраняет его. Управляемость client-а требует точного owner
+`transformer-auth-clients` и metadata `managed_by=transformer-auth-clients`,
+`schema_version=1`; проверка выполняется до удаления client-а или его tokens.
+Consumer самостоятельно получает short-lived access tokens через
+`client_credentials`. Flight process не импортирует этот adapter и не получает
+права на client administration через application ports.
 
 Единственная runtime-настройка Transformer:
 

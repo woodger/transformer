@@ -16,6 +16,7 @@ from app.service.adapters.outbound.hydra.config import (
 class AuthClientArguments(Protocol):
     clients_action: str
     client_id: str
+    name: str | None
 
 
 def run(args: AuthClientArguments) -> None:
@@ -23,7 +24,8 @@ def run(args: AuthClientArguments) -> None:
         endpoint = load_hydra_introspection_config().endpoint
         administration = HydraOAuthClientAdministration(endpoint)
         if args.clients_action == "create":
-            print_created(administration.create(args.client_id))
+            client_name = args.client_id if args.name is None else args.name
+            print_created(administration.create(args.client_id, client_name))
             return
         if args.clients_action == "list":
             print_list(administration.list())

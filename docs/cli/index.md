@@ -50,14 +50,21 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 
 ```bash
 ./.venv/bin/python ./app/main.py auth clients create consumer
+./.venv/bin/python ./app/main.py auth clients create inventory \
+  --name="Inventory Transformer"
 ```
 
+`--name` необязателен и без него равен точному `CLIENT_ID`; пустое имя не
+принимается.
 Команда регистрирует в Hydra client с flow `client_credentials`, opaque access
 tokens, audience `transformer` и scope `transformer:invoke`. Точный `client_id`
 является Transformer `owner_subject`. Client secret печатается только в
 успешном output `create`, не сохраняется Transformer и должен сразу попасть в
 secret store Consumer-а. Consumer самостоятельно получает short-lived access
 tokens через `client_credentials`.
+
+При совпадении `CLIENT_ID` с существующим Hydra client команда завершается
+ошибкой и не изменяет существующий client.
 
 Показать созданные этим CLI clients без secrets:
 
@@ -72,7 +79,10 @@ tokens через `client_credentials`.
 ```
 
 Positional argument `CLIENT_ID` у `delete` принимает OAuth `client_id` из
-output `create`. Команда не управляет посторонними Hydra clients. Удаление
+output `create`. `list` и `delete` считают client управляемым только при точном
+совпадении owner и versioned metadata-маркеров Transformer CLI. `list`
+показывает display name, но никогда не получает secrets или access tokens.
+Команда не управляет посторонними Hydra clients. Удаление
 становится видимым новым Flight RPC не позднее окончания 15-секундного
 положительного authorization cache; уже начатый streaming RPC не прерывается.
 

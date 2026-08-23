@@ -137,7 +137,8 @@ defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` 
 admin-only Hydra adapter для OAuth client lifecycle. Alembic- и Hydra-команды
 не запускают service или worker. OAuth clients остаются в Ory Hydra, client
 secret принадлежит consumer-у и только однократно проходит через presentation
-успешного `create`; Transformer его не сохраняет.
+успешного `create`; Transformer его не сохраняет. Admin CLI распознаёт свои
+clients только по совместному owner и versioned metadata-маркеру.
 
 ## Contracts
 

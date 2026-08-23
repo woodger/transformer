@@ -9,6 +9,9 @@ class OAuthClientView(Protocol):
     def client_id(self) -> str: ...
 
     @property
+    def client_name(self) -> str: ...
+
+    @property
     def created_at(self) -> str: ...
 
     @property
@@ -20,21 +23,28 @@ class CreatedOAuthClientView(Protocol):
     def client_id(self) -> str: ...
 
     @property
+    def client_name(self) -> str: ...
+
+    @property
     def client_secret(self) -> str: ...
 
 
 def print_created(record: CreatedOAuthClientView) -> None:
     print(f"Client ID: {record.client_id}")
+    print(f"Client Name: {record.client_name}")
     print(f"Client Secret: {record.client_secret}")
     print("Audience: transformer")
     print("Scope: transformer:invoke")
 
 
 def print_list(records: Sequence[OAuthClientView]) -> None:
-    print("CLIENT ID\tCREATED AT\tSTATUS")
+    print("CLIENT ID\tNAME\tCREATED AT\tSTATUS")
     for record in records:
         status = "ready" if record.ready else "misconfigured"
-        print(f"{record.client_id}\t{record.created_at}\t{status}")
+        print(
+            f"{record.client_id}\t{record.client_name}\t"
+            f"{record.created_at}\t{status}"
+        )
 
 
 def print_deleted(client_id: str) -> None:
