@@ -12,7 +12,7 @@ def add_admin_parsers(subparsers: SubparserTarget) -> None:
 def _add_auth_parsers(subparsers: SubparserTarget) -> None:
     auth = subparsers.add_parser(
         "auth",
-        help="OAuth access administration commands.",
+        help="OAuth client administration commands.",
         formatter_class=HelpFormatter,
     )
     auth_commands = auth.add_subparsers(
@@ -21,57 +21,55 @@ def _add_auth_parsers(subparsers: SubparserTarget) -> None:
         title="Commands",
         metavar="COMMAND",
     )
-    tokens = auth_commands.add_parser(
-        "tokens",
-        help="Transformer Hydra client commands.",
+    clients = auth_commands.add_parser(
+        "clients",
+        help="Transformer-managed Hydra OAuth clients.",
         formatter_class=HelpFormatter,
     )
-    token_commands = tokens.add_subparsers(
-        dest="tokens_action",
+    client_commands = clients.add_subparsers(
+        dest="clients_action",
         required=True,
         title="Commands",
         metavar="COMMAND",
     )
-    issue = token_commands.add_parser(
-        "issue",
+    create = client_commands.add_parser(
+        "create",
         add_help=False,
-        description="Issue Hydra OAuth client credentials for Transformer.",
+        description="Create Hydra OAuth client credentials for Transformer.",
         formatter_class=HelpFormatter,
     )
-    add_hidden_help_argument(issue)
-    issue.add_argument(
-        "--client-id",
-        help=(
-            "Stable OAuth client ID and Transformer owner identity; "
-            "generated when omitted."
-        ),
+    add_hidden_help_argument(create)
+    create.add_argument(
+        "client_id",
+        metavar="CLIENT_ID",
+        help="Stable OAuth client ID and Transformer owner identity.",
     )
-    issue.set_defaults(data=None, metrics_name=None)
+    create.set_defaults(data=None, metrics_name=None)
 
-    token_list = token_commands.add_parser(
+    client_list = client_commands.add_parser(
         "list",
         add_help=False,
         description="List Transformer-managed Hydra OAuth clients.",
         formatter_class=HelpFormatter,
     )
-    add_hidden_help_argument(token_list)
-    token_list.set_defaults(data=None, metrics_name=None)
+    add_hidden_help_argument(client_list)
+    client_list.set_defaults(data=None, metrics_name=None)
 
-    revoke = token_commands.add_parser(
-        "revoke",
+    delete = client_commands.add_parser(
+        "delete",
         add_help=False,
         description=(
             "Delete one Transformer-managed Hydra client and its access tokens."
         ),
         formatter_class=HelpFormatter,
     )
-    add_hidden_help_argument(revoke)
-    revoke.add_argument(
-        "token_id",
-        metavar="TOKEN_ID",
-        help="Hydra OAuth client ID returned by auth tokens issue.",
+    add_hidden_help_argument(delete)
+    delete.add_argument(
+        "client_id",
+        metavar="CLIENT_ID",
+        help="Hydra OAuth client ID returned by auth clients create.",
     )
-    revoke.set_defaults(data=None, metrics_name=None)
+    delete.set_defaults(data=None, metrics_name=None)
 
 
 def _add_database_parsers(subparsers: SubparserTarget) -> None:

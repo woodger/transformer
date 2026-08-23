@@ -33,12 +33,13 @@ Flight RPC
 Проверка применяется к `ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и
 `DoGet`. Worker не получает token и не знает о Hydra.
 
-Отдельный короткоживущий admin CLI может создавать, перечислять и отзывать
-помеченные Transformer OAuth clients через Hydra Admin API. Он фиксирует
+Отдельный короткоживущий admin CLI `auth clients` может создавать, перечислять
+и удалять помеченные Transformer OAuth clients через Hydra Admin API. Он фиксирует
 `client_credentials`, opaque token strategy, audience `transformer` и scope
-`transformer:invoke`, возвращает client secret только в output создания и не
-сохраняет его. Flight process не импортирует этот adapter и не получает права
-на client administration через application ports.
+`transformer:invoke`, возвращает client secret только в успешном output
+`create` и не сохраняет его. Consumer самостоятельно получает short-lived
+access tokens через `client_credentials`. Flight process не импортирует этот
+adapter и не получает права на client administration через application ports.
 
 Единственная runtime-настройка Transformer:
 

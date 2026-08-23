@@ -53,20 +53,17 @@ Transformer сам использует фиксированный path
 Создать OAuth client Consumer-а можно отдельной короткоживущей admin-командой:
 
 ```bash
-./.venv/bin/python ./app/main.py auth tokens issue
-./.venv/bin/python ./app/main.py auth tokens issue --client-id=consumer
-./.venv/bin/python ./app/main.py auth tokens list
+./.venv/bin/python ./app/main.py auth clients create consumer
+./.venv/bin/python ./app/main.py auth clients list
 ```
 
-Без `--client-id` команда генерирует новую изолированную identity; явный
-identifier следует использовать для постоянного Consumer-а. Успешный `issue`
-печатает точный client ID и client secret один раз. Сохраните secret
-непосредственно в secret store Consumer-а; Transformer его не сохраняет и
-Flight service его не получает. Consumer запрашивает opaque access token через OAuth
-`client_credentials` с явными `audience=transformer` и
-`scope=transformer:invoke`. Отзыв client-а и его tokens выполняется командой
-`auth tokens revoke consumer`. Error semantics и полный порядок операций
-описаны в
+Успешный `create` печатает точные client credentials один раз. Сохраните их
+непосредственно в secret store Consumer-а; Transformer их не сохраняет и
+Flight service их не получает. Consumer самостоятельно запрашивает
+short-lived opaque access tokens через OAuth `client_credentials` с явными
+`audience=transformer` и `scope=transformer:invoke`. Удаление client-а и отзыв
+всех его tokens выполняются командой `auth clients delete consumer`. Error
+semantics и полный порядок операций описаны в
 [Flight runbook](./flight-operations.md#ory-hydra).
 
 ## Локальное обучение и prediction

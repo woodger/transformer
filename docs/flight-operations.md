@@ -242,26 +242,26 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 через Transformer CLI:
 
 ```bash
-./.venv/bin/python ./app/main.py auth tokens issue --client-id=inventory
-./.venv/bin/python ./app/main.py auth tokens list
-./.venv/bin/python ./app/main.py auth tokens revoke inventory
+./.venv/bin/python ./app/main.py auth clients create inventory
+./.venv/bin/python ./app/main.py auth clients list
+./.venv/bin/python ./app/main.py auth clients delete inventory
 ```
 
-`issue` создаёт client с точными `client_credentials`, opaque token strategy,
+`create` создаёт client с точными `client_credentials`, opaque token strategy,
 audience `transformer`, scope `transformer:invoke` и token endpoint method
-`client_secret_basic`. Если `--client-id` не передан, CLI генерирует новый
-identifier формата `trf-<20 hex>`; каждый вызов без option создаёт отдельного
-owner-а. `Token ID` в output и positional `TOKEN_ID` у `revoke` равны точному
-Hydra `client_id`. Secret возвращается Hydra и печатается только один раз;
-Transformer не сохраняет его и не включает в errors или logs.
+`client_secret_basic`. `Client ID` в output и positional `CLIENT_ID` у
+`delete` равны точному Hydra `client_id`. Client secret печатается только в
+успешном output `create`; Transformer не сохраняет его и не включает в errors
+или logs. Consumer хранит client credentials и самостоятельно получает
+short-lived access tokens через Hydra Public API.
 
 `list` запрашивает все страницы только для Transformer-managed owner marker,
-никогда не получает secrets и показывает drift обязательной конфигурации как
-`misconfigured`. `revoke` сначала проверяет owner marker, удаляет access tokens,
-удаляет client и повторно очищает tokens, закрывая возможность выдать новый
-token в промежутке. PostgreSQL, Flight application и worker в этих командах не
-инициализируются. Hydra Admin API должен оставаться доступен только доверенному
-operator boundary.
+никогда не получает secrets или access tokens и показывает drift обязательной
+конфигурации как `misconfigured`. `delete` сначала проверяет owner marker,
+удаляет access tokens, удаляет client и повторно очищает tokens, закрывая
+возможность выдать новый token в промежутке. PostgreSQL, Flight application и
+worker в этих командах не инициализируются. Hydra Admin API должен оставаться
+доступен только доверенному operator boundary.
 
 Inventory использует постоянный OAuth client `inventory`, flow
 `client_credentials` и opaque access tokens. При запросе token клиент явно

@@ -58,7 +58,7 @@ user-site. Полный локальный сценарий находится �
   training metrics JSONL;
 - [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
   service;
-- [`auth tokens issue|list|revoke` и `db migrations`](./docs/flight-operations.md)
+- [`auth clients create|list|delete` и `db migrations`](./docs/flight-operations.md)
   — Hydra OAuth clients и schema PostgreSQL.
 
 Точные options, defaults, aliases и side effects описывает help leaf-команды;

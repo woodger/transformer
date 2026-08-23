@@ -17,7 +17,7 @@ from app.service.domain.authentication import is_valid_owner_subject
 
 _CLIENTS_PATH = "/admin/clients"
 _TOKENS_PATH = "/admin/oauth2/tokens"
-_MANAGED_OWNER = "transformer-auth-tokens"
+_MANAGED_OWNER = "transformer-auth-clients"
 _PAGE_SIZE = 100
 _MAX_RESPONSE_BYTES = 1024 * 1024
 
@@ -34,7 +34,7 @@ class OAuthClientRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class IssuedOAuthClient:
+class CreatedOAuthClient:
     client_id: str
     client_secret: str = field(repr=False)
 
@@ -76,7 +76,7 @@ class HydraOAuthClientAdministration:
             ssl.create_default_context() if self._use_tls else None
         )
 
-    def issue(self, client_id: str) -> IssuedOAuthClient:
+    def create(self, client_id: str) -> CreatedOAuthClient:
         _require_client_id(client_id)
         body = json.dumps(
             {
@@ -111,7 +111,7 @@ class HydraOAuthClientAdministration:
             raise HydraAdministrationError(
                 "Hydra create-client response has no client secret"
             )
-        return IssuedOAuthClient(
+        return CreatedOAuthClient(
             client_id=client_id,
             client_secret=client_secret,
         )
@@ -145,7 +145,7 @@ class HydraOAuthClientAdministration:
             page_token = next_token
         return sorted(records, key=lambda record: record.client_id)
 
-    def revoke(self, client_id: str) -> str:
+    def delete(self, client_id: str) -> str:
         _require_client_id(client_id)
         client_path = f"{_CLIENTS_PATH}/{quote(client_id, safe='')}"
         response = self._request("GET", client_path)
@@ -320,8 +320,8 @@ def _next_page_token(link: str | None) -> str | None:
 
 
 __all__ = [
+    "CreatedOAuthClient",
     "HydraAdministrationError",
     "HydraOAuthClientAdministration",
-    "IssuedOAuthClient",
     "OAuthClientRecord",
 ]

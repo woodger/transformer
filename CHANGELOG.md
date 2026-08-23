@@ -9,11 +9,11 @@
 
 ### Added
 
-- Восстановлены `auth tokens issue|list|revoke` как короткоживущая
-  административная обёртка над Ory Hydra. Команды создают и перечисляют
-  только помеченные Transformer OAuth clients, удаляют client вместе с его
-  access tokens и не используют PostgreSQL credential storage. `issue`
-  генерирует случайный `client_id`, если он не указан явно.
+- Добавлены `auth clients create|list|delete` как короткоживущая
+  административная обёртка над Ory Hydra. Команды создают OAuth client с
+  обязательным `client_id`, перечисляют только помеченные Transformer clients,
+  удаляют client вместе с его access tokens и не используют PostgreSQL
+  credential storage.
 
 ## [0.1.14] - 2026-08-21
 

@@ -261,10 +261,9 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
 
 
 def test_admin_namespaces_are_nested():
-    issued = parse("auth", "tokens", "issue", "--client-id", "consumer")
-    generated = parse("auth", "tokens", "issue")
-    token_list = parse("auth", "tokens", "list")
-    revoked = parse("auth", "tokens", "revoke", "consumer")
+    created = parse("auth", "clients", "create", "consumer")
+    client_list = parse("auth", "clients", "list")
+    deleted_client = parse("auth", "clients", "delete", "consumer")
     status = parse("db", "migrations", "status")
     models = parse("models", "list")
     deleted_models = parse("models", "list", "--deleted")
@@ -274,20 +273,19 @@ def test_admin_namespaces_are_nested():
         "mdl_0123456789abcdef0123456789abcdef",
     )
 
-    assert (issued.action, issued.tokens_action, issued.client_id) == (
+    assert (created.action, created.clients_action, created.client_id) == (
         "auth",
-        "issue",
+        "create",
         "consumer",
     )
-    assert (generated.action, generated.tokens_action, generated.client_id) == (
+    assert (client_list.action, client_list.clients_action) == ("auth", "list")
+    assert (
+        deleted_client.action,
+        deleted_client.clients_action,
+        deleted_client.client_id,
+    ) == (
         "auth",
-        "issue",
-        None,
-    )
-    assert (token_list.action, token_list.tokens_action) == ("auth", "list")
-    assert (revoked.action, revoked.tokens_action, revoked.token_id) == (
-        "auth",
-        "revoke",
+        "delete",
         "consumer",
     )
     assert (status.action, status.db_action, status.migrations_action) == (
@@ -302,6 +300,11 @@ def test_admin_namespaces_are_nested():
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
 
 
+def test_obsolete_auth_tokens_namespace_is_not_available():
+    with pytest.raises(SystemExit):
+        parse("auth", "tokens", "list")
+
+
 @pytest.mark.parametrize(
     "argv",
     (
@@ -312,8 +315,9 @@ def test_admin_namespaces_are_nested():
         ("fit-stream",),
         ("flight",),
         ("auth",),
-        ("auth", "tokens"),
-        ("auth", "tokens", "revoke"),
+        ("auth", "clients"),
+        ("auth", "clients", "create"),
+        ("auth", "clients", "delete"),
         ("db",),
         ("db", "migrations"),
         ("models",),
@@ -492,10 +496,10 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("flight", "--help"),
         ("flight", "serve", "--help"),
         ("auth", "--help"),
-        ("auth", "tokens", "--help"),
-        ("auth", "tokens", "issue", "--help"),
-        ("auth", "tokens", "list", "--help"),
-        ("auth", "tokens", "revoke", "--help"),
+        ("auth", "clients", "--help"),
+        ("auth", "clients", "create", "--help"),
+        ("auth", "clients", "list", "--help"),
+        ("auth", "clients", "delete", "--help"),
         ("models", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
@@ -522,9 +526,9 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("predict-stream", "--help"),
         ("gmark", "--help"),
         ("flight", "serve", "--help"),
-        ("auth", "tokens", "issue", "--help"),
-        ("auth", "tokens", "list", "--help"),
-        ("auth", "tokens", "revoke", "--help"),
+        ("auth", "clients", "create", "--help"),
+        ("auth", "clients", "list", "--help"),
+        ("auth", "clients", "delete", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),
