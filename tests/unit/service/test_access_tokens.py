@@ -2,7 +2,7 @@ import hashlib
 import re
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -55,16 +55,20 @@ class _Database:
 
 def test_issue_generates_token_without_storing_credential():
     database = _Database()
+    created_at = datetime(2026, 1, 31, 12, 30, tzinfo=UTC)
 
-    issued = AccessTokenStore(database).issue("inventory")
+    issued = AccessTokenStore(database).issue("inventory", now=created_at)
 
     assert uuid.UUID(issued.token_id).version == 4
     assert issued.subject == "inventory"
+    assert issued.created_at == created_at
+    assert issued.expires_at == datetime(2026, 4, 30, 12, 30, tzinfo=UTC)
     assert issued.revoked_at is None
     assert issued.token is not None
     assert re.fullmatch(r"a\.[A-Za-z0-9_-]{86}", issued.token)
     stored = database.current.records[0]
     assert isinstance(stored, ApiAccessToken)
+    assert stored.expires_at == issued.expires_at
     assert stored.token_digest == hashlib.sha256(
         issued.token.encode("ascii")
     ).hexdigest()
@@ -112,9 +116,10 @@ def test_revoke_rejects_invalid_or_unknown_token_id():
 def test_digest_cache_authenticates_subject_and_drops_revoked_entries():
     token = "a." + "A" * 86
     digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+    expires_at = datetime(2026, 11, 23, 12, 30, tzinfo=UTC)
 
     class Store:
-        credentials = [(digest, "token-id", "inventory")]
+        credentials = [(digest, "token-id", "inventory", expires_at)]
 
         def active_credentials(self):
             return self.credentials
@@ -123,8 +128,14 @@ def test_digest_cache_authenticates_subject_and_drops_revoked_entries():
     cache = AccessTokenCache()
 
     assert cache.reload(store) == 1
-    assert cache.authenticate(token).owner_subject == "inventory"
+    assert cache.authenticate(
+        token,
+        now=expires_at - timedelta(microseconds=1),
+    ).owner_subject == "inventory"
     assert token not in repr(vars(cache))
+
+    with pytest.raises(InvalidAccessTokenError):
+        cache.authenticate(token, now=expires_at)
 
     store.credentials = []
     assert cache.reload(store) == 0
@@ -140,7 +151,21 @@ def test_access_token_model_contains_digest_only():
         "token_digest",
         "subject",
         "created_at",
+        "expires_at",
         "revoked_at",
     }
     assert ApiAccessToken.__table__.c.created_at.type.timezone is True
+    assert ApiAccessToken.__table__.c.expires_at.type.timezone is True
+    assert {
+        constraint.name for constraint in ApiAccessToken.__table__.constraints
+    } >= {
+        "api_access_tokens_digest_format_ck",
+        "api_access_tokens_expiry_order_ck",
+    }
+    active_index = next(
+        index
+        for index in ApiAccessToken.__table__.indexes
+        if index.name == "api_access_tokens_active_idx"
+    )
+    assert [column.name for column in active_index.columns] == ["expires_at"]
     assert datetime.now(UTC).tzinfo is UTC

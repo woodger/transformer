@@ -744,9 +744,13 @@ class ApiAccessToken(Base):
             "token_digest ~ '^[0-9a-f]{64}$'",
             name="api_access_tokens_digest_format_ck",
         ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="api_access_tokens_expiry_order_ck",
+        ),
         Index(
             "api_access_tokens_active_idx",
-            "revoked_at",
+            "expires_at",
             postgresql_where=text("revoked_at IS NULL"),
         ),
         {"schema": SCHEMA},
@@ -756,6 +760,10 @@ class ApiAccessToken(Base):
     token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     subject: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
     )

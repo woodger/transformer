@@ -46,11 +46,12 @@ systemd — [deployment guide](./deployment/systemd.md).
 ./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выпускает token для единственного owner-а `inventory` и выводит token
-ID и новый credential вида `a.<base64url>`. Сохраните credential в secret
-storage клиентского приложения; не помещайте его в repository, логи или server
-`.env`. Перезапуск Transformer не требуется: token cache обновляется
-автоматически.
+Команда выпускает token для единственного owner-а `inventory` сроком на три
+календарных месяца и выводит token ID, expiration time и новый credential вида
+`a.<base64url>`. Сохраните credential в secret storage клиентского приложения;
+не помещайте его в repository, логи или server `.env`. Перезапуск Transformer
+не требуется: token cache обновляется автоматически. Выпустите и передайте
+Consumer-у новый token до `expires_at`, затем отзовите прежний по ID.
 
 ## Отозвать API-токен
 

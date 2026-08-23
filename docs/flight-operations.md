@@ -218,6 +218,13 @@ Revision `0016` исправляет database, отмеченные как `0015
 удаляется, а notification objects пересоздаются. Для уже корректной
 digest-only таблицы conversion является no-op.
 
+Revision `0017` удаляет все существующие бессрочные API token rows и добавляет
+обязательный `expires_at`. Удалённые credentials восстановить невозможно. Для
+cutover остановите Inventory и Transformer, примените migration, выпустите
+новый token обновлённым CLI, передайте его Inventory через secret storage и
+только затем снова запустите оба процесса. Downgrade после выпуска нового token
+запрещён.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -233,11 +240,12 @@ DoPut, GetFlightInfo и DoGet. Выпустите token для локально�
 ./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выпускает token для фиксированного owner subject `inventory` и выводит
-ID token и новый credential. Credential имеет формат `a.<base64url>` и
-показывается только при выпуске. PostgreSQL хранит его SHA-256 digest, но не
-исходный bearer. Передавайте credential через канал secrets, принятый в
-deployment; не помещайте его в историю команд, логи или репозиторий.
+Команда выпускает token для фиксированного owner subject `inventory` сроком на
+три календарных месяца и выводит ID token, `Expires` и новый credential.
+Credential имеет формат `a.<base64url>` и показывается только при выпуске.
+PostgreSQL хранит его SHA-256 digest, но не исходный bearer. Передавайте
+credential через канал secrets, принятый в deployment; не помещайте его в
+историю команд, логи или репозиторий.
 
 Просмотр metadata без раскрытия credentials:
 
@@ -257,6 +265,11 @@ tokens. При authentication вычисляется digest переданног
 PostgreSQL `LISTEN/NOTIFY` вызывает полное обновление cache после выпуска или
 отзыва. После reconnect listener также загружает весь активный набор, поэтому
 PostgreSQL остаётся единственным долговечным источником истины.
+При каждом новом RPC cache локально проверяет `expires_at`, не обращаясь к
+PostgreSQL. `tokens list` показывает `Active`, `Revoked` или `Expired` вместе с
+`Created` и `Expires`. Для штатной ротации выпустите и передайте Inventory новый
+token до expiration, затем отзовите прежний по ID; owner-scoped state не
+изменится.
 
 ## Настройка Flight service
 

@@ -11,8 +11,9 @@
 
 - Восстановлены административные команды
   `auth tokens issue`, `auth tokens list` и
-  `auth tokens revoke <TOKEN_ID>` для бессрочных API credentials формата
-  `a.<base64url>`. Все выпущенные tokens принадлежат owner subject `inventory`.
+  `auth tokens revoke <TOKEN_ID>` для API credentials формата
+  `a.<base64url>` со сроком действия три календарных месяца. Все выпущенные
+  tokens принадлежат owner subject `inventory`.
 - Migration `0015` создаёт новую таблицу API tokens и `LISTEN/NOTIFY` trigger.
   PostgreSQL хранит только SHA-256 digest credential; исходный bearer
   показывается один раз при выпуске.
@@ -20,12 +21,15 @@
   сохранившие историческую raw-колонку `token`: существующие credentials
   переводятся в digests без изменения ID, subject, timestamps или revoke
   status, после чего raw bearer удаляется.
+- Migration `0017` удаляет все прежние бессрочные API tokens и добавляет
+  обязательный `expires_at`; удалённые credentials не восстанавливаются.
 
 ### Changed
 
 - Flight authentication снова использует PostgreSQL-backed digest cache.
   Точный subject credential является `owner_subject`; выпуск и отзыв обновляют
-  cache без перезапуска сервиса.
+  cache без перезапуска сервиса, а срок действия проверяется локально при
+  каждом новом RPC.
 
 ### Removed
 

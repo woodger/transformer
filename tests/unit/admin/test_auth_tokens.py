@@ -7,13 +7,15 @@ from app.service.domain.access import AccessTokenRecord
 
 TOKEN_ID = "12345678-1234-4234-8234-123456789abc"
 CREATED_AT = datetime(2026, 8, 23, 12, 30, tzinfo=UTC)
+EXPIRES_AT = datetime(2026, 11, 23, 12, 30, tzinfo=UTC)
 
 
-def _record(*, revoked=False, token=None):
+def _record(*, revoked=False, expired=False, token=None):
     return AccessTokenRecord(
         token_id=TOKEN_ID,
         subject="inventory",
         created_at=CREATED_AT,
+        expires_at=(CREATED_AT if expired else EXPIRES_AT),
         revoked_at=(CREATED_AT if revoked else None),
         token=token,
     )
@@ -21,24 +23,32 @@ def _record(*, revoked=False, token=None):
 
 def test_token_output_contract_is_aligned(capsys):
     print_issued(_record(token="a.secret"))
-    print_list([_record(), _record(revoked=True)])
+    print_list([_record(), _record(revoked=True)], now=CREATED_AT)
     print_revoked(_record(revoked=True))
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[:2] == [
+    assert lines[:3] == [
         f"Token ID: {TOKEN_ID}",
+        f"Expires: {EXPIRES_AT.isoformat()}",
         "Token: a.secret",
     ]
     assert lines[-1] == f"Revoked token: {TOKEN_ID}"
     for heading, active_value, revoked_value in (
-        ("TOKEN ID", TOKEN_ID, TOKEN_ID),
-        ("CREATED AT", CREATED_AT.isoformat(), CREATED_AT.isoformat()),
-        ("STATUS", "active", "revoked"),
+        ("ID", TOKEN_ID, TOKEN_ID),
+        ("Status", "Active", "Revoked"),
+        ("Created", CREATED_AT.isoformat(), CREATED_AT.isoformat()),
+        ("Expires", EXPIRES_AT.isoformat(), EXPIRES_AT.isoformat()),
     ):
-        offset = lines[2].index(heading)
-        assert lines[3].index(active_value) == offset
-        assert lines[4].index(revoked_value) == offset
+        offset = lines[3].index(heading)
+        assert lines[4].index(active_value) == offset
+        assert lines[5].index(revoked_value) == offset
     assert all("inventory" not in line for line in lines)
+
+
+def test_token_list_reports_expiration_at_the_exact_boundary(capsys):
+    print_list([_record(expired=True)], now=CREATED_AT)
+
+    assert "Expired" in capsys.readouterr().out.splitlines()[1]
 
 
 def _wire(monkeypatch, administration):
@@ -106,9 +116,10 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
     ))
 
     output = capsys.readouterr().out
-    assert "TOKEN ID" in output
-    assert "CREATED AT" in output
-    assert "STATUS" in output
+    assert "ID" in output
+    assert "Status" in output
+    assert "Created" in output
+    assert "Expires" in output
     assert "SUBJECT" not in output
     assert "inventory" not in output
     assert f"Revoked token: {TOKEN_ID}" in output

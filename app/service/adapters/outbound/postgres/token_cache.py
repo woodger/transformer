@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from types import MappingProxyType
 
 import psycopg
@@ -26,8 +27,12 @@ class AccessTokenCache:
 
     def reload(self, store: AccessTokenStore) -> int:
         entries = {
-            digest: AuthIdentity(token_id=token_id, subject=subject)
-            for digest, token_id, subject in store.active_credentials()
+            digest: AuthIdentity(
+                token_id=token_id,
+                subject=subject,
+                expires_at=expires_at,
+            )
+            for digest, token_id, subject, expires_at in store.active_credentials()
         }
         with self._lock:
             self._entries = MappingProxyType(entries)
@@ -37,9 +42,15 @@ class AccessTokenCache:
         entries = self._entries
         return entries.get(_digest(token))
 
-    def authenticate(self, access_token: str) -> AuthenticatedPrincipal:
+    def authenticate(
+        self,
+        access_token: str,
+        *,
+        now: datetime | None = None,
+    ) -> AuthenticatedPrincipal:
         identity = self.lookup(access_token)
-        if identity is None:
+        current_time = datetime.now(UTC) if now is None else now
+        if identity is None or identity.expires_at <= current_time:
             raise InvalidAccessTokenError("access token is inactive")
         return AuthenticatedPrincipal(owner_subject=identity.subject)
 

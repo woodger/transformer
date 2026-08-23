@@ -1,22 +1,30 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from app.service.domain.access import AccessTokenRecord
 
 
 def print_issued(record: AccessTokenRecord) -> None:
     print(f"Token ID: {record.token_id}")
+    print(f"Expires: {record.expires_at.isoformat()}")
     print(f"Token: {record.token}")
 
 
-def print_list(records: Sequence[AccessTokenRecord]) -> None:
-    headers = ("TOKEN ID", "CREATED AT", "STATUS")
+def print_list(
+    records: Sequence[AccessTokenRecord],
+    *,
+    now: datetime | None = None,
+) -> None:
+    current_time = datetime.now(UTC) if now is None else now
+    headers = ("ID", "Status", "Created", "Expires")
     rows = [
         (
             record.token_id,
+            _status(record, current_time),
             record.created_at.isoformat(),
-            "revoked" if record.revoked_at is not None else "active",
+            record.expires_at.isoformat(),
         )
         for record in records
     ]
@@ -30,6 +38,14 @@ def print_list(records: Sequence[AccessTokenRecord]) -> None:
                 value.ljust(width) for value, width in zip(row, widths, strict=True)
             ).rstrip()
         )
+
+
+def _status(record: AccessTokenRecord, now: datetime) -> str:
+    if record.revoked_at is not None:
+        return "Revoked"
+    if record.expires_at <= now:
+        return "Expired"
+    return "Active"
 
 
 def print_revoked(record: AccessTokenRecord) -> None:

@@ -10,21 +10,28 @@ from sqlalchemy import select
 
 from app.service.adapters.outbound.postgres.models import ApiAccessToken
 from app.service.adapters.outbound.postgres.session import Database
-from app.service.domain.access import AccessTokenRecord
+from app.service.domain.access import AccessTokenRecord, access_token_expiration
 
 
 class AccessTokenStore:
     def __init__(self, database: Database) -> None:
         self.database = database
 
-    def issue(self, subject: str) -> AccessTokenRecord:
+    def issue(
+        self,
+        subject: str,
+        *,
+        now: datetime | None = None,
+    ) -> AccessTokenRecord:
         _validate_subject(subject)
         token = _generate_token()
+        created_at = datetime.now(UTC) if now is None else now
         record = ApiAccessToken(
             token_id=str(uuid.uuid4()),
             token_digest=_digest(token),
             subject=subject,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
+            expires_at=access_token_expiration(created_at),
         )
         with self.database.transaction() as session:
             session.add(record)
@@ -52,16 +59,25 @@ class AccessTokenStore:
                 session.flush()
             return _record(record)
 
-    def active_credentials(self) -> list[tuple[str, str, str]]:
+    def active_credentials(self) -> list[tuple[str, str, str, datetime]]:
         """Return credential digests for the in-process authentication cache."""
+        now = datetime.now(UTC)
         with self.database.session() as session:
             records = session.scalars(
                 select(ApiAccessToken)
-                .where(ApiAccessToken.revoked_at.is_(None))
+                .where(
+                    ApiAccessToken.revoked_at.is_(None),
+                    ApiAccessToken.expires_at > now,
+                )
                 .order_by(ApiAccessToken.token_id)
             )
             return [
-                (record.token_digest, record.token_id, record.subject)
+                (
+                    record.token_digest,
+                    record.token_id,
+                    record.subject,
+                    record.expires_at,
+                )
                 for record in records
             ]
 
@@ -75,6 +91,7 @@ def _record(
         token_id=record.token_id,
         subject=record.subject,
         created_at=record.created_at,
+        expires_at=record.expires_at,
         revoked_at=record.revoked_at,
         token=token,
     )
