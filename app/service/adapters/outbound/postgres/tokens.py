@@ -54,10 +54,10 @@ class AccessTokenStore:
             record = session.get(ApiAccessToken, token_id, with_for_update=True)
             if record is None:
                 raise LookupError(f"API access token not found: {token_id}")
-            if record.revoked_at is None:
-                record.revoked_at = datetime.now(UTC)
-                session.flush()
-            return _record(record)
+            deleted = _record(record)
+            session.delete(record)
+            session.flush()
+            return deleted
 
     def active_credentials(self) -> list[tuple[str, str, str, datetime]]:
         """Return credential digests for the in-process authentication cache."""
@@ -65,10 +65,7 @@ class AccessTokenStore:
         with self.database.session() as session:
             records = session.scalars(
                 select(ApiAccessToken)
-                .where(
-                    ApiAccessToken.revoked_at.is_(None),
-                    ApiAccessToken.expires_at > now,
-                )
+                .where(ApiAccessToken.expires_at > now)
                 .order_by(ApiAccessToken.token_id)
             )
             return [
@@ -92,7 +89,6 @@ def _record(
         subject=record.subject,
         created_at=record.created_at,
         expires_at=record.expires_at,
-        revoked_at=record.revoked_at,
         token=token,
     )
 

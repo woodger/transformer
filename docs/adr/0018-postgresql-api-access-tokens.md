@@ -39,13 +39,14 @@ auth tokens revoke <TOKEN_ID>
 ```
 
 `issue` один раз печатает `Token ID`, `Expires` и `Token`. `list` показывает
-ID, состояние, creation time и expiration time без credential. `revoke`
-принимает UUID, фиксирует `revoked_at` и является идемпотентным.
+ID, состояние `Active` или `Expired`, creation time и expiration time без
+credential. `revoke` принимает UUID и физически удаляет token row. Неизвестный
+ID и повторный revoke возвращают `not found`.
 
 PostgreSQL хранит только SHA-256 digest credential, token ID, subject,
-`created_at`, `expires_at` и `revoked_at`. Случайный bearer содержит 512 бит
-энтропии, поэтому digest не требует password-oriented slow hashing. Исходный
-credential не сохраняется в ORM, PostgreSQL, cache keys, logs или errors.
+`created_at` и `expires_at`. Случайный bearer содержит 512 бит энтропии, поэтому
+digest не требует password-oriented slow hashing. Исходный credential не
+сохраняется в ORM, PostgreSQL, cache keys, logs или errors.
 
 Flight process при старте загружает активные digest records в неизменяемый
 in-process index. Каждый новый RPC вычисляет digest переданного bearer и
@@ -63,7 +64,8 @@ objects. Migration `0016` нормализует физическую schema, е
 credentials переводятся в digests без изменения identity или revoke status.
 Migration `0017` удаляет все существующие бессрочные token rows и добавляет
 обязательный `expires_at`. Credentials, удалённые migrations `0014` и `0017`,
-не восстанавливаются.
+не восстанавливаются. Migration `0018` удаляет существующие revoked rows и
+колонку `revoked_at`; эти metadata также не восстанавливаются.
 
 Ory Hydra adapters, `HYDRA_ENDPOINT`, `auth clients` и OAuth-specific runtime
 configuration удаляются. Flight v5 wire schemas, worker contract и persisted
@@ -77,5 +79,7 @@ owner-scoped application state не меняются.
   поэтому credential должен находиться только в secret storage Consumer-а.
 - Все выпущенные tokens имеют subject `inventory` и видят один owner-scoped
   state, что позволяет ротацию без переименования owner-а.
+- После revoke token metadata не сохраняются; встроенная audit history отзывов
+  отсутствует. Expired token остаётся в PostgreSQL до явного revoke.
 - PostgreSQL и token listener обязательны при старте Flight process.
 - Выпуск и отзыв не требуют перезапуска Flight service.

@@ -75,8 +75,9 @@ Consumer-у новый token до `expires_at`, затем отзовите пр
 ```
 
 Используйте именно token ID, а не credential вида `a.<base64url>`. Перезапуск
-Transformer не требуется: token cache обновляется автоматически. Подробности
-управления токенами находятся в
+Transformer не требуется: token cache обновляется автоматически. Успешный
+revoke физически удаляет token row; повторный вызов для того же ID возвращает
+`not found`. Подробности управления токенами находятся в
 [Flight runbook](./flight-operations.md#токены-доступа-api).
 
 ## Локальное обучение и prediction

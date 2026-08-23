@@ -751,7 +751,6 @@ class ApiAccessToken(Base):
         Index(
             "api_access_tokens_active_idx",
             "expires_at",
-            postgresql_where=text("revoked_at IS NULL"),
         ),
         {"schema": SCHEMA},
     )
@@ -767,7 +766,6 @@ class ApiAccessToken(Base):
         DateTime(timezone=True),
         nullable=False,
     )
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RuntimeState(Base):

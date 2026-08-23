@@ -13,7 +13,6 @@ class AccessTokenRecord:
     subject: str
     created_at: datetime
     expires_at: datetime
-    revoked_at: datetime | None
     token: str | None = field(default=None, repr=False)
 
 

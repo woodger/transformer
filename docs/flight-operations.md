@@ -225,6 +225,11 @@ cutover остановите Inventory и Transformer, примените migrat
 только затем снова запустите оба процесса. Downgrade после выпуска нового token
 запрещён.
 
+Revision `0018` физически удаляет существующие revoked token rows и колонку
+`revoked_at`, перестраивает expiry index и оставляет token cache notification
+на `INSERT/DELETE`. Удалённая revoke history не восстанавливается при
+downgrade.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -259,6 +264,10 @@ credential через канал secrets, принятый в deployment; не �
 ./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
 ```
 
+Успешный `revoke` физически удаляет token row. Повторный вызов и неизвестный ID
+завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
+явного revoke.
+
 Flight-процесс строит в RAM неизменяемый индекс SHA-256 digests активных
 tokens. При authentication вычисляется digest переданного credential и
 проверяется индекс; запрос к PostgreSQL на пути RPC не выполняется.
@@ -266,10 +275,9 @@ PostgreSQL `LISTEN/NOTIFY` вызывает полное обновление ca
 отзыва. После reconnect listener также загружает весь активный набор, поэтому
 PostgreSQL остаётся единственным долговечным источником истины.
 При каждом новом RPC cache локально проверяет `expires_at`, не обращаясь к
-PostgreSQL. `tokens list` показывает `Active`, `Revoked` или `Expired` вместе с
-`Created` и `Expires`. Для штатной ротации выпустите и передайте Inventory новый
-token до expiration, затем отзовите прежний по ID; owner-scoped state не
-изменится.
+PostgreSQL. `tokens list` показывает `Active` или `Expired` вместе с `Created`
+и `Expires`. Для штатной ротации выпустите и передайте Inventory новый token до
+expiration, затем отзовите прежний по ID; owner-scoped state не изменится.
 
 ## Настройка Flight service
 

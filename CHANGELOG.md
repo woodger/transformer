@@ -23,13 +23,16 @@
   status, после чего raw bearer удаляется.
 - Migration `0017` удаляет все прежние бессрочные API tokens и добавляет
   обязательный `expires_at`; удалённые credentials не восстанавливаются.
+- Migration `0018` физически удаляет прежние revoked token rows, удаляет
+  `revoked_at` и оставляет cache notification только для issue/revoke через
+  `INSERT/DELETE`.
 
 ### Changed
 
 - Flight authentication снова использует PostgreSQL-backed digest cache.
-  Точный subject credential является `owner_subject`; выпуск и отзыв обновляют
-  cache без перезапуска сервиса, а срок действия проверяется локально при
-  каждом новом RPC.
+  Точный subject credential является `owner_subject`; выпуск обновляет cache,
+  revoke физически удаляет token и также обновляет cache без перезапуска
+  сервиса, а срок действия проверяется локально при каждом новом RPC.
 
 ### Removed
 

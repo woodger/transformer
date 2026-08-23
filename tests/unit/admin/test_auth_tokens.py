@@ -10,21 +10,20 @@ CREATED_AT = datetime(2026, 8, 23, 12, 30, tzinfo=UTC)
 EXPIRES_AT = datetime(2026, 11, 23, 12, 30, tzinfo=UTC)
 
 
-def _record(*, revoked=False, expired=False, token=None):
+def _record(*, expired=False, token=None):
     return AccessTokenRecord(
         token_id=TOKEN_ID,
         subject="inventory",
         created_at=CREATED_AT,
         expires_at=(CREATED_AT if expired else EXPIRES_AT),
-        revoked_at=(CREATED_AT if revoked else None),
         token=token,
     )
 
 
 def test_token_output_contract_is_aligned(capsys):
     print_issued(_record(token="a.secret"))
-    print_list([_record(), _record(revoked=True)], now=CREATED_AT)
-    print_revoked(_record(revoked=True))
+    print_list([_record()], now=CREATED_AT)
+    print_revoked(_record())
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[:3] == [
@@ -33,16 +32,16 @@ def test_token_output_contract_is_aligned(capsys):
         "Token: a.secret",
     ]
     assert lines[-1] == f"Revoked token: {TOKEN_ID}"
-    for heading, active_value, revoked_value in (
-        ("ID", TOKEN_ID, TOKEN_ID),
-        ("Status", "Active", "Revoked"),
-        ("Created", CREATED_AT.isoformat(), CREATED_AT.isoformat()),
-        ("Expires", EXPIRES_AT.isoformat(), EXPIRES_AT.isoformat()),
+    for heading, value in (
+        ("ID", TOKEN_ID),
+        ("Status", "Active"),
+        ("Created", CREATED_AT.isoformat()),
+        ("Expires", EXPIRES_AT.isoformat()),
     ):
         offset = lines[3].index(heading)
-        assert lines[4].index(active_value) == offset
-        assert lines[5].index(revoked_value) == offset
+        assert lines[4].index(value) == offset
     assert all("inventory" not in line for line in lines)
+    assert all("Revoked" not in line for line in lines[:-1])
 
 
 def test_token_list_reports_expiration_at_the_exact_boundary(capsys):
@@ -104,7 +103,7 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
 
         def revoke(self, token_id):
             calls.append(("revoke", token_id))
-            return _record(revoked=True)
+            return _record()
 
     administration = Administration()
     closed = _wire(monkeypatch, administration)

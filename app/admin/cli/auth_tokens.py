@@ -41,8 +41,6 @@ def print_list(
 
 
 def _status(record: AccessTokenRecord, now: datetime) -> str:
-    if record.revoked_at is not None:
-        return "Revoked"
     if record.expires_at <= now:
         return "Expired"
     return "Active"
