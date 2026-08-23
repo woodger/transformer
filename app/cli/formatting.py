@@ -8,6 +8,14 @@ COMMAND_GROUPS = (
         (("flight serve", "Run the durable Arrow Flight job service."),),
     ),
     (
+        "Access",
+        (
+            ("auth tokens issue", "Issue Hydra OAuth client credentials"),
+            ("auth tokens list", "List Transformer Hydra clients"),
+            ("auth tokens revoke <client-id>", "Revoke one Hydra client"),
+        ),
+    ),
+    (
         "Models",
         (
             ("models list", "List published model generations"),

@@ -274,7 +274,9 @@ def test_canonical_contracts_and_composition_roots_exist():
         APP_ROOT / "service" / "bootstrap" / "data_plane.py",
         APP_ROOT / "service" / "bootstrap" / "control_plane.py",
         APP_ROOT / "worker" / "bootstrap" / "__main__.py",
+        APP_ROOT / "admin" / "bootstrap" / "auth_tokens.py",
         APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
+        APP_ROOT / "admin" / "adapters" / "outbound" / "hydra.py",
         APP_ROOT / "service" / "adapters" / "outbound" / "hydra" / "client.py",
     ):
         assert path.is_file()

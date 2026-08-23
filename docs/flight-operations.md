@@ -222,8 +222,9 @@ worker lanes БД не опрашивают.
 ## Ory Hydra
 
 Bearer authentication обязательна для каждого Flight RPC, включая
-`ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. Transformer не
-выдаёт, не хранит и не отзывает credentials. В `.env` сервиса задаётся только:
+`ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. Flight process
+не выдаёт, не хранит и не отзывает credentials. В `.env` задаётся базовый
+адрес Hydra Admin API:
 
 ```dotenv
 HYDRA_ENDPOINT=http://hp260g9.home:4445
@@ -237,10 +238,33 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 валидируется конфигурация endpoint, но сетевой запрос выполняется только в
 начале нового RPC.
 
+Отдельный short-lived admin process управляет только OAuth clients, созданными
+через Transformer CLI:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue --client-id=inventory
+./.venv/bin/python ./app/main.py auth tokens list
+./.venv/bin/python ./app/main.py auth tokens revoke inventory
+```
+
+`issue` создаёт client с точными `client_credentials`, opaque token strategy,
+audience `transformer`, scope `transformer:invoke` и token endpoint method
+`client_secret_basic`. `Token ID` в output и positional `TOKEN_ID` у `revoke`
+равны точному Hydra `client_id`. Secret возвращается Hydra и печатается только
+один раз; Transformer не сохраняет его и не включает в errors или logs.
+
+`list` запрашивает все страницы только для Transformer-managed owner marker,
+никогда не получает secrets и показывает drift обязательной конфигурации как
+`misconfigured`. `revoke` сначала проверяет owner marker, удаляет access tokens,
+удаляет client и повторно очищает tokens, закрывая возможность выдать новый
+token в промежутке. PostgreSQL, Flight application и worker в этих командах не
+инициализируются. Hydra Admin API должен оставаться доступен только доверенному
+operator boundary.
+
 Inventory использует постоянный OAuth client `inventory`, flow
 `client_credentials` и opaque access tokens. При запросе token клиент явно
 передаёт требуемые audience и scope. Client secret хранится только у Inventory;
-Transformer его не получает.
+Flight service его не получает.
 
 Introspection отправляет form-urlencoded поле `token` в Hydra Admin API.
 Положительный ответ должен подтвердить `active=true`,

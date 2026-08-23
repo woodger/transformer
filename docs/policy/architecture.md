@@ -133,10 +133,11 @@ defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` 
 ## Admin
 
 `app/admin/cli` отвечает только за presentation. `app/admin/bootstrap`
-создаёт короткоживущие PostgreSQL resources для database и model operations.
-Alembic-команды имеют отдельный короткоживущий SQLAlchemy lifecycle и не
-запускают service или worker. OAuth clients и credentials принадлежат Ory Hydra
-и её consumers, а не admin CLI Transformer.
+создаёт короткоживущие PostgreSQL resources для database/model operations или
+admin-only Hydra adapter для OAuth client lifecycle. Alembic- и Hydra-команды
+не запускают service или worker. OAuth clients остаются в Ory Hydra, client
+secret принадлежит consumer-у и только однократно проходит через presentation
+успешного `issue`; Transformer его не сохраняет.
 
 ## Contracts
 
@@ -231,6 +232,8 @@ Ownership хранения:
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
 - Ory Hydra introspection — `app/service/adapters/outbound/hydra/`;
+- Ory Hydra OAuth client administration —
+  `app/admin/adapters/outbound/hydra.py`;
 - OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
 - metrics artifacts —
   `app/service/adapters/outbound/artifacts/telemetry/`;

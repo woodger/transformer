@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 class CliArguments(Protocol):
     action: str
     flight_action: str
+    tokens_action: str
     migrations_action: str
     models_action: str
+    client_id: str
+    token_id: str
     model_ref: str
     deleted: bool
     seed: int
@@ -163,6 +166,12 @@ def main() -> None:
         from app.service.bootstrap.application import run_from_args
 
         run_from_args(args)
+        return
+
+    if args.action == "auth":
+        from app.admin.bootstrap.auth_tokens import run
+
+        run(args)
         return
 
     if args.action == "db":

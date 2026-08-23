@@ -59,7 +59,7 @@ user-site. Полный локальный сценарий находится �
 - [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
   service;
 - [`auth tokens issue|list|revoke` и `db migrations`](./docs/flight-operations.md)
-  — access tokens и schema PostgreSQL.
+  — Hydra OAuth clients и schema PostgreSQL.
 
 Точные options, defaults, aliases и side effects описывает help leaf-команды;
 поведение local commands и paths — [справочник CLI](./docs/cli/index.md).

@@ -32,17 +32,48 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
+| `auth tokens issue\|list\|revoke` | Управлять Transformer OAuth clients через Ory Hydra |
 | `models list\|delete` | Просматривать и удалять опубликованные model generations |
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
 `flight serve`, `models` и `db migrations` требуют настройки PostgreSQL.
-`flight serve` дополнительно требует базовый адрес Ory Hydra
-Admin API;
-Transformer не содержит CLI для выдачи OAuth credentials.
-Их lifecycle и безопасный порядок операций описаны в
+`flight serve` и `auth tokens` требуют базовый адрес Ory Hydra Admin API.
+`auth tokens` не подключается к PostgreSQL; lifecycle OAuth credentials и
+безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
 [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
+
+## Hydra OAuth clients
+
+Создать постоянную OAuth identity Consumer-а:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue --client-id=consumer
+```
+
+Команда регистрирует в Hydra client с flow `client_credentials`, opaque access
+tokens, audience `transformer` и scope `transformer:invoke`. `Token ID` в
+output равен точному `client_id` и далее является Transformer
+`owner_subject`. Client secret печатается только в успешном output `issue`, не
+сохраняется Transformer и должен сразу попасть в secret store Consumer-а.
+
+Показать созданные этим CLI clients без secrets:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
+```
+
+Удалить client и все его access tokens:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke consumer
+```
+
+`revoke` принимает OAuth `client_id`, несмотря на совместимое имя positional
+argument `TOKEN_ID`. Команда не управляет посторонними Hydra clients. Удаление
+становится видимым новым Flight RPC не позднее окончания 15-секундного
+положительного authorization cache; уже начатый streaming RPC не прерывается.
 
 ## File commands
 

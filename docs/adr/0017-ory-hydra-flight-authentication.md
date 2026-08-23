@@ -33,6 +33,13 @@ Flight RPC
 Проверка применяется к `ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и
 `DoGet`. Worker не получает token и не знает о Hydra.
 
+Отдельный короткоживущий admin CLI может создавать, перечислять и отзывать
+помеченные Transformer OAuth clients через Hydra Admin API. Он фиксирует
+`client_credentials`, opaque token strategy, audience `transformer` и scope
+`transformer:invoke`, возвращает client secret только в output создания и не
+сохраняет его. Flight process не импортирует этот adapter и не получает права
+на client administration через application ports.
+
 Единственная runtime-настройка Transformer:
 
 ```dotenv
@@ -98,8 +105,9 @@ fallback при отказе Hydra.
 Ошибки и логи не содержат access token, authorization header, client secret,
 form body или тело ответа introspection.
 
-Локальная выдача и отзыв API tokens удаляются без fallback. Migration `0014`
-необратимо удаляет `api_access_tokens`, notification trigger и функцию. Поля
+Локальная PostgreSQL-выдача и отзыв API tokens удаляются без fallback.
+Migration `0014` необратимо удаляет `api_access_tokens`, notification trigger
+и функцию. Поля
 `owner_subject` уже являются строковыми и не ссылаются на таблицу tokens,
 поэтому существующий owner-scoped state не требует изменения schema. Cutover
 выполняется только при отсутствии активных jobs и совместно с переходом
@@ -113,7 +121,8 @@ Inventory на OAuth client `inventory`.
   дают `UNAVAILABLE`. Сбой не изменяет уже зафиксированное прикладное состояние.
 - Отзыв token становится видим Transformer не позднее чем через 15 секунд;
   перезапуск сервиса немедленно очищает локальный кэш.
-- Transformer не хранит client secret и не управляет OAuth clients.
+- Transformer не хранит client secret; OAuth clients остаются в Hydra, а их
+  lifecycle доступен только отдельному short-lived admin CLI.
 - Inventory запрашивает token с явными `audience=transformer` и
   `scope=transformer:invoke`; регистрация client задаёт разрешённые значения,
   но не заменяет параметры token request.

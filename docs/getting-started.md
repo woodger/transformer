@@ -39,8 +39,9 @@ systemd — [deployment guide](./deployment/systemd.md).
 
 ## Настроить аутентификацию Flight
 
-Transformer не выдаёт и не хранит API credentials. Для запуска Flight service
-задайте базовый адрес Ory Hydra Admin API:
+Flight service не выдаёт и не хранит API credentials. Для запуска сервиса и
+административных OAuth client commands задайте базовый адрес Ory Hydra Admin
+API:
 
 ```dotenv
 HYDRA_ENDPOINT=http://hp260g9.home:4445
@@ -49,10 +50,20 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 Transformer сам использует фиксированный path
 `/admin/oauth2/introspect`.
 
-Клиент получает opaque access token через OAuth `client_credentials` с явными
-`audience=transformer` и `scope=transformer:invoke`. Client secret принадлежит
-клиентскому приложению и не передаётся Transformer. Настройка client-а, error
-semantics и порядок cutover описаны в
+Создать OAuth client Consumer-а можно отдельной короткоживущей admin-командой:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue --client-id=consumer
+./.venv/bin/python ./app/main.py auth tokens list
+```
+
+Успешный `issue` печатает client secret один раз. Сохраните его непосредственно
+в secret store Consumer-а; Transformer его не сохраняет и Flight service его
+не получает. Consumer запрашивает opaque access token через OAuth
+`client_credentials` с явными `audience=transformer` и
+`scope=transformer:invoke`. Отзыв client-а и его tokens выполняется командой
+`auth tokens revoke consumer`. Error semantics и полный порядок операций
+описаны в
 [Flight runbook](./flight-operations.md#ory-hydra).
 
 ## Локальное обучение и prediction

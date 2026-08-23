@@ -27,7 +27,10 @@ from app.service.application.ports.authentication import (
     InsufficientAccessError,
     InvalidAccessTokenError,
 )
-from app.service.domain.authentication import AuthenticatedPrincipal
+from app.service.domain.authentication import (
+    AuthenticatedPrincipal,
+    is_valid_owner_subject,
+)
 
 _MAX_RESPONSE_BYTES = 64 * 1024
 _ACCESS_TOKEN_TYPE = "bearer"
@@ -152,7 +155,7 @@ class HydraAccessTokenAuthenticator:
             return _AuthorizationResult(_AuthorizationDecision.INVALID)
 
         client_id = document.get("client_id")
-        if not _valid_owner_subject(client_id):
+        if not is_valid_owner_subject(client_id):
             raise AuthenticationUnavailableError(
                 "Hydra introspection response has no valid client ID"
             )
@@ -181,9 +184,7 @@ class HydraAccessTokenAuthenticator:
 
         return _AuthorizationResult(
             decision=_AuthorizationDecision.ALLOW,
-            principal=AuthenticatedPrincipal(
-                owner_subject=cast(str, client_id)
-            ),
+            principal=AuthenticatedPrincipal(owner_subject=client_id),
             expires_at=expires_at,
         )
 
@@ -339,18 +340,6 @@ def _audiences(value: object) -> set[str]:
             return set(cast(list[str], items))
     raise AuthenticationUnavailableError(
         "Hydra introspection response has an invalid audience"
-    )
-
-
-def _valid_owner_subject(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and bool(value)
-        and len(value) <= 256
-        and not any(
-            ord(character) < 32 or ord(character) == 127
-            for character in value
-        )
     )
 
 
