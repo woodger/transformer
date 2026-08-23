@@ -3,13 +3,16 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.parser import build_parser
+from app.config import (
+    DEFAULT_MAX_FRAME_BYTES,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
+)
 from app.contracts.worker.v7.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
 )
-from app.service.bootstrap.config import HOST_DEFAULT, PORT_DEFAULT
-from app.worker.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.worker.runtime.device import get_device
 from app.worker.training.run_config import (
     ModelConfig,

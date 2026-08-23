@@ -84,6 +84,7 @@ user-site. Полный локальный сценарий находится �
 
 ```text
 app/main.py          # тонкий CLI entrypoint
+app/config.py        # единый источник встроенных operational defaults
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
 app/contracts/       # public Flight v5, internal worker v7 и metrics v3

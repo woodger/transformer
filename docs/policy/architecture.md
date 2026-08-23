@@ -124,11 +124,12 @@ document является необязательным наблюдением.
 `app/commands` отсутствует, чтобы слово `commands` не обозначало одновременно
 local CLI и application use cases сервиса.
 
-Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
-размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
-service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` не
-создаётся.
+Общие identity и путь корня проекта находятся в `app/project.py`. Встроенные
+operational defaults находятся в `app/config.py`; runtime-владельцы сохраняют
+configuration types, загрузку, валидацию и технологические преобразования.
+Версионируемые worker contract defaults остаются в
+`app/contracts/worker/v7/config.py`. Общий модуль не загружает environment или
+adapters и не содержит mutable configuration state.
 
 ## Admin
 

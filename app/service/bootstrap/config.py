@@ -1,18 +1,12 @@
 import math
 import os
-import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TypedDict, cast
 
+from app import config as defaults
 from app.contracts.flight.v5.constants import MAX_PAYLOADS_PER_JOB
-from app.project import PROJECT_NAME, PROJECT_ROOT
-
-HOST_DEFAULT = "127.0.0.1"
-PORT_DEFAULT = 8815
-ALLOW_PLAINTEXT = True
-CPU_WORKERS = 2
-RETENTION_SECONDS = 7 * 24 * 60 * 60
+from app.project import PROJECT_ROOT
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
@@ -60,35 +54,45 @@ class _FlightServiceOverrides(TypedDict, total=False):
 
 @dataclass(frozen=True, slots=True)
 class FlightServiceConfig:
-    runtime_dir: str = os.path.join(tempfile.gettempdir(), PROJECT_NAME)
-    host: str = HOST_DEFAULT
-    port: int = PORT_DEFAULT
-    allow_plaintext: bool = ALLOW_PLAINTEXT
+    runtime_dir: str = defaults.RUNTIME_DIR_DEFAULT
+    host: str = defaults.HOST_DEFAULT
+    port: int = defaults.PORT_DEFAULT
+    allow_plaintext: bool = defaults.ALLOW_PLAINTEXT
 
     tls_cert_file: str | None = None
     tls_key_file: str | None = None
     tls_ca_file: str | None = None
     tls_require_client_cert: bool = False
 
-    max_message_bytes: int = 16 * 1024 * 1024
-    target_batch_bytes: int = 8 * 1024 * 1024
-    max_batch_bytes: int = 16 * 1024 * 1024
-    max_payload_bytes: int = 512 * 1024 * 1024
-    max_rows_per_payload: int = 2_000_000
+    max_message_bytes: int = defaults.MAX_MESSAGE_BYTES_DEFAULT
+    target_batch_bytes: int = defaults.TARGET_BATCH_BYTES_DEFAULT
+    max_batch_bytes: int = defaults.MAX_BATCH_BYTES_DEFAULT
+    max_payload_bytes: int = defaults.MAX_PAYLOAD_BYTES_DEFAULT
+    max_rows_per_payload: int = defaults.MAX_ROWS_PER_PAYLOAD_DEFAULT
     max_payloads_per_job: int = MAX_PAYLOADS_PER_JOB
-    max_job_bytes: int = 64 * 1024 * 1024 * 1024
-    max_active_jobs_per_subject: int = 32
+    max_job_bytes: int = defaults.MAX_JOB_BYTES_DEFAULT
+    max_active_jobs_per_subject: int = (
+        defaults.MAX_ACTIVE_JOBS_PER_SUBJECT_DEFAULT
+    )
 
-    cpu_capacity: int = CPU_WORKERS
-    ticket_ttl_seconds: int = 600
-    cancel_grace_seconds: float = 10.0
-    shutdown_drain_seconds: float = 30.0
+    cpu_capacity: int = defaults.CPU_WORKERS
+    ticket_ttl_seconds: int = defaults.TICKET_TTL_SECONDS_DEFAULT
+    cancel_grace_seconds: float = defaults.CANCEL_GRACE_SECONDS_DEFAULT
+    shutdown_drain_seconds: float = defaults.SHUTDOWN_DRAIN_SECONDS_DEFAULT
 
-    retention_seconds: int = RETENTION_SECONDS
-    maintenance_interval_seconds: int = 60
-    subprocess_timeout_seconds: float = 24 * 60 * 60
-    input_idle_timeout_seconds: float = 15 * 60
-    acquire_idle_grace_seconds: float = 30.0
+    retention_seconds: int = defaults.RETENTION_SECONDS
+    maintenance_interval_seconds: int = (
+        defaults.MAINTENANCE_INTERVAL_SECONDS_DEFAULT
+    )
+    subprocess_timeout_seconds: float = (
+        defaults.SUBPROCESS_TIMEOUT_SECONDS_DEFAULT
+    )
+    input_idle_timeout_seconds: float = (
+        defaults.INPUT_IDLE_TIMEOUT_SECONDS_DEFAULT
+    )
+    acquire_idle_grace_seconds: float = (
+        defaults.ACQUIRE_IDLE_GRACE_SECONDS_DEFAULT
+    )
 
     @property
     def tls_enabled(self) -> bool:
@@ -227,14 +231,14 @@ def load_config(
     if legacy_keys:
         raise ValueError(
             "unsupported legacy Transformer environment variable(s): "
-            f"{', '.join(legacy_keys)}; use the current service config and "
+            f"{', '.join(legacy_keys)}; use the current app/config.py and "
             "TRANSFORMER_* settings"
         )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            "configure HOST_DEFAULT in service/bootstrap/config.py or use --host"
+            "configure HOST_DEFAULT in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
         if field.name in _NON_ENVIRONMENT_FIELDS:

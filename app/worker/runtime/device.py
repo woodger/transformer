@@ -1,10 +1,10 @@
 import torch
 
-DEFAULT_DEVICE = "cpu"
+from app import config as defaults
 
 
 def get_device(device_arg: str | None = None) -> torch.device:
-    dev = device_arg or DEFAULT_DEVICE
+    dev = device_arg or defaults.DEFAULT_DEVICE
 
     if dev == "cpu":
         return torch.device("cpu")

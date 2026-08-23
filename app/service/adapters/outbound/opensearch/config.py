@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
+from app import config as defaults
 from app.project import PROJECT_ROOT
 
 _KEYS = (
@@ -28,10 +29,14 @@ class OpenSearchMetricsConfig:
     username: str | None = None
     password: str | None = field(default=None, repr=False)
     ca_file: str | None = None
-    connect_timeout_seconds: float = 3.0
-    request_timeout_seconds: float = 15.0
-    max_bulk_documents: int = 500
-    max_bulk_bytes: int = 2 * 1024 * 1024
+    connect_timeout_seconds: float = (
+        defaults.OPENSEARCH_CONNECT_TIMEOUT_SECONDS_DEFAULT
+    )
+    request_timeout_seconds: float = (
+        defaults.OPENSEARCH_REQUEST_TIMEOUT_SECONDS_DEFAULT
+    )
+    max_bulk_documents: int = defaults.OPENSEARCH_MAX_BULK_DOCUMENTS_DEFAULT
+    max_bulk_bytes: int = defaults.OPENSEARCH_MAX_BULK_BYTES_DEFAULT
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.endpoint)

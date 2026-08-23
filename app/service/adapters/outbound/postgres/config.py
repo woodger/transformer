@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 from sqlalchemy import URL
 
+from app import config as defaults
 from app.project import PROJECT_ROOT
 
 _REQUIRED_KEYS = (
@@ -24,8 +25,8 @@ class DatabaseConfig:
     database: str
     user: str
     password: str = field(repr=False)
-    port: int = 5432
-    schema: str = "transformer"
+    port: int = defaults.POSTGRES_PORT_DEFAULT
+    schema: str = defaults.POSTGRES_SCHEMA_DEFAULT
 
     def __post_init__(self) -> None:
         for name in ("host", "database", "user", "password", "schema"):
@@ -66,7 +67,7 @@ def load_database_config(
     *,
     environ: Mapping[str, str] | None = None,
     env_file: str | os.PathLike[str] | None = None,
-    schema: str = "transformer",
+    schema: str = defaults.POSTGRES_SCHEMA_DEFAULT,
 ) -> DatabaseConfig:
     """Load PostgreSQL settings without mutating ``os.environ``.
 
@@ -88,7 +89,7 @@ def load_database_config(
         raise ValueError(
             "missing PostgreSQL configuration: " + ", ".join(missing)
         )
-    raw_port = values.get("POSTGRES_PORT", "5432")
+    raw_port = values.get("POSTGRES_PORT", str(defaults.POSTGRES_PORT_DEFAULT))
     try:
         port = int(raw_port)
     except (TypeError, ValueError) as exc:

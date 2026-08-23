@@ -85,10 +85,10 @@ transformer <command> --help
 ## Environment
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
-группам переменных. Фактические правила parsing и defaults находятся у
-владельцев runtime: `app/local/config.py`,
-`app/service/bootstrap/config.py`, `app/contracts/worker/v7/config.py` и
-`app/service/adapters/outbound/postgres/config.py`.
+группам переменных. Встроенные operational defaults находятся в
+`app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
+`app/service/bootstrap/config.py`, `app/contracts/worker/v7/config.py`,
+PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
 

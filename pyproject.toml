@@ -24,6 +24,7 @@ markers = [
 include = [
   "app/admin",
   "app/cli",
+  "app/config.py",
   "app/local",
   "app/project.py",
   "app/contracts",
@@ -44,6 +45,7 @@ include = [
 strict = [
   "app/admin",
   "app/cli",
+  "app/config.py",
   "app/local",
   "app/project.py",
   "app/contracts",

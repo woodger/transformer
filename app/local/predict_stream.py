@@ -5,8 +5,8 @@ from typing import Protocol, cast
 
 import torch
 
+from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.worker.v7.config import ModelConfig
-from app.local.config import DEFAULT_MAX_FRAME_BYTES
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.arrow import (
     empty_predictions_table,

@@ -5,7 +5,7 @@ from app.cli.formatting import (
 )
 from app.cli.options import add_hidden_help_argument, nonnegative_int
 from app.cli.parsers import SubparserTarget
-from app.service.bootstrap.config import HOST_DEFAULT, PORT_DEFAULT
+from app.config import HOST_DEFAULT, PORT_DEFAULT
 
 _FLIGHT_SERVE_DESCRIPTION = (
     "Run the durable Arrow Flight service for fit and predict jobs."

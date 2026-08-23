@@ -29,6 +29,9 @@
 
 ### Changed
 
+- Встроенные local, Flight service, PostgreSQL и OpenSearch defaults снова
+  собраны в едином `app/config.py`; runtime-specific parsing, validation,
+  environment precedence и worker v7 contract не изменены.
 - Flight authentication снова использует PostgreSQL-backed digest cache.
   Точный subject credential является `owner_subject`; выпуск обновляет cache,
   revoke физически удаляет token и также обновляет cache без перезапуска

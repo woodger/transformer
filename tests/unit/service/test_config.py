@@ -4,19 +4,21 @@ import tempfile
 
 import pytest
 
-from app.project import PROJECT_NAME
-from app.service.bootstrap.config import (
+from app.config import (
     ALLOW_PLAINTEXT,
     CPU_WORKERS,
     HOST_DEFAULT,
     PORT_DEFAULT,
     RETENTION_SECONDS,
+)
+from app.project import PROJECT_NAME
+from app.service.bootstrap.config import (
     FlightServiceConfig,
     load_config,
 )
 
 
-def test_service_defaults_come_from_service_config(tmp_path):
+def test_service_defaults_come_from_application_config(tmp_path):
     state = tmp_path / "state"
     config = FlightServiceConfig(
         runtime_dir=str(state),

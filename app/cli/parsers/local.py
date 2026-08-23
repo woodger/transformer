@@ -13,6 +13,7 @@ from app.cli.options import (
     six_positive_floats,
 )
 from app.cli.parsers import SubparserTarget
+from app.config import DEFAULT_DEVICE, DEFAULT_MAX_FRAME_BYTES
 from app.contracts.worker.v7.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
@@ -29,7 +30,6 @@ from app.contracts.worker.v7.config import (
     DEFAULT_STAGE_SIZE,
     DEFAULT_WEIGHT_DECAY,
 )
-from app.local.config import DEFAULT_DEVICE, DEFAULT_MAX_FRAME_BYTES
 
 
 def add_local_parsers(subparsers: SubparserTarget) -> None:

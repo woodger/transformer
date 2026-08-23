@@ -247,6 +247,7 @@ def test_application_internal_import_graph_is_acyclic():
 
 
 def test_canonical_contracts_and_composition_roots_exist():
+    assert (APP_ROOT / "config.py").is_file()
     assert (APP_ROOT / "contracts" / "flight" / "v5").is_dir()
     assert (APP_ROOT / "contracts" / "worker" / "v7").is_dir()
     assert (APP_ROOT / "contracts" / "metrics" / "v3").is_dir()
