@@ -41,8 +41,10 @@ def _add_auth_parsers(subparsers: SubparserTarget) -> None:
     add_hidden_help_argument(issue)
     issue.add_argument(
         "--client-id",
-        required=True,
-        help="Stable OAuth client ID and Transformer owner identity.",
+        help=(
+            "Stable OAuth client ID and Transformer owner identity; "
+            "generated when omitted."
+        ),
     )
     issue.set_defaults(data=None, metrics_name=None)
 

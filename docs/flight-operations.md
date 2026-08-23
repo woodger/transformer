@@ -249,9 +249,11 @@ HYDRA_ENDPOINT=http://hp260g9.home:4445
 
 `issue` создаёт client с точными `client_credentials`, opaque token strategy,
 audience `transformer`, scope `transformer:invoke` и token endpoint method
-`client_secret_basic`. `Token ID` в output и positional `TOKEN_ID` у `revoke`
-равны точному Hydra `client_id`. Secret возвращается Hydra и печатается только
-один раз; Transformer не сохраняет его и не включает в errors или logs.
+`client_secret_basic`. Если `--client-id` не передан, CLI генерирует новый
+identifier формата `trf-<20 hex>`; каждый вызов без option создаёт отдельного
+owner-а. `Token ID` в output и positional `TOKEN_ID` у `revoke` равны точному
+Hydra `client_id`. Secret возвращается Hydra и печатается только один раз;
+Transformer не сохраняет его и не включает в errors или logs.
 
 `list` запрашивает все страницы только для Transformer-managed owner marker,
 никогда не получает secrets и показывает drift обязательной конфигурации как

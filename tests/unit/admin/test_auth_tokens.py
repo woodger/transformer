@@ -256,3 +256,44 @@ def test_auth_token_command_prints_issued_credentials(monkeypatch, capsys):
         "Audience: transformer\n"
         "Scope: transformer:invoke\n"
     )
+
+
+def test_auth_token_command_generates_client_id_when_omitted(
+    monkeypatch,
+    capsys,
+):
+    class Administration:
+        def __init__(self, endpoint):
+            assert endpoint == "http://hydra-admin:4445"
+
+        def issue(self, client_id):
+            assert client_id == "trf-0123456789abcdefabcd"
+            return IssuedOAuthClient(client_id, "one-time-secret")
+
+    monkeypatch.setattr(
+        auth_tokens_command,
+        "load_hydra_introspection_config",
+        lambda: SimpleNamespace(endpoint="http://hydra-admin:4445"),
+    )
+    monkeypatch.setattr(
+        auth_tokens_command,
+        "HydraOAuthClientAdministration",
+        Administration,
+    )
+    monkeypatch.setattr(
+        auth_tokens_command.secrets,
+        "token_hex",
+        lambda size: "0123456789abcdefabcd" if size == 10 else "unexpected",
+    )
+
+    auth_tokens_command.run(
+        SimpleNamespace(tokens_action="issue", client_id=None)
+    )
+
+    assert capsys.readouterr().out == (
+        "Token ID: trf-0123456789abcdefabcd\n"
+        "Client ID: trf-0123456789abcdefabcd\n"
+        "Client Secret: one-time-secret\n"
+        "Audience: transformer\n"
+        "Scope: transformer:invoke\n"
+    )

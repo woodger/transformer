@@ -262,6 +262,7 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
 
 def test_admin_namespaces_are_nested():
     issued = parse("auth", "tokens", "issue", "--client-id", "consumer")
+    generated = parse("auth", "tokens", "issue")
     token_list = parse("auth", "tokens", "list")
     revoked = parse("auth", "tokens", "revoke", "consumer")
     status = parse("db", "migrations", "status")
@@ -277,6 +278,11 @@ def test_admin_namespaces_are_nested():
         "auth",
         "issue",
         "consumer",
+    )
+    assert (generated.action, generated.tokens_action, generated.client_id) == (
+        "auth",
+        "issue",
+        None,
     )
     assert (token_list.action, token_list.tokens_action) == ("auth", "list")
     assert (revoked.action, revoked.tokens_action, revoked.token_id) == (
@@ -307,7 +313,6 @@ def test_admin_namespaces_are_nested():
         ("flight",),
         ("auth",),
         ("auth", "tokens"),
-        ("auth", "tokens", "issue"),
         ("auth", "tokens", "revoke"),
         ("db",),
         ("db", "migrations"),

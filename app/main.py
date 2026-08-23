@@ -28,7 +28,7 @@ class CliArguments(Protocol):
     tokens_action: str
     migrations_action: str
     models_action: str
-    client_id: str
+    client_id: str | None
     token_id: str
     model_ref: str
     deleted: bool

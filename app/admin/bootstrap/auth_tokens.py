@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import sys
 from typing import Protocol
 
@@ -15,7 +16,7 @@ from app.service.adapters.outbound.hydra.config import (
 
 class AuthTokenArguments(Protocol):
     tokens_action: str
-    client_id: str
+    client_id: str | None
     token_id: str
 
 
@@ -24,7 +25,12 @@ def run(args: AuthTokenArguments) -> None:
         endpoint = load_hydra_introspection_config().endpoint
         administration = HydraOAuthClientAdministration(endpoint)
         if args.tokens_action == "issue":
-            print_issued(administration.issue(args.client_id))
+            client_id = (
+                args.client_id
+                if args.client_id is not None
+                else f"trf-{secrets.token_hex(10)}"
+            )
+            print_issued(administration.issue(client_id))
             return
         if args.tokens_action == "list":
             print_list(administration.list())

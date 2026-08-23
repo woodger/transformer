@@ -46,7 +46,14 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 
 ## Hydra OAuth clients
 
-Создать постоянную OAuth identity Consumer-а:
+Создать OAuth identity Consumer-а с автоматически сгенерированным
+`client_id`:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue
+```
+
+Для постоянной, выбранной оператором identity передать `client_id` явно:
 
 ```bash
 ./.venv/bin/python ./app/main.py auth tokens issue --client-id=consumer
@@ -57,6 +64,8 @@ tokens, audience `transformer` и scope `transformer:invoke`. `Token ID` в
 output равен точному `client_id` и далее является Transformer
 `owner_subject`. Client secret печатается только в успешном output `issue`, не
 сохраняется Transformer и должен сразу попасть в secret store Consumer-а.
+Без `--client-id` команда создаёт новый identifier формата `trf-<20 hex>`;
+каждый такой вызов создаёт отдельного owner-а.
 
 Показать созданные этим CLI clients без secrets:
 
