@@ -9,10 +9,10 @@
 
 ### Added
 
-- Восстановлен исторический административный контракт
-  `auth tokens issue --subject`, `auth tokens list` и
+- Восстановлены административные команды
+  `auth tokens issue`, `auth tokens list` и
   `auth tokens revoke <TOKEN_ID>` для бессрочных API credentials формата
-  `a.<base64url>`.
+  `a.<base64url>`. Все выпущенные tokens принадлежат owner subject `inventory`.
 - Migration `0015` создаёт новую таблицу API tokens и `LISTEN/NOTIFY` trigger.
   PostgreSQL хранит только SHA-256 digest credential; исходный bearer
   показывается один раз при выпуске.

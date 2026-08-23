@@ -230,14 +230,14 @@ Bearer authentication обязательна для каждого Flight RPC, �
 DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
 
 ```bash
-./.venv/bin/python ./app/main.py auth tokens issue --subject=inventory-production
+./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выводит ID token, subject и новый credential. Credential имеет формат
-`a.<base64url>` и показывается только при выпуске. PostgreSQL хранит его
-SHA-256 digest, но не исходный bearer. Передавайте credential через канал
-secrets, принятый в deployment; не помещайте его в историю команд, логи или
-репозиторий.
+Команда выпускает token для фиксированного owner subject `inventory` и выводит
+ID token, subject и новый credential. Credential имеет формат `a.<base64url>`
+и показывается только при выпуске. PostgreSQL хранит его SHA-256 digest, но не
+исходный bearer. Передавайте credential через канал secrets, принятый в
+deployment; не помещайте его в историю команд, логи или репозиторий.
 
 Просмотр metadata без раскрытия credentials:
 

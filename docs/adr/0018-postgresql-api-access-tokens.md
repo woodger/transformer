@@ -26,13 +26,14 @@ ADR 0017 заменил этот механизм на Ory Hydra introspection �
 
 Transformer принимает только собственный credential формата
 `a.<base64url>`. При `issue` генерируются 64 случайных байта, UUID token ID и
-точный operator-supplied subject. Credential действует без срока истечения до
-явного `revoke`.
+фиксированный owner subject `inventory`. Credential действует без срока
+истечения до явного `revoke`. Один экземпляр Transformer и его PostgreSQL
+database обслуживают эту единственную service identity.
 
-Восстанавливается точный административный CLI:
+Административный CLI:
 
 ```text
-auth tokens issue --subject <SUBJECT>
+auth tokens issue
 auth tokens list
 auth tokens revoke <TOKEN_ID>
 ```
@@ -71,7 +72,7 @@ owner-scoped application state не меняются.
   отдельный token exchange отсутствует.
 - Компрометация bearer предоставляет доступ до явного отзыва, поэтому
   credential должен находиться только в secret storage Consumer-а.
-- Несколько tokens могут иметь одинаковый subject и видеть один owner-scoped
+- Все выпущенные tokens имеют subject `inventory` и видят один owner-scoped
   state, что позволяет ротацию без переименования owner-а.
 - PostgreSQL и token listener обязательны при старте Flight process.
 - Выпуск и отзыв не требуют перезапуска Flight service.

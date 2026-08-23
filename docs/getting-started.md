@@ -43,14 +43,14 @@ systemd — [deployment guide](./deployment/systemd.md).
 клиентского service identity:
 
 ```bash
-./.venv/bin/python ./app/main.py auth tokens issue \
-  --subject=inventory-production
+./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выводит token ID, subject и новый credential вида `a.<base64url>`.
-Сохраните credential в secret storage клиентского приложения; не помещайте его
-в repository, логи или server `.env`. Перезапуск Transformer не требуется:
-token cache обновляется автоматически.
+Команда выпускает token для единственного owner-а `inventory` и выводит token
+ID, subject и новый credential вида `a.<base64url>`. Сохраните credential в
+secret storage клиентского приложения; не помещайте его в repository, логи или
+server `.env`. Перезапуск Transformer не требуется: token cache обновляется
+автоматически.
 
 ## Отозвать API-токен
 

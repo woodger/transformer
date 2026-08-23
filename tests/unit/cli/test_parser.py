@@ -261,7 +261,7 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
 
 
 def test_access_and_database_namespaces_are_nested():
-    issue = parse("auth", "tokens", "issue", "--subject", "inventory")
+    issue = parse("auth", "tokens", "issue")
     listed = parse("auth", "tokens", "list")
     token_id = "12345678-1234-4234-8234-123456789abc"
     revoked = parse("auth", "tokens", "revoke", token_id)
@@ -279,7 +279,7 @@ def test_access_and_database_namespaces_are_nested():
         "tokens",
         "issue",
     )
-    assert issue.subject == "inventory"
+    assert not hasattr(issue, "subject")
     assert listed.tokens_action == "list"
     assert revoked.token_id == token_id
     assert (status.action, status.db_action, status.migrations_action) == (
@@ -292,6 +292,11 @@ def test_access_and_database_namespaces_are_nested():
     assert deleted_models.deleted is True
     assert deleted.models_action == "delete"
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
+
+
+def test_auth_tokens_issue_rejects_removed_subject_option():
+    with pytest.raises(SystemExit):
+        parse("auth", "tokens", "issue", "--subject", "inventory")
 
 
 def test_obsolete_auth_clients_namespace_is_not_available():
@@ -310,7 +315,6 @@ def test_obsolete_auth_clients_namespace_is_not_available():
         ("flight",),
         ("auth",),
         ("auth", "tokens"),
-        ("auth", "tokens", "issue"),
         ("auth", "tokens", "revoke"),
         ("db",),
         ("db", "migrations"),

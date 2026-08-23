@@ -9,6 +9,7 @@ import pytest
 from app.service.adapters.outbound.postgres.models import ApiAccessToken
 from app.service.adapters.outbound.postgres.token_cache import AccessTokenCache
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
+from app.service.application.commands.access_tokens import AccessTokenAdministration
 from app.service.application.ports.authentication import InvalidAccessTokenError
 
 
@@ -52,7 +53,7 @@ class _Database:
         return self.current
 
 
-def test_issue_preserves_historical_token_contract_without_storing_credential():
+def test_issue_generates_token_without_storing_credential():
     database = _Database()
 
     issued = AccessTokenStore(database).issue("inventory")
@@ -69,6 +70,12 @@ def test_issue_preserves_historical_token_contract_without_storing_credential():
     ).hexdigest()
     assert not hasattr(stored, "token")
     assert issued.token not in repr(issued)
+
+
+def test_administration_issues_tokens_for_inventory_owner():
+    issued = AccessTokenAdministration(AccessTokenStore(_Database())).issue()
+
+    assert issued.subject == "inventory"
 
 
 @pytest.mark.parametrize("subject", ["", "x" * 257, "bad\nsubject"])

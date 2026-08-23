@@ -39,11 +39,6 @@ def _add_auth_parsers(subparsers: SubparserTarget) -> None:
         formatter_class=HelpFormatter,
     )
     add_hidden_help_argument(issue)
-    issue.add_argument(
-        "--subject",
-        required=True,
-        help="Authenticated subject associated with the token.",
-    )
     issue.set_defaults(data=None, metrics_name=None)
 
     token_list = token_commands.add_parser(

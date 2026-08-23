@@ -12,12 +12,25 @@ def print_issued(record: AccessTokenRecord) -> None:
 
 
 def print_list(records: Sequence[AccessTokenRecord]) -> None:
-    print("TOKEN ID\tSUBJECT\tCREATED AT\tSTATUS")
-    for record in records:
-        status = "revoked" if record.revoked_at is not None else "active"
+    headers = ("TOKEN ID", "SUBJECT", "CREATED AT", "STATUS")
+    rows = [
+        (
+            record.token_id,
+            record.subject,
+            record.created_at.isoformat(),
+            "revoked" if record.revoked_at is not None else "active",
+        )
+        for record in records
+    ]
+    widths = tuple(
+        max(len(values[index]) for values in (headers, *rows))
+        for index in range(len(headers))
+    )
+    for row in (headers, *rows):
         print(
-            f"{record.token_id}\t{record.subject}\t"
-            f"{record.created_at.isoformat()}\t{status}"
+            "  ".join(
+                value.ljust(width) for value, width in zip(row, widths, strict=True)
+            ).rstrip()
         )
 
 

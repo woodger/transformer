@@ -19,20 +19,27 @@ def _record(*, revoked=False, token=None):
     )
 
 
-def test_historical_token_output_contract(capsys):
+def test_token_output_contract_is_aligned(capsys):
     print_issued(_record(token="a.secret"))
     print_list([_record(), _record(revoked=True)])
     print_revoked(_record(revoked=True))
 
-    assert capsys.readouterr().out == (
-        f"Token ID: {TOKEN_ID}\n"
-        "Subject: inventory\n"
-        "Token: a.secret\n"
-        "TOKEN ID\tSUBJECT\tCREATED AT\tSTATUS\n"
-        f"{TOKEN_ID}\tinventory\t{CREATED_AT.isoformat()}\tactive\n"
-        f"{TOKEN_ID}\tinventory\t{CREATED_AT.isoformat()}\trevoked\n"
-        f"Revoked token: {TOKEN_ID}\n"
-    )
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:3] == [
+        f"Token ID: {TOKEN_ID}",
+        "Subject: inventory",
+        "Token: a.secret",
+    ]
+    assert lines[-1] == f"Revoked token: {TOKEN_ID}"
+    for heading, active_value, revoked_value in (
+        ("TOKEN ID", TOKEN_ID, TOKEN_ID),
+        ("SUBJECT", "inventory", "inventory"),
+        ("CREATED AT", CREATED_AT.isoformat(), CREATED_AT.isoformat()),
+        ("STATUS", "active", "revoked"),
+    ):
+        offset = lines[3].index(heading)
+        assert lines[4].index(active_value) == offset
+        assert lines[5].index(revoked_value) == offset
 
 
 def _wire(monkeypatch, administration):
@@ -65,18 +72,14 @@ def _wire(monkeypatch, administration):
     return closed
 
 
-def test_issue_dispatches_subject_and_closes_database(monkeypatch, capsys):
+def test_issue_and_close_database(monkeypatch, capsys):
     class Administration:
-        def issue(self, subject):
-            assert subject == "inventory"
+        def issue(self):
             return _record(token="a.secret")
 
     closed = _wire(monkeypatch, Administration())
 
-    tokens_command.run(SimpleNamespace(
-        tokens_action="issue",
-        subject="inventory",
-    ))
+    tokens_command.run(SimpleNamespace(tokens_action="issue"))
 
     assert "Token: a.secret" in capsys.readouterr().out
     assert closed == [True]
@@ -104,7 +107,10 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
     ))
 
     output = capsys.readouterr().out
-    assert "TOKEN ID\tSUBJECT\tCREATED AT\tSTATUS" in output
+    assert "TOKEN ID" in output
+    assert "SUBJECT" in output
+    assert "CREATED AT" in output
+    assert "STATUS" in output
     assert f"Revoked token: {TOKEN_ID}" in output
     assert calls == ["list", ("revoke", TOKEN_ID)]
     assert closed == [True, True]

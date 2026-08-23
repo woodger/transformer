@@ -12,7 +12,6 @@ from app.service.application.commands.access_tokens import AccessTokenAdministra
 
 class AuthTokenArguments(Protocol):
     tokens_action: str
-    subject: str
     token_id: str
 
 
@@ -23,7 +22,7 @@ def run(args: AuthTokenArguments) -> None:
     try:
         administration = AccessTokenAdministration(AccessTokenStore(database))
         if args.tokens_action == "issue":
-            print_issued(administration.issue(args.subject))
+            print_issued(administration.issue())
             return
         if args.tokens_action == "list":
             print_list(administration.list())
