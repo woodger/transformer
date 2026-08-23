@@ -2,7 +2,7 @@
 
 ## Статус
 
-Принято.
+Заменено [ADR 0018](0018-postgresql-api-access-tokens.md).
 
 ## Контекст
 

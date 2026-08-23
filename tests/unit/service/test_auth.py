@@ -7,8 +7,6 @@ import pytest
 from app.service.adapters.inbound.flight.auth import BearerAuthMiddlewareFactory
 from app.service.adapters.observability import OperationalMetrics
 from app.service.application.ports.authentication import (
-    AuthenticationUnavailableError,
-    InsufficientAccessError,
     InvalidAccessTokenError,
 )
 from app.service.domain.authentication import AuthenticatedPrincipal
@@ -32,7 +30,7 @@ def factory(authenticator=None, logger=None):
     )
 
 
-def test_bearer_auth_uses_hydra_principal_as_owner_identity():
+def test_bearer_auth_uses_authenticated_subject_as_owner_identity():
     authenticator = StaticAccessTokenAuthenticator({
         "first-token": "inventory",
         "rotated-token": "inventory",
@@ -52,7 +50,7 @@ def test_bearer_auth_uses_hydra_principal_as_owner_identity():
 
 
 @pytest.mark.parametrize(
-    ("headers", "introspection_expected"),
+    ("headers", "authentication_expected"),
     [
         ({}, False),
         ({"authorization": ["Basic opaque-token"]}, False),
@@ -66,7 +64,7 @@ def test_bearer_auth_uses_hydra_principal_as_owner_identity():
 )
 def test_missing_malformed_and_inactive_credentials_are_unauthenticated(
     headers,
-    introspection_expected,
+    authentication_expected,
 ):
     authenticator = StaticAccessTokenAuthenticator({
         "opaque-token": "inventory",
@@ -81,7 +79,7 @@ def test_missing_malformed_and_inactive_credentials_are_unauthenticated(
             headers,
         )
 
-    assert bool(authenticator.calls) is introspection_expected
+    assert bool(authenticator.calls) is authentication_expected
 
 
 @pytest.mark.parametrize(
@@ -91,16 +89,6 @@ def test_missing_malformed_and_inactive_credentials_are_unauthenticated(
             InvalidAccessTokenError("sensitive token"),
             flight.FlightUnauthenticatedError,
             "UNAUTHENTICATED",
-        ),
-        (
-            InsufficientAccessError("sensitive token"),
-            flight.FlightUnauthorizedError,
-            "PERMISSION_DENIED",
-        ),
-        (
-            AuthenticationUnavailableError("sensitive token"),
-            flight.FlightUnavailableError,
-            "UNAVAILABLE",
         ),
         (
             RuntimeError("sensitive token"),

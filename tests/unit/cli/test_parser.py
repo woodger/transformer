@@ -260,17 +260,11 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
         parse("gmark", *option)
 
 
-def test_admin_namespaces_are_nested():
-    created = parse("auth", "clients", "create", "consumer")
-    named_client = parse(
-        "auth",
-        "clients",
-        "create",
-        "inventory",
-        "--name=Inventory Transformer",
-    )
-    client_list = parse("auth", "clients", "list")
-    deleted_client = parse("auth", "clients", "delete", "consumer")
+def test_access_and_database_namespaces_are_nested():
+    issue = parse("auth", "tokens", "issue", "--subject", "inventory")
+    listed = parse("auth", "tokens", "list")
+    token_id = "12345678-1234-4234-8234-123456789abc"
+    revoked = parse("auth", "tokens", "revoke", token_id)
     status = parse("db", "migrations", "status")
     models = parse("models", "list")
     deleted_models = parse("models", "list", "--deleted")
@@ -280,26 +274,14 @@ def test_admin_namespaces_are_nested():
         "mdl_0123456789abcdef0123456789abcdef",
     )
 
-    assert (created.action, created.clients_action, created.client_id) == (
+    assert (issue.action, issue.auth_action, issue.tokens_action) == (
         "auth",
-        "create",
-        "consumer",
+        "tokens",
+        "issue",
     )
-    assert created.name is None
-    assert (named_client.client_id, named_client.name) == (
-        "inventory",
-        "Inventory Transformer",
-    )
-    assert (client_list.action, client_list.clients_action) == ("auth", "list")
-    assert (
-        deleted_client.action,
-        deleted_client.clients_action,
-        deleted_client.client_id,
-    ) == (
-        "auth",
-        "delete",
-        "consumer",
-    )
+    assert issue.subject == "inventory"
+    assert listed.tokens_action == "list"
+    assert revoked.token_id == token_id
     assert (status.action, status.db_action, status.migrations_action) == (
         "db",
         "migrations",
@@ -312,9 +294,9 @@ def test_admin_namespaces_are_nested():
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
 
 
-def test_obsolete_auth_tokens_namespace_is_not_available():
+def test_obsolete_auth_clients_namespace_is_not_available():
     with pytest.raises(SystemExit):
-        parse("auth", "tokens", "list")
+        parse("auth", "clients", "list")
 
 
 @pytest.mark.parametrize(
@@ -327,9 +309,9 @@ def test_obsolete_auth_tokens_namespace_is_not_available():
         ("fit-stream",),
         ("flight",),
         ("auth",),
-        ("auth", "clients"),
-        ("auth", "clients", "create"),
-        ("auth", "clients", "delete"),
+        ("auth", "tokens"),
+        ("auth", "tokens", "issue"),
+        ("auth", "tokens", "revoke"),
         ("db",),
         ("db", "migrations"),
         ("models",),
@@ -508,10 +490,10 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("flight", "--help"),
         ("flight", "serve", "--help"),
         ("auth", "--help"),
-        ("auth", "clients", "--help"),
-        ("auth", "clients", "create", "--help"),
-        ("auth", "clients", "list", "--help"),
-        ("auth", "clients", "delete", "--help"),
+        ("auth", "tokens", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
         ("models", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
@@ -538,9 +520,9 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("predict-stream", "--help"),
         ("gmark", "--help"),
         ("flight", "serve", "--help"),
-        ("auth", "clients", "create", "--help"),
-        ("auth", "clients", "list", "--help"),
-        ("auth", "clients", "delete", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),

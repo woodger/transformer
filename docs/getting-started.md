@@ -37,36 +37,46 @@ systemd — [deployment guide](./deployment/systemd.md).
 `./.venv/bin/python ./app/main.py <command> --help`. Краткая карта команд и их
 поведение собраны в [справочнике CLI](./cli/index.md).
 
-## Настроить аутентификацию Flight
+## Создать API-токен
 
-Flight service не выдаёт и не хранит API credentials. Для запуска сервиса и
-административных OAuth client commands задайте базовый адрес Ory Hydra Admin
-API:
-
-```dotenv
-HYDRA_ENDPOINT=http://hp260g9.home:4445
-```
-
-Transformer сам использует фиксированный path
-`/admin/oauth2/introspect`.
-
-Создать OAuth client Consumer-а можно отдельной короткоживущей admin-командой:
+После настройки PostgreSQL и применения migrations выпустите bearer token для
+клиентского service identity:
 
 ```bash
-./.venv/bin/python ./app/main.py auth clients create consumer \
-  --name="Consumer Transformer"
-./.venv/bin/python ./app/main.py auth clients list
+./.venv/bin/python ./app/main.py auth tokens issue \
+  --subject=inventory-production
 ```
 
-`--name` необязателен и по умолчанию равен `CLIENT_ID`. Успешный `create`
-печатает точные client credentials один раз. Сохраните их
-непосредственно в secret store Consumer-а; Transformer их не сохраняет и
-Flight service их не получает. Consumer самостоятельно запрашивает
-short-lived opaque access tokens через OAuth `client_credentials` с явными
-`audience=transformer` и `scope=transformer:invoke`. Удаление client-а и отзыв
-всех его tokens выполняются командой `auth clients delete consumer`. Error
-semantics и полный порядок операций описаны в
-[Flight runbook](./flight-operations.md#ory-hydra).
+Команда выводит token ID, subject и новый credential вида `a.<base64url>`.
+Сохраните credential в secret storage клиентского приложения; не помещайте его
+в repository, логи или server `.env`. Перезапуск Transformer не требуется:
+token cache обновляется автоматически.
+
+## Отозвать API-токен
+
+Сначала найдите token ID без раскрытия credentials:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
+```
+
+Затем отзовите токен по его ID:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke <token-id>
+```
+
+Например:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke \
+  35dc6236-cfb9-4ac7-80db-320db21ef463
+```
+
+Используйте именно token ID, а не credential вида `a.<base64url>`. Перезапуск
+Transformer не требуется: token cache обновляется автоматически. Подробности
+управления токенами находятся в
+[Flight runbook](./flight-operations.md#токены-доступа-api).
 
 ## Локальное обучение и prediction
 
@@ -104,7 +114,7 @@ Prediction использует созданный checkpoint:
   возвращают framed Arrow payloads через standard streams.
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
-  PostgreSQL, OAuth, recovery, TLS и lifecycle service.
+  PostgreSQL, tokens, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка

@@ -93,9 +93,9 @@ Flight:
   flight serve                    Run the durable Arrow Flight job service.
 
 Access:
-  auth clients create <client-id> Create Hydra OAuth client
-  auth clients list               List Transformer Hydra clients
-  auth clients delete <client-id> Delete one Hydra client
+  auth tokens issue               Issue a local API access token
+  auth tokens list                List API access token metadata
+  auth tokens revoke <token-id>   Revoke an API access token
 
 Models:
   models list                     List published model generations

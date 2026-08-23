@@ -10,9 +10,9 @@ COMMAND_GROUPS = (
     (
         "Access",
         (
-            ("auth clients create <client-id>", "Create Hydra OAuth client"),
-            ("auth clients list", "List Transformer Hydra clients"),
-            ("auth clients delete <client-id>", "Delete one Hydra client"),
+            ("auth tokens issue", "Issue a local API access token"),
+            ("auth tokens list", "List API access token metadata"),
+            ("auth tokens revoke <token-id>", "Revoke an API access token"),
         ),
     ),
     (

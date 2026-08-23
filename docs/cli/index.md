@@ -32,59 +32,15 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
-| `auth clients create\|list\|delete` | Управлять Transformer OAuth clients через Ory Hydra |
+| `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
 | `models list\|delete` | Просматривать и удалять опубликованные model generations |
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
-`flight serve`, `models` и `db migrations` требуют настройки PostgreSQL.
-`flight serve` и `auth clients` требуют базовый адрес Ory Hydra Admin API.
-`auth clients` не подключается к PostgreSQL; lifecycle OAuth credentials и
-безопасный порядок операций описаны в
+`flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки
+PostgreSQL. Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
 [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
-
-## Hydra OAuth clients
-
-Создать OAuth identity Consumer-а с обязательным стабильным `client_id`:
-
-```bash
-./.venv/bin/python ./app/main.py auth clients create consumer
-./.venv/bin/python ./app/main.py auth clients create inventory \
-  --name="Inventory Transformer"
-```
-
-`--name` необязателен и без него равен точному `CLIENT_ID`; пустое имя не
-принимается.
-Команда регистрирует в Hydra client с flow `client_credentials`, opaque access
-tokens, audience `transformer` и scope `transformer:invoke`. Точный `client_id`
-является Transformer `owner_subject`. Client secret печатается только в
-успешном output `create`, не сохраняется Transformer и должен сразу попасть в
-secret store Consumer-а. Consumer самостоятельно получает short-lived access
-tokens через `client_credentials`.
-
-При совпадении `CLIENT_ID` с существующим Hydra client команда завершается
-ошибкой и не изменяет существующий client.
-
-Показать созданные этим CLI clients без secrets:
-
-```bash
-./.venv/bin/python ./app/main.py auth clients list
-```
-
-Удалить client и все его access tokens:
-
-```bash
-./.venv/bin/python ./app/main.py auth clients delete consumer
-```
-
-Positional argument `CLIENT_ID` у `delete` принимает OAuth `client_id` из
-output `create`. `list` и `delete` считают client управляемым только при точном
-совпадении owner и versioned metadata-маркеров Transformer CLI. `list`
-показывает display name, но никогда не получает secrets или access tokens.
-Команда не управляет посторонними Hydra clients. Удаление
-становится видимым новым Flight RPC не позднее окончания 15-секундного
-положительного authorization cache; уже начатый streaming RPC не прерывается.
 
 ## File commands
 

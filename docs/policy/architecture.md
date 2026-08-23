@@ -16,8 +16,8 @@
 telemetry от core state закреплено в
 [ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
 persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md). Transport
-authentication через Ory Hydra закреплена в
-[ADR 0017](../adr/0017-ory-hydra-flight-authentication.md).
+authentication закреплена в
+[ADR 0018](../adr/0018-postgresql-api-access-tokens.md).
 
 ## Процессы и composition roots
 
@@ -26,7 +26,7 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/local                      локальные file/stream commands и gmark
 ├── app/service/bootstrap          Arrow Flight service
 ├── app/worker/bootstrap           один ML execution attempt
-└── app/admin/bootstrap            database и model commands
+└── app/admin/bootstrap            auth, database и model commands
 
 app/contracts/flight/v5            публичный Flight contract
 app/contracts/worker/v7            внутренний process contract
@@ -51,7 +51,7 @@ service/application/{commands,queries,services,ports,telemetry}
 service/domain
 
 service/bootstrap ── собирает inbound и outbound adapters
-service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch,hydra}
+service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
 - `service/domain` содержит job states, error codes, immutable records и pure
@@ -133,12 +133,10 @@ defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` 
 ## Admin
 
 `app/admin/cli` отвечает только за presentation. `app/admin/bootstrap`
-создаёт короткоживущие PostgreSQL resources для database/model operations или
-admin-only Hydra adapter для OAuth client lifecycle. Alembic- и Hydra-команды
-не запускают service или worker. OAuth clients остаются в Ory Hydra, client
-secret принадлежит consumer-у и только однократно проходит через presentation
-успешного `create`; Transformer его не сохраняет. Admin CLI распознаёт свои
-clients только по совместному owner и versioned metadata-маркеру.
+создаёт короткоживущие PostgreSQL resources и вызывает application use cases
+для access tokens и published models. Alembic-команды имеют отдельный
+короткоживущий SQLAlchemy lifecycle. Admin-команды не запускают service или
+worker.
 
 ## Contracts
 
@@ -168,10 +166,9 @@ clients только по совместному owner и versioned metadata-м�
 PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
-owner-scoped state и published metadata. Сам owner устанавливается
-introspection-ответом Ory Hydra как точный `client_id`. Отдельный telemetry
-slice владеет epoch intervals, run artifact metadata и metrics outbox.
-OpenSearch является
+tokens, owner-scoped state и published metadata. Owner устанавливается точным
+subject API credential. Отдельный telemetry slice владеет epoch intervals, run
+artifact metadata и metrics outbox. OpenSearch является
 best-effort аналитической проекцией, а не частью model/job lifecycle.
 SQLite и dual-write запрещены.
 
@@ -194,7 +191,7 @@ Ownership хранения:
 - `models/` — только успешно опубликованные immutable model generations;
 - `telemetry/` — run-owned best-effort artifacts до завершения outbox
   retention;
-- RAM — FIFO queues и active process handles.
+- RAM — FIFO queues, token digest cache и active process handles.
 
 ## Обязательные dependency rules
 
@@ -232,9 +229,6 @@ Ownership хранения:
 - spool/publication — `app/service/adapters/outbound/artifacts/`;
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
-- Ory Hydra introspection — `app/service/adapters/outbound/hydra/`;
-- Ory Hydra OAuth client administration —
-  `app/admin/adapters/outbound/hydra.py`;
 - OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
 - metrics artifacts —
   `app/service/adapters/outbound/artifacts/telemetry/`;

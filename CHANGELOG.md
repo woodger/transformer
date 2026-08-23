@@ -9,11 +9,24 @@
 
 ### Added
 
-- Добавлены `auth clients create|list|delete` как короткоживущая
-  административная обёртка над Ory Hydra. Команды создают OAuth client с
-  обязательным `client_id` и необязательным display name, перечисляют и удаляют
-  только clients с точными owner/metadata-маркерами Transformer CLI, удаляют
-  связанные access tokens и не используют PostgreSQL credential storage.
+- Восстановлен исторический административный контракт
+  `auth tokens issue --subject`, `auth tokens list` и
+  `auth tokens revoke <TOKEN_ID>` для бессрочных API credentials формата
+  `a.<base64url>`.
+- Migration `0015` создаёт новую таблицу API tokens и `LISTEN/NOTIFY` trigger.
+  PostgreSQL хранит только SHA-256 digest credential; исходный bearer
+  показывается один раз при выпуске.
+
+### Changed
+
+- Flight authentication снова использует PostgreSQL-backed digest cache.
+  Точный subject credential является `owner_subject`; выпуск и отзыв обновляют
+  cache без перезапуска сервиса.
+
+### Removed
+
+- Удалены Ory Hydra introspection, `HYDRA_ENDPOINT`, OAuth client
+  administration и команды `auth clients create|list|delete`.
 
 ## [0.1.14] - 2026-08-21
 

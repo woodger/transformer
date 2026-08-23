@@ -24,9 +24,7 @@ Project `.venv`, `.env` и PostgreSQL migrations должны быть подг�
 [политике Python runtime](../policy/python-runtime-policy.md), а параметры
 Flight service — в [Flight runbook](../flight-operations.md).
 Необязательная доставка training metrics настраивается отдельно по
-[инструкции OpenSearch](opensearch.md). Обязательный базовый адрес Ory Hydra
-Admin API задаётся в project `.env` по
-[Flight runbook](../flight-operations.md#ory-hydra).
+[инструкции OpenSearch](opensearch.md).
 
 ## Создать unit-файл
 

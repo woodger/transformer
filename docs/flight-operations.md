@@ -12,7 +12,7 @@ breaking cutover — в
 индикаторов — в
 [`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md), а transport
 authentication — в
-[`ADR 0017`](adr/0017-ory-hydra-flight-authentication.md).
+[`ADR 0018`](adr/0018-postgresql-api-access-tokens.md).
 
 ## Требования к runtime
 
@@ -22,8 +22,6 @@ authentication — в
 - PyTorch, NumPy и PyArrow для обучения и Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic и python-dotenv для доступа к PostgreSQL.
 - PostgreSQL, доступный в частной сети.
-- Доступный административный endpoint Ory Hydra для introspection каждого
-  нового Flight RPC.
 - Постоянный каталог project `models/` для успешно опубликованных моделей.
 - Постоянный каталог project `recovery/` для fit inputs и внутренних
   checkpoints global epochs.
@@ -60,6 +58,7 @@ PostgreSQL является единственным долговечным ис
 - metadata опубликованных моделей и owner-scoped aliases моделей;
 - committed epoch metrics, metadata run-owned metrics artifacts и состояние
   OpenSearch outbox;
+- API access tokens;
 - текущей storage epoch runtime.
 
 Filesystem runtime намеренно является временным:
@@ -130,8 +129,8 @@ records, поскольку эти artifacts невозможно восстан
 inputs в `recovery/` остаётся авторитетным: прерванная attempt переходит в
 `RETRYING` и возобновляется с последней зарегистрированной завершённой epoch.
 
-Опубликованные модели и постоянные fit inputs/checkpoints не связаны с runtime
-epoch. Потеря `recovery/` обрабатывается иначе: отсутствие или
+Опубликованные модели, постоянные fit inputs/checkpoints и API access tokens не
+связаны с runtime epoch. Потеря `recovery/` обрабатывается иначе: отсутствие или
 повреждение зарегистрированного input либо checkpoint приводит к явной ошибке
 recovery; Transformer не начинает fit незаметно с нулевой epoch. PostgreSQL
 хранит только metadata, поэтому ни один filesystem нельзя восстановить из БД.
@@ -162,7 +161,7 @@ Transformer использует schema PostgreSQL `transformer`. Сервис �
 ```
 
 `status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
-head. Сервис и административные команды отказываются запускаться при
+head. Сервис и команды управления tokens отказываются запускаться при
 отсутствующей или устаревшей schema и предлагают выполнить
 `db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
 автоматически migrations не применяются.
@@ -209,9 +208,10 @@ revision `0012` timestamps восстановить невозможно. Тек
 `AVAILABLE → DELETING → audit archive`. Flight v5 не меняется.
 
 Revision `0014` необратимо удаляет локальные API tokens, их notification
-trigger и функцию. Owner-scoped jobs/models не изменяются: их строковый
-`owner_subject` уже хранит точный `client_id`. После применения migration
-локального authentication fallback нет; сервис требует Hydra introspection.
+trigger и функцию. Удалённые credential восстановить невозможно. Revision
+`0015` создаёт новую пустую таблицу API tokens с digest-only хранением и
+возвращает notification trigger. Owner-scoped jobs/models не изменяются:
+строковый `owner_subject` продолжает хранить точный subject credential.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -219,95 +219,39 @@ cache. Transactions короткие. In-process FIFO получает быст�
 `QUEUED` и `RETRYING` строки, чтобы восстановить потерянное уведомление. Idle
 worker lanes БД не опрашивают.
 
-## Ory Hydra
+## Токены доступа API
 
-Bearer authentication обязательна для каждого Flight RPC, включая
-`ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. Flight process
-не выдаёт, не хранит и не отзывает credentials. В `.env` задаётся базовый
-адрес Hydra Admin API:
-
-```dotenv
-HYDRA_ENDPOINT=http://hp260g9.home:4445
-```
-
-`HYDRA_ENDPOINT` задаёт базовый адрес Hydra Admin API; path
-`/admin/oauth2/introspect` фиксирован в adapter. Audience `transformer`, scope
-`transformer:invoke`, timeout 3000 ms, TTL кэша authorization 15/2 секунды
-и его предел в 1024 записи
-зафиксированы в Transformer и не имеют environment overrides. При старте
-валидируется конфигурация endpoint, но сетевой запрос выполняется только в
-начале нового RPC.
-
-Отдельный short-lived admin process управляет только OAuth clients, созданными
-через Transformer CLI:
+Bearer authentication обязательна для каждого Flight RPC, включая actions,
+DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
 
 ```bash
-./.venv/bin/python ./app/main.py auth clients create inventory \
-  --name="Inventory Transformer"
-./.venv/bin/python ./app/main.py auth clients list
-./.venv/bin/python ./app/main.py auth clients delete inventory
+./.venv/bin/python ./app/main.py auth tokens issue --subject=inventory-production
 ```
 
-`create` создаёт client с точными `client_credentials`, opaque token strategy,
-audience `transformer`, scope `transformer:invoke` и token endpoint method
-`client_secret_basic`. Обязательный positional `CLIENT_ID` без преобразований
-передаётся как Hydra `client_id`; необязательный `--name` задаёт `client_name`
-и по умолчанию равен `CLIENT_ID`. Client secret печатается только в успешном
-output `create`; Transformer не сохраняет его и не включает в errors или logs.
-Consumer хранит client credentials и самостоятельно получает short-lived
-access tokens через Hydra Public API. Конфликт существующего `client_id`
-завершает `create` ошибкой без cleanup или изменения существующего client-а.
+Команда выводит ID token, subject и новый credential. Credential имеет формат
+`a.<base64url>` и показывается только при выпуске. PostgreSQL хранит его
+SHA-256 digest, но не исходный bearer. Передавайте credential через канал
+secrets, принятый в deployment; не помещайте его в историю команд, логи или
+репозиторий.
 
-Каждый созданный client получает фиксированные маркеры:
+Просмотр metadata без раскрытия credentials:
 
-```json
-{
-  "owner": "transformer-auth-clients",
-  "metadata": {
-    "managed_by": "transformer-auth-clients",
-    "schema_version": 1
-  }
-}
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
 ```
 
-`list` запрашивает все страницы по owner, но показывает только clients с обоими
-точными маркерами, включая display name; secrets и access tokens он не
-получает. Drift обязательной OAuth-конфигурации показывается как
-`misconfigured`. `delete` проверяет оба маркера до первого delete-запроса,
-удаляет access tokens, удаляет client и повторно очищает tokens, закрывая
-возможность выдать новый token в промежутке. Client с несовпадающим owner или
-metadata CLI не удаляет. PostgreSQL, Flight application и worker в этих
-командах не инициализируются. Hydra Admin API должен оставаться доступен только
-доверенному operator boundary.
+Отзыв по ID token:
 
-Inventory использует постоянный OAuth client `inventory`, flow
-`client_credentials` и opaque access tokens. При запросе token клиент явно
-передаёт требуемые audience и scope. Client secret хранится только у Inventory;
-Flight service его не получает.
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
+```
 
-Introspection отправляет form-urlencoded поле `token` в Hydra Admin API.
-Положительный ответ должен подтвердить `active=true`,
-`token_type=Bearer`, точные audience/scope и непустой `client_id`.
-Последний без преобразований становится `owner_subject`.
-
-Успешная authorization кэшируется на 15 секунд, но не дольше `exp`;
-неактивный token и недостаточные полномочия — на 2 секунды. Кэш имеет
-1024 LRU-записи, а одновременные промахи для одного token выполняют одну
-introspection. Исходный token не хранится в ключе кэша. Ошибки Hydra и
-malformed responses не кэшируются; просроченная запись не используется
-как fallback. Уже авторизованный streaming RPC продолжает работу до своей
-обычной границы завершения.
-
-Ошибки различаются следующим образом:
-
-- отсутствующий/malformed bearer, inactive, expired, revoked или refresh token
-  дают `UNAUTHENTICATED`;
-- active token без требуемого audience/scope даёт `PERMISSION_DENIED`;
-- timeout, network failure, non-2xx либо malformed/incomplete ответ Hydra даёт
-  `UNAVAILABLE`.
-
-Access token, authorization metadata, client secret, form body и ответ Hydra
-не включаются в логи или ошибки.
+Flight-процесс строит в RAM неизменяемый индекс SHA-256 digests активных
+tokens. При authentication вычисляется digest переданного credential и
+проверяется индекс; запрос к PostgreSQL на пути RPC не выполняется.
+PostgreSQL `LISTEN/NOTIFY` вызывает полное обновление cache после выпуска или
+отзыва. После reconnect listener также загружает весь активный набор, поэтому
+PostgreSQL остаётся единственным долговечным источником истины.
 
 ## Настройка Flight service
 
@@ -441,7 +385,7 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    `AVAILABLE` и ожидающие удаления `DELETING` generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
-10. собирает Hydra introspection adapter из проверенной runtime-конфигурации;
+10. загружает cache API tokens и запускает notification listener;
 11. загружает `QUEUED` и `RETRYING` jobs в in-memory device queues, запускает
     workers и maintenance; дальнейшая сверка в maintenance cycle
     восстанавливает потерянные queue notifications;
@@ -469,8 +413,8 @@ EOF незавершённая нулевая epoch намеренно повт�
 
 При SIGINT/SIGTERM процесс закрывает границу claim очереди, помечает себя как
 draining, прекращает приём RPC work, ожидает running work и отменяет оставшиеся
-worker groups. Maintenance останавливается до закрытия pool соединений
-PostgreSQL и освобождения runtime lock.
+worker groups. Maintenance и token listener останавливаются до закрытия pool
+соединений PostgreSQL и освобождения runtime lock.
 
 ## Хранение и ошибки хранилища
 
