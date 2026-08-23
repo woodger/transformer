@@ -7,16 +7,14 @@ from app.service.domain.access import AccessTokenRecord
 
 def print_issued(record: AccessTokenRecord) -> None:
     print(f"Token ID: {record.token_id}")
-    print(f"Subject: {record.subject}")
     print(f"Token: {record.token}")
 
 
 def print_list(records: Sequence[AccessTokenRecord]) -> None:
-    headers = ("TOKEN ID", "SUBJECT", "CREATED AT", "STATUS")
+    headers = ("TOKEN ID", "CREATED AT", "STATUS")
     rows = [
         (
             record.token_id,
-            record.subject,
             record.created_at.isoformat(),
             "revoked" if record.revoked_at is not None else "active",
         )

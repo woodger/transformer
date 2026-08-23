@@ -38,9 +38,9 @@ auth tokens list
 auth tokens revoke <TOKEN_ID>
 ```
 
-`issue` один раз печатает `Token ID`, `Subject` и `Token`. `list` показывает
-ID, subject, creation time и состояние без credential. `revoke` принимает UUID,
-фиксирует `revoked_at` и является идемпотентным.
+`issue` один раз печатает `Token ID` и `Token`. `list` показывает ID, creation
+time и состояние без credential. `revoke` принимает UUID, фиксирует
+`revoked_at` и является идемпотентным.
 
 PostgreSQL хранит только SHA-256 digest credential, token ID, subject,
 `created_at` и `revoked_at`. Случайный bearer содержит 512 бит энтропии,

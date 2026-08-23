@@ -25,21 +25,20 @@ def test_token_output_contract_is_aligned(capsys):
     print_revoked(_record(revoked=True))
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[:3] == [
+    assert lines[:2] == [
         f"Token ID: {TOKEN_ID}",
-        "Subject: inventory",
         "Token: a.secret",
     ]
     assert lines[-1] == f"Revoked token: {TOKEN_ID}"
     for heading, active_value, revoked_value in (
         ("TOKEN ID", TOKEN_ID, TOKEN_ID),
-        ("SUBJECT", "inventory", "inventory"),
         ("CREATED AT", CREATED_AT.isoformat(), CREATED_AT.isoformat()),
         ("STATUS", "active", "revoked"),
     ):
-        offset = lines[3].index(heading)
-        assert lines[4].index(active_value) == offset
-        assert lines[5].index(revoked_value) == offset
+        offset = lines[2].index(heading)
+        assert lines[3].index(active_value) == offset
+        assert lines[4].index(revoked_value) == offset
+    assert all("inventory" not in line for line in lines)
 
 
 def _wire(monkeypatch, administration):
@@ -108,9 +107,10 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "TOKEN ID" in output
-    assert "SUBJECT" in output
     assert "CREATED AT" in output
     assert "STATUS" in output
+    assert "SUBJECT" not in output
+    assert "inventory" not in output
     assert f"Revoked token: {TOKEN_ID}" in output
     assert calls == ["list", ("revoke", TOKEN_ID)]
     assert closed == [True, True]

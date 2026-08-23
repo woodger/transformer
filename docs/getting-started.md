@@ -47,9 +47,9 @@ systemd — [deployment guide](./deployment/systemd.md).
 ```
 
 Команда выпускает token для единственного owner-а `inventory` и выводит token
-ID, subject и новый credential вида `a.<base64url>`. Сохраните credential в
-secret storage клиентского приложения; не помещайте его в repository, логи или
-server `.env`. Перезапуск Transformer не требуется: token cache обновляется
+ID и новый credential вида `a.<base64url>`. Сохраните credential в secret
+storage клиентского приложения; не помещайте его в repository, логи или server
+`.env`. Перезапуск Transformer не требуется: token cache обновляется
 автоматически.
 
 ## Отозвать API-токен

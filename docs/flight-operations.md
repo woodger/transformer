@@ -234,8 +234,8 @@ DoPut, GetFlightInfo и DoGet. Выпустите token для локально�
 ```
 
 Команда выпускает token для фиксированного owner subject `inventory` и выводит
-ID token, subject и новый credential. Credential имеет формат `a.<base64url>`
-и показывается только при выпуске. PostgreSQL хранит его SHA-256 digest, но не
+ID token и новый credential. Credential имеет формат `a.<base64url>` и
+показывается только при выпуске. PostgreSQL хранит его SHA-256 digest, но не
 исходный bearer. Передавайте credential через канал secrets, принятый в
 deployment; не помещайте его в историю команд, логи или репозиторий.
 
