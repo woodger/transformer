@@ -45,7 +45,7 @@ Python modules и packages используют `snake_case`:
 
 ```text
 app/worker/training/loss_scheduler.py
-app/service/adapters/outbound/hydra/client.py
+app/service/adapters/outbound/postgres/token_cache.py
 tests/unit/worker/test_checkpoint_storage.py
 ```
 
@@ -61,7 +61,7 @@ Markdown-документы используют устойчивые сущес
 Внешнее имя сохраняется дословно, даже если оно не соответствует Python style:
 
 - environment variables — `POSTGRES_HOST`, `TRANSFORMER_MAX_PAYLOAD_BYTES`;
-- CLI commands/options — `flight serve`, `fit-stream`, `--allow-plaintext`;
+- CLI commands/options — `flight serve`, `fit-stream`, `--tls-cert-file`;
 - Flight JSON fields — `requestId`, `modelRef`, `maxPayloadBytes`;
 - machine error/state codes — `INVALID_ARGUMENT`, `RUNNING`;
 - SQL tables и columns — `snake_case`;

@@ -4,20 +4,16 @@
 > и ownership данных Transformer Arrow Flight service.
 
 Проект использует Clean Architecture отдельно для каждого исполняемого
-процесса. Нормативные решения и их причины зафиксированы в
-[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
-[ADR 0006](../adr/0006-service-application-boundaries.md),
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md),
-[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md) и текущем
-[ADR 0015](../adr/0015-unified-indicator-identity-flight-v5.md), а граница
-централизованных training metrics — в
-[ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
-telemetry от core state закреплено в
-[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
-persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md). Transport
-authentication через Ory Hydra закреплена в
-[ADR 0017](../adr/0017-ory-hydra-flight-authentication.md).
+процесса. Этот документ является источником текущих process, dependency и data
+ownership boundaries. Нормативный remote protocol находится в
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md),
+training telemetry policy — в [`docs/metrics.md`](../metrics.md), а credential
+model и security boundary — в
+[`docs/authentication.md`](../authentication.md).
+Историческое обоснование service и process boundaries находится в
+[ADR 0001](../adr/0001-arrow-flight-job-service.md) и
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md); ADR не
+переопределяет правила этого документа.
 
 ## Процессы и composition roots
 
@@ -26,7 +22,7 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/local                      локальные file/stream commands и gmark
 ├── app/service/bootstrap          Arrow Flight service
 ├── app/worker/bootstrap           один ML execution attempt
-└── app/admin/bootstrap            database и model commands
+└── app/admin/bootstrap            auth, database и model commands
 
 app/contracts/flight/v5            публичный Flight contract
 app/contracts/worker/v7            внутренний process contract
@@ -51,7 +47,7 @@ service/application/{commands,queries,services,ports,telemetry}
 service/domain
 
 service/bootstrap ── собирает inbound и outbound adapters
-service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch,hydra}
+service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
 - `service/domain` содержит job states, error codes, immutable records и pure
@@ -124,19 +120,20 @@ document является необязательным наблюдением.
 `app/commands` отсутствует, чтобы слово `commands` не обозначало одновременно
 local CLI и application use cases сервиса.
 
-Общие identity и путь корня проекта находятся в `app/project.py`. Настройки
-размещаются у runtime-владельца: local defaults — в `app/local/config.py`,
-service defaults — в `app/service/bootstrap/config.py`, worker contract
-defaults — в `app/contracts/worker/v7/config.py`. Общий `app/config.py` не
-создаётся.
+Общие identity и путь корня проекта находятся в `app/project.py`. Встроенные
+operational defaults находятся в `app/config.py`; runtime-владельцы сохраняют
+configuration types, загрузку, валидацию и технологические преобразования.
+Версионируемые worker contract defaults остаются в
+`app/contracts/worker/v7/config.py`. Общий модуль не загружает environment или
+adapters и не содержит mutable configuration state.
 
 ## Admin
 
 `app/admin/cli` отвечает только за presentation. `app/admin/bootstrap`
-создаёт короткоживущие PostgreSQL resources для database и model operations.
-Alembic-команды имеют отдельный короткоживущий SQLAlchemy lifecycle и не
-запускают service или worker. OAuth clients и credentials принадлежат Ory Hydra
-и её consumers, а не admin CLI Transformer.
+создаёт короткоживущие PostgreSQL resources и вызывает application use cases
+для access tokens и published models. Alembic-команды имеют отдельный
+короткоживущий SQLAlchemy lifecycle. Admin-команды не запускают service или
+worker.
 
 ## Contracts
 
@@ -166,10 +163,9 @@ Alembic-команды имеют отдельный короткоживущи�
 PostgreSQL adapter, ORM и Alembic находятся в
 `app/service/adapters/outbound/postgres/`. PostgreSQL является единственным
 источником истины для job lifecycle, revision, idempotency, active attempt,
-owner-scoped state и published metadata. Сам owner устанавливается
-introspection-ответом Ory Hydra как точный `client_id`. Отдельный telemetry
-slice владеет epoch intervals, run artifact metadata и metrics outbox.
-OpenSearch является
+tokens, owner-scoped state и published metadata. Owner устанавливается точным
+subject API credential. Отдельный telemetry slice владеет epoch intervals, run
+artifact metadata и metrics outbox. OpenSearch является
 best-effort аналитической проекцией, а не частью model/job lifecycle.
 SQLite и dual-write запрещены.
 
@@ -192,7 +188,7 @@ Ownership хранения:
 - `models/` — только успешно опубликованные immutable model generations;
 - `telemetry/` — run-owned best-effort artifacts до завершения outbox
   retention;
-- RAM — FIFO queues и active process handles.
+- RAM — FIFO queues, token digest cache и active process handles.
 
 ## Обязательные dependency rules
 
@@ -230,7 +226,6 @@ Ownership хранения:
 - spool/publication — `app/service/adapters/outbound/artifacts/`;
 - subprocess supervision — `app/service/adapters/outbound/worker/`;
 - CUDA inventory — `app/service/adapters/outbound/cuda/`;
-- Ory Hydra introspection — `app/service/adapters/outbound/hydra/`;
 - OpenSearch transport — `app/service/adapters/outbound/opensearch/`;
 - metrics artifacts —
   `app/service/adapters/outbound/artifacts/telemetry/`;

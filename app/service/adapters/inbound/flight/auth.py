@@ -8,8 +8,6 @@ import pyarrow.flight as flight
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import (
     AccessTokenAuthenticator,
-    AuthenticationUnavailableError,
-    InsufficientAccessError,
     InvalidAccessTokenError,
 )
 
@@ -108,25 +106,9 @@ class BearerAuthMiddlewareFactory(
                 "invalid bearer credential",
                 "FlightUnauthenticatedError",
             )
-        except InsufficientAccessError:
-            self._reject(
-                method,
-                started,
-                "PERMISSION_DENIED",
-                "bearer credential lacks required permission",
-                "FlightUnauthorizedError",
-            )
-        except AuthenticationUnavailableError:
-            self._reject(
-                method,
-                started,
-                "UNAVAILABLE",
-                "authentication service is unavailable",
-                "FlightUnavailableError",
-            )
         except Exception:
             # Fail closed and never expose an adapter error that could contain
-            # the credential or the introspection request body.
+            # the credential.
             self._reject(
                 method,
                 started,

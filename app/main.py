@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 class CliArguments(Protocol):
     action: str
     flight_action: str
+    tokens_action: str
     migrations_action: str
     models_action: str
+    subject: str
+    token_id: str
     model_ref: str
     deleted: bool
     seed: int
@@ -40,7 +43,6 @@ class CliArguments(Protocol):
     plots_dir: str
     host: str | None
     port: int | None
-    allow_plaintext: bool | None
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
@@ -163,6 +165,12 @@ def main() -> None:
         from app.service.bootstrap.application import run_from_args
 
         run_from_args(args)
+        return
+
+    if args.action == "auth":
+        from app.admin.bootstrap.auth_tokens import run
+
+        run(args)
         return
 
     if args.action == "db":

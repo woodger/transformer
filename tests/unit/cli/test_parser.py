@@ -3,13 +3,16 @@ from types import SimpleNamespace
 import pytest
 
 from app.cli.parser import build_parser
+from app.config import (
+    DEFAULT_MAX_FRAME_BYTES,
+    HOST_DEFAULT,
+    PORT_DEFAULT,
+)
 from app.contracts.worker.v7.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
 )
-from app.service.bootstrap.config import HOST_DEFAULT, PORT_DEFAULT
-from app.worker.data.arrow import DEFAULT_MAX_FRAME_BYTES
 from app.worker.runtime.device import get_device
 from app.worker.training.run_config import (
     ModelConfig,
@@ -260,7 +263,11 @@ def test_gmark_numeric_options_are_validated_by_argparse(option):
         parse("gmark", *option)
 
 
-def test_database_and_model_namespaces_are_nested():
+def test_access_and_database_namespaces_are_nested():
+    issue = parse("auth", "tokens", "issue")
+    listed = parse("auth", "tokens", "list")
+    token_id = "12345678-1234-4234-8234-123456789abc"
+    revoked = parse("auth", "tokens", "revoke", token_id)
     status = parse("db", "migrations", "status")
     models = parse("models", "list")
     deleted_models = parse("models", "list", "--deleted")
@@ -270,6 +277,14 @@ def test_database_and_model_namespaces_are_nested():
         "mdl_0123456789abcdef0123456789abcdef",
     )
 
+    assert (issue.action, issue.auth_action, issue.tokens_action) == (
+        "auth",
+        "tokens",
+        "issue",
+    )
+    assert not hasattr(issue, "subject")
+    assert listed.tokens_action == "list"
+    assert revoked.token_id == token_id
     assert (status.action, status.db_action, status.migrations_action) == (
         "db",
         "migrations",
@@ -282,6 +297,16 @@ def test_database_and_model_namespaces_are_nested():
     assert deleted.model_ref == "mdl_0123456789abcdef0123456789abcdef"
 
 
+def test_auth_tokens_issue_rejects_removed_subject_option():
+    with pytest.raises(SystemExit):
+        parse("auth", "tokens", "issue", "--subject", "inventory")
+
+
+def test_obsolete_auth_clients_namespace_is_not_available():
+    with pytest.raises(SystemExit):
+        parse("auth", "clients", "list")
+
+
 @pytest.mark.parametrize(
     "argv",
     (
@@ -291,6 +316,9 @@ def test_database_and_model_namespaces_are_nested():
         ("predict",),
         ("fit-stream",),
         ("flight",),
+        ("auth",),
+        ("auth", "tokens"),
+        ("auth", "tokens", "revoke"),
         ("db",),
         ("db", "migrations"),
         ("models",),
@@ -396,7 +424,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    normalized_output = " ".join(output.split())
 
     assert "usage: transformer flight serve [options]" in output
     assert "Run the durable Arrow Flight service for fit and predict jobs." in output
@@ -415,7 +442,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     option_labels = (
         "--host HOST",
         "--port PORT",
-        "--allow-plaintext",
         "--tls-cert-file FILE",
         "--tls-key-file FILE",
         "--tls-ca-file FILE",
@@ -435,7 +461,7 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     )
     stripped_lines = {line.strip() for line in output.splitlines()}
     assert set(expected_multiline_entries) <= stripped_lines
-    assert "Allow serving without TLS." in normalized_output
+    assert "--allow-plaintext" not in output
     assert "--bearer-tokens-file" not in output
     assert "--profile" not in output
     assert "--config" not in output
@@ -468,6 +494,11 @@ def test_defaults_are_shown_in_command_help(capsys):
         ("gmark", "--help"),
         ("flight", "--help"),
         ("flight", "serve", "--help"),
+        ("auth", "--help"),
+        ("auth", "tokens", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
         ("models", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
@@ -494,6 +525,9 @@ def test_help_does_not_render_internal_none_defaults(capsys, argv):
         ("predict-stream", "--help"),
         ("gmark", "--help"),
         ("flight", "serve", "--help"),
+        ("auth", "tokens", "issue", "--help"),
+        ("auth", "tokens", "list", "--help"),
+        ("auth", "tokens", "revoke", "--help"),
         ("db", "migrations", "status", "--help"),
         ("db", "migrations", "apply", "--help"),
         ("db", "migrations", "rollback", "--help"),

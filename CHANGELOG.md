@@ -7,6 +7,63 @@
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-08-24
+
+### Added
+
+- Восстановлены административные команды
+  `auth tokens issue`, `auth tokens list` и
+  `auth tokens revoke <TOKEN_ID>` для API credentials формата
+  `a.<base64url>` со сроком действия три календарных месяца. Все выпущенные
+  tokens принадлежат owner subject `inventory`.
+- Migration `0015` создаёт новую таблицу API tokens и `LISTEN/NOTIFY` trigger.
+  PostgreSQL хранит только SHA-256 digest credential; исходный bearer
+  показывается один раз при выпуске.
+- Migration `0016` нормализует database, уже отмеченные revision `0015`, но
+  сохранившие историческую raw-колонку `token`: существующие credentials
+  переводятся в digests без изменения ID, subject, timestamps или revoke
+  status, после чего raw bearer удаляется.
+- Migration `0017` удаляет все прежние бессрочные API tokens и добавляет
+  обязательный `expires_at`; удалённые credentials не восстанавливаются.
+- Migration `0018` физически удаляет прежние revoked token rows, удаляет
+  `revoked_at` и оставляет cache notification только для issue/revoke через
+  `INSERT/DELETE`.
+- Migration `0019` удаляет token notification trigger и функцию; token rows,
+  expiry index и credentials не меняются.
+- Migration `0020` добавляет nullable `last_used_at`, обновляемый при успешной
+  PostgreSQL revalidation token.
+- Добавлен профильный справочник `docs/authentication.md` с текущей credential
+  model, cache consistency и security boundary Flight service.
+- Добавлен gatekeeper `docs/adr/index.md` для admission, immutable lifecycle и
+  ненормативной роли исторических architecture decision records.
+
+### Changed
+
+- Встроенные local, Flight service, PostgreSQL и OpenSearch defaults снова
+  собраны в едином `app/config.py`; runtime-specific parsing, validation,
+  environment precedence и worker v7 contract не изменены.
+- Flight authentication использует bounded PostgreSQL-backed cache-aside:
+  максимум 1024 положительных digest entries с окном повторной проверки
+  60 секунд, single-flight для одновременных misses и без preload, listener или
+  `LISTEN/NOTIFY`. Успешная revalidation обновляет `last_used_at`, неизвестные
+  tokens не кэшируются, а после hard-delete revoke закэшированный token может
+  приниматься ещё максимум 60 секунд. Fixed expiration проверяется на каждом
+  новом RPC. `auth tokens list` показывает `Last used` вместо `Created`.
+- Документация описывает текущее состояние системы в профильных источниках;
+  прошедшие admission архитектурные решения хранят только historical rationale,
+  release history — этот changelog, а database evolution — Alembic migrations.
+
+### Removed
+
+- Удалены Ory Hydra introspection, `HYDRA_ENDPOINT`, OAuth client
+  administration и команды `auth clients create|list|delete`.
+- Удалён отдельный `--allow-plaintext`: полная пара TLS certificate/key
+  включает TLS, а отсутствие обоих options выбирает plaintext.
+- Удалены 11 прежних ADR, описывавших рефакторинг, текущую структуру, конкретные
+  telemetry formats, migrations или промежуточные реализации. Их полные версии
+  остаются в Git history; 9 прошедших admission решений сохранены как краткие
+  исторические records.
+
 ## [0.1.14] - 2026-08-21
 
 ### Added
@@ -621,7 +678,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/woodger/transformer/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/woodger/transformer/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/woodger/transformer/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/woodger/transformer/compare/v0.1.11...v0.1.12

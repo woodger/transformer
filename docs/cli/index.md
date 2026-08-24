@@ -32,14 +32,12 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `gmark` | Нагрузить CUDA синтетическим training с контролем integrity и температуры |
 | `plot-metrics METRICS_FILE` | Построить SVG-графики по metrics JSONL |
 | `flight serve` | Запустить durable Arrow Flight job service |
+| `auth tokens issue\|list\|revoke` | Управлять API access tokens в PostgreSQL |
 | `models list\|delete` | Просматривать и удалять опубликованные model generations |
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
-`flight serve`, `models` и `db migrations` требуют настройки PostgreSQL.
-`flight serve` дополнительно требует базовый адрес Ory Hydra
-Admin API;
-Transformer не содержит CLI для выдачи OAuth credentials.
-Их lifecycle и безопасный порядок операций описаны в
+`flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки
+PostgreSQL. Их lifecycle и безопасный порядок операций описаны в
 [Flight runbook](../flight-operations.md). Public remote API не является
 обёрткой над local CLI: его нормативный contract находится в
 [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).

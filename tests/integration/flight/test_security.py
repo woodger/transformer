@@ -124,7 +124,6 @@ def protected_server(tmp_path):
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "runtime"),
             port=0,
-            allow_plaintext=True,
         ),
         coordinator,
         StaticAccessTokenAuthenticator({"secret": "inventory"}),
@@ -212,7 +211,6 @@ def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_pat
     with pytest.raises(ValueError, match="required with tls_ca_file"):
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "state"),
-            allow_plaintext=True,
             tls_ca_file=str(certificate_authority),
             tls_require_client_cert=True,
         ).validate()
@@ -220,7 +218,6 @@ def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_pat
     with pytest.raises(ValueError, match="TLS must be enabled"):
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "other-state"),
-            allow_plaintext=True,
             tls_require_client_cert=True,
         ).validate()
 

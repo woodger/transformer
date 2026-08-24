@@ -37,23 +37,51 @@ systemd — [deployment guide](./deployment/systemd.md).
 `./.venv/bin/python ./app/main.py <command> --help`. Краткая карта команд и их
 поведение собраны в [справочнике CLI](./cli/index.md).
 
-## Настроить аутентификацию Flight
+## Создать API-токен
 
-Transformer не выдаёт и не хранит API credentials. Для запуска Flight service
-задайте базовый адрес Ory Hydra Admin API:
+После настройки PostgreSQL и применения migrations выпустите bearer token для
+клиентского service identity:
 
-```dotenv
-HYDRA_ENDPOINT=http://hp260g9.home:4445
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Transformer сам использует фиксированный path
-`/admin/oauth2/introspect`.
+Команда выпускает token для единственного owner-а `inventory` сроком на три
+календарных месяца и выводит token ID, expiration time и новый credential вида
+`a.<base64url>`. Сохраните credential в secret storage клиентского приложения;
+не помещайте его в repository, логи или server `.env`. Перезапуск Transformer
+не требуется: новый token доступен при первом cache miss. Выпустите и передайте
+Consumer-у новый token до `expires_at`, затем отзовите прежний по ID.
 
-Клиент получает opaque access token через OAuth `client_credentials` с явными
-`audience=transformer` и `scope=transformer:invoke`. Client secret принадлежит
-клиентскому приложению и не передаётся Transformer. Настройка client-а, error
-semantics и порядок cutover описаны в
-[Flight runbook](./flight-operations.md#ory-hydra).
+## Отозвать API-токен
+
+Сначала найдите token ID без раскрытия credentials:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
+```
+
+Затем отзовите токен по его ID:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke <token-id>
+```
+
+Например:
+
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke \
+  35dc6236-cfb9-4ac7-80db-320db21ef463
+```
+
+Используйте именно token ID, а не credential вида `a.<base64url>`. Успешный
+revoke физически удаляет token row; ранее закэшированный credential может
+приниматься ещё максимум 60 секунд. Перезапуск Transformer не требуется, а
+повторный revoke того же ID возвращает `not found`. Подробности управления
+токенами находятся в
+[Flight runbook](./flight-operations.md#токены-доступа-api), а persistence,
+cache и security semantics — в
+[справочнике аутентификации](./authentication.md).
 
 ## Локальное обучение и prediction
 
@@ -91,7 +119,7 @@ Prediction использует созданный checkpoint:
   возвращают framed Arrow payloads через standard streams.
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
-  PostgreSQL, OAuth, recovery, TLS и lifecycle service.
+  PostgreSQL, tokens, recovery, TLS и lifecycle service.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка

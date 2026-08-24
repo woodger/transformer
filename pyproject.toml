@@ -24,6 +24,7 @@ markers = [
 include = [
   "app/admin",
   "app/cli",
+  "app/config.py",
   "app/local",
   "app/project.py",
   "app/contracts",
@@ -33,7 +34,6 @@ include = [
   "app/service/adapters/outbound/artifacts",
   "app/service/adapters/outbound/postgres",
   "app/service/adapters/outbound/cuda",
-  "app/service/adapters/outbound/hydra",
   "app/service/adapters/outbound/opensearch",
   "app/service/adapters/outbound/worker",
   "app/service/application",
@@ -45,6 +45,7 @@ include = [
 strict = [
   "app/admin",
   "app/cli",
+  "app/config.py",
   "app/local",
   "app/project.py",
   "app/contracts",
@@ -54,7 +55,6 @@ strict = [
   "app/service/adapters/outbound/artifacts",
   "app/service/adapters/outbound/postgres",
   "app/service/adapters/outbound/cuda",
-  "app/service/adapters/outbound/hydra",
   "app/service/adapters/outbound/opensearch",
   "app/service/adapters/outbound/worker",
   "app/service/application",

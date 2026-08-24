@@ -63,7 +63,7 @@ snapshots = {}
 
 from app.cli.parser import build_parser
 parser = build_parser()
-parser.parse_args(["flight", "serve", "--allow-plaintext"])
+parser.parse_args(["flight", "serve"])
 parser.parse_args(["db", "migrations", "status"])
 snapshots["cli"] = {
     "mlModules": sorted(
@@ -247,6 +247,7 @@ def test_application_internal_import_graph_is_acyclic():
 
 
 def test_canonical_contracts_and_composition_roots_exist():
+    assert (APP_ROOT / "config.py").is_file()
     assert (APP_ROOT / "contracts" / "flight" / "v5").is_dir()
     assert (APP_ROOT / "contracts" / "worker" / "v7").is_dir()
     assert (APP_ROOT / "contracts" / "metrics" / "v3").is_dir()
@@ -258,7 +259,6 @@ def test_canonical_contracts_and_composition_roots_exist():
     for path in (
         APP_ROOT / "service" / "adapters" / "outbound" / "artifacts",
         APP_ROOT / "service" / "adapters" / "outbound" / "cuda",
-        APP_ROOT / "service" / "adapters" / "outbound" / "hydra",
         APP_ROOT / "service" / "adapters" / "outbound" / "worker",
         APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "ledger",
         APP_ROOT / "service" / "adapters" / "outbound" / "postgres" / "telemetry",
@@ -274,8 +274,8 @@ def test_canonical_contracts_and_composition_roots_exist():
         APP_ROOT / "service" / "bootstrap" / "data_plane.py",
         APP_ROOT / "service" / "bootstrap" / "control_plane.py",
         APP_ROOT / "worker" / "bootstrap" / "__main__.py",
+        APP_ROOT / "admin" / "bootstrap" / "auth_tokens.py",
         APP_ROOT / "admin" / "bootstrap" / "db_migrations.py",
-        APP_ROOT / "service" / "adapters" / "outbound" / "hydra" / "client.py",
     ):
         assert path.is_file()
 

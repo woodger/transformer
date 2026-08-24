@@ -25,12 +25,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
 | Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
 | Best-effort границы metrics и OpenSearch | `docs/metrics.md` |
+| Authentication model и security boundary | `docs/authentication.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
-| ML architecture и training decisions | профильные документы в `docs/` |
+| ML behavior и training reference | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |
 | Inventory integration | `docs/inventory-flight-handoff.md` |
-| Архитектурные решения | `docs/adr/` |
+| Текущие process и dependency boundaries | `docs/policy/architecture.md` |
+| Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный Flight v5 contract | `app/contracts/flight/v5/` |
@@ -52,7 +54,7 @@ identifiers, команды, пути, значения enum и другие э�
 
 README использует навигационную структуру: что есть в проекте, режимы, быстрый
 старт, CLI, документация, структура и deployment. Длинные объяснения recovery,
-deployment, protocol edge cases, training semantics и архитектурных решений
+deployment, protocol edge cases, training semantics и архитектурных границ
 следует помещать в профильный документ, оставляя в README краткую ссылку.
 
 ## CLI help
@@ -85,10 +87,10 @@ transformer <command> --help
 ## Environment
 
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
-группам переменных. Фактические правила parsing и defaults находятся у
-владельцев runtime: `app/local/config.py`,
-`app/service/bootstrap/config.py`, `app/contracts/worker/v7/config.py` и
-`app/service/adapters/outbound/postgres/config.py`.
+группам переменных. Встроенные operational defaults находятся в
+`app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
+`app/service/bootstrap/config.py`, `app/contracts/worker/v7/config.py`,
+PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
 
@@ -118,15 +120,27 @@ format. README или operations guide не могут переопределя�
 `docs/local-arrow-protocol.md`. Flight v5 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
-## ADR
+## Документация текущего состояния
 
-ADR фиксирует значимое принятое решение, альтернативы и последствия. ADR нужен
-для изменения service boundary, persistence ownership, durability model,
-protocol или multi-process architecture.
+Living documentation описывает только действующую систему. Architecture,
+security, persistence, protocol, training и operations facts размещаются в
+профильном источнике с конкретным читателем.
 
-ADR не используется как пошаговый runbook и не переписывается так, будто
-предыдущее решение никогда не существовало. Новое решение оформляется новым
-ADR или явным изменением статуса.
+ADR хранит historical rationale отдельного архитектурного решения, но не
+является system reference или нормативным источником текущего состояния.
+Admission, immutable lifecycle и допустимое содержание ADR задаёт
+[`docs/adr/index.md`](../adr/index.md). Решение, не проходящее admission,
+остаётся в issue или merge request.
+
+После реализации release history сохраняет `CHANGELOG.md`, точную историю
+изменений — Git, а применённую эволюцию PostgreSQL — неизменяемая цепочка
+Alembic migrations. Эти исторические источники не заменяют документацию
+текущего состояния.
+
+При замене решения профильный документ обновляется в том же change set:
+устаревшая и отменённая семантика удаляется, а не переносится в новый
+постоянный справочник. Сводный `decisions.md`, дублирующий ADR или current
+documentation, в проекте не ведётся.
 
 ## Deployment и operations
 
@@ -162,7 +176,7 @@ reference-инструкцию не добавляются.
 1. Какой вопрос он закрывает?
 2. Почему существующий источник не подходит?
 3. Где на него будет ссылка?
-4. Не дублирует ли он contract, ADR или README?
+4. Не дублирует ли он contract, профильный источник, ADR или README?
 
 Временная идея без устойчивой роли остаётся issue/plan, а не постоянным
 документом.

@@ -4,15 +4,16 @@
 Детали wire-контракта для Consumer находятся в
 [`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Lifecycle
-долговечного потока, fencing и семантика восстановления закреплены в
-[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md), а текущий ML-контракт и
-breaking cutover — в
-[`ADR 0007`](adr/0007-target-aligned-flight-v4.md), а текущая единая identity
-индикаторов — в
-[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md), а transport
-authentication — в
-[`ADR 0017`](adr/0017-ory-hydra-flight-authentication.md).
+[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Текущие
+process и data ownership boundaries описывает
+[`архитектурная политика`](policy/architecture.md), training и recovery —
+[`training reference`](training-runtime.md), а credential model, cache
+consistency и channel security —
+[`справочник аутентификации`](authentication.md).
+Rationale durable recovery и streaming lifecycle сохранён в
+[ADR 0003](adr/0003-durable-resumable-training-and-device-aware-execution.md)
+и [ADR 0005](adr/0005-durable-streaming-flight-v3.md); текущую операционную
+семантику определяет это руководство.
 
 ## Требования к runtime
 
@@ -22,8 +23,6 @@ authentication — в
 - PyTorch, NumPy и PyArrow для обучения и Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic и python-dotenv для доступа к PostgreSQL.
 - PostgreSQL, доступный в частной сети.
-- Доступный административный endpoint Ory Hydra для introspection каждого
-  нового Flight RPC.
 - Постоянный каталог project `models/` для успешно опубликованных моделей.
 - Постоянный каталог project `recovery/` для fit inputs и внутренних
   checkpoints global epochs.
@@ -60,6 +59,7 @@ PostgreSQL является единственным долговечным ис
 - metadata опубликованных моделей и owner-scoped aliases моделей;
 - committed epoch metrics, metadata run-owned metrics artifacts и состояние
   OpenSearch outbox;
+- API access tokens;
 - текущей storage epoch runtime.
 
 Filesystem runtime намеренно является временным:
@@ -118,7 +118,7 @@ OpenSearch outbox. Ошибка telemetry не меняет model generation и�
 state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. V5 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -130,8 +130,8 @@ records, поскольку эти artifacts невозможно восстан
 inputs в `recovery/` остаётся авторитетным: прерванная attempt переходит в
 `RETRYING` и возобновляется с последней зарегистрированной завершённой epoch.
 
-Опубликованные модели и постоянные fit inputs/checkpoints не связаны с runtime
-epoch. Потеря `recovery/` обрабатывается иначе: отсутствие или
+Опубликованные модели, постоянные fit inputs/checkpoints и API access tokens не
+связаны с runtime epoch. Потеря `recovery/` обрабатывается иначе: отсутствие или
 повреждение зарегистрированного input либо checkpoint приводит к явной ошибке
 recovery; Transformer не начинает fit незаметно с нулевой epoch. PostgreSQL
 хранит только metadata, поэтому ни один filesystem нельзя восстановить из БД.
@@ -162,7 +162,7 @@ Transformer использует schema PostgreSQL `transformer`. Сервис �
 ```
 
 `status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
-head. Сервис и административные команды отказываются запускаться при
+head. Сервис и команды управления tokens отказываются запускаться при
 отсутствующей или устаревшей schema и предлагают выполнить
 `db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
 автоматически migrations не применяются.
@@ -209,9 +209,35 @@ revision `0012` timestamps восстановить невозможно. Тек
 `AVAILABLE → DELETING → audit archive`. Flight v5 не меняется.
 
 Revision `0014` необратимо удаляет локальные API tokens, их notification
-trigger и функцию. Owner-scoped jobs/models не изменяются: их строковый
-`owner_subject` уже хранит точный `client_id`. После применения migration
-локального authentication fallback нет; сервис требует Hydra introspection.
+trigger и функцию. Удалённые credential восстановить невозможно. Revision
+`0015` создаёт новую пустую таблицу API tokens с digest-only хранением и
+возвращает notification trigger. Owner-scoped jobs/models не изменяются:
+строковый `owner_subject` продолжает хранить точный subject credential.
+Revision `0016` исправляет database, отмеченные как `0015`, но физически
+сохранившие историческую колонку `token`: существующие credentials заменяются
+их SHA-256 digests без изменения metadata или revoke status, raw-колонка
+удаляется, а notification objects пересоздаются. Для уже корректной
+digest-only таблицы conversion является no-op.
+
+Revision `0017` удаляет все существующие бессрочные API token rows и добавляет
+обязательный `expires_at`. Удалённые credentials восстановить невозможно. Для
+cutover остановите Inventory и Transformer, примените migration, выпустите
+новый token обновлённым CLI, передайте его Inventory через secret storage и
+только затем снова запустите оба процесса. Downgrade после выпуска нового token
+запрещён.
+
+Revision `0018` физически удаляет существующие revoked token rows и колонку
+`revoked_at`, перестраивает expiry index и оставляет token cache notification
+на `INSERT/DELETE`. Удалённая revoke history не восстанавливается при
+downgrade.
+
+Revision `0019` удаляет token notification trigger и функцию. Token rows,
+expiry index и credentials не меняются. Downgrade восстанавливает notification
+objects revision `0018`.
+
+Revision `0020` добавляет nullable `last_used_at`. Существующие и новые tokens
+имеют значение `NULL` до первой успешной PostgreSQL revalidation. Downgrade
+удаляет только эти usage metadata.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -219,59 +245,53 @@ cache. Transactions короткие. In-process FIFO получает быст�
 `QUEUED` и `RETRYING` строки, чтобы восстановить потерянное уведомление. Idle
 worker lanes БД не опрашивают.
 
-## Ory Hydra
+## Токены доступа API
 
-Bearer authentication обязательна для каждого Flight RPC, включая
-`ListActions`, `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. Transformer не
-выдаёт, не хранит и не отзывает credentials. В `.env` сервиса задаётся только:
+Bearer authentication обязательна для каждого Flight RPC, включая actions,
+DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
 
-```dotenv
-HYDRA_ENDPOINT=http://hp260g9.home:4445
+```bash
+./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-`HYDRA_ENDPOINT` задаёт базовый адрес Hydra Admin API; path
-`/admin/oauth2/introspect` фиксирован в adapter. Audience `transformer`, scope
-`transformer:invoke`, timeout 3000 ms, TTL кэша authorization 15/2 секунды
-и его предел в 1024 записи
-зафиксированы в Transformer и не имеют environment overrides. При старте
-валидируется конфигурация endpoint, но сетевой запрос выполняется только в
-начале нового RPC.
+Команда выпускает token для фиксированного owner subject `inventory` сроком на
+три календарных месяца и выводит ID token, `Expires` и новый credential.
+Credential имеет формат `a.<base64url>` и показывается только при выпуске.
+PostgreSQL хранит его SHA-256 digest, но не исходный bearer. Передавайте
+credential через канал secrets, принятый в deployment; не помещайте его в
+историю команд, логи или репозиторий.
 
-Inventory использует постоянный OAuth client `inventory`, flow
-`client_credentials` и opaque access tokens. При запросе token клиент явно
-передаёт требуемые audience и scope. Client secret хранится только у Inventory;
-Transformer его не получает.
+Просмотр metadata без раскрытия credentials:
 
-Introspection отправляет form-urlencoded поле `token` в Hydra Admin API.
-Положительный ответ должен подтвердить `active=true`,
-`token_type=Bearer`, точные audience/scope и непустой `client_id`.
-Последний без преобразований становится `owner_subject`.
+```bash
+./.venv/bin/python ./app/main.py auth tokens list
+```
 
-Успешная authorization кэшируется на 15 секунд, но не дольше `exp`;
-неактивный token и недостаточные полномочия — на 2 секунды. Кэш имеет
-1024 LRU-записи, а одновременные промахи для одного token выполняют одну
-introspection. Исходный token не хранится в ключе кэша. Ошибки Hydra и
-malformed responses не кэшируются; просроченная запись не используется
-как fallback. Уже авторизованный streaming RPC продолжает работу до своей
-обычной границы завершения.
+Отзыв по ID token:
 
-Ошибки различаются следующим образом:
+```bash
+./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
+```
 
-- отсутствующий/malformed bearer, inactive, expired, revoked или refresh token
-  дают `UNAUTHENTICATED`;
-- active token без требуемого audience/scope даёт `PERMISSION_DENIED`;
-- timeout, network failure, non-2xx либо malformed/incomplete ответ Hydra даёт
-  `UNAVAILABLE`.
+Успешный `revoke` физически удаляет token row. Повторный вызов и неизвестный ID
+завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
+явного revoke.
 
-Access token, authorization metadata, client secret, form body и ответ Hydra
-не включаются в логи или ошибки.
+Полная persistence, cache и security semantics описана в
+[`справочнике аутентификации`](authentication.md). Для оператора существенны
+следующие следствия: новый token доступен без перезапуска, после `revoke`
+закэшированный credential может приниматься ещё максимум 60 секунд, а
+`last_used_at` отражает последнее persisted окно использования с той же
+точностью. `tokens list` показывает `ID`, `Status`, `Last used` и `Expires`;
+до первого использования выводится `Never`. Для штатной ротации выпустите и
+передайте Inventory новый token до expiration, затем отзовите прежний по ID;
+owner-scoped state не изменится.
 
 ## Настройка Flight service
 
 Приоритет конфигурации сервиса от низшего к высшему:
 
-1. параметры в `app/service/bootstrap/config.py` и остальные встроенные
-   значения;
+1. встроенные defaults в `app/config.py`;
 2. поддерживаемые переменные окружения `TRANSFORMER_*`;
 3. явно переданные options `flight serve`.
 
@@ -280,21 +300,20 @@ CLI предоставляет только overrides endpoint и transport:
 ```text
 --host
 --port
---allow-plaintext
 --tls-cert-file
 --tls-key-file
 --tls-ca-file
 --tls-require-client-cert
 ```
 
-Следующие параметры сервиса задаются в
-`app/service/bootstrap/config.py`, а не через окружение:
+Следующие параметры сервиса задаются в `app/config.py`, а не через окружение:
 
 | Параметр Python | По умолчанию | Назначение |
 | --- | --- | --- |
 | `HOST_DEFAULT` | `127.0.0.1` | Адрес прослушивания Flight |
 | `PORT_DEFAULT` | `8815` | Порт Flight; значение `0` разрешено в тестах |
-| `ALLOW_PLAINTEXT` | `true` | Разрешить работу без TLS |
+| `ACCESS_TOKEN_CACHE_MAX_ENTRIES` | `1024` | Максимум положительных token cache entries |
+| `ACCESS_TOKEN_CACHE_TTL_SECONDS` | `60.0` | Окно revalidation и верхняя граница revoke latency |
 | `CPU_WORKERS` | `2` | Число одновременных CPU worker lanes |
 | `RETENTION_SECONDS` | `604800` | Срок хранения terminal jobs |
 
@@ -308,9 +327,10 @@ certificate options команды `flight serve`. Flight v5 определяе�
 `cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
-Certificate и key должны задаваться вместе. `tls-require-client-cert` также
-требует CA file. Plaintext transport разрешён только при явном включении;
-bearer authentication остаётся обязательной во всех transport modes.
+Certificate и key должны задаваться вместе. Их полная пара включает TLS, а
+отсутствие обоих options выбирает plaintext. `tls-require-client-cert` также
+требует CA file. Bearer authentication остаётся обязательной во всех transport
+modes.
 
 ### Квоты и целевые параметры interoperability
 
@@ -353,7 +373,6 @@ Production-запуск определён только в
 
 ```bash
 ./.venv/bin/python ./app/main.py flight serve \
-  --allow-plaintext \
   --host=127.0.0.1 \
   --port=8815
 ```
@@ -398,7 +417,7 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    `AVAILABLE` и ожидающие удаления `DELETING` generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
-10. собирает Hydra introspection adapter из проверенной runtime-конфигурации;
+10. создаёт пустой bounded cache-aside API tokens без preload и listener;
 11. загружает `QUEUED` и `RETRYING` jobs в in-memory device queues, запускает
     workers и maintenance; дальнейшая сверка в maintenance cycle
     восстанавливает потерянные queue notifications;
@@ -441,7 +460,9 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 action для удаления модели; оператор использует локальную команду
 `models delete`.
 
-Удаление model generation имеет отдельную durable boundary. PostgreSQL
+Rationale lifecycle удаления моделей зафиксирован в
+[ADR 0016](adr/0016-hard-delete-published-models.md). Удаление model generation
+имеет отдельную durable boundary. PostgreSQL
 transaction блокирует новые predict, проверяет отсутствие активных predict
 jobs, снимает только alias, который указывает на эту generation, и фиксирует
 `DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
@@ -512,7 +533,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Известные ограничения v4
+## Известные ограничения v5
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.
@@ -536,8 +557,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 - Transformer владеет checkpoints; клиенты получают только opaque значения
   `modelRef`.
 - Output tickets краткоживущие и не являются ссылками на модель.
-- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в
-  `app/service/bootstrap/config.py`; option `--allow-plaintext` может включить
-  её для одного процесса.
+- Наличие полной пары TLS certificate/key выбирает TLS; отсутствие обоих
+  options выбирает plaintext.
 - Interoperability Node → PyArrow и физическое поведение CUDA требуют отдельной
   проверки в целевом окружении.

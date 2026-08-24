@@ -6,15 +6,7 @@ from app.service.domain.authentication import AuthenticatedPrincipal
 
 
 class InvalidAccessTokenError(Exception):
-    """The supplied credential is not an active OAuth access token."""
-
-
-class InsufficientAccessError(Exception):
-    """The active token lacks the required audience or scope."""
-
-
-class AuthenticationUnavailableError(Exception):
-    """The external authentication authority cannot make a safe decision."""
+    """The supplied credential is not an active API access token."""
 
 
 class AccessTokenAuthenticator(Protocol):
@@ -23,7 +15,5 @@ class AccessTokenAuthenticator(Protocol):
 
 __all__ = [
     "AccessTokenAuthenticator",
-    "AuthenticationUnavailableError",
-    "InsufficientAccessError",
     "InvalidAccessTokenError",
 ]

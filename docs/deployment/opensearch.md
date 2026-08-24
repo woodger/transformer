@@ -2,10 +2,8 @@
 
 > Type: Operations. Настройка OpenSearch projection Transformer.
 
-Источник истины и границы решения описаны в
-[ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md) и
-[ADR 0014](../adr/0014-run-owned-telemetry.md). Текущие schemas и templates находятся в
+Best-effort boundary и ownership telemetry описаны в
+[`политике metrics`](../metrics.md). Текущие schemas и templates находятся в
 [`app/contracts/metrics/v3`](../../app/contracts/metrics/v3/README.md) и
 [`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 
@@ -107,7 +105,8 @@ publication продолжает создавать durable artifact и outbox b
 ./.venv/bin/python ./app/main.py db migrations apply
 ```
 
-Текущий head — `0013`.
+Текущий head показывает команда `db migrations status`; перед запуском
+publisher-а примените все pending revisions.
 
 ## Проверить работу
 

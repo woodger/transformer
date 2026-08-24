@@ -11,7 +11,8 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
   PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
   scheduling;
 - versioned public Flight и internal worker contracts;
-- documentation, ADR и политики изменения в `docs/`.
+- документацию текущего состояния, исторические decision records и политики
+  изменения в `docs/`.
 
 ## Режимы работы
 
@@ -74,16 +75,19 @@ user-site. Полный локальный сценарий находится �
 - [Arrow Flight v5 contract](./app/contracts/flight/v5/README.md)
 - [Worker process contract v7](./app/contracts/worker/v7/README.md)
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
+- [Аутентификация Flight](./docs/authentication.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
-- [Архитектурные решения](./docs/adr/)
+- [Архитектурная политика](./docs/policy/architecture.md)
+- [Журнал архитектурных решений](./docs/adr/index.md)
 - [Политики проекта](./docs/policy/index.md)
 
 ## Структура проекта
 
 ```text
 app/main.py          # тонкий CLI entrypoint
+app/config.py        # единый источник встроенных operational defaults
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
 app/contracts/       # public Flight v5, internal worker v7 и metrics v3
@@ -103,6 +107,6 @@ Production-запуск на Fedora через systemd описан в
 tokens, recovery, storage lifecycle и TLS/mTLS собраны в
 [Flight runbook](./docs/flight-operations.md).
 
-Bearer authentication обязательна при любом transport. Plaintext разрешается
-только явным `--allow-plaintext`; не открывайте такой endpoint в недоверенную
-сеть.
+Bearer authentication обязательна при любом transport. Полная пара
+`--tls-cert-file`/`--tls-key-file` включает TLS; без неё endpoint использует
+plaintext, поэтому не открывайте его в недоверенную сеть.

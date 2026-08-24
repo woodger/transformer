@@ -15,7 +15,7 @@
 - `app/main.py` и зарегистрированные CLI commands;
 - `app/service/bootstrap/application.py` и Flight server wiring;
 - `app/worker/bootstrap/` и один worker process на attempt;
-- `app/admin/bootstrap/` для database/model commands;
+- `app/admin/bootstrap/` для auth/database/model commands;
 - package imports и `__init__.py` exports;
 - systemd entrypoint и documented operator commands.
 
@@ -69,8 +69,8 @@ contract role.
 
 Файл содержит только TODO, stub или будущую идею без runtime consumer.
 
-Решение: перенести намерение в ADR/issue/documentation или удалить. Пустая
-архитектурная заготовка не должна жить в `app/`.
+Решение: перенести намерение в issue или профильную документацию либо удалить.
+Пустая архитектурная заготовка не должна жить в `app/`.
 
 ### Test-only implementation
 
@@ -105,7 +105,7 @@ reference.
 - Alembic configuration и revision chain;
 - SQLAlchemy model metadata;
 - tests, fixtures и `conftest.py`;
-- README, docs, ADR и normative contracts;
+- README, профильные docs, ADR и normative contracts;
 - systemd unit, environment names и release files;
 - compatibility с checkpoint/database/wire artifacts.
 

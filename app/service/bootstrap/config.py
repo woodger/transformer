@@ -1,23 +1,16 @@
 import math
 import os
-import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TypedDict, cast
 
+from app import config as defaults
 from app.contracts.flight.v5.constants import MAX_PAYLOADS_PER_JOB
-from app.project import PROJECT_NAME, PROJECT_ROOT
-
-HOST_DEFAULT = "127.0.0.1"
-PORT_DEFAULT = 8815
-ALLOW_PLAINTEXT = True
-CPU_WORKERS = 2
-RETENTION_SECONDS = 7 * 24 * 60 * 60
+from app.project import PROJECT_ROOT
 
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 _NON_ENVIRONMENT_FIELDS = frozenset({
-    "allow_plaintext",
     "cpu_capacity",
     "host",
     "port",
@@ -34,7 +27,6 @@ class _FlightServiceOverrides(TypedDict, total=False):
     runtime_dir: str
     host: str
     port: int
-    allow_plaintext: bool
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
@@ -60,35 +52,43 @@ class _FlightServiceOverrides(TypedDict, total=False):
 
 @dataclass(frozen=True, slots=True)
 class FlightServiceConfig:
-    runtime_dir: str = os.path.join(tempfile.gettempdir(), PROJECT_NAME)
-    host: str = HOST_DEFAULT
-    port: int = PORT_DEFAULT
-    allow_plaintext: bool = ALLOW_PLAINTEXT
-
+    runtime_dir: str = defaults.RUNTIME_DIR_DEFAULT
+    host: str = defaults.HOST_DEFAULT
+    port: int = defaults.PORT_DEFAULT
     tls_cert_file: str | None = None
     tls_key_file: str | None = None
     tls_ca_file: str | None = None
     tls_require_client_cert: bool = False
 
-    max_message_bytes: int = 16 * 1024 * 1024
-    target_batch_bytes: int = 8 * 1024 * 1024
-    max_batch_bytes: int = 16 * 1024 * 1024
-    max_payload_bytes: int = 512 * 1024 * 1024
-    max_rows_per_payload: int = 2_000_000
+    max_message_bytes: int = defaults.MAX_MESSAGE_BYTES_DEFAULT
+    target_batch_bytes: int = defaults.TARGET_BATCH_BYTES_DEFAULT
+    max_batch_bytes: int = defaults.MAX_BATCH_BYTES_DEFAULT
+    max_payload_bytes: int = defaults.MAX_PAYLOAD_BYTES_DEFAULT
+    max_rows_per_payload: int = defaults.MAX_ROWS_PER_PAYLOAD_DEFAULT
     max_payloads_per_job: int = MAX_PAYLOADS_PER_JOB
-    max_job_bytes: int = 64 * 1024 * 1024 * 1024
-    max_active_jobs_per_subject: int = 32
+    max_job_bytes: int = defaults.MAX_JOB_BYTES_DEFAULT
+    max_active_jobs_per_subject: int = (
+        defaults.MAX_ACTIVE_JOBS_PER_SUBJECT_DEFAULT
+    )
 
-    cpu_capacity: int = CPU_WORKERS
-    ticket_ttl_seconds: int = 600
-    cancel_grace_seconds: float = 10.0
-    shutdown_drain_seconds: float = 30.0
+    cpu_capacity: int = defaults.CPU_WORKERS
+    ticket_ttl_seconds: int = defaults.TICKET_TTL_SECONDS_DEFAULT
+    cancel_grace_seconds: float = defaults.CANCEL_GRACE_SECONDS_DEFAULT
+    shutdown_drain_seconds: float = defaults.SHUTDOWN_DRAIN_SECONDS_DEFAULT
 
-    retention_seconds: int = RETENTION_SECONDS
-    maintenance_interval_seconds: int = 60
-    subprocess_timeout_seconds: float = 24 * 60 * 60
-    input_idle_timeout_seconds: float = 15 * 60
-    acquire_idle_grace_seconds: float = 30.0
+    retention_seconds: int = defaults.RETENTION_SECONDS
+    maintenance_interval_seconds: int = (
+        defaults.MAINTENANCE_INTERVAL_SECONDS_DEFAULT
+    )
+    subprocess_timeout_seconds: float = (
+        defaults.SUBPROCESS_TIMEOUT_SECONDS_DEFAULT
+    )
+    input_idle_timeout_seconds: float = (
+        defaults.INPUT_IDLE_TIMEOUT_SECONDS_DEFAULT
+    )
+    acquire_idle_grace_seconds: float = (
+        defaults.ACQUIRE_IDLE_GRACE_SECONDS_DEFAULT
+    )
 
     @property
     def tls_enabled(self) -> bool:
@@ -135,9 +135,12 @@ class FlightServiceConfig:
             or port > 65535
         ):
             raise ValueError("port must be between 0 and 65535")
-        for name in ("allow_plaintext", "tls_require_client_cert"):
-            if not isinstance(getattr(self, name), bool):
-                raise ValueError(f"{name} must be a boolean")
+        require_client_cert: object = object.__getattribute__(
+            self,
+            "tls_require_client_cert",
+        )
+        if not isinstance(require_client_cert, bool):
+            raise ValueError("tls_require_client_cert must be a boolean")
 
         cert_set = bool(self.tls_cert_file)
         key_set = bool(self.tls_key_file)
@@ -149,13 +152,6 @@ class FlightServiceConfig:
             raise ValueError("TLS must be enabled when mTLS is required")
         if self.tls_require_client_cert and not self.tls_ca_file:
             raise ValueError("tls_ca_file is required when mTLS is enabled")
-        if not self.tls_enabled:
-            if not self.allow_plaintext:
-                raise ValueError(
-                    "plaintext Flight is disabled; configure TLS or explicitly "
-                    "enable plaintext"
-                )
-
         positive_integers = (
             "max_message_bytes",
             "target_batch_bytes",
@@ -227,14 +223,14 @@ def load_config(
     if legacy_keys:
         raise ValueError(
             "unsupported legacy Transformer environment variable(s): "
-            f"{', '.join(legacy_keys)}; use the current service config and "
+            f"{', '.join(legacy_keys)}; use the current app/config.py and "
             "TRANSFORMER_* settings"
         )
     legacy_host_key = ENV_PREFIX + "BIND_HOST"
     if legacy_host_key in env:
         raise ValueError(
             f"unknown Flight environment variable: {legacy_host_key}; "
-            "configure HOST_DEFAULT in service/bootstrap/config.py or use --host"
+            "configure HOST_DEFAULT in app/config.py or use --host"
         )
     for field in fields(FlightServiceConfig):
         if field.name in _NON_ENVIRONMENT_FIELDS:

@@ -5,6 +5,10 @@
 
 OpenSearch используется только как механизм наблюдаемости и не должен влиять на поведение приложения.
 
+Rationale best-effort artifact/outbox boundary сохранён в
+[ADR 0009](./adr/0009-centralized-training-metrics.md). Текущие нормативные
+правила задаёт этот документ.
+
 * Метрики не должны влиять на бизнес-логику, управление потоком выполнения, корректность работы или поведение API.
 * Ошибки сбора или отправки метрик не должны приводить к ошибке основной операции.
 * Не использовать OpenSearch как состояние приложения, хранилище, механизм синхронизации или источник истины.
@@ -58,11 +62,8 @@ Target-bound telemetry использует одну регистрозавис�
 `inventory.target.v2`: структурную пару `target.index`/`target.name` с именами
 `MeanReturn`, `SigmaReturn`, `ProbTP`, `ProbSL`, `VolatilityNext` и
 `HittingProbTP`. Старые camelCase формы и numeric enum ordinal Consumer-а не
-являются contract values. Решение закреплено в
-[ADR 0015](./adr/0015-unified-indicator-identity-flight-v5.md).
-
-Подробное решение зафиксировано в
-[ADR 0013](./adr/0013-telemetry-ownership-boundaries.md).
+являются contract values. Нормативную identity задаёт текущий
+[`Flight v5 contract`](../app/contracts/flight/v5/README.md).
 
 ### Надёжность
 

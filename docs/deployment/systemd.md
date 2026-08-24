@@ -1,3 +1,19 @@
+<!--
+CONTRACT DOCUMENT — SEMANTIC CHANGE MODE
+
+Этот файл фиксирует проверенный deployment contract и не является шаблоном,
+кандидатом на cleanup или stylistic rewrite.
+
+Менять его можно только по явному требованию текущей задачи и только в
+минимальном фрагменте, необходимом для изменения названного контракта. До
+изменения нужно определить точный contract delta и сохранить все независимые
+инварианты. Сходство с другим проектом не разрешает переписывать документ
+целиком, удалять соседние положения или переносить его deployment-детали.
+
+После изменения нужно проверить semantic diff и явно сообщить, какие свойства
+контракта изменены, а какие сохранены.
+-->
+
 # Развертывание через systemd
 
 > Type: Reference. Production-запуск `transformer flight serve` через systemd.
@@ -8,9 +24,7 @@ Project `.venv`, `.env` и PostgreSQL migrations должны быть подг�
 [политике Python runtime](../policy/python-runtime-policy.md), а параметры
 Flight service — в [Flight runbook](../flight-operations.md).
 Необязательная доставка training metrics настраивается отдельно по
-[инструкции OpenSearch](opensearch.md). Обязательный базовый адрес Ory Hydra
-Admin API задаётся в project `.env` по
-[Flight runbook](../flight-operations.md#ory-hydra).
+[инструкции OpenSearch](opensearch.md).
 
 ## Создать unit-файл
 
@@ -33,7 +47,7 @@ Wants=network-online.target
 Type=exec
 User=nerv
 
-ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
+ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815
 
 Restart=on-failure
 RestartSec=5

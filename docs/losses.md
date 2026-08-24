@@ -1,9 +1,9 @@
 # Функция потерь
 
-Нормативное решение описано в
-[ADR 0007](./adr/0007-target-aligned-flight-v4.md). Внутри worker модель
-возвращает семь значений: шесть public heads и один private Gaussian scale.
-Flight boundary публикует только первые шесть в target-space.
+Нормативную public target identity задаёт текущий
+[`Flight v5 contract`](../app/contracts/flight/v5/README.md). Внутри worker
+модель возвращает семь значений: шесть public heads и один private Gaussian
+scale. Flight boundary публикует только первые шесть в target-space.
 
 | Индекс | Public semantic | Внутреннее представление | Диапазон prediction |
 | --- | --- | --- | --- |

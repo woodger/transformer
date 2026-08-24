@@ -1,145 +1,62 @@
-# ADR 0009: Централизованные training metrics через immutable artifact и outbox
+# ADR 0009: best-effort training telemetry через artifact и outbox
 
-## Статус
+- Status: Accepted
+- Decision date: 2026-08-15
 
-Принято, 2026-08-15. Уточнено 2026-08-16: projection использует обычные
-versioned indices вместо data streams, а текущее развёртывание подключается к
-OpenSearch по trusted-LAN HTTP-профилю.
-Контракт v1 расширен без изменения durability boundary в
-[ADR 0012](0012-gradient-and-target-telemetry.md).
-Уточнено 2026-08-17: telemetry является строго best effort и не входит в
-transaction прикладного checkpoint или model generation.
+> Historical decision record; not a current system reference. See
+> [ADR index](index.md).
 
 ## Контекст
 
-Worker уже вычисляет epoch-level training metrics, но attempt-local
-`metrics.jsonl` находится в runtime spool и удаляется вместе с terminal job.
-Чтение stdout, отправка из optimizer loop или непосредственный сетевой доступ
-worker-а не дают надёжной связи с опубликованной model generation и делают
-OpenSearch частью критического пути обучения.
+Worker вычисляет epoch observations, но attempt-local output не является
+долговечной run identity. Прямая отправка из optimizer loop или зависимость
+успешного fit от OpenSearch сделали бы аналитическую систему частью critical
+training path и смешали observability с model/job lifecycle.
 
-OpenSearch на `hp260g9.home` является общей аналитической проекцией Inventory и
-Transformer. Он не заменяет PostgreSQL как источник истины job/model lifecycle
-и filesystem как хранилище checkpoint и исходного metrics artifact.
+Filesystem и PostgreSQL не образуют distributed transaction, а OpenSearch не
+должен становиться источником истины Transformer.
 
 ## Решение
 
-Принимается отдельный интеграционный контракт
-`transformer.training-metrics.v1` → `inventory.metrics.v1`. Публичный Flight v4
-не меняется. Внутренний worker process contract был повышен до v4. Core
-checkpoint event остаётся строгим, а метрика той же global epoch передаётся
-как необязательная telemetry. Terminal fit summary и timing boundaries развиваются отдельным
-[ADR 0011](0011-terminal-fit-run-summary.md), который повышает внутренний
-контракт до v5 без изменения Flight v4.
+Training telemetry является отдельным best-effort observer. После durable
+checkpoint или успешной model publication service формирует immutable
+run-owned artifacts и регистрирует PostgreSQL outbox отдельной операцией.
+Background publisher доставляет deterministic documents в OpenSearch
+идемпотентным create flow.
 
-Durable flow:
+Worker не подключается к OpenSearch и не выполняет network delivery. Ошибка
+сбора, artifact publication, outbox admission или доставки наблюдаема, но не
+меняет recovery generation, model publication или terminal outcome fit.
 
-```text
-worker завершил global epoch
-  → fsync recovery checkpoint
-  → checkpoint event
-  → PostgreSQL transaction: recovery generation + compact job progress
-  → best-effort PostgreSQL transaction: metric interval
-  → terminal worker checkpoint
-  → models/{modelRef}/checkpoint.pth
-     models/{modelRef}/metadata.json
-  → PostgreSQL transaction: model generation + SUCCEEDED
-  → best-effort telemetry/{jobId}/metrics.jsonl + metadata + outbox
-  → background publisher
-  → OpenSearch Bulk create
-```
+Telemetry принадлежит run identity, а не lifecycle модели. Удаление модели не
+отменяет delivery и не удаляет run telemetry. OpenSearch остаётся производной
+аналитической projection; PostgreSQL и immutable local artifacts обеспечивают
+bounded retry lifecycle.
 
-Filesystem и PostgreSQL не образуют распределённую транзакцию. Файлы сначала
-публикуются через fsync и atomic rename, затем становятся видимыми в БД.
-Падение до database commit оставляет только orphan model directory, который
-удаляет startup reconciliation. После прикладного commit модель остаётся
-успешно опубликованной даже при потере telemetry. Зарегистрированный outbox
-можно повторить из immutable artifact.
+## Рассмотренные альтернативы
 
-## Identity и данные
-
-`runId` равен Transformer `jobId`. Каждая строка artifact содержит `jobId`,
-фактические `attemptId` и `attempt` epoch, `modelRef`, immutable ML digests,
-checkpoint format, версию приложения и Git commit. Итоговая artifact metadata
-содержит attempt, опубликовавшую модель; отдельные строки могут принадлежать
-предыдущим attempts после recovery.
-
-В OpenSearch публикуются только закрытые имена metrics. Per-target points
-получают `targetIndex`; arbitrary dynamic attributes запрещены JSON Schema и
-strict mapping. Wall-clock phase metrics нужны для диагностики, но не входят в
-deterministic identity модели.
-
-`recordedAt` фиксируется сервисом при durable commit epoch. `step` означает
-число завершённых training batches, а не гарантированное число optimizer
-updates при AMP overflow. Эта семантика сохраняет существующий training state
-и не изменяет loss scheduling.
-
-## Доставка
-
-Publisher не запускается, если OpenSearch полностью не настроен. Ошибочная
-конфигурация отключает только publisher, регистрируется в operational
-logs/counters и не блокирует startup. При штатной конфигурации недоступность
-OpenSearch не блокирует startup, fit или model publication.
-
-Bulk request ограничен 500 документами и 2 MiB. Доставка использует `create` и
-детерминированный `_id`. HTTP 409 проверяется через `_mget` и
-`documentSha256`. Повторяются network errors и HTTP 408/429/5xx с exponential
-backoff и jitter от одной секунды до пяти минут. Остальные ошибки переводят
-outbox entry в `BLOCKED` и требуют вмешательства оператора.
-
-Одна запись повторяется не более 288 раз и не дольше 24 часов, после чего
-переходит в `CANCELLED`. `BLOCKED`, `CANCELLED` и `DELIVERED` записи хранятся
-семь дней. Admission новых записей ограничен 10 000 entries и 10 GiB; при
-исчерпании бюджета telemetry отбрасывается после публикации модели. Health
-metrics показывают число, bytes и возраст backlog, а превышение диагностических
-порогов создаёт operational event.
-
-## Индексы OpenSearch
-
-Templates и обычные versioned indices `metrics-points-v1` и
-`metrics-artifacts-v1` создаёт оператор до включения publisher-а. Companion
-projection `metrics-runs-v1` определена ADR 0011. Data streams
-не используются: они направляют запись в текущий write index, поэтому rollover
-позволяет повторно создать тот же `_id` в новом backing index, а exact `_mget`
-по имени data stream не обеспечивает проверку существующего документа.
-
-Один concrete index на versioned projection гарантирует конфликт повторного
-`create` и пакетную проверку `documentSha256` через `_mget`. Будущее временное
-разбиение допустимо только как отдельное изменение delivery contract с
-детерминированным выбором partition по immutable `recordedAt`.
-
-Оба template задают `number_of_replicas: 0`, поскольку текущий OpenSearch
-работает как одиночный узел.
-
-## Подключение
-
-Текущее развёртывание находится в полностью доверенной локальной сети и
-использует HTTP без REST TLS, но с существующей OpenSearch Basic Auth.
-Runtime-конфигурация содержит endpoint, полную пару username/password и
-стабильный `deploymentId`; CA для HTTP не задаётся. Анонимный HTTP остаётся
-допустимым профилем для доверенных deployments. Templates и indices по-прежнему
-создаёт оператор до запуска publisher-а; publisher выполняет только Bulk create
-и exact `_mget` для versioned metrics indices.
-
-Transformer сохраняет прежний HTTPS-профиль для других сред, но он не является
-частью текущего deployment. Arrow data, stack traces и filesystem paths не
-попадают в документы и логи независимо от transport profile.
-
-## Ограничения v1
-
-- публикуются только успешно завершённые fit runs;
-- `experimentRunId` не добавляется без согласованного межсистемного identity;
-- checkpoints и исходный NDJSON не отправляются в OpenSearch;
-- независимые test metrics и baselines остаются ответственностью Inventory;
-- централизованные logs, traces и host metrics не входят в решение.
+- Отправлять metrics непосредственно из worker/hot loop. Отклонено из-за
+  network dependency, latency и смешения process responsibilities.
+- Парсить stdout без versioned artifact contract. Отклонено из-за слабой
+  durability и неявной identity.
+- Делать OpenSearch transactionally обязательным для `SUCCEEDED`. Отклонено:
+  observability не должна определять business outcome.
+- Использовать OpenSearch как источник lifecycle state. Отклонено в пользу
+  PostgreSQL authority.
+- Владеть telemetry через model foreign keys. Отклонено, потому что model и
+  run имеют независимые deletion/retention lifecycles.
 
 ## Последствия
 
-Metrics artifact является необязательной run-owned telemetry. Повреждённая,
-неполная или отсутствующая epoch metric логируется и отбрасывается, но не
-меняет recovery, fit outcome или model generation. Migration `0007` добавляет
-best-effort epoch intervals, model artifact metadata и outbox без изменения
-Flight v4 schema.
+- Fit и model publication продолжаются при недоступном OpenSearch.
+- Возможна потеря части telemetry без потери ML-state; это осознанная
+  best-effort граница.
+- Outbox требует bounded capacity, retry и retention policies.
+- Contracts telemetry версионируются независимо от Flight и worker lifecycle.
 
-Структурные владельцы core state и telemetry уточнены в
-[ADR 0013](0013-telemetry-ownership-boundaries.md).
+## Текущая документация
+
+- [Политика metrics и OpenSearch](../metrics.md)
+- [Training runtime](../training-runtime.md)
+- [Operations OpenSearch](../deployment/opensearch.md)
+- [Metrics contracts](../../app/contracts/metrics/)

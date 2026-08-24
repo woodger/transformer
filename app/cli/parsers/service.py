@@ -5,7 +5,7 @@ from app.cli.formatting import (
 )
 from app.cli.options import add_hidden_help_argument, nonnegative_int
 from app.cli.parsers import SubparserTarget
-from app.service.bootstrap.config import HOST_DEFAULT, PORT_DEFAULT
+from app.config import HOST_DEFAULT, PORT_DEFAULT
 
 _FLIGHT_SERVE_DESCRIPTION = (
     "Run the durable Arrow Flight service for fit and predict jobs."
@@ -44,12 +44,6 @@ def add_service_parsers(subparsers: SubparserTarget) -> None:
         type=nonnegative_int,
         default=None,
         help=f"Listen port. (default: {PORT_DEFAULT})",
-    )
-    service.add_argument(
-        "--allow-plaintext",
-        action="store_true",
-        default=None,
-        help="Allow serving without TLS.",
     )
     service.add_argument(
         "--tls-cert-file",

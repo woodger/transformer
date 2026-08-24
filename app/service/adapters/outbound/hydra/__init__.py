@@ -1,1 +1,0 @@
-"""Ory Hydra authentication adapter."""

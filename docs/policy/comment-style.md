@@ -129,8 +129,8 @@ TODO допустим, только если содержит:
 # TODO: fix later
 ```
 
-Placeholder без runtime consumer лучше хранить в ADR, issue или roadmap, а не
-в пустом Python module.
+Placeholder без runtime consumer лучше хранить в issue или roadmap, а не в
+пустом Python module.
 
 ## Workarounds
 

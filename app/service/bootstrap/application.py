@@ -18,12 +18,6 @@ from app.service.adapters.outbound.artifacts.telemetry.projection import (
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
 )
-from app.service.adapters.outbound.hydra.client import (
-    HydraAccessTokenAuthenticator,
-)
-from app.service.adapters.outbound.hydra.config import (
-    load_hydra_introspection_config,
-)
 from app.service.adapters.outbound.opensearch.client import (
     OpenSearchMetricsClient,
 )
@@ -44,6 +38,8 @@ from app.service.adapters.outbound.postgres.telemetry import (
     PostgresMetricsOutbox,
     PostgresTrainingTelemetry,
 )
+from app.service.adapters.outbound.postgres.token_cache import AccessTokenCache
+from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
 from app.service.application.telemetry.publisher import MetricsPublisher
@@ -61,7 +57,6 @@ from app.service.bootstrap.maintenance import MaintenanceService
 class FlightServiceArguments(Protocol):
     host: str | None
     port: int | None
-    allow_plaintext: bool | None
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
@@ -151,9 +146,6 @@ class FlightApplication:
     ) -> FlightApplication:
         logger = logger or JsonLogger()
         metrics = OperationalMetrics()
-        authenticator = HydraAccessTokenAuthenticator(
-            load_hydra_introspection_config()
-        )
         model_path = config.models_dir if models_dir is None else models_dir
         model_path_text = (
             model_path
@@ -294,6 +286,9 @@ class FlightApplication:
             removed_telemetry_runs = spool.reconcile_telemetry_directories(
                 metrics_outbox.retained_run_ids()
             )
+            token_cache = AccessTokenCache(
+                AccessTokenStore(ledger.database)
+            )
             if device_inventory is None:
                 device_inventory = CudaDeviceInventory(
                     logger=logger,
@@ -349,7 +344,7 @@ class FlightApplication:
                 TransformerFlightServer(
                     config,
                     coordinator,
-                    authenticator,
+                    token_cache,
                     upload_handler=upload,
                     output_handler=output,
                     metrics=metrics,
@@ -377,8 +372,8 @@ class FlightApplication:
                 worker,
                 metrics,
                 logger,
-                recovery_store,
-                metrics_publisher,
+                recovery_store=recovery_store,
+                metrics_publisher=metrics_publisher,
             )
             if metrics_publisher is not None:
                 try:
@@ -595,7 +590,6 @@ def run_from_args(args: FlightServiceArguments) -> None:
     overrides = {
         "host": args.host,
         "port": args.port,
-        "allow_plaintext": args.allow_plaintext,
         "tls_cert_file": args.tls_cert_file,
         "tls_key_file": args.tls_key_file,
         "tls_ca_file": args.tls_ca_file,

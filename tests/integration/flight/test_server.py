@@ -59,7 +59,6 @@ def control_server(tmp_path):
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "runtime"),
             port=0,
-            allow_plaintext=True,
         ),
         coordinator,
         StaticAccessTokenAuthenticator({"secret": "inventory"}),

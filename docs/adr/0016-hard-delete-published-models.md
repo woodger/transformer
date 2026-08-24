@@ -1,119 +1,56 @@
-# ADR 0016: безвозвратное удаление моделей и архив identity
+# ADR 0016: hard delete моделей с минимальным audit archive
 
-- Статус: принято
-- Дата: 2026-08-20
-- Заменяет хранение полного model tombstone из ADR 0010
+- Status: Accepted
+- Decision date: 2026-08-20
+
+> Historical decision record; not a current system reference. See
+> [ADR index](index.md).
 
 ## Контекст
 
-ADR 0010 оставлял удалённую модель в основной таблице `models` со всеми
-checkpoint paths, hashes, ML contracts и metadata. Обычный `models list`
-смешивал рабочий каталог с историей удалений и со временем накапливал строки
-несуществующих моделей.
+Полный model tombstone сохранял checkpoint paths, hashes, ML contracts и
+metadata после физического удаления artifacts. Рабочая таблица смешивала
+доступные models с историей и неограниченно накапливала metadata
+несуществующих generations.
 
-Полностью отказаться от deletion record также нежелательно: оператору нужен
-явный `deleted_at`, а allocator generation не должен повторно использовать
-номер уже опубликованной модели.
-
-Run-owned telemetry и terminal jobs имеют собственные lifecycle и retention.
-Они не являются частью опубликованной модели и не должны неявно менять свою
-политику хранения при удалении model generation.
+Полное отсутствие deletion record также нежелательно: operator должен видеть
+завершение удаления, а allocator не должен повторно использовать generation.
+Filesystem и PostgreSQL нельзя изменить одной transaction.
 
 ## Решение
 
-Сохраняется безопасная двухфазная граница:
+Удаление имеет durable двухфазную boundary. Сначала PostgreSQL запрещает новые
+predict operations и фиксирует pending deletion. Затем maintenance удаляет
+server-owned model artifacts. После успеха отдельная transaction физически
+удаляет рабочую model row и создаёт минимальный audit record identity и
+timestamps.
 
-```text
-models:          AVAILABLE → DELETING → строка отсутствует
-deleted_models:                         минимальный audit record
-```
+Audit archive не содержит checkpoint paths, hashes, ML/data contracts или
+payload metadata и не разрешается как model. Allocation generation учитывает
+рабочие rows и archive, поэтому номер не используется повторно. Run-owned
+telemetry и terminal jobs сохраняют независимые retention lifecycles.
 
-Команда `models delete MODEL_REF` в PostgreSQL transaction блокирует строку,
-проверяет отсутствие активных predict jobs, снимает текущий alias и переводит
-модель в `DELETING`. Новые predict и `model.describe` после commit не видят
-модель.
+## Рассмотренные альтернативы
 
-Maintenance удаляет server-owned каталог `models/{modelRef}`. Только после
-успешного удаления каталога одна transaction:
-
-1. записывает минимальный audit record в `deleted_models`;
-2. физически удаляет рабочую строку `models`.
-
-Отсутствие каталога также считается успешным результатом. Ошибка filesystem
-оставляет `DELETING` для следующей попытки. Foreign key модели удаляет любой
-случайно оставшийся alias каскадно.
-
-Archive содержит только:
-
-- `modelRef`;
-- owner и label;
-- generation;
-- `created_at`;
-- `deletion_requested_at`;
-- `deleted_at`.
-
-Checkpoint paths, hashes, model/data/ML contracts, metadata и producing job в
-archive не переносятся. Это audit удаления, а не доступная или восстановимая
-модель.
-
-## CLI
-
-Обычная команда показывает только доступные модели (`AVAILABLE`):
-
-```bash
-./.venv/bin/python ./app/main.py models list
-```
-
-Архив удалений запрашивается отдельно:
-
-```bash
-./.venv/bin/python ./app/main.py models list --deleted
-```
-
-Опция `--deleted` является фильтром удаления. Она показывает как ожидающие
-физической очистки модели (`DELETING`), так и завершённые audit records
-(`DELETED`). Колонка `DELETED AT` остаётся пустой до завершения очистки и
-заполняется только для архивной записи. После завершения deletion повторная
-команда `models delete MODEL_REF` возвращает
-`model generation not found`.
-
-## Generation
-
-Публикация вычисляет следующий generation по максимуму основной таблицы и
-архива под тем же advisory lock. Поэтому generation одного owner/label остаётся
-монотонным и не используется повторно после удаления.
-
-`modelRef` остаётся identity модели, а не архива. Архивная строка не разрешается
-через Flight и не может быть использована для predict.
-
-## Миграция
-
-Revision `0012` уже физически удалила прежние строки `DELETED` из `models` и
-поле `models.deleted_at`. Их timestamps восстановить невозможно.
-
-Revision `0013` создаёт пустой `deleted_models` для последующих удалений.
-Downgrade разрешён только пока archive пуст; после появления первой audit
-record migration становится необратимой.
-
-## Граница удаления
-
-Hard delete удаляет принадлежащие модели данные:
-
-- каталог с checkpoint и metadata;
-- рабочую строку `models`;
-- alias, указывающий на модель.
-
-Исторические terminal jobs и run-owned telemetry продолжают очищаться по
-собственным retention policies. OpenSearch documents также не удаляются
-командой модели.
+- Сохранять полный tombstone в основной model table. Отклонено из-за роста
+  metadata и смешения working set с history.
+- Не сохранять deletion record. Отклонено из-за потери operator-visible
+  completion и риска повторного generation.
+- Удалять filesystem и database row одним admin command. Отклонено: crash
+  между несогласованными resources нельзя сделать atomic.
+- Использовать вечный soft delete без физической очистки. Отклонено, потому что
+  server-owned model artifacts должны освобождаться.
 
 ## Последствия
 
-- `models list` содержит только доступные модели;
-- `models list --deleted` показывает незавершённую очистку и минимальный audit
-  с `deleted_at` после её завершения;
-- PostgreSQL не хранит payload или metadata удалённых моделей;
-- generation остаётся монотонным;
-- активный predict по-прежнему блокирует удаление;
-- filesystem failure остаётся безопасно восстанавливаемым;
-- восстановить удалённую модель по audit record невозможно.
+- После hard delete модель невозможно восстановить из audit record.
+- Filesystem failure оставляет повторяемое pending deletion, а не частичную
+  доступную model.
+- Working model list не накапливает удалённые metadata.
+- Generation остаётся монотонным, а telemetry deletion не получает скрытых
+  side effects.
+
+## Текущая документация
+
+- [Операционное руководство Flight](../flight-operations.md)
+- [Архитектурная политика](../policy/architecture.md)

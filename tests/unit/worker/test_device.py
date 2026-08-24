@@ -92,6 +92,11 @@ Commands:
 Flight:
   flight serve                    Run the durable Arrow Flight job service.
 
+Access:
+  auth tokens issue               Issue a local API access token
+  auth tokens list                List API access token metadata
+  auth tokens revoke <token-id>   Revoke an API access token
+
 Models:
   models list                     List published model generations
   models delete <model-ref>       Delete one model generation

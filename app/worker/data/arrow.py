@@ -10,6 +10,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
+from app import config as defaults
 from app.contracts.flight.v5.arrow import (
     TARGET_WIDTH,
     canonical_input_schema,
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
     import torch
 
 FRAME_HEADER_BYTES = 8
-DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024
 FLOAT32_MAX = float(np.finfo(np.float32).max)
 
 
@@ -400,7 +400,7 @@ def _read_exact(stream: BinaryIO, size: int) -> bytes:
 
 def iter_framed_arrow(
     stream: BinaryIO,
-    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+    max_frame_bytes: int = defaults.DEFAULT_MAX_FRAME_BYTES,
 ) -> Iterator[pa.Table]:
     if max_frame_bytes <= 0:
         raise ValueError("max_frame_bytes must be greater than zero")
