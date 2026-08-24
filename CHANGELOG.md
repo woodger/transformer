@@ -9,6 +9,9 @@
 
 ### Changed
 
+- Production systemd unit явно задаёт `WorkingDirectory=/home/nerv/transformer`;
+  `app/main.py` разрешается относительно project root, а путь к project
+  interpreter остаётся абсолютным.
 - Срок действия новых API access tokens изменён с трёх календарных месяцев на
   фиксированные 180 суток. Уже выпущенные tokens сохраняют записанный
   `expires_at`; migration и продление действующих credentials отсутствуют.
