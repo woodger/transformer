@@ -32,6 +32,8 @@
   PostgreSQL revalidation token.
 - Добавлен профильный справочник `docs/authentication.md` с текущей credential
   model, cache consistency и security boundary Flight service.
+- Добавлен gatekeeper `docs/adr/index.md` для admission, immutable lifecycle и
+  ненормативной роли исторических architecture decision records.
 
 ### Changed
 
@@ -46,8 +48,8 @@
   приниматься ещё максимум 60 секунд. Fixed expiration проверяется на каждом
   новом RPC. `auth tokens list` показывает `Last used` вместо `Created`.
 - Документация описывает текущее состояние системы в профильных источниках;
-  причины и alternatives изменений остаются в issue/MR и Git, release history
-  — в этом changelog, а database evolution — в Alembic migrations.
+  прошедшие admission архитектурные решения хранят только historical rationale,
+  release history — этот changelog, а database evolution — Alembic migrations.
 
 ### Removed
 
@@ -55,9 +57,10 @@
   administration и команды `auth clients create|list|delete`.
 - Удалён отдельный `--allow-plaintext`: полная пара TLS certificate/key
   включает TLS, а отсутствие обоих options выбирает plaintext.
-- Удалён каталог `docs/adr/` из 20 decision records; актуальные process,
-  protocol, telemetry, operations и authentication сведения перенесены в их
-  профильные документы.
+- Удалены 11 прежних ADR, описывавших рефакторинг, текущую структуру, конкретные
+  telemetry formats, migrations или промежуточные реализации. Их полные версии
+  остаются в Git history; 9 прошедших admission решений сохранены как краткие
+  исторические records.
 
 ## [0.1.14] - 2026-08-21
 

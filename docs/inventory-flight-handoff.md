@@ -9,6 +9,9 @@
 [`руководстве по эксплуатации Flight`](flight-operations.md). Credential
 model, token verification и bounded revoke latency описаны в
 [`справочнике аутентификации`](authentication.md).
+Rationale единой cross-language indicator identity сохранён в
+[ADR 0015](adr/0015-unified-indicator-identity-flight-v5.md); текущие значения
+задаёт нормативный Flight contract.
 
 Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,

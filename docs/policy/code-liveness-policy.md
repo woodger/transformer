@@ -105,7 +105,7 @@ reference.
 - Alembic configuration и revision chain;
 - SQLAlchemy model metadata;
 - tests, fixtures и `conftest.py`;
-- README, профильные docs и normative contracts;
+- README, профильные docs, ADR и normative contracts;
 - systemd unit, environment names и release files;
 - compatibility с checkpoint/database/wire artifacts.
 

@@ -32,6 +32,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Flight service behavior и operations | `docs/flight-operations.md` |
 | Inventory integration | `docs/inventory-flight-handoff.md` |
 | Текущие process и dependency boundaries | `docs/policy/architecture.md` |
+| Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный Flight v5 contract | `app/contracts/flight/v5/` |
@@ -121,21 +122,25 @@ format. README или operations guide не могут переопределя�
 
 ## Документация текущего состояния
 
-Постоянная документация описывает только действующую систему. Architecture,
+Living documentation описывает только действующую систему. Architecture,
 security, persistence, protocol, training и operations facts размещаются в
-профильном источнике с конкретным читателем, а не в последовательности
-decision records или общем справочнике решений.
+профильном источнике с конкретным читателем.
 
-Причины изменения, рассмотренные alternatives и план перехода принадлежат
-issue или merge request. После реализации историю сохраняют Git и
-`CHANGELOG.md`, а применённую эволюцию PostgreSQL — неизменяемая цепочка
+ADR хранит historical rationale отдельного архитектурного решения, но не
+является system reference или нормативным источником текущего состояния.
+Admission, immutable lifecycle и допустимое содержание ADR задаёт
+[`docs/adr/index.md`](../adr/index.md). Решение, не проходящее admission,
+остаётся в issue или merge request.
+
+После реализации release history сохраняет `CHANGELOG.md`, точную историю
+изменений — Git, а применённую эволюцию PostgreSQL — неизменяемая цепочка
 Alembic migrations. Эти исторические источники не заменяют документацию
 текущего состояния.
 
 При замене решения профильный документ обновляется в том же change set:
 устаревшая и отменённая семантика удаляется, а не переносится в новый
-постоянный документ. Отдельный каталог ADR и сводный `decisions.md` в проекте
-не ведутся.
+постоянный справочник. Сводный `decisions.md`, дублирующий ADR или current
+documentation, в проекте не ведётся.
 
 ## Deployment и operations
 
@@ -171,7 +176,7 @@ reference-инструкцию не добавляются.
 1. Какой вопрос он закрывает?
 2. Почему существующий источник не подходит?
 3. Где на него будет ссылка?
-4. Не дублирует ли он contract, профильный источник или README?
+4. Не дублирует ли он contract, профильный источник, ADR или README?
 
 Временная идея без устойчивой роли остаётся issue/plan, а не постоянным
 документом.

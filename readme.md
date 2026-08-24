@@ -11,7 +11,8 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
   PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
   scheduling;
 - versioned public Flight и internal worker contracts;
-- документацию текущего состояния и политики изменения в `docs/`.
+- документацию текущего состояния, исторические decision records и политики
+  изменения в `docs/`.
 
 ## Режимы работы
 
@@ -79,6 +80,7 @@ user-site. Полный локальный сценарий находится �
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
 - [Архитектурная политика](./docs/policy/architecture.md)
+- [Журнал архитектурных решений](./docs/adr/index.md)
 - [Политики проекта](./docs/policy/index.md)
 
 ## Структура проекта
@@ -93,7 +95,7 @@ app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots
 app/project.py       # identity и путь корня проекта
-docs/                # пользовательская документация и политики
+docs/                # пользовательская документация, ADR и политики
 recovery/            # runtime-created persistent fit inputs/checkpoints
 tests/               # unit, contract, integration и architecture tests
 ```

@@ -10,6 +10,10 @@ ownership boundaries. Нормативный remote protocol находится 
 training telemetry policy — в [`docs/metrics.md`](../metrics.md), а credential
 model и security boundary — в
 [`docs/authentication.md`](../authentication.md).
+Историческое обоснование service и process boundaries находится в
+[ADR 0001](../adr/0001-arrow-flight-job-service.md) и
+[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md); ADR не
+переопределяет правила этого документа.
 
 ## Процессы и composition roots
 

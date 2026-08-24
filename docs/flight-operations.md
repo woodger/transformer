@@ -10,6 +10,10 @@ process и data ownership boundaries описывает
 [`training reference`](training-runtime.md), а credential model, cache
 consistency и channel security —
 [`справочник аутентификации`](authentication.md).
+Rationale durable recovery и streaming lifecycle сохранён в
+[ADR 0003](adr/0003-durable-resumable-training-and-device-aware-execution.md)
+и [ADR 0005](adr/0005-durable-streaming-flight-v3.md); текущую операционную
+семантику определяет это руководство.
 
 ## Требования к runtime
 
@@ -456,7 +460,9 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 action для удаления модели; оператор использует локальную команду
 `models delete`.
 
-Удаление model generation имеет отдельную durable boundary. PostgreSQL
+Rationale lifecycle удаления моделей зафиксирован в
+[ADR 0016](adr/0016-hard-delete-published-models.md). Удаление model generation
+имеет отдельную durable boundary. PostgreSQL
 transaction блокирует новые predict, проверяет отсутствие активных predict
 jobs, снимает только alias, который указывает на эту generation, и фиксирует
 `DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного

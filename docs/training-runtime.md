@@ -6,6 +6,9 @@
 Параметры команд находятся в [справочнике CLI](./cli/index.md), формулы — в
 [описании функции потерь](./losses.md), а нормативный remote ML-контракт — в
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md).
+Rationale target-aligned public semantics сохранён в
+[ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
+определяют contract и этот reference.
 
 ## Checkpoint contract
 
