@@ -6,8 +6,10 @@
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
-[`руководстве по эксплуатации Flight`](flight-operations.md). Credential
-model, token verification и bounded revoke latency описаны в
+[`руководстве по эксплуатации Flight`](flight-operations.md). Выдача, передача,
+ротация и отзыв credentials описаны в
+[`операционном руководстве`](operations/api-access-tokens.md), а credential
+model, token verification и bounded revoke latency — в
 [`справочнике аутентификации`](authentication.md).
 Rationale единой cross-language indicator identity сохранён в
 [ADR 0015](adr/0015-unified-indicator-identity-flight-v5.md); текущие значения

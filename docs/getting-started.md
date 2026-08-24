@@ -46,43 +46,14 @@ systemd — [deployment guide](./deployment/systemd.md).
 ./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выпускает token для единственного owner-а `inventory` ровно на
-180 суток (`180 × 24` часа) и выводит token ID, expiration time и новый
-credential вида `a.<base64url>`. Сохраните credential в secret storage
-клиентского приложения; не помещайте его в repository, логи или server `.env`.
-Перезапуск Transformer не требуется: новый token доступен при первом cache
-miss. Выпустите и передайте Consumer-у новый token до `expires_at`, затем
-отзовите прежний по ID.
+Команда один раз выводит token ID, expiration time и новый credential вида
+`a.<base64url>`. Сохраните credential в secret storage клиентского приложения;
+не помещайте его в repository, логи или server `.env`.
 
-## Отозвать API-токен
-
-Сначала найдите token ID без раскрытия credentials:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens list
-```
-
-Затем отзовите токен по его ID:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke <token-id>
-```
-
-Например:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke \
-  35dc6236-cfb9-4ac7-80db-320db21ef463
-```
-
-Используйте именно token ID, а не credential вида `a.<base64url>`. Успешный
-revoke физически удаляет token row; ранее закэшированный credential может
-приниматься ещё максимум 60 секунд. Перезапуск Transformer не требуется, а
-повторный revoke того же ID возвращает `not found`. Подробности управления
-токенами находятся в
-[Flight runbook](./flight-operations.md#токены-доступа-api), а persistence,
-cache и security semantics — в
-[справочнике аутентификации](./authentication.md).
+Просмотр, безопасную передачу Consumer-у, ротацию и отзыв описывает
+[`руководство по управлению API access tokens`](./operations/api-access-tokens.md).
+Persistence, cache и security semantics находятся в
+[`справочнике аутентификации`](./authentication.md).
 
 ## Локальное обучение и prediction
 
@@ -120,7 +91,9 @@ Prediction использует созданный checkpoint:
   возвращают framed Arrow payloads через standard streams.
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
-  PostgreSQL, tokens, recovery, TLS и lifecycle service.
+  PostgreSQL, recovery, TLS и lifecycle service.
+- [Руководство по управлению API access tokens](./operations/api-access-tokens.md)
+  описывает выдачу, передачу, ротацию и отзыв credentials.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка

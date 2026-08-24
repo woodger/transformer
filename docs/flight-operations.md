@@ -191,44 +191,12 @@ worker lanes БД не опрашивают.
 ## Токены доступа API
 
 Bearer authentication обязательна для каждого Flight RPC, включая actions,
-DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens issue
-```
-
-Команда выпускает token для фиксированного owner subject `inventory` ровно на
-180 суток (`180 × 24` часа) и выводит ID token, `Expires` и новый credential.
-Credential имеет формат `a.<base64url>` и показывается только при выпуске.
-PostgreSQL хранит его SHA-256 digest, но не исходный bearer. Передавайте
-credential через канал secrets, принятый в deployment; не помещайте его в
-историю команд, логи или репозиторий.
-
-Просмотр metadata без раскрытия credentials:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens list
-```
-
-Отзыв по ID token:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
-```
-
-Успешный `revoke` физически удаляет token row. Повторный вызов и неизвестный ID
-завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
-явного revoke.
-
-Полная persistence, cache и security semantics описана в
-[`справочнике аутентификации`](authentication.md). Для оператора существенны
-следующие следствия: новый token доступен без перезапуска, после `revoke`
-закэшированный credential может приниматься ещё максимум 60 секунд, а
-`last_used_at` отражает последнее persisted окно использования с той же
-точностью. `tokens list` показывает `ID`, `Status`, `Last used` и `Expires`;
-до первого использования выводится `Never`. Для штатной ротации выпустите и
-передайте Inventory новый token до expiration, затем отзовите прежний по ID;
-owner-scoped state не изменится.
+DoPut, GetFlightInfo и DoGet. До предоставления сервиса Inventory оператор
+должен выпустить и безопасно передать credential. Выдачу, просмотр, ротацию,
+отзыв и проверку полного lifecycle описывает
+[`руководство по управлению API access tokens`](operations/api-access-tokens.md).
+Credential model, cache consistency и channel security описаны в
+[`справочнике аутентификации`](authentication.md).
 
 ## Настройка Flight service
 

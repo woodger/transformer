@@ -26,6 +26,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
 | Best-effort границы metrics и OpenSearch | `docs/metrics.md` |
 | Authentication model и security boundary | `docs/authentication.md` |
+| Выдача, передача, ротация и отзыв API access tokens | `docs/operations/api-access-tokens.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
@@ -147,6 +148,9 @@ documentation, в проекте не ведётся.
 ## Deployment и operations
 
 `docs/deployment/` содержит короткие ручные инструкции установки и запуска.
+`docs/operations/` содержит operator-facing lifecycle procedures для
+application-managed ресурсов. `docs/operations/api-access-tokens.md` является
+основным источником процедуры выдачи, передачи, ротации и отзыва credentials.
 `docs/flight-operations.md` содержит подробные lifecycle, recovery, security и
 storage semantics.
 

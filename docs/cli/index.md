@@ -37,10 +37,11 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 | `db migrations status\|apply\|rollback` | Управлять схемой PostgreSQL |
 
 `flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки
-PostgreSQL. Их lifecycle и безопасный порядок операций описаны в
-[Flight runbook](../flight-operations.md). Public remote API не является
-обёрткой над local CLI: его нормативный contract находится в
-[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
+PostgreSQL. Lifecycle `auth tokens` описан в
+[руководстве по управлению API access tokens](../operations/api-access-tokens.md),
+а service и database operations — в [Flight runbook](../flight-operations.md).
+Public remote API не является обёрткой над local CLI: его нормативный contract
+находится в [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
 
 ## File commands
 

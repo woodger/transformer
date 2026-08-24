@@ -59,8 +59,10 @@ user-site. Полный локальный сценарий находится �
   training metrics JSONL;
 - [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
   service;
-- [`auth tokens issue|list|revoke` и `db migrations`](./docs/flight-operations.md)
-  — access tokens и schema PostgreSQL.
+- [`auth tokens issue|list|revoke`](./docs/operations/api-access-tokens.md) —
+  lifecycle API access tokens;
+- [`db migrations`](./docs/flight-operations.md#настройка-postgresql-и-migrations)
+  — schema PostgreSQL.
 
 Точные options, defaults, aliases и side effects описывает help leaf-команды;
 поведение local commands и paths — [справочник CLI](./docs/cli/index.md).
@@ -76,6 +78,7 @@ user-site. Полный локальный сценарий находится �
 - [Worker process contract v7](./app/contracts/worker/v7/README.md)
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
 - [Аутентификация Flight](./docs/authentication.md)
+- [Управление API access tokens](./docs/operations/api-access-tokens.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
