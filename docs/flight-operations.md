@@ -5,7 +5,7 @@
 
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
-[`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
+[`руководстве по интеграции Consumer-ов`](consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Текущие
 process и data ownership boundaries описывает
@@ -171,7 +171,7 @@ worker lanes БД не опрашивают.
 ## Токены доступа API
 
 Bearer authentication обязательна для каждого Flight RPC, включая actions,
-DoPut, GetFlightInfo и DoGet. До предоставления сервиса Inventory оператор
+DoPut, GetFlightInfo и DoGet. До предоставления сервиса Consumer-у оператор
 должен выпустить и безопасно передать credential. Выдачу, просмотр, ротацию,
 отзыв и проверку полного lifecycle описывает
 [`руководство по управлению API access tokens`](operations/api-access-tokens.md).
@@ -238,7 +238,7 @@ modes.
 
 Проверяемый порядок:
 `targetBatchBytes <= maxBatchBytes <= maxMessageBytes <= maxPayloadBytes`.
-Inventory должен получать фактические значения через capabilities, а не
+Consumer должен получать фактические значения через capabilities, а не
 копировать defaults.
 
 ### Политика lifecycle
@@ -280,7 +280,7 @@ Production-запуск определён только в
 
 Если требуются client certificates, добавьте `--tls-ca-file` и
 `--tls-require-client-cert`. Убедитесь, что SAN server certificate совпадает с
-адресом, который использует Inventory.
+адресом, который использует Consumer.
 
 Процесс пишет структурированные JSON logs в stderr. Supervisor deployment-а
 должен передавать SIGTERM, ждать не меньше `shutdownDrainSeconds +

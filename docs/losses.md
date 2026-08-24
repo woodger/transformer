@@ -17,7 +17,8 @@ scale. Flight boundary публикует только первые шесть �
 | `5` | `HittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
 | private | `returnScale` | `softplus(scaleHead) + 1e-6` | не публикуется |
 
-`SigmaReturn` — нормализованный target Inventory, а не Gaussian scale.
+`SigmaReturn` — нормализованная target-координата `inventory.target.v2`, а не
+Gaussian scale.
 `ProbTP` и `ProbSL` независимы и не обязаны давать сумму `1`.
 
 ## Прямые компоненты

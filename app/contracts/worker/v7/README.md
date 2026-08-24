@@ -96,7 +96,7 @@ Terminal fit result содержит такое же время сериализ
 
 Command manifest содержит точный `mlContract`. Для fit worker повторно
 вычисляет его из `training` и отклоняет несовпадение до создания модели.
-`dataContract` содержит принадлежащий Inventory непрозрачный `profile` и
+`dataContract` содержит принадлежащий Consumer-у непрозрачный `profile` и
 сохраняется целиком в model checkpoint и recovery. Predict и recovery требуют
 точного совпадения всего документа; Transformer не нормализует и не
 интерпретирует `profile`. Recovery также содержит тот же

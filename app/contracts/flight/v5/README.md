@@ -1,9 +1,9 @@
 # Контракт Transformer Arrow Flight v5
 
-Этот каталог содержит нормативный контракт обмена данными между Inventory и
+Этот каталог содержит нормативный контракт обмена данными между Consumer-ами и
 Transformer, не зависящий от языка реализации. JSON Schema, Arrow-схемы и
 эталонные фикстуры версионируются вместе. Интеграционный flow описан в
-[`inventory-flight-handoff.md`](../../../../docs/inventory-flight-handoff.md),
+[`consumer-flight-integration.md`](../../../../docs/consumer-flight-integration.md),
 эксплуатационный lifecycle — в
 [`flight-operations.md`](../../../../docs/flight-operations.md), а credential
 model и channel security — в
@@ -81,7 +81,7 @@ predict допустим: отсутствие payload-ов даёт отсут�
 
 ## Стабильная идентичность и fencing
 
-Inventory создаёт и сохраняет `jobId` до вызова create. После удаления тяжёлых
+Consumer создаёт и сохраняет `jobId` до вызова create. После удаления тяжёлых
 данных job Transformer сохраняет компактную, ограниченную owner-ом запись об
 идентичности. Благодаря этому потерянный ответ create восстанавливается точным
 повтором запроса, а UUID нельзя позднее использовать для другого запроса.
@@ -181,12 +181,12 @@ null-значения в ML-данных: ingress-валидация и вали
 
 ## ML-контракт данных и модели
 
-Inventory владеет семантическим документом набора данных. Create передаёт его
+Consumer владеет семантическим документом набора данных. Create передаёт его
 `id`, `version`, регистрозависимый `profile`, `dataContractSha256`, `seqLen`,
 `featureDim` и `targetSchemaId`. `profile` является непрозрачной ограниченной
 строкой, покрывается digest и не перечисляется в capabilities. Transformer
 хранит и возвращает весь документ без преобразования, не воспроизводя
-семантику features Inventory. Predict create отклоняется с
+семантику features Consumer-а. Predict create отклоняется с
 `MODEL_SCHEMA_MISMATCH` до загрузки, если выбранная неизменяемая модель не
 сертифицирована для всего точного `dataContract`.
 

@@ -1,4 +1,4 @@
-# Интеграция Inventory с Transformer Arrow Flight v5
+# Интеграция Consumer-ов с Transformer Arrow Flight v5
 
 > Тип: справочник. Руководство по интеграции Consumer-а с текущим протоколом.
 
@@ -15,7 +15,7 @@ Rationale единой cross-language indicator identity сохранён в
 [ADR 0015](adr/0015-unified-indicator-identity-flight-v5.md); текущие значения
 задаёт нормативный Flight contract.
 
-Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
+Transformer Flight v5 — единственный текущий удалённый API. Consumer должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,
 descriptors и семантику состояний v5, описанные ниже. V4 actions, descriptors,
 semantic aliases и fallback отсутствуют.
@@ -32,7 +32,7 @@ authorization: Bearer a.<base64url>
 Credential представляет одного owner subject. Jobs, model aliases, model
 references, status, receipts, tickets и outputs ограничены owner-ом. Никогда не
 записывайте bearer credential или непрозрачный output ticket в логи. Credential
-действует ровно 180 суток (`180 × 24` часа); Inventory должен получить новый
+действует ровно 180 суток (`180 × 24` часа); Consumer должен получить новый
 token до expiration и переключиться на него до отзыва прежнего.
 
 Каждый документ action начинается с:
@@ -60,7 +60,7 @@ token до expiration и переключиться на него до отзы�
 | `transformer.v5.capabilities` | Версии, схемы, ML-контракт, лимиты и доступная ёмкость | Нет |
 | `transformer.v5.health` | Аутентифицированная проверка liveness/readiness | Нет |
 | `transformer.v5.job.create` | Создать fit- или predict-job с заданной клиентом идентичностью | Начальное владение |
-| `transformer.v5.job.acquire` | Передать владение Inventory и увеличить fence | Compare-and-swap |
+| `transformer.v5.job.acquire` | Передать владение Consumer-у и увеличить fence | Compare-and-swap |
 | `transformer.v5.job.status` | Получить ограниченное состояние job и сводку результата | Нет |
 | `transformer.v5.job.inputs.list` | Сверить зафиксированные inputs по revision | Нет |
 | `transformer.v5.job.input.close` | Зафиксировать EOF и неизменяемую сводку входа | Да |
@@ -73,15 +73,15 @@ token до expiration и переключиться на него до отзы�
 `mlContract`; несовпадение semantic IDs является ошибкой совместимости до
 создания job. Эффективные лимиты из ответа являются
 нормативными для текущего runtime; не копируйте значения по умолчанию из
-репозитория в Inventory.
+репозитория в код Consumer-а.
 
 ## Сохранение идентичности до create
 
-До первого сетевого запроса Inventory создаёт и фиксирует в своей транзакции
-PostgreSQL следующие значения:
+До первого сетевого запроса Consumer создаёт и надёжно фиксирует в своём
+durable state следующие значения:
 
 - `jobId` — стабильная удалённая идентичность логического job;
-- `clientExecutionId` — идентичность текущего claim Inventory;
+- `clientExecutionId` — идентичность текущего claim Consumer-а;
 - `idempotencyKey` для create и неизменяемый документ create.
 
 Fit create соответствует фикстуре
@@ -107,7 +107,7 @@ fencingToken    = "1"
 
 ## Контракты данных и objective
 
-Каждый create содержит принадлежащую Inventory семантическую идентичность:
+Каждый create содержит семантическую идентичность, определяемую Consumer-ом:
 
 ```json
 {
@@ -123,7 +123,10 @@ fencingToken    = "1"
 }
 ```
 
-Inventory владеет каноническим документом, digest которого указан здесь. В
+Префикс `inventory` в текущих semantic IDs является точным значением wire
+contract и не ограничивает использование API одноимённым проектом.
+
+Consumer владеет каноническим документом, digest которого указан здесь. В
 документ входят упорядоченные идентичности features, семантика target,
 нормализация, политика missing values и `profile`. Поле `profile` —
 непрозрачная для Transformer, ограниченная и регистрозависимая строка.
@@ -192,7 +195,7 @@ Predict должен передать точный `mlContract`, возвращ�
 ```
 
 Token представляет собой каноническую положительную десятичную строку, а не
-JSON integer. При перехвате lease Inventory вызовите
+JSON integer. При перехвате lease Consumer вызывает
 `transformer.v5.job.acquire` с предыдущим execution ID, ожидаемым token и новым
 execution ID. Transformer атомарно сравнивает старую пару и возвращает
 следующий token. Сохраните этот ответ до выполнения мутаций от нового claim.
@@ -338,12 +341,12 @@ execution.state:
 
 Он фиксируется атомарно с recovery checkpoint. AMP, gradient, target metrics и
 timings остаются только в telemetry. Если core progress ещё недоступен,
-Inventory может использовать `recovery.latestCheckpoint.completedEpochs` и
+Consumer может использовать `recovery.latestCheckpoint.completedEpochs` и
 `globalStep` как fallback.
 
 До EOF после сбоя fit attempt незавершённая нулевая epoch повторяется с начала;
 надёжно зафиксированные inputs сохраняются. После EOF recovery checkpoints
-находятся на границах полных global epochs. Inventory должен корректно
+находятся на границах полных global epochs. Consumer должен корректно
 обрабатывать `RETRYING`, не отправляя уже зафиксированные payloads повторно.
 
 ## Результаты prediction
@@ -380,7 +383,7 @@ transformer.prediction.target-aligned.v2
 
 Все значения конечны. Координаты `ProbTP` и `ProbSL` независимы и не обязаны
 давать сумму `1`. Raw logits и private uncertainty scale в output отсутствуют.
-Поэтому Inventory вычисляет per-target метрики напрямую, но не использует
+Поэтому Consumer вычисляет per-target метрики напрямую, но не использует
 общую MAE/MSE по шести разнородным координатам как quality score.
 
 Все поля верхнего уровня используют `nullable=false`. Вложенное дочернее поле
@@ -391,7 +394,7 @@ Metadata схемы не входит в физическую identity или `s
 
 Transformer отклоняет неканоническую входную схему с `INVALID_ARGUMENT` до
 резервирования или фиксации payload. Job остаётся нетерминальным с открытым
-входом, поэтому Inventory может исправить схему и повторить тот же ordinal в
+входом, поэтому Consumer может исправить схему и повторить тот же ordinal в
 новой транспортной попытке.
 
 Transformer может готовить результаты локально для attempt при открытом входе,
@@ -422,7 +425,7 @@ owner-ом `modelAlias`. Пока модель существует, её `model
 
 ## Решения о повторных запросах
 
-| Потерянный или неуспешный шаг | Поведение Inventory |
+| Потерянный или неуспешный шаг | Поведение Consumer-а |
 | --- | --- |
 | Ответ create | Повторить тот же логический create; `jobId` уже известен |
 | Ответ acquire | Повторить acquire с тем же idempotency key |

@@ -1,7 +1,7 @@
 # Управление API access tokens
 
 > Тип: операционное руководство. Выдача, просмотр, передача, ротация и отзыв
-> Bearer credentials для Consumer-а Inventory.
+> Bearer credentials для контролируемых Consumer-ов.
 
 Это руководство задаёт текущую операторскую процедуру. Устройство credential,
 правила persistence, cache consistency и security boundary описаны в
@@ -9,8 +9,11 @@
 format — в [`контракте Arrow Flight v5`](../../app/contracts/flight/v5/README.md).
 
 Transformer поддерживает одну service identity с фиксированным owner subject
-`inventory`. Одновременно выпущенные tokens принадлежат тому же owner-у и
-нужны для ротации, а не для разделения Consumer-ов или permissions.
+`inventory`. Это технический owner identifier, а не имя единственного
+допустимого Consumer-а. Одновременно выпущенные tokens принадлежат тому же
+owner-у и могут использоваться для ротации или отдельной передачи Consumer-ам,
+но не создают разные identity, permissions или изоляцию состояния. Соответствие
+`Token ID` конкретному Consumer-у оператор учитывает вне Transformer.
 
 ## Предварительные условия
 
@@ -78,8 +81,8 @@ latency.
 ## Выполнить штатную ротацию
 
 1. Выпустите новый credential командой `auth tokens issue`.
-2. Сохраните и передайте новый `Token` Consumer-у.
-3. Переключите Consumer и подтвердите успешным новым RPC, что credential
+2. Сохраните и передайте новый `Token` соответствующему Consumer-у.
+3. Переключите этого Consumer-а и подтвердите успешным новым RPC, что credential
    принят. `auth tokens list` может дополнительно показать обновлённый
    `Last used`.
 4. Отзовите прежний token по сохранённому `Token ID`.

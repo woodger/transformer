@@ -33,7 +33,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/flight-operations.md` |
-| Inventory integration | `docs/inventory-flight-handoff.md` |
+| Consumer integration | `docs/consumer-flight-integration.md` |
 | Текущие process и dependency boundaries | `docs/policy/architecture.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
@@ -117,7 +117,7 @@ format. README или operations guide не могут переопределя�
 - parser/serializer;
 - contract tests;
 - version/compatibility policy;
-- Inventory handoff.
+- Consumer integration guide.
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
