@@ -26,21 +26,26 @@
 - Migration `0018` физически удаляет прежние revoked token rows, удаляет
   `revoked_at` и оставляет cache notification только для issue/revoke через
   `INSERT/DELETE`.
+- Migration `0019` удаляет token notification trigger и функцию; token rows,
+  expiry index и credentials не меняются.
 
 ### Changed
 
 - Встроенные local, Flight service, PostgreSQL и OpenSearch defaults снова
   собраны в едином `app/config.py`; runtime-specific parsing, validation,
   environment precedence и worker v7 contract не изменены.
-- Flight authentication снова использует PostgreSQL-backed digest cache.
-  Точный subject credential является `owner_subject`; выпуск обновляет cache,
-  revoke физически удаляет token и также обновляет cache без перезапуска
-  сервиса, а срок действия проверяется локально при каждом новом RPC.
+- Flight authentication использует bounded PostgreSQL-backed cache-aside:
+  максимум 1024 положительных digest entries с TTL 15 секунд, без preload,
+  listener и `LISTEN/NOTIFY`. Issue доступен на первом cache miss, а после
+  hard-delete revoke закэшированный token может приниматься ещё максимум
+  15 секунд. Fixed expiration проверяется на каждом новом RPC.
 
 ### Removed
 
 - Удалены Ory Hydra introspection, `HYDRA_ENDPOINT`, OAuth client
   administration и команды `auth clients create|list|delete`.
+- Удалён отдельный `--allow-plaintext`: полная пара TLS certificate/key
+  включает TLS, а отсутствие обоих options выбирает plaintext.
 
 ## [0.1.14] - 2026-08-21
 

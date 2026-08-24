@@ -38,10 +38,7 @@ from app.service.adapters.outbound.postgres.telemetry import (
     PostgresMetricsOutbox,
     PostgresTrainingTelemetry,
 )
-from app.service.adapters.outbound.postgres.token_cache import (
-    AccessTokenCache,
-    AccessTokenCacheService,
-)
+from app.service.adapters.outbound.postgres.token_cache import AccessTokenCache
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.adapters.outbound.worker.process import recover_process_groups
 from app.service.application.ports.devices import DeviceLeaseManager
@@ -60,7 +57,6 @@ from app.service.bootstrap.maintenance import MaintenanceService
 class FlightServiceArguments(Protocol):
     host: str | None
     port: int | None
-    allow_plaintext: bool | None
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
@@ -87,10 +83,6 @@ class _WorkerRuntime(Protocol):
 
 
 class _MaintenanceRuntime(Protocol):
-    def shutdown(self, timeout: float | None = None) -> None: ...
-
-
-class _TokenCacheRuntime(Protocol):
     def shutdown(self, timeout: float | None = None) -> None: ...
 
 
@@ -124,7 +116,6 @@ class FlightApplication:
         worker: _WorkerRuntime,
         metrics: OperationalMetrics,
         logger: JsonLogger,
-        token_cache_service: _TokenCacheRuntime | None = None,
         recovery_store: _LockRuntime | None = None,
         metrics_publisher: _MetricsPublisherRuntime | None = None,
     ) -> None:
@@ -137,7 +128,6 @@ class FlightApplication:
         self.worker = worker
         self.metrics = metrics
         self.logger = logger
-        self.token_cache_service = token_cache_service
         self.recovery_store = recovery_store
         self.metrics_publisher = metrics_publisher
         self._shutdown_lock = threading.Lock()
@@ -186,7 +176,6 @@ class FlightApplication:
         )
         recovery_store = RecoveryStore(recovery_dir).initialize()
         ledger: Ledger | None = None
-        token_cache_service: AccessTokenCacheService | None = None
         worker: WorkerPool | None = None
         coordinator = None
         server: _FlightServerRuntime | None = None
@@ -297,14 +286,9 @@ class FlightApplication:
             removed_telemetry_runs = spool.reconcile_telemetry_directories(
                 metrics_outbox.retained_run_ids()
             )
-            token_cache = AccessTokenCache()
-            token_cache_service = AccessTokenCacheService(
-                database_config,
-                AccessTokenStore(ledger.database),
-                token_cache,
-                logger=logger,
+            token_cache = AccessTokenCache(
+                AccessTokenStore(ledger.database)
             )
-            token_cache_service.start()
             if device_inventory is None:
                 device_inventory = CudaDeviceInventory(
                     logger=logger,
@@ -388,7 +372,6 @@ class FlightApplication:
                 worker,
                 metrics,
                 logger,
-                token_cache_service=token_cache_service,
                 recovery_store=recovery_store,
                 metrics_publisher=metrics_publisher,
             )
@@ -482,7 +465,6 @@ class FlightApplication:
                 worker=worker,
                 maintenance=maintenance,
                 metrics_publisher=metrics_publisher,
-                token_cache_service=token_cache_service,
                 ledger=ledger,
                 spool=spool,
                 recovery_store=recovery_store,
@@ -587,7 +569,6 @@ class FlightApplication:
                 worker=self.worker,
                 maintenance=self.maintenance,
                 metrics_publisher=self.metrics_publisher,
-                token_cache_service=self.token_cache_service,
                 ledger=self.ledger,
                 spool=self.spool,
                 recovery_store=self.recovery_store,
@@ -609,7 +590,6 @@ def run_from_args(args: FlightServiceArguments) -> None:
     overrides = {
         "host": args.host,
         "port": args.port,
-        "allow_plaintext": args.allow_plaintext,
         "tls_cert_file": args.tls_cert_file,
         "tls_key_file": args.tls_key_file,
         "tls_ca_file": args.tls_ca_file,
@@ -625,7 +605,6 @@ def _cleanup_runtime(
     worker: _WorkerRuntime | None,
     maintenance: _MaintenanceRuntime | None,
     metrics_publisher: _MetricsPublisherRuntime | None,
-    token_cache_service: _TokenCacheRuntime | None,
     ledger: _LedgerRuntime | None,
     spool: _LockRuntime,
     recovery_store: _LockRuntime | None = None,
@@ -643,11 +622,6 @@ def _cleanup_runtime(
             else lambda: metrics_publisher.shutdown(maintenance_timeout)
         ),
         None if maintenance is None else lambda: maintenance.shutdown(maintenance_timeout),
-        (
-            None
-            if token_cache_service is None
-            else lambda: token_cache_service.shutdown(maintenance_timeout)
-        ),
         None if ledger is None else ledger.close,
         spool.release_lock,
         (

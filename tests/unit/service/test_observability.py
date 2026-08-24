@@ -63,7 +63,6 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
         FlightServiceConfig(
             runtime_dir=str(tmp_path / "runtime"),
             port=0,
-            allow_plaintext=True,
         ),
         CapabilityCoordinator(),
         StaticAccessTokenAuthenticator({"secret": "inventory"}),

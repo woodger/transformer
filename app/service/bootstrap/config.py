@@ -11,7 +11,6 @@ from app.project import PROJECT_ROOT
 ENV_PREFIX = "TRANSFORMER_"
 LEGACY_ENV_PREFIX = "TRANSFORMER_FLIGHT_"
 _NON_ENVIRONMENT_FIELDS = frozenset({
-    "allow_plaintext",
     "cpu_capacity",
     "host",
     "port",
@@ -28,7 +27,6 @@ class _FlightServiceOverrides(TypedDict, total=False):
     runtime_dir: str
     host: str
     port: int
-    allow_plaintext: bool
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
@@ -57,8 +55,6 @@ class FlightServiceConfig:
     runtime_dir: str = defaults.RUNTIME_DIR_DEFAULT
     host: str = defaults.HOST_DEFAULT
     port: int = defaults.PORT_DEFAULT
-    allow_plaintext: bool = defaults.ALLOW_PLAINTEXT
-
     tls_cert_file: str | None = None
     tls_key_file: str | None = None
     tls_ca_file: str | None = None
@@ -139,9 +135,12 @@ class FlightServiceConfig:
             or port > 65535
         ):
             raise ValueError("port must be between 0 and 65535")
-        for name in ("allow_plaintext", "tls_require_client_cert"):
-            if not isinstance(getattr(self, name), bool):
-                raise ValueError(f"{name} must be a boolean")
+        require_client_cert: object = object.__getattribute__(
+            self,
+            "tls_require_client_cert",
+        )
+        if not isinstance(require_client_cert, bool):
+            raise ValueError("tls_require_client_cert must be a boolean")
 
         cert_set = bool(self.tls_cert_file)
         key_set = bool(self.tls_key_file)
@@ -153,13 +152,6 @@ class FlightServiceConfig:
             raise ValueError("TLS must be enabled when mTLS is required")
         if self.tls_require_client_cert and not self.tls_ca_file:
             raise ValueError("tls_ca_file is required when mTLS is enabled")
-        if not self.tls_enabled:
-            if not self.allow_plaintext:
-                raise ValueError(
-                    "plaintext Flight is disabled; configure TLS or explicitly "
-                    "enable plaintext"
-                )
-
         positive_integers = (
             "max_message_bytes",
             "target_batch_bytes",

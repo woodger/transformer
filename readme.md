@@ -104,6 +104,6 @@ Production-запуск на Fedora через systemd описан в
 tokens, recovery, storage lifecycle и TLS/mTLS собраны в
 [Flight runbook](./docs/flight-operations.md).
 
-Bearer authentication обязательна при любом transport. Plaintext разрешается
-только явным `--allow-plaintext`; не открывайте такой endpoint в недоверенную
-сеть.
+Bearer authentication обязательна при любом transport. Полная пара
+`--tls-cert-file`/`--tls-key-file` включает TLS; без неё endpoint использует
+plaintext, поэтому не открывайте его в недоверенную сеть.

@@ -12,7 +12,9 @@ breaking cutover — в
 индикаторов — в
 [`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md), а transport
 authentication — в
-[`ADR 0018`](adr/0018-postgresql-api-access-tokens.md).
+[`ADR 0018`](adr/0018-postgresql-api-access-tokens.md), а выбранный класс
+решения и cache consistency — в
+[`ADR 0020`](adr/0020-local-opaque-api-access-tokens.md).
 
 ## Требования к runtime
 
@@ -230,6 +232,10 @@ Revision `0018` физически удаляет существующие revok
 на `INSERT/DELETE`. Удалённая revoke history не восстанавливается при
 downgrade.
 
+Revision `0019` удаляет token notification trigger и функцию. Token rows,
+expiry index и credentials не меняются. Downgrade восстанавливает notification
+objects revision `0018`.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -268,16 +274,19 @@ credential через канал secrets, принятый в deployment; не �
 завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
 явного revoke.
 
-Flight-процесс строит в RAM неизменяемый индекс SHA-256 digests активных
-tokens. При authentication вычисляется digest переданного credential и
-проверяется индекс; запрос к PostgreSQL на пути RPC не выполняется.
-PostgreSQL `LISTEN/NOTIFY` вызывает полное обновление cache после выпуска или
-отзыва. После reconnect listener также загружает весь активный набор, поэтому
-PostgreSQL остаётся единственным долговечным источником истины.
-При каждом новом RPC cache локально проверяет `expires_at`, не обращаясь к
-PostgreSQL. `tokens list` показывает `Active` или `Expired` вместе с `Created`
-и `Expires`. Для штатной ротации выпустите и передайте Inventory новый token до
-expiration, затем отзовите прежний по ID; owner-scoped state не изменится.
+Flight-процесс использует пустой при запуске process-local cache-aside SHA-256
+digests: не более 1024 положительных entries с TTL 15 секунд. На cache miss
+выполняется точный lookup digest в PostgreSQL; отрицательные результаты не
+кэшируются. Положительная entry никогда не действует после `expires_at`.
+Preload, отдельный listener connection и PostgreSQL `LISTEN/NOTIFY` не
+используются.
+
+Новый token доступен на первом cache miss. После успешного `revoke` ранее
+закэшированный token может приниматься ещё максимум 15 секунд; это bounded
+revoke latency не требует перезапуска процесса. `tokens list` показывает
+`Active` или `Expired` вместе с `Created` и `Expires`. Для штатной ротации
+выпустите и передайте Inventory новый token до expiration, затем отзовите
+прежний по ID; owner-scoped state не изменится.
 
 ## Настройка Flight service
 
@@ -292,7 +301,6 @@ CLI предоставляет только overrides endpoint и transport:
 ```text
 --host
 --port
---allow-plaintext
 --tls-cert-file
 --tls-key-file
 --tls-ca-file
@@ -305,7 +313,8 @@ CLI предоставляет только overrides endpoint и transport:
 | --- | --- | --- |
 | `HOST_DEFAULT` | `127.0.0.1` | Адрес прослушивания Flight |
 | `PORT_DEFAULT` | `8815` | Порт Flight; значение `0` разрешено в тестах |
-| `ALLOW_PLAINTEXT` | `true` | Разрешить работу без TLS |
+| `ACCESS_TOKEN_CACHE_MAX_ENTRIES` | `1024` | Максимум положительных token cache entries |
+| `ACCESS_TOKEN_CACHE_TTL_SECONDS` | `15.0` | TTL положительной token cache entry и верхняя граница revoke latency |
 | `CPU_WORKERS` | `2` | Число одновременных CPU worker lanes |
 | `RETENTION_SECONDS` | `604800` | Срок хранения terminal jobs |
 
@@ -319,9 +328,10 @@ certificate options команды `flight serve`. Flight v5 определяе�
 `cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
-Certificate и key должны задаваться вместе. `tls-require-client-cert` также
-требует CA file. Plaintext transport разрешён только при явном включении;
-bearer authentication остаётся обязательной во всех transport modes.
+Certificate и key должны задаваться вместе. Их полная пара включает TLS, а
+отсутствие обоих options выбирает plaintext. `tls-require-client-cert` также
+требует CA file. Bearer authentication остаётся обязательной во всех transport
+modes.
 
 ### Квоты и целевые параметры interoperability
 
@@ -364,7 +374,6 @@ Production-запуск определён только в
 
 ```bash
 ./.venv/bin/python ./app/main.py flight serve \
-  --allow-plaintext \
   --host=127.0.0.1 \
   --port=8815
 ```
@@ -409,7 +418,7 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    `AVAILABLE` и ожидающие удаления `DELETING` generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
-10. загружает cache API tokens и запускает notification listener;
+10. создаёт пустой bounded cache-aside API tokens без preload и listener;
 11. загружает `QUEUED` и `RETRYING` jobs в in-memory device queues, запускает
     workers и maintenance; дальнейшая сверка в maintenance cycle
     восстанавливает потерянные queue notifications;
@@ -437,8 +446,8 @@ EOF незавершённая нулевая epoch намеренно повт�
 
 При SIGINT/SIGTERM процесс закрывает границу claim очереди, помечает себя как
 draining, прекращает приём RPC work, ожидает running work и отменяет оставшиеся
-worker groups. Maintenance и token listener останавливаются до закрытия pool
-соединений PostgreSQL и освобождения runtime lock.
+worker groups. Maintenance останавливается до закрытия pool соединений
+PostgreSQL и освобождения runtime lock.
 
 ## Хранение и ошибки хранилища
 
@@ -547,8 +556,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 - Transformer владеет checkpoints; клиенты получают только opaque значения
   `modelRef`.
 - Output tickets краткоживущие и не являются ссылками на модель.
-- Доступность plaintext задаётся `ALLOW_PLAINTEXT` в `app/config.py`; option
-  `--allow-plaintext` может включить
-  её для одного процесса.
+- Наличие полной пары TLS certificate/key выбирает TLS; отсутствие обоих
+  options выбирает plaintext.
 - Interoperability Node → PyArrow и физическое поведение CUDA требуют отдельной
   проверки в целевом окружении.

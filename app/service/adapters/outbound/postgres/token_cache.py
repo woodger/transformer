@@ -1,163 +1,134 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import threading
-from collections.abc import Mapping
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from types import MappingProxyType
+from typing import cast
 
-import psycopg
-
-from app.service.adapters.observability import JsonLogger
-from app.service.adapters.outbound.postgres.config import DatabaseConfig
+from app import config as defaults
 from app.service.adapters.outbound.postgres.tokens import AccessTokenStore
 from app.service.application.ports.authentication import InvalidAccessTokenError
 from app.service.domain.access import AuthIdentity
 from app.service.domain.authentication import AuthenticatedPrincipal
 
-_NOTIFY_CHANNEL = "transformer_auth_tokens"
+
+@dataclass(frozen=True, slots=True)
+class _CacheEntry:
+    identity: AuthIdentity
+    deadline: float
 
 
 class AccessTokenCache:
-    """Immutable digest index swapped atomically after PostgreSQL changes."""
+    """Authenticate token digests through a bounded PostgreSQL cache-aside."""
 
-    def __init__(self) -> None:
-        self._entries: Mapping[str, AuthIdentity] = MappingProxyType({})
+    def __init__(
+        self,
+        store: AccessTokenStore,
+        *,
+        ttl_seconds: float = defaults.ACCESS_TOKEN_CACHE_TTL_SECONDS,
+        max_entries: int = defaults.ACCESS_TOKEN_CACHE_MAX_ENTRIES,
+    ) -> None:
+        ttl_value = cast(object, ttl_seconds)
+        if (
+            isinstance(ttl_value, bool)
+            or not isinstance(ttl_value, (int, float))
+            or not math.isfinite(ttl_value)
+            or ttl_value <= 0
+        ):
+            raise ValueError("access token cache TTL must be positive and finite")
+        capacity_value = cast(object, max_entries)
+        if (
+            isinstance(capacity_value, bool)
+            or not isinstance(capacity_value, int)
+            or capacity_value <= 0
+        ):
+            raise ValueError("access token cache capacity must be positive")
+        self.store = store
+        self.ttl_seconds = float(ttl_value)
+        self.max_entries = capacity_value
+        self._entries: OrderedDict[str, _CacheEntry] = OrderedDict()
         self._lock = threading.Lock()
-
-    def reload(self, store: AccessTokenStore) -> int:
-        entries = {
-            digest: AuthIdentity(
-                token_id=token_id,
-                subject=subject,
-                expires_at=expires_at,
-            )
-            for digest, token_id, subject, expires_at in store.active_credentials()
-        }
-        with self._lock:
-            self._entries = MappingProxyType(entries)
-        return len(entries)
-
-    def lookup(self, token: str) -> AuthIdentity | None:
-        entries = self._entries
-        return entries.get(_digest(token))
 
     def authenticate(
         self,
         access_token: str,
         *,
         now: datetime | None = None,
+        monotonic_now: float | None = None,
     ) -> AuthenticatedPrincipal:
-        identity = self.lookup(access_token)
         current_time = datetime.now(UTC) if now is None else now
-        if identity is None or identity.expires_at <= current_time:
-            raise InvalidAccessTokenError("access token is inactive")
+        current_monotonic = (
+            time.monotonic() if monotonic_now is None else monotonic_now
+        )
+        digest = _digest(access_token)
+        identity = self._cached_identity(
+            digest,
+            now=current_time,
+            monotonic_now=current_monotonic,
+        )
+        if identity is None:
+            identity = self.store.active_credential(
+                digest,
+                now=current_time,
+            )
+            if identity is None or identity.expires_at <= current_time:
+                raise InvalidAccessTokenError("access token is inactive")
+            self._store_identity(
+                digest,
+                identity,
+                now=current_time,
+                monotonic_now=current_monotonic,
+            )
         return AuthenticatedPrincipal(owner_subject=identity.subject)
 
-
-class AccessTokenCacheService:
-    """Keep the RAM cache current via PostgreSQL LISTEN/NOTIFY."""
-
-    def __init__(
+    def _cached_identity(
         self,
-        database_config: DatabaseConfig,
-        store: AccessTokenStore,
-        cache: AccessTokenCache,
+        digest: str,
         *,
-        logger: JsonLogger | None = None,
+        now: datetime,
+        monotonic_now: float,
+    ) -> AuthIdentity | None:
+        with self._lock:
+            entry = self._entries.get(digest)
+            if entry is None:
+                return None
+            if (
+                monotonic_now >= entry.deadline
+                or now >= entry.identity.expires_at
+            ):
+                del self._entries[digest]
+                return None
+            self._entries.move_to_end(digest)
+            return entry.identity
+
+    def _store_identity(
+        self,
+        digest: str,
+        identity: AuthIdentity,
+        *,
+        now: datetime,
+        monotonic_now: float,
     ) -> None:
-        self.database_config = database_config
-        self.store = store
-        self.cache = cache
-        self.logger = logger or JsonLogger()
-        self._stop = threading.Event()
-        self._ready = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._startup_error: BaseException | None = None
-
-    def start(self, timeout: float = 10.0) -> AccessTokenCacheService:
-        if self._thread is not None:
-            return self
-        self._thread = threading.Thread(
-            target=self._run,
-            name="transformer-auth-token-listener",
-            daemon=False,
-        )
-        self._thread.start()
-        if not self._ready.wait(timeout):
-            self.shutdown(timeout=2.0)
-            if self._startup_error is not None:
-                raise RuntimeError(
-                    "failed to initialize API token cache"
-                ) from self._startup_error
-            raise RuntimeError("timed out while initializing API token cache")
-        if self._startup_error is not None:
-            error = self._startup_error
-            self.shutdown(timeout=2.0)
-            raise RuntimeError(
-                "failed to initialize API token cache"
-            ) from error
-        return self
-
-    def shutdown(self, timeout: float | None = None) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout)
-            if self._thread.is_alive():
-                raise RuntimeError(
-                    "API token listener did not stop before timeout"
-                )
-            self._thread = None
-
-    def _run(self) -> None:
-        initial = True
-        retry_seconds = 0.25
-        while not self._stop.is_set():
-            try:
-                with psycopg.connect(
-                    host=self.database_config.host,
-                    dbname=self.database_config.database,
-                    user=self.database_config.user,
-                    password=self.database_config.password,
-                    port=self.database_config.port,
-                    autocommit=True,
-                ) as connection:
-                    connection.execute(f"LISTEN {_NOTIFY_CHANNEL}")
-                    count = self.cache.reload(self.store)
-                    self.logger.event(
-                        "flight.auth.cache.loaded",
-                        activeTokens=count,
-                    )
-                    self._startup_error = None
-                    self._ready.set()
-                    initial = False
-                    retry_seconds = 0.25
-                    while not self._stop.is_set():
-                        notifications = tuple(
-                            connection.notifies(timeout=1.0, stop_after=1)
-                        )
-                        if notifications:
-                            count = self.cache.reload(self.store)
-                            self.logger.event(
-                                "flight.auth.cache.reloaded",
-                                activeTokens=count,
-                            )
-            except BaseException as exc:
-                self._startup_error = exc
-                self.logger.event(
-                    "flight.auth.cache.connection_lost",
-                    errorType=type(exc).__name__,
-                )
-                if initial and retry_seconds >= 4.0:
-                    self._ready.set()
-                    return
-                if self._stop.wait(retry_seconds):
-                    return
-                retry_seconds = min(retry_seconds * 2, 4.0)
+        remaining_seconds = (identity.expires_at - now).total_seconds()
+        ttl_seconds = min(self.ttl_seconds, remaining_seconds)
+        if ttl_seconds <= 0:
+            return
+        with self._lock:
+            self._entries[digest] = _CacheEntry(
+                identity=identity,
+                deadline=monotonic_now + ttl_seconds,
+            )
+            self._entries.move_to_end(digest)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
 
 
 def _digest(token: str) -> str:
     return hashlib.sha256(token.encode("ascii")).hexdigest()
 
 
-__all__ = ["AccessTokenCache", "AccessTokenCacheService"]
+__all__ = ["AccessTokenCache"]

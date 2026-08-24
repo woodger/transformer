@@ -10,7 +10,11 @@ from sqlalchemy import select
 
 from app.service.adapters.outbound.postgres.models import ApiAccessToken
 from app.service.adapters.outbound.postgres.session import Database
-from app.service.domain.access import AccessTokenRecord, access_token_expiration
+from app.service.domain.access import (
+    AccessTokenRecord,
+    AuthIdentity,
+    access_token_expiration,
+)
 
 
 class AccessTokenStore:
@@ -59,24 +63,28 @@ class AccessTokenStore:
             session.flush()
             return deleted
 
-    def active_credentials(self) -> list[tuple[str, str, str, datetime]]:
-        """Return credential digests for the in-process authentication cache."""
-        now = datetime.now(UTC)
+    def active_credential(
+        self,
+        token_digest: str,
+        *,
+        now: datetime | None = None,
+    ) -> AuthIdentity | None:
+        current_time = datetime.now(UTC) if now is None else now
         with self.database.session() as session:
-            records = session.scalars(
+            record = session.scalar(
                 select(ApiAccessToken)
-                .where(ApiAccessToken.expires_at > now)
-                .order_by(ApiAccessToken.token_id)
-            )
-            return [
-                (
-                    record.token_digest,
-                    record.token_id,
-                    record.subject,
-                    record.expires_at,
+                .where(
+                    ApiAccessToken.token_digest == token_digest,
+                    ApiAccessToken.expires_at > current_time,
                 )
-                for record in records
-            ]
+            )
+            if record is None:
+                return None
+            return AuthIdentity(
+                token_id=record.token_id,
+                subject=record.subject,
+                expires_at=record.expires_at,
+            )
 
 
 def _record(

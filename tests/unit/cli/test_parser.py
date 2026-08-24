@@ -424,7 +424,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    normalized_output = " ".join(output.split())
 
     assert "usage: transformer flight serve [options]" in output
     assert "Run the durable Arrow Flight service for fit and predict jobs." in output
@@ -443,7 +442,6 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     option_labels = (
         "--host HOST",
         "--port PORT",
-        "--allow-plaintext",
         "--tls-cert-file FILE",
         "--tls-key-file FILE",
         "--tls-ca-file FILE",
@@ -463,7 +461,7 @@ def test_flight_serve_help_documents_configuration_contract(capsys):
     )
     stripped_lines = {line.strip() for line in output.splitlines()}
     assert set(expected_multiline_entries) <= stripped_lines
-    assert "Allow serving without TLS." in normalized_output
+    assert "--allow-plaintext" not in output
     assert "--bearer-tokens-file" not in output
     assert "--profile" not in output
     assert "--config" not in output

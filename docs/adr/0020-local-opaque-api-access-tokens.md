@@ -133,9 +133,10 @@ availability error. Ещё действующая положительная ent
 до своей обычной границы TTL и `expires_at`. Перезапуск процесса полностью
 очищает cache.
 
-Точные capacity и cache TTL являются implementation constants, но обязаны быть
-конечными, проверяемыми тестами и задокументированными вместе с максимальной
-revoke latency. Они не меняют fixed token expiration.
+Текущие implementation constants ограничивают cache 1024 положительными
+entries и задают TTL 15 секунд. Следовательно, максимальная revoke latency
+равна 15 секундам. Эти bounds проверяются тестами и не меняют fixed token
+expiration.
 
 ### Security boundary и TLS
 
@@ -145,11 +146,12 @@ Bearer является replayable secret: любой, кто получил е�
 немедленного использования credentials, но не защищает token в памяти
 Consumer-а, command output или network transport.
 
-Production transport, передающий Bearer между Consumer и Transformer, требует
-TLS с проверкой identity server-а. Plaintext допустим только как явно
-небезопасный локальный diagnostic mode с временным credential и не является
-поддерживаемой production security boundary. mTLS может дополнительно защищать
-канал, но не заменяет Bearer lifecycle и owner identity.
+Transport mode определяется только certificate options: полная пара
+`--tls-cert-file`/`--tls-key-file` включает TLS, а отсутствие обоих options
+означает plaintext. Отдельного plaintext switch нет. При передаче Bearer через
+недоверенную сеть deployment обязан использовать TLS с проверкой identity
+server-а; plaintext сам по себе не обеспечивает confidentiality. mTLS может
+дополнительно защищать канал, но не заменяет Bearer lifecycle и owner identity.
 
 Credentials не помещаются в repository, shell history, command arguments,
 structured logs или exception text. Operator передаёт новый Bearer Consumer-у
@@ -202,20 +204,13 @@ Python modules остаются implementation/operations details при сох�
 ADR 0018 остаётся историей текущего CLI, token format, PostgreSQL schema и
 migrations. Его решение о полном `LISTEN/NOTIFY` index заменено этим ADR.
 
-## Состояние реализации при принятии
+## Состояние реализации
 
-Digest-only persistence, отдельный `token_id`, fixed expiration, hard delete и
-отсутствие OAuth claims уже реализованы. Два элемента ещё не соответствуют
-этому ADR:
-
-- `AccessTokenCacheService` загружает полный index и использует PostgreSQL
-  `LISTEN/NOTIFY`;
-- production systemd contract запускает Flight с `--allow-plaintext`.
-
-Приведение cache и production TLS к принятому решению является отдельной
-implementation/deployment задачей. До её завершения текущая revoke propagation
-и transport security соответствуют ADR 0018 и действующему deployment
-contract, а не целевой модели этого ADR.
+Digest-only persistence, отдельный `token_id`, fixed expiration, hard delete,
+отсутствие OAuth claims и bounded cache-aside реализованы. Migration `0019`
+удаляет token notification trigger и функцию. Runtime не выполняет preload, не
+создаёт listener connection и не использует PostgreSQL `LISTEN/NOTIFY`.
+Transport выбирается только наличием полной пары certificate/key options.
 
 ## Последствия
 
@@ -223,8 +218,8 @@ contract, а не целевой модели этого ADR.
   реализовывать generation, storage, rotation, expiration и revoke.
 - PostgreSQL остаётся единственным долговечным authority authentication state;
   отдельный identity service не требуется.
-- Issue виден без notification propagation, но revoke имеет документированную
-  верхнюю границу задержки cache TTL.
+- Issue виден на первом cache miss, но revoke имеет документированную верхнюю
+  границу задержки 15 секунд.
 - Hard delete минимизирует metadata, но исключает встроенную revoke audit
   history.
 - Database availability требуется на cache miss; cache не становится вторым

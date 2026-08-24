@@ -43,7 +43,6 @@ class CliArguments(Protocol):
     plots_dir: str
     host: str | None
     port: int | None
-    allow_plaintext: bool | None
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None

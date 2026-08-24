@@ -63,7 +63,7 @@ snapshots = {}
 
 from app.cli.parser import build_parser
 parser = build_parser()
-parser.parse_args(["flight", "serve", "--allow-plaintext"])
+parser.parse_args(["flight", "serve"])
 parser.parse_args(["db", "migrations", "status"])
 snapshots["cli"] = {
     "mlModules": sorted(

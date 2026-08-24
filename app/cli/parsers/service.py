@@ -46,12 +46,6 @@ def add_service_parsers(subparsers: SubparserTarget) -> None:
         help=f"Listen port. (default: {PORT_DEFAULT})",
     )
     service.add_argument(
-        "--allow-plaintext",
-        action="store_true",
-        default=None,
-        help="Allow serving without TLS.",
-    )
-    service.add_argument(
         "--tls-cert-file",
         default=None,
         metavar="FILE",

@@ -12,6 +12,8 @@
 [`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md). Transport
 authentication закреплена в
 [`ADR 0018`](adr/0018-postgresql-api-access-tokens.md).
+Класс token verification и bounded revoke latency закреплены в
+[`ADR 0020`](adr/0020-local-opaque-api-access-tokens.md).
 
 Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,

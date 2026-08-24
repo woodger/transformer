@@ -44,7 +44,8 @@
 
 - bearer authentication действует для каждого Flight transport; owner identity
   равна точному subject PostgreSQL-backed API token;
-- plaintext разрешается только явно;
+- полная пара TLS certificate/key включает TLS, а отсутствие обоих параметров
+  выбирает plaintext;
 - сбой сбора, конфигурации или доставки telemetry не меняет результат fit,
   model lifecycle, startup или shutdown; transport profile определяется
   deployment policy;

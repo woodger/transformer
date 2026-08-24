@@ -47,7 +47,7 @@ Wants=network-online.target
 Type=exec
 User=nerv
 
-ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815 --allow-plaintext
+ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815
 
 Restart=on-failure
 RestartSec=5

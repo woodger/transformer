@@ -50,7 +50,7 @@ systemd — [deployment guide](./deployment/systemd.md).
 календарных месяца и выводит token ID, expiration time и новый credential вида
 `a.<base64url>`. Сохраните credential в secret storage клиентского приложения;
 не помещайте его в repository, логи или server `.env`. Перезапуск Transformer
-не требуется: token cache обновляется автоматически. Выпустите и передайте
+не требуется: новый token доступен при первом cache miss. Выпустите и передайте
 Consumer-у новый token до `expires_at`, затем отзовите прежний по ID.
 
 ## Отозвать API-токен
@@ -74,10 +74,11 @@ Consumer-у новый token до `expires_at`, затем отзовите пр
   35dc6236-cfb9-4ac7-80db-320db21ef463
 ```
 
-Используйте именно token ID, а не credential вида `a.<base64url>`. Перезапуск
-Transformer не требуется: token cache обновляется автоматически. Успешный
-revoke физически удаляет token row; повторный вызов для того же ID возвращает
-`not found`. Подробности управления токенами находятся в
+Используйте именно token ID, а не credential вида `a.<base64url>`. Успешный
+revoke физически удаляет token row; ранее закэшированный credential может
+приниматься ещё максимум 15 секунд. Перезапуск Transformer не требуется, а
+повторный revoke того же ID возвращает `not found`. Подробности управления
+токенами находятся в
 [Flight runbook](./flight-operations.md#токены-доступа-api).
 
 ## Локальное обучение и prediction
