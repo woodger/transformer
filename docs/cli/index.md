@@ -70,7 +70,7 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v3 содержит model config и `feature_dim`, поэтому при prediction
+Checkpoint v4 содержит model config и `feature_dim`, поэтому при prediction
 model options передавать не требуется. Явно переданные `--seq-len`, `--hidden`,
 `--layers`, `--dropout`, `--nhead` и `--mode` — это проверка: значение должно
 совпасть с checkpoint, иначе команда завершится, например, ошибкой

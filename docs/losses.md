@@ -1,5 +1,7 @@
 # Функция потерь
 
+> Тип: справочник. Текущая семантика loss stages и model heads.
+
 Нормативную public target identity задаёт текущий
 [`Flight v5 contract`](../app/contracts/flight/v5/README.md). Внутри worker
 модель возвращает семь значений: шесть public heads и один private Gaussian

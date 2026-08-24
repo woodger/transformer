@@ -1,5 +1,8 @@
 # Сервис Transformer Arrow Flight: операционное руководство v5
 
+> Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
+> текущего Flight service.
+
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
 [`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
