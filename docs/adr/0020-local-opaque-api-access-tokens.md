@@ -85,9 +85,9 @@ contract.
 ### Persistence и lifecycle
 
 PostgreSQL хранит только SHA-256 digest Bearer credential и его metadata:
-`token_id`, owner subject, `created_at` и `expires_at`. Исходный Bearer
-показывается один раз при issue и не сохраняется в database, logs, errors или
-cache entries.
+`token_id`, owner subject, `created_at`, nullable `last_used_at` и `expires_at`.
+Исходный Bearer показывается один раз при issue и не сохраняется в database,
+logs, errors или cache entries.
 
 SHA-256 используется не как password hash, а как необратимый lookup key для
 credential с криптографически случайной высокой entropy. Медленный
@@ -123,9 +123,19 @@ authorization semantics.
 
 PostgreSQL `LISTEN/NOTIFY`, notification trigger, полный preload всех активных
 tokens и отдельный listener connection не используются. Новый token доступен
-на первом cache miss. После физического revoke уже закэшированное положительное
-решение может оставаться действительным не дольше максимального cache TTL;
-немедленный distributed revoke не является свойством этого класса решения.
+на первом cache miss. Одновременные misses одного digest внутри процесса
+объединяются в одну PostgreSQL revalidation. Неизвестный, удалённый или
+истёкший token не создаёт cache entry.
+
+Успешная revalidation атомарно проверяет digest и fixed expiration, обновляет
+`last_used_at` и возвращает identity. Cache hits не изменяют PostgreSQL,
+поэтому `last_used_at` является временем последней persisted revalidation, а
+не точным audit timestamp каждого RPC, и может отставать от фактического
+последнего использования не более чем на cache TTL.
+
+После физического revoke уже закэшированное положительное решение может
+оставаться действительным не дольше максимального cache TTL; немедленный
+distributed revoke не является свойством этого класса решения.
 
 При cache miss или истечении entry PostgreSQL обязателен для нового решения.
 Database failure не превращается в `UNAUTHENTICATED`: запрос получает
@@ -134,9 +144,10 @@ availability error. Ещё действующая положительная ent
 очищает cache.
 
 Текущие implementation constants ограничивают cache 1024 положительными
-entries и задают TTL 15 секунд. Следовательно, максимальная revoke latency
-равна 15 секундам. Эти bounds проверяются тестами и не меняют fixed token
-expiration.
+entries и задают окно повторной проверки 60 секунд. Следовательно,
+максимальная revoke latency и точность persisted `last_used_at` ограничены
+60 секундами. Эти bounds проверяются тестами и не меняют fixed token
+expiration. LRU eviction может вызвать revalidation раньше этой границы.
 
 ### Security boundary и TLS
 
@@ -208,9 +219,10 @@ migrations. Его решение о полном `LISTEN/NOTIFY` index заме
 
 Digest-only persistence, отдельный `token_id`, fixed expiration, hard delete,
 отсутствие OAuth claims и bounded cache-aside реализованы. Migration `0019`
-удаляет token notification trigger и функцию. Runtime не выполняет preload, не
-создаёт listener connection и не использует PostgreSQL `LISTEN/NOTIFY`.
-Transport выбирается только наличием полной пары certificate/key options.
+удаляет token notification trigger и функцию, а migration `0020` добавляет
+nullable `last_used_at`. Runtime не выполняет preload, не создаёт listener
+connection и не использует PostgreSQL `LISTEN/NOTIFY`. Transport выбирается
+только наличием полной пары certificate/key options.
 
 ## Последствия
 
@@ -219,7 +231,9 @@ Transport выбирается только наличием полной пар
 - PostgreSQL остаётся единственным долговечным authority authentication state;
   отдельный identity service не требуется.
 - Issue виден на первом cache miss, но revoke имеет документированную верхнюю
-  границу задержки 15 секунд.
+  границу задержки 60 секунд.
+- `last_used_at` показывает последнее persisted окно использования с точностью
+  до 60 секунд и не является audit log каждого RPC.
 - Hard delete минимизирует metadata, но исключает встроенную revoke audit
   history.
 - Database availability требуется на cache miss; cache не становится вторым

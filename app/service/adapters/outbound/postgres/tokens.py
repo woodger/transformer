@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.service.adapters.outbound.postgres.models import ApiAccessToken
 from app.service.adapters.outbound.postgres.session import Database
@@ -63,20 +63,22 @@ class AccessTokenStore:
             session.flush()
             return deleted
 
-    def active_credential(
+    def use_active_credential(
         self,
         token_digest: str,
         *,
         now: datetime | None = None,
     ) -> AuthIdentity | None:
         current_time = datetime.now(UTC) if now is None else now
-        with self.database.session() as session:
+        with self.database.transaction() as session:
             record = session.scalar(
-                select(ApiAccessToken)
+                update(ApiAccessToken)
                 .where(
                     ApiAccessToken.token_digest == token_digest,
                     ApiAccessToken.expires_at > current_time,
                 )
+                .values(last_used_at=current_time)
+                .returning(ApiAccessToken)
             )
             if record is None:
                 return None
@@ -97,6 +99,7 @@ def _record(
         subject=record.subject,
         created_at=record.created_at,
         expires_at=record.expires_at,
+        last_used_at=record.last_used_at,
         token=token,
     )
 

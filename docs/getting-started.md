@@ -76,7 +76,7 @@ Consumer-у новый token до `expires_at`, затем отзовите пр
 
 Используйте именно token ID, а не credential вида `a.<base64url>`. Успешный
 revoke физически удаляет token row; ранее закэшированный credential может
-приниматься ещё максимум 15 секунд. Перезапуск Transformer не требуется, а
+приниматься ещё максимум 60 секунд. Перезапуск Transformer не требуется, а
 повторный revoke того же ID возвращает `not found`. Подробности управления
 токенами находятся в
 [Flight runbook](./flight-operations.md#токены-доступа-api).

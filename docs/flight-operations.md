@@ -236,6 +236,10 @@ Revision `0019` удаляет token notification trigger и функцию. Tok
 expiry index и credentials не меняются. Downgrade восстанавливает notification
 objects revision `0018`.
 
+Revision `0020` добавляет nullable `last_used_at`. Существующие и новые tokens
+имеют значение `NULL` до первой успешной PostgreSQL revalidation. Downgrade
+удаляет только эти usage metadata.
+
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
 после commit, а единый maintenance cycle периодически сверяет с PostgreSQL
@@ -275,18 +279,23 @@ credential через канал secrets, принятый в deployment; не �
 явного revoke.
 
 Flight-процесс использует пустой при запуске process-local cache-aside SHA-256
-digests: не более 1024 положительных entries с TTL 15 секунд. На cache miss
-выполняется точный lookup digest в PostgreSQL; отрицательные результаты не
-кэшируются. Положительная entry никогда не действует после `expires_at`.
-Preload, отдельный listener connection и PostgreSQL `LISTEN/NOTIFY` не
-используются.
+digests: не более 1024 положительных entries с окном повторной проверки
+60 секунд. На cache miss одна atomic PostgreSQL operation проверяет digest и
+`expires_at`, обновляет `last_used_at` и возвращает identity. Одновременные
+misses одного digest объединяются в одну operation. Неизвестные, удалённые и
+истёкшие tokens не кэшируются. Положительная entry никогда не действует после
+`expires_at`. Preload, отдельный listener connection и PostgreSQL
+`LISTEN/NOTIFY` не используются.
 
 Новый token доступен на первом cache miss. После успешного `revoke` ранее
-закэшированный token может приниматься ещё максимум 15 секунд; это bounded
-revoke latency не требует перезапуска процесса. `tokens list` показывает
-`Active` или `Expired` вместе с `Created` и `Expires`. Для штатной ротации
-выпустите и передайте Inventory новый token до expiration, затем отзовите
-прежний по ID; owner-scoped state не изменится.
+закэшированный token может приниматься ещё максимум 60 секунд; это bounded
+revoke latency не требует перезапуска процесса. Cache hits не записываются в
+PostgreSQL, поэтому `last_used_at` может отставать от последнего RPC максимум
+на 60 секунд и не является audit timestamp каждого вызова. `tokens list`
+показывает `ID`, `Status`, `Last used` и `Expires`; до первого использования
+выводится `Never`. Для штатной ротации выпустите и передайте Inventory новый
+token до expiration, затем отзовите прежний по ID; owner-scoped state не
+изменится.
 
 ## Настройка Flight service
 
@@ -314,7 +323,7 @@ CLI предоставляет только overrides endpoint и transport:
 | `HOST_DEFAULT` | `127.0.0.1` | Адрес прослушивания Flight |
 | `PORT_DEFAULT` | `8815` | Порт Flight; значение `0` разрешено в тестах |
 | `ACCESS_TOKEN_CACHE_MAX_ENTRIES` | `1024` | Максимум положительных token cache entries |
-| `ACCESS_TOKEN_CACHE_TTL_SECONDS` | `15.0` | TTL положительной token cache entry и верхняя граница revoke latency |
+| `ACCESS_TOKEN_CACHE_TTL_SECONDS` | `60.0` | Окно revalidation и верхняя граница revoke latency |
 | `CPU_WORKERS` | `2` | Число одновременных CPU worker lanes |
 | `RETENTION_SECONDS` | `604800` | Срок хранения terminal jobs |
 

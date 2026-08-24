@@ -28,6 +28,8 @@
   `INSERT/DELETE`.
 - Migration `0019` удаляет token notification trigger и функцию; token rows,
   expiry index и credentials не меняются.
+- Migration `0020` добавляет nullable `last_used_at`, обновляемый при успешной
+  PostgreSQL revalidation token.
 
 ### Changed
 
@@ -35,10 +37,12 @@
   собраны в едином `app/config.py`; runtime-specific parsing, validation,
   environment precedence и worker v7 contract не изменены.
 - Flight authentication использует bounded PostgreSQL-backed cache-aside:
-  максимум 1024 положительных digest entries с TTL 15 секунд, без preload,
-  listener и `LISTEN/NOTIFY`. Issue доступен на первом cache miss, а после
-  hard-delete revoke закэшированный token может приниматься ещё максимум
-  15 секунд. Fixed expiration проверяется на каждом новом RPC.
+  максимум 1024 положительных digest entries с окном повторной проверки
+  60 секунд, single-flight для одновременных misses и без preload, listener или
+  `LISTEN/NOTIFY`. Успешная revalidation обновляет `last_used_at`, неизвестные
+  tokens не кэшируются, а после hard-delete revoke закэшированный token может
+  приниматься ещё максимум 60 секунд. Fixed expiration проверяется на каждом
+  новом RPC. `auth tokens list` показывает `Last used` вместо `Created`.
 
 ### Removed
 

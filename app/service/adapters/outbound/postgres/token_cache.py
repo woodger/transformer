@@ -5,6 +5,7 @@ import math
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -51,6 +52,7 @@ class AccessTokenCache:
         self.ttl_seconds = float(ttl_value)
         self.max_entries = capacity_value
         self._entries: OrderedDict[str, _CacheEntry] = OrderedDict()
+        self._inflight: dict[str, Future[AuthIdentity | None]] = {}
         self._lock = threading.Lock()
 
     def authenticate(
@@ -71,19 +73,64 @@ class AccessTokenCache:
             monotonic_now=current_monotonic,
         )
         if identity is None:
-            identity = self.store.active_credential(
+            identity = self._authenticate_singleflight(
                 digest,
-                now=current_time,
-            )
-            if identity is None or identity.expires_at <= current_time:
-                raise InvalidAccessTokenError("access token is inactive")
-            self._store_identity(
-                digest,
-                identity,
                 now=current_time,
                 monotonic_now=current_monotonic,
             )
+        if identity is None or identity.expires_at <= current_time:
+            raise InvalidAccessTokenError("access token is inactive")
         return AuthenticatedPrincipal(owner_subject=identity.subject)
+
+    def _authenticate_singleflight(
+        self,
+        digest: str,
+        *,
+        now: datetime,
+        monotonic_now: float,
+    ) -> AuthIdentity | None:
+        with self._lock:
+            identity = self._cached_identity_locked(
+                digest,
+                now=now,
+                monotonic_now=monotonic_now,
+            )
+            if identity is not None:
+                return identity
+            pending = self._inflight.get(digest)
+            if pending is None:
+                pending = Future[AuthIdentity | None]()
+                self._inflight[digest] = pending
+                is_leader = True
+            else:
+                is_leader = False
+
+        if not is_leader:
+            return pending.result()
+
+        try:
+            identity = self.store.use_active_credential(
+                digest,
+                now=now,
+            )
+            if identity is not None and identity.expires_at <= now:
+                identity = None
+            with self._lock:
+                if identity is not None:
+                    self._store_identity_locked(
+                        digest,
+                        identity,
+                        now=now,
+                        monotonic_now=monotonic_now,
+                    )
+                pending.set_result(identity)
+                self._inflight.pop(digest, None)
+        except BaseException as exc:
+            with self._lock:
+                pending.set_exception(exc)
+                self._inflight.pop(digest, None)
+            raise
+        return identity
 
     def _cached_identity(
         self,
@@ -93,19 +140,32 @@ class AccessTokenCache:
         monotonic_now: float,
     ) -> AuthIdentity | None:
         with self._lock:
-            entry = self._entries.get(digest)
-            if entry is None:
-                return None
-            if (
-                monotonic_now >= entry.deadline
-                or now >= entry.identity.expires_at
-            ):
-                del self._entries[digest]
-                return None
-            self._entries.move_to_end(digest)
-            return entry.identity
+            return self._cached_identity_locked(
+                digest,
+                now=now,
+                monotonic_now=monotonic_now,
+            )
 
-    def _store_identity(
+    def _cached_identity_locked(
+        self,
+        digest: str,
+        *,
+        now: datetime,
+        monotonic_now: float,
+    ) -> AuthIdentity | None:
+        entry = self._entries.get(digest)
+        if entry is None:
+            return None
+        if (
+            monotonic_now >= entry.deadline
+            or now >= entry.identity.expires_at
+        ):
+            del self._entries[digest]
+            return None
+        self._entries.move_to_end(digest)
+        return entry.identity
+
+    def _store_identity_locked(
         self,
         digest: str,
         identity: AuthIdentity,
@@ -117,14 +177,13 @@ class AccessTokenCache:
         ttl_seconds = min(self.ttl_seconds, remaining_seconds)
         if ttl_seconds <= 0:
             return
-        with self._lock:
-            self._entries[digest] = _CacheEntry(
-                identity=identity,
-                deadline=monotonic_now + ttl_seconds,
-            )
-            self._entries.move_to_end(digest)
-            while len(self._entries) > self.max_entries:
-                self._entries.popitem(last=False)
+        self._entries[digest] = _CacheEntry(
+            identity=identity,
+            deadline=monotonic_now + ttl_seconds,
+        )
+        self._entries.move_to_end(digest)
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
 
 
 def _digest(token: str) -> str:

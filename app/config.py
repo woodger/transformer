@@ -5,7 +5,7 @@ from app.project import PROJECT_NAME
 
 # API access token authentication.
 ACCESS_TOKEN_CACHE_MAX_ENTRIES = 1024
-ACCESS_TOKEN_CACHE_TTL_SECONDS = 15.0
+ACCESS_TOKEN_CACHE_TTL_SECONDS = 60.0
 
 # Local runtime.
 DEFAULT_DEVICE = "cpu"

@@ -7,15 +7,17 @@ from app.service.domain.access import AccessTokenRecord
 
 TOKEN_ID = "12345678-1234-4234-8234-123456789abc"
 CREATED_AT = datetime(2026, 8, 23, 12, 30, tzinfo=UTC)
+LAST_USED_AT = datetime(2026, 8, 24, 12, 30, tzinfo=UTC)
 EXPIRES_AT = datetime(2026, 11, 23, 12, 30, tzinfo=UTC)
 
 
-def _record(*, expired=False, token=None):
+def _record(*, expired=False, last_used_at=LAST_USED_AT, token=None):
     return AccessTokenRecord(
         token_id=TOKEN_ID,
         subject="inventory",
         created_at=CREATED_AT,
         expires_at=(CREATED_AT if expired else EXPIRES_AT),
+        last_used_at=last_used_at,
         token=token,
     )
 
@@ -35,7 +37,7 @@ def test_token_output_contract_is_aligned(capsys):
     for heading, value in (
         ("ID", TOKEN_ID),
         ("Status", "Active"),
-        ("Created", CREATED_AT.isoformat()),
+        ("Last used", LAST_USED_AT.isoformat()),
         ("Expires", EXPIRES_AT.isoformat()),
     ):
         offset = lines[3].index(heading)
@@ -48,6 +50,12 @@ def test_token_list_reports_expiration_at_the_exact_boundary(capsys):
     print_list([_record(expired=True)], now=CREATED_AT)
 
     assert "Expired" in capsys.readouterr().out.splitlines()[1]
+
+
+def test_token_list_reports_never_used_token(capsys):
+    print_list([_record(last_used_at=None)], now=CREATED_AT)
+
+    assert "Never" in capsys.readouterr().out.splitlines()[1]
 
 
 def _wire(monkeypatch, administration):
@@ -117,7 +125,7 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "ID" in output
     assert "Status" in output
-    assert "Created" in output
+    assert "Last used" in output
     assert "Expires" in output
     assert "SUBJECT" not in output
     assert "inventory" not in output

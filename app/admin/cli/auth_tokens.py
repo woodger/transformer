@@ -18,12 +18,16 @@ def print_list(
     now: datetime | None = None,
 ) -> None:
     current_time = datetime.now(UTC) if now is None else now
-    headers = ("ID", "Status", "Created", "Expires")
+    headers = ("ID", "Status", "Last used", "Expires")
     rows = [
         (
             record.token_id,
             _status(record, current_time),
-            record.created_at.isoformat(),
+            (
+                "Never"
+                if record.last_used_at is None
+                else record.last_used_at.isoformat()
+            ),
             record.expires_at.isoformat(),
         )
         for record in records
