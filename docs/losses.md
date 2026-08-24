@@ -1,5 +1,7 @@
 # Функция потерь
 
+> Тип: справочник. Текущая семантика loss stages и model heads.
+
 Нормативную public target identity задаёт текущий
 [`Flight v5 contract`](../app/contracts/flight/v5/README.md). Внутри worker
 модель возвращает семь значений: шесть public heads и один private Gaussian
@@ -15,7 +17,7 @@ scale. Flight boundary публикует только первые шесть �
 | `5` | `HittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
 | private | `returnScale` | `softplus(scaleHead) + 1e-6` | не публикуется |
 
-`SigmaReturn` — нормализованный target Inventory, а не Gaussian scale.
+`SigmaReturn` — нормализованная public target-координата, а не Gaussian scale.
 `ProbTP` и `ProbSL` независимы и не обязаны давать сумму `1`.
 
 ## Прямые компоненты
@@ -68,8 +70,7 @@ score и не меняют публичную семантику.
 
 ## Этапы
 
-`--loss-stage` зафиксирован в `4`. `--loss-schedule` управляет переходом к
-максимальному stage:
+Stage composition определяет, какие компоненты входят в loss:
 
 | Stage | Активные компоненты |
 | --- | --- |
@@ -78,29 +79,7 @@ score и не меняют публичную семантику.
 | `3` | stage 2 + EV/risk |
 | `4` | stage 3 + `L4` |
 
-- `none` — сразу использовать stage 4;
-- `epoch` — повышать stage каждые `--stage-size` epochs;
-- `step` — повышать stage каждые `--stage-size` optimizer steps.
-
-При defaults `--loss-schedule=epoch --stage-size=5` epochs `1..5` используют
-stage 1, `6..10` — stage 2, `11..15` — stage 3, с epoch 16 — stage 4.
-Обучение обязано завершить хотя бы одну полную epoch stage 4.
-
-## Выбор checkpoint
-
-Если включён `--select-best-checkpoint`, score вычисляется только для полной
-epoch stage 4:
-
-```text
-selectionScore = Σ wi × globalRowMean(Li)
-```
-
-`globalRowMean` означает взвешивание batch-значений числом строк. Границы
-payload и batch не меняют score. Auxiliary losses исключены. Нефинитный или
-неполный score завершает обучение ошибкой.
-
-Candidate заменяет best только при
-`score < best - selectionMinDelta`; равенство сохраняет более ранний
-checkpoint. `--selection-patience=0` отключает early stopping, но оставляет
-выбор best. Если selection выключен, публикуется последний checkpoint
-максимального stage.
+Порядок перехода между stages, CLI modes и требование завершить stage 4 задаёт
+[training runtime](./training-runtime.md#loss-schedule). Агрегация score, выбор
+candidate и early stopping находятся в его разделе
+[Selection](./training-runtime.md#selection-и-early-stopping).

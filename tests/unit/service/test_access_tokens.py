@@ -102,7 +102,8 @@ def test_issue_generates_token_without_storing_credential():
     assert issued.subject == "inventory"
     assert issued.created_at == created_at
     assert issued.last_used_at is None
-    assert issued.expires_at == datetime(2026, 4, 30, 12, 30, tzinfo=UTC)
+    assert issued.expires_at == datetime(2026, 7, 30, 12, 30, tzinfo=UTC)
+    assert issued.expires_at - issued.created_at == timedelta(days=180)
     assert issued.token is not None
     assert re.fullmatch(r"a\.[A-Za-z0-9_-]{86}", issued.token)
     stored = database.current.records[0]

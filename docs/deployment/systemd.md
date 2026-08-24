@@ -16,13 +16,15 @@ CONTRACT DOCUMENT — SEMANTIC CHANGE MODE
 
 # Развертывание через systemd
 
-> Type: Reference. Production-запуск `transformer flight serve` через systemd.
+> Тип: контракт развёртывания. Production-запуск `transformer flight serve`
+> через systemd.
 
 Service запускается из `/home/nerv/transformer` от `nerv:nerv`.
-Project `.venv`, `.env` и PostgreSQL migrations должны быть подготовлены до
-включения unit. Правила окружения находятся в
+Project `.venv`, `.env` и
+[PostgreSQL migrations](../operations/database-migrations.md) должны быть
+подготовлены до включения unit. Правила окружения находятся в
 [политике Python runtime](../policy/python-runtime-policy.md), а параметры
-Flight service — в [Flight runbook](../flight-operations.md).
+Flight service — в [Flight runbook](../operations/flight-service.md).
 Необязательная доставка training metrics настраивается отдельно по
 [инструкции OpenSearch](opensearch.md).
 
@@ -46,8 +48,9 @@ Wants=network-online.target
 [Service]
 Type=exec
 User=nerv
+WorkingDirectory=/home/nerv/transformer
 
-ExecStart=/home/nerv/transformer/.venv/bin/python /home/nerv/transformer/app/main.py flight serve --host=0.0.0.0 --port=8815
+ExecStart=/home/nerv/transformer/.venv/bin/python app/main.py flight serve --host=0.0.0.0 --port=8815
 
 Restart=on-failure
 RestartSec=5

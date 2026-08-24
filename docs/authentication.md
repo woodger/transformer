@@ -6,23 +6,23 @@
 Нормативное требование к заголовку каждого RPC находится в
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md), а команды
 выпуска, ротации и отзыва — в
-[`операционном руководстве`](./flight-operations.md#токены-доступа-api).
+[`руководстве по управлению API access tokens`](./operations/api-access-tokens.md).
 Rationale выбранного класса credential system сохранён в
 [ADR 0020](./adr/0020-local-opaque-api-access-tokens.md); текущую семантику
 задают этот справочник и нормативный Flight contract.
 
 ## Граница системы
 
-Transformer использует local opaque Bearer API access tokens для одного
-контролируемого service Consumer-а. Transformer самостоятельно выпускает и
-проверяет credentials, а PostgreSQL является долговечным authority их
-состояния.
+Transformer использует local opaque Bearer API access tokens для общей service
+identity, доступной контролируемым Consumer-ам. Transformer самостоятельно
+выпускает и проверяет credentials, а PostgreSQL является долговечным authority
+их состояния.
 
 Эта модель рассчитана на следующие условия:
 
-- provider и Consumer находятся под единым операционным контролем;
-- service identities известны заранее и их мало;
-- нет интерактивных пользователей и сторонних clients;
+- provider и Consumer-ы находятся под единым операционным контролем;
+- Consumer-ы известны заранее и их мало;
+- нет интерактивных пользователей и неконтролируемых сторонних clients;
 - полномочия не делегируются;
 - не требуются scopes, audiences, federation, SSO или refresh tokens;
 - operator-managed issue, rotation и revoke достаточны для lifecycle.
@@ -38,18 +38,20 @@ credentials означает, что authentication model нужно проек�
 
 Credential имеет форму `a.<base64url>` и содержит 64 случайных байта. Он не
 является JWT и не несёт subject или authorization claims. Все действующие
-credentials соответствуют стабильному owner subject `inventory`; несколько
-одновременно выпущенных tokens нужны только для ротации и видят один
-owner-scoped state jobs, models и aliases.
+credentials соответствуют стабильному owner subject `inventory` и видят один
+owner-scoped state jobs, models и aliases. Это технический owner identifier, а
+не ограничение API одноимённым Consumer-проектом. Отдельные credentials могут
+быть переданы разным контролируемым Consumer-ам, но не создают разные identity,
+permissions или изоляцию состояния.
 
 При выпуске создаётся отдельный UUID `token_id`. Это management handle для
 `list` и `revoke`, а не credential: знание ID не позволяет пройти
 аутентификацию. Исходный Bearer показывается только один раз в успешном выводе
 `issue`.
 
-Каждый token получает фиксированный `expires_at` через три календарных месяца
-после выпуска. Использование token и ротация других credentials не продлевают
-срок; sliding expiration отсутствует.
+Каждый token получает фиксированный `expires_at` ровно через 180 суток
+(`180 × 24` часа) после выпуска. Использование token и ротация других
+credentials не продлевают срок; sliding expiration отсутствует.
 
 ## Persistence и lifecycle
 

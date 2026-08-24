@@ -1,9 +1,11 @@
 # Доставка training metrics в OpenSearch
 
-> Type: Operations. Настройка OpenSearch projection Transformer.
+> Тип: руководство по развёртыванию. Настройка OpenSearch projection
+> Transformer.
 
 Best-effort boundary и ownership telemetry описаны в
-[`политике metrics`](../metrics.md). Текущие schemas и templates находятся в
+[`политике metrics`](../policy/metrics-policy.md). Текущие schemas и templates
+находятся в
 [`app/contracts/metrics/v3`](../../app/contracts/metrics/v3/README.md) и
 [`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 
@@ -98,15 +100,10 @@ publication продолжает создавать durable artifact и outbox b
 или смешанная конфигурация считается ошибкой deployment и оставляет publisher
 выключенным; service продолжает работать.
 
-После изменения `.env` перезапустите service. Migrations применяются отдельно:
-
-```bash
-./.venv/bin/python ./app/main.py db migrations status
-./.venv/bin/python ./app/main.py db migrations apply
-```
-
-Текущий head показывает команда `db migrations status`; перед запуском
-publisher-а примените все pending revisions.
+Migrations применяются отдельно по
+[`операционному руководству PostgreSQL`](../operations/database-migrations.md).
+Перед перезапуском service убедитесь, что `db migrations status` показывает
+`Pending migrations: no`, затем примените изменение `.env` перезапуском.
 
 ## Проверить работу
 

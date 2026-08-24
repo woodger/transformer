@@ -26,6 +26,15 @@ GPU-сценарии выделены единственным resource marker `
 пропускаются из-за недоступной database. Отсутствующую инфраструктуру не
 подменяют SQLite или ORM mocks, претендующие на проверку transaction semantics.
 
+Отдельные Alembic revisions и migration chain не входят в pytest boundary.
+Нельзя добавлять tests, которые импортируют revision modules, подменяют
+`alembic.op`, сравнивают migration metadata или SQL либо фиксируют номер
+текущего head. Административные команды migrations можно тестировать на уровне
+dispatch и presentation без проверки DDL. Корректность schema migration
+проверяется применением на выделенном PostgreSQL; отсутствие такой
+infrastructure фиксируется как непроверенное ограничение и не компенсируется
+unit test или mock database.
+
 ## Запуск
 
 Основной набор:

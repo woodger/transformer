@@ -1,10 +1,12 @@
 # Ограничения зависимости PyArrow Flight 24
 
+> Тип: справочник. Подтверждённые ограничения текущего PyArrow Flight runtime.
+
 ## Область действия
 
 Эта заметка фиксирует два подтверждённых ограничения `pyarrow==24.0.0`,
 влияющих на контракт Transformer Flight v5. Это ограничения Python binding
-сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или Inventory.
+сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или Consumer-а.
 
 Окружение, в котором воспроизведено поведение:
 
@@ -149,7 +151,7 @@ logical payload, rows, job и queue на уровне приложения не 
 
 ### Безопасное временное поведение
 
-- Inventory настраивает `maxSendMessageLength` и `maxReceiveMessageLength` и
+- Consumer настраивает `maxSendMessageLength` и `maxReceiveMessageLength` и
   формирует RecordBatches примерно по 8 MiB.
 - Transformer применяет лимиты batch, logical payload, total job и rows при
   чтении каждого chunk.
@@ -180,4 +182,4 @@ flight.FlightServerBase(
 отдельно поддерживаемое native extension или будущее обновление dependency,
 поведение которого проверено с Node client. Private local patch или custom
 Cython shim существенно расширили бы scope Transformer и deployment matrix.
-Изменения Inventory или `arrow-flight-client@0.0.8` не предлагаются.
+Изменения Consumer applications или `arrow-flight-client@0.0.8` не предлагаются.

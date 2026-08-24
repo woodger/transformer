@@ -1,6 +1,6 @@
 # Политики проекта
 
-> Type: Reference. Рабочие правила изменения Transformer Arrow Flight service.
+> Тип: указатель. Рабочие правила изменения Transformer Arrow Flight service.
 
 Политики помогают сохранять архитектуру, публичные контракты и эксплуатационные
 свойства проекта. Они применяются вместе с текущим кодом, тестами, профильной
@@ -15,7 +15,7 @@
 - [Политика тестирования](./testing-policy.md)
 - [Политика ведения документации](./documentation-policy.md)
 - [Нефункциональные требования](./nonfunctional.md)
-- [Политика metrics и OpenSearch](../metrics.md)
+- [Политика metrics и OpenSearch](./metrics-policy.md)
 
 ## Политики реализации
 

@@ -24,14 +24,18 @@ identifiers, команды, пути, значения enum и другие э�
 | Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
 | Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
-| Best-effort границы metrics и OpenSearch | `docs/metrics.md` |
+| Best-effort границы metrics и OpenSearch | `docs/policy/metrics-policy.md` |
 | Authentication model и security boundary | `docs/authentication.md` |
+| Выдача, передача, ротация и отзыв API access tokens | `docs/operations/api-access-tokens.md` |
+| Проверка и изменение PostgreSQL schema | `docs/operations/database-migrations.md` |
+| Просмотр и удаление published models | `docs/operations/published-models.md` |
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
-| Flight service behavior и operations | `docs/flight-operations.md` |
-| Inventory integration | `docs/inventory-flight-handoff.md` |
-| Текущие process и dependency boundaries | `docs/policy/architecture.md` |
+| Flight service behavior и operations | `docs/operations/flight-service.md` |
+| Consumer integration | `docs/consumer-flight-integration.md` |
+| Текущие процессы, компоненты, contracts и data ownership | `docs/architecture.md` |
+| Dependency boundaries и размещение кода | `docs/policy/architecture.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
@@ -41,7 +45,8 @@ identifiers, команды, пути, значения enum и другие э�
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
-`readme.md`, а для политик — `docs/policy/index.md`.
+`readme.md`, для operational procedures — `docs/operations/index.md`, а для
+политик — `docs/policy/index.md`.
 
 ## README
 
@@ -113,7 +118,7 @@ format. README или operations guide не могут переопределя�
 - parser/serializer;
 - contract tests;
 - version/compatibility policy;
-- Inventory handoff.
+- Consumer integration guide.
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
@@ -132,10 +137,12 @@ Admission, immutable lifecycle и допустимое содержание ADR 
 [`docs/adr/index.md`](../adr/index.md). Решение, не проходящее admission,
 остаётся в issue или merge request.
 
-После реализации release history сохраняет `CHANGELOG.md`, точную историю
-изменений — Git, а применённую эволюцию PostgreSQL — неизменяемая цепочка
-Alembic migrations. Эти исторические источники не заменяют документацию
-текущего состояния.
+После реализации release history сохраняет `CHANGELOG.md`, а точную историю
+изменений — Git. Текущий PostgreSQL baseline и последующую эволюцию schema
+задают Alembic migrations. Если опубликованная цепочка заменена baseline,
+удалённые revisions остаются в release tag и Git history, а compatibility
+boundary явно фиксируется в operations. Эти исторические источники не
+заменяют документацию текущего состояния.
 
 При замене решения профильный документ обновляется в том же change set:
 устаревшая и отменённая семантика удаляется, а не переносится в новый
@@ -145,8 +152,12 @@ documentation, в проекте не ведётся.
 ## Deployment и operations
 
 `docs/deployment/` содержит короткие ручные инструкции установки и запуска.
-`docs/flight-operations.md` содержит подробные lifecycle, recovery, security и
-storage semantics.
+`docs/operations/` содержит operator-facing lifecycle procedures для service и
+application-managed ресурсов. Их состав и границы перечисляет
+`docs/operations/index.md`; каждый resource lifecycle имеет один основной
+Operational Guide.
+`docs/operations/flight-service.md` содержит подробные lifecycle, recovery,
+security и storage semantics Flight service.
 
 Deployment guide не должен дублировать всю архитектуру сервиса или
 автоматизировать изменение production-хоста. Для target Fedora deployment он
@@ -164,7 +175,8 @@ reference-инструкцию не добавляются.
 
 - постоянные filenames — английский `kebab-case`, если путь уже не закреплён;
 - H1 — понятный русский заголовок;
-- metadata `> Тип: политика|справочник` рекомендуется для policy/reference;
+- metadata `> Тип: ...` называет фактическую роль файла: справочник, политика,
+  указатель, руководство, операционное руководство или контракт;
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.

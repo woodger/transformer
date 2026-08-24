@@ -3,8 +3,11 @@
 > Type: Reference. Формат checkpoint, обучение, missing-data semantics и
 > training telemetry локального CLI и Flight worker.
 
-Параметры команд находятся в [справочнике CLI](./cli/index.md), формулы — в
-[описании функции потерь](./losses.md), а нормативный remote ML-контракт — в
+Параметры команд находятся в [справочнике CLI](./cli/index.md). Состав model
+heads, формулы loss components и stage composition принадлежат
+[описанию функции потерь](./losses.md), а schedule transitions, checkpoint
+selection, recovery и runtime telemetry — этому документу. Нормативный remote
+ML-контракт находится в
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
@@ -213,7 +216,7 @@ Mean, max и P95 считаются только по finite pre-clip gradient n
 Flight fit best effort сохраняет завершённые global epochs в immutable
 `telemetry/{jobId}/metrics.jsonl`. Durable boundary, OpenSearch
 projection и различие между `step` и фактическими AMP optimizer updates
-описаны в [политике metrics](./metrics.md) и текущих versioned
+описаны в [политике metrics](./policy/metrics-policy.md) и текущих versioned
 [`metrics contracts`](../app/contracts/metrics/). Успешный fit также может
 получить run-owned `run-summary.json` с lifecycle durations и counters.
 Отсутствие или повреждение telemetry не меняет результат fit и model

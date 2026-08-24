@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from calendar import monthrange
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
-ACCESS_TOKEN_TTL_MONTHS = 3
+ACCESS_TOKEN_TTL_DAYS = 180
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,15 +24,11 @@ class AuthIdentity:
 
 
 def access_token_expiration(created_at: datetime) -> datetime:
-    month_index = created_at.month - 1 + ACCESS_TOKEN_TTL_MONTHS
-    year = created_at.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(created_at.day, monthrange(year, month)[1])
-    return created_at.replace(year=year, month=month, day=day)
+    return created_at + timedelta(days=ACCESS_TOKEN_TTL_DAYS)
 
 
 __all__ = [
-    "ACCESS_TOKEN_TTL_MONTHS",
+    "ACCESS_TOKEN_TTL_DAYS",
     "AccessTokenRecord",
     "AuthIdentity",
     "access_token_expiration",

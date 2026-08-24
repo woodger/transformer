@@ -48,7 +48,7 @@ finite `float64`, который выходит за диапазон `float32`,
 ```
 
 Ширина `src` должна делиться на `--seq-len`. В stream `feature_dim` не может
-меняться между frames; при prediction с checkpoint v3 она также должна совпасть
+меняться между frames; при prediction с checkpoint v4 она также должна совпасть
 с сохранённым значением. Missing-data semantics для `NaN` определяет
 [training reference](./training-runtime.md).
 

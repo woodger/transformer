@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Protocol
 
 from app.admin.cli.auth_tokens import print_issued, print_list, print_revoked
@@ -28,6 +29,9 @@ def run(args: AuthTokenArguments) -> None:
             print_list(administration.list())
             return
         print_revoked(administration.revoke(args.token_id))
+    except (LookupError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     finally:
         database.close()
 

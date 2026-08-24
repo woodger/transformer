@@ -52,5 +52,5 @@ telemetry и terminal jobs сохраняют независимые retention l
 
 ## Текущая документация
 
-- [Операционное руководство Flight](../flight-operations.md)
-- [Архитектурная политика](../policy/architecture.md)
+- [Управление опубликованными моделями](../operations/published-models.md)
+- [Архитектура Transformer](../architecture.md)

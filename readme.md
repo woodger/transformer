@@ -57,10 +57,14 @@ user-site. Полный локальный сценарий находится �
   integrity stress test;
 - [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
   training metrics JSONL;
-- [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
+- [`flight serve`](./docs/operations/flight-service.md) — durable Arrow Flight job
   service;
-- [`auth tokens issue|list|revoke` и `db migrations`](./docs/flight-operations.md)
-  — access tokens и schema PostgreSQL.
+- [`auth tokens issue|list|revoke`](./docs/operations/api-access-tokens.md) —
+  lifecycle API access tokens;
+- [`models list|delete`](./docs/operations/published-models.md) — lifecycle
+  опубликованных model generations;
+- [`db migrations`](./docs/operations/database-migrations.md) — schema
+  PostgreSQL.
 
 Точные options, defaults, aliases и side effects описывает help leaf-команды;
 поведение local commands и paths — [справочник CLI](./docs/cli/index.md).
@@ -76,10 +80,11 @@ user-site. Полный локальный сценарий находится �
 - [Worker process contract v7](./app/contracts/worker/v7/README.md)
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
 - [Аутентификация Flight](./docs/authentication.md)
-- [Flight runbook](./docs/flight-operations.md)
+- [Операционные руководства](./docs/operations/index.md)
+- [Flight runbook](./docs/operations/flight-service.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
-- [Архитектурная политика](./docs/policy/architecture.md)
+- [Архитектура Transformer](./docs/architecture.md)
 - [Журнал архитектурных решений](./docs/adr/index.md)
 - [Политики проекта](./docs/policy/index.md)
 
@@ -103,9 +108,10 @@ tests/               # unit, contract, integration и architecture tests
 ## Развертывание
 
 Production-запуск на Fedora через systemd описан в
-[docs/deployment/systemd.md](./docs/deployment/systemd.md). PostgreSQL,
-tokens, recovery, storage lifecycle и TLS/mTLS собраны в
-[Flight runbook](./docs/flight-operations.md).
+[docs/deployment/systemd.md](./docs/deployment/systemd.md). Schema PostgreSQL,
+tokens и published models управляются по
+[операционным руководствам](./docs/operations/index.md), а recovery, storage
+lifecycle и TLS/mTLS описаны в [Flight runbook](./docs/operations/flight-service.md).
 
 Bearer authentication обязательна при любом transport. Полная пара
 `--tls-cert-file`/`--tls-key-file` включает TLS; без неё endpoint использует

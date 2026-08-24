@@ -1,0 +1,103 @@
+# Управление опубликованными моделями
+
+> Тип: операционное руководство. Просмотр и необратимое удаление published
+> model generations Transformer.
+
+Это руководство задаёт текущую операторскую процедуру для server-owned моделей
+в `models/` и их metadata в PostgreSQL. Rationale двухфазного hard delete
+сохранён в [ADR 0016](../adr/0016-hard-delete-published-models.md), а storage и
+maintenance boundaries описаны в
+[`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
+
+Команды требуют актуальной PostgreSQL schema. Порядок её проверки находится в
+[`руководстве по migrations`](database-migrations.md).
+
+## Просмотреть доступные модели
+
+```bash
+./.venv/bin/python ./app/main.py models list
+```
+
+Команда показывает только доступные generations в состоянии `AVAILABLE`:
+точный `MODEL REF`, owner, label, generation, state и время создания.
+`MODEL REF` является management identity конкретной immutable generation.
+
+Перед удалением зафиксируйте точный `MODEL REF`. Alias или label команда
+`models delete` не принимает, чтобы ротация alias не могла изменить target
+административной операции.
+
+## Запросить удаление
+
+```bash
+./.venv/bin/python ./app/main.py models delete <MODEL_REF>
+```
+
+При успехе команда выводит выбранную identity и состояние:
+
+```text
+Model: <MODEL_REF>
+State: DELETING
+```
+
+Request transaction:
+
+- блокирует новые prediction jobs для этой generation;
+- отклоняется, если на модель ссылается незавершённый prediction job;
+- снимает alias, только если он всё ещё указывает на удаляемую generation;
+- переводит модель в `DELETING`.
+
+Alias не откатывается на предыдущую generation. Поддерживаемой команды undo
+нет, поэтому перед `models delete` убедитесь, что выбрана точная generation и
+Consumer больше не должен использовать её.
+
+## Дождаться физического удаления
+
+После commit модель сразу исчезает из обычного `models list`. Физическое
+удаление выполняет maintenance работающего Flight service:
+
+1. удаляет каталог `models/{modelRef}`;
+2. физически удаляет working row модели из PostgreSQL;
+3. создаёт минимальную запись `DELETED` с identity и timestamps.
+
+Пока операция не завершена, состояние видно отдельной командой:
+
+```bash
+./.venv/bin/python ./app/main.py models list --deleted
+```
+
+Она показывает `DELETING` и завершённые `DELETED` records. У `DELETING`
+колонка `DELETED AT` остаётся пустой; после успешной очистки она получает
+timestamp.
+
+Filesystem error оставляет модель в `DELETING`, и maintenance повторяет
+очистку. Если состояние не меняется, проверьте logs сервиса и доступность
+`models/`; не удаляйте PostgreSQL row вручную.
+
+## Повторные операции и история
+
+Повторный `models delete` до завершения очистки возвращает текущее состояние
+`DELETING`. После завершения working row отсутствует, поэтому повторный delete
+возвращает `model generation not found`.
+
+Archive сохраняет только owner, label, generation, model reference и
+timestamps. Checkpoint paths, hashes, contracts и полная metadata не
+сохраняются, поэтому восстановить удалённую модель из archive невозможно.
+Generation остаётся монотонным и не используется повторно.
+
+Удаление модели не отменяет pending OpenSearch delivery и не удаляет уже
+принятые OpenSearch documents. Run telemetry имеет собственный retention
+lifecycle.
+
+## Проверить полный lifecycle
+
+Для проверки выбранной generation:
+
+1. Найдите точный `MODEL REF` через `models list`.
+2. Убедитесь, что у generation нет незавершённых prediction jobs.
+3. Выполните `models delete <MODEL_REF>` и проверьте `State: DELETING`.
+4. Убедитесь, что generation исчезла из обычного `models list`.
+5. Наблюдайте `models list --deleted`, пока state не станет `DELETED` и не
+   появится `DELETED AT`.
+
+Эта проверка необратима и должна выполняться только для generation, которую
+разрешено физически удалить.

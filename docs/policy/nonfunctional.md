@@ -1,59 +1,69 @@
 # Нефункциональные требования
 
-> Type: Policy. Этот документ фиксирует свойства Transformer, которые нельзя
-> нарушать рабочей правкой.
+> Тип: политика. Cross-cutting acceptance criteria для изменений Transformer.
+
+Этот документ используется как review checklist и не дублирует текущую
+топологию, wire schemas, configuration defaults или runbook. Их источники:
+
+- [архитектура](../architecture.md) — процессы и data ownership;
+- [Flight v5 contract](../../app/contracts/flight/v5/README.md) — wire и
+  lifecycle semantics;
+- [training runtime](../training-runtime.md) — checkpoint, recovery и обучение;
+- [аутентификация](../authentication.md) — credential verification и security
+  boundary;
+- [Flight Operations Guide](../operations/flight-service.md) — storage,
+  devices, startup, recovery и shutdown;
+- [политика metrics](./metrics-policy.md) — best-effort observability.
 
 ## Корректность и воспроизводимость
 
-- заданные seed и deterministic mode сохраняют заявленную семантику;
-- изменение размера transport payload не меняет training trajectory;
-- optimizer, scheduler, early stopping и best checkpoint принадлежат всему
-  training job, а не отдельному Flight payload;
-- явный `cuda` не подменяется CPU;
-- shape, dtype, NaN/Infinity и masking semantics валидируются до вычисления.
+- Заданные seed и deterministic mode сохраняют заявленную семантику.
+- Transport payload и RecordBatch boundaries не меняют training trajectory.
+- Optimizer, scheduler, early stopping и best checkpoint принадлежат целому
+  training job, а не отдельному transport payload.
+- Явно запрошенный `cuda` не подменяется CPU.
+- Shape, dtype, non-finite values и masking semantics валидируются до
+  вычисления.
 
-## Контракты данных
+## Контракты
 
-- Arrow schema и границы logical payload сохраняются;
-- binary stdout не смешивается с diagnostics;
-- checkpoint metadata достаточно для совместимого prediction;
-- опубликованные модели неизменяемы и появляются только после успешного fit;
-- Flight idempotency не приводит к повторному запуску Torch execution.
+- Arrow schema, logical payload identity и protocol versioning меняются только
+  намеренно вместе с нормативным contract.
+- Binary stdout не смешивается с diagnostics.
+- Checkpoint metadata достаточно для совместимого prediction; несовместимый
+  или повреждённый checkpoint не интерпретируется эвристически.
+- Published model generation неизменяема и появляется только после успешного
+  fit.
+- Idempotency и retry не создают повторный Torch execution для одной
+  зафиксированной операции.
 
-## Надёжность и хранение
+## Надёжность и ресурсы
 
-- PostgreSQL остаётся единственным durable control-plane source of truth;
-- prediction payload и незавершённые attempt artifacts остаются в
-  `/tmp/transformer`;
-- fit payload и completed-epoch recovery checkpoints остаются в project
-  `recovery/`;
-- успешно опубликованные checkpoints остаются в project `models/`;
-- при успешном best-effort сборе immutable training metrics artifact живёт
-  вместе с model generation, а его OpenSearch projection доставляется через
-  PostgreSQL outbox;
-- потеря runtime storage инвалидирует prediction jobs, но не fit с целыми
-  persistent recovery artifacts;
-- fit возобновляется только с зарегистрированной границы полной глобальной
-  эпохи, без silent restart при повреждении recovery;
-- файловая публикация и database transitions остаются атомарными;
-- runtime и recovery directories принадлежат одному процессу сервиса;
-- CUDA attempt привязан к одному physical GPU, а подтверждённо потерянный GPU
-  не возвращается в pool до следующего Linux boot.
+- Durable control-plane state и filesystem artifacts сохраняют ownership,
+  определённый архитектурой и Operations Guide.
+- Потеря transient storage не выдаётся за успешное recovery persistent fit.
+- Fit возобновляется только с зарегистрированной границы полной global epoch;
+  повреждённый recovery не приводит к silent restart.
+- File publication и связанный database transition не оставляют ссылку на
+  частично записанный artifact.
+- Queues, caches, retry, telemetry и worker resources имеют явные bounds.
+- Ошибка best-effort telemetry не меняет fit, model/job lifecycle, startup или
+  shutdown.
+- Потерянное CUDA device не возвращается в scheduler до безопасной границы,
+  определённой Operations Guide.
 
 ## Безопасность и эксплуатация
 
-- bearer authentication действует для каждого Flight transport; owner identity
-  равна точному subject PostgreSQL-backed API token;
-- полная пара TLS certificate/key включает TLS, а отсутствие обоих параметров
-  выбирает plaintext;
-- сбой сбора, конфигурации или доставки telemetry не меняет результат fit,
-  model lifecycle, startup или shutdown; transport profile определяется
-  deployment policy;
-- paths и subprocess arguments не принимаются из network request произвольно;
-- service не опрашивает PostgreSQL на каждом RPC или в idle worker loop;
-- SIGTERM, cancellation и process-group cleanup не оставляют активных workers;
-- CLI, environment names, логирование и exit behavior меняются только
-  намеренно как публичный контракт.
+- Каждый Flight transport аутентифицирован; owner isolation соответствует
+  credential model.
+- TLS/plaintext выбирается только deployment configuration и не меняет
+  прикладное состояние.
+- Network request не управляет произвольными filesystem paths или subprocess
+  arguments.
+- Hot paths и idle loops не создают неограниченный I/O или polling.
+- SIGTERM, cancellation и process-group cleanup не оставляют активных workers.
+- CLI, environment names, logging и exit behavior рассматриваются как
+  публичное поведение и меняются намеренно.
 
 Изменение, которое выдаёт правильный happy-path результат, но нарушает одно из
 этих свойств, не считается корректным.

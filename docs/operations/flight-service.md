@@ -1,18 +1,21 @@
 # Сервис Transformer Arrow Flight: операционное руководство v5
 
+> Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
+> текущего Flight service.
+
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
-[`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
+[`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Текущие
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md). Текущие
 process и data ownership boundaries описывает
-[`архитектурная политика`](policy/architecture.md), training и recovery —
-[`training reference`](training-runtime.md), а credential model, cache
+[`архитектурный справочник`](../architecture.md), training и recovery —
+[`training reference`](../training-runtime.md), а credential model, cache
 consistency и channel security —
-[`справочник аутентификации`](authentication.md).
+[`справочник аутентификации`](../authentication.md).
 Rationale durable recovery и streaming lifecycle сохранён в
-[ADR 0003](adr/0003-durable-resumable-training-and-device-aware-execution.md)
-и [ADR 0005](adr/0005-durable-streaming-flight-v3.md); текущую операционную
+[ADR 0003](../adr/0003-durable-resumable-training-and-device-aware-execution.md)
+и [ADR 0005](../adr/0005-durable-streaming-flight-v3.md); текущую операционную
 семантику определяет это руководство.
 
 ## Требования к runtime
@@ -34,9 +37,9 @@ Rationale durable recovery и streaming lifecycle сохранён в
   видимый GPU должен быть доступен пользователю сервиса.
 
 Production-версии Python packages зафиксированы только в
-[`requirements.txt`](../requirements.txt). Окружение создаётся на целевом
+[`requirements.txt`](../../requirements.txt). Окружение создаётся на целевом
 хосте по инструкции
-[`deployment/systemd.md`](deployment/systemd.md). Команды этого руководства
+[`deployment/systemd.md`](../deployment/systemd.md). Команды этого руководства
 выполняются из `/home/nerv/transformer` через `./.venv/bin/python`.
 
 ```bash
@@ -136,7 +139,7 @@ inputs в `recovery/` остаётся авторитетным: прерван�
 recovery; Transformer не начинает fit незаметно с нулевой epoch. PostgreSQL
 хранит только metadata, поэтому ни один filesystem нельзя восстановить из БД.
 
-## Настройка PostgreSQL и migrations
+## Настройка PostgreSQL
 
 Параметры БД читаются из `<project-root>/.env`. Значения, уже присутствующие в
 окружении процесса, имеют приоритет. Обязательные параметры:
@@ -153,91 +156,11 @@ POSTGRES_PASSWORD=replace-with-a-secret
 частной сети. Credentials нельзя фиксировать в репозитории или включать в
 логи.
 
-Transformer использует schema PostgreSQL `transformer`. Сервис никогда не
-применяет migrations при запуске. Проверяйте и обновляйте schema явно:
-
-```bash
-./.venv/bin/python ./app/main.py db migrations status
-./.venv/bin/python ./app/main.py db migrations apply
-```
-
-`status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
-head. Сервис и команды управления tokens отказываются запускаться при
-отсутствующей или устаревшей schema и предлагают выполнить
-`db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
-автоматически migrations не применяются.
-
-Переход на Alembic revision `0006` необратим: он удаляет незавершённые v3
-jobs, idempotency и recovery state. Access tokens, model identities и aliases
-сохраняются, но прежние модели не получают `mlContract` v4 и недоступны для
-prediction. Перед первым применением `0006` остановите Inventory workers и
-Transformer, сохраните резервную копию PostgreSQL и model artifacts. После
-обновления одновременно запускаются только Inventory v4 и Transformer v4;
-модели требуется переобучить.
-
-Revision `0007` добавляет committed training intervals, metadata metrics
-artifact и delivery outbox. Flight v5 wire schema не меняется. Настройка
-OpenSearch выполняется отдельно по
-[`deployment/opensearch.md`](deployment/opensearch.md); недоступность
-OpenSearch не блокирует fit и публикацию модели.
-
-Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
-опубликованных model generations и состояние `CANCELLED` для явно отброшенной
-metrics delivery. Публичный Flight v5 не меняется.
-
-Revision `0009` добавляет timing boundaries terminal fit summary. Revision
-`0010` переносит durable telemetry в отдельный run-owned lifecycle с ключом
-`jobId` и удаляет экспериментальные model-owned artifact metadata и outbox.
-Committed epoch intervals и model generations сохраняются. Публичный Flight v5
-не меняется.
-
-Revision `0011` выполняет breaking cutover на единую PascalCase identity
-индикаторов Flight v5. До обновления checkout, пока v4 schema является текущей,
-штатно удалите все опубликованные модели и дождитесь состояния `DELETED`.
-Затем остановите Inventory и Transformer, разверните v5 и примените migration.
-Если осталась хотя бы одна модель `AVAILABLE` или `DELETING`, migration
-завершится ошибкой, не изменив данные. Она удаляет v4 jobs, recovery,
-idempotency, aliases и run-owned telemetry, но сохраняет API tokens и
-tombstones удалённых моделей с монотонными generation. Downgrade отсутствует.
-После cutover совместно запускаются только Inventory v5 и Transformer v5,
-затем выполняется новый fit.
-
-Revision `0012` физически удаляет накопленные строки `DELETED` из `models` и
-удаляет поле `models.deleted_at`. Она необратима. Revision `0013` создаёт
-минимальный `deleted_models` archive для последующих удалений. Ранее очищенные
-revision `0012` timestamps восстановить невозможно. Текущий lifecycle:
-`AVAILABLE → DELETING → audit archive`. Flight v5 не меняется.
-
-Revision `0014` необратимо удаляет локальные API tokens, их notification
-trigger и функцию. Удалённые credential восстановить невозможно. Revision
-`0015` создаёт новую пустую таблицу API tokens с digest-only хранением и
-возвращает notification trigger. Owner-scoped jobs/models не изменяются:
-строковый `owner_subject` продолжает хранить точный subject credential.
-Revision `0016` исправляет database, отмеченные как `0015`, но физически
-сохранившие историческую колонку `token`: существующие credentials заменяются
-их SHA-256 digests без изменения metadata или revoke status, raw-колонка
-удаляется, а notification objects пересоздаются. Для уже корректной
-digest-only таблицы conversion является no-op.
-
-Revision `0017` удаляет все существующие бессрочные API token rows и добавляет
-обязательный `expires_at`. Удалённые credentials восстановить невозможно. Для
-cutover остановите Inventory и Transformer, примените migration, выпустите
-новый token обновлённым CLI, передайте его Inventory через secret storage и
-только затем снова запустите оба процесса. Downgrade после выпуска нового token
-запрещён.
-
-Revision `0018` физически удаляет существующие revoked token rows и колонку
-`revoked_at`, перестраивает expiry index и оставляет token cache notification
-на `INSERT/DELETE`. Удалённая revoke history не восстанавливается при
-downgrade.
-
-Revision `0019` удаляет token notification trigger и функцию. Token rows,
-expiry index и credentials не меняются. Downgrade восстанавливает notification
-objects revision `0018`.
-
-Revision `0020` добавляет nullable `last_used_at`. Существующие и новые tokens
-имеют значение `NULL` до первой успешной PostgreSQL revalidation. Downgrade
-удаляет только эти usage metadata.
+Transformer использует schema PostgreSQL `transformer` и никогда не применяет
+migrations при запуске. Service и административные команды требуют schema на
+текущем Alembic head. Проверку revisions, upgrade, compatibility с baseline и
+rollback boundary описывает
+[`руководство по управлению схемой PostgreSQL`](database-migrations.md).
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -248,44 +171,12 @@ worker lanes БД не опрашивают.
 ## Токены доступа API
 
 Bearer authentication обязательна для каждого Flight RPC, включая actions,
-DoPut, GetFlightInfo и DoGet. Выпустите token для локальной service identity:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens issue
-```
-
-Команда выпускает token для фиксированного owner subject `inventory` сроком на
-три календарных месяца и выводит ID token, `Expires` и новый credential.
-Credential имеет формат `a.<base64url>` и показывается только при выпуске.
-PostgreSQL хранит его SHA-256 digest, но не исходный bearer. Передавайте
-credential через канал secrets, принятый в deployment; не помещайте его в
-историю команд, логи или репозиторий.
-
-Просмотр metadata без раскрытия credentials:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens list
-```
-
-Отзыв по ID token:
-
-```bash
-./.venv/bin/python ./app/main.py auth tokens revoke 35dc6236-cfb9-4ac7-80db-320db21ef463
-```
-
-Успешный `revoke` физически удаляет token row. Повторный вызов и неизвестный ID
-завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
-явного revoke.
-
-Полная persistence, cache и security semantics описана в
-[`справочнике аутентификации`](authentication.md). Для оператора существенны
-следующие следствия: новый token доступен без перезапуска, после `revoke`
-закэшированный credential может приниматься ещё максимум 60 секунд, а
-`last_used_at` отражает последнее persisted окно использования с той же
-точностью. `tokens list` показывает `ID`, `Status`, `Last used` и `Expires`;
-до первого использования выводится `Never`. Для штатной ротации выпустите и
-передайте Inventory новый token до expiration, затем отзовите прежний по ID;
-owner-scoped state не изменится.
+DoPut, GetFlightInfo и DoGet. До предоставления сервиса Consumer-у оператор
+должен выпустить и безопасно передать credential. Выдачу, просмотр, ротацию,
+отзыв и проверку полного lifecycle описывает
+[`руководство по управлению API access tokens`](api-access-tokens.md).
+Credential model, cache consistency и channel security описаны в
+[`справочнике аутентификации`](../authentication.md).
 
 ## Настройка Flight service
 
@@ -347,7 +238,7 @@ modes.
 
 Проверяемый порядок:
 `targetBatchBytes <= maxBatchBytes <= maxMessageBytes <= maxPayloadBytes`.
-Inventory должен получать фактические значения через capabilities, а не
+Consumer должен получать фактические значения через capabilities, а не
 копировать defaults.
 
 ### Политика lifecycle
@@ -368,7 +259,7 @@ Inventory должен получать фактические значения 
 ## Ручной запуск на переднем плане
 
 Production-запуск определён только в
-[`deployment/systemd.md`](deployment/systemd.md). Для foreground diagnostics
+[`deployment/systemd.md`](../deployment/systemd.md). Для foreground diagnostics
 локальный plaintext-процесс можно запустить так:
 
 ```bash
@@ -389,14 +280,14 @@ Production-запуск определён только в
 
 Если требуются client certificates, добавьте `--tls-ca-file` и
 `--tls-require-client-cert`. Убедитесь, что SAN server certificate совпадает с
-адресом, который использует Inventory.
+адресом, который использует Consumer.
 
 Процесс пишет структурированные JSON logs в stderr. Supervisor deployment-а
 должен передавать SIGTERM, ждать не меньше `shutdownDrainSeconds +
 cancelGraceSeconds` до внешнего SIGKILL и никогда не запускать два процесса с
 одним каталогом runtime. Целевой Fedora systemd unit, политика каталога runtime
 и действия operator описаны в
-[`deployment/systemd.md`](deployment/systemd.md).
+[`deployment/systemd.md`](../deployment/systemd.md).
 
 ## Запуск и восстановление
 
@@ -456,27 +347,12 @@ idempotency record. Recovery inputs/checkpoints удаляются после п
 terminal state. Каталоги опубликованных моделей не удаляются вместе с job, а
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
-а точный lost-create replay остаётся разрешимым. Во Flight v5 нет сетевого
-action для удаления модели; оператор использует локальную команду
-`models delete`.
+а точный lost-create replay остаётся разрешимым.
 
-Rationale lifecycle удаления моделей зафиксирован в
-[ADR 0016](adr/0016-hard-delete-published-models.md). Удаление model generation
-имеет отдельную durable boundary. PostgreSQL
-transaction блокирует новые predict, проверяет отсутствие активных predict
-jobs, снимает только alias, который указывает на эту generation, и фиксирует
-`DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
-удаления физически удаляет строку модели. При filesystem error состояние
-остаётся `DELETING` для следующей попытки. Минимальная identity и timestamps
-попадают в `deleted_models`. Модель исчезает из обычного `models list` сразу
-после фиксации `DELETING`, но остаётся наблюдаемой через
-`models list --deleted`: сначала без `deleted_at`, затем как завершённая audit
-record. Generation остаётся монотонным.
-Alias не откатывается на предыдущую generation.
-
-OpenSearch outbox не участвует в удалении модели. Pending run продолжает
-доставляться, а terminal telemetry очищается по собственной retention policy.
-Уже принятые OpenSearch documents команда модели не удаляет.
+Published model generation имеет независимый двухфазный hard-delete lifecycle;
+во Flight v5 нет сетевого action для её удаления. Команды оператора,
+наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
+[`руководство по управлению опубликованными моделями`](published-models.md).
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -531,7 +407,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
    по-прежнему контролируются приложением.
 
 Подробности записаны в
-[`flight-dependency-note.md`](flight-dependency-note.md).
+[`flight-dependency-note.md`](../flight-dependency-note.md).
 
 ## Известные ограничения v5
 
