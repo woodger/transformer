@@ -16,7 +16,8 @@ CONTRACT DOCUMENT — SEMANTIC CHANGE MODE
 
 # Развертывание через systemd
 
-> Type: Reference. Production-запуск `transformer flight serve` через systemd.
+> Тип: контракт развёртывания. Production-запуск `transformer flight serve`
+> через systemd.
 
 Service запускается из `/home/nerv/transformer` от `nerv:nerv`.
 Project `.venv`, `.env` и

@@ -84,7 +84,7 @@ user-site. Полный локальный сценарий находится �
 - [Flight runbook](./docs/operations/flight-service.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
-- [Архитектурная политика](./docs/policy/architecture.md)
+- [Архитектура Transformer](./docs/architecture.md)
 - [Журнал архитектурных решений](./docs/adr/index.md)
 - [Политики проекта](./docs/policy/index.md)
 

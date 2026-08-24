@@ -1,9 +1,11 @@
 # Доставка training metrics в OpenSearch
 
-> Type: Operations. Настройка OpenSearch projection Transformer.
+> Тип: руководство по развёртыванию. Настройка OpenSearch projection
+> Transformer.
 
 Best-effort boundary и ownership telemetry описаны в
-[`политике metrics`](../metrics.md). Текущие schemas и templates находятся в
+[`политике metrics`](../policy/metrics-policy.md). Текущие schemas и templates
+находятся в
 [`app/contracts/metrics/v3`](../../app/contracts/metrics/v3/README.md) и
 [`app/contracts/metrics/fit_run/v2`](../../app/contracts/metrics/fit_run/v2/README.md).
 

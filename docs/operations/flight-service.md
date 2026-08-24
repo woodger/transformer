@@ -9,7 +9,7 @@
 нормативные schemas и fixtures — в
 [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md). Текущие
 process и data ownership boundaries описывает
-[`архитектурная политика`](../policy/architecture.md), training и recovery —
+[`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
 consistency и channel security —
 [`справочник аутентификации`](../authentication.md).

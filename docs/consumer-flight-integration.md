@@ -1,13 +1,14 @@
 # Интеграция Consumer-ов с Transformer Arrow Flight v5
 
-> Тип: справочник. Руководство по интеграции Consumer-а с текущим протоколом.
+> Тип: интеграционное руководство. Durable workflow Consumer-а поверх
+> текущего протокола.
 
 Нормативный wire-контракт находится в
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
-[`руководстве по эксплуатации Flight`](operations/flight-service.md). Выдача, передача,
-ротация и отзыв credentials описаны в
+[`руководстве по эксплуатации Flight`](operations/flight-service.md). Выдача,
+передача, ротация и отзыв credentials описаны в
 [`операционном руководстве`](operations/api-access-tokens.md), а credential
 model, token verification и bounded revoke latency — в
 [`справочнике аутентификации`](authentication.md).
@@ -17,56 +18,33 @@ Rationale единой cross-language indicator identity сохранён в
 
 Transformer Flight v5 — единственный текущий удалённый API. Consumer должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,
-descriptors и семантику состояний v5, описанные ниже. V4 actions, descriptors,
-semantic aliases и fallback отсутствуют.
+descriptors и семантику состояний v5. V4 actions, descriptors, semantic aliases
+и fallback отсутствуют.
 
 ## Транспорт и аутентификация
 
-Используйте Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. V5 не
-использует `DoExchange` и `PollFlightInfo`. Каждый RPC содержит:
+Используйте Arrow Flight `DoAction`, `DoPut`, `GetFlightInfo` и `DoGet`. Каждый
+RPC содержит:
 
 ```text
 authorization: Bearer a.<base64url>
 ```
 
-Credential представляет одного owner subject. Jobs, model aliases, model
-references, status, receipts, tickets и outputs ограничены owner-ом. Никогда не
-записывайте bearer credential или непрозрачный output ticket в логи. Credential
-действует ровно 180 суток (`180 × 24` часа); Consumer должен получить новый
-token до expiration и переключиться на него до отзыва прежнего.
+Credential представляет одного owner subject, и доступ к job/model resources
+ограничен этим owner-ом. Никогда не записывайте bearer credential или
+непрозрачный output ticket в логи. Expiration, rotation и revoke procedure
+задаёт [справочник аутентификации](authentication.md).
 
-Каждый документ action начинается с:
+Точный action envelope, transport methods и error representation задаёт
+[Flight contract](../app/contracts/flight/v5/README.md#конверт-и-аутентификация).
+Для каждой мутации заранее сохраните стабильный `idempotencyKey` и канонический
+request. Повторяйте потерянный запрос с тем же содержимым; не используйте ключ
+для другой операции.
 
-```json
-{
-  "contract": "transformer-flight",
-  "version": 5,
-  "requestId": "UUID"
-}
-```
+## Проверка capabilities
 
-Для мутаций дополнительно требуется стабильный `idempotencyKey`, специфичный
-для action. Повтор одного канонического запроса безопасен; повторное
-использование ключа для другого запроса отклоняется. Неуспешная операция
-представляет собой ошибку Flight RPC. Стабильные application codes входят в
-безопасный текст ошибки и terminal status.
-
-## Actions
-
-Сервер объявляет строго следующий список:
-
-| Action | Назначение | Мутация с fencing |
-| --- | --- | --- |
-| `transformer.v5.capabilities` | Версии, схемы, ML-контракт, лимиты и доступная ёмкость | Нет |
-| `transformer.v5.health` | Аутентифицированная проверка liveness/readiness | Нет |
-| `transformer.v5.job.create` | Создать fit- или predict-job с заданной клиентом идентичностью | Начальное владение |
-| `transformer.v5.job.acquire` | Передать владение Consumer-у и увеличить fence | Compare-and-swap |
-| `transformer.v5.job.status` | Получить ограниченное состояние job и сводку результата | Нет |
-| `transformer.v5.job.inputs.list` | Сверить зафиксированные inputs по revision | Нет |
-| `transformer.v5.job.input.close` | Зафиксировать EOF и неизменяемую сводку входа | Да |
-| `transformer.v5.job.outputs.list` | Получить terminal output receipts | Нет |
-| `transformer.v5.job.cancel` | Отменить нетерминальный job | Да |
-| `transformer.v5.model.describe` | Разрешить ссылку и описать неизменяемую модель | Нет |
+Полный список actions и их точные schemas задаёт
+[Flight contract](../app/contracts/flight/v5/README.md#actions).
 
 При запуске вызовите `capabilities` и завершитесь с ошибкой, если
 `protocolVersions` не равен `[5]`. Одновременно проверьте объявленный
@@ -107,77 +85,30 @@ fencingToken    = "1"
 
 ## Контракты данных и objective
 
-Каждый create содержит семантическую идентичность, определяемую Consumer-ом:
+Точные формы `dataContract` и `mlContract`, текущие semantic IDs и примеры
+create принадлежат
+[Flight contract](../app/contracts/flight/v5/README.md#ml-контракт-данных-и-модели)
+и его fixtures. Не переносите их копию в Consumer как независимую
+спецификацию.
 
-```json
-{
-  "dataContract": {
-    "id": "inventory.learning-dataset",
-    "version": 2,
-    "profile": "research-dividend-events-v2",
-    "dataContractSha256": "64 lowercase hex characters",
-    "seqLen": 10,
-    "featureDim": 891,
-    "targetSchemaId": "inventory.target.v2"
-  }
-}
-```
-
-Префикс `inventory` в текущих semantic IDs является точным значением wire
-contract и не ограничивает использование API одноимённым проектом.
-
-Consumer владеет каноническим документом, digest которого указан здесь. В
-документ входят упорядоченные идентичности features, семантика target,
-нормализация, политика missing values и `profile`. Поле `profile` —
-непрозрачная для Transformer, ограниченная и регистрозависимая строка.
-Transformer сохраняет и возвращает её без преобразования; поле входит в
-identity контракта вместе с остальными полями и покрывается digest. Predict
-create должен передать весь точный `dataContract`, для которого сертифицирована
-разрешённая модель. Несовпадение любого поля отклоняется до загрузки с
-`MODEL_SCHEMA_MISMATCH`.
-
-Кроме `dataContract`, каждый create содержит target-aligned `mlContract`:
-
-```json
-{
-  "mlContract": {
-    "targetSchemaId": "inventory.target.v2",
-    "predictionSchemaId": "transformer.prediction.target-aligned.v2",
-    "objectiveId": "transformer.objective.target-aligned.v2",
-    "objectiveConfigSha256": "64 lowercase hex characters",
-    "checkpointFormat": "transformer-checkpoint-v4",
-    "targetWidth": 6,
-    "predictionSpace": "target"
-  }
-}
-```
+Consumer владеет каноническим data-contract document: упорядоченными
+идентичностями features, target semantics, нормализацией, missing-value policy
+и `profile`. Transformer рассматривает `profile` как ограниченную,
+регистрозависимую строку, сохраняет её без преобразования и включает в
+identity. Predict create передаёт весь точный `dataContract`, для которого
+сертифицирована выбранная модель.
 
 Для fit `objectiveConfigSha256` вычисляется по фактической `trainingConfig`.
 Точная форма документа задана
 [`objective-config.schema.json`](../app/contracts/flight/v5/schemas/objective-config.schema.json),
 а нормативная cross-language пара документ/digest — фикстурами
 [`objective-config.fit.json`](../app/contracts/flight/v5/fixtures/json/objective-config.fit.json)
-и create-fit. Документ канонизируется строго по
+и create-fit fixture. Документ канонизируется строго по
 [RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), после чего SHA-256
-вычисляется над полученными UTF-8 bytes. В частности, JCS использует
-ECMAScript-сериализацию чисел, поэтому `1.0` и `1` дают одинаковое
-представление. `NaN`, `Infinity` и другие значения вне I-JSON запрещены.
-Нормативный digest fit fixture:
-`ae695d62d643a636d5daaef31275c83eb8baa75e354e70368061c1997b39c2fb`.
-Node.js-проверка находится в
+вычисляется над полученными UTF-8 bytes. Cross-language проверка находится в
 [`objective_config_sha256.mjs`](../app/contracts/flight/v5/fixtures/objective_config_sha256.mjs).
 Transformer независимо строит тот же документ и отклоняет несовпадение до
 создания job.
-
-На максимальном loss stage каждая из шести координат имеет прямой supervised
-loss. `directLossWeights` содержит шесть положительных весов. Поле `selection`
-имеет два режима:
-
-- object `{minDelta, patience}` — best-checkpoint и early stopping работают
-  только по полным stage-4 epochs и только по глобально агрегированным
-  `L0…L5`;
-- `null` или отсутствие поля — выполняется заданное число epochs и публикуется
-  последний checkpoint максимального stage.
 
 Predict должен передать точный `mlContract`, возвращённый `model.describe` для
 выбранной модели. Нельзя подставлять только IDs из capabilities: конкретный
@@ -208,39 +139,11 @@ execution ID. Transformer атомарно сравнивает старую п�
 ## Загрузка
 
 Один DoPut представляет один семантический payload. Границы RecordBatch нужны
-только для транспортного разбиения. Используйте:
-
-```text
-pathDescriptor("transformer", "v5", "jobs", jobId, "inputs", ordinal)
-```
-
-До RecordBatch запишите одно сообщение application metadata:
-
-```json
-{
-  "contract": "transformer-flight",
-  "version": 5,
-  "jobId": "UUID",
-  "clientExecutionId": "UUID",
-  "fencingToken": "7",
-  "payloadId": "UUID",
-  "ordinal": 0,
-  "schemaId": "inventory.sequence.fit.v2",
-  "dataContractSha256": "64 lowercase hex characters",
-  "rows": 1820
-}
-```
-
-Физическая схема задана точно:
-
-```text
-inventory.sequence.fit.v2
-  src: non-null FixedSizeList<Float32>[seqLen * featureDim]
-  tgt: non-null FixedSizeList<Float32>[6]
-
-inventory.sequence.predict.v2
-  src: non-null FixedSizeList<Float32>[seqLen * featureDim]
-```
+только для транспортного разбиения. Descriptor, application metadata и точные
+Arrow schemas берите из разделов
+[«Загрузка»](../app/contracts/flight/v5/README.md#загрузка) и
+[«Arrow-схемы»](../app/contracts/flight/v5/README.md#arrow-схемы) нормативного
+контракта.
 
 Завершение DoPut не по порядку разрешено. Сервер возвращает один PutResult
 только после надёжной фиксации неизменяемого artifact и PostgreSQL receipt.
@@ -278,27 +181,11 @@ ordinal является конфликтом.
 ## Закрытие входа
 
 Close обозначает EOF, а не команду запуска. Рассчитайте канонический digest по
-всем server receipts, отсортированным по ordinal. Используются поля:
-
-```text
-payloadId, ordinal, schemaId, dataContractSha256, rows, batches, bytes,
-sha256, schemaFingerprint
-```
-
-Исключите `commitRevision`, временные метки и порядок поступления. Передайте
-только сводку:
-
-```json
-{
-  "jobId": "UUID",
-  "clientExecutionId": "UUID",
-  "fencingToken": "7",
-  "payloadCount": 5,
-  "totalRows": 9100,
-  "totalBytes": 324625520,
-  "manifestSha256": "64 lowercase hex characters"
-}
-```
+всем server receipts, отсортированным по ordinal. Точный набор покрытых полей и
+close request задаёт
+[Flight contract](../app/contracts/flight/v5/README.md#закрытие-входа-и-digest-манифеста).
+Исключите `commitRevision`, timestamps и порядок поступления и передайте только
+каноническую сводку.
 
 До фиксации `input.state=CLOSED` Transformer проверяет непрерывность ordinal
 `0..payloadCount-1`, итоговые значения, digest, единую физическую Arrow-схему и
@@ -311,38 +198,20 @@ sha256, schemaFingerprint
 
 ## Состояния и polling
 
-Status предоставляет две независимые оси состояния:
-
-```text
-input.state:
-  OPEN | CLOSED | ABORTED
-
-execution.state:
-  WAITING_INPUT | QUEUED | RUNNING | RETRYING | CANCELLING |
-  SUCCEEDED | FAILED | CANCELLED
-```
+Status предоставляет независимые input и execution state axes; точные enums и
+terminal rules задаёт
+[Flight contract](../app/contracts/flight/v5/README.md#состояние).
 
 Сочетание `OPEN + RUNNING` является нормальным. Для terminal success требуется
 закрытый input и атомарная публикация. Выполняйте polling не чаще, чем указано
 в `pollAfterMs`. Размер status ограничен; он содержит счётчики, а не все input
 или output receipts.
 
-Для выполняющегося fit после каждой durable global epoch status возвращает
-компактный live progress:
-
-```json
-{
-  "epoch": 4,
-  "step": 2940,
-  "loss_stage": 4,
-  "loss": -3.149016
-}
-```
-
-Он фиксируется атомарно с recovery checkpoint. AMP, gradient, target metrics и
-timings остаются только в telemetry. Если core progress ещё недоступен,
-Consumer может использовать `recovery.latestCheckpoint.completedEpochs` и
-`globalStep` как fallback.
+Для выполняющегося fit status после durable global epoch возвращает компактный
+checkpoint-aligned progress. AMP, gradient, target metrics и timings остаются
+только в telemetry. Если core progress ещё недоступен, Consumer может
+использовать `recovery.latestCheckpoint.completedEpochs` и `globalStep` как
+fallback.
 
 До EOF после сбоя fit attempt незавершённая нулевая epoch повторяется с начала;
 надёжно зафиксированные inputs сохраняются. После EOF recovery checkpoints
@@ -354,43 +223,15 @@ Consumer может использовать `recovery.latestCheckpoint.complete
 Результаты доступны только после `execution.state=SUCCEEDED`:
 
 1. Получите все страницы `transformer.v5.job.outputs.list`.
-2. Для каждого ordinal вызовите `GetFlightInfo` с:
+2. Для каждого ordinal вызовите `GetFlightInfo` с нормативным output
+   descriptor.
+3. До expiration используйте возвращённый непрозрачный ticket в `DoGet`.
 
-   ```text
-   pathDescriptor("transformer", "v5", "jobs", jobId, "outputs", ordinal)
-   ```
-
-3. До истечения срока действия используйте возвращённый непрозрачный ticket в
-   `DoGet`.
-
-Схема output:
-
-```text
-transformer.prediction.target-aligned.v2
-  <predictionColumn>: non-null FixedSizeList<Float32>[6]
-```
-
-Значения уже находятся в target-space и сопоставляются target по индексу:
-
-| Индекс | Семантика | Диапазон |
-| --- | --- | --- |
-| `0` | `MeanReturn` | `[-1, 1]` |
-| `1` | `SigmaReturn` | `[0, 1]` |
-| `2` | `ProbTP` | `[0, 1]` |
-| `3` | `ProbSL` | `[0, 1]` |
-| `4` | `VolatilityNext` | `[0, 1]` |
-| `5` | `HittingProbTP` | `[0, 1]` |
-
-Все значения конечны. Координаты `ProbTP` и `ProbSL` независимы и не обязаны
-давать сумму `1`. Raw logits и private uncertainty scale в output отсутствуют.
-Поэтому Consumer вычисляет per-target метрики напрямую, но не использует
-общую MAE/MSE по шести разнородным координатам как quality score.
-
-Все поля верхнего уровня используют `nullable=false`. Вложенное дочернее поле
-`FixedSizeList` называется `item`, имеет тип `Float32` и использует
-`nullable=true`. Это часть точной физической схемы; фактические строки и
-дочерние значения с null по-прежнему отклоняются runtime-валидацией значений.
-Metadata схемы не входит в физическую identity или `schemaFingerprint`.
+Descriptor, ticket semantics и точную output schema задаёт
+[Flight contract](../app/contracts/flight/v5/README.md#доступ-к-результатам).
+Проверьте полученную Arrow schema до обработки строк. Значения уже находятся в
+target-space, поэтому Consumer вычисляет per-target метрики напрямую, но не
+использует общую MAE/MSE по разнородным координатам как quality score.
 
 Transformer отклоняет неканоническую входную схему с `INVALID_ARGUMENT` до
 резервирования или фиксации payload. Job остаётся нетерминальным с открытым
@@ -403,25 +244,11 @@ Transformer может готовить результаты локально д
 
 ## Модели
 
-`transformer.v5.model.describe` принимает один `modelRef` или ограниченный
-owner-ом `modelAlias`. Пока модель существует, её `modelRef` и generation
-неизменяемы и не имеют автоматического TTL. После штатного hard delete metadata
-модели не сохраняется; минимальный audit record удерживает identity, timestamps
-и монотонность generation, но не разрешается через Flight. Consumer должен
-идентифицировать существующую модель точным `modelRef`.
-`predictionColumn` относится к prediction job, а не к модели. Ответ возвращает
-полный `dataContract`, включая `profile`, а
-`mlContract.targetSchemaId` и `targetWidth`. Отдельного списка `targets` нет:
-порядок и имена шести координат однозначно определяет `inventory.target.v2`.
-
-Стабильные ошибки lifecycle:
-
-| Код | Значение |
-| --- | --- |
-| `NOT_FOUND` | Нет видимой owner-у идентичности модели |
-| `MODEL_UNAVAILABLE` | Metadata существует, но checkpoint отсутствует |
-| `MODEL_CORRUPT` | Неверны checkpoint или заявленная current semantic metadata |
-| `MODEL_SCHEMA_MISMATCH` | Контракт данных/ML не совпадает либо модель относится к прежнему контракту |
+Разрешите owner-scoped alias через `model.describe` и сохраните возвращённый
+immutable `modelRef`. Для predict используйте этот точный reference и полный
+`dataContract`/`mlContract` из ответа. `predictionColumn` относится к prediction
+job, а не к модели. Exact request, response и lifecycle error codes принадлежат
+[Flight contract](../app/contracts/flight/v5/README.md#ml-контракт-данных-и-модели).
 
 ## Решения о повторных запросах
 

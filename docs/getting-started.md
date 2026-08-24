@@ -1,7 +1,7 @@
 # Начало работы
 
-> Type: Reference. Локальный сценарий для working copy Transformer Arrow Flight
-> service.
+> Тип: руководство. Локальный сценарий для working copy Transformer Arrow
+> Flight service.
 
 Этот документ описывает запуск локального CLI. Для remote Arrow Flight service
 с PostgreSQL используйте [runbook](./operations/flight-service.md), для production

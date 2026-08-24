@@ -60,4 +60,4 @@ recovery error, а не скрытый restart с нуля.
 
 - [Training runtime и recovery](../training-runtime.md)
 - [Операционное руководство Flight](../operations/flight-service.md)
-- [Архитектурная политика](../policy/architecture.md)
+- [Архитектура Transformer](../architecture.md)

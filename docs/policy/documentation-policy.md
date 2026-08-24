@@ -24,7 +24,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
 | Команды и порядок проверки изменений | `docs/policy/testing-policy.md` |
-| Best-effort границы metrics и OpenSearch | `docs/metrics.md` |
+| Best-effort границы metrics и OpenSearch | `docs/policy/metrics-policy.md` |
 | Authentication model и security boundary | `docs/authentication.md` |
 | Выдача, передача, ротация и отзыв API access tokens | `docs/operations/api-access-tokens.md` |
 | Проверка и изменение PostgreSQL schema | `docs/operations/database-migrations.md` |
@@ -34,7 +34,8 @@ identifiers, команды, пути, значения enum и другие э�
 | ML behavior и training reference | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/operations/flight-service.md` |
 | Consumer integration | `docs/consumer-flight-integration.md` |
-| Текущие process и dependency boundaries | `docs/policy/architecture.md` |
+| Текущие процессы, компоненты, contracts и data ownership | `docs/architecture.md` |
+| Dependency boundaries и размещение кода | `docs/policy/architecture.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
@@ -174,7 +175,8 @@ reference-инструкцию не добавляются.
 
 - постоянные filenames — английский `kebab-case`, если путь уже не закреплён;
 - H1 — понятный русский заголовок;
-- metadata `> Тип: политика|справочник` рекомендуется для policy/reference;
+- metadata `> Тип: ...` называет фактическую роль файла: справочник, политика,
+  указатель, руководство, операционное руководство или контракт;
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.

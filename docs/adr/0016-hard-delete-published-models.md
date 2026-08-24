@@ -53,4 +53,4 @@ telemetry и terminal jobs сохраняют независимые retention l
 ## Текущая документация
 
 - [Управление опубликованными моделями](../operations/published-models.md)
-- [Архитектурная политика](../policy/architecture.md)
+- [Архитектура Transformer](../architecture.md)
