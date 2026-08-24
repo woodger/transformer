@@ -30,8 +30,8 @@ authorization: Bearer a.<base64url>
 Credential представляет одного owner subject. Jobs, model aliases, model
 references, status, receipts, tickets и outputs ограничены owner-ом. Никогда не
 записывайте bearer credential или непрозрачный output ticket в логи. Credential
-действует три календарных месяца; Inventory должен получить новый token до
-expiration и переключиться на него до отзыва прежнего.
+действует ровно 180 суток (`180 × 24` часа); Inventory должен получить новый
+token до expiration и переключиться на него до отзыва прежнего.
 
 Каждый документ action начинается с:
 

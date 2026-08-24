@@ -8,7 +8,7 @@ from app.service.domain.access import AccessTokenRecord
 TOKEN_ID = "12345678-1234-4234-8234-123456789abc"
 CREATED_AT = datetime(2026, 8, 23, 12, 30, tzinfo=UTC)
 LAST_USED_AT = datetime(2026, 8, 24, 12, 30, tzinfo=UTC)
-EXPIRES_AT = datetime(2026, 11, 23, 12, 30, tzinfo=UTC)
+EXPIRES_AT = datetime(2027, 2, 19, 12, 30, tzinfo=UTC)
 
 
 def _record(*, expired=False, last_used_at=LAST_USED_AT, token=None):

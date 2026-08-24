@@ -254,8 +254,8 @@ DoPut, GetFlightInfo и DoGet. Выпустите token для локально�
 ./.venv/bin/python ./app/main.py auth tokens issue
 ```
 
-Команда выпускает token для фиксированного owner subject `inventory` сроком на
-три календарных месяца и выводит ID token, `Expires` и новый credential.
+Команда выпускает token для фиксированного owner subject `inventory` ровно на
+180 суток (`180 × 24` часа) и выводит ID token, `Expires` и новый credential.
 Credential имеет формат `a.<base64url>` и показывается только при выпуске.
 PostgreSQL хранит его SHA-256 digest, но не исходный bearer. Передавайте
 credential через канал secrets, принятый в deployment; не помещайте его в

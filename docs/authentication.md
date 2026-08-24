@@ -47,9 +47,9 @@ owner-scoped state jobs, models и aliases.
 аутентификацию. Исходный Bearer показывается только один раз в успешном выводе
 `issue`.
 
-Каждый token получает фиксированный `expires_at` через три календарных месяца
-после выпуска. Использование token и ротация других credentials не продлевают
-срок; sliding expiration отсутствует.
+Каждый token получает фиксированный `expires_at` ровно через 180 суток
+(`180 × 24` часа) после выпуска. Использование token и ротация других
+credentials не продлевают срок; sliding expiration отсутствует.
 
 ## Persistence и lifecycle
 
