@@ -2,7 +2,9 @@
 
 ## Статус
 
-Принято.
+Принято как implementation record. Архитектурный класс решения и целевая
+cache/TLS boundary уточнены [ADR 0020](0020-local-opaque-api-access-tokens.md);
+решение о полном token index через PostgreSQL `LISTEN/NOTIFY` заменено.
 
 ## Контекст
 

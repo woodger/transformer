@@ -15,9 +15,11 @@
 [ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
 telemetry от core state закреплено в
 [ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
-persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md). Transport
-authentication закреплена в
-[ADR 0018](../adr/0018-postgresql-api-access-tokens.md).
+persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md). Текущая
+реализация transport authentication записана в
+[ADR 0018](../adr/0018-postgresql-api-access-tokens.md), а выбранный класс
+local opaque API access tokens и его целевая security boundary закреплены в
+[ADR 0020](../adr/0020-local-opaque-api-access-tokens.md).
 
 ## Процессы и composition roots
 
