@@ -39,7 +39,10 @@ Torch, CUDA или worker runtime. Версии ML runtime публикует wo
 `flight serve`, `auth tokens`, `models` и `db migrations` требуют настройки
 PostgreSQL. Lifecycle `auth tokens` описан в
 [руководстве по управлению API access tokens](../operations/api-access-tokens.md),
-а service и database operations — в [Flight runbook](../flight-operations.md).
+published models — в
+[руководстве по управлению моделями](../operations/published-models.md), а
+schema — в [руководстве по migrations](../operations/database-migrations.md).
+Service operations находятся в [Flight runbook](../flight-operations.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
 находится в [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
 
@@ -237,42 +240,18 @@ Training options доступны только у `fit` и `fit-stream`. `--use-
 
 ## Опубликованные модели
 
-Список доступных model generations включает точный `modelRef`, owner, label,
-generation и lifecycle state:
+Точные administrative commands:
 
 ```bash
 ./.venv/bin/python ./app/main.py models list
-```
-
-Удаление запрашивается только по точному `modelRef`; alias команда не
-принимает:
-
-```bash
+./.venv/bin/python ./app/main.py models list --deleted
 ./.venv/bin/python ./app/main.py models delete \
   mdl_ead8077a4cba4455920d718532551248
 ```
 
-Команда атомарно переводит доступную модель в `DELETING` и снимает alias,
-если он всё ещё указывает на эту generation. Новые prediction jobs после этого
-модель не видят. Maintenance-процесс Flight service удаляет каталог, затем
-физически удаляет строку модели из PostgreSQL. После завершения модель исчезает
-из `models list`, а повторный запрос возвращает `model generation not found`.
-
-Минимальная identity и timestamps доступны отдельно:
-
-```bash
-./.venv/bin/python ./app/main.py models list --deleted
-```
-
-Опция показывает модели в процессе удаления (`DELETING`) и завершённые
-удаления (`DELETED`). Для `DELETING` колонка `DELETED AT` остаётся пустой; она
-заполняется после физической очистки и переноса identity в archive. Checkpoint
-paths, hashes, contracts и metadata в archive не сохраняются. Generation
-остаётся монотонным и не используется повторно.
-
-Удаление отклоняется, пока на модель ссылается незавершённый prediction job.
-Run telemetry имеет собственный lifecycle: удаление модели не отменяет её
-доставку и не удаляет уже созданные документы OpenSearch.
+`models delete` принимает только точный `MODEL_REF`, а не alias. Полный
+необратимый lifecycle, состояния и порядок проверки описывает
+[`руководство по управлению опубликованными моделями`](../operations/published-models.md).
 
 ## Пути и запись артефактов
 

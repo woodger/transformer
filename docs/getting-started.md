@@ -92,8 +92,8 @@ Prediction использует созданный checkpoint:
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
   public remote API; [Flight runbook](./flight-operations.md) описывает
   PostgreSQL, recovery, TLS и lifecycle service.
-- [Руководство по управлению API access tokens](./operations/api-access-tokens.md)
-  описывает выдачу, передачу, ротацию и отзыв credentials.
+- [Операционные руководства](./operations/index.md) описывают lifecycle API
+  access tokens, PostgreSQL schema и published models.
 - [systemd guide](./deployment/systemd.md) — единственный ручной production
   deployment path для Fedora.
 - [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка

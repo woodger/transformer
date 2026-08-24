@@ -136,7 +136,7 @@ inputs в `recovery/` остаётся авторитетным: прерван�
 recovery; Transformer не начинает fit незаметно с нулевой epoch. PostgreSQL
 хранит только metadata, поэтому ни один filesystem нельзя восстановить из БД.
 
-## Настройка PostgreSQL и migrations
+## Настройка PostgreSQL
 
 Параметры БД читаются из `<project-root>/.env`. Значения, уже присутствующие в
 окружении процесса, имеют приоритет. Обязательные параметры:
@@ -153,34 +153,11 @@ POSTGRES_PASSWORD=replace-with-a-secret
 частной сети. Credentials нельзя фиксировать в репозитории или включать в
 логи.
 
-Transformer использует schema PostgreSQL `transformer`. Сервис никогда не
-применяет migrations при запуске. Проверяйте и обновляйте schema явно:
-
-```bash
-./.venv/bin/python ./app/main.py db migrations status
-./.venv/bin/python ./app/main.py db migrations apply
-```
-
-`status` выполняет только чтение. `apply` обновляет schema до текущего Alembic
-head. Сервис и команды управления tokens отказываются запускаться при
-отсутствующей или устаревшей schema и предлагают выполнить
-`db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
-автоматически migrations не применяются.
-
-Текущий Alembic head `0020` является baseline полной актуальной schema. Новая
-пустая БД создаётся одной migration. База, уже доведённая опубликованной
-цепочкой до `0020`, совместима без повторного DDL: `status` показывает
-одинаковые current и head revisions, а `apply` ничего не изменяет.
-
-Базы на revisions ниже `0020` текущим checkout не поддерживаются. Сначала
-разверните tag `0.1.15`, примените его полную migration chain до `0020` и
-только затем переходите на текущую версию. Это же правило действует для
-старых backups. Прежние revisions и их data-cutover instructions сохранены в
-tag `0.1.15`, Git history и release notes.
-
-Baseline необратима: `db migrations rollback` на revision `0020` завершается
-ошибкой и не удаляет schema или данные. Перед будущими migrations сохраняйте
-резервную копию PostgreSQL и связанных model artifacts.
+Transformer использует schema PostgreSQL `transformer` и никогда не применяет
+migrations при запуске. Service и административные команды требуют schema на
+текущем Alembic head. Проверку revisions, upgrade, compatibility с baseline и
+rollback boundary описывает
+[`руководство по управлению схемой PostgreSQL`](operations/database-migrations.md).
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -367,27 +344,12 @@ idempotency record. Recovery inputs/checkpoints удаляются после п
 terminal state. Каталоги опубликованных моделей не удаляются вместе с job, а
 необязательная ссылка на producing job очищается. Компактная owner-scoped
 identity tombstone сохраняется, поэтому `jobId` нельзя использовать повторно,
-а точный lost-create replay остаётся разрешимым. Во Flight v5 нет сетевого
-action для удаления модели; оператор использует локальную команду
-`models delete`.
+а точный lost-create replay остаётся разрешимым.
 
-Rationale lifecycle удаления моделей зафиксирован в
-[ADR 0016](adr/0016-hard-delete-published-models.md). Удаление model generation
-имеет отдельную durable boundary. PostgreSQL
-transaction блокирует новые predict, проверяет отсутствие активных predict
-jobs, снимает только alias, который указывает на эту generation, и фиксирует
-`DELETING`. Maintenance удаляет `models/{modelRef}` и только после успешного
-удаления физически удаляет строку модели. При filesystem error состояние
-остаётся `DELETING` для следующей попытки. Минимальная identity и timestamps
-попадают в `deleted_models`. Модель исчезает из обычного `models list` сразу
-после фиксации `DELETING`, но остаётся наблюдаемой через
-`models list --deleted`: сначала без `deleted_at`, затем как завершённая audit
-record. Generation остаётся монотонным.
-Alias не откатывается на предыдущую generation.
-
-OpenSearch outbox не участвует в удалении модели. Pending run продолжает
-доставляться, а terminal telemetry очищается по собственной retention policy.
-Уже принятые OpenSearch documents команда модели не удаляет.
+Published model generation имеет независимый двухфазный hard-delete lifecycle;
+во Flight v5 нет сетевого action для её удаления. Команды оператора,
+наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
+[`руководство по управлению опубликованными моделями`](operations/published-models.md).
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из

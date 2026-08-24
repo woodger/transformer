@@ -17,7 +17,7 @@ Transformer поддерживает одну service identity с фиксиро
 - Команды выполняются из корня working copy через project `.venv`.
 - CLI должен обращаться к той же PostgreSQL database, что и Flight service;
   schema должна быть обновлена согласно
-  [`руководству по эксплуатации Flight`](../flight-operations.md#настройка-postgresql-и-migrations).
+  [`руководству по migrations`](database-migrations.md).
 - До выпуска token подготовьте принятые в deployment secret storage и канал
   передачи credential Consumer-у.
 
