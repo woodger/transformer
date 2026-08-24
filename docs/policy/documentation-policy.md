@@ -32,7 +32,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Python runtime, `.venv` и установка package dependencies | `docs/policy/python-runtime-policy.md` |
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
-| Flight service behavior и operations | `docs/flight-operations.md` |
+| Flight service behavior и operations | `docs/operations/flight-service.md` |
 | Consumer integration | `docs/consumer-flight-integration.md` |
 | Текущие process и dependency boundaries | `docs/policy/architecture.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
@@ -151,12 +151,12 @@ documentation, в проекте не ведётся.
 ## Deployment и operations
 
 `docs/deployment/` содержит короткие ручные инструкции установки и запуска.
-`docs/operations/` содержит operator-facing lifecycle procedures для
+`docs/operations/` содержит operator-facing lifecycle procedures для service и
 application-managed ресурсов. Их состав и границы перечисляет
 `docs/operations/index.md`; каждый resource lifecycle имеет один основной
 Operational Guide.
-`docs/flight-operations.md` содержит подробные lifecycle, recovery, security и
-storage semantics.
+`docs/operations/flight-service.md` содержит подробные lifecycle, recovery,
+security и storage semantics Flight service.
 
 Deployment guide не должен дублировать всю архитектуру сервиса или
 автоматизировать изменение production-хоста. Для target Fedora deployment он

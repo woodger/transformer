@@ -5,7 +5,7 @@ Transformer, не зависящий от языка реализации. JSON 
 эталонные фикстуры версионируются вместе. Интеграционный flow описан в
 [`consumer-flight-integration.md`](../../../../docs/consumer-flight-integration.md),
 эксплуатационный lifecycle — в
-[`flight-operations.md`](../../../../docs/flight-operations.md), а credential
+[`flight-service.md`](../../../../docs/operations/flight-service.md), а credential
 model и channel security — в
 [`authentication.md`](../../../../docs/authentication.md).
 

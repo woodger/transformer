@@ -42,7 +42,7 @@ PostgreSQL. Lifecycle `auth tokens` описан в
 published models — в
 [руководстве по управлению моделями](../operations/published-models.md), а
 schema — в [руководстве по migrations](../operations/database-migrations.md).
-Service operations находятся в [Flight runbook](../flight-operations.md).
+Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
 находится в [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
 

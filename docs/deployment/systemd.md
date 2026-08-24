@@ -23,7 +23,7 @@ Project `.venv`, `.env` и
 [PostgreSQL migrations](../operations/database-migrations.md) должны быть
 подготовлены до включения unit. Правила окружения находятся в
 [политике Python runtime](../policy/python-runtime-policy.md), а параметры
-Flight service — в [Flight runbook](../flight-operations.md).
+Flight service — в [Flight runbook](../operations/flight-service.md).
 Необязательная доставка training metrics настраивается отдельно по
 [инструкции OpenSearch](opensearch.md).
 

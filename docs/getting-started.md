@@ -4,7 +4,7 @@
 > service.
 
 Этот документ описывает запуск локального CLI. Для remote Arrow Flight service
-с PostgreSQL используйте [runbook](./flight-operations.md), для production
+с PostgreSQL используйте [runbook](./operations/flight-service.md), для production
 systemd — [deployment guide](./deployment/systemd.md).
 
 ## Подготовить окружение
@@ -90,7 +90,7 @@ Prediction использует созданный checkpoint:
 - [`fit-stream` и `predict-stream`](./local-arrow-protocol.md) принимают и
   возвращают framed Arrow payloads через standard streams.
 - [Arrow Flight v5 contract](../app/contracts/flight/v5/README.md) задаёт
-  public remote API; [Flight runbook](./flight-operations.md) описывает
+  public remote API; [Flight runbook](./operations/flight-service.md) описывает
   PostgreSQL, recovery, TLS и lifecycle service.
 - [Операционные руководства](./operations/index.md) описывают lifecycle API
   access tokens, PostgreSQL schema и published models.

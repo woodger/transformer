@@ -5,7 +5,7 @@
 
 Это руководство задаёт текущую операторскую процедуру для PostgreSQL schema
 `transformer`. Параметры подключения и роль PostgreSQL в runtime описаны в
-[`Flight runbook`](../flight-operations.md#настройка-postgresql), а точный
+[`Flight runbook`](flight-service.md#настройка-postgresql), а точный
 command tree — в [`справочнике CLI`](../cli/index.md).
 
 Flight service не применяет migrations при запуске. `flight serve`, команды

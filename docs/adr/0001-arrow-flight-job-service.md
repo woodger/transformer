@@ -56,4 +56,4 @@ artifacts. Torch выполняется вне RPC handler в отдельном
 
 - [Архитектурная политика](../policy/architecture.md)
 - [Контракт Arrow Flight v5](../../app/contracts/flight/v5/README.md)
-- [Операционное руководство Flight](../flight-operations.md)
+- [Операционное руководство Flight](../operations/flight-service.md)

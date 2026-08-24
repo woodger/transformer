@@ -6,7 +6,7 @@
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
-[`руководстве по эксплуатации Flight`](flight-operations.md). Выдача, передача,
+[`руководстве по эксплуатации Flight`](operations/flight-service.md). Выдача, передача,
 ротация и отзыв credentials описаны в
 [`операционном руководстве`](operations/api-access-tokens.md), а credential
 model, token verification и bounded revoke latency — в

@@ -57,7 +57,7 @@ user-site. Полный локальный сценарий находится �
   integrity stress test;
 - [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
   training metrics JSONL;
-- [`flight serve`](./docs/flight-operations.md) — durable Arrow Flight job
+- [`flight serve`](./docs/operations/flight-service.md) — durable Arrow Flight job
   service;
 - [`auth tokens issue|list|revoke`](./docs/operations/api-access-tokens.md) —
   lifecycle API access tokens;
@@ -81,7 +81,7 @@ user-site. Полный локальный сценарий находится �
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
 - [Аутентификация Flight](./docs/authentication.md)
 - [Операционные руководства](./docs/operations/index.md)
-- [Flight runbook](./docs/flight-operations.md)
+- [Flight runbook](./docs/operations/flight-service.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
 - [Архитектурная политика](./docs/policy/architecture.md)
@@ -111,7 +111,7 @@ Production-запуск на Fedora через systemd описан в
 [docs/deployment/systemd.md](./docs/deployment/systemd.md). Schema PostgreSQL,
 tokens и published models управляются по
 [операционным руководствам](./docs/operations/index.md), а recovery, storage
-lifecycle и TLS/mTLS описаны в [Flight runbook](./docs/flight-operations.md).
+lifecycle и TLS/mTLS описаны в [Flight runbook](./docs/operations/flight-service.md).
 
 Bearer authentication обязательна при любом transport. Полная пара
 `--tls-cert-file`/`--tls-key-file` включает TLS; без неё endpoint использует

@@ -5,17 +5,17 @@
 
 Это руководство описывает единственный экземпляр сервиса Transformer Flight.
 Детали wire-контракта для Consumer находятся в
-[`руководстве по интеграции Consumer-ов`](consumer-flight-integration.md), а
+[`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Текущие
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md). Текущие
 process и data ownership boundaries описывает
-[`архитектурная политика`](policy/architecture.md), training и recovery —
-[`training reference`](training-runtime.md), а credential model, cache
+[`архитектурная политика`](../policy/architecture.md), training и recovery —
+[`training reference`](../training-runtime.md), а credential model, cache
 consistency и channel security —
-[`справочник аутентификации`](authentication.md).
+[`справочник аутентификации`](../authentication.md).
 Rationale durable recovery и streaming lifecycle сохранён в
-[ADR 0003](adr/0003-durable-resumable-training-and-device-aware-execution.md)
-и [ADR 0005](adr/0005-durable-streaming-flight-v3.md); текущую операционную
+[ADR 0003](../adr/0003-durable-resumable-training-and-device-aware-execution.md)
+и [ADR 0005](../adr/0005-durable-streaming-flight-v3.md); текущую операционную
 семантику определяет это руководство.
 
 ## Требования к runtime
@@ -37,9 +37,9 @@ Rationale durable recovery и streaming lifecycle сохранён в
   видимый GPU должен быть доступен пользователю сервиса.
 
 Production-версии Python packages зафиксированы только в
-[`requirements.txt`](../requirements.txt). Окружение создаётся на целевом
+[`requirements.txt`](../../requirements.txt). Окружение создаётся на целевом
 хосте по инструкции
-[`deployment/systemd.md`](deployment/systemd.md). Команды этого руководства
+[`deployment/systemd.md`](../deployment/systemd.md). Команды этого руководства
 выполняются из `/home/nerv/transformer` через `./.venv/bin/python`.
 
 ```bash
@@ -160,7 +160,7 @@ Transformer использует schema PostgreSQL `transformer` и никогд
 migrations при запуске. Service и административные команды требуют schema на
 текущем Alembic head. Проверку revisions, upgrade, compatibility с baseline и
 rollback boundary описывает
-[`руководство по управлению схемой PostgreSQL`](operations/database-migrations.md).
+[`руководство по управлению схемой PostgreSQL`](database-migrations.md).
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications
@@ -174,9 +174,9 @@ Bearer authentication обязательна для каждого Flight RPC, �
 DoPut, GetFlightInfo и DoGet. До предоставления сервиса Consumer-у оператор
 должен выпустить и безопасно передать credential. Выдачу, просмотр, ротацию,
 отзыв и проверку полного lifecycle описывает
-[`руководство по управлению API access tokens`](operations/api-access-tokens.md).
+[`руководство по управлению API access tokens`](api-access-tokens.md).
 Credential model, cache consistency и channel security описаны в
-[`справочнике аутентификации`](authentication.md).
+[`справочнике аутентификации`](../authentication.md).
 
 ## Настройка Flight service
 
@@ -259,7 +259,7 @@ Consumer должен получать фактические значения �
 ## Ручной запуск на переднем плане
 
 Production-запуск определён только в
-[`deployment/systemd.md`](deployment/systemd.md). Для foreground diagnostics
+[`deployment/systemd.md`](../deployment/systemd.md). Для foreground diagnostics
 локальный plaintext-процесс можно запустить так:
 
 ```bash
@@ -287,7 +287,7 @@ Production-запуск определён только в
 cancelGraceSeconds` до внешнего SIGKILL и никогда не запускать два процесса с
 одним каталогом runtime. Целевой Fedora systemd unit, политика каталога runtime
 и действия operator описаны в
-[`deployment/systemd.md`](deployment/systemd.md).
+[`deployment/systemd.md`](../deployment/systemd.md).
 
 ## Запуск и восстановление
 
@@ -352,7 +352,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
 во Flight v5 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
-[`руководство по управлению опубликованными моделями`](operations/published-models.md).
+[`руководство по управлению опубликованными моделями`](published-models.md).
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -407,7 +407,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
    по-прежнему контролируются приложением.
 
 Подробности записаны в
-[`flight-dependency-note.md`](flight-dependency-note.md).
+[`flight-dependency-note.md`](../flight-dependency-note.md).
 
 ## Известные ограничения v5
 

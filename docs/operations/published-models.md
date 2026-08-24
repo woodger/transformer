@@ -7,7 +7,7 @@
 в `models/` и их metadata в PostgreSQL. Rationale двухфазного hard delete
 сохранён в [ADR 0016](../adr/0016-hard-delete-published-models.md), а storage и
 maintenance boundaries описаны в
-[`Flight runbook`](../flight-operations.md#хранение-и-ошибки-хранилища).
+[`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
 
 Команды требуют актуальной PostgreSQL schema. Порядок её проверки находится в
 [`руководстве по migrations`](database-migrations.md).

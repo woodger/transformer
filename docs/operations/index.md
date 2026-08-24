@@ -22,7 +22,7 @@ deployment guides могут содержать краткий пример ил
 
 ## Эксплуатация service и deployment
 
-- [Flight runbook](../flight-operations.md) описывает runtime requirements,
+- [Flight runbook](flight-service.md) описывает runtime requirements,
   storage, запуск, recovery, shutdown, health и ограничения сервиса.
 - [Systemd deployment contract](../deployment/systemd.md) задаёт единственный
   ручной production deployment на Fedora.
