@@ -9,6 +9,10 @@
 
 ### Changed
 
+- Alembic revisions `0001–0020` объединены в одну baseline migration с
+  сохранением head `0020`. Базы, уже находящиеся на `0020`, не изменяются;
+  более старые revisions сначала требуется обновить полной цепочкой из tag
+  `0.1.15`. Downgrade ниже baseline запрещён.
 - Production systemd unit явно задаёт `WorkingDirectory=/home/nerv/transformer`;
   `app/main.py` разрешается относительно project root, а путь к project
   interpreter остаётся абсолютным.

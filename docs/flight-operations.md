@@ -167,77 +167,20 @@ head. Сервис и команды управления tokens отказыв�
 `db migrations apply`. Flight v5 является текущим контрактом schema и runtime;
 автоматически migrations не применяются.
 
-Переход на Alembic revision `0006` необратим: он удаляет незавершённые v3
-jobs, idempotency и recovery state. Access tokens, model identities и aliases
-сохраняются, но прежние модели не получают `mlContract` v4 и недоступны для
-prediction. Перед первым применением `0006` остановите Inventory workers и
-Transformer, сохраните резервную копию PostgreSQL и model artifacts. После
-обновления одновременно запускаются только Inventory v4 и Transformer v4;
-модели требуется переобучить.
+Текущий Alembic head `0020` является baseline полной актуальной schema. Новая
+пустая БД создаётся одной migration. База, уже доведённая опубликованной
+цепочкой до `0020`, совместима без повторного DDL: `status` показывает
+одинаковые current и head revisions, а `apply` ничего не изменяет.
 
-Revision `0007` добавляет committed training intervals, metadata metrics
-artifact и delivery outbox. Flight v5 wire schema не меняется. Настройка
-OpenSearch выполняется отдельно по
-[`deployment/opensearch.md`](deployment/opensearch.md); недоступность
-OpenSearch не блокирует fit и публикацию модели.
+Базы на revisions ниже `0020` текущим checkout не поддерживаются. Сначала
+разверните tag `0.1.15`, примените его полную migration chain до `0020` и
+только затем переходите на текущую версию. Это же правило действует для
+старых backups. Прежние revisions и их data-cutover instructions сохранены в
+tag `0.1.15`, Git history и release notes.
 
-Revision `0008` добавляет lifecycle `AVAILABLE → DELETING → DELETED` для
-опубликованных model generations и состояние `CANCELLED` для явно отброшенной
-metrics delivery. Публичный Flight v5 не меняется.
-
-Revision `0009` добавляет timing boundaries terminal fit summary. Revision
-`0010` переносит durable telemetry в отдельный run-owned lifecycle с ключом
-`jobId` и удаляет экспериментальные model-owned artifact metadata и outbox.
-Committed epoch intervals и model generations сохраняются. Публичный Flight v5
-не меняется.
-
-Revision `0011` выполняет breaking cutover на единую PascalCase identity
-индикаторов Flight v5. До обновления checkout, пока v4 schema является текущей,
-штатно удалите все опубликованные модели и дождитесь состояния `DELETED`.
-Затем остановите Inventory и Transformer, разверните v5 и примените migration.
-Если осталась хотя бы одна модель `AVAILABLE` или `DELETING`, migration
-завершится ошибкой, не изменив данные. Она удаляет v4 jobs, recovery,
-idempotency, aliases и run-owned telemetry, но сохраняет API tokens и
-tombstones удалённых моделей с монотонными generation. Downgrade отсутствует.
-После cutover совместно запускаются только Inventory v5 и Transformer v5,
-затем выполняется новый fit.
-
-Revision `0012` физически удаляет накопленные строки `DELETED` из `models` и
-удаляет поле `models.deleted_at`. Она необратима. Revision `0013` создаёт
-минимальный `deleted_models` archive для последующих удалений. Ранее очищенные
-revision `0012` timestamps восстановить невозможно. Текущий lifecycle:
-`AVAILABLE → DELETING → audit archive`. Flight v5 не меняется.
-
-Revision `0014` необратимо удаляет локальные API tokens, их notification
-trigger и функцию. Удалённые credential восстановить невозможно. Revision
-`0015` создаёт новую пустую таблицу API tokens с digest-only хранением и
-возвращает notification trigger. Owner-scoped jobs/models не изменяются:
-строковый `owner_subject` продолжает хранить точный subject credential.
-Revision `0016` исправляет database, отмеченные как `0015`, но физически
-сохранившие историческую колонку `token`: существующие credentials заменяются
-их SHA-256 digests без изменения metadata или revoke status, raw-колонка
-удаляется, а notification objects пересоздаются. Для уже корректной
-digest-only таблицы conversion является no-op.
-
-Revision `0017` удаляет все существующие бессрочные API token rows и добавляет
-обязательный `expires_at`. Удалённые credentials восстановить невозможно. Для
-cutover остановите Inventory и Transformer, примените migration, выпустите
-новый token обновлённым CLI, передайте его Inventory через secret storage и
-только затем снова запустите оба процесса. Downgrade после выпуска нового token
-запрещён.
-
-Revision `0018` физически удаляет существующие revoked token rows и колонку
-`revoked_at`, перестраивает expiry index и оставляет token cache notification
-на `INSERT/DELETE`. Удалённая revoke history не восстанавливается при
-downgrade.
-
-Revision `0019` удаляет token notification trigger и функцию. Token rows,
-expiry index и credentials не меняются. Downgrade восстанавливает notification
-objects revision `0018`.
-
-Revision `0020` добавляет nullable `last_used_at`. Существующие и новые tokens
-имеют значение `NULL` до первой успешной PostgreSQL revalidation. Downgrade
-удаляет только эти usage metadata.
+Baseline необратима: `db migrations rollback` на revision `0020` завершается
+ошибкой и не удаляет schema или данные. Перед будущими migrations сохраняйте
+резервную копию PostgreSQL и связанных model artifacts.
 
 PostgreSQL хранит состояние control plane, а не Arrow payload-ы и не локальный
 cache. Transactions короткие. In-process FIFO получает быстрые notifications

@@ -22,7 +22,7 @@ def test_database_migration_command_dispatches_action_and_prints_status(
 ):
     config = object()
     calls = []
-    status = MigrationStatus(current=("0001",), heads=("0001",))
+    status = MigrationStatus(current=("0020",), heads=("0020",))
     monkeypatch.setattr(
         migrations_command,
         "load_database_config",
@@ -43,8 +43,8 @@ def test_database_migration_command_dispatches_action_and_prints_status(
 
     assert calls == [config]
     assert capsys.readouterr().out == (
-        "Current revision: 0001\n"
-        "Head revision: 0001\n"
+        "Current revision: 0020\n"
+        "Head revision: 0020\n"
         "Pending migrations: no\n"
     )
 
@@ -61,7 +61,7 @@ def test_database_migration_status_prints_empty_current_revision(
     monkeypatch.setattr(
         migrations_command,
         "migration_status",
-        lambda _: MigrationStatus(current=(), heads=("0001",)),
+        lambda _: MigrationStatus(current=(), heads=("0020",)),
     )
 
     migrations_command.run(
@@ -70,6 +70,6 @@ def test_database_migration_status_prints_empty_current_revision(
 
     assert capsys.readouterr().out == (
         "Current revision: none\n"
-        "Head revision: 0001\n"
+        "Head revision: 0020\n"
         "Pending migrations: yes\n"
     )

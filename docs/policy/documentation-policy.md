@@ -132,10 +132,12 @@ Admission, immutable lifecycle и допустимое содержание ADR 
 [`docs/adr/index.md`](../adr/index.md). Решение, не проходящее admission,
 остаётся в issue или merge request.
 
-После реализации release history сохраняет `CHANGELOG.md`, точную историю
-изменений — Git, а применённую эволюцию PostgreSQL — неизменяемая цепочка
-Alembic migrations. Эти исторические источники не заменяют документацию
-текущего состояния.
+После реализации release history сохраняет `CHANGELOG.md`, а точную историю
+изменений — Git. Текущий PostgreSQL baseline и последующую эволюцию schema
+задают Alembic migrations. Если опубликованная цепочка заменена baseline,
+удалённые revisions остаются в release tag и Git history, а compatibility
+boundary явно фиксируется в operations. Эти исторические источники не
+заменяют документацию текущего состояния.
 
 При замене решения профильный документ обновляется в том же change set:
 устаревшая и отменённая семантика удаляется, а не переносится в новый
