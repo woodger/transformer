@@ -13,6 +13,11 @@
   фиксированные 180 суток. Уже выпущенные tokens сохраняют записанный
   `expires_at`; migration и продление действующих credentials отсутствуют.
 
+### Fixed
+
+- `auth tokens revoke` выводит ожидаемые `not found` и invalid-ID ошибки
+  кратко в stderr с exit code `1`, без Python traceback.
+
 ## [0.1.15] - 2026-08-24
 
 ### Added

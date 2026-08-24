@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
+
 import app.admin.bootstrap.auth_tokens as tokens_command
 from app.admin.cli.auth_tokens import print_issued, print_list, print_revoked
 from app.service.domain.access import AccessTokenRecord
@@ -132,3 +134,35 @@ def test_list_and_revoke_dispatch_historical_actions(monkeypatch, capsys):
     assert f"Revoked token: {TOKEN_ID}" in output
     assert calls == ["list", ("revoke", TOKEN_ID)]
     assert closed == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("error_type", "message"),
+    (
+        (LookupError, f"API access token not found: {TOKEN_ID}"),
+        (ValueError, "token ID must be a canonical UUID"),
+    ),
+)
+def test_revoke_reports_expected_error_without_traceback(
+    monkeypatch,
+    capsys,
+    error_type,
+    message,
+):
+    class Administration:
+        def revoke(self, _token_id):
+            raise error_type(message)
+
+    closed = _wire(monkeypatch, Administration())
+
+    with pytest.raises(SystemExit) as exc:
+        tokens_command.run(SimpleNamespace(
+            tokens_action="revoke",
+            token_id=TOKEN_ID,
+        ))
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"ERROR: {message}\n"
+    assert closed == [True]
