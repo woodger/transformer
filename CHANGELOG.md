@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-08-24
+
 ### Changed
 
 - Alembic revisions `0001–0020` объединены в одну baseline migration с
@@ -19,6 +21,11 @@
 - Срок действия новых API access tokens изменён с трёх календарных месяцев на
   фиксированные 180 суток. Уже выпущенные tokens сохраняют записанный
   `expires_at`; migration и продление действующих credentials отсутствуют.
+- Release tags и comparison links используют SemVer без префикса `v`.
+- Документация разделена по ownership: текущая архитектура отделена от
+  архитектурной политики, lifecycle procedures собраны в Operations Guides, а
+  Consumer guide оставляет workflow и ссылается на нормативный Flight contract
+  для wire details. Устаревшие и дублирующие design references удалены.
 
 ### Fixed
 
@@ -696,7 +703,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.15...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.16...HEAD
+[0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/woodger/transformer/compare/0.1.14...0.1.15
 [0.1.14]: https://github.com/woodger/transformer/compare/0.1.13...0.1.14
 [0.1.13]: https://github.com/woodger/transformer/compare/0.1.12...0.1.13
