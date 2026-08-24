@@ -3,7 +3,7 @@
 > Этот файл объясняет идеи и содержит исторические примеры. Исполняемый
 > контракт текущих четырёх loss stages и точные формулы описаны в
 > [`losses.md`](./losses.md), а публичная target-aligned семантика — в
-> [`ADR 0007`](./adr/0007-target-aligned-flight-v4.md). Snippets ниже не
+> [`Flight v5 contract`](../app/contracts/flight/v5/README.md). Snippets ниже не
 > являются актуальной архитектурой модели или CLI-схемой: упоминаемый в них
 > `sigmaR` соответствует текущей private `returnScale`, а публичный
 > `SigmaReturn` обучается отдельной прямой регрессией.

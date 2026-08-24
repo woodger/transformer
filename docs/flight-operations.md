@@ -4,17 +4,12 @@
 Детали wire-контракта для Consumer находятся в
 [`пояснительной записке для Inventory`](inventory-flight-handoff.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Lifecycle
-долговечного потока, fencing и семантика восстановления закреплены в
-[`ADR 0005`](adr/0005-durable-streaming-flight-v3.md), а текущий ML-контракт и
-breaking cutover — в
-[`ADR 0007`](adr/0007-target-aligned-flight-v4.md), а текущая единая identity
-индикаторов — в
-[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md), а transport
-authentication — в
-[`ADR 0018`](adr/0018-postgresql-api-access-tokens.md), а выбранный класс
-решения и cache consistency — в
-[`ADR 0020`](adr/0020-local-opaque-api-access-tokens.md).
+[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). Текущие
+process и data ownership boundaries описывает
+[`архитектурная политика`](policy/architecture.md), training и recovery —
+[`training reference`](training-runtime.md), а credential model, cache
+consistency и channel security —
+[`справочник аутентификации`](authentication.md).
 
 ## Требования к runtime
 
@@ -119,7 +114,7 @@ OpenSearch outbox. Ошибка telemetry не меняет model generation и�
 state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V4 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. V5 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -278,24 +273,15 @@ credential через канал secrets, принятый в deployment; не �
 завершаются ошибкой `not found`. Expired rows сохраняются и видны в списке до
 явного revoke.
 
-Flight-процесс использует пустой при запуске process-local cache-aside SHA-256
-digests: не более 1024 положительных entries с окном повторной проверки
-60 секунд. На cache miss одна atomic PostgreSQL operation проверяет digest и
-`expires_at`, обновляет `last_used_at` и возвращает identity. Одновременные
-misses одного digest объединяются в одну operation. Неизвестные, удалённые и
-истёкшие tokens не кэшируются. Положительная entry никогда не действует после
-`expires_at`. Preload, отдельный listener connection и PostgreSQL
-`LISTEN/NOTIFY` не используются.
-
-Новый token доступен на первом cache miss. После успешного `revoke` ранее
-закэшированный token может приниматься ещё максимум 60 секунд; это bounded
-revoke latency не требует перезапуска процесса. Cache hits не записываются в
-PostgreSQL, поэтому `last_used_at` может отставать от последнего RPC максимум
-на 60 секунд и не является audit timestamp каждого вызова. `tokens list`
-показывает `ID`, `Status`, `Last used` и `Expires`; до первого использования
-выводится `Never`. Для штатной ротации выпустите и передайте Inventory новый
-token до expiration, затем отзовите прежний по ID; owner-scoped state не
-изменится.
+Полная persistence, cache и security semantics описана в
+[`справочнике аутентификации`](authentication.md). Для оператора существенны
+следующие следствия: новый token доступен без перезапуска, после `revoke`
+закэшированный credential может приниматься ещё максимум 60 секунд, а
+`last_used_at` отражает последнее persisted окно использования с той же
+точностью. `tokens list` показывает `ID`, `Status`, `Last used` и `Expires`;
+до первого использования выводится `Never`. Для штатной ротации выпустите и
+передайте Inventory новый token до expiration, затем отзовите прежний по ID;
+owner-scoped state не изменится.
 
 ## Настройка Flight service
 
@@ -541,7 +527,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](flight-dependency-note.md).
 
-## Известные ограничения v4
+## Известные ограничения v5
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

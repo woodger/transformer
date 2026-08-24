@@ -6,14 +6,9 @@
 [`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
-[`руководстве по эксплуатации Flight`](flight-operations.md), а архитектурное
-решения — в [`ADR 0005`](adr/0005-durable-streaming-flight-v3.md),
-[`ADR 0007`](adr/0007-target-aligned-flight-v4.md) и
-[`ADR 0015`](adr/0015-unified-indicator-identity-flight-v5.md). Transport
-authentication закреплена в
-[`ADR 0018`](adr/0018-postgresql-api-access-tokens.md).
-Класс token verification и bounded revoke latency закреплены в
-[`ADR 0020`](adr/0020-local-opaque-api-access-tokens.md).
+[`руководстве по эксплуатации Flight`](flight-operations.md). Credential
+model, token verification и bounded revoke latency описаны в
+[`справочнике аутентификации`](authentication.md).
 
 Transformer Flight v5 — единственный текущий удалённый API. Inventory должен
 требовать `protocolVersions`, равный `[5]`, и использовать нормативные actions,

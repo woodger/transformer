@@ -30,6 +30,8 @@
   expiry index и credentials не меняются.
 - Migration `0020` добавляет nullable `last_used_at`, обновляемый при успешной
   PostgreSQL revalidation token.
+- Добавлен профильный справочник `docs/authentication.md` с текущей credential
+  model, cache consistency и security boundary Flight service.
 
 ### Changed
 
@@ -43,6 +45,9 @@
   tokens не кэшируются, а после hard-delete revoke закэшированный token может
   приниматься ещё максимум 60 секунд. Fixed expiration проверяется на каждом
   новом RPC. `auth tokens list` показывает `Last used` вместо `Created`.
+- Документация описывает текущее состояние системы в профильных источниках;
+  причины и alternatives изменений остаются в issue/MR и Git, release history
+  — в этом changelog, а database evolution — в Alembic migrations.
 
 ### Removed
 
@@ -50,6 +55,9 @@
   administration и команды `auth clients create|list|delete`.
 - Удалён отдельный `--allow-plaintext`: полная пара TLS certificate/key
   включает TLS, а отсутствие обоих options выбирает plaintext.
+- Удалён каталог `docs/adr/` из 20 decision records; актуальные process,
+  protocol, telemetry, operations и authentication сведения перенесены в их
+  профильные документы.
 
 ## [0.1.14] - 2026-08-21
 

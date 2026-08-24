@@ -4,22 +4,12 @@
 > и ownership данных Transformer Arrow Flight service.
 
 Проект использует Clean Architecture отдельно для каждого исполняемого
-процесса. Нормативные решения и их причины зафиксированы в
-[ADR 0004](../adr/0004-clean-architecture-process-boundaries.md),
-[ADR 0006](../adr/0006-service-application-boundaries.md),
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md),
-[ADR 0008](../adr/0008-project-layout-by-runtime-owner.md) и текущем
-[ADR 0015](../adr/0015-unified-indicator-identity-flight-v5.md), а граница
-централизованных training metrics — в
-[ADR 0009](../adr/0009-centralized-training-metrics.md) и
-[ADR 0012](../adr/0012-gradient-and-target-telemetry.md). Структурное отделение
-telemetry от core state закреплено в
-[ADR 0013](../adr/0013-telemetry-ownership-boundaries.md), а run-owned
-persistence — в [ADR 0014](../adr/0014-run-owned-telemetry.md). Текущая
-реализация transport authentication записана в
-[ADR 0018](../adr/0018-postgresql-api-access-tokens.md), а выбранный класс
-local opaque API access tokens и его целевая security boundary закреплены в
-[ADR 0020](../adr/0020-local-opaque-api-access-tokens.md).
+процесса. Этот документ является источником текущих process, dependency и data
+ownership boundaries. Нормативный remote protocol находится в
+[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md),
+training telemetry policy — в [`docs/metrics.md`](../metrics.md), а credential
+model и security boundary — в
+[`docs/authentication.md`](../authentication.md).
 
 ## Процессы и composition roots
 

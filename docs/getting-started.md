@@ -79,7 +79,9 @@ revoke физически удаляет token row; ранее закэширо�
 приниматься ещё максимум 60 секунд. Перезапуск Transformer не требуется, а
 повторный revoke того же ID возвращает `not found`. Подробности управления
 токенами находятся в
-[Flight runbook](./flight-operations.md#токены-доступа-api).
+[Flight runbook](./flight-operations.md#токены-доступа-api), а persistence,
+cache и security semantics — в
+[справочнике аутентификации](./authentication.md).
 
 ## Локальное обучение и prediction
 

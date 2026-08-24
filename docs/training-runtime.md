@@ -4,8 +4,8 @@
 > training telemetry локального CLI и Flight worker.
 
 Параметры команд находятся в [справочнике CLI](./cli/index.md), формулы — в
-[описании функции потерь](./losses.md), нормативный ML-контракт — в
-[ADR 0007](./adr/0007-target-aligned-flight-v4.md).
+[описании функции потерь](./losses.md), а нормативный remote ML-контракт — в
+[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md).
 
 ## Checkpoint contract
 
@@ -24,7 +24,7 @@ Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `d
 `nhead`, `context_mode` и public `out_dim=6`. Фактическая модель имеет ещё одну
 private uncertainty head, которая не меняет public width.
 
-Loader принимает только точный формат v3. Предыдущие wrapped и raw legacy
+Loader принимает только точный формат v4. Предыдущие wrapped и raw legacy
 checkpoint не интерпретируются автоматически. Для Flight prediction другой
 корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
 противоречивой semantic metadata даёт `MODEL_CORRUPT`.
@@ -210,8 +210,8 @@ Mean, max и P95 считаются только по finite pre-clip gradient n
 Flight fit best effort сохраняет завершённые global epochs в immutable
 `telemetry/{jobId}/metrics.jsonl`. Durable boundary, OpenSearch
 projection и различие между `step` и фактическими AMP optimizer updates
-зафиксированы в [ADR 0009](./adr/0009-centralized-training-metrics.md) и
-[ADR 0012](./adr/0012-gradient-and-target-telemetry.md). Успешный fit также
-может получить run-owned `run-summary.json` с lifecycle durations и counters.
+описаны в [политике metrics](./metrics.md) и текущих versioned
+[`metrics contracts`](../app/contracts/metrics/). Успешный fit также может
+получить run-owned `run-summary.json` с lifecycle durations и counters.
 Отсутствие или повреждение telemetry не меняет результат fit и model
 publication.

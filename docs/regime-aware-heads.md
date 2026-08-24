@@ -3,8 +3,8 @@
 > Это ненормативная проектная идея, а не текущая архитектура. Любая её будущая
 > реализация обязана сохранять шесть target-aligned public coordinates и
 > private uncertainty head из
-> [`ADR 0007`](./adr/0007-target-aligned-flight-v4.md). Примеры ниже созданы до
-> Flight v5 и не задают wire-, checkpoint- или objective-контракт.
+> [`Flight v5 contract`](../app/contracts/flight/v5/README.md). Примеры ниже
+> созданы до Flight v5 и не задают wire-, checkpoint- или objective-контракт.
 
 Разные “режимы рынка” → **разные головы модели**.
 

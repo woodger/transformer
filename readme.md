@@ -11,7 +11,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
   PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
   scheduling;
 - versioned public Flight и internal worker contracts;
-- documentation, ADR и политики изменения в `docs/`.
+- документацию текущего состояния и политики изменения в `docs/`.
 
 ## Режимы работы
 
@@ -74,10 +74,11 @@ user-site. Полный локальный сценарий находится �
 - [Arrow Flight v5 contract](./app/contracts/flight/v5/README.md)
 - [Worker process contract v7](./app/contracts/worker/v7/README.md)
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
+- [Аутентификация Flight](./docs/authentication.md)
 - [Flight runbook](./docs/flight-operations.md)
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
-- [Архитектурные решения](./docs/adr/)
+- [Архитектурная политика](./docs/policy/architecture.md)
 - [Политики проекта](./docs/policy/index.md)
 
 ## Структура проекта
@@ -92,7 +93,7 @@ app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots
 app/project.py       # identity и путь корня проекта
-docs/                # пользовательская документация, ADR и политики
+docs/                # пользовательская документация и политики
 recovery/            # runtime-created persistent fit inputs/checkpoints
 tests/               # unit, contract, integration и architecture tests
 ```

@@ -82,9 +82,10 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 где это защищает самостоятельный reusable API.
 
 Для target и prediction нормативны текущие semantic names из
-[ADR 0007](../adr/0007-target-aligned-flight-v4.md). Короткие `x`, `y` и `p`
-допустимы в локальной формуле; orchestration и boundary code использует
-`features`, `targets`, `predictions`, `padding_mask` и другие смысловые имена.
+[`Flight v5 contract`](../../app/contracts/flight/v5/README.md). Короткие `x`,
+`y` и `p` допустимы в локальной формуле; orchestration и boundary code
+использует `features`, `targets`, `predictions`, `padding_mask` и другие
+смысловые имена.
 
 ## Pyright
 

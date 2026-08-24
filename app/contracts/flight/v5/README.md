@@ -2,14 +2,12 @@
 
 Этот каталог содержит нормативный контракт обмена данными между Inventory и
 Transformer, не зависящий от языка реализации. JSON Schema, Arrow-схемы и
-эталонные фикстуры версионируются вместе. Durable lifecycle обоснован в
-[ADR 0005](../../../../docs/adr/0005-durable-streaming-flight-v3.md), а
-target-aligned ML-контракт — в
-[ADR 0007](../../../../docs/adr/0007-target-aligned-flight-v4.md), а единая
-identity индикаторов — в
-[ADR 0015](../../../../docs/adr/0015-unified-indicator-identity-flight-v5.md),
-а transport authentication — в
-[ADR 0018](../../../../docs/adr/0018-postgresql-api-access-tokens.md).
+эталонные фикстуры версионируются вместе. Интеграционный flow описан в
+[`inventory-flight-handoff.md`](../../../../docs/inventory-flight-handoff.md),
+эксплуатационный lifecycle — в
+[`flight-operations.md`](../../../../docs/flight-operations.md), а credential
+model и channel security — в
+[`authentication.md`](../../../../docs/authentication.md).
 
 ## Конверт и аутентификация
 

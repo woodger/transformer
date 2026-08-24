@@ -58,11 +58,8 @@ Target-bound telemetry использует одну регистрозавис�
 `inventory.target.v2`: структурную пару `target.index`/`target.name` с именами
 `MeanReturn`, `SigmaReturn`, `ProbTP`, `ProbSL`, `VolatilityNext` и
 `HittingProbTP`. Старые camelCase формы и numeric enum ordinal Consumer-а не
-являются contract values. Решение закреплено в
-[ADR 0015](./adr/0015-unified-indicator-identity-flight-v5.md).
-
-Подробное решение зафиксировано в
-[ADR 0013](./adr/0013-telemetry-ownership-boundaries.md).
+являются contract values. Нормативную identity задаёт текущий
+[`Flight v5 contract`](../app/contracts/flight/v5/README.md).
 
 ### Надёжность
 
