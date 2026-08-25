@@ -92,6 +92,13 @@ operational defaults — в `app/config.py`. Runtime-владельцы сохр
 configuration types, загрузку и валидацию. Версионируемые worker defaults
 остаются в `app/contracts/worker/v7/config.py`.
 
+`app/config.py` не является adapter или provider boundary. Его immutable
+defaults могут использовать разные процессы, а понятия Transformer остаются в
+domain либо внутренних contracts; adapters преобразуют их в типы конкретной
+runtime library. Сейчас `RUNTIME_DIR_DEFAULT` является отдельным
+platform-derived значением: оно вычисляется через `tempfile.gettempdir()` и
+потребляется bootstrap, а не service domain/application.
+
 `app/admin/cli` отвечает за presentation. `app/admin/bootstrap` создаёт
 короткоживущие PostgreSQL resources для access-token и model use cases.
 Alembic-команды имеют отдельный короткоживущий SQLAlchemy lifecycle.

@@ -62,9 +62,24 @@ Worker остаётся цельным Arrow/Torch runtime. Ports вокруг t
 implementation. Параллельные ML-пакеты, конкурирующие с каноническим
 `app/worker/`, не создаются.
 
-Общий configuration module не загружает environment или adapters и не хранит
-mutable runtime state. Generic `app/commands` не вводится как второй владелец
-рядом с local CLI и application use cases.
+Положение configuration module определяется его зависимостями и поведением, а
+не именем файла. Общий модуль чистых статических defaults не является внешним
+слоем: зависимости domain/application на такой модуль и его зависимости на
+domain-типы допустимы. Конкретный import graph при этом остаётся ацикличным.
+
+Общий чистый configuration module содержит только deterministic immutable
+values. Он не читает environment или credentials, не выполняет I/O и runtime
+initialization, не импортирует adapters, bootstrap, provider SDK или другие
+runtime dependencies и не хранит mutable state. Configuration types, parsing,
+validation и wiring остаются у соответствующих runtime-владельцев.
+
+Тип, выражающий понятие Transformer, принадлежит domain или профильному
+внутреннему versioned contract. Domain/application и внутренние contracts не
+зависят от типов внешнего provider SDK или runtime library; преобразование в
+provider-owned representation выполняет infrastructure adapter на границе.
+
+Generic `app/commands` не вводится как второй владелец рядом с local CLI и
+application use cases.
 
 ## Размещение нового кода
 
