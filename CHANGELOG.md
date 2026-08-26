@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Удалён недокументированный программный alias `gpu` для выбора runtime
+  device. Поддерживаемые значения остаются `cpu`, `cuda` и `auto`; Flight и
+  CLI contracts не изменены.
+
 ## [0.1.16] - 2026-08-24
 
 ### Changed

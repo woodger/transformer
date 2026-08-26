@@ -34,21 +34,9 @@ def test_worker_capabilities_follow_the_v6_contract(monkeypatch):
     }
 
 
-@pytest.mark.parametrize(
-    ("cuda_available", "expected"),
-    ((True, "cuda"), (False, "cpu")),
-)
-def test_legacy_gpu_device_follows_cuda_availability(
-    monkeypatch,
-    cuda_available,
-    expected,
-):
-    monkeypatch.setattr(
-        "app.worker.runtime.device.torch.cuda.is_available",
-        lambda: cuda_available,
-    )
-
-    assert get_device("gpu").type == expected
+def test_gpu_device_alias_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported device: gpu"):
+        get_device("gpu")
 
 
 def test_package_reexports_runtime_version():
