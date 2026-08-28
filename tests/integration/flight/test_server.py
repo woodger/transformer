@@ -45,7 +45,7 @@ def call_options(token="secret"):
 def action_body(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 6,
         "requestId": str(uuid.uuid4()),
     }
     document.update(overrides)
@@ -71,7 +71,7 @@ def control_server(tmp_path):
         server.shutdown()
 
 
-def test_list_actions_advertises_exact_v5_contract(control_server):
+def test_list_actions_advertises_exact_v6_contract(control_server):
     _, _, client = control_server
 
     actions = list(client.list_actions(options=call_options()))
@@ -95,14 +95,14 @@ def test_action_is_authenticated_and_validated_before_dispatch(control_server):
 def test_invalid_version_and_action_are_transport_errors(control_server):
     _, coordinator, client = control_server
 
-    with pytest.raises(Exception, match="version must be 5"):
+    with pytest.raises(Exception, match="version must be 6"):
         list(client.do_action(
             flight.Action(CAPABILITIES_ACTION, action_body(version=1)),
             options=call_options(),
         ))
     with pytest.raises(Exception, match="unsupported action"):
         list(client.do_action(
-            flight.Action("transformer.v4.capabilities", action_body()),
+            flight.Action("transformer.v5.capabilities", action_body()),
             options=call_options(),
         ))
 

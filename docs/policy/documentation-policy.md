@@ -39,7 +39,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v5 contract | `app/contracts/flight/v5/` |
+| Нормативный Flight v6 contract | `app/contracts/flight/v6/` |
 | Нормативный worker v7 contract | `app/contracts/worker/v7/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | История релизов | `CHANGELOG.md` |
@@ -107,8 +107,8 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v5/` нормативны для wire
-format. README или operations guide не могут переопределять их. Flight v5 —
+JSON Schemas и golden fixtures в `app/contracts/flight/v6/` нормативны для wire
+format. README или operations guide не могут переопределять их. Flight v6 —
 единственный текущий remote API contract и базовая точка для дальнейших
 изменений.
 
@@ -122,7 +122,7 @@ format. README или operations guide не могут переопределя�
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v5 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v6 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## Документация текущего состояния

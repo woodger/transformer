@@ -26,6 +26,7 @@ from app.service.adapters.inbound.flight.constants import (
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
 )
+from app.service.adapters.inbound.flight.devices import device_from_api
 from app.service.adapters.inbound.flight.documents import (
     canonical_request_hash,
     encode_document,
@@ -243,16 +244,15 @@ class JobCoordinator:
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
-                "cuda": {
+                "gpu": {
                     "available": inventory.cuda_capacity > 0,
                     "deviceCount": inventory.device_count,
                     "quarantinedCount": inventory.quarantined_count,
-                    "runtimeVersion": inventory.runtime_version,
                 },
             },
             queue={
                 "cpuCapacity": capabilities.cpu_capacity,
-                "cudaCapacity": inventory.cuda_capacity,
+                "gpuCapacity": inventory.cuda_capacity,
                 "singleInstance": True,
             },
             supportedOperations=["fit", "predict"],
@@ -265,7 +265,7 @@ class JobCoordinator:
                 "revisionPagination": True,
                 "resumableFit": True,
                 "recoveryBoundary": "globalEpoch",
-                "deviceAwareCuda": True,
+                "deviceAwareGpu": True,
             },
         )
 
@@ -278,7 +278,7 @@ class JobCoordinator:
             ready=health.ready,
             draining=health.draining,
             ledger={"available": health.ledger_available},
-            cuda={
+            gpu={
                 "available": inventory.cuda_capacity > 0,
                 "deviceCount": inventory.device_count,
                 "quarantinedCount": inventory.quarantined_count,
@@ -308,7 +308,7 @@ def _create_command(
         job_id=request["job_id"],
         client_execution_id=request["client_execution_id"],
         operation=request["operation"],
-        requested_device=request["device"],
+        requested_device=device_from_api(request["device"]),
         prediction_column=request["prediction_column"],
         data_contract=cast(JsonObject, dict(request["data_contract"])),
         ml_contract=cast(JsonObject, dict(request["ml_contract"])),

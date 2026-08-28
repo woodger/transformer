@@ -43,9 +43,9 @@ def add_local_parsers(subparsers: SubparserTarget) -> None:
 def _add_device_argument(group: ArgumentTarget) -> None:
     group.add_argument(
         "--device",
-        choices=["auto", "cpu", "cuda"],
+        choices=["cpu", "gpu", "auto"],
         default=DEFAULT_DEVICE,
-        help="Runtime device. auto uses CUDA when available.",
+        help="Runtime device. auto uses a GPU when available.",
     )
 
 
@@ -243,7 +243,7 @@ def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
         "--use-amp",
         dest="use_amp",
         action="store_true",
-        help="Use mixed precision when running on CUDA.",
+        help="Use mixed precision when running on a GPU.",
     )
     train.add_argument(
         "--seed",
@@ -383,7 +383,7 @@ def _add_predict_parser(
         "--use-amp",
         dest="use_amp",
         action="store_true",
-        help="Use mixed precision on CUDA; disabled with a diagnostic on CPU.",
+        help="Use mixed precision on a GPU; disabled with a diagnostic on CPU.",
     )
     if stream:
         _add_max_frame_bytes_argument(runtime)

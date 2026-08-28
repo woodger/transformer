@@ -1,0 +1,19 @@
+{
+  "contract": "transformer-flight",
+  "version": 6,
+  "requestId": "12121212-1212-4121-8121-121212121212",
+  "live": true,
+  "ready": true,
+  "draining": false,
+  "ledger": {"available": true},
+  "gpu": {"available": false, "deviceCount": 0, "quarantinedCount": 0},
+  "storage": {
+    "runtime": {"freeBytes": 17179869184},
+    "recovery": {"freeBytes": 17179869184}
+  },
+  "metrics": {
+    "rpc": {},
+    "counters": {},
+    "gauges": {"gpuAvailable": false, "ready": true}
+  }
+}

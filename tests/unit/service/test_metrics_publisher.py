@@ -23,7 +23,7 @@ from app.service.application.telemetry.records import (
     TelemetryArtifactCleanup,
     TrainingMetricsArtifactRecord,
 )
-from tests.support.flight_v5_helpers import (
+from tests.support.flight_v6_helpers import (
     create_test_metrics_artifact,
     create_test_run_summary_artifact,
 )

@@ -235,8 +235,8 @@ class WorkerAttemptExecutor:
                 failure = self._coerce_failure(exc)
                 if failure.code == ErrorCode.DEVICE_LOST:
                     failure = self._confirm_device_loss(job, failure)
-                if failure.code == ErrorCode.CUDA_OUT_OF_MEMORY:
-                    self.metrics.add("cudaOutOfMemory")
+                if failure.code == ErrorCode.GPU_OUT_OF_MEMORY:
+                    self.metrics.add("gpuOutOfMemory")
                     self.logger.event(
                         "flight.cuda.oom",
                         jobId=job_id,
@@ -244,7 +244,7 @@ class WorkerAttemptExecutor:
                         device=job.selected_device,
                     )
                 elif failure.code == ErrorCode.DEVICE_LOST:
-                    self.metrics.add("cudaUnavailableDuringExecution")
+                    self.metrics.add("gpuUnavailableDuringExecution")
                 # Cleanup can race with a committed cancel action. Refresh
                 # state before choosing the terminal outcome so cancel wins
                 # whenever it was registered before final artifact commit.
@@ -319,7 +319,7 @@ class WorkerAttemptExecutor:
         ):
             return WorkerAttemptError(
                 ErrorCode.SUBPROCESS_FAILED,
-                "CUDA subprocess failed without a verifiable device loss",
+                "GPU subprocess failed without a verifiable device loss",
                 failure.exit_code,
             )
         try:
@@ -332,7 +332,7 @@ class WorkerAttemptExecutor:
             return failure
         return WorkerAttemptError(
             ErrorCode.SUBPROCESS_FAILED,
-            "CUDA subprocess failed while its assigned device remained available",
+            "GPU subprocess failed while its assigned device remained available",
             failure.exit_code,
         )
 

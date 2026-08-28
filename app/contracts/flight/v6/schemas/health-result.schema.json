@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v6/health-result.schema.json",
+  "title": "transformer.v6.health result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "live", "ready", "draining",
+    "ledger", "gpu", "storage", "metrics"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 6},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "live": {"type": "boolean"},
+    "ready": {"type": "boolean"},
+    "draining": {"type": "boolean"},
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {"available": {"type": "boolean"}}
+    },
+    "gpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "deviceCount", "quarantinedCount"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "deviceCount": {"type": "integer", "minimum": 0},
+        "quarantinedCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "recovery"],
+      "properties": {
+        "runtime": {"$ref": "#/$defs/storageHealth"},
+        "recovery": {"$ref": "#/$defs/storageHealth"}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rpc", "counters", "gauges"],
+      "properties": {
+        "rpc": {"type": "object"},
+        "counters": {"type": "object"},
+        "gauges": {"type": "object"}
+      }
+    }
+  },
+  "$defs": {
+    "storageHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["freeBytes"],
+      "properties": {"freeBytes": {"type": "integer", "minimum": 0}}
+    }
+  }
+}

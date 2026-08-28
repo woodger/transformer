@@ -138,6 +138,7 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     }
     assert result["execution"] == {"state": "SUCCEEDED", "attempt": 2}
     assert result["ownership"]["fencingToken"] == "7"
+    assert result["device"] == {"requested": "auto", "selected": "gpu"}
     assert result["progress"] == {
         "epoch": 2,
         "step": 6,
@@ -187,6 +188,46 @@ def test_failed_status_has_stable_error_and_nonterminal_status_polls():
     assert active["input"]["state"] == "OPEN"
     assert active["execution"]["state"] == "RUNNING"
     assert active["pollAfterMs"] == 500
+
+
+def test_status_maps_legacy_internal_cuda_oom_to_public_gpu_error():
+    failed = StatusSnapshot(
+        job=_job(
+            execution_state=ExecutionState.FAILED,
+            error_code="CUDA_OUT_OF_MEMORY",
+            error_message="CUDA execution ran out of memory",
+            result=None,
+        ),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(failed), "request-gpu-oom")
+
+    assert result["error"] == {
+        "code": "GPU_OUT_OF_MEMORY",
+        "message": "GPU execution ran out of memory",
+    }
+
+
+def test_status_hides_cuda_backend_name_from_public_error_message():
+    failed = StatusSnapshot(
+        job=_job(
+            execution_state=ExecutionState.FAILED,
+            error_code="DEVICE_LOST",
+            error_message="CUDA device became unavailable during execution",
+            result=None,
+        ),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(failed), "request-device-lost")
+
+    assert result["error"] == {
+        "code": "DEVICE_LOST",
+        "message": "GPU device became unavailable during execution",
+    }
 
 
 def test_retired_identity_returns_stable_job_retired_error():

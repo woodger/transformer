@@ -67,4 +67,4 @@ Bearer является replayable secret. При передаче через н
 
 - [Аутентификация Arrow Flight](../authentication.md)
 - [Управление API access tokens](../operations/api-access-tokens.md)
-- [Контракт Arrow Flight v5](../../app/contracts/flight/v5/README.md)
+- [Контракт Arrow Flight v6](../../app/contracts/flight/v6/README.md)

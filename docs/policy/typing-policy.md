@@ -82,7 +82,7 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 где это защищает самостоятельный reusable API.
 
 Для target и prediction нормативны текущие semantic names из
-[`Flight v5 contract`](../../app/contracts/flight/v5/README.md). Короткие `x`,
+[`Flight v6 contract`](../../app/contracts/flight/v6/README.md). Короткие `x`,
 `y` и `p` допустимы в локальной формуле; orchestration и boundary code
 использует `features`, `targets`, `predictions`, `padding_mask` и другие
 смысловые имена.

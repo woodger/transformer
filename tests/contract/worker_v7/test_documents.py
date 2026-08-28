@@ -7,7 +7,7 @@ from copy import deepcopy
 import pytest
 from jsonschema import Draft202012Validator
 
-from app.contracts.flight.v5.constants import (
+from app.contracts.flight.v6.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
@@ -213,7 +213,7 @@ def test_worker_v7_schemas_are_valid_draft_2020_12_documents():
         Draft202012Validator.check_schema(json.loads(path.read_text()))
 
 
-def test_worker_v7_pins_flight_v5_arrow_schema_ids():
+def test_worker_v7_pins_flight_v6_arrow_schema_ids():
     assert (
         FIT_INPUT_SCHEMA_ID,
         PREDICT_INPUT_SCHEMA_ID,

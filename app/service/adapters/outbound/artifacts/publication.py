@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.flight.v5.arrow import validate_prediction_file
+from app.contracts.flight.v6.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
 from app.contracts.worker.v7 import PREDICTION_OUTPUT_SCHEMA_ID
 from app.contracts.worker.v7.config import (

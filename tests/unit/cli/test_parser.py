@@ -13,6 +13,7 @@ from app.contracts.worker.v7.config import (
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
 )
+from app.main import device_name, get_device as get_cli_device
 from app.worker.runtime.device import get_device
 from app.worker.training.run_config import (
     ModelConfig,
@@ -43,6 +44,15 @@ def test_fit_namespace_has_only_fit_options():
     assert not hasattr(args, "pred_col")
     assert not hasattr(args, "plots_dir")
     assert not hasattr(args, "max_frame_bytes")
+
+
+def test_local_commands_accept_gpu_and_reject_cuda_spelling():
+    args = parse("fit", "train.arrow", "--seq-len", "20", "--device", "gpu")
+
+    assert args.device == "gpu"
+
+    with pytest.raises(SystemExit):
+        parse("fit", "train.arrow", "--seq-len", "20", "--device", "cuda")
 
 
 def test_predict_namespace_keeps_checkpoint_validation_overrides():
@@ -748,6 +758,32 @@ def test_device_auto_selects_cuda_only_when_available(monkeypatch):
         lambda: False,
     )
     assert get_device("auto").type == "cpu"
+
+
+def test_public_gpu_device_maps_to_internal_cuda(monkeypatch):
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: True,
+    )
+
+    device = get_cli_device("gpu")
+
+    assert device.type == "cuda"
+    assert device_name(device) == "gpu"
+    with pytest.raises(ValueError, match="Unsupported device: cuda"):
+        get_cli_device("cuda")
+
+
+def test_public_gpu_unavailability_does_not_expose_backend_name(monkeypatch):
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: False,
+    )
+
+    with pytest.raises(RuntimeError, match=r"GPU .* not available") as error:
+        get_cli_device("gpu")
+
+    assert error.value.__cause__ is None
 
 
 def test_explicit_cuda_errors_when_unavailable(monkeypatch):

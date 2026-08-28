@@ -3,7 +3,7 @@
 > Тип: справочник. Текущая семантика loss stages и model heads.
 
 Нормативную public target identity задаёт текущий
-[`Flight v5 contract`](../app/contracts/flight/v5/README.md). Внутри worker
+[`Flight v6 contract`](../app/contracts/flight/v6/README.md). Внутри worker
 модель возвращает семь значений: шесть public heads и один private Gaussian
 scale. Flight boundary публикует только первые шесть в target-space.
 

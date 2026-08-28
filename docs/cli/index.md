@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
+находится в [`app/contracts/flight/v6`](../../app/contracts/flight/v6/README.md).
 
 ## File commands
 
@@ -184,14 +184,14 @@ core, но не является полной гарантией темпера�
 
 | Аргумент | Команды | Описание | По умолчанию |
 | --- | --- | --- | --- |
-| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
+| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `gpu` или `auto`; `auto` выбирает GPU при наличии | `cpu` |
 | `--checkpoint-out` | `fit`, `fit-stream` | checkpoint output | `model_weights.pth` |
 | `--checkpoint` | `predict`, `predict-stream` | checkpoint input | `model_weights.pth` |
 | `--output` | `predict` | Arrow output file | `/tmp/preds.arrow` |
 | `--pred-col` | `predict`, `predict-stream` | имя единственной prediction-колонки | `out` |
 | `--metrics-out` | `fit`, `fit-stream` | metrics JSONL | не задан |
 | `--max-frame-bytes` | `fit-stream`, `predict-stream` | максимальный размер одного payload | `536870912` (512 MiB) |
-| `--use-amp` | все fit/predict варианты | CUDA mixed precision | выключено |
+| `--use-amp` | все fit/predict варианты | GPU mixed precision | выключено |
 | `--plots-dir` | `plot-metrics` | каталог для SVG | `metrics_plots` |
 
 Для совместимости сохранены aliases: `--model-name` для checkpoint input/output,
@@ -234,8 +234,9 @@ core, но не является полной гарантией темпера�
 | `--deterministic` | Включить deterministic PyTorch algorithms | выключено |
 
 Training options доступны только у `fit` и `fit-stream`. `--use-amp` на CPU
-явно отключается и для training, и для prediction; `--device=cuda` завершается
-ошибкой, если CUDA недоступна. Deterministic mode может быть медленнее и может
+явно отключается и для training, и для prediction; `--device=gpu` завершается
+ошибкой, если GPU недоступен. Значение `--device=cuda` не поддерживается.
+Deterministic mode может быть медленнее и может
 сообщить об операции, для которой PyTorch не имеет deterministic implementation.
 
 ## Опубликованные модели

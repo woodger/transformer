@@ -61,7 +61,7 @@ def test_persisted_v4_wire_result_replays_without_new_mutation():
         def lookup_idempotency(self, owner, action, key):
             assert (owner, action, key) == (
                 "inventory",
-                "transformer.v5.job.create",
+                "transformer.v6.job.create",
                 "create:1",
             )
             return {
@@ -72,10 +72,10 @@ def test_persisted_v4_wire_result_replays_without_new_mutation():
     gateway = PostgresJobLifecycle(
         ReplayLedger(),
         JobActionNames(
-            create="transformer.v5.job.create",
-            acquire="transformer.v5.job.acquire",
-            input_close="transformer.v5.job.input.close",
-            cancel="transformer.v5.job.cancel",
+            create="transformer.v6.job.create",
+            acquire="transformer.v6.job.acquire",
+            input_close="transformer.v6.job.input.close",
+            cancel="transformer.v6.job.cancel",
         ),
     )
     command = CreateJobCommand(

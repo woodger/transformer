@@ -71,7 +71,7 @@ CUDA/AMP и serialization.
 
 ```text
 tests/unit/{admin,cli,local,service,worker}
-tests/contract/{flight_v5,worker_v7,metrics_v3,metrics_fit_run_v2}
+tests/contract/{flight_v6,worker_v7,metrics_v3,metrics_fit_run_v2}
 tests/integration/{flight,worker_process}
 tests/architecture
 tests/support
@@ -126,7 +126,7 @@ assertions по прежним путям, именам packages и legacy sourc
 
 ## Contracts
 
-Contract tests проверяют нормативные schemas и golden fixtures Flight v5,
+Contract tests проверяют нормативные schemas и golden fixtures Flight v6,
 worker v7 и metrics contracts. Fixture обновляется только при намеренном
 изменении contract, а не ради прохождения падающего теста.
 

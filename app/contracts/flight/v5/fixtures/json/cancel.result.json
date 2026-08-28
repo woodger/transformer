@@ -1,9 +1,0 @@
-{
-  "contract": "transformer-flight",
-  "version": 5,
-  "requestId": "99999999-9999-4999-8999-999999999999",
-  "jobId": "34343434-3434-4343-8343-343434343434",
-  "revision": 2,
-  "input": {"state": "ABORTED"},
-  "execution": {"state": "CANCELLED"}
-}

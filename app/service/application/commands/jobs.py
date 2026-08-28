@@ -64,10 +64,10 @@ class CreateJobAction:
                 command.requested_device == "cuda"
                 and not self._cuda_available()
             ):
-                self.metrics.add("cudaUnavailableRequests")
+                self.metrics.add("gpuUnavailableRequests")
                 raise ServiceError(
                     ErrorCode.DEVICE_UNAVAILABLE,
-                    "explicit CUDA device is not available",
+                    "explicit GPU device is not available",
                 )
 
         def prepare(
@@ -268,7 +268,7 @@ def _select_device(requested: str, cuda_available: bool) -> str:
     if decision.error_code is not None:
         raise ServiceError(
             decision.error_code,
-            "explicit CUDA device is unavailable",
+            "explicit GPU device is unavailable",
         )
     if decision.selected is None:
         raise ServiceError(ErrorCode.INTERNAL, "device selection failed")

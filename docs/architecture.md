@@ -18,7 +18,7 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v5            публичный Flight contract
+app/contracts/flight/v6            публичный Flight contract
 app/contracts/worker/v7            внутренний process contract
 app/contracts/metrics/v3           epoch artifact и OpenSearch points
 app/contracts/metrics/fit_run/v2   terminal fit summary
@@ -52,6 +52,9 @@ service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
   наблюдений отдельно от job ledger.
 - inbound Flight adapter валидирует wire DTO, выполняет semantic mapping и
   преобразует application results и errors в Flight documents и Arrow status.
+- Public Flight и local fit/predict CLI используют device class `gpu`;
+  inbound/local adapters преобразуют его во внутренний CUDA runtime, а наружу
+  не публикуют backend-specific device identity.
 - outbound adapters реализуют PostgreSQL, artifact storage, worker process,
   CUDA inventory и OpenSearch boundaries.
 - `service/bootstrap` собирает конкретные service adapters.
@@ -105,7 +108,7 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v5/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v6/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/ml.py` — единая Python identity target, ML-контракта,
   checkpoint и recovery formats;
 - `app/contracts/worker/v7/` — command/result manifests, capability document,

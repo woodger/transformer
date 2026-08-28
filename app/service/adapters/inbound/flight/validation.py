@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v5.codec import (
+from app.contracts.flight.v6.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,

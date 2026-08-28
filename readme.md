@@ -7,8 +7,8 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 
 - local CLI для обучения и prediction из Arrow IPC files;
 - stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v5 service с durable streaming jobs,
-  PostgreSQL state, cross-system fencing, recovery, API tokens и CUDA
+- single-instance Arrow Flight v6 service с durable streaming jobs,
+  PostgreSQL state, cross-system fencing, recovery, API tokens и GPU
   scheduling;
 - versioned public Flight и internal worker contracts;
 - документацию текущего состояния, исторические decision records и политики
@@ -20,7 +20,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 | --- | --- | --- | --- |
 | File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
 | Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v5 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v5/README.md) |
+| Arrow Flight v6 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v6/README.md) |
 
 ## Быстрый старт
 
@@ -76,7 +76,7 @@ user-site. Полный локальный сценарий находится �
 - [Локальный Arrow и stream contract](./docs/local-arrow-protocol.md)
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
-- [Arrow Flight v5 contract](./app/contracts/flight/v5/README.md)
+- [Arrow Flight v6 contract](./app/contracts/flight/v6/README.md)
 - [Worker process contract v7](./app/contracts/worker/v7/README.md)
 - [Training metrics contract v3](./app/contracts/metrics/v3/README.md)
 - [Аутентификация Flight](./docs/authentication.md)
@@ -95,7 +95,7 @@ app/main.py          # тонкий CLI entrypoint
 app/config.py        # единый источник встроенных operational defaults
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # public Flight v5, internal worker v7 и metrics v3
+app/contracts/       # public Flight v6, internal worker v7 и metrics v3
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

@@ -52,7 +52,22 @@ class CliArguments(Protocol):
 def get_device(value: str | None) -> torch.device:
     from app.worker.runtime.device import get_device as implementation
 
-    return implementation(value)
+    if value == "gpu":
+        try:
+            return implementation("cuda")
+        except RuntimeError as exc:
+            if str(exc) == "CUDA was requested but is not available":
+                raise RuntimeError(
+                    "GPU was requested but is not available"
+                ) from None
+            raise
+    if value in (None, "cpu", "auto"):
+        return implementation(value)
+    raise ValueError(f"Unsupported device: {value}")
+
+
+def device_name(device: torch.device) -> str:
+    return "gpu" if device.type == "cuda" else str(device)
 
 
 def configure_reproducibility(seed: int, deterministic: bool) -> None:
@@ -198,13 +213,13 @@ def main() -> None:
     device = get_device(args.device)
 
     if args.action == "predict-stream":
-        print(f"Using device: {device}", file=sys.stderr)
+        print(f"Using device: {device_name(device)}", file=sys.stderr)
         if args.data is not None:
             raise ValueError("predict-stream reads stdin; data path is not supported")
         predict_stream(args, device)
         return
 
-    print(f"Using device: {device}")
+    print(f"Using device: {device_name(device)}")
 
     if args.action == "fit-stream":
         if args.data is not None:

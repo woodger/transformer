@@ -8,7 +8,7 @@ heads, формулы loss components и stage composition принадлежа�
 [описанию функции потерь](./losses.md), а schedule transitions, checkpoint
 selection, recovery и runtime telemetry — этому документу. Нормативный remote
 ML-контракт находится в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md).
+[`app/contracts/flight/v6`](../app/contracts/flight/v6/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.

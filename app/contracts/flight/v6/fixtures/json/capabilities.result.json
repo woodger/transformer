@@ -1,0 +1,64 @@
+{
+  "contract": "transformer-flight",
+  "version": 6,
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "protocolVersions": [6],
+  "service": {
+    "name": "transformer-flight",
+    "version": "0.2.0",
+    "pyarrowVersion": "24.0.0",
+    "torchVersion": "2.12.0+cpu"
+  },
+  "schemaIds": {
+    "fitInput": "inventory.sequence.fit.v2",
+    "predictInput": "inventory.sequence.predict.v2",
+    "predictionOutput": "transformer.prediction.target-aligned.v2"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v2",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v2",
+    "objectiveId": "transformer.objective.target-aligned.v2",
+    "checkpointFormat": "transformer-checkpoint-v4",
+    "targetWidth": 6,
+    "predictionSpace": "target",
+    "objectiveConfigSchemaVersion": 2
+  },
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "targetBatchBytes": 8388608,
+    "maxBatchBytes": 16777216,
+    "maxPayloadBytes": 536870912,
+    "maxRowsPerPayload": 2000000,
+    "maxPayloadsPerJob": 100000,
+    "maxJobBytes": 68719476736,
+    "maxActiveJobsPerSubject": 32,
+    "maxPageItems": 100,
+    "inputIdleTimeoutSeconds": 900.0,
+    "transportMessageLimitEnforced": false
+  },
+  "devices": {
+    "cpu": {"available": true},
+    "gpu": {
+      "available": false,
+      "deviceCount": 0,
+      "quarantinedCount": 0
+    }
+  },
+  "queue": {
+    "cpuCapacity": 2,
+    "gpuCapacity": 0,
+    "singleInstance": true
+  },
+  "supportedOperations": ["fit", "predict"],
+  "features": {
+    "doExchange": false,
+    "pollFlightInfo": false,
+    "durableStreamingInput": true,
+    "clientGeneratedJobId": true,
+    "crossSystemFencing": true,
+    "revisionPagination": true,
+    "resumableFit": true,
+    "recoveryBoundary": "globalEpoch",
+    "deviceAwareGpu": true
+  }
+}

@@ -171,7 +171,7 @@ class WorkerPlanBuilder:
         if device == "cuda" and not job.assigned_device_id:
             raise WorkerPlanError(
                 ErrorCode.INTERNAL,
-                "CUDA attempt has no assigned physical device",
+                "GPU attempt has no assigned physical device",
             )
         model_config = job.model_config
         if model_config is None:

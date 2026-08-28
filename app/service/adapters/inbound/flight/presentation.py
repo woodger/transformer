@@ -9,6 +9,7 @@ from app.service.adapters.inbound.flight.constants import (
     FIT_SCHEMA_ID,
     PREDICT_SCHEMA_ID,
 )
+from app.service.adapters.inbound.flight.devices import device_to_api
 from app.service.adapters.inbound.flight.documents import (
     data_contract_to_api,
     model_config_to_api,
@@ -49,8 +50,8 @@ def present_job_created(result: JobCreated) -> JsonObject:
             "fencingToken": str(result.fencing_token),
         },
         device={
-            "requested": result.requested_device,
-            "selected": result.selected_device,
+            "requested": device_to_api(result.requested_device),
+            "selected": device_to_api(result.selected_device),
         },
         resolvedModelRef=result.resolved_model_ref,
         dataContract=data_contract_to_api(result.data_contract),
@@ -123,7 +124,7 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
     durable_result = job.result or {}
     error: JsonObject | None = None
     if job.execution_state == ExecutionState.FAILED:
-        error = {"code": job.error_code, "message": job.error_message}
+        error = _error_to_api(job.error_code, job.error_message)
     return response_document(
         result.request_id,
         jobId=job.job_id,
@@ -148,8 +149,8 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
         },
         timestamps=_timestamps(job),
         device={
-            "requested": job.requested_device,
-            "selected": job.selected_device,
+            "requested": device_to_api(job.requested_device),
+            "selected": device_to_api(job.selected_device),
         },
         dataContract=data_contract_to_api(job.data_contract),
         mlContract=dict(job.ml_contract),
@@ -256,6 +257,22 @@ def limits_to_api(limits: ServiceLimits) -> JsonObject:
         "inputIdleTimeoutSeconds": limits.input_idle_timeout_seconds,
         "transportMessageLimitEnforced": False,
     }
+
+
+def _error_to_api(code: str | None, message: str | None) -> JsonObject:
+    if code in ("CUDA_OUT_OF_MEMORY", "GPU_OUT_OF_MEMORY"):
+        return {
+            "code": "GPU_OUT_OF_MEMORY",
+            "message": "GPU execution ran out of memory",
+        }
+    if message is not None and "cuda" in message.lower():
+        if code == "DEVICE_LOST":
+            message = "GPU device became unavailable during execution"
+        elif code == "SUBPROCESS_FAILED":
+            message = "GPU subprocess failed"
+        else:
+            message = "GPU execution failed"
+    return {"code": code, "message": message}
 
 
 def _safe_recovery(

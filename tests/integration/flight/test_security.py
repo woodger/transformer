@@ -48,7 +48,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 6,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -56,7 +56,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 6,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),

@@ -6,7 +6,7 @@
 Это руководство задаёт текущую операторскую процедуру. Устройство credential,
 правила persistence, cache consistency и security boundary описаны в
 [`справочнике аутентификации`](../authentication.md), а обязательный wire
-format — в [`контракте Arrow Flight v5`](../../app/contracts/flight/v5/README.md).
+format — в [`контракте Arrow Flight v6`](../../app/contracts/flight/v6/README.md).
 
 Transformer поддерживает одну service identity с фиксированным owner subject
 `inventory`. Это технический owner identifier, а не имя единственного

@@ -7,11 +7,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Public device identity изменена с `cuda` на `gpu` в local fit/predict CLI и
+  новом единственном Arrow Flight v6 contract. CUDA остаётся внутренним
+  execution backend; adapter boundary преобразует public `gpu` во внутренний
+  `cuda`.
+- Flight actions, descriptor paths, schemas и envelopes переведены с v5 на v6.
+  Capabilities, health, GPU OOM errors и связанные operational metrics
+  используют provider-neutral GPU terminology.
+
 ### Removed
 
-- Удалён недокументированный программный alias `gpu` для выбора runtime
-  device. Поддерживаемые значения остаются `cpu`, `cuda` и `auto`; Flight и
-  CLI contracts не изменены.
+- Flight v5 и публичное значение device `cuda` удалены без aliases или
+  parallel compatibility runtime.
 
 ## [0.1.16] - 2026-08-24
 

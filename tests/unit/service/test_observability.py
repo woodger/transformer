@@ -49,7 +49,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 6,
         "requestId": request_id,
     }).encode("utf-8")
 
