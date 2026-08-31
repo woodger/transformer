@@ -4,17 +4,22 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v6.codec import (
+from app.contracts.flight.v7.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v8.objective import (
+    ObjectiveConfig,
+    ml_contract,
+    objective_from_ml_contract,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -71,6 +76,8 @@ class MlContractFields(TypedDict):
     checkpointFormat: str
     targetWidth: int
     predictionSpace: str
+    targets: list[str]
+    objective: JsonObject
 
 
 class CreateRequestFields(RequestIdFields):
@@ -87,6 +94,7 @@ class CreateRequestFields(RequestIdFields):
     model_selector: NotRequired[str]
     model_config: NotRequired[ModelConfig]
     train_config: NotRequired[TrainConfig]
+    objective_config: NotRequired[ObjectiveConfig]
 
 
 class AcquireRequestFields(RequestIdFields):
@@ -246,7 +254,11 @@ def _validate_create(
 ) -> CreateRequestFields:
     operation = _string(document, "operation")
     data_contract = _data_contract(_object(document, "dataContract"))
-    requested_ml_contract = _ml_contract(_object(document, "mlContract"))
+    requested_ml_contract = (
+        _ml_contract(_object(document, "mlContract"))
+        if operation == "predict"
+        else None
+    )
     common: CreateRequestFields = {
         "request_id": request_id,
         "idempotency_key": _string(document, "idempotencyKey"),
@@ -256,26 +268,34 @@ def _validate_create(
         "device": _string(document, "device"),
         "prediction_column": cast(str, document.get("predictionColumn", "out")),
         "data_contract": data_contract,
-        "ml_contract": requested_ml_contract,
+        "ml_contract": cast(MlContractFields, requested_ml_contract),
     }
     if operation == "fit":
+        objective_config = _objective_config(document)
         model_config = _model_config(_object(document, "modelConfig"))
         if model_config.seq_len != data_contract["seq_len"]:
             raise invalid("modelConfig.seqLen must match dataContract.seqLen")
         resolved_model_config = replace(
             model_config,
             feature_dim=data_contract["feature_dim"],
+            out_dim=objective_config.target_width,
         )
         train_config = _train_config(
             cast(Mapping[str, object], document.get("trainingConfig", {}))
         )
-        if requested_ml_contract != ml_contract(train_config):
-            raise invalid(
-                "mlContract does not match the target-aligned training objective"
+        diagnostics = _diagnostics_config(document.get("diagnostics"))
+        train_config = replace(train_config, diagnostics=diagnostics)
+        common["ml_contract"] = cast(
+            MlContractFields,
+            ml_contract(
+                objective_config,
+                target_schema_id=data_contract["target_schema_id"],
             )
+        )
         common["model_label"] = _string(document, "modelLabel")
         common["model_config"] = resolved_model_config
         common["train_config"] = train_config
+        common["objective_config"] = objective_config
     else:
         selector = "modelRef" if "modelRef" in document else "modelAlias"
         common["model_ref"] = _string(document, selector)
@@ -396,15 +416,30 @@ def _data_contract(document: Mapping[str, object]) -> DataContractFields:
 
 
 def _ml_contract(document: Mapping[str, object]) -> MlContractFields:
-    return {
-        "targetSchemaId": _string(document, "targetSchemaId"),
-        "predictionSchemaId": _string(document, "predictionSchemaId"),
-        "objectiveId": _string(document, "objectiveId"),
-        "objectiveConfigSha256": _string(document, "objectiveConfigSha256"),
-        "checkpointFormat": _string(document, "checkpointFormat"),
-        "targetWidth": _integer(document, "targetWidth"),
-        "predictionSpace": _string(document, "predictionSpace"),
-    }
+    try:
+        objective_from_ml_contract(document)
+    except (TypeError, ValueError) as exc:
+        raise invalid(f"invalid mlContract: {exc}") from exc
+    return cast(MlContractFields, dict(document))
+
+
+def _objective_config(document: Mapping[str, object]) -> ObjectiveConfig:
+    try:
+        return ObjectiveConfig.from_document({
+            "targets": document["targets"],
+            "objective": document["objective"],
+        })
+    except (TypeError, ValueError) as exc:
+        raise invalid(f"invalid objective: {exc}") from exc
+
+
+def _diagnostics_config(document: object) -> DiagnosticsConfig:
+    if document is None:
+        return DiagnosticsConfig()
+    try:
+        return DiagnosticsConfig.from_document(document)
+    except (TypeError, ValueError) as exc:
+        raise invalid(f"invalid diagnostics: {exc}") from exc
 
 
 def _model_config(document: Mapping[str, object]) -> ModelConfig:
@@ -445,12 +480,8 @@ def _train_config(document: Mapping[str, object]) -> TrainConfig:
         "lr": "lr",
         "batchSize": "batch_size",
         "epochs": "epochs",
-        "lossStage": "loss_stage",
-        "lossSchedule": "loss_schedule",
-        "stageSize": "stage_size",
         "useAmp": "use_amp",
         "weightDecay": "weight_decay",
-        "directLossWeights": "direct_loss_weights",
         "selection": "selection",
         "seed": "seed",
         "deterministic": "deterministic",

@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v7/capabilities-result.schema.json",
+  "title": "transformer.v7.capabilities result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "protocolVersions", "service",
+    "schemaIds", "mlContract", "limits", "devices", "queue", "supportedOperations",
+    "features"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 7},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "protocolVersions": {
+      "type": "array",
+      "prefixItems": [{"const": 7}],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "pyarrowVersion", "torchVersion"],
+      "properties": {
+        "name": {"const": "transformer-flight"},
+        "version": {"type": "string", "minLength": 1},
+        "pyarrowVersion": {"type": "string", "minLength": 1},
+        "torchVersion": {"type": "string", "minLength": 1}
+      }
+    },
+    "schemaIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fitInput", "predictInput", "predictionOutput"],
+      "properties": {
+        "fitInput": {"const": "inventory.sequence.fit.v3"},
+        "predictInput": {"const": "inventory.sequence.predict.v2"},
+        "predictionOutput": {"const": "transformer.prediction.target-aligned.v3"}
+      }
+    },
+    "mlContract": {
+      "$ref": "common.schema.json#/$defs/advertisedMlContract"
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxMessageBytes", "targetBatchBytes", "maxBatchBytes",
+        "maxPayloadBytes", "maxRowsPerPayload", "maxPayloadsPerJob",
+        "maxJobBytes", "maxActiveJobsPerSubject", "maxPageItems",
+        "inputIdleTimeoutSeconds", "transportMessageLimitEnforced"
+      ],
+      "properties": {
+        "maxMessageBytes": {"type": "integer", "minimum": 1},
+        "targetBatchBytes": {"type": "integer", "minimum": 1},
+        "maxBatchBytes": {"type": "integer", "minimum": 1},
+        "maxPayloadBytes": {"type": "integer", "minimum": 1},
+        "maxRowsPerPayload": {"type": "integer", "minimum": 1},
+        "maxPayloadsPerJob": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "maxJobBytes": {"type": "integer", "minimum": 1},
+        "maxActiveJobsPerSubject": {"type": "integer", "minimum": 1},
+        "maxPageItems": {"type": "integer", "minimum": 1, "maximum": 100},
+        "inputIdleTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0},
+        "transportMessageLimitEnforced": {"const": false}
+      }
+    },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "gpu"],
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available"],
+          "properties": {"available": {"const": true}}
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available", "deviceCount", "quarantinedCount"],
+          "properties": {
+            "available": {"type": "boolean"},
+            "deviceCount": {"type": "integer", "minimum": 0},
+            "quarantinedCount": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpuCapacity", "gpuCapacity", "singleInstance"],
+      "properties": {
+        "cpuCapacity": {"type": "integer", "minimum": 1},
+        "gpuCapacity": {"type": "integer", "minimum": 0},
+        "singleInstance": {"const": true}
+      }
+    },
+    "supportedOperations": {
+      "type": "array",
+      "prefixItems": [{"const": "fit"}, {"const": "predict"}],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doExchange", "pollFlightInfo", "durableStreamingInput",
+        "clientGeneratedJobId", "crossSystemFencing", "revisionPagination",
+        "resumableFit", "recoveryBoundary", "deviceAwareGpu"
+      ],
+      "properties": {
+        "doExchange": {"const": false},
+        "pollFlightInfo": {"const": false},
+        "durableStreamingInput": {"const": true},
+        "clientGeneratedJobId": {"const": true},
+        "crossSystemFencing": {"const": true},
+        "revisionPagination": {"const": true},
+        "resumableFit": {"const": true},
+        "recoveryBoundary": {"const": "globalEpoch"},
+        "deviceAwareGpu": {"const": true}
+      }
+    }
+  }
+}

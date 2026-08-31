@@ -4,7 +4,10 @@ from typing import Protocol
 
 import torch
 
-from app.contracts.worker.v7.config import ModelConfig
+from app.contracts.worker.v8.objective import (
+    ObjectiveConfig,
+    objective_from_ml_contract,
+)
 from app.worker.checkpoints.model import load_checkpoint_metadata
 from app.worker.data.arrow import read_source_arrow, write_arrow
 from app.worker.data.tensors import (
@@ -16,13 +19,10 @@ from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
 
 ModelBuilder = Callable[
-    [object, torch.Tensor, torch.Tensor | None, torch.device],
+    [object, torch.Tensor, torch.Tensor | None, torch.device, ObjectiveConfig],
     torch.nn.Module,
 ]
-TrainerBuilder = Callable[
-    [object, torch.nn.Module, torch.device, ModelConfig | None],
-    Trainer,
-]
+TrainerBuilder = Callable[..., Trainer]
 
 
 class PredictArguments(Protocol):
@@ -44,6 +44,7 @@ def run(
         raise ValueError("prediction output path must differ from input data path")
 
     metadata = load_checkpoint_metadata(args.model_name, device)
+    objective = objective_from_ml_contract(metadata["ml_contract"])
     model_config = model_config_from_args(
         args,
         checkpoint_config=metadata.get("model_config"),
@@ -57,14 +58,27 @@ def run(
             args.preds_path,
             torch.empty((0, model_config.out_dim), dtype=torch.float32),
             args.pred_col,
+            targets=objective.targets,
         )
         print("Predictions saved")
         return
     features_cpu = reshape_source(features_cpu, model_config.seq_len)
     validate_checkpoint_feature_dim(features_cpu, model_config.feature_dim)
 
-    model = build_model_fn(model_config, features_cpu, None, device)
-    trainer = build_trainer_fn(args, model, device, model_config)
+    model = build_model_fn(
+        model_config,
+        features_cpu,
+        None,
+        device,
+        objective,
+    )
+    trainer = build_trainer_fn(
+        args,
+        model,
+        device,
+        model_config,
+        objective=objective,
+    )
     trainer.load(args.model_name)
     predictions = trainer.predict(features_cpu)
     write_arrow(
@@ -72,5 +86,6 @@ def run(
         predictions,
         args.pred_col,
         expected_rows=features_cpu.shape[0],
+        targets=objective.targets,
     )
     print("Predictions saved")

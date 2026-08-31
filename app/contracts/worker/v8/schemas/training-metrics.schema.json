@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v8/training-metrics.schema.json",
+  "title": "Transformer worker v8 committed training interval metrics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode", "frame", "epoch", "step", "rows", "batches", "lr",
+    "loss", "directLosses", "auxiliaryLosses", "targetMetrics",
+    "gradientInteractions",
+    "selection_score", "trainingBatchesCompleted",
+    "optimizerUpdatesApplied", "optimizerUpdatesSkipped",
+    "ampOverflowBatches", "finiteGradientBatches",
+    "nonFiniteGradientBatches", "preClipGradientNormMean",
+    "preClipGradientNormMax", "preClipGradientNormP95", "nan_ratio",
+    "masked_token_ratio", "complete_token_ratio", "partial_token_ratio",
+    "empty_token_ratio", "input_pipeline_ms", "missing_stats_ms",
+    "host_to_device_ms", "train_step_ms", "elapsed_ms",
+    "checkpoint_best", "should_stop", "best_selection_score"
+  ],
+  "properties": {
+    "mode": {"const": "fit-stream"},
+    "frame": {"type": ["integer", "null"], "minimum": 0},
+    "epoch": {"type": "integer", "minimum": 1},
+    "step": {"type": "integer", "minimum": 0},
+    "rows": {"type": "integer", "minimum": 1},
+    "batches": {"type": "integer", "minimum": 1},
+    "lr": {"type": "number", "minimum": 0},
+    "loss": {"type": "number"},
+    "directLosses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/directLoss"},
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "auxiliaryLosses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/auxiliaryLoss"},
+      "maxItems": 3
+    },
+    "targetMetrics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/targetMetrics"},
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "gradientInteractions": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/gradientInteractions"}
+      ]
+    },
+    "selection_score": {"type": ["number", "null"]},
+    "trainingBatchesCompleted": {"type": "integer", "minimum": 1},
+    "optimizerUpdatesApplied": {"type": "integer", "minimum": 0},
+    "optimizerUpdatesSkipped": {"type": "integer", "minimum": 0},
+    "ampOverflowBatches": {"type": "integer", "minimum": 0},
+    "finiteGradientBatches": {"type": "integer", "minimum": 0},
+    "nonFiniteGradientBatches": {"type": "integer", "minimum": 0},
+    "preClipGradientNormMean": {"type": ["number", "null"], "minimum": 0},
+    "preClipGradientNormMax": {"type": ["number", "null"], "minimum": 0},
+    "preClipGradientNormP95": {"type": ["number", "null"], "minimum": 0},
+    "nan_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "masked_token_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "complete_token_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "partial_token_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "empty_token_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "input_pipeline_ms": {"type": "number", "minimum": 0},
+    "missing_stats_ms": {"type": "number", "minimum": 0},
+    "host_to_device_ms": {"type": "number", "minimum": 0},
+    "train_step_ms": {"type": "number", "minimum": 0},
+    "elapsed_ms": {"type": "number", "minimum": 0},
+    "checkpoint_best": {"type": "boolean"},
+    "should_stop": {"type": "boolean"},
+    "best_selection_score": {"type": ["number", "null"]}
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "name"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "maximum": 5},
+        "name": {
+          "enum": [
+            "MeanReturn", "SigmaReturn", "ProbTP", "ProbSL",
+            "VolatilityNext", "HittingProbTP"
+          ]
+        }
+      }
+    },
+    "directLoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "value"],
+      "properties": {
+        "target": {"$ref": "#/$defs/target"},
+        "value": {"type": "number"}
+      }
+    },
+    "auxiliaryLoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator", "value"],
+      "properties": {
+        "operator": {
+          "enum": [
+            "GaussianNLL", "ExpectedValue", "RiskAdjustedExpectedValue"
+          ]
+        },
+        "value": {"type": "number"}
+      }
+    },
+    "targetMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "mae", "rmse"],
+      "properties": {
+        "target": {"$ref": "#/$defs/target"},
+        "mae": {"type": "number", "minimum": 0},
+        "rmse": {"type": "number", "minimum": 0}
+      }
+    },
+    "gradientInteractions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples", "components", "pairs"],
+      "properties": {
+        "samples": {"type": "integer", "minimum": 1},
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "meanNorm"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "meanNorm": {"type": "number", "minimum": 0}
+            }
+          },
+          "minItems": 1
+        },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["left", "right", "meanCosine"],
+            "properties": {
+              "left": {"type": "string", "minLength": 1},
+              "right": {"type": "string", "minLength": 1},
+              "meanCosine": {"type": "number", "minimum": -1, "maximum": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}

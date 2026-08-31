@@ -8,22 +8,24 @@ import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.flight.v6.arrow import validate_prediction_file
+from app.contracts.flight.v7.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v8.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v8.objective import (
     CHECKPOINT_FORMAT,
-    ml_contract,
-    objective_config,
+    ObjectiveConfig,
     objective_config_sha256,
+    objective_from_ml_contract,
 )
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
@@ -239,6 +241,7 @@ class WorkerArtifactPublisher:
                     path,
                     job.prediction_column,
                     item.rows,
+                    objective_from_ml_contract(job.ml_contract).targets,
                 )
             except (OSError, ServiceError, ValueError) as exc:
                 raise WorkerArtifactError(
@@ -335,6 +338,13 @@ class WorkerArtifactPublisher:
             actual_train = TrainConfig.from_dict(
                 checkpoint_metadata.get("trainingConfig")
             )
+            if actual_train is not None:
+                actual_train = replace(
+                    actual_train,
+                    diagnostics=DiagnosticsConfig.from_document(
+                        checkpoint_metadata.get("diagnostics")
+                    ),
+                )
         except Exception as exc:
             raise WorkerArtifactError(
                 ErrorCode.SUBPROCESS_FAILED,
@@ -387,22 +397,18 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit checkpoint data contract differs from the job",
                 )
-            expected_ml_contract = ml_contract(actual_train)
+            expected_ml_contract = dict(job.ml_contract)
             if checkpoint_metadata.get("mlContract") != expected_ml_contract:
                 raise WorkerArtifactError(
                     ErrorCode.MALFORMED_OUTPUT,
                     "fit checkpoint ML contract differs from the job",
                 )
-            expected_objective = objective_config(actual_train)
-            if checkpoint_metadata.get("objectiveConfig") != expected_objective:
-                raise WorkerArtifactError(
-                    ErrorCode.MALFORMED_OUTPUT,
-                    "fit checkpoint objective configuration differs from the job",
-                )
+            objective = objective_from_ml_contract(expected_ml_contract)
             data_schema = _canonical_data_schema(actual_model)
             checkpoint_selection = _validate_worker_selection(
                 checkpoint_metadata.get("checkpointSelection"),
                 actual_train,
+                objective,
             )
             safe_checkpoint: JsonObject = {
                 "format": checkpoint_format,
@@ -411,8 +417,10 @@ class WorkerArtifactPublisher:
                 "bytes": byte_count,
                 "modelConfig": model_config_to_manifest(actual_model),
                 "trainingConfig": train_config_to_manifest(actual_train),
+                "diagnostics": actual_train.diagnostics.to_document(),
                 "dataContract": _data_contract_to_api(job.data_contract),
                 "mlContract": expected_ml_contract,
+                "objective": objective.to_document(),
                 "checkpointSelection": checkpoint_selection,
             }
         except WorkerArtifactError:
@@ -439,7 +447,7 @@ class WorkerArtifactPublisher:
                 "train_config": actual_train.to_dict(),
                 "data_contract": dict(job.data_contract),
                 "ml_contract": expected_ml_contract,
-                "objective_config": expected_objective,
+                "objective": objective.to_document(),
                 "data_schema": data_schema,
                 "checkpoint": safe_checkpoint,
             }
@@ -545,6 +553,7 @@ def _sha256_file(path: str) -> str:
 def _checkpoint_selection_to_api(
     value: object,
     train_config: TrainConfig,
+    objective: ObjectiveConfig,
 ) -> JsonObject:
     try:
         document = _object(value, "checkpoint selection")
@@ -572,7 +581,7 @@ def _checkpoint_selection_to_api(
             score is None
             and frame is None
             and epoch is None
-            and document.get("source") == "last_maximum_stage"
+            and document.get("source") == "last_epoch"
         )
     if (
         set(document)
@@ -586,7 +595,7 @@ def _checkpoint_selection_to_api(
         }
         or document.get("enabled") is not enabled
         or document.get("objectiveConfigSha256")
-        != objective_config_sha256(train_config)
+        != objective_config_sha256(objective)
         or not valid_frame
         or not valid_epoch
         or not valid_selection
@@ -616,7 +625,7 @@ def _canonical_data_schema(model_config: ModelConfig) -> JsonObject:
         "target": {
             "column": "tgt",
             "acceptedElementTypes": ["float32"],
-            "width": 6,
+            "width": model_config.out_dim,
             "targetSchemaId": "inventory.target.v2",
         },
         "featureDim": feature_dim,
@@ -641,6 +650,7 @@ def _canonical_data_schema(model_config: ModelConfig) -> JsonObject:
 def _validate_worker_selection(
     value: object,
     train_config: TrainConfig,
+    objective: ObjectiveConfig,
 ) -> JsonObject:
     try:
         document = _object(value, "worker checkpoint selection")
@@ -649,7 +659,7 @@ def _validate_worker_selection(
             ErrorCode.SUBPROCESS_FAILED,
             "fit worker checkpoint selection metadata is invalid",
         ) from exc
-    result = _checkpoint_selection_to_api(document, train_config)
+    result = _checkpoint_selection_to_api(document, train_config, objective)
     if result != document:
         raise WorkerArtifactError(
             ErrorCode.SUBPROCESS_FAILED,

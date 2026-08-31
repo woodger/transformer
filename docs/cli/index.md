@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v6`](../../app/contracts/flight/v6/README.md).
+находится в [`app/contracts/flight/v7`](../../app/contracts/flight/v7/README.md).
 
 ## File commands
 
@@ -111,13 +111,13 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 
 В `predict-stream` stdout — бинарный результат; diagnostics идут в stderr.
 `fit-stream` печатает training progress в текстовый stdout. Semantics обучения
-на отдельных frames, loss schedule и early stopping определены в
+на отдельных frames, objective и early stopping определены в
 [training reference](../training-runtime.md).
 
 ## GPU stress test
 
 `gmark` выполняет синтетические optimizer steps через production
-`TransformerModel`: forward, полный loss stage, backward, gradient clipping и
+`TransformerModel`: forward, полный default objective, backward, gradient clipping и
 Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
 тот же CUDA autocast и `GradScaler`, что и production worker. Команда проверяет
 loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
@@ -223,13 +223,10 @@ core, но не является полной гарантией темпера�
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Эпохи для file fit / максимум на stdin frame / эпохи всего Flight job | `25` |
-| `--loss-stage` | Максимальный этап target-aligned objective; зафиксирован в `4` | `4` |
-| `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
-| `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
 | `--direct-loss-weights` | Шесть положительных весов `L0…L5` через запятую | `1,1,1,1,1,1` |
-| `--[no-]select-best-checkpoint` | Выбирать best checkpoint только по direct losses полной epoch stage 4 | выключено |
+| `--[no-]select-best-checkpoint` | Выбирать best checkpoint по direct losses завершённой epoch | выключено |
 | `--selection-min-delta` | Минимальное улучшение selection score | `0.0` |
-| `--selection-patience` | Число неулучшающихся stage-4 epochs; `0` не останавливает обучение | `0` |
+| `--selection-patience` | Число неулучшающихся epochs; `0` не останавливает обучение | `0` |
 | `--seed` | Seed `0..4294967295` для Python, NumPy, PyTorch и CUDA | `42` |
 | `--deterministic` | Включить deterministic PyTorch algorithms | выключено |
 

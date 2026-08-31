@@ -1,67 +1,90 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-DIRECT_LOSS_FIELDS = tuple(f"loss_l{index}" for index in range(6))
+from app.contracts.ml import TARGET_IDENTITIES, canonical_targets
+from app.worker.training.losses import MaterializedLossStatistics
+
+
+def _empty_loss_values() -> dict[str, float]:
+    return {}
 
 
 @dataclass
 class TrainingEpochResult:
-    """ML result of one completed global epoch.
+    """Core ML result of one completed global epoch."""
 
-    These values participate in checkpoint selection and therefore belong to
-    training state. Runtime observations are deliberately represented by a
-    separate telemetry type and must not affect optimization or selection.
-    """
-
+    targets: tuple[str, ...] = TARGET_IDENTITIES
+    auxiliary_operators: tuple[str, ...] = ()
     rows: int = 0
     batches: int = 0
     loss: float = 0.0
-    loss_l0: float = 0.0
-    loss_l1: float = 0.0
-    loss_l2: float = 0.0
-    loss_l3: float = 0.0
-    loss_l4: float = 0.0
-    loss_l5: float = 0.0
-    loss_nll: float = 0.0
-    loss_ev: float = 0.0
+    direct_loss_values: dict[str, float] = field(
+        default_factory=_empty_loss_values
+    )
+    auxiliary_loss_values: dict[str, float] = field(
+        default_factory=_empty_loss_values
+    )
     selection_score: float | None = None
     step: int = 0
     lr: float = 0.0
-    loss_stage: int = 0
-    minimum_loss_stage: int = 0
-    maximum_loss_stage: int = 0
 
-    def update(self, rows: int, loss_parts: dict[str, float]) -> None:
+    def __post_init__(self) -> None:
+        self.targets = canonical_targets(self.targets)
+        self.direct_loss_values = {
+            target: float(self.direct_loss_values.get(target, 0.0))
+            for target in self.targets
+        }
+        self.auxiliary_loss_values = {
+            operator: float(self.auxiliary_loss_values.get(operator, 0.0))
+            for operator in self.auxiliary_operators
+        }
+
+    def update(
+        self,
+        rows: int,
+        statistics: MaterializedLossStatistics,
+        *,
+        step: int,
+    ) -> None:
         total_rows = self.rows + rows
         if total_rows <= 0:
             return
+        if len(statistics.direct_losses) != len(self.targets):
+            raise ValueError("direct loss statistics differ from target selection")
+        if tuple(
+            operator for operator, _value in statistics.auxiliary_losses
+        ) != self.auxiliary_operators:
+            raise ValueError("auxiliary loss statistics differ from objective")
 
         def average(current: float, value: float) -> float:
             return math.fsum((current * self.rows, value * rows)) / total_rows
 
-        for name in ("loss", *DIRECT_LOSS_FIELDS, "loss_nll", "loss_ev"):
-            setattr(self, name, average(getattr(self, name), loss_parts[name]))
+        self.loss = average(self.loss, statistics.loss)
+        for target, value in zip(
+            self.targets,
+            statistics.direct_losses,
+            strict=True,
+        ):
+            self.direct_loss_values[target] = average(
+                self.direct_loss_values[target],
+                value,
+            )
+        for operator, value in statistics.auxiliary_losses:
+            self.auxiliary_loss_values[operator] = average(
+                self.auxiliary_loss_values[operator],
+                value,
+            )
 
         self.rows = total_rows
         self.batches += 1
-        self.step = int(loss_parts.get("step", self.step))
-        observed_stage = int(loss_parts.get("loss_stage", self.loss_stage))
-        self.loss_stage = observed_stage
-        if self.minimum_loss_stage == 0:
-            self.minimum_loss_stage = observed_stage
-        else:
-            self.minimum_loss_stage = min(
-                self.minimum_loss_stage,
-                observed_stage,
-            )
-        self.maximum_loss_stage = max(self.maximum_loss_stage, observed_stage)
+        self.step = step
 
     def direct_losses(self) -> tuple[float, ...]:
         if self.rows <= 0:
             raise ValueError("selection score is incomplete: epoch has no rows")
-        values = tuple(getattr(self, name) for name in DIRECT_LOSS_FIELDS)
+        values = tuple(self.direct_loss_values[target] for target in self.targets)
         if not all(math.isfinite(value) for value in values):
             raise ValueError("selection score contains a non-finite component")
         return values
@@ -76,4 +99,4 @@ class TrainingEpochResult:
         return self.loss > float(other)
 
 
-__all__ = ["DIRECT_LOSS_FIELDS", "TrainingEpochResult"]
+__all__ = ["TrainingEpochResult"]

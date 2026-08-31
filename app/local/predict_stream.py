@@ -6,7 +6,10 @@ from typing import Protocol, cast
 import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v7.config import ModelConfig
+from app.contracts.worker.v8.objective import (
+    ObjectiveConfig,
+    objective_from_ml_contract,
+)
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.arrow import (
     empty_predictions_table,
@@ -24,13 +27,10 @@ from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
 
 ModelBuilder = Callable[
-    [object, torch.Tensor, torch.Tensor | None, torch.device],
+    [object, torch.Tensor, torch.Tensor | None, torch.device, ObjectiveConfig],
     torch.nn.Module,
 ]
-TrainerBuilder = Callable[
-    [object, torch.nn.Module, torch.device, ModelConfig | None],
-    Trainer,
-]
+TrainerBuilder = Callable[..., Trainer]
 
 
 class PredictStreamArguments(Protocol):
@@ -54,6 +54,7 @@ def run(
         checkpoint_config=checkpoint.get("model_config"),
         require_seq_len=True,
     )
+    objective = objective_from_ml_contract(checkpoint["ml_contract"])
     model = None
     trainer = None
     received_frames = 0
@@ -67,7 +68,7 @@ def run(
         if table.num_rows == 0:
             write_framed_arrow(
                 sys.stdout.buffer,
-                empty_predictions_table(args.pred_col),
+                empty_predictions_table(args.pred_col, objective.targets),
             )
             print(
                 f"frame {received_frames}, emitted empty predictions",
@@ -89,8 +90,15 @@ def run(
                     features_cpu,
                     None,
                     device,
+                    objective,
                 )
-                trainer = build_trainer_fn(args, model, device, model_config)
+                trainer = build_trainer_fn(
+                    args,
+                    model,
+                    device,
+                    model_config,
+                    objective=objective,
+                )
                 if checkpoint is None:
                     raise AssertionError(
                         "prediction checkpoint was already consumed"
@@ -110,6 +118,7 @@ def run(
                 predictions,
                 args.pred_col,
                 expected_rows=features_cpu.shape[0],
+                targets=objective.targets,
             ),
         )
         predicted_frames += 1

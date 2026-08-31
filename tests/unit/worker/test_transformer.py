@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,
@@ -30,7 +31,8 @@ def test_transformer_forward_shape():
         hidden_dim=32,
         layers=2,
         dropout=0.0,
-        out_dim=out_dim,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
     )
 
@@ -38,7 +40,11 @@ def test_transformer_forward_shape():
     model_output = model(features)
 
     assert model_output.shape == (batch, out_dim + 1)
-    assert public_predictions(model_output).shape == (batch, out_dim)
+    assert public_predictions(
+        model_output,
+        TARGET_IDENTITIES,
+        include_return_scale=True,
+    ).shape == (batch, out_dim)
 
 
 @pytest.mark.parametrize(
@@ -57,7 +63,8 @@ def test_transformer_rejects_input_outside_tensor_contract(features, message):
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
     )
 
@@ -73,7 +80,8 @@ def test_transformer_rejects_invalid_attention_dimensions():
             hidden_dim=30,
             layers=1,
             dropout=0.0,
-            out_dim=6,
+            targets=TARGET_IDENTITIES,
+            include_return_scale=True,
             nhead=8,
         )
 
@@ -85,7 +93,8 @@ def test_transformer_input_dim_matches_context_mode():
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
         context_mode="relaxed",
     )
@@ -95,7 +104,8 @@ def test_transformer_input_dim_matches_context_mode():
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
         context_mode="strict",
     )
@@ -194,7 +204,8 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
         context_mode="relaxed",
     )
@@ -215,7 +226,11 @@ def test_public_predictions_are_target_aligned_and_bounded():
         [-0.25, 0.4, 0.0, 2.0, 0.75, -2.0, 3.5],
     ])
 
-    prediction = public_predictions(output)
+    prediction = public_predictions(
+        output,
+        TARGET_IDENTITIES,
+        include_return_scale=True,
+    )
 
     assert prediction.shape == (1, 6)
     assert prediction[0, 0] == pytest.approx(-0.25)

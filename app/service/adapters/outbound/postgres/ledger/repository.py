@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -1030,7 +1030,6 @@ class Ledger:
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss_stage: int,
         loss: float,
         training_complete: bool,
         now: float | None = None,
@@ -1046,7 +1045,6 @@ class Ledger:
             sha256=sha256,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss_stage=loss_stage,
             loss=loss,
             training_complete=training_complete,
             now=now,

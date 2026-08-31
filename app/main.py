@@ -13,7 +13,8 @@ from app.cli.args import parse_args
 if TYPE_CHECKING:
     import torch
 
-    from app.contracts.worker.v7.config import ModelConfig
+    from app.contracts.worker.v8.config import ModelConfig
+    from app.contracts.worker.v8.objective import ObjectiveConfig
     from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
     from app.local.fit_stream import FitStreamArguments
     from app.local.plot_metrics import PlotMetricsArguments
@@ -83,6 +84,7 @@ def build_model(
     features_cpu: torch.Tensor,
     targets_cpu: torch.Tensor | None,
     device: torch.device,
+    objective: ObjectiveConfig | None = None,
 ) -> torch.nn.Module:
     from app.worker.training.factory import build_model as implementation
 
@@ -91,6 +93,7 @@ def build_model(
         features_cpu,
         targets_cpu,
         device,
+        objective,
     )
 
 
@@ -100,6 +103,8 @@ def build_trainer(
     device: torch.device,
     model_config: ModelConfig | None = None,
     data_contract: Mapping[str, object] | None = None,
+    *,
+    objective: ObjectiveConfig | None = None,
 ) -> Trainer:
     from app.worker.training.factory import build_trainer as implementation
 
@@ -109,6 +114,7 @@ def build_trainer(
         device,
         model_config,
         data_contract,
+        objective=objective,
     )
 
 

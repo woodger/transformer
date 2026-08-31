@@ -10,13 +10,16 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v8.objective import (
     CHECKPOINT_FORMAT,
+    ObjectiveConfig,
+    default_objective,
     ml_contract,
     objective_config,
 )
@@ -36,7 +39,7 @@ from app.worker.training.batching import BatchPrefetcher
 from app.worker.training.early_stopping import SelectionState
 from app.worker.training.epoch import TrainingEpochResult
 from app.worker.training.factory import build_trainer
-from app.worker.training.losses import resolve_loss_stage
+from app.worker.training.losses import MaterializedLossStatistics
 from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
 
@@ -85,14 +88,16 @@ def data_contract(*, seq_len=5, feature_dim=4):
     }
 
 
-def new_model():
+def new_model(objective: ObjectiveConfig | None = None):
+    objective = default_objective() if objective is None else objective
     return TransformerModel(
         input_dim=4,
         seq_len=5,
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=objective.targets,
+        include_return_scale=objective.requires_return_scale,
         nhead=4,
     )
 
@@ -102,15 +107,16 @@ def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
     config = TrainConfig(
         batch_size=4,
         epochs=1,
-        loss_schedule="none",
         use_amp=False,
     )
+    objective = default_objective()
     trainer = build_trainer(
         config,
         new_model(),
         torch.device("cpu"),
         model_config(),
         data_contract=data_contract(),
+        objective=objective,
     )
 
     path = tmp_path / "model.pth"
@@ -121,8 +127,8 @@ def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
     assert checkpoint["model_config"]["feature_dim"] == 4
     assert checkpoint["train_config"] == config.to_dict()
     assert checkpoint["data_contract"] == data_contract()
-    assert checkpoint["ml_contract"] == ml_contract(config)
-    assert checkpoint["objective_config"] == objective_config(config)
+    assert checkpoint["ml_contract"] == ml_contract(objective)
+    assert checkpoint["objective"] == objective_config(objective)
 
 
 def test_model_config_can_be_loaded_from_checkpoint_defaults():
@@ -161,9 +167,9 @@ def test_cpu_training_disables_amp_and_updates_parameters():
             lr=1e-3,
             batch_size=4,
             epochs=1,
-            loss_schedule="none",
             use_amp=True,
         ),
+        objective=default_objective(),
     )
     before = {
         name: value.detach().clone()
@@ -189,8 +195,8 @@ def test_fit_batch_reports_six_target_metrics():
             lr=1e-3,
             batch_size=8,
             epochs=1,
-            loss_schedule="none",
         ),
+        objective=default_objective(),
     )
 
     metrics = trainer.fit_batch(batch)
@@ -205,17 +211,72 @@ def test_fit_batch_reports_six_target_metrics():
     assert telemetry.amp_overflow_batches == 0
     assert telemetry.finite_gradient_batches == 4
     assert telemetry.non_finite_gradient_batches == 0
-    assert metrics.loss_stage == 4
-    for semantic in (
-        "mean_return",
-        "sigma_return",
-        "prob_tp",
-        "prob_sl",
-        "volatility_next",
-        "hitting_prob_tp",
-    ):
-        assert getattr(telemetry, f"{semantic}_mae") >= 0
-        assert getattr(telemetry, f"{semantic}_rmse") >= 0
+    for target in default_objective().targets:
+        assert telemetry.target_mae[target] >= 0
+        assert telemetry.target_rmse[target] >= 0
+
+
+def test_gradient_interactions_are_sampled_at_completed_step_interval():
+    batch = make_dummy_data(n=4)
+    trainer = Trainer(
+        model=new_model(),
+        device=torch.device("cpu"),
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=2,
+            epochs=1,
+            diagnostics=DiagnosticsConfig(
+                gradient_sample_every_steps=2,
+            ),
+        ),
+        objective=default_objective(),
+    )
+
+    metrics = trainer.fit_batch(batch)
+
+    assert metrics.telemetry is not None
+    assert metrics.telemetry.gradient_interaction_samples == 1
+    assert metrics.telemetry.gradient_interactions_document() is not None
+
+
+def test_single_target_objective_trains_and_predicts_one_public_value():
+    objective = ObjectiveConfig.from_document({
+        "targets": ["MeanReturn"],
+        "objective": {
+            "schemaVersion": 1,
+            "aggregation": "WeightedSum",
+            "reduction": "GlobalRowMean",
+            "directLosses": [
+                {
+                    "target": "MeanReturn",
+                    "operator": "SmoothL1",
+                    "weight": 1.0,
+                }
+            ],
+            "auxiliaryLosses": [
+                {"operator": "GaussianNLL", "weight": 1.0}
+            ],
+            "balancing": {"operator": "Static"},
+        },
+    })
+    full_batch = make_dummy_data(n=4)
+    batch = TrainingBatch(
+        features=full_batch.features,
+        targets=full_batch.targets[:, :1],
+    )
+    trainer = Trainer(
+        model=new_model(objective),
+        device=torch.device("cpu"),
+        train_config=TrainConfig(lr=1e-3, batch_size=4, epochs=1),
+        objective=objective,
+    )
+
+    metrics = trainer.fit_batch(batch)
+    predictions = trainer.predict(batch.features)
+
+    assert metrics.direct_loss_values.keys() == {"MeanReturn"}
+    assert metrics.auxiliary_loss_values.keys() == {"GaussianNLL"}
+    assert predictions.shape == (4, 1)
 
 
 def test_target_error_telemetry_failure_does_not_interrupt_training(
@@ -240,8 +301,45 @@ def test_target_error_telemetry_failure_does_not_interrupt_training(
             lr=1e-3,
             batch_size=4,
             epochs=1,
-            loss_schedule="none",
         ),
+        objective=default_objective(),
+    )
+
+    result = trainer.fit_batch(batch)
+
+    assert result.rows == 4
+    assert result.batches == 1
+    assert result.telemetry is None
+    assert "training epoch telemetry disabled" in capsys.readouterr().err
+
+
+def test_gradient_diagnostics_failure_does_not_interrupt_training(
+    monkeypatch,
+    capsys,
+):
+    class BrokenGradientInteractionObservation:
+        @staticmethod
+        def evaluate(*_args):
+            raise RuntimeError("injected diagnostics failure")
+
+    monkeypatch.setattr(
+        trainer_module,
+        "GradientInteractionObservation",
+        BrokenGradientInteractionObservation,
+    )
+    batch = make_dummy_data(n=4)
+    trainer = Trainer(
+        model=new_model(),
+        device=torch.device("cpu"),
+        train_config=TrainConfig(
+            lr=1e-3,
+            batch_size=4,
+            epochs=1,
+            diagnostics=DiagnosticsConfig(
+                gradient_sample_every_steps=1,
+            ),
+        ),
+        objective=default_objective(),
     )
 
     result = trainer.fit_batch(batch)
@@ -270,8 +368,8 @@ def test_predict_batches_model_and_returns_only_public_target_space():
             lr=1e-3,
             batch_size=4,
             epochs=1,
-            loss_schedule="none",
         ),
+        objective=default_objective(),
     )
     source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
     internal = torch.nn.functional.linear(
@@ -283,33 +381,18 @@ def test_predict_batches_model_and_returns_only_public_target_space():
     predictions = trainer.predict(source)
 
     assert model.forward_batch_sizes == [4, 4, 2]
-    assert torch.allclose(predictions, public_predictions(internal))
+    assert torch.allclose(
+        predictions,
+        public_predictions(
+            internal,
+            default_objective().targets,
+            include_return_scale=True,
+        ),
+    )
     assert predictions.shape == (10, 6)
 
 
-@pytest.mark.parametrize(
-    ("schedule", "progress", "expected"),
-    [
-        ("epoch", 0, 1),
-        ("epoch", 3, 4),
-        ("step", 2, 3),
-        ("none", 99, 4),
-    ],
-)
-def test_loss_schedule_reaches_target_aligned_maximum_stage(
-    schedule,
-    progress,
-    expected,
-):
-    assert resolve_loss_stage(
-        progress,
-        schedule,
-        stage_size=1,
-        max_stage=4,
-    ) == expected
-
-
-def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
+def test_selection_starts_with_the_first_complete_epoch():
     batch = make_dummy_data(n=4)
     selection = CheckpointSelectionConfig(min_delta=0.0, patience=1)
     trainer = Trainer(
@@ -319,16 +402,16 @@ def test_selection_starts_only_after_a_complete_maximum_stage_epoch():
             lr=1e-30,
             batch_size=4,
             epochs=10,
-            loss_schedule="epoch",
-            stage_size=1,
             selection=selection,
         ),
+        objective=default_objective(),
     )
 
     metrics = trainer.fit_epochs(batch)
 
-    assert [item.loss_stage for item in metrics] == [1, 2, 3, 4, 4]
-    assert trainer.best_epoch == 4
+    assert len(metrics) == 2
+    assert trainer.best_epoch == 1
+    assert trainer.selection_state is not None
     assert trainer.selection_state.active is True
     assert trainer.selection_state.wait == 1
 
@@ -342,15 +425,14 @@ def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
             lr=1e-30,
             batch_size=4,
             epochs=3,
-            loss_schedule="none",
         ),
+        objective=default_objective(),
     )
 
     metrics = trainer.fit_epochs(batch)
 
     assert len(metrics) == 3
     assert trainer.best_state_dict is None
-    assert trainer.maximum_stage_completed is True
 
 
 def test_selection_tie_keeps_the_earlier_candidate():
@@ -381,11 +463,13 @@ def test_train_metrics_uses_global_row_weighted_direct_losses():
     first = TrainingEpochResult()
     first.update(
         rows=1,
-        loss_parts=_loss_parts(1.0),
+        statistics=_statistics(1.0),
+        step=1,
     )
     first.update(
         rows=3,
-        loss_parts=_loss_parts(3.0),
+        statistics=_statistics(3.0),
+        step=2,
     )
 
     assert first.direct_losses() == pytest.approx((2.5,) * 6)
@@ -401,12 +485,13 @@ def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
     ):
         metrics.update(
             rows=1,
-            loss_parts=_loss_parts(1.0),
+            statistics=_statistics(1.0),
+            step=metrics.step + 1,
         )
         assert metrics.telemetry is not None
         metrics.telemetry.observe_batch(
             rows=1,
-            target_errors=_loss_parts(1.0),
+            target_errors=_target_errors(1.0),
             grad_norm=gradient,
             optimizer_update_applied=applied,
             amp_overflow=overflow,
@@ -432,12 +517,13 @@ def test_invalid_gradient_telemetry_does_not_interrupt_metric_aggregation():
 
     metrics.update(
         rows=1,
-        loss_parts=_loss_parts(1.0),
+        statistics=_statistics(1.0),
+        step=1,
     )
     assert metrics.telemetry is not None
     metrics.telemetry.observe_batch(
         rows=1,
-        target_errors=_loss_parts(1.0),
+        target_errors=_target_errors(1.0),
         grad_norm=-1.0,
         optimizer_update_applied=True,
         amp_overflow=True,
@@ -463,8 +549,8 @@ def test_amp_overflow_counts_a_skipped_update_and_keeps_later_gradient():
         train_config=TrainConfig(
             batch_size=2,
             epochs=1,
-            loss_schedule="none",
         ),
+        objective=default_objective(),
     )
     forward_calls = 0
 
@@ -556,7 +642,6 @@ def test_payload_partitioning_does_not_change_training_state():
             lr=1e-3,
             batch_size=4,
             epochs=2,
-            loss_schedule="none",
             seed=91,
             deterministic=True,
         )
@@ -600,7 +685,6 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
             lr=1e-3,
             batch_size=4,
             epochs=2,
-            loss_schedule="none",
             seed=137,
             deterministic=True,
         )
@@ -658,7 +742,7 @@ def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
     metrics = ObservedTrainingEpoch(
         rows=4,
         batches=1,
-        loss_l0=0.2,
+        direct_loss_values={"MeanReturn": 0.2},
         telemetry=EpochTelemetry(
             training_batches_completed=1,
             optimizer_updates_applied=1,
@@ -696,7 +780,7 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
     output = tmp_path / "plots"
     metrics = ObservedTrainingEpoch(
         rows=2,
-        telemetry=EpochTelemetry(mean_return_mae=0.25),
+        telemetry=EpochTelemetry(target_mae={"MeanReturn": 0.25}),
     )
     append_epoch_telemetry(str(path), metrics, mode="fit")
 
@@ -719,9 +803,9 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
             lr=1e-3,
             batch_size=4,
             epochs=1,
-            loss_schedule="none",
             use_amp=True,
         ),
+        objective=default_objective(),
     )
     before = {
         name: value.detach().clone()
@@ -750,35 +834,19 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
     )
 
 
-def _loss_parts(value: float) -> dict:
+def _statistics(value: float) -> MaterializedLossStatistics:
+    return MaterializedLossStatistics(
+        loss=value,
+        direct_losses=(value,) * 6,
+        auxiliary_losses=(),
+        grad_norm=None,
+    )
+
+
+def _target_errors(value: float) -> dict[str, tuple[float, float]]:
     return {
-        "loss": value,
-        **{f"loss_l{index}": value for index in range(6)},
-        "loss_nll": value,
-        "loss_ev": value,
-        **{
-            f"{semantic}_mae": value
-            for semantic in (
-                "mean_return",
-                "sigma_return",
-                "prob_tp",
-                "prob_sl",
-                "volatility_next",
-                "hitting_prob_tp",
-            )
-        },
-        **{
-            f"{semantic}_mse": value * value
-            for semantic in (
-                "mean_return",
-                "sigma_return",
-                "prob_tp",
-                "prob_sl",
-                "volatility_next",
-                "hitting_prob_tp",
-            )
-        },
-        "loss_stage": 4,
+        target: (value, value * value)
+        for target in default_objective().targets
     }
 
 

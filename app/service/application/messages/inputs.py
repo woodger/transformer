@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v7.config import ModelConfig
+from app.contracts.worker.v8.config import ModelConfig
 from app.service.domain.job import InputState
+from app.service.domain.json_types import JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,7 @@ class InputUploadJob:
     input_revision: int
     next_input_ordinal: int
     data_contract_sha256: str
+    ml_contract: JsonObject
     model_config: ModelConfig
 
 

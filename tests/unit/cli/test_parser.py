@@ -8,7 +8,7 @@ from app.config import (
     HOST_DEFAULT,
     PORT_DEFAULT,
 )
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
@@ -19,6 +19,7 @@ from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,
     model_config_from_args,
+    objective_config_from_args,
     train_config_from_args,
 )
 
@@ -647,7 +648,7 @@ def test_training_seed_options_are_plumbed_into_train_config():
     assert config.to_dict()["deterministic"] is True
 
 
-def test_direct_loss_weights_are_plumbed_into_train_config():
+def test_direct_loss_weights_are_plumbed_into_local_objective():
     args = parse(
         "fit",
         "train.arrow",
@@ -657,9 +658,9 @@ def test_direct_loss_weights_are_plumbed_into_train_config():
         "1,2,3,4,5,6",
     )
 
-    config = train_config_from_args(args)
+    objective = objective_config_from_args(args)
 
-    assert config.direct_loss_weights == (1, 2, 3, 4, 5, 6)
+    assert objective.direct_loss_weights == (1, 2, 3, 4, 5, 6)
 
 
 @pytest.mark.parametrize("action", ("fit", "fit-stream"))
@@ -719,7 +720,7 @@ def test_bounded_training_options_are_validated_by_argparse(options):
         ({"seq_len": 10, "layers": 0}, "layers"),
         ({"seq_len": 10, "dropout": 1.0}, "dropout"),
         ({"seq_len": 10, "context_mode": "unknown"}, "context_mode"),
-        ({"seq_len": 10, "out_dim": 5}, "out_dim"),
+        ({"seq_len": 10, "out_dim": 7}, "out_dim"),
         ({"seq_len": 10, "feature_dim": 0}, "feature_dim"),
     ),
 )
@@ -734,9 +735,7 @@ def test_model_config_validates_programmatic_values(kwargs, message):
         ({"lr": 0}, "lr"),
         ({"batch_size": 0}, "batch_size"),
         ({"epochs": 0}, "epochs"),
-        ({"loss_stage": 3}, "loss_stage"),
         ({"weight_decay": -1}, "weight_decay"),
-        ({"direct_loss_weights": (1, 1, 1, 1, 1, 0)}, "direct_loss_weights"),
         ({"selection": {"minDelta": -1, "patience": 1}}, "min_delta"),
         ({"seed": 2**32}, "seed"),
     ),

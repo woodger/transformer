@@ -2,8 +2,8 @@ from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.mapping import (
     execution_job_from_mapping,
     recoverable_attempt_from_mapping,
@@ -25,6 +25,7 @@ def _assert_frozen_slots(record):
 
 def test_execution_mapping_preserves_both_state_axes_and_typed_config():
     train_config = TrainConfig(epochs=3, deterministic=True)
+    contract = ml_contract(default_objective())
     value = {
         "job_id": "00000000-0000-4000-8000-000000000001",
         "owner_subject": "inventory",
@@ -42,7 +43,7 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         ).to_dict(),
         "training_config": train_config.to_dict(),
         "data_contract": {"data_contract_sha256": "a" * 64},
-        "ml_contract": ml_contract(train_config),
+        "ml_contract": contract,
         "config_hash": "b" * 64,
         "manifest_sha256": None,
         "feature_dim": 2,
@@ -66,7 +67,7 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         epochs=3,
         deterministic=True,
     )
-    assert record.ml_contract == ml_contract(train_config)
+    assert record.ml_contract == contract
     _assert_frozen_slots(record)
 
 
@@ -76,7 +77,7 @@ def test_committed_input_record_carries_order_and_contract_identity():
         ordinal=4,
         payload_id="00000000-0000-4000-8000-000000000002",
         commit_revision=7,
-        schema_id="inventory.sequence.fit.v2",
+        schema_id="inventory.sequence.fit.v3",
         data_contract_sha256="a" * 64,
         rows=10,
         batches=2,

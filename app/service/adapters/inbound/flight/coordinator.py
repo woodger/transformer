@@ -3,12 +3,17 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v8.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
+from app.contracts.worker.v8.objective import (
+    AUXILIARY_LOSS_OPERATORS,
     CHECKPOINT_FORMAT,
+    DIRECT_LOSS_OPERATORS,
+    MAX_TARGET_WIDTH,
     OBJECTIVE_ID,
+    OBJECTIVE_SCHEMA_VERSION,
     PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
+    TARGET_IDENTITIES,
     TARGET_SCHEMA_ID,
-    TARGET_WIDTH,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
@@ -237,9 +242,15 @@ class JobCoordinator:
                 "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
                 "objectiveId": OBJECTIVE_ID,
                 "checkpointFormat": CHECKPOINT_FORMAT,
-                "targetWidth": TARGET_WIDTH,
+                "targetIdentities": list(TARGET_IDENTITIES),
+                "minimumTargetWidth": 1,
+                "maximumTargetWidth": MAX_TARGET_WIDTH,
                 "predictionSpace": "target",
-                "objectiveConfigSchemaVersion": 2,
+                "objectiveSchemaVersion": OBJECTIVE_SCHEMA_VERSION,
+                "diagnosticsSchemaVersion": DIAGNOSTICS_SCHEMA_VERSION,
+                "directLossOperators": sorted(set(DIRECT_LOSS_OPERATORS.values())),
+                "auxiliaryLossOperators": list(AUXILIARY_LOSS_OPERATORS),
+                "balancingOperators": ["Static"],
             },
             limits=limits_to_api(capabilities.limits),
             devices={

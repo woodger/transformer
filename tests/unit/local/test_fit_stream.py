@@ -84,13 +84,11 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
                     rows=1,
                     batches=1,
                     loss=1.25,
-                    loss_stage=1,
                 ),
                 ObservedTrainingEpoch(
                     rows=1,
                     batches=1,
                     loss=1.10,
-                    loss_stage=2,
                 ),
             ]
             for epoch, metrics in enumerate(metrics_rows):
@@ -112,7 +110,11 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(stream))
     monkeypatch.setattr(main_module, "build_model", lambda *args: object())
-    monkeypatch.setattr(main_module, "build_trainer", lambda *args: trainer)
+    monkeypatch.setattr(
+        main_module,
+        "build_trainer",
+        lambda *args, **kwargs: trainer,
+    )
 
     main_module.fit_stream(make_args(model_name="stream.pth"), torch.device("cpu"))
 
@@ -183,7 +185,6 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
                     rows=sum(batch.features.size(0) for batch in loaded),
                     batches=len(loaded),
                     loss=1.0 - epoch * 0.1,
-                    loss_stage=epoch + 1,
                 )
                 on_epoch(epoch, metrics, {
                     "selection_score": None,
@@ -200,7 +201,11 @@ def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, c
 
     trainer = FakeTrainer()
     monkeypatch.setattr(main_module, "build_model", lambda *args: object())
-    monkeypatch.setattr(main_module, "build_trainer", lambda *args: trainer)
+    monkeypatch.setattr(
+        main_module,
+        "build_trainer",
+        lambda *args, **kwargs: trainer,
+    )
 
     main_module.fit_stream(
         make_args(

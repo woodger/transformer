@@ -14,7 +14,7 @@ from app.cli.options import (
 )
 from app.cli.parsers import SubparserTarget
 from app.config import DEFAULT_DEVICE, DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
@@ -22,12 +22,9 @@ from app.contracts.worker.v7.config import (
     DEFAULT_EPOCHS,
     DEFAULT_HIDDEN,
     DEFAULT_LAYERS,
-    DEFAULT_LOSS_SCHEDULE,
-    DEFAULT_LOSS_STAGE,
     DEFAULT_LR,
     DEFAULT_NHEAD,
     DEFAULT_SEED,
-    DEFAULT_STAGE_SIZE,
     DEFAULT_WEIGHT_DECAY,
 )
 
@@ -190,28 +187,6 @@ def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
         help="Epoch count.",
     )
     train.add_argument(
-        "--loss-stage",
-        type=int,
-        default=DEFAULT_LOSS_STAGE,
-        choices=[4],
-        help="Target-aligned objective maximum stage (fixed at 4).",
-    )
-    train.add_argument(
-        "--loss-schedule",
-        choices=["none", "epoch", "step"],
-        default=DEFAULT_LOSS_SCHEDULE,
-        help=(
-            "Stage schedule: none starts directly at --loss-stage; epoch/step "
-            "advance from stage 1."
-        ),
-    )
-    train.add_argument(
-        "--stage-size",
-        type=positive_int,
-        default=DEFAULT_STAGE_SIZE,
-        help="Epoch/step count per loss stage.",
-    )
-    train.add_argument(
         "--direct-loss-weights",
         type=six_positive_floats,
         default=None,
@@ -223,8 +198,8 @@ def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Select the best maximum-stage checkpoint. Disabled by default; "
-            "the last maximum-stage checkpoint is then published."
+            "Select the best checkpoint by weighted direct loss. Disabled by "
+            "default; the last epoch is then published."
         ),
     )
     train.add_argument(
@@ -237,7 +212,7 @@ def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
         "--selection-patience",
         type=nonnegative_int,
         default=None,
-        help="Non-improving maximum-stage epochs before early stopping.",
+        help="Non-improving epochs before early stopping.",
     )
     train.add_argument(
         "--use-amp",

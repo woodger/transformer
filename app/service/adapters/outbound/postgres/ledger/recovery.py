@@ -5,7 +5,7 @@ from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.worker.v7.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v8.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -52,7 +52,6 @@ class RecoveryLedgerSlice:
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss_stage: int,
         loss: float,
         training_complete: bool,
         now: float | None = None,
@@ -69,13 +68,6 @@ class RecoveryLedgerSlice:
             or raw_global_step < 0
         ):
             raise ValueError("global_step must be a non-negative integer")
-        raw_loss_stage = cast(object, loss_stage)
-        if (
-            isinstance(raw_loss_stage, bool)
-            or not isinstance(raw_loss_stage, int)
-            or not 1 <= raw_loss_stage <= 4
-        ):
-            raise ValueError("loss_stage must be an integer from 1 to 4")
         raw_loss = cast(object, loss)
         if (
             isinstance(raw_loss, bool)
@@ -177,7 +169,6 @@ class RecoveryLedgerSlice:
             job.progress = {
                 "epoch": completed_epochs,
                 "step": global_step,
-                "loss_stage": loss_stage,
                 "loss": float(loss),
             }
             job.updated_at = created_at

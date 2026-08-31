@@ -2,7 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v7.config import ModelConfig
+from app.contracts.worker.v8.config import ModelConfig
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -34,6 +35,7 @@ class UploadStore:
 
 
 def _job(**overrides):
+    objective = default_objective()
     job = InputUploadJob(
         job_id="job-id",
         owner_subject="inventory",
@@ -46,6 +48,7 @@ def _job(**overrides):
         input_revision=1,
         next_input_ordinal=1,
         data_contract_sha256="a" * 64,
+        ml_contract=ml_contract(objective),
         model_config=ModelConfig(seq_len=2, feature_dim=3),
     )
     return replace(job, **overrides)
@@ -58,7 +61,7 @@ def _metadata(**overrides):
         fencing_token=7,
         payload_id="payload-id",
         ordinal=1,
-        schema_id="inventory.sequence.fit.v2",
+        schema_id="inventory.sequence.fit.v3",
         input_kind="fit",
         data_contract_sha256="a" * 64,
         rows=10,
@@ -122,7 +125,7 @@ def test_exact_replay_uses_current_input_frontier_without_recommit():
         job_id="job-id",
         payload_id="payload-id",
         ordinal=1,
-        schema_id="inventory.sequence.fit.v2",
+        schema_id="inventory.sequence.fit.v3",
         data_contract_sha256="a" * 64,
         rows=10,
         batches=1,

@@ -10,8 +10,10 @@ import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import ModelConfig
-from app.contracts.worker.v7.objective import objective_config_sha256
+from app.contracts.worker.v8.objective import (
+    ObjectiveConfig,
+    objective_config_sha256,
+)
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -30,17 +32,17 @@ from app.worker.data.tensors import (
 from app.worker.telemetry import format_epoch_console_line
 from app.worker.telemetry.epoch import ObservedTrainingEpoch
 from app.worker.training.factory import build_model, build_trainer
-from app.worker.training.run_config import model_config_from_args
+from app.worker.training.run_config import (
+    model_config_from_args,
+    objective_config_from_args,
+)
 from app.worker.training.trainer import SelectionPayload, Trainer
 
 ModelBuilder = Callable[
-    [object, torch.Tensor, torch.Tensor | None, torch.device],
+    [object, torch.Tensor, torch.Tensor | None, torch.device, ObjectiveConfig],
     torch.nn.Module,
 ]
-TrainerBuilder = Callable[
-    [object, torch.nn.Module, torch.device, ModelConfig | None],
-    Trainer,
-]
+TrainerBuilder = Callable[..., Trainer]
 
 
 class FitStreamArguments(Protocol):
@@ -78,6 +80,7 @@ def run(
         )
 
     model_config = model_config_from_args(args)
+    objective = objective_config_from_args(args)
     model = None
     trainer = None
     expected_feat_dim = None
@@ -95,7 +98,7 @@ def run(
             print(f"frame {received_frames}, skipped empty payload")
             continue
 
-        batch = table_to_tensors(table)
+        batch = table_to_tensors(table, objective.targets)
         batch = TrainingBatch(
             features=reshape_source(batch.features, model_config.seq_len),
             targets=batch.targets,
@@ -110,14 +113,25 @@ def run(
         )
 
         if model is None:
-            model_config = replace(model_config, feature_dim=expected_feat_dim)
+            model_config = replace(
+                model_config,
+                feature_dim=expected_feat_dim,
+                out_dim=objective.target_width,
+            )
             model = build_model_fn(
                 model_config,
                 batch.features,
                 batch.targets,
                 device,
+                objective,
             )
-            trainer = build_trainer_fn(args, model, device, model_config)
+            trainer = build_trainer_fn(
+                args,
+                model,
+                device,
+                model_config,
+                objective=objective,
+            )
             _print_config_line(trainer)
             print(
                 "features:",
@@ -199,6 +213,7 @@ def _run_spooled(
         raise ValueError("input_frame_count must be a non-negative integer")
 
     model_config = model_config_from_args(args)
+    objective = objective_config_from_args(args)
     recovery = _recovery_arguments(args)
     model = None
     trainer = None
@@ -212,7 +227,7 @@ def _run_spooled(
     for ordinal in range(input_frame_count):
         frame = ordinal + 1
         path = input_directory / f"{ordinal}.arrow"
-        batch = read_arrow(str(path))
+        batch = read_arrow(str(path), objective.targets)
         if batch.features.size(0) == 0:
             print(f"frame {frame}, skipped empty payload")
             del batch
@@ -232,14 +247,25 @@ def _run_spooled(
         )
 
         if model is None:
-            model_config = replace(model_config, feature_dim=expected_feat_dim)
+            model_config = replace(
+                model_config,
+                feature_dim=expected_feat_dim,
+                out_dim=objective.target_width,
+            )
             model = build_model_fn(
                 model_config,
                 batch.features,
                 batch.targets,
                 device,
+                objective,
             )
-            trainer = build_trainer_fn(args, model, device, model_config)
+            trainer = build_trainer_fn(
+                args,
+                model,
+                device,
+                model_config,
+                objective=objective,
+            )
             _print_config_line(trainer)
             print(
                 "features:",
@@ -263,14 +289,14 @@ def _run_spooled(
                 expected_config_hash=recovery.config_hash,
                 expected_manifest_hash=recovery.manifest_hash,
                 expected_objective_config_sha256=objective_config_sha256(
-                    train_config
+                    objective
                 ),
             )
             if payload["model_config"] != asdict(model_config):
                 raise ValueError(
                     "training recovery model configuration does not match"
                 )
-            if payload["train_config"] != asdict(train_config):
+            if payload["train_config"] != train_config.to_dict():
                 raise ValueError(
                     "training recovery train configuration does not match"
                 )
@@ -287,7 +313,7 @@ def _run_spooled(
 
     def payloads() -> Iterator[TrainingBatch]:
         for path in trained_inputs:
-            batch = read_arrow(str(path))
+            batch = read_arrow(str(path), objective.targets)
             batch = TrainingBatch(
                 features=reshape_source(batch.features, model_config.seq_len),
                 targets=batch.targets,

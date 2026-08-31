@@ -18,10 +18,10 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v6            публичный Flight contract
-app/contracts/worker/v7            внутренний process contract
-app/contracts/metrics/v3           epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v2   terminal fit summary
+app/contracts/flight/v7            публичный Flight contract
+app/contracts/worker/v8            внутренний process contract
+app/contracts/metrics/v4           epoch artifact и OpenSearch points
+app/contracts/metrics/fit_run/v3   terminal fit summary
 ```
 
 Каждый исполняемый процесс имеет собственный composition root. Service
@@ -93,7 +93,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v7/config.py`.
+остаются в `app/contracts/worker/v8/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -108,15 +108,23 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v6/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v7/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/ml.py` — единая Python identity target, ML-контракта,
   checkpoint и recovery formats;
-- `app/contracts/worker/v7/` — command/result manifests, capability document,
+- `app/contracts/worker/v8/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/metrics/v3/` — immutable epoch artifact, OpenSearch
+- `app/contracts/metrics/v4/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
-- `app/contracts/metrics/fit_run/v2/` — terminal fit summary, lifecycle
+- `app/contracts/metrics/fit_run/v3/` — terminal fit summary, lifecycle
   durations и counters.
+
+В публичном Flight contract Consumer выбирает непустое подмножество
+канонических targets и передаёт закрытый декларативный objective. Transformer
+валидирует их совместимость, вычисляет canonical digest и владеет tensor-
+семантикой operators, model heads и autograd. Выбранные targets физически
+задают ширину fit target vector, публичные prediction heads и prediction
+output. Objective, training policy и необязательные diagnostics остаются
+отдельными contract sections; checkpoint навсегда связан с targets и objective.
 
 Эти contracts версионируются независимо. Worker `attemptId` является UUID
 execution identity и equality fence; публичный `attempt` — положительный

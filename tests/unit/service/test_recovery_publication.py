@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.worker.v7.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v8.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,
@@ -40,7 +40,6 @@ class _Ledger:
         self.progress = {
             "epoch": fields["completed_epochs"],
             "step": fields["global_step"],
-            "loss_stage": fields["loss_stage"],
             "loss": fields["loss"],
         }
         return TrainingRecoveryCheckpointRecord(
@@ -136,7 +135,6 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         "progress": {
             "epoch": 1,
             "step": 2,
-            "loss_stage": 4,
             "loss": -3.149016,
         },
         "training_complete": False,
@@ -151,7 +149,6 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     assert ledger.progress == {
         "epoch": 1,
         "step": 2,
-        "loss_stage": 4,
         "loss": -3.149016,
     }
     assert telemetry.metric_intervals == 1

@@ -7,9 +7,10 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v8 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v8.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -61,13 +62,18 @@ def execute_fit(
     train_config = TrainConfig.from_dict(object_field(manifest, "training"))
     if model_config is None or train_config is None:
         raise ValueError("fit configuration is unavailable")
-    if object_field(manifest, "mlContract") != ml_contract(train_config):
-        raise ValueError("fit ML contract differs from training configuration")
+    objective = objective_from_ml_contract(object_field(manifest, "mlContract"))
+    diagnostics = DiagnosticsConfig.from_document(
+        object_field(manifest, "diagnostics")
+    )
+    train_config = replace(train_config, diagnostics=diagnostics)
+    if model_config.out_dim != objective.target_width:
+        raise ValueError("fit model shape differs from objective targets")
     configure_reproducibility(train_config.seed, train_config.deterministic)
     device = get_device(string_field(object_field(manifest, "device"), "kind"))
     data_contract = object_field(manifest, "dataContract")
     expected_feature_dim = integer_field(data_contract, "featureDim")
-    expected_target_dim = 6
+    expected_target_dim = objective.target_width
     committed_inputs = CommittedInputArtifacts()
 
     def read_payload(item: JsonObject) -> TrainingBatch:
@@ -78,6 +84,7 @@ def execute_fit(
             path,
             expected_rows=integer_field(item, "rows"),
             source_width=model_config.seq_len * expected_feature_dim,
+            targets=objective.targets,
         )
         batch = TrainingBatch(
             features=reshape_source(batch.features, model_config.seq_len),
@@ -99,13 +106,20 @@ def execute_fit(
         raise ValueError("fit requires at least one non-empty input")
 
     actual_config = replace(model_config, feature_dim=expected_feature_dim)
-    model = build_model(actual_config, first.features, first.targets, device)
+    model = build_model(
+        actual_config,
+        first.features,
+        first.targets,
+        device,
+        objective,
+    )
     trainer = build_trainer(
         train_config,
         model,
         device,
         actual_config,
         data_contract=data_contract,
+        objective=objective,
     )
 
     recovery_value = manifest.get("recovery")
@@ -239,7 +253,6 @@ def execute_fit(
             "progress": {
                 "epoch": epoch + 1,
                 "step": metrics.step,
-                "loss_stage": metrics.loss_stage,
                 "loss": metrics.loss,
             },
             "trainingComplete": boolean_value(

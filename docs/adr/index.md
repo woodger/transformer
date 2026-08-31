@@ -106,6 +106,7 @@ references. Он не воспроизводит их значения, кома
 | [0016](0016-hard-delete-published-models.md) | Accepted | Физически удалять модели с минимальным audit archive |
 | [0020](0020-local-opaque-api-access-tokens.md) | Accepted | Использовать local opaque database-backed access tokens |
 | [0021](0021-provider-neutral-gpu-device-interface.md) | Accepted | Использовать provider-neutral public identity `gpu` |
+| [0022](0022-declarative-target-objectives.md) | Accepted | Передавать выбранные targets и declarative objective через Flight |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

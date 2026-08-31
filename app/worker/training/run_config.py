@@ -1,7 +1,8 @@
 from collections.abc import Sequence
 from typing import TypeVar, cast
 
-from app.contracts.worker.v7.config import (
+from app.contracts.ml import MAX_TARGET_WIDTH
+from app.contracts.worker.v8.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
@@ -10,17 +11,15 @@ from app.contracts.worker.v7.config import (
     DEFAULT_EPOCHS,
     DEFAULT_HIDDEN,
     DEFAULT_LAYERS,
-    DEFAULT_LOSS_SCHEDULE,
-    DEFAULT_LOSS_STAGE,
     DEFAULT_LR,
     DEFAULT_NHEAD,
     DEFAULT_SEED,
-    DEFAULT_STAGE_SIZE,
     DEFAULT_WEIGHT_DECAY,
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
+from app.contracts.worker.v8.objective import ObjectiveConfig, default_objective
 
 T = TypeVar("T")
 
@@ -91,7 +90,11 @@ def model_config_from_args(
         ),
         out_dim=_pick(
             _optional_arg(args, "out_dim", int),
-            6 if checkpoint_config is None else checkpoint_config.out_dim,
+            (
+                MAX_TARGET_WIDTH
+                if checkpoint_config is None
+                else checkpoint_config.out_dim
+            ),
         ),
         feature_dim=(
             None if checkpoint_config is None else checkpoint_config.feature_dim
@@ -151,30 +154,6 @@ def train_config_from_args(
                 else checkpoint_config.epochs
             ),
         ),
-        loss_stage=_pick(
-            _optional_arg(args, "loss_stage", int),
-            (
-                DEFAULT_LOSS_STAGE
-                if checkpoint_config is None
-                else checkpoint_config.loss_stage
-            ),
-        ),
-        loss_schedule=_pick(
-            _optional_arg(args, "loss_schedule", str),
-            (
-                DEFAULT_LOSS_SCHEDULE
-                if checkpoint_config is None
-                else checkpoint_config.loss_schedule
-            ),
-        ),
-        stage_size=_pick(
-            _optional_arg(args, "stage_size", int),
-            (
-                DEFAULT_STAGE_SIZE
-                if checkpoint_config is None
-                else checkpoint_config.stage_size
-            ),
-        ),
         use_amp=_pick(
             _optional_arg(args, "use_amp", bool),
             False if checkpoint_config is None else checkpoint_config.use_amp,
@@ -185,14 +164,6 @@ def train_config_from_args(
                 DEFAULT_WEIGHT_DECAY
                 if checkpoint_config is None
                 else checkpoint_config.weight_decay
-            ),
-        ),
-        direct_loss_weights=_pick(
-            _optional_float_tuple(args, "direct_loss_weights"),
-            (
-                DEFAULT_DIRECT_LOSS_WEIGHTS
-                if checkpoint_config is None
-                else checkpoint_config.direct_loss_weights
             ),
         ),
         selection=selection,
@@ -212,6 +183,13 @@ def train_config_from_args(
                 else checkpoint_config.deterministic
             ),
         ),
+    )
+
+
+def objective_config_from_args(args: object) -> ObjectiveConfig:
+    weights = _optional_float_tuple(args, "direct_loss_weights")
+    return default_objective(
+        DEFAULT_DIRECT_LOSS_WEIGHTS if weights is None else weights
     )
 
 

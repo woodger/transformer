@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v8/diagnostics.schema.json",
+  "title": "Transformer worker execution diagnostics v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gradientInteractions"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "gradientInteractions": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sampleEverySteps"],
+          "properties": {
+            "sampleEverySteps": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    }
+  }
+}

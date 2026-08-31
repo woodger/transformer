@@ -9,7 +9,8 @@ import torch
 
 import app.main as main_module
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.worker.data.arrow import iter_framed_arrow
 
 predict_stream_module = importlib.import_module("app.local.predict_stream")
@@ -63,6 +64,7 @@ def checkpoint_payload():
             dropout=0.0,
             nhead=4,
         ).to_dict(),
+        "ml_contract": ml_contract(default_objective()),
         "state_dict": {},
     }
 
@@ -121,7 +123,11 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
         return object()
 
     monkeypatch.setattr(main_module, "build_model", build_model)
-    monkeypatch.setattr(main_module, "build_trainer", lambda *args: trainer)
+    monkeypatch.setattr(
+        main_module,
+        "build_trainer",
+        lambda *args, **kwargs: trainer,
+    )
 
     main_module.predict_stream(make_args(), torch.device("cpu"))
 

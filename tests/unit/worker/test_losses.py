@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from app.contracts.worker.v8.objective import ObjectiveConfig, default_objective
 from app.worker.training.losses import combined_loss
 
 
@@ -18,10 +19,12 @@ def make_outputs_and_targets():
 
 
 @pytest.mark.parametrize("target_index", range(6))
-def test_maximum_stage_directly_supervises_every_public_head(target_index):
+def test_declarative_objective_directly_supervises_every_selected_head(
+    target_index,
+):
     outputs, targets = make_outputs_and_targets()
 
-    loss = combined_loss(outputs, targets, loss_stage=4)
+    loss = combined_loss(outputs, targets, default_objective())
     loss.backward()
 
     gradient = outputs.grad[0, target_index]
@@ -41,34 +44,32 @@ def test_each_target_changes_only_its_corresponding_direct_component(
     changed_targets = targets.clone()
     changed_targets[0, target_index] = replacement
 
-    original_evaluation = combined_loss(
+    original = combined_loss(
         outputs,
         targets,
-        loss_stage=4,
+        default_objective(),
         return_parts=True,
-    )
-    changed_evaluation = combined_loss(
+    ).statistics
+    changed = combined_loss(
         outputs,
         changed_targets,
-        loss_stage=4,
+        default_objective(),
         return_parts=True,
-    )
+    ).statistics
 
-    original = original_evaluation.statistics.parts
-    changed = changed_evaluation.statistics.parts
-    assert changed[f"loss_l{target_index}"] != pytest.approx(
-        original[f"loss_l{target_index}"]
+    assert changed.direct_losses[target_index] != pytest.approx(
+        original.direct_losses[target_index]
     )
     for other_index in set(range(6)) - {target_index}:
-        assert changed[f"loss_l{other_index}"] == pytest.approx(
-            original[f"loss_l{other_index}"]
+        assert changed.direct_losses[other_index] == pytest.approx(
+            original.direct_losses[other_index]
         )
 
 
 def test_sigma_return_and_private_gaussian_scale_are_distinct_heads():
     outputs, targets = make_outputs_and_targets()
 
-    loss = combined_loss(outputs, targets, loss_stage=1)
+    loss = combined_loss(outputs, targets, default_objective())
     loss.backward()
 
     assert outputs.grad[0, 1].abs() > 0
@@ -78,44 +79,78 @@ def test_sigma_return_and_private_gaussian_scale_are_distinct_heads():
 def test_probability_targets_use_logits_for_stable_direct_loss():
     outputs, targets = make_outputs_and_targets()
 
-    evaluation = combined_loss(
+    statistics = combined_loss(
         outputs,
         targets,
-        loss_stage=4,
+        default_objective(),
         return_parts=True,
-    )
+    ).statistics
 
     expected = torch.nn.functional.binary_cross_entropy_with_logits(
         outputs[:, 2],
         targets[:, 2],
     )
-    assert evaluation.statistics.parts["loss_l2"] == pytest.approx(
-        expected.item()
+    assert statistics.direct_losses[2] == pytest.approx(expected.item())
+
+
+def test_expected_value_and_risk_adjusted_expected_value_are_distinct():
+    outputs, targets = make_outputs_and_targets()
+    expected_value = _objective(
+        auxiliary=[{"operator": "ExpectedValue", "weight": 0.3}],
+    )
+
+    plain = combined_loss(
+        outputs[:, :6],
+        targets,
+        expected_value,
+        return_parts=True,
+    ).statistics
+    adjusted = combined_loss(
+        outputs,
+        targets,
+        default_objective(),
+        return_parts=True,
+    ).statistics
+
+    assert plain.auxiliary_losses[0][0] == "ExpectedValue"
+    assert adjusted.auxiliary_losses[1][0] == "RiskAdjustedExpectedValue"
+    assert plain.auxiliary_losses[0][1] != pytest.approx(
+        adjusted.auxiliary_losses[1][1]
     )
 
 
 def test_deferred_loss_statistics_preserve_materialized_metrics():
     outputs, targets = make_outputs_and_targets()
 
-    expected_evaluation = combined_loss(
+    expected = combined_loss(
         outputs,
         targets,
-        loss_stage=4,
+        default_objective(),
         return_parts=True,
-    )
-    deferred_evaluation = combined_loss(
+    ).statistics
+    deferred = combined_loss(
         outputs,
         targets,
-        loss_stage=4,
+        default_objective(),
         return_statistics=True,
-    )
-    actual_statistics = deferred_evaluation.statistics.materialize(
-        torch.tensor(3.25, dtype=torch.float64)
-    )
+    ).statistics.materialize(torch.tensor(3.25, dtype=torch.float64))
 
-    expected = expected_evaluation.statistics.parts
-    actual = actual_statistics.parts
-    assert actual.keys() == expected.keys()
-    for name, value in expected.items():
-        assert actual[name] == pytest.approx(value)
-    assert actual_statistics.grad_norm == pytest.approx(3.25)
+    assert deferred.loss == pytest.approx(expected.loss)
+    assert deferred.direct_losses == pytest.approx(expected.direct_losses)
+    assert tuple(name for name, _value in deferred.auxiliary_losses) == tuple(
+        name for name, _value in expected.auxiliary_losses
+    )
+    assert tuple(
+        value for _name, value in deferred.auxiliary_losses
+    ) == pytest.approx(
+        tuple(value for _name, value in expected.auxiliary_losses)
+    )
+    assert deferred.grad_norm == pytest.approx(3.25)
+
+
+def _objective(*, auxiliary: list[dict[str, object]]) -> ObjectiveConfig:
+    document = default_objective().to_document()
+    objective = document["objective"]
+    assert isinstance(objective, dict)
+    objective["auxiliaryLosses"] = auxiliary
+    return ObjectiveConfig.from_document(document)

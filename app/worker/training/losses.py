@@ -1,82 +1,44 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast, overload
 
 import torch
 import torch.nn.functional as F
 
-from app.contracts.worker.v7.config import (
-    DEFAULT_DIRECT_LOSS_WEIGHTS,
-    DEFAULT_LOSS_SCHEDULE,
-    DEFAULT_LOSS_STAGE,
-    DEFAULT_STAGE_SIZE,
-)
+from app.contracts.worker.v8.objective import ObjectiveConfig
 from app.worker.model.transformer import public_predictions
 
 
 @dataclass(frozen=True, slots=True)
-class LossStageDefinition:
-    stage: int
-    name: str
-    components: tuple[str, ...]
-
-
-LOSS_STAGE_DEFINITIONS = (
-    LossStageDefinition(1, "returns", ("L0", "L1", "nll")),
-    LossStageDefinition(
-        2,
-        "probabilities",
-        ("L0", "L1", "L2", "L3", "L5", "nll"),
-    ),
-    LossStageDefinition(
-        3,
-        "bayesian-ev",
-        ("L0", "L1", "L2", "L3", "L5", "nll", "ev"),
-    ),
-    LossStageDefinition(
-        4,
-        "volatility",
-        ("L0", "L1", "L2", "L3", "L4", "L5", "nll", "ev"),
-    ),
-)
-
-LOSS_STAGES = len(LOSS_STAGE_DEFINITIONS)
-LOSS_SCHEDULES = ("none", "epoch", "step")
-_LOSS_STATISTIC_NAMES = (
-    "loss",
-    *(f"loss_l{index}" for index in range(6)),
-    "loss_nll",
-    "loss_ev",
-)
-
-
-@dataclass(frozen=True, slots=True)
 class MaterializedLossStatistics:
-    """Host-side core statistics and optional opaque observations."""
-
-    parts: dict[str, float | int]
+    loss: float
+    direct_losses: tuple[float, ...]
+    auxiliary_losses: tuple[tuple[str, float], ...]
     grad_norm: float | None
     observations: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class LossStatistics:
-    """Device-resident row-normalized statistics awaiting one host transfer."""
-
-    values: tuple[torch.Tensor, ...]
-    loss_stage: int
+    loss: torch.Tensor
+    direct_losses: tuple[torch.Tensor, ...]
+    auxiliary_losses: tuple[tuple[str, torch.Tensor], ...]
 
     def materialize(
         self,
         grad_norm: torch.Tensor | None = None,
         observations: tuple[torch.Tensor, ...] = (),
     ) -> MaterializedLossStatistics:
-        device_values = (*self.values, *observations)
+        core_values = (
+            self.loss,
+            *self.direct_losses,
+            *(value for _operator, value in self.auxiliary_losses),
+        )
+        device_values = (*core_values, *observations)
         if grad_norm is not None:
             device_values = (*device_values, grad_norm.detach())
-        # PyTorch types ``Tensor.tolist`` as a list of unknown depth. The
-        # stacked tensor is one-dimensional by construction here.
         host_values = cast(
             list[float],
             torch.stack(tuple(
@@ -84,83 +46,55 @@ class LossStatistics:
                 for value in device_values
             )).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
         )
-        core_count = len(_LOSS_STATISTIC_NAMES)
-        observation_count = len(observations)
-        parts: dict[str, float | int] = dict(zip(
-            _LOSS_STATISTIC_NAMES,
-            host_values[:core_count],
-            strict=True,
-        ))
-        parts["loss_stage"] = self.loss_stage
+        core_count = len(core_values)
+        direct_count = len(self.direct_losses)
+        auxiliary_count = len(self.auxiliary_losses)
         return MaterializedLossStatistics(
-            parts=parts,
-            grad_norm=None if grad_norm is None else host_values[-1],
+            loss=float(host_values[0]),
+            direct_losses=tuple(
+                float(value)
+                for value in host_values[1:1 + direct_count]
+            ),
+            auxiliary_losses=tuple(
+                (operator, float(value))
+                for (operator, _tensor), value in zip(
+                    self.auxiliary_losses,
+                    host_values[
+                        1 + direct_count:
+                        1 + direct_count + auxiliary_count
+                    ],
+                    strict=True,
+                )
+            ),
+            grad_norm=(
+                None if grad_norm is None else float(host_values[-1])
+            ),
             observations=tuple(
-                host_values[core_count:core_count + observation_count]
+                float(value)
+                for value in host_values[core_count:core_count + len(observations)]
             ),
         )
 
 
 @dataclass(frozen=True, slots=True)
 class LossEvaluation:
-    """Differentiable loss paired with device-resident statistics."""
-
     loss: torch.Tensor
     statistics: LossStatistics
+    diagnostic_components: tuple[tuple[str, torch.Tensor], ...]
 
 
 @dataclass(frozen=True, slots=True)
 class MaterializedLossEvaluation:
-    """Differentiable loss paired with host-side scalar statistics."""
-
     loss: torch.Tensor
     statistics: MaterializedLossStatistics
-
-
-def validate_loss_stage(loss_stage: int) -> int:
-    if loss_stage < 1 or loss_stage > LOSS_STAGES:
-        raise ValueError(f"loss_stage must be between 1 and {LOSS_STAGES}")
-    return loss_stage
-
-
-def validate_stage_size(stage_size: int) -> int:
-    if stage_size <= 0:
-        raise ValueError("stage_size must be a positive integer")
-    return stage_size
-
-
-def validate_loss_schedule(loss_schedule: str) -> str:
-    if loss_schedule not in LOSS_SCHEDULES:
-        choices = ", ".join(LOSS_SCHEDULES)
-        raise ValueError(f"loss_schedule must be one of: {choices}")
-    return loss_schedule
-
-
-def resolve_loss_stage(
-    progress: int,
-    loss_schedule: str = DEFAULT_LOSS_SCHEDULE,
-    stage_size: int = DEFAULT_STAGE_SIZE,
-    max_stage: int = DEFAULT_LOSS_STAGE,
-) -> int:
-    max_stage = validate_loss_stage(max_stage)
-    loss_schedule = validate_loss_schedule(loss_schedule)
-    if loss_schedule == "none":
-        return max_stage
-    stage_size = validate_stage_size(stage_size)
-    return min(max_stage, progress // stage_size + 1)
-
-
-def active_loss_components(loss_stage: int) -> tuple[str, ...]:
-    loss_stage = validate_loss_stage(loss_stage)
-    return LOSS_STAGE_DEFINITIONS[loss_stage - 1].components
 
 
 @overload
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int = DEFAULT_LOSS_STAGE,
-    direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
+    objective: ObjectiveConfig,
+    *,
     return_parts: Literal[False] = False,
     return_statistics: Literal[False] = False,
 ) -> torch.Tensor: ...
@@ -170,8 +104,8 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int,
-    direct_loss_weights: tuple[float, ...],
+    objective: ObjectiveConfig,
+    *,
     return_parts: Literal[True],
     return_statistics: Literal[False] = False,
 ) -> MaterializedLossEvaluation: ...
@@ -181,114 +115,193 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int,
-    direct_loss_weights: tuple[float, ...],
+    objective: ObjectiveConfig,
+    *,
     return_parts: Literal[False] = False,
-    return_statistics: Literal[True] = True,
+    return_statistics: Literal[True],
 ) -> LossEvaluation: ...
 
 
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    loss_stage: int = DEFAULT_LOSS_STAGE,
-    direct_loss_weights: tuple[float, ...] = DEFAULT_DIRECT_LOSS_WEIGHTS,
+    objective: ObjectiveConfig,
+    *,
     return_parts: bool = False,
     return_statistics: bool = False,
-) -> (
-    torch.Tensor
-    | MaterializedLossEvaluation
-    | LossEvaluation
-):
-    """Evaluate the target-aligned staged objective.
-
-    The first six model heads represent public target coordinates. Probability
-    heads remain logits here for stable BCE; the seventh head is the private
-    Gaussian return scale. Every public coordinate has its own direct loss.
-    """
+) -> torch.Tensor | MaterializedLossEvaluation | LossEvaluation:
+    """Evaluate one immutable declarative objective for every optimizer step."""
 
     if return_parts and return_statistics:
         raise ValueError(
             "return_parts and return_statistics are mutually exclusive"
         )
-    if model_output.ndim != 2 or model_output.shape[1] != 7:
-        raise ValueError("model output must have shape [rows, 7]")
-    if targets.ndim != 2 or targets.shape != (model_output.shape[0], 6):
-        raise ValueError("targets must have shape [rows, 6]")
-    if len(direct_loss_weights) != 6:
-        raise ValueError("direct_loss_weights must contain six values")
-
-    loss_stage = validate_loss_stage(loss_stage)
-    active = frozenset(active_loss_components(loss_stage))
-    mean_return = model_output[:, 0]
-    sigma_return = model_output[:, 1]
-    take_profit_logit = model_output[:, 2]
-    stop_loss_logit = model_output[:, 3]
-    next_volatility = model_output[:, 4]
-    hitting_probability_logit = model_output[:, 5]
-    return_scale = model_output[:, 6]
-
-    direct_rows = (
-        F.smooth_l1_loss(mean_return, targets[:, 0], reduction="none"),
-        F.smooth_l1_loss(sigma_return, targets[:, 1], reduction="none"),
-        F.binary_cross_entropy_with_logits(
-            take_profit_logit,
-            targets[:, 2],
-            reduction="none",
-        ),
-        F.binary_cross_entropy_with_logits(
-            stop_loss_logit,
-            targets[:, 3],
-            reduction="none",
-        ),
-        (
-            torch.log(next_volatility + 1e-6)
-            - torch.log(targets[:, 4] + 1e-6)
-        ).square(),
-        F.binary_cross_entropy_with_logits(
-            hitting_probability_logit,
-            targets[:, 5],
-            reduction="none",
-        ),
+    expected_output_width = (
+        objective.target_width + int(objective.requires_return_scale)
     )
-    direct_means = tuple(values.mean() for values in direct_rows)
+    if model_output.ndim != 2 or model_output.shape[1] != expected_output_width:
+        raise ValueError(
+            f"model output must have shape [rows, {expected_output_width}]"
+        )
+    if targets.ndim != 2 or targets.shape != (
+        model_output.shape[0],
+        objective.target_width,
+    ):
+        raise ValueError(
+            f"targets must have shape [rows, {objective.target_width}]"
+        )
 
+    direct_means: list[torch.Tensor] = []
+    task_components: dict[str, torch.Tensor] = {}
     loss = model_output.new_tensor(0.0)
-    for index, direct in enumerate(direct_means):
-        if f"L{index}" in active:
-            loss = loss + float(direct_loss_weights[index]) * direct
+    target_indices = {
+        target: index
+        for index, target in enumerate(objective.targets)
+    }
 
-    variance = return_scale.square() + 1e-6
-    nll_rows = 0.5 * (
-        (targets[:, 0] - mean_return).square() / variance
-        + torch.log(variance)
+    for index, specification in enumerate(objective.direct_losses):
+        target = str(specification["target"])
+        operator = str(specification["operator"])
+        direct = _direct_loss(
+            operator,
+            model_output[:, index],
+            targets[:, index],
+        ).mean()
+        weighted = _number(specification["weight"], "direct loss weight") * direct
+        direct_means.append(direct)
+        task_components[f"target:{target}"] = weighted
+        loss = loss + weighted
+
+    auxiliary_means: list[tuple[str, torch.Tensor]] = []
+    return_scale = (
+        model_output[:, objective.target_width]
+        if objective.requires_return_scale
+        else None
     )
-    loss_nll = nll_rows.mean()
-    if "nll" in active:
-        loss = loss + loss_nll
+    predictions = public_predictions(
+        model_output,
+        objective.targets,
+        include_return_scale=objective.requires_return_scale,
+    )
 
-    predictions = public_predictions(model_output)
-    ev = predictions[:, 2] - predictions[:, 3]
-    risk_penalty = return_scale.detach() * torch.abs(ev)
-    loss_ev = -0.3 * torch.mean(ev - 0.1 * risk_penalty)
-    if "ev" in active:
-        loss = loss + loss_ev
+    for specification in objective.auxiliary_losses:
+        operator = str(specification["operator"])
+        auxiliary = _auxiliary_loss(
+            operator,
+            specification,
+            model_output,
+            predictions,
+            targets,
+            target_indices,
+            return_scale,
+        ).mean()
+        weighted = _number(
+            specification["weight"],
+            "auxiliary loss weight",
+        ) * auxiliary
+        auxiliary_means.append((operator, auxiliary))
+        loss = loss + weighted
+        component_name = f"auxiliary:{operator}"
+        if operator == "GaussianNLL":
+            component_name = "target:MeanReturn"
+        task_components[component_name] = (
+            task_components.get(component_name, model_output.new_tensor(0.0))
+            + weighted
+        )
 
     if not return_parts and not return_statistics:
         return loss
 
     statistics = LossStatistics(
-        values=(
-            loss.detach(),
-            *(value.detach() for value in direct_means),
-            loss_nll.detach(),
-            loss_ev.detach(),
+        loss=loss.detach(),
+        direct_losses=tuple(value.detach() for value in direct_means),
+        auxiliary_losses=tuple(
+            (operator, value.detach())
+            for operator, value in auxiliary_means
         ),
-        loss_stage=loss_stage,
     )
     if return_statistics:
-        return LossEvaluation(loss=loss, statistics=statistics)
+        return LossEvaluation(
+            loss=loss,
+            statistics=statistics,
+            diagnostic_components=tuple(task_components.items()),
+        )
     return MaterializedLossEvaluation(
         loss=loss,
         statistics=statistics.materialize(),
     )
+
+
+def _direct_loss(
+    operator: str,
+    model_value: torch.Tensor,
+    target_value: torch.Tensor,
+) -> torch.Tensor:
+    if operator == "SmoothL1":
+        return F.smooth_l1_loss(model_value, target_value, reduction="none")
+    if operator == "BinaryCrossEntropyWithLogits":
+        return F.binary_cross_entropy_with_logits(
+            model_value,
+            target_value,
+            reduction="none",
+        )
+    if operator == "LogMSE":
+        return (
+            torch.log(model_value + 1e-6)
+            - torch.log(target_value + 1e-6)
+        ).square()
+    raise ValueError(f"unsupported direct loss operator: {operator}")
+
+
+def _auxiliary_loss(
+    operator: str,
+    specification: Mapping[str, object],
+    model_output: torch.Tensor,
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    target_indices: dict[str, int],
+    return_scale: torch.Tensor | None,
+) -> torch.Tensor:
+    if operator == "GaussianNLL":
+        if return_scale is None:
+            raise ValueError("GaussianNLL requires returnScale")
+        index = target_indices["MeanReturn"]
+        variance = return_scale.square() + 1e-6
+        return 0.5 * (
+            (targets[:, index] - model_output[:, index]).square() / variance
+            + torch.log(variance)
+        )
+
+    probability_delta = (
+        predictions[:, target_indices["ProbTP"]]
+        - predictions[:, target_indices["ProbSL"]]
+    )
+    if operator == "ExpectedValue":
+        return -probability_delta
+    if operator == "RiskAdjustedExpectedValue":
+        if return_scale is None:
+            raise ValueError("RiskAdjustedExpectedValue requires returnScale")
+        risk_penalty = return_scale.detach() * torch.abs(probability_delta)
+        return -(
+            probability_delta
+            - _number(
+                specification["riskPenalty"],
+                "risk adjustment penalty",
+            ) * risk_penalty
+        )
+    raise ValueError(f"unsupported auxiliary loss operator: {operator}")
+
+
+def _number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number")
+    return float(value)
+
+
+__all__ = [
+    "LossEvaluation",
+    "LossStatistics",
+    "MaterializedLossEvaluation",
+    "MaterializedLossStatistics",
+    "combined_loss",
+]

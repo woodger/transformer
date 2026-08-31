@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v8/command-manifest.schema.json",
+  "title": "Transformer worker v8 startup manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "protocolVersion", "jobId", "attempt", "attemptId",
+    "operation", "device", "inputs", "inputRevision", "inputClosed",
+    "workspace", "model", "dataContract", "mlContract"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-worker"},
+    "protocolVersion": {"const": 8},
+    "jobId": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/uuid"
+    },
+    "attempt": {"type": "integer", "minimum": 1},
+    "attemptId": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/uuid"
+    },
+    "operation": {"enum": ["fit", "predict"]},
+    "predictionColumn": {"type": "string", "minLength": 1, "maxLength": 128},
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["cpu", "cuda"]},
+        "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "cuda"}}},
+          "then": {"required": ["opaqueId"]},
+          "else": {"not": {"required": ["opaqueId"]}}
+        }
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "https://transformer.local/contracts/worker/v8/arrow-manifest.schema.json"
+      },
+      "maxItems": 100000
+    },
+    "inputRevision": {"type": "integer", "minimum": 0},
+    "inputClosed": {"type": "boolean"},
+    "manifestSha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root"],
+      "properties": {
+        "root": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/path"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["config"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 128},
+        "config": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/modelConfig"
+        },
+        "checkpoint": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/artifact"
+        }
+      }
+    },
+    "training": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/trainingConfig"
+    },
+    "diagnostics": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/diagnosticsConfig"
+    },
+    "dataContract": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/dataContract"
+    },
+    "mlContract": {
+      "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/mlContract"
+    },
+    "recovery": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "configSha256", "dataContractSha256", "objectiveConfigSha256",
+        "manifestSha256"
+      ],
+      "properties": {
+        "configSha256": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/sha256"
+        },
+        "dataContractSha256": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/sha256"
+        },
+        "objectiveConfigSha256": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/sha256"
+        },
+        "manifestSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checkpoint": {
+          "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/artifact"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"inputClosed": {"const": true}}},
+      "then": {
+        "required": ["manifestSha256"],
+        "properties": {
+          "manifestSha256": {
+            "$ref": "https://transformer.local/contracts/worker/v8/common.schema.json#/$defs/sha256"
+          }
+        }
+      },
+      "else": {"properties": {"manifestSha256": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"operation": {"const": "fit"}}},
+      "then": {
+        "required": ["training", "diagnostics", "recovery"],
+        "properties": {"model": {"required": ["label"]}}
+      },
+      "else": {
+        "required": ["predictionColumn"],
+        "not": {
+          "anyOf": [
+            {"required": ["training"]},
+            {"required": ["diagnostics"]},
+            {"required": ["recovery"]}
+          ]
+        },
+        "properties": {"model": {"required": ["checkpoint"]}}
+      }
+    }
+  ]
+}

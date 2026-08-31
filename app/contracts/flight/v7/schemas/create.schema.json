@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v7/create.schema.json",
+  "title": "transformer.v7.job.create request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "idempotencyKey", "jobId",
+    "clientExecutionId", "operation", "device", "dataContract"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 7},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "idempotencyKey": {"$ref": "common.schema.json#/$defs/idempotencyKey"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "operation": {"enum": ["fit", "predict"]},
+    "device": {"enum": ["cpu", "gpu", "auto"]},
+    "modelLabel": {"$ref": "common.schema.json#/$defs/label"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/label"},
+    "modelAlias": {"$ref": "common.schema.json#/$defs/label"},
+    "predictionColumn": {
+      "$ref": "common.schema.json#/$defs/predictionColumn"
+    },
+    "targets": {"$ref": "common.schema.json#/$defs/targets"},
+    "objective": {"$ref": "objective-config.schema.json"},
+    "diagnostics": {"$ref": "diagnostics.schema.json"},
+    "modelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seqLen"],
+      "properties": {
+        "seqLen": {"type": "integer", "minimum": 1},
+        "hidden": {"type": "integer", "minimum": 1},
+        "layers": {"type": "integer", "minimum": 1},
+        "dropout": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+        "nhead": {"type": "integer", "minimum": 1},
+        "mode": {"enum": ["strict", "relaxed"]}
+      }
+    },
+    "trainingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lr": {"type": "number", "exclusiveMinimum": 0},
+        "batchSize": {"type": "integer", "minimum": 1},
+        "epochs": {"type": "integer", "minimum": 1},
+        "useAmp": {"type": "boolean"},
+        "weightDecay": {"type": "number", "minimum": 0},
+        "selection": {
+          "$ref": "common.schema.json#/$defs/selectionConfig"
+        },
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "deterministic": {"type": "boolean"}
+      }
+    },
+    "dataContract": {"$ref": "common.schema.json#/$defs/dataContract"},
+    "mlContract": {"$ref": "common.schema.json#/$defs/mlContract"}
+  },
+  "oneOf": [
+    {
+      "properties": {"operation": {"const": "fit"}},
+      "required": ["modelLabel", "modelConfig", "targets", "objective"],
+      "not": {
+        "anyOf": [
+          {"required": ["modelRef"]},
+          {"required": ["modelAlias"]},
+          {"required": ["mlContract"]}
+        ]
+      }
+    },
+    {
+      "properties": {"operation": {"const": "predict"}},
+      "required": ["mlContract"],
+      "oneOf": [{"required": ["modelRef"]}, {"required": ["modelAlias"]}],
+      "not": {
+        "anyOf": [
+          {"required": ["modelLabel"]},
+          {"required": ["modelConfig"]},
+          {"required": ["trainingConfig"]},
+          {"required": ["targets"]},
+          {"required": ["objective"]},
+          {"required": ["diagnostics"]}
+        ]
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -49,7 +50,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 6,
+        "version": 7,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -123,9 +124,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         model_config=None,
         training_config=None,
         data_contract={"data_contract_sha256": "d" * 64},
-        ml_contract={
-            "objectiveId": "transformer.objective.target-aligned.v2",
-        },
+        ml_contract=ml_contract(default_objective()),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

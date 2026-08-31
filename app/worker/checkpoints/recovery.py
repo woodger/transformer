@@ -9,12 +9,14 @@ from typing import Protocol, cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import (
+from app.contracts.ml import TARGET_SCHEMA_ID
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.objective import (
     TRAINING_RECOVERY_FORMAT,
+    ObjectiveConfig,
     ml_contract,
-    objective_config,
     objective_config_sha256,
+    objective_from_ml_contract,
 )
 from app.worker.runtime.version import __version__
 
@@ -30,6 +32,9 @@ class RecoveryTrainer(Protocol):
 
     @property
     def data_contract(self) -> Mapping[str, object] | None: ...
+
+    @property
+    def objective(self) -> ObjectiveConfig: ...
 
     def recovery_state_dict(self) -> dict[str, object]: ...
 
@@ -52,6 +57,8 @@ def save_training_recovery(
     if model_config is None or train_config is None:
         raise ValueError("training recovery configuration is unavailable")
     state = trainer.recovery_state_dict()
+    objective = trainer.objective
+    target_schema_id = _target_schema_id(trainer.data_contract)
     progress = _object_dict(
         state.get("training_state"),
         "training recovery progress",
@@ -81,10 +88,13 @@ def save_training_recovery(
             if trainer.data_contract is None
             else dict(trainer.data_contract)
         ),
-        "ml_contract": ml_contract(train_config),
-        "objective_config": objective_config(train_config),
+        "ml_contract": ml_contract(
+            objective,
+            target_schema_id=target_schema_id,
+        ),
+        "objective": objective.to_document(),
         "objective_config_sha256": objective_config_sha256(
-            train_config
+            objective
         ),
         "trainer_state": state,
     }
@@ -145,7 +155,7 @@ def load_training_recovery(
         "train_config",
         "data_contract",
         "ml_contract",
-        "objective_config",
+        "objective",
         "objective_config_sha256",
         "trainer_state",
     }
@@ -165,6 +175,8 @@ def load_training_recovery(
         )
     try:
         train_config = TrainConfig.from_dict(payload["train_config"])
+        objective = ObjectiveConfig.from_document(payload["objective"])
+        contract_objective = objective_from_ml_contract(payload["ml_contract"])
     except (TypeError, ValueError) as exc:
         raise ValueError(
             "training recovery objective configuration is invalid"
@@ -173,9 +185,8 @@ def load_training_recovery(
         payload["objective_config_sha256"]
         != expected_objective_config_sha256
         or payload["objective_config_sha256"]
-        != objective_config_sha256(train_config)
-        or payload["objective_config"] != objective_config(train_config)
-        or payload["ml_contract"] != ml_contract(train_config)
+        != objective_config_sha256(objective)
+        or contract_objective != objective
     ):
         raise ValueError(
             "training recovery objective configuration does not match the job"
@@ -226,6 +237,15 @@ def load_training_recovery(
             "training recovery completion metadata is inconsistent"
         )
     return payload
+
+
+def _target_schema_id(data_contract: Mapping[str, object] | None) -> str:
+    if data_contract is None:
+        return TARGET_SCHEMA_ID
+    value = data_contract.get("targetSchemaId", data_contract.get("target_schema_id"))
+    if not isinstance(value, str) or not value:
+        raise ValueError("training recovery target schema is unavailable")
+    return value
 
 
 def sha256_file(path: str) -> str:

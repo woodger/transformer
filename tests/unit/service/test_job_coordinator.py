@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.messages.jobs import (
@@ -12,7 +12,7 @@ from app.service.application.messages.jobs import (
 from app.service.domain.job import ExecutionState, InputState
 
 
-def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v6():
+def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v7():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -73,7 +73,8 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v6():
         "target_schema_id": "inventory.target.v2",
     }
     train_config = TrainConfig()
-    contract = ml_contract(train_config)
+    objective = default_objective()
+    contract = ml_contract(objective)
     request = {
         "request_id": request_id,
         "idempotency_key": "create:1",
@@ -89,10 +90,11 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v6():
         "model_ref": None,
         "model_config": ModelConfig(seq_len=2, feature_dim=1),
         "train_config": train_config,
+        "objective_config": objective,
     }
     document = {
         "contract": "transformer-flight",
-        "version": 6,
+        "version": 7,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -112,7 +114,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v6():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 6
+    assert result["version"] == 7
     assert result["jobId"] == job_id
     assert result["device"] == {"requested": "gpu", "selected": None}
     assert result["ownership"] == {
@@ -122,13 +124,13 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v6():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v6",
+            "v7",
             "jobs",
             job_id,
             "inputs",
             "{ordinal}",
         ],
-        "schemaId": "inventory.sequence.fit.v2",
+        "schemaId": "inventory.sequence.fit.v3",
         "oneDoPutIsOneSemanticPayload": True,
     }
 
@@ -185,7 +187,7 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     capabilities = coordinator.capabilities("request-capabilities")
     health = coordinator.health("request-health")
 
-    assert capabilities["protocolVersions"] == [6]
+    assert capabilities["protocolVersions"] == [7]
     assert capabilities["devices"] == {
         "cpu": {"available": True},
         "gpu": {

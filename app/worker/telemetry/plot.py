@@ -11,8 +11,9 @@ from app.worker.telemetry.io import load_metrics_jsonl
 PLOT_METRICS = (
     "loss",
     *(f"direct.{name}" for name in TARGET_IDENTITIES),
-    "loss_nll",
-    "loss_ev",
+    "auxiliary.GaussianNLL",
+    "auxiliary.ExpectedValue",
+    "auxiliary.RiskAdjustedExpectedValue",
     *(
         f"target.{name}.{statistic}"
         for name in TARGET_IDENTITIES
@@ -37,9 +38,6 @@ PLOT_METRICS = (
     "batches",
     "step",
     "lr",
-    "loss_stage",
-    "minimum_loss_stage",
-    "maximum_loss_stage",
     "input_pipeline_ms",
     "missing_stats_ms",
     "host_to_device_ms",
@@ -55,7 +53,7 @@ def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
 
     os.makedirs(output_dir, exist_ok=True)
     paths: list[str] = []
-    for metric in PLOT_METRICS:
+    for metric in _metric_names(rows):
         points = _series(rows, metric)
         if not points:
             continue
@@ -106,7 +104,62 @@ def _metric_value(row: JsonObject, metric: str) -> object:
             target_name=target_name,
             field=field,
         )
+    if metric.startswith("auxiliary."):
+        return _named_metric(
+            row.get("auxiliaryLosses"),
+            name=metric.removeprefix("auxiliary."),
+            name_field="operator",
+            value_field="value",
+        )
+    if metric.startswith("gradient.component."):
+        interactions = row.get("gradientInteractions")
+        if not isinstance(interactions, dict):
+            return None
+        return _named_metric(
+            cast(JsonObject, interactions).get("components"),
+            name=metric.removeprefix("gradient.component."),
+            name_field="name",
+            value_field="meanNorm",
+        )
+    if metric.startswith("gradient.pair."):
+        interactions = row.get("gradientInteractions")
+        if not isinstance(interactions, dict):
+            return None
+        left, separator, right = metric.removeprefix("gradient.pair.").partition(
+            "__"
+        )
+        if not separator:
+            return None
+        pairs = cast(JsonObject, interactions).get("pairs")
+        if not isinstance(pairs, list):
+            return None
+        for item in cast(list[object], pairs):
+            if not isinstance(item, dict):
+                continue
+            document = cast(JsonObject, item)
+            if document.get("left") == left and document.get("right") == right:
+                return document.get("meanCosine")
+        return None
     return row.get(metric)
+
+
+def _metric_names(rows: list[JsonObject]) -> tuple[str, ...]:
+    discovered: set[str] = set()
+    for row in rows:
+        interactions = row.get("gradientInteractions")
+        if not isinstance(interactions, dict):
+            continue
+        document = cast(JsonObject, interactions)
+        for component in _objects(document.get("components")):
+            name = component.get("name")
+            if isinstance(name, str):
+                discovered.add(f"gradient.component.{name}")
+        for pair in _objects(document.get("pairs")):
+            left = pair.get("left")
+            right = pair.get("right")
+            if isinstance(left, str) and isinstance(right, str):
+                discovered.add(f"gradient.pair.{left}__{right}")
+    return (*PLOT_METRICS, *sorted(discovered))
 
 
 def _structured_metric(
@@ -128,6 +181,29 @@ def _structured_metric(
         ):
             return document.get(field)
     return None
+
+
+def _named_metric(
+    value: object,
+    *,
+    name: str,
+    name_field: str,
+    value_field: str,
+) -> object:
+    for document in _objects(value):
+        if document.get(name_field) == name:
+            return document.get(value_field)
+    return None
+
+
+def _objects(value: object) -> tuple[JsonObject, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        cast(JsonObject, item)
+        for item in cast(list[object], value)
+        if isinstance(item, dict)
+    )
 
 
 def _write_svg(

@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from app.contracts.worker.v8.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -46,14 +47,10 @@ def _job(**overrides):
             "feature_dim": 2,
             "target_schema_id": "inventory.target.v2",
         },
-        ml_contract={
-            "targetSchemaId": "inventory.target.v2",
-            "objectiveId": "transformer.objective.target-aligned.v2",
-        },
+        ml_contract=ml_contract(default_objective()),
         progress={
             "epoch": 2,
             "step": 6,
-            "loss_stage": 4,
             "loss": -3.149016,
         },
         attempt=2,
@@ -101,13 +98,13 @@ def _execute(query, request_id):
     )
 
 
-def test_status_exposes_bounded_v4_state_without_artifact_paths():
+def test_status_exposes_bounded_state_without_artifact_paths():
     recovery = StatusRecoveryRecord(
         checkpoint=TrainingRecoveryCheckpointRecord(
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v4",
+            format="transformer-training-recovery-v5",
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,
@@ -142,7 +139,6 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     assert result["progress"] == {
         "epoch": 2,
         "step": 6,
-        "loss_stage": 4,
         "loss": -3.149016,
     }
     assert result["results"] == {

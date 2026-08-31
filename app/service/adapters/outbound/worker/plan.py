@@ -5,14 +5,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7 import (
+from app.contracts.worker.v8 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v8.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -235,6 +235,9 @@ class WorkerPlanBuilder:
             model_manifest["label"] = job.model_label
             document["training"] = train_config_to_manifest(
                 job.training_config
+            )
+            document["diagnostics"] = (
+                job.training_config.diagnostics.to_document()
             )
             document["recovery"] = None
             if self.recovery_store is not None:

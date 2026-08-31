@@ -6,8 +6,11 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v7.config import CheckpointSelectionConfig
-from app.contracts.worker.v7.objective import objective_config_sha256
+from app.contracts.worker.v8.config import CheckpointSelectionConfig
+from app.contracts.worker.v8.objective import (
+    default_objective,
+    objective_config_sha256,
+)
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -66,9 +69,6 @@ def _trainer(initial_state: dict) -> Trainer:
         lr=0.001,
         batch_size=3,
         epochs=3,
-        loss_stage=4,
-        loss_schedule="none",
-        stage_size=2,
         selection=CheckpointSelectionConfig(min_delta=0.0, patience=0),
         seed=919,
         deterministic=True,
@@ -77,6 +77,7 @@ def _trainer(initial_state: dict) -> Trainer:
         model=model,
         device=torch.device("cpu"),
         train_config=train_config,
+        objective=default_objective(),
         model_config=model_config,
     )
 
@@ -158,7 +159,7 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
         expected_config_hash=CONFIG_HASH,
         expected_manifest_hash=MANIFEST_HASH,
         expected_objective_config_sha256=objective_config_sha256(
-            interrupted.train_config
+            interrupted.objective
         ),
     )
     resumed = _trainer(initial_state)
@@ -209,6 +210,6 @@ def test_recovery_checkpoint_rejects_a_different_closed_input_set(
             expected_config_hash=CONFIG_HASH,
             expected_manifest_hash="c" * 64,
             expected_objective_config_sha256=objective_config_sha256(
-                trainer.train_config
+                trainer.objective
             ),
         )
