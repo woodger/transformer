@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-09-01
+
 ### Changed
 
 - Public device identity изменена с `cuda` на `gpu` в local fit/predict CLI и
@@ -742,7 +744,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.16...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.17...HEAD
+[0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/woodger/transformer/compare/0.1.14...0.1.15
 [0.1.14]: https://github.com/woodger/transformer/compare/0.1.13...0.1.14
