@@ -36,6 +36,9 @@
   фактический target subset, auxiliary losses и sampled gradient norms/cosines.
 - TransformerEncoder inference использует стабильный dense-tensor path с
   отключённой экспериментальной Nested Tensor оптимизацией PyTorch.
+- Обычный запуск `pytest` автоматически выполняет CUDA-сценарии при наличии
+  доступного GPU и явно пропускает их в остальных средах; отдельный `gpu`
+  marker profile удалён.
 
 ### Removed
 
