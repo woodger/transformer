@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import (
-    ml_contract,
-    objective_config,
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.objective import (
+    objective_config_sha256,
+    objective_from_ml_contract,
 )
 from app.service.domain.errors import ServiceError
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import PublishedModelRecord
@@ -43,20 +44,25 @@ def verify_model_semantics(
         train_config = TrainConfig.from_dict(model.metadata["train_config"])
         if model_config is None or train_config is None:
             raise ValueError("published model configuration is unavailable")
-        expected_ml_contract = ml_contract(train_config)
-        expected_objective = objective_config(train_config)
+        objective = objective_from_ml_contract(model.ml_contract)
         checkpoint = _object(
             model.metadata["checkpoint"],
             "published model checkpoint metadata",
         )
+        initialization = model_initialization(model)
+        checkpoint_initialization = validate_initialization(
+            checkpoint.get("initialization"),
+            missing_is_random=True,
+        )
         consistent = (
             model.metadata["data_contract"] == model.data_contract
-            and model.metadata["ml_contract"] == expected_ml_contract
-            and model.metadata["objective_config"] == expected_objective
-            and model.ml_contract == expected_ml_contract
+            and model.metadata["ml_contract"] == model.ml_contract
+            and model.metadata["objective"] == objective.to_document()
+            and model_config.out_dim == objective.target_width
             and model.objective_config_sha256
-            == expected_ml_contract["objectiveConfigSha256"]
-            and checkpoint["mlContract"] == expected_ml_contract
+            == objective_config_sha256(objective)
+            and checkpoint["mlContract"] == model.ml_contract
+            and checkpoint_initialization == initialization
         )
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise ServiceError(
@@ -71,6 +77,19 @@ def verify_model_semantics(
     return model_config
 
 
+def model_initialization(model: PublishedModelRecord) -> JsonObject:
+    try:
+        return validate_initialization(
+            model.metadata.get("initialization"),
+            missing_is_random=True,
+        )
+    except ValueError as exc:
+        raise ServiceError(
+            ErrorCode.MODEL_CORRUPT,
+            "published model initialization metadata is invalid",
+        ) from exc
+
+
 def _object(value: object, label: str) -> JsonObject:
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be an object")
@@ -80,4 +99,4 @@ def _object(value: object, label: str) -> JsonObject:
     return cast(JsonObject, dict(mapping))
 
 
-__all__ = ["verify_model_semantics"]
+__all__ = ["model_initialization", "verify_model_semantics"]

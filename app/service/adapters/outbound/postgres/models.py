@@ -110,9 +110,9 @@ class Job(Base):
         ),
         CheckConstraint(
             "(operation = 'fit' AND model_label IS NOT NULL "
-            "AND resolved_model_ref IS NULL) OR "
+            "AND initialization IS NOT NULL) OR "
             "(operation = 'predict' AND model_label IS NULL "
-            "AND resolved_model_ref IS NOT NULL)",
+            "AND resolved_model_ref IS NOT NULL AND initialization IS NULL)",
             name="jobs_operation_fields_ck",
         ),
         Index(
@@ -155,6 +155,7 @@ class Job(Base):
     selected_device: Mapped[str | None] = mapped_column(String(8))
     model_label: Mapped[str | None] = mapped_column(String(256))
     resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
+    initialization: Mapped[JsonObject | None] = mapped_column(JSONB)
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
     model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[JsonObject | None] = mapped_column(JSONB)

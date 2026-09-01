@@ -44,7 +44,7 @@ contract identifiers и immutable lookup tables. Обычная локальна
 Python modules и packages используют `snake_case`:
 
 ```text
-app/worker/training/loss_scheduler.py
+app/worker/training/losses.py
 app/service/adapters/outbound/postgres/token_cache.py
 tests/unit/worker/test_checkpoint_storage.py
 ```

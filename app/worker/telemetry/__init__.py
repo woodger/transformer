@@ -6,6 +6,9 @@ from app.worker.telemetry.epoch import (
     format_epoch_console_line,
     format_epoch_log_line,
 )
+from app.worker.telemetry.gradient_interactions import (
+    GradientInteractionObservation,
+)
 from app.worker.telemetry.io import (
     append_epoch_telemetry,
     load_metrics_jsonl,
@@ -16,6 +19,7 @@ from app.worker.telemetry.plot import PLOT_METRICS, plot_metrics
 __all__ = [
     "PLOT_METRICS",
     "EpochTelemetry",
+    "GradientInteractionObservation",
     "ObservedTrainingEpoch",
     "TargetErrorObservation",
     "append_epoch_telemetry",

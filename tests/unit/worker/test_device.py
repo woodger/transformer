@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v6_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v8_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,28 +27,16 @@ def test_worker_capabilities_follow_the_v6_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 7,
+        "protocolVersion": 9,
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
         "devices": [],
     }
 
 
-@pytest.mark.parametrize(
-    ("cuda_available", "expected"),
-    ((True, "cuda"), (False, "cpu")),
-)
-def test_legacy_gpu_device_follows_cuda_availability(
-    monkeypatch,
-    cuda_available,
-    expected,
-):
-    monkeypatch.setattr(
-        "app.worker.runtime.device.torch.cuda.is_available",
-        lambda: cuda_available,
-    )
-
-    assert get_device("gpu").type == expected
+def test_gpu_device_alias_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported device: gpu"):
+        get_device("gpu")
 
 
 def test_package_reexports_runtime_version():
@@ -131,7 +119,7 @@ def test_cli_use_amp(monkeypatch):
     assert args.use_amp is True
 
 
-def test_cli_loss_schedule_args(monkeypatch):
+def test_cli_rejects_removed_loss_schedule_args(monkeypatch):
     monkeypatch.setattr(sys, "argv", [
         "main.py",
         "fit-stream",
@@ -141,8 +129,5 @@ def test_cli_loss_schedule_args(monkeypatch):
         "--stage-size=100",
     ])
 
-    args = parse_args()
-
-    assert args.loss_stage == 4
-    assert args.loss_schedule == "step"
-    assert args.stage_size == 100
+    with pytest.raises(SystemExit):
+        parse_args()

@@ -9,7 +9,7 @@ class TrainingBatch:
 
     ``features`` is float32 ``[rows, source_width]`` at the Arrow boundary and
     float32 ``[batch, sequence, features]`` after source reshaping. ``targets``
-    is float32 ``[rows, 6]`` in the target-aligned public order.
+    is float32 ``[rows, selected_targets]`` in the target-aligned public order.
     """
 
     features: torch.Tensor

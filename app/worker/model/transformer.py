@@ -1,8 +1,13 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from app.contracts.worker.v7.config import DEFAULT_CONTEXT_MODE
+from app.contracts.ml import canonical_targets
+from app.contracts.worker.v9.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -20,67 +25,62 @@ def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
 
 
 class TradingHead(nn.Module):
-    def __init__(self, hidden_dim: int) -> None:
+    def __init__(
+        self,
+        hidden_dim: int,
+        targets: Sequence[str],
+        *,
+        include_return_scale: bool,
+    ) -> None:
         super().__init__()
         if hidden_dim <= 0:
             raise ValueError("hidden_dim must be a positive integer")
 
         self.hidden_dim = hidden_dim
+        self.targets = canonical_targets(targets)
+        self.include_return_scale = include_return_scale
         self.shared = nn.Sequential(
             nn.Linear(hidden_dim, 128),
             nn.GELU(),
             nn.LayerNorm(128),
         )
-
-        self.mean_head = nn.Linear(128, 1)
-        self.sigma_head = nn.Linear(128, 1)
-        self.return_scale_head = nn.Linear(128, 1)
-
-        # Probability heads stay as logits inside the worker. The prediction
-        # boundary converts them to target-space probabilities.
-        self.ptp_head = nn.Linear(128, 1)
-        self.psl_head = nn.Linear(128, 1)
-        self.hit_head = nn.Linear(128, 1)
-
-        self.vol_head = nn.Linear(128, 1)
+        self.public_heads = nn.ModuleDict({
+            target: nn.Linear(128, 1)
+            for target in self.targets
+        })
+        self.return_scale_head = (
+            nn.Linear(128, 1)
+            if include_return_scale
+            else None
+        )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Map floating [batch, hidden] states to seven internal model heads."""
+        output, _shared = self.forward_with_shared_representation(hidden_states)
+        return output
 
+    def forward_with_shared_representation(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if hidden_states.ndim != 2 or hidden_states.shape[1] != self.hidden_dim:
             raise ValueError("hidden states must have shape [batch, hidden]")
-        h = self.shared(hidden_states)
 
-        mean_return = torch.tanh(self.mean_head(h))
-        sigma_return = torch.sigmoid(self.sigma_head(h))
-        return_scale = F.softplus(self.return_scale_head(h)) + 1e-6
-
-        take_profit_logit = self.ptp_head(h)
-        stop_loss_logit = self.psl_head(h)
-        hit_logit = self.hit_head(h)
-
-        next_volatility = torch.sigmoid(self.vol_head(h))
-
-        return torch.cat(
-            [
-                mean_return,
-                sigma_return,
-                take_profit_logit,
-                stop_loss_logit,
-                next_volatility,
-                hit_logit,
-                return_scale,
-            ],
-            dim=1
-        )
+        shared = self.shared(hidden_states)
+        public = [
+            _internal_public_value(target, self.public_heads[target](shared))
+            for target in self.targets
+        ]
+        values = public
+        if self.return_scale_head is not None:
+            values = [
+                *values,
+                F.softplus(self.return_scale_head(shared)) + 1e-6,
+            ]
+        return torch.cat(values, dim=1), shared
 
 
 class TransformerModel(nn.Module):
-    """Map inputs to six public heads and one private uncertainty head.
-
-    Context mode controls NaN masking, and the last unmasked timestep feeds
-    the trading head for each sequence.
-    """
+    """Map sequence inputs to selected public heads and required private heads."""
 
     def __init__(
         self,
@@ -89,7 +89,9 @@ class TransformerModel(nn.Module):
         hidden_dim: int,
         layers: int,
         dropout: float,
-        out_dim: int,
+        targets: Sequence[str],
+        *,
+        include_return_scale: bool,
         nhead: int = 8,
         context_mode: str = DEFAULT_CONTEXT_MODE,
     ) -> None:
@@ -107,11 +109,11 @@ class TransformerModel(nn.Module):
             raise ValueError("hidden_dim must be divisible by a positive nhead")
         if not 0 <= dropout < 1:
             raise ValueError("dropout must be in the range [0, 1)")
-        if out_dim <= 0:
-            raise ValueError("out_dim must be a positive integer")
 
         self.input_dim = input_dim
         self.seq_len = seq_len
+        self.targets = canonical_targets(targets)
+        self.include_return_scale = include_return_scale
         self.context_mode = validate_context_mode(context_mode)
         self.input_proj = nn.Linear(
             context_input_dim(input_dim, self.context_mode),
@@ -126,27 +128,25 @@ class TransformerModel(nn.Module):
             dropout=dropout,
             batch_first=True,
         )
-
         self.encoder = nn.TransformerEncoder(
             encoder_layer,
             num_layers=layers,
+            enable_nested_tensor=False,
+        )
+        self.head = TradingHead(
+            hidden_dim,
+            self.targets,
+            include_return_scale=include_return_scale,
         )
 
-        self.head = TradingHead(hidden_dim)
-
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """Build seven internal heads from float32 model input.
+        output, _shared = self.forward_with_shared_representation(features)
+        return output
 
-        Args:
-            features: Tensor [batch, sequence, features]. Sequence and feature
-                dimensions must match the immutable model configuration. NaN
-                values are interpreted according to ``context_mode``.
-
-        Returns:
-            Tensor [batch, 7]: six public target heads followed by the private
-            Gaussian return scale. Probability heads remain logits here.
-        """
-
+    def forward_with_shared_representation(
+        self,
+        features: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if features.ndim != 3:
             raise ValueError("features must have shape [batch, sequence, features]")
         if features.shape[1] != self.seq_len:
@@ -160,41 +160,56 @@ class TransformerModel(nn.Module):
             features,
             self.context_mode,
         )
-
         encoded_features = self.input_proj(prepared_context.features)
         encoded_features = self.pos(encoded_features)
-
-        enc = self.encoder(
+        encoded = self.encoder(
             encoded_features,
-            src_key_padding_mask=prepared_context.key_padding_mask
+            src_key_padding_mask=prepared_context.key_padding_mask,
         )
-
         last_unmasked_indices = _last_unmasked_indices(
             prepared_context.key_padding_mask
         )
-
-        batch_idx = torch.arange(
+        batch_indices = torch.arange(
             encoded_features.size(0),
             device=encoded_features.device,
         )
-        last_valid = enc[batch_idx, last_unmasked_indices]
+        last_valid = encoded[batch_indices, last_unmasked_indices]
+        return self.head.forward_with_shared_representation(last_valid)
 
-        return self.head(last_valid)
 
-
-def public_predictions(model_output: torch.Tensor) -> torch.Tensor:
-    """Convert the worker's seven-head output to the six target-space values."""
-
-    if model_output.ndim != 2 or model_output.shape[1] != 7:
-        raise ValueError("model output must have shape [rows, 7]")
+def public_predictions(
+    model_output: torch.Tensor,
+    targets: Sequence[str],
+    *,
+    include_return_scale: bool = False,
+) -> torch.Tensor:
+    selected = canonical_targets(targets)
+    expected_width = len(selected) + int(include_return_scale)
+    if model_output.ndim != 2 or model_output.shape[1] != expected_width:
+        raise ValueError(
+            f"model output must have shape [rows, {expected_width}]"
+        )
     return torch.stack(
-        (
-            model_output[:, 0],
-            model_output[:, 1],
-            torch.sigmoid(model_output[:, 2]),
-            torch.sigmoid(model_output[:, 3]),
-            model_output[:, 4],
-            torch.sigmoid(model_output[:, 5]),
+        tuple(
+            _public_value(target, model_output[:, index])
+            for index, target in enumerate(selected)
         ),
         dim=1,
     )
+
+
+def _internal_public_value(target: str, value: torch.Tensor) -> torch.Tensor:
+    if target == "MeanReturn":
+        return torch.tanh(value)
+    if target in {"SigmaReturn", "VolatilityNext"}:
+        return torch.sigmoid(value)
+    return value
+
+
+def _public_value(target: str, value: torch.Tensor) -> torch.Tensor:
+    if target in {"ProbTP", "ProbSL", "HittingProbTP"}:
+        return torch.sigmoid(value)
+    return value
+
+
+__all__ = ["TradingHead", "TransformerModel", "public_predictions"]

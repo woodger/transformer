@@ -11,13 +11,13 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v9.config import (
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DROPOUT,
-    DEFAULT_LOSS_STAGE,
     DEFAULT_LR,
     DEFAULT_WEIGHT_DECAY,
 )
+from app.contracts.worker.v9.objective import default_objective
 from app.worker.training.constants import GRAD_CLIP_NORM
 
 MIB = 1024**2
@@ -54,6 +54,7 @@ class TrainingWorkload:
         self._torch = torch
         self._device = device
         self._combined_loss = combined_loss
+        self._objective = default_objective()
         self._use_amp = bool(args.use_amp)
         self._batch_size = args.batch_size
         self._amp_backoffs = 0
@@ -64,7 +65,8 @@ class TrainingWorkload:
             hidden_dim=args.hidden,
             layers=args.layers,
             dropout=DEFAULT_DROPOUT,
-            out_dim=6,
+            targets=self._objective.targets,
+            include_return_scale=self._objective.requires_return_scale,
             nhead=args.nhead,
             context_mode=DEFAULT_CONTEXT_MODE,
         ).to(device)
@@ -81,7 +83,7 @@ class TrainingWorkload:
             dtype=torch.float32,
         )
         self._targets_cpu = torch.zeros(
-            (args.batch_size, 6),
+            (args.batch_size, self._objective.target_width),
             dtype=torch.float32,
         )
         self._targets_cpu[:, 0] = (
@@ -140,7 +142,7 @@ class TrainingWorkload:
             loss = self._combined_loss(
                 model_output,
                 batch_targets,
-                DEFAULT_LOSS_STAGE,
+                self._objective,
             )
 
         loss_value = float(loss.detach().cpu())

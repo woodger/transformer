@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v8/input-close-result.schema.json",
+  "title": "transformer.v8.job.input.close result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "version", "requestId", "jobId", "revision", "input",
+    "execution"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 8},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "revision": {"type": "integer", "minimum": 2},
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state", "revision", "payloadCount", "totalRows", "totalBytes",
+        "manifestSha256"
+      ],
+      "properties": {
+        "state": {"const": "CLOSED"},
+        "revision": {"type": "integer", "minimum": 0},
+        "payloadCount": {"type": "integer", "minimum": 0},
+        "totalRows": {"type": "integer", "minimum": 0},
+        "totalBytes": {"type": "integer", "minimum": 0},
+        "manifestSha256": {"$ref": "common.schema.json#/$defs/sha256"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"$ref": "common.schema.json#/$defs/executionState"}
+      }
+    }
+  }
+}

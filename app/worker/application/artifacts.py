@@ -10,15 +10,15 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v7 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v9 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v9.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v9.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
-    objective_config,
+    objective_config_sha256,
 )
 from app.worker.application.documents import integer_field, object_field, string_field
 from app.worker.runtime.version import __version__
@@ -75,30 +75,38 @@ def checkpoint_metadata(
         raise ValueError("fit checkpoint feature dimension is unavailable")
     if data_contract is None:
         raise ValueError("fit checkpoint data contract is unavailable")
+    if trainer.initialization is None:
+        raise ValueError("fit checkpoint initialization is unavailable")
     best_selection_score = trainer.best_selection_score
     if not math.isfinite(best_selection_score):
         best_selection_score = None
     selection_enabled = trainer.selection is not None
+    ml = ml_contract(
+        trainer.objective,
+        target_schema_id=string_field(data_contract, "targetSchemaId"),
+    )
     return {
         "format": CHECKPOINT_FORMAT,
         "serviceVersion": __version__,
         "modelConfig": model_config_to_manifest(model_config),
         "trainingConfig": train_config_to_manifest(train_config),
+        "diagnostics": train_config.diagnostics.to_document(),
+        "initialization": dict(trainer.initialization),
         "dataContract": dict(data_contract),
-        "mlContract": ml_contract(train_config),
-        "objectiveConfig": objective_config(train_config),
+        "mlContract": ml,
+        "objective": trainer.objective.to_document(),
         "checkpointSelection": {
             "enabled": selection_enabled,
-            "objectiveConfigSha256": ml_contract(train_config)[
-                "objectiveConfigSha256"
-            ],
+            "objectiveConfigSha256": objective_config_sha256(
+                trainer.objective
+            ),
             "bestSelectionScore": best_selection_score,
             "bestFrame": trainer.best_frame,
             "bestEpoch": trainer.best_epoch,
             "source": (
                 "best_selection_score"
                 if selection_enabled
-                else "last_maximum_stage"
+                else "last_epoch"
             ),
         },
     }

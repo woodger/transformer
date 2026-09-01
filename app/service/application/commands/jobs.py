@@ -27,6 +27,10 @@ from app.service.application.services.model_contract import (
     verify_model_semantics,
 )
 from app.service.domain.errors import ServiceError
+from app.service.domain.initialization import (
+    published_model_initialization,
+    random_initialization,
+)
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.policies import resolve_device
 from app.service.domain.records import PublishedModelRecord
@@ -64,10 +68,10 @@ class CreateJobAction:
                 command.requested_device == "cuda"
                 and not self._cuda_available()
             ):
-                self.metrics.add("cudaUnavailableRequests")
+                self.metrics.add("gpuUnavailableRequests")
                 raise ServiceError(
                     ErrorCode.DEVICE_UNAVAILABLE,
-                    "explicit CUDA device is not available",
+                    "explicit GPU device is not available",
                 )
 
         def prepare(
@@ -75,6 +79,7 @@ class CreateJobAction:
         ) -> JobCreationPreparation:
             model_config = command.model_config
             resolved_model_ref = None
+            initialization = None
             if command.operation == "predict":
                 if model is None:
                     raise ServiceError(
@@ -88,6 +93,35 @@ class CreateJobAction:
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
+            elif command.initialization_kind == "random":
+                initialization = random_initialization()
+            elif command.initialization_kind == "publishedModel":
+                if model is None:
+                    raise ServiceError(
+                        ErrorCode.NOT_FOUND,
+                        "model generation not found",
+                    )
+                parent_config = verify_model_semantics(
+                    model,
+                    data_contract=command.data_contract,
+                    requested_ml_contract=command.ml_contract,
+                )
+                if model_config != parent_config:
+                    raise ServiceError(
+                        ErrorCode.MODEL_SCHEMA_MISMATCH,
+                        "parent model configuration does not match fit job",
+                    )
+                self._model_verifier.verify(model)
+                resolved_model_ref = model.model_ref
+                initialization = published_model_initialization(
+                    model.model_ref,
+                    model.sha256,
+                )
+            else:
+                raise ServiceError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    "fit initialization is unavailable",
+                )
             if model_config is None:
                 raise ServiceError(
                     ErrorCode.INVALID_ARGUMENT,
@@ -111,6 +145,7 @@ class CreateJobAction:
                 data_contract=dict(command.data_contract),
                 ml_contract=dict(command.ml_contract),
                 limits=self.limits,
+                initialization=initialization,
             )
             return JobCreationPreparation(
                 result=result,
@@ -268,7 +303,7 @@ def _select_device(requested: str, cuda_available: bool) -> str:
     if decision.error_code is not None:
         raise ServiceError(
             decision.error_code,
-            "explicit CUDA device is unavailable",
+            "explicit GPU device is unavailable",
         )
     if decision.selected is None:
         raise ServiceError(ErrorCode.INTERNAL, "device selection failed")

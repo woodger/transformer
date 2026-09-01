@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -46,14 +47,10 @@ def _job(**overrides):
             "feature_dim": 2,
             "target_schema_id": "inventory.target.v2",
         },
-        ml_contract={
-            "targetSchemaId": "inventory.target.v2",
-            "objectiveId": "transformer.objective.target-aligned.v2",
-        },
+        ml_contract=ml_contract(default_objective()),
         progress={
             "epoch": 2,
             "step": 6,
-            "loss_stage": 4,
             "loss": -3.149016,
         },
         attempt=2,
@@ -67,6 +64,7 @@ def _job(**overrides):
         started_at=4.0,
         cancel_requested_at=None,
         finished_at=8.0,
+        initialization={"kind": "random"},
     )
     return replace(value, **overrides)
 
@@ -101,13 +99,13 @@ def _execute(query, request_id):
     )
 
 
-def test_status_exposes_bounded_v4_state_without_artifact_paths():
+def test_status_exposes_bounded_state_without_artifact_paths():
     recovery = StatusRecoveryRecord(
         checkpoint=TrainingRecoveryCheckpointRecord(
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v4",
+            format="transformer-training-recovery-v5",
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,
@@ -138,10 +136,10 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     }
     assert result["execution"] == {"state": "SUCCEEDED", "attempt": 2}
     assert result["ownership"]["fencingToken"] == "7"
+    assert result["device"] == {"requested": "auto", "selected": "gpu"}
     assert result["progress"] == {
         "epoch": 2,
         "step": 6,
-        "loss_stage": 4,
         "loss": -3.149016,
     }
     assert result["results"] == {
@@ -152,6 +150,26 @@ def test_status_exposes_bounded_v4_state_without_artifact_paths():
     assert result["recovery"]["latestCheckpoint"]["generation"] == 2
     assert result["pollAfterMs"] == 0
     assert "private" not in repr(result)
+
+
+def test_status_adds_implicit_random_lineage_to_existing_checkpoint_metadata():
+    snapshot = StatusSnapshot(
+        job=_job(result={
+            "modelRef": "mdl_generation",
+            "checkpoint": {
+                "format": "transformer-checkpoint-v5",
+                "sha256": "c" * 64,
+            },
+        }),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(snapshot), "request-existing-checkpoint")
+
+    assert result["results"]["checkpoint"]["initialization"] == {
+        "kind": "random"
+    }
 
 
 def test_failed_status_has_stable_error_and_nonterminal_status_polls():
@@ -187,6 +205,46 @@ def test_failed_status_has_stable_error_and_nonterminal_status_polls():
     assert active["input"]["state"] == "OPEN"
     assert active["execution"]["state"] == "RUNNING"
     assert active["pollAfterMs"] == 500
+
+
+def test_status_maps_legacy_internal_cuda_oom_to_public_gpu_error():
+    failed = StatusSnapshot(
+        job=_job(
+            execution_state=ExecutionState.FAILED,
+            error_code="CUDA_OUT_OF_MEMORY",
+            error_message="CUDA execution ran out of memory",
+            result=None,
+        ),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(failed), "request-gpu-oom")
+
+    assert result["error"] == {
+        "code": "GPU_OUT_OF_MEMORY",
+        "message": "GPU execution ran out of memory",
+    }
+
+
+def test_status_hides_cuda_backend_name_from_public_error_message():
+    failed = StatusSnapshot(
+        job=_job(
+            execution_state=ExecutionState.FAILED,
+            error_code="DEVICE_LOST",
+            error_message="CUDA device became unavailable during execution",
+            result=None,
+        ),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(failed), "request-device-lost")
+
+    assert result["error"] == {
+        "code": "DEVICE_LOST",
+        "message": "GPU device became unavailable during execution",
+    }
 
 
 def test_retired_identity_returns_stable_job_retired_error():

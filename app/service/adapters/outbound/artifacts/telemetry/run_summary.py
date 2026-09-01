@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v2 import (
+from app.contracts.metrics.fit_run.v3 import (
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_summary,
@@ -43,6 +44,7 @@ def publish_fit_run_summary(
     checkpoint_format: str,
     application_version: str,
     git_commit: str,
+    targets: Sequence[str],
     terminal_checkpoint_serialization_ms: float,
     terminal_checkpoint_publication_ms: float,
 ) -> StagedFitRunSummary:
@@ -65,6 +67,7 @@ def publish_fit_run_summary(
         checkpoint_format=checkpoint_format,
         application_version=application_version,
         git_commit=git_commit,
+        targets=targets,
         milestones={
             "createdAt": _timestamp(source.created_at),
             "firstInputCommittedAt": _timestamp(

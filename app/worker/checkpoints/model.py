@@ -8,14 +8,16 @@ from typing import cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.objective import (
     CHECKPOINT_FORMAT,
     DATA_CONTRACT_ID,
     DATA_CONTRACT_VERSION,
     TARGET_SCHEMA_ID,
+    ObjectiveConfig,
+    default_objective,
     ml_contract,
-    objective_config,
+    objective_from_ml_contract,
 )
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import (
@@ -45,11 +47,15 @@ def save_checkpoint(
     model: torch.nn.Module,
     model_config: object = None,
     train_config: object = None,
+    objective: object = None,
     data_contract: Mapping[str, object] | None = None,
     extra: Mapping[str, object] | None = None,
 ) -> None:
     model_config = _model_config(model_config)
     train_config = _train_config(train_config)
+    objective = _objective_config(objective)
+    if model_config.out_dim != objective.target_width:
+        raise ValueError("checkpoint model shape differs from objective targets")
     if model_config.feature_dim is None:
         raise ValueError("checkpoint feature dimension is unavailable")
     full_path = model_path(model_name)
@@ -61,8 +67,11 @@ def save_checkpoint(
         "train_config": train_config.to_dict(),
         "data_schema": _data_schema(model_config),
         "data_contract": None if data_contract is None else dict(data_contract),
-        "ml_contract": ml_contract(train_config),
-        "objective_config": objective_config(train_config),
+        "ml_contract": ml_contract(
+            objective,
+            target_schema_id=_target_schema_id(data_contract),
+        ),
+        "objective": objective.to_document(),
         "extra": {} if extra is None else dict(extra),
     }
 
@@ -107,7 +116,7 @@ def load_checkpoint_metadata(
         "data_schema": payload["data_schema"],
         "data_contract": payload["data_contract"],
         "ml_contract": payload["ml_contract"],
-        "objective_config": payload["objective_config"],
+        "objective": payload["objective"],
         "extra": payload["extra"],
     }
 
@@ -117,6 +126,7 @@ def save_model(
     model: torch.nn.Module,
     model_config: ModelConfig | None = None,
     train_config: TrainConfig | None = None,
+    objective: ObjectiveConfig | None = None,
     data_contract: Mapping[str, object] | None = None,
     extra: Mapping[str, object] | None = None,
 ) -> None:
@@ -125,6 +135,7 @@ def save_model(
         model,
         model_config=model_config,
         train_config=train_config,
+        objective=objective,
         data_contract=data_contract,
         extra=extra,
     )
@@ -159,7 +170,7 @@ def _validate_current_checkpoint(payload: dict[str, object]) -> None:
         "data_schema",
         "data_contract",
         "ml_contract",
-        "objective_config",
+        "objective",
         "extra",
     }
     if set(payload) != required:
@@ -172,17 +183,22 @@ def _validate_current_checkpoint(payload: dict[str, object]) -> None:
         raise CheckpointCorrupt("Checkpoint extra metadata is invalid")
     try:
         model_config = _model_config(payload["model_config"])
-        train_config = _train_config(payload["train_config"])
+        _train_config(payload["train_config"])
+        objective = _objective_config(payload["objective"])
     except (TypeError, ValueError) as exc:
         raise CheckpointCorrupt("Checkpoint configuration is invalid") from exc
     if model_config.feature_dim is None:
         raise CheckpointCorrupt("Checkpoint feature dimension is unavailable")
     if payload["data_schema"] != _data_schema(model_config):
         raise CheckpointCorrupt("Checkpoint data schema is inconsistent")
-    if payload["ml_contract"] != ml_contract(train_config):
+    if model_config.out_dim != objective.target_width:
+        raise CheckpointCorrupt("Checkpoint target width is inconsistent")
+    try:
+        parsed_contract = objective_from_ml_contract(payload["ml_contract"])
+    except (TypeError, ValueError) as exc:
+        raise CheckpointCorrupt("Checkpoint ML contract is invalid") from exc
+    if parsed_contract != objective:
         raise CheckpointCorrupt("Checkpoint ML contract is inconsistent")
-    if payload["objective_config"] != objective_config(train_config):
-        raise CheckpointCorrupt("Checkpoint objective configuration is inconsistent")
     data_contract_value = payload["data_contract"]
     data_contract = (
         None
@@ -240,7 +256,7 @@ def _data_schema(model_config: ModelConfig) -> JsonObject:
         "tgt": {
             "column": "tgt",
             "accepted_element_types": ["float32"],
-            "width": 6,
+            "width": model_config.out_dim,
             "target_schema_id": TARGET_SCHEMA_ID,
         },
         "feature_dim": feature_dim,
@@ -270,6 +286,23 @@ def _train_config(value: object) -> TrainConfig:
     if config is None:
         raise ValueError("training configuration is required")
     return config
+
+
+def _objective_config(value: object) -> ObjectiveConfig:
+    if isinstance(value, ObjectiveConfig):
+        return value
+    if value is None:
+        return default_objective()
+    return ObjectiveConfig.from_document(value)
+
+
+def _target_schema_id(data_contract: Mapping[str, object] | None) -> str:
+    if data_contract is None:
+        return TARGET_SCHEMA_ID
+    value = data_contract.get("targetSchemaId", data_contract.get("target_schema_id"))
+    if not isinstance(value, str) or not value:
+        raise ValueError("data contract target schema is unavailable")
+    return value
 
 
 def _object_dict(value: object, label: str) -> dict[str, object]:

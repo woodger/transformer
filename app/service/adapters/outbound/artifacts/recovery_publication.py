@@ -10,8 +10,8 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7 import WorkerContractError, validate_document
-from app.contracts.worker.v7.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v9 import WorkerContractError, validate_document
+from app.contracts.worker.v9.objective import TRAINING_RECOVERY_FORMAT
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -43,7 +43,6 @@ class _RecoveryLedger(Protocol):
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss_stage: int,
         loss: float,
         training_complete: bool,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
@@ -262,10 +261,6 @@ class RecoveryCheckpointPublisher:
             sha256=digest,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss_stage=_positive_integer(
-                progress["loss_stage"],
-                "progress loss_stage",
-            ),
             loss=_finite_number(progress["loss"], "progress loss"),
             training_complete=training_complete,
         )
@@ -490,23 +485,15 @@ def _core_progress(
     global_step: int,
 ) -> JsonObject:
     progress = _object(value, "recovery progress")
-    if set(progress) != {"epoch", "step", "loss_stage", "loss"}:
+    if set(progress) != {"epoch", "step", "loss"}:
         raise WorkerRecoveryError(
             ErrorCode.MALFORMED_OUTPUT,
             "recovery progress has invalid fields",
         )
     epoch = _positive_integer(progress["epoch"], "progress epoch")
     step = _nonnegative_integer(progress["step"], "progress step")
-    loss_stage = _positive_integer(
-        progress["loss_stage"],
-        "progress loss_stage",
-    )
     loss = _finite_number(progress["loss"], "progress loss")
-    if (
-        epoch != completed_epochs
-        or step != global_step
-        or loss_stage > 4
-    ):
+    if epoch != completed_epochs or step != global_step:
         raise WorkerRecoveryError(
             ErrorCode.MALFORMED_OUTPUT,
             "recovery progress differs from checkpoint metadata",
@@ -514,7 +501,6 @@ def _core_progress(
     return {
         "epoch": epoch,
         "step": step,
-        "loss_stage": loss_stage,
         "loss": loss,
     }
 

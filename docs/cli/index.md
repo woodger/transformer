@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md).
+находится в [`app/contracts/flight/v8`](../../app/contracts/flight/v8/README.md).
 
 ## File commands
 
@@ -70,7 +70,7 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v4 содержит model config и `feature_dim`, поэтому при prediction
+Checkpoint v5 содержит model config и `feature_dim`, поэтому при prediction
 model options передавать не требуется. Явно переданные `--seq-len`, `--hidden`,
 `--layers`, `--dropout`, `--nhead` и `--mode` — это проверка: значение должно
 совпасть с checkpoint, иначе команда завершится, например, ошибкой
@@ -111,13 +111,13 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 
 В `predict-stream` stdout — бинарный результат; diagnostics идут в stderr.
 `fit-stream` печатает training progress в текстовый stdout. Semantics обучения
-на отдельных frames, loss schedule и early stopping определены в
+на отдельных frames, objective и early stopping определены в
 [training reference](../training-runtime.md).
 
 ## GPU stress test
 
 `gmark` выполняет синтетические optimizer steps через production
-`TransformerModel`: forward, полный loss stage, backward, gradient clipping и
+`TransformerModel`: forward, полный default objective, backward, gradient clipping и
 Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
 тот же CUDA autocast и `GradScaler`, что и production worker. Команда проверяет
 loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
@@ -184,14 +184,14 @@ core, но не является полной гарантией темпера�
 
 | Аргумент | Команды | Описание | По умолчанию |
 | --- | --- | --- | --- |
-| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `cuda` или `auto`; `auto` выбирает CUDA при наличии | `cpu` |
+| `--device` | `fit`, `predict`, `fit-stream`, `predict-stream` | `cpu`, `gpu` или `auto`; `auto` выбирает GPU при наличии | `cpu` |
 | `--checkpoint-out` | `fit`, `fit-stream` | checkpoint output | `model_weights.pth` |
 | `--checkpoint` | `predict`, `predict-stream` | checkpoint input | `model_weights.pth` |
 | `--output` | `predict` | Arrow output file | `/tmp/preds.arrow` |
 | `--pred-col` | `predict`, `predict-stream` | имя единственной prediction-колонки | `out` |
 | `--metrics-out` | `fit`, `fit-stream` | metrics JSONL | не задан |
 | `--max-frame-bytes` | `fit-stream`, `predict-stream` | максимальный размер одного payload | `536870912` (512 MiB) |
-| `--use-amp` | все fit/predict варианты | CUDA mixed precision | выключено |
+| `--use-amp` | все fit/predict варианты | GPU mixed precision | выключено |
 | `--plots-dir` | `plot-metrics` | каталог для SVG | `metrics_plots` |
 
 Для совместимости сохранены aliases: `--model-name` для checkpoint input/output,
@@ -222,20 +222,18 @@ core, но не является полной гарантией темпера�
 | `--lr` | Learning rate | `0.0005` |
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
-| `--epochs` | Эпохи для file fit / максимум на stdin frame / эпохи всего Flight job | `25` |
-| `--loss-stage` | Максимальный этап target-aligned objective; зафиксирован в `4` | `4` |
-| `--loss-schedule` | Как двигать этап loss: `none`, `epoch`, `step` | `epoch` |
-| `--stage-size` | Сколько epoch/optimizer steps держать один этап | `5` |
+| `--epochs` | Эпохи для file fit / максимум на stdin frame | `25` |
 | `--direct-loss-weights` | Шесть положительных весов `L0…L5` через запятую | `1,1,1,1,1,1` |
-| `--[no-]select-best-checkpoint` | Выбирать best checkpoint только по direct losses полной epoch stage 4 | выключено |
+| `--[no-]select-best-checkpoint` | Выбирать best checkpoint по direct losses завершённой epoch | выключено |
 | `--selection-min-delta` | Минимальное улучшение selection score | `0.0` |
-| `--selection-patience` | Число неулучшающихся stage-4 epochs; `0` не останавливает обучение | `0` |
+| `--selection-patience` | Число неулучшающихся epochs; `0` не останавливает обучение | `0` |
 | `--seed` | Seed `0..4294967295` для Python, NumPy, PyTorch и CUDA | `42` |
 | `--deterministic` | Включить deterministic PyTorch algorithms | выключено |
 
 Training options доступны только у `fit` и `fit-stream`. `--use-amp` на CPU
-явно отключается и для training, и для prediction; `--device=cuda` завершается
-ошибкой, если CUDA недоступна. Deterministic mode может быть медленнее и может
+явно отключается и для training, и для prediction; `--device=gpu` завершается
+ошибкой, если GPU недоступен. Значение `--device=cuda` не поддерживается.
+Deterministic mode может быть медленнее и может
 сообщить об операции, для которой PyTorch не имеет deterministic implementation.
 
 ## Опубликованные модели

@@ -15,10 +15,6 @@ combine-as-imports = true
 
 [tool.pytest.ini_options]
 cache_dir = ".cache/pytest"
-addopts = ["-m", "not gpu"]
-markers = [
-  "gpu: requires a real CUDA device",
-]
 
 [tool.pyright]
 include = [

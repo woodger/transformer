@@ -5,13 +5,13 @@ import os
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v7 import (
+from app.contracts.worker.v9 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -79,10 +79,17 @@ def execute_predict(
             "MODEL_CORRUPT",
             "prediction checkpoint has no data contract",
         )
+    try:
+        objective = objective_from_ml_contract(checkpoint["ml_contract"])
+    except (TypeError, ValueError) as exc:
+        raise WorkerExecutionError(
+            "MODEL_CORRUPT",
+            "prediction checkpoint objective is invalid",
+        ) from exc
     if (
         checkpoint["data_contract"] != object_field(manifest, "dataContract")
         or checkpoint["ml_contract"] != object_field(manifest, "mlContract")
-        or checkpoint["ml_contract"] != ml_contract(train_config)
+        or model_config.out_dim != objective.target_width
     ):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",
@@ -114,7 +121,10 @@ def execute_predict(
             f"{integer_field(item, 'ordinal')}.arrow",
         )
         if features_cpu.size(0) == 0:
-            predictions = torch.empty((0, 6), dtype=torch.float32)
+            predictions = torch.empty(
+                (0, objective.target_width),
+                dtype=torch.float32,
+            )
         else:
             features_cpu = reshape_source(features_cpu, model_config.seq_len)
             validate_checkpoint_feature_dim(
@@ -122,13 +132,20 @@ def execute_predict(
                 model_config.feature_dim,
             )
             if model is None:
-                model = build_model(model_config, features_cpu, None, device)
+                model = build_model(
+                    model_config,
+                    features_cpu,
+                    None,
+                    device,
+                    objective,
+                )
                 trainer = build_trainer(
                     train_config,
                     model,
                     device,
                     model_config,
                     data_contract=data_contract,
+                    objective=objective,
                 )
                 if checkpoint is None:
                     raise AssertionError(
@@ -144,6 +161,7 @@ def execute_predict(
             predictions,
             prediction_column,
             expected_rows=integer_field(item, "rows"),
+            targets=objective.targets,
         )
         artifacts.append({
             "schemaId": PREDICTION_OUTPUT_SCHEMA_ID,

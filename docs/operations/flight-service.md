@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v5
+# Сервис Transformer Arrow Flight: операционное руководство v8
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v5`](../../app/contracts/flight/v5/README.md). Текущие
+[`app/contracts/flight/v8`](../../app/contracts/flight/v8/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -121,7 +121,7 @@ OpenSearch outbox. Ошибка telemetry не меняет model generation и�
 state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V5 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. V8 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,8 +214,8 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v5 определяет
-`cudaCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
+certificate options команды `flight serve`. Flight v8 определяет
+`gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
 Certificate и key должны задаваться вместе. Их полная пара включает TLS, а
@@ -316,8 +316,11 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
 
 Возобновляемый fit восстанавливает последний зарегистрированный в PostgreSQL
 checkpoint global epoch. Если checkpoint отсутствует, обучение начинается с
-нулевой epoch на тех же постоянных inputs и неизменяемой конфигурации job. До
-EOF незавершённая нулевая epoch намеренно повторяется полностью.
+нулевой epoch на тех же постоянных inputs и неизменяемой конфигурации job. Для
+warm-start job исходные weights повторно проверяются по зафиксированным parent
+reference и digest; training recovery при наличии затем восстанавливает уже
+состояние нового job. До EOF незавершённая нулевая epoch намеренно повторяется
+полностью.
 `inputIdleTimeout` отсчитывается только после сообщения worker об ожидании
 следующего contiguous ordinal; out-of-order commit не продлевает timeout.
 
@@ -350,9 +353,11 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v5 нет сетевого action для её удаления. Команды оператора,
+во Flight v8 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
+Запрос удаления блокируется не только незавершённым prediction, но и
+незавершённым warm-start fit, использующим generation как parent.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -362,12 +367,12 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v5.health`.
+аутентифицированный Flight action `transformer.v8.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
   PostgreSQL завершался успешно.
-- Доступность CUDA, число физических devices и число quarantined devices
+- Доступность GPU, число физических devices и число quarantined devices
   возвращаются независимо.
 
 Логи сервиса — по одному JSON object на строку в stderr. Они охватывают
@@ -386,10 +391,10 @@ Metrics сбрасываются при перезапуске сервиса и
 - `ready=false` или недоступность PostgreSQL;
 - заполнение filesystem с `DISK_FULL`;
 - рост постоянного recovery/model storage вне прогноза;
-- ошибки worker lane, CUDA OOM, quarantined devices или повторные ошибки/retry
+- ошибки worker lane, GPU OOM, quarantined devices или повторные ошибки/retry
   subprocess;
 - recovery прерванного процесса или сброс storage epoch runtime;
-- долгое ожидание в queue относительно настроенной CPU/CUDA capacity.
+- долгое ожидание в queue относительно настроенной CPU/GPU capacity.
 
 ## Стабильные ошибки и ограничения PyArrow
 
@@ -409,7 +414,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v5
+## Известные ограничения v8
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

@@ -17,9 +17,4 @@ def get_device(device_arg: str | None = None) -> torch.device:
             raise RuntimeError("CUDA was requested but is not available")
         return torch.device("cuda")
 
-    # Keep the former programmatic spelling working; the CLI exposes the
-    # unambiguous auto/cpu/cuda choices above.
-    if dev == "gpu":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     raise ValueError(f"Unsupported device: {dev}")

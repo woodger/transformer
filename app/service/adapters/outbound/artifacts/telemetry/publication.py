@@ -6,7 +6,10 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.objective import CHECKPOINT_FORMAT
+from app.contracts.worker.v9.objective import (
+    CHECKPOINT_FORMAT,
+    objective_from_ml_contract,
+)
 from app.service.adapters.outbound.artifacts.telemetry.run_summary import (
     publish_fit_run_summary,
 )
@@ -75,6 +78,7 @@ class FitRunTelemetryPublisher:
         metrics_path = self.spool.telemetry_metrics_path(job.job_id)
         run_summary_path = self.spool.telemetry_run_summary_path(job.job_id)
         try:
+            targets = objective_from_ml_contract(model.ml_contract).targets
             checkpoint_serialization_ms = _nonnegative_number(
                 worker_result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
@@ -101,6 +105,7 @@ class FitRunTelemetryPublisher:
                 checkpoint_format=CHECKPOINT_FORMAT,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
+                targets=targets,
             )
             run_summary = publish_fit_run_summary(
                 self.spool,
@@ -118,6 +123,7 @@ class FitRunTelemetryPublisher:
                 checkpoint_format=CHECKPOINT_FORMAT,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
+                targets=targets,
                 terminal_checkpoint_serialization_ms=(
                     checkpoint_serialization_ms
                 ),

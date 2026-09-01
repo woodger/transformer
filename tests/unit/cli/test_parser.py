@@ -8,16 +8,18 @@ from app.config import (
     HOST_DEFAULT,
     PORT_DEFAULT,
 )
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v9.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
 )
+from app.main import device_name, get_device as get_cli_device
 from app.worker.runtime.device import get_device
 from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,
     model_config_from_args,
+    objective_config_from_args,
     train_config_from_args,
 )
 
@@ -43,6 +45,15 @@ def test_fit_namespace_has_only_fit_options():
     assert not hasattr(args, "pred_col")
     assert not hasattr(args, "plots_dir")
     assert not hasattr(args, "max_frame_bytes")
+
+
+def test_local_commands_accept_gpu_and_reject_cuda_spelling():
+    args = parse("fit", "train.arrow", "--seq-len", "20", "--device", "gpu")
+
+    assert args.device == "gpu"
+
+    with pytest.raises(SystemExit):
+        parse("fit", "train.arrow", "--seq-len", "20", "--device", "cuda")
 
 
 def test_predict_namespace_keeps_checkpoint_validation_overrides():
@@ -563,7 +574,6 @@ def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
         ("--weight-decay", "nan"),
         ("--batch-size", "0"),
         ("--epochs", "0"),
-        ("--stage-size", "0"),
         ("--selection-patience", "-1"),
         ("--seed", "-1"),
     ),
@@ -637,7 +647,7 @@ def test_training_seed_options_are_plumbed_into_train_config():
     assert config.to_dict()["deterministic"] is True
 
 
-def test_direct_loss_weights_are_plumbed_into_train_config():
+def test_direct_loss_weights_are_plumbed_into_local_objective():
     args = parse(
         "fit",
         "train.arrow",
@@ -647,9 +657,9 @@ def test_direct_loss_weights_are_plumbed_into_train_config():
         "1,2,3,4,5,6",
     )
 
-    config = train_config_from_args(args)
+    objective = objective_config_from_args(args)
 
-    assert config.direct_loss_weights == (1, 2, 3, 4, 5, 6)
+    assert objective.direct_loss_weights == (1, 2, 3, 4, 5, 6)
 
 
 @pytest.mark.parametrize("action", ("fit", "fit-stream"))
@@ -709,7 +719,7 @@ def test_bounded_training_options_are_validated_by_argparse(options):
         ({"seq_len": 10, "layers": 0}, "layers"),
         ({"seq_len": 10, "dropout": 1.0}, "dropout"),
         ({"seq_len": 10, "context_mode": "unknown"}, "context_mode"),
-        ({"seq_len": 10, "out_dim": 5}, "out_dim"),
+        ({"seq_len": 10, "out_dim": 7}, "out_dim"),
         ({"seq_len": 10, "feature_dim": 0}, "feature_dim"),
     ),
 )
@@ -724,9 +734,7 @@ def test_model_config_validates_programmatic_values(kwargs, message):
         ({"lr": 0}, "lr"),
         ({"batch_size": 0}, "batch_size"),
         ({"epochs": 0}, "epochs"),
-        ({"loss_stage": 3}, "loss_stage"),
         ({"weight_decay": -1}, "weight_decay"),
-        ({"direct_loss_weights": (1, 1, 1, 1, 1, 0)}, "direct_loss_weights"),
         ({"selection": {"minDelta": -1, "patience": 1}}, "min_delta"),
         ({"seed": 2**32}, "seed"),
     ),
@@ -748,6 +756,32 @@ def test_device_auto_selects_cuda_only_when_available(monkeypatch):
         lambda: False,
     )
     assert get_device("auto").type == "cpu"
+
+
+def test_public_gpu_device_maps_to_internal_cuda(monkeypatch):
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: True,
+    )
+
+    device = get_cli_device("gpu")
+
+    assert device.type == "cuda"
+    assert device_name(device) == "gpu"
+    with pytest.raises(ValueError, match="Unsupported device: cuda"):
+        get_cli_device("cuda")
+
+
+def test_public_gpu_unavailability_does_not_expose_backend_name(monkeypatch):
+    monkeypatch.setattr(
+        "app.worker.runtime.device.torch.cuda.is_available",
+        lambda: False,
+    )
+
+    with pytest.raises(RuntimeError, match=r"GPU .* not available") as error:
+        get_cli_device("gpu")
+
+    assert error.value.__cause__ is None
 
 
 def test_explicit_cuda_errors_when_unavailable(monkeypatch):

@@ -4,18 +4,17 @@
 > training telemetry локального CLI и Flight worker.
 
 Параметры команд находятся в [справочнике CLI](./cli/index.md). Состав model
-heads, формулы loss components и stage composition принадлежат
-[описанию функции потерь](./losses.md), а schedule transitions, checkpoint
-selection, recovery и runtime telemetry — этому документу. Нормативный remote
-ML-контракт находится в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md).
+heads, declarative objective и формулы loss operators принадлежат
+[описанию функции потерь](./losses.md), а checkpoint selection, recovery и
+runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
+[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
 
 ## Checkpoint contract
 
-Текущий формат — `transformer-checkpoint-v4`. Он содержит только закрытый
+Текущий формат — `transformer-checkpoint-v5`. Он содержит только закрытый
 набор полей:
 
 - `state_dict` и версию приложения;
@@ -23,52 +22,59 @@ Rationale target-aligned public semantics сохранён в
 - physical/model input schema;
 - `data_contract`;
 - полный `ml_contract` с `objectiveConfigSha256`;
-- каноническую `objective_config`;
+- канонический документ `objective` с выбранными targets;
 - metadata выбора checkpoint.
 
-Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `dropout`,
-`nhead`, `context_mode` и public `out_dim=6`. Фактическая модель имеет ещё одну
-private uncertainty head, которая не меняет public width.
+Checkpoint, опубликованный Flight fit, дополнительно сохраняет разрешённый
+`initialization` с lineage parent checkpoint. У локального fit parent
+отсутствует и отдельная Flight lineage metadata не создаётся.
 
-Loader принимает только точный формат v4. Предыдущие wrapped и raw legacy
+Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `dropout`,
+`nhead`, `context_mode` и public `out_dim`. Значение `out_dim` равно числу
+выбранных targets от `1` до `6`. Private `returnScale` head существует только
+для objective с `GaussianNLL` или `RiskAdjustedExpectedValue` и не меняет
+public width.
+
+Loader принимает только точный формат v5. Предыдущие wrapped и raw legacy
 checkpoint не интерпретируются автоматически. Для Flight prediction другой
 корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
 противоречивой semantic metadata даёт `MODEL_CORRUPT`.
 
-`fit` и `fit-stream` всегда создают новую модель. `--checkpoint-out` задаёт
-конечную цель: существующий файл атомарно заменяется только после успешного
-обучения и validation.
+Локальные `fit` и `fit-stream` всегда начинают со случайной инициализации.
+`--checkpoint-out` задаёт конечную цель: существующий файл атомарно заменяется
+только после успешного обучения и validation.
 
-## Target-aligned objective
+Flight fit также может использовать опубликованную generation как weights-only
+warm start. Parent checkpoint должен иметь те же model/data/ML contracts;
+optimizer, AMP scaler, RNG, progress и checkpoint selection не наследуются.
+Результатом остаётся новая immutable generation, а не изменение parent и не
+продолжение его training run. Точную wire-форму `initialization` задаёт
+[Flight contract](../app/contracts/flight/v8/README.md#инициализация-fit-и-lineage-модели).
+Recovery относится к состоянию уже созданного нового job.
 
-Публичный prediction имеет шесть координат в том же порядке, что target:
+## Target selection и objective
+
+Flight fit выбирает каноническое непустое подмножество:
 
 ```text
 MeanReturn, SigmaReturn, ProbTP, ProbSL, VolatilityNext, HittingProbTP
 ```
 
-Для каждой координаты JSONL содержит отдельные MAE и RMSE. Общая MAE/MSE по
-шести разнородным величинам не вычисляется и не используется для оценки
-модели. `trainingLoss` может содержать direct и auxiliary components, но
-checkpoint selection использует только прямые `L0…L5`.
+`tgt`, model heads, prediction и per-target telemetry содержат только выбранные
+координаты в этом порядке. Общая MAE/MSE по разнородным величинам не
+вычисляется и не используется для оценки модели. Полный `{targets, objective}`
+входит в `objectiveConfigSha256`; все объявленные losses активны с первого
+optimizer step.
 
-## Loss schedule
-
-Максимальный `--loss-stage` зафиксирован в `4`. Способы перехода:
-
-- `none` — stage 4 активен с первого optimizer step;
-- `epoch` — stage повышается каждые `--stage-size` epochs;
-- `step` — stage повышается каждые `--stage-size` завершённых training
-  batches и может смениться внутри epoch.
-
-Stage 4 непосредственно обучает все шесть public heads. Запуск, в котором не
-завершилась ни одна полная epoch stage 4, считается ошибочным и не публикует
-checkpoint.
+Training policy задаёт optimizer, число epochs, weight decay, reproducibility,
+AMP и optional checkpoint selection. Она сохраняется отдельно от objective и
+не меняет его digest. Execution diagnostics также имеют отдельную schema и не
+влияют на model identity.
 
 ## Selection и early stopping
 
 По умолчанию selection выключен: выполняется фиксированное число epochs и
-сохраняется последний checkpoint максимального stage.
+сохраняется checkpoint последней epoch.
 
 Включение:
 
@@ -80,17 +86,17 @@ checkpoint.
   --selection-patience=5
 ```
 
-Selection начинает работать только после полной epoch stage 4. При входе в
-этот режим прежние best/patience/baseline сбрасываются. Score равен сумме шести
-direct losses с положительными `--direct-loss-weights`, агрегированных по всем
-строкам. Auxiliary NLL и EV не участвуют.
+Selection работает с первой завершённой epoch. Score равен сумме direct losses
+выбранных targets с положительными objective weights, агрегированных по всем
+строкам. Auxiliary losses не участвуют.
 
 Candidate принимается только при `score < best - minDelta`; tie сохраняет
 ранний checkpoint. Нефинитный или неполный score завершает обучение ошибкой.
 `--selection-patience=0` отключает остановку, но сохраняет выбор лучшего
 candidate.
 
-Вся selection policy входит в `objectiveConfigSha256` и recovery state.
+Selection policy входит в `train_config` и recovery state, но не в
+`objectiveConfigSha256`.
 
 ## File, standalone stream и Flight fit
 
@@ -116,7 +122,7 @@ replay с проверкой schema и row count.
 
 ## Recovery
 
-Текущий формат — `transformer-training-recovery-v4`. Checkpoint создаётся
+Текущий формат — `transformer-training-recovery-v5`. Checkpoint создаётся
 только на границе завершённой global epoch после EOF и содержит:
 
 - model, optimizer и AMP scaler state;
@@ -155,19 +161,20 @@ Core loss scalars и optional target/gradient observations по-прежнему
 материализована, trainer повторяет только core transfer и продолжает обучение
 без telemetry текущей epoch.
 
-Компактная строка epoch выглядит так:
+Компактная строка epoch для выбранных targets выглядит так:
 
 ```text
-epoch=4 selection=0.1842 loss=0.233100 mean_mae=0.012 sigma_mae=0.021 tp_mae=0.11 sl_mae=0.10 vol_mae=0.03 hit_mae=0.09 grad_mean=1.000 rows=67249 batches=263 time=181.7s stage=4/4
+epoch=4 selection=0.1842 loss=0.233100 MeanReturn_mae=0.012 SigmaReturn_mae=0.021 grad_mean=1.000 rows=67249 batches=263 time=181.7s
 ```
 
-`selection=n/a` означает, что текущая epoch не является полной epoch
-максимального stage либо selection выключен.
+`selection=n/a` означает, что checkpoint selection выключен.
 
 JSONL содержит:
 
-- `loss`, `loss_l0…loss_l5`, `loss_nll`, `loss_ev`;
-- по каждой public semantic поля `<name>_mae` и `<name>_rmse`;
+- `loss`, структурированные `directLosses` и `auxiliaryLosses`;
+- `targets` и структурированные `targetMetrics` с MAE/RMSE;
+- optional `gradientInteractions` с числом samples, mean component norms и
+  mean pairwise cosine;
 - `selection_score`, `checkpoint_best`, `best_selection_score`;
 - `trainingBatchesCompleted`, `optimizerUpdatesApplied`,
   `optimizerUpdatesSkipped`, `ampOverflowBatches`;
@@ -175,7 +182,6 @@ JSONL содержит:
   `preClipGradientNormMean`, `preClipGradientNormMax`,
   `preClipGradientNormP95`;
 - `rows`, `batches`, `step`, `lr`;
-- `loss_stage`, `minimum_loss_stage`, `maximum_loss_stage`;
 - `nan_ratio`, `masked_token_ratio`, `complete_token_ratio`,
   `partial_token_ratio`, `empty_token_ratio`;
 - `input_pipeline_ms`, `missing_stats_ms`, `host_to_device_ms`,
@@ -196,9 +202,16 @@ trainingBatchesCompleted
   = finiteGradientBatches + nonFiniteGradientBatches
 ```
 
-Mean, max и P95 считаются только по finite pre-clip gradient norms. P95
+Mean, max и P95 считаются только по finite pre-clip full-model gradient norms. P95
 использует nearest-rank policy; если все norms non-finite, эти три поля равны
 `null`.
+
+Если `diagnostics.gradientInteractions` задан, sample выполняется после каждого
+указанного числа optimizer steps. Для выбранного batch сохраняются gradients
+objective components относительно общей representation model head. Нулевой
+norm не превращается в искусственный cosine: такая пара не входит в итоговое
+среднее. Diagnostics увеличивает стоимость только sampled steps и остаётся
+best-effort telemetry.
 
 Сохранение и визуализация:
 

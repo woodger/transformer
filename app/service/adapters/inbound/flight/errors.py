@@ -56,7 +56,7 @@ def to_flight_exception(error: ServiceError) -> Exception:
         ErrorCode.SUBPROCESS_FAILED,
         ErrorCode.SUBPROCESS_HUNG,
         ErrorCode.MALFORMED_OUTPUT,
-        ErrorCode.CUDA_OUT_OF_MEMORY,
+        ErrorCode.GPU_OUT_OF_MEMORY,
         ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
         ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
         ErrorCode.RECOVERY_INPUT_UNAVAILABLE,

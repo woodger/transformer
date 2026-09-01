@@ -11,14 +11,12 @@ production-риск. Он не должен фиксировать случай�
 
 ## Текущая граница
 
-Основной набор полностью самодостаточен. Он не требует PostgreSQL, OpenSearch,
-внешней сети, credentials или заранее подготовленных системных ресурсов и не
-содержит условно пропускаемых тестов. Внутри процесса допустимы временные файлы,
-loopback Flight server и bounded child processes: тест сам создаёт их и всегда
-освобождает.
-
-GPU-сценарии выделены единственным resource marker `gpu` и запускаются явно.
-Обычный запуск исключает их через конфигурацию `pyproject.toml`.
+Полный набор не требует PostgreSQL, OpenSearch, внешней сети или credentials.
+GPU-сценарии выполняются автоматически при наличии доступного CUDA device и
+явно пропускаются в остальных средах. Все прочие сценарии полностью
+самодостаточны и не содержат условных infrastructure skips. Внутри процесса
+допустимы временные файлы, loopback Flight server и bounded child processes:
+тест сам создаёт их и всегда освобождает.
 
 Полноценные PostgreSQL и сквозные integration tests будут спроектированы после
 появления выделенной инфраструктуры. Сейчас в проекте нет `postgres` marker,
@@ -37,20 +35,14 @@ unit test или mock database.
 
 ## Запуск
 
-Основной набор:
+Полный набор:
 
 ```bash
 ./.venv/bin/python -m pytest
 ```
 
-GPU-сценарии:
-
-```bash
-./.venv/bin/python -m pytest -m gpu
-```
-
-Это полный набор штатных pytest-команд проекта. Дополнительные marker profiles
-и специальные команды для отдельных видов integration tests не поддерживаются.
+Это единственная штатная pytest-команда проекта. Marker profiles и специальные
+команды для отдельных видов integration tests не поддерживаются.
 
 GPU test может быть фактически проверен только в среде с доступным CUDA device.
 Skip в такой среде не считается успешной проверкой GPU-поведения.
@@ -71,7 +63,7 @@ CUDA/AMP и serialization.
 
 ```text
 tests/unit/{admin,cli,local,service,worker}
-tests/contract/{flight_v5,worker_v7,metrics_v3,metrics_fit_run_v2}
+tests/contract/{flight_v8,worker_v9,metrics_v4,metrics_fit_run_v3}
 tests/integration/{flight,worker_process}
 tests/architecture
 tests/support
@@ -126,8 +118,8 @@ assertions по прежним путям, именам packages и legacy sourc
 
 ## Contracts
 
-Contract tests проверяют нормативные schemas и golden fixtures Flight v5,
-worker v7 и metrics contracts. Fixture обновляется только при намеренном
+Contract tests проверяют нормативные schemas и golden fixtures Flight v8,
+worker v9 и metrics contracts. Fixture обновляется только при намеренном
 изменении contract, а не ради прохождения падающего теста.
 
 Cross-language проверки используют локальный Node.js без npm dependencies и

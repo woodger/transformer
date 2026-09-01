@@ -5,6 +5,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
+from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.data.arrow import (
     iter_framed_arrow,
     read_arrow,
@@ -136,6 +137,7 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
         str(path),
         expected_rows=2,
         source_width=4,
+        targets=TARGET_IDENTITIES,
     )
 
     assert batch.features.shape == (2, 4)

@@ -8,7 +8,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 
-from app.contracts.metrics.v3 import (
+from app.contracts.metrics.v4 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     build_training_record,
@@ -45,6 +45,7 @@ def publish_training_metrics(
     checkpoint_format: str,
     application_version: str,
     git_commit: str,
+    targets: Sequence[str],
 ) -> StagedTrainingMetrics:
     if not intervals:
         raise ValueError("fit run telemetry requires committed epoch metrics")
@@ -93,6 +94,7 @@ def publish_training_metrics(
                 checkpoint_format=checkpoint_format,
                 application_version=application_version,
                 git_commit=git_commit,
+                targets=targets,
             )
             encoded = (
                 json.dumps(

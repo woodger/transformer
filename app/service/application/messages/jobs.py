@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
@@ -45,6 +45,7 @@ class CreateJobCommand:
     model_ref: str | None = None
     model_config: ModelConfig | None = None
     training_config: TrainConfig | None = None
+    initialization_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +139,7 @@ class JobCreated:
     data_contract: JsonObject
     ml_contract: JsonObject
     limits: ServiceLimits
+    initialization: JsonObject | None
 
 
 @dataclass(frozen=True, slots=True)

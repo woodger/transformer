@@ -13,19 +13,23 @@ from typing import TypedDict, cast
 import numpy as np
 import torch
 
-from app.contracts.json_types import JsonValue
-from app.contracts.worker.v7.config import (
+from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.worker.v9.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v7.objective import objective_config_sha256
+from app.contracts.worker.v9.objective import (
+    ObjectiveConfig,
+    objective_config_sha256,
+)
 from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.context import context_missingness_ratios
 from app.worker.model.transformer import public_predictions
 from app.worker.telemetry import (
     EpochTelemetry,
+    GradientInteractionObservation,
     ObservedTrainingEpoch,
     TargetErrorObservation,
     append_epoch_telemetry,
@@ -34,13 +38,7 @@ from app.worker.telemetry import (
 from app.worker.training.batching import Closable, PayloadBatcher, TrainingBatches
 from app.worker.training.constants import GRAD_CLIP_NORM
 from app.worker.training.early_stopping import SelectionState
-from app.worker.training.loss_scheduler import LossScheduler
-from app.worker.training.losses import (
-    combined_loss,
-    validate_loss_schedule,
-    validate_loss_stage,
-    validate_stage_size,
-)
+from app.worker.training.losses import combined_loss
 from app.worker.training.parameter_stats import parameter_tree_stats
 from app.worker.training.training_state import TrainingState
 
@@ -74,31 +72,34 @@ class Trainer:
         model: torch.nn.Module,
         device: torch.device,
         train_config: TrainConfig,
+        objective: ObjectiveConfig,
         *,
         metrics_path: str | None = None,
         context_mode: str = DEFAULT_CONTEXT_MODE,
         metrics_context: Mapping[str, JsonValue] | None = None,
         model_config: ModelConfig | None = None,
         data_contract: Mapping[str, object] | None = None,
+        initialization: Mapping[str, object] | None = None,
     ) -> None:
         self.model = model
         self.device = device
         self.train_config = train_config
+        self.objective = objective
         self.batch_size = train_config.batch_size
         self._batcher = PayloadBatcher(self.batch_size)
         self.epochs = train_config.epochs
-        self.loss_stage = validate_loss_stage(train_config.loss_stage)
-        self.loss_schedule = validate_loss_schedule(
-            train_config.loss_schedule
-        )
-        self.stage_size = validate_stage_size(train_config.stage_size)
-        self.direct_loss_weights = train_config.direct_loss_weights
+        self.direct_loss_weights = objective.direct_loss_weights
         self.selection = train_config.selection
         self.metrics_path = metrics_path
         self.context_mode = context_mode
         self.model_config = model_config
         self.data_contract = (
             None if data_contract is None else dict(data_contract)
+        )
+        self.initialization: JsonObject | None = (
+            None
+            if initialization is None
+            else cast(JsonObject, dict(initialization))
         )
         self.seed = train_config.seed
         self.best_selection_score: float = float("inf")
@@ -114,22 +115,15 @@ class Trainer:
                 self.selection.patience,
             )
         )
-        self.maximum_stage_completed = False
         self.training_complete = False
         self._payload_shuffle_generator = torch.Generator()
         self._payload_shuffle_generator.manual_seed(self.seed)
-        self.loss_scheduler = LossScheduler(
-            loss_schedule=self.loss_schedule,
-            stage_size=self.stage_size,
-            max_stage=self.loss_stage,
-        )
         self.metrics_context: dict[str, JsonValue] = {
             "batch_size": self.batch_size,
-            "loss_schedule": self.loss_schedule,
-            "stage_size": self.stage_size,
-            "max_loss_stage": self.loss_stage,
             "device": str(self.device),
             "selection_enabled": self.selection is not None,
+            "targets": list(self.objective.targets),
+            "objective_config_sha256": self._objective_config_sha256(),
         }
         if metrics_context:
             self.metrics_context.update(metrics_context)
@@ -178,10 +172,11 @@ class Trainer:
     ) -> ObservedTrainingEpoch:
         self.model.train()
         epoch_result = ObservedTrainingEpoch(
+            targets=self.objective.targets,
+            auxiliary_operators=self.objective.auxiliary_operators,
             lr=self.optimizer.param_groups[0]["lr"],
             step=self.state.train_step,
-            loss_stage=self._loss_stage_for(),
-            telemetry=EpochTelemetry(),
+            telemetry=EpochTelemetry(targets=self.objective.targets),
         )
         started = time.perf_counter()
 
@@ -201,7 +196,6 @@ class Trainer:
                             time.perf_counter() - phase_started
                         ) * 1000
 
-                    loss_stage = self._loss_stage_for()
                     batch_rows = batch.features.size(0)
                     phase_started = time.perf_counter()
                     missingness_ratios: dict[str, float] = {}
@@ -229,16 +223,57 @@ class Trainer:
                     phase_started = time.perf_counter()
                     self.optimizer.zero_grad()
 
+                    gradient_observation: GradientInteractionObservation | None = None
+                    shared_representation: torch.Tensor | None = None
+                    sample_gradient_interactions = (
+                        epoch_result.telemetry is not None
+                        and self._sample_gradient_interactions()
+                    )
+                    raw_forward = getattr(
+                        self.model,
+                        "forward_with_shared_representation",
+                        None,
+                    )
+                    if sample_gradient_interactions and not callable(raw_forward):
+                        self._disable_epoch_telemetry(
+                            epoch_result,
+                            ValueError(
+                                "gradient diagnostics require a Transformer model"
+                            ),
+                        )
+                        sample_gradient_interactions = False
+
                     with self._autocast():
-                        model_output = self.model(batch_features)
+                        if sample_gradient_interactions:
+                            forward = cast(
+                                Callable[
+                                    [torch.Tensor],
+                                    tuple[torch.Tensor, torch.Tensor],
+                                ],
+                                raw_forward,
+                            )
+                            model_output, shared_representation = forward(
+                                batch_features
+                            )
+                        else:
+                            model_output = self.model(batch_features)
+                            shared_representation = None
                         loss_evaluation = combined_loss(
                             model_output,
                             batch_targets,
-                            loss_stage,
-                            self.direct_loss_weights,
+                            self.objective,
                             return_statistics=True,
                         )
                         loss = loss_evaluation.loss
+
+                    if shared_representation is not None:
+                        try:
+                            gradient_observation = GradientInteractionObservation.evaluate(
+                                loss_evaluation.diagnostic_components,
+                                shared_representation,
+                            )
+                        except Exception as exc:
+                            self._disable_epoch_telemetry(epoch_result, exc)
 
                     target_error_observation: TargetErrorObservation | None = None
                     if epoch_result.telemetry is not None:
@@ -247,6 +282,10 @@ class Trainer:
                                 TargetErrorObservation.evaluate(
                                     model_output,
                                     batch_targets,
+                                    self.objective.targets,
+                                    include_return_scale=(
+                                        self.objective.requires_return_scale
+                                    ),
                                 )
                             )
                         except Exception as exc:
@@ -287,11 +326,14 @@ class Trainer:
                         materialized_statistics = (
                             loss_evaluation.statistics.materialize()
                         )
-                    loss_parts = materialized_statistics.parts
                     grad_norm_value = materialized_statistics.grad_norm
-                    loss_parts["step"] = self.state.finish_step()
+                    step = self.state.finish_step()
 
-                    epoch_result.update(batch_rows, loss_parts)
+                    epoch_result.update(
+                        batch_rows,
+                        materialized_statistics,
+                        step=step,
+                    )
                     telemetry = epoch_result.telemetry
                     if telemetry is not None and target_error_observation is not None:
                         try:
@@ -310,6 +352,10 @@ class Trainer:
                                 ),
                                 **missingness_ratios,
                             )
+                            if gradient_observation is not None:
+                                telemetry.observe_gradient_interactions(
+                                    gradient_observation.materialize()
+                                )
                             telemetry.train_step_ms += (
                                 time.perf_counter() - phase_started
                             ) * 1000
@@ -351,37 +397,29 @@ class Trainer:
         checkpoint_best = False
         should_stop = False
         selection_score = None
-        maximum_stage_epoch = (
-            metrics.minimum_loss_stage == self.loss_stage
-            and metrics.maximum_loss_stage == self.loss_stage
-        )
-        if maximum_stage_epoch:
-            self.maximum_stage_completed = True
-            if self.selection_state is not None:
-                if not self.selection_state.active:
-                    self._reset_selection()
-                components = metrics.direct_losses()
-                selection_score = math.fsum(
-                    weight * value
-                    for weight, value in zip(
-                        self.direct_loss_weights,
-                        components,
-                        strict=True,
-                    )
+        if self.selection_state is not None:
+            if not self.selection_state.active:
+                self._reset_selection()
+            components = metrics.direct_losses()
+            selection_score = math.fsum(
+                weight * value
+                for weight, value in zip(
+                    self.direct_loss_weights,
+                    components,
+                    strict=True,
                 )
-                if not math.isfinite(selection_score):
-                    raise ValueError("checkpoint selection score must be finite")
-                selection_decision = self.selection_state.update(
-                    selection_score,
-                )
-                checkpoint_best = selection_decision.improved
-                should_stop = selection_decision.should_stop
-                metrics.selection_score = selection_score
-                if checkpoint_best:
-                    self.best_selection_score = selection_score
-                    self.best_state_dict = self._snapshot_state_dict()
-                    self.best_frame = frame
-                    self.best_epoch = epoch
+            )
+            if not math.isfinite(selection_score):
+                raise ValueError("checkpoint selection score must be finite")
+            selection_decision = self.selection_state.update(selection_score)
+            checkpoint_best = selection_decision.improved
+            should_stop = selection_decision.should_stop
+            metrics.selection_score = selection_score
+            if checkpoint_best:
+                self.best_selection_score = selection_score
+                self.best_state_dict = self._snapshot_state_dict()
+                self.best_frame = frame
+                self.best_epoch = epoch
 
         return {
             "selection_score": selection_score,
@@ -419,8 +457,12 @@ class Trainer:
         }
         self.model.load_state_dict(state_dict)
 
-    def _loss_stage_for(self) -> int:
-        return self.loss_scheduler.stage_for(self.state)
+    def _sample_gradient_interactions(self) -> bool:
+        interval = self.train_config.diagnostics.gradient_sample_every_steps
+        return (
+            interval is not None
+            and (self.state.train_step + 1) % interval == 0
+        )
 
     def fit_batch(
         self,
@@ -499,10 +541,6 @@ class Trainer:
             self.training_complete = (
                 should_stop or self.state.global_epoch >= self.epochs
             )
-            if self.training_complete and not self.maximum_stage_completed:
-                raise ValueError(
-                    "training completed before the maximum loss stage"
-                )
             if on_epoch_committed is not None:
                 on_epoch_committed(
                     epoch,
@@ -624,7 +662,6 @@ class Trainer:
                 "cuda": cuda_rng_state,
             },
             "training_complete": self.training_complete,
-            "maximum_stage_completed": self.maximum_stage_completed,
         }
 
     def load_recovery_state_dict(
@@ -644,7 +681,6 @@ class Trainer:
             "payload_shuffle_generator_state",
             "rng",
             "training_complete",
-            "maximum_stage_completed",
         }
         if set(payload) != required:
             raise ValueError("training recovery state has invalid fields")
@@ -818,10 +854,6 @@ class Trainer:
             payload["training_complete"],
             "training completion marker",
         )
-        self.maximum_stage_completed = _boolean(
-            payload["maximum_stage_completed"],
-            "maximum stage completion marker",
-        )
 
     def fit(
         self,
@@ -865,14 +897,22 @@ class Trainer:
         self.model.eval()
         with torch.no_grad(), self._autocast():
             if features.size(0) == 0:
-                return public_predictions(self.model(features.to(self.device)))
+                return public_predictions(
+                    self.model(features.to(self.device)),
+                    self.objective.targets,
+                    include_return_scale=self.objective.requires_return_scale,
+                )
 
             predictions = None
             for offset in range(0, features.size(0), self.batch_size):
                 batch_features = features[
                     offset:offset + self.batch_size
                 ].to(self.device)
-                batch_predictions = public_predictions(self.model(batch_features))
+                batch_predictions = public_predictions(
+                    self.model(batch_features),
+                    self.objective.targets,
+                    include_return_scale=self.objective.requires_return_scale,
+                )
                 if predictions is None:
                     predictions = torch.empty(
                         (features.size(0), *batch_predictions.shape[1:]),
@@ -904,6 +944,7 @@ class Trainer:
             self.model,
             model_config=self.model_config,
             train_config=self.train_config,
+            objective=self.objective,
             data_contract=self.data_contract,
             extra={
                 "checkpoint_selection": {
@@ -919,9 +960,14 @@ class Trainer:
                     "source": (
                         "best_selection_score"
                         if self.best_state_dict is not None
-                        else "last_maximum_stage"
+                        else "last_epoch"
                     ),
                 },
+                **(
+                    {}
+                    if self.initialization is None
+                    else {"initialization": self.initialization}
+                ),
             },
         )
 
@@ -936,9 +982,7 @@ class Trainer:
             if key in context:
                 fields[key] = context[key]
         fields.update({
-            "loss_schedule": context["loss_schedule"],
-            "stage_size": context["stage_size"],
-            "max_loss_stage": context["max_loss_stage"],
+            "targets": ",".join(self.objective.targets),
             "selection": "on" if self.selection is not None else "off",
             "context_mode": self.context_mode,
             "amp": self.use_amp,
@@ -948,7 +992,7 @@ class Trainer:
         )
 
     def _objective_config_sha256(self) -> str:
-        return objective_config_sha256(self.train_config)
+        return objective_config_sha256(self.objective)
 
     def record_metrics(
         self,

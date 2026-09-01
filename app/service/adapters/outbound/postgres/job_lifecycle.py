@@ -111,7 +111,7 @@ class PostgresJobLifecycle:
                 )
 
             model = None
-            if command.operation == "predict":
+            if command.model_ref is not None:
                 model = self._resolve_model(command, connection)
             prepared = prepare(model)
             encoded = _encode_created(prepared.result)
@@ -130,6 +130,7 @@ class PostgresJobLifecycle:
                 resolved_model_ref=prepared.resolved_model_ref,
                 model_config=prepared.model_config,
                 training_config=prepared.training_config,
+                initialization=prepared.result.initialization,
                 connection=connection,
             )
             created = True
@@ -322,8 +323,8 @@ class PostgresJobLifecycle:
     ) -> PublishedModelRecord:
         model_ref = command.model_ref
         if model_ref is None:
-            raise ValueError("predict command requires a model reference")
-        if command.model_selector == "alias":
+            raise ValueError("job command requires a model reference")
+        if command.operation == "predict" and command.model_selector == "alias":
             model = self.ledger.resolve_published_model_alias(
                 command.owner_subject,
                 model_ref,
@@ -408,6 +409,7 @@ def _encode_created(result: JobCreated) -> JsonObject:
         "resolved_model_ref": result.resolved_model_ref,
         "data_contract": dict(result.data_contract),
         "ml_contract": dict(result.ml_contract),
+        "initialization": result.initialization,
         "limits": _encode_limits(result.limits),
     }
 
@@ -438,6 +440,7 @@ def _decode_created(document: JsonObject) -> JobCreated:
             ),
             data_contract=_object(document, "data_contract"),
             ml_contract=_object(document, "ml_contract"),
+            initialization=_optional_object(document, "initialization"),
             limits=_decode_limits(_object(document, "limits")),
         )
     ownership = _object(document, "ownership")
@@ -462,6 +465,7 @@ def _decode_created(document: JsonObject) -> JobCreated:
             _object(document, "dataContract")
         ),
         ml_contract=_object(document, "mlContract"),
+        initialization=_optional_object(document, "initialization"),
         limits=_wire_limits(_object(document, "limits")),
     )
 
@@ -702,6 +706,17 @@ def _object(document: JsonObject, key: str) -> JsonObject:
     value = _value(document, key)
     if not isinstance(value, dict):
         raise ValueError(f"stored result field {key} must be an object")
+    return value
+
+
+def _optional_object(document: JsonObject, key: str) -> JsonObject | None:
+    value = document.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"stored result field {key} must be an object or null"
+        )
     return value
 
 

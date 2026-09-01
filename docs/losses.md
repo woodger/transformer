@@ -1,85 +1,109 @@
 # Функция потерь
 
-> Тип: справочник. Текущая семантика loss stages и model heads.
+> Тип: справочник. Текущая семантика model heads и декларативного objective.
 
-Нормативную public target identity задаёт текущий
-[`Flight v5 contract`](../app/contracts/flight/v5/README.md). Внутри worker
-модель возвращает семь значений: шесть public heads и один private Gaussian
-scale. Flight boundary публикует только первые шесть в target-space.
+Нормативные wire schema и public target identity задаёт
+[`Flight v8 contract`](../app/contracts/flight/v8/README.md). Consumer выбирает
+каноническое непустое подмножество из следующего target universe:
 
-| Индекс | Public semantic | Внутреннее представление | Диапазон prediction |
+| Public semantic | Внутреннее представление | Direct operator | Диапазон prediction |
 | --- | --- | --- | --- |
-| `0` | `MeanReturn` | `tanh(meanHead)` | `[-1, 1]` |
-| `1` | `SigmaReturn` | `sigmoid(sigmaHead)` | `[0, 1]` |
-| `2` | `ProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
-| `3` | `ProbSL` | logit; при публикации `sigmoid` | `[0, 1]` |
-| `4` | `VolatilityNext` | `sigmoid(volatilityHead)` | `[0, 1]` |
-| `5` | `HittingProbTP` | logit; при публикации `sigmoid` | `[0, 1]` |
-| private | `returnScale` | `softplus(scaleHead) + 1e-6` | не публикуется |
+| `MeanReturn` | `tanh(head)` | `SmoothL1` | `[-1, 1]` |
+| `SigmaReturn` | `sigmoid(head)` | `SmoothL1` | `[0, 1]` |
+| `ProbTP` | logit; при публикации `sigmoid` | `BinaryCrossEntropyWithLogits` | `[0, 1]` |
+| `ProbSL` | logit; при публикации `sigmoid` | `BinaryCrossEntropyWithLogits` | `[0, 1]` |
+| `VolatilityNext` | `sigmoid(head)` | `LogMSE` | `[0, 1]` |
+| `HittingProbTP` | logit; при публикации `sigmoid` | `BinaryCrossEntropyWithLogits` | `[0, 1]` |
 
-`SigmaReturn` — нормализованная public target-координата, а не Gaussian scale.
-`ProbTP` и `ProbSL` независимы и не обязаны давать сумму `1`.
+Порядок выбранных targets сохраняет порядок этой таблицы. Worker физически
+создаёт только выбранные public heads; `tgt` и prediction имеют ту же ширину и
+тот же порядок. `SigmaReturn` — public target-координата, а не private
+Gaussian scale. `ProbTP` и `ProbSL` независимы и не обязаны давать сумму `1`.
+
+## Declarative objective v1
+
+Fit create передаёт отдельные поля `targets` и `objective`. Полный canonical
+документ `{targets, objective}` хешируется по RFC 8785/JCS и сохраняется в
+`mlContract`, checkpoint и model metadata.
+
+Закрытая objective schema v1 фиксирует:
+
+- `aggregation: "WeightedSum"`;
+- `reduction: "GlobalRowMean"`;
+- ровно один direct loss для каждого выбранного target в том же порядке;
+- ноль или более совместимых auxiliary losses;
+- строго положительные статические веса;
+- `balancing: {"operator": "Static"}`.
+
+Ни training policy, ни device/AMP, ни diagnostics в objective identity не
+входят. Все объявленные компоненты активны с первого optimizer step; loss
+stages и stage schedule отсутствуют.
 
 ## Прямые компоненты
 
-Каждая target-координата непосредственно обучает одноимённую public head:
+Для выбранной координаты `i` Transformer применяет закреплённый за semantic
+operator:
 
 ```text
-L0 = mean(SmoothL1(MeanReturn, target[0]))
-L1 = mean(SmoothL1(SigmaReturn, target[1]))
-L2 = mean(BCEWithLogits(probTpLogit, target[2]))
-L3 = mean(BCEWithLogits(probSlLogit, target[3]))
-L4 = mean((log(VolatilityNext + 1e-6)
-           - log(target[4] + 1e-6))²)
-L5 = mean(BCEWithLogits(hittingProbTpLogit, target[5]))
+SmoothL1:
+  mean(SmoothL1(publicHead[i], target[i]))
+
+BinaryCrossEntropyWithLogits:
+  mean(BCEWithLogits(publicLogit[i], target[i]))
+
+LogMSE:
+  mean((log(publicHead[i] + 1e-6) - log(target[i] + 1e-6))²)
 ```
 
-На максимальном stage все шесть весов `w0…w5` строго положительны:
-
-```text
-directLoss = Σ wi × Li
-```
-
-`--direct-loss-weights` задаёт веса в порядке target vector.
+Итоговая прямая часть равна сумме `weight × directLoss`. Подмена operator для
+конкретного target, пропуск direct loss или другой порядок отклоняются до
+создания job.
 
 ## Вспомогательные компоненты
 
-Private Gaussian NLL использует только `MeanReturn`, `target[0]` и отдельный
-`returnScale`:
+`GaussianNLL` требует `MeanReturn` и добавляет private `returnScale` head:
 
 ```text
 variance = returnScale² + 1e-6
 gaussianNll = mean(0.5 × (
-  (target[0] - MeanReturn)² / variance + log(variance)
+  (target[MeanReturn] - prediction[MeanReturn])² / variance
+  + log(variance)
 ))
 ```
 
-Значение Gaussian NLL может быть отрицательным при малой дисперсии. Это само по
-себе не означает ошибку.
+Gaussian NLL может быть отрицательным при малой дисперсии; это само по себе не
+означает ошибку.
 
-EV/risk regularizer использует независимые вероятности TP и SL:
+`ExpectedValue` требует `ProbTP` и `ProbSL`:
 
 ```text
-ev = sigmoid(probTpLogit) - sigmoid(probSlLogit)
-risk = detach(returnScale) × abs(ev)
-expectedValueLoss = -0.3 × mean(ev - 0.1 × risk)
+delta = prediction[ProbTP] - prediction[ProbSL]
+expectedValueLoss = -mean(delta)
 ```
 
-Auxiliary losses влияют на `trainingLoss`, но не входят в checkpoint selection
-score и не меняют публичную семантику.
+`RiskAdjustedExpectedValue` является отдельным operator. Он требует
+`ProbTP`, `ProbSL` и `GaussianNLL`, использует private scale и объявленный
+`riskPenalty`:
 
-## Этапы
+```text
+delta = prediction[ProbTP] - prediction[ProbSL]
+risk = detach(returnScale) × abs(delta)
+riskAdjustedExpectedValueLoss = -mean(delta - riskPenalty × risk)
+```
 
-Stage composition определяет, какие компоненты входят в loss:
+`ExpectedValue` и `RiskAdjustedExpectedValue` нельзя включить одновременно.
+Вес каждого auxiliary component применяется внешней `WeightedSum`-агрегацией.
 
-| Stage | Активные компоненты |
-| --- | --- |
-| `1` | `L0`, `L1`, Gaussian NLL |
-| `2` | stage 1 + `L2`, `L3`, `L5` |
-| `3` | stage 2 + EV/risk |
-| `4` | stage 3 + `L4` |
+## Selection и diagnostics
 
-Порядок перехода между stages, CLI modes и требование завершить stage 4 задаёт
-[training runtime](./training-runtime.md#loss-schedule). Агрегация score, выбор
-candidate и early stopping находятся в его разделе
-[Selection](./training-runtime.md#selection-и-early-stopping).
+Checkpoint selection является training policy. Если selection включён, score
+равен сумме global-row-mean direct losses с весами из objective; auxiliary
+components в score не входят. Параметры `minDelta` и `patience` не меняют
+`objectiveConfigSha256`.
+
+Gradient-interaction diagnostics — необязательное наблюдение, а не часть loss.
+На выбранных optimizer steps Transformer вычисляет gradient каждого
+target-task в общей representation model head, их нормы и попарные cosine.
+`GaussianNLL` входит в компонент `target:MeanReturn`; совместные EV operators
+представлены отдельным auxiliary component. Diagnostics не выполняет optimizer
+step, не балансирует gradients и не меняет checkpoint compatibility.

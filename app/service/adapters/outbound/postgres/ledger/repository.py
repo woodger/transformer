@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -51,6 +51,7 @@ from app.service.domain.errors import (
     failed_precondition,
     not_found,
 )
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import (
     SUPPORTED_DEVICES,
     SUPPORTED_OPERATIONS,
@@ -155,6 +156,7 @@ class Ledger:
         resolved_model_ref: str | None = None,
         model_config: ModelConfig | JsonObject | None = None,
         training_config: TrainConfig | JsonObject | None = None,
+        initialization: JsonObject | None = None,
         now: float | None = None,
         connection: Session | None = None,
     ) -> RowMapping:
@@ -194,14 +196,29 @@ class Ledger:
             typed_data_contract.get("feature_dim"),
             "data_contract.feature_dim",
         )
-        if operation == "fit" and (
-            not model_label or resolved_model_ref is not None
-        ):
-            raise ValueError("fit job requires model_label only")
+        if operation == "fit":
+            if not model_label:
+                raise ValueError("fit job requires model_label")
+            initialization = validate_initialization(initialization)
+            parent_model_ref = initialization.get("parentModelRef")
+            if (
+                initialization["kind"] == "random"
+                and resolved_model_ref is not None
+            ) or (
+                initialization["kind"] == "publishedModel"
+                and resolved_model_ref != parent_model_ref
+            ):
+                raise ValueError(
+                    "fit resolved model must match its initialization"
+                )
         if operation == "predict" and (
-            not resolved_model_ref or model_label is not None
+            not resolved_model_ref
+            or model_label is not None
+            or initialization is not None
         ):
-            raise ValueError("predict job requires resolved_model_ref only")
+            raise ValueError(
+                "predict job requires resolved_model_ref without initialization"
+            )
         timestamp = _now(now)
         identity = JobIdentity(
             job_id=job_id,
@@ -224,6 +241,9 @@ class Ledger:
             requested_device=requested_device,
             model_label=model_label,
             resolved_model_ref=resolved_model_ref,
+            initialization=(
+                None if initialization is None else _json_value(initialization)
+            ),
             prediction_column=prediction_column,
             model_config=(
                 None if model_config is None else _json_value(model_config)
@@ -231,7 +251,11 @@ class Ledger:
             training_config=(
                 None
                 if training_config is None
-                else _json_value(training_config)
+                else _json_value(
+                    training_config.to_dict()
+                    if isinstance(training_config, TrainConfig)
+                    else training_config
+                )
             ),
             data_contract=_json_value(typed_data_contract),
             data_contract_sha256=contract_sha256,
@@ -1030,7 +1054,6 @@ class Ledger:
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss_stage: int,
         loss: float,
         training_complete: bool,
         now: float | None = None,
@@ -1046,7 +1069,6 @@ class Ledger:
             sha256=sha256,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss_stage=loss_stage,
             loss=loss,
             training_complete=training_complete,
             now=now,

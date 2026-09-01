@@ -6,7 +6,7 @@
 топологию, wire schemas, configuration defaults или runbook. Их источники:
 
 - [архитектура](../architecture.md) — процессы и data ownership;
-- [Flight v5 contract](../../app/contracts/flight/v5/README.md) — wire и
+- [Flight v8 contract](../../app/contracts/flight/v8/README.md) — wire и
   lifecycle semantics;
 - [training runtime](../training-runtime.md) — checkpoint, recovery и обучение;
 - [аутентификация](../authentication.md) — credential verification и security
@@ -21,7 +21,7 @@
 - Transport payload и RecordBatch boundaries не меняют training trajectory.
 - Optimizer, scheduler, early stopping и best checkpoint принадлежат целому
   training job, а не отдельному transport payload.
-- Явно запрошенный `cuda` не подменяется CPU.
+- Явно запрошенный `gpu` не подменяется CPU.
 - Shape, dtype, non-finite values и masking semantics валидируются до
   вычисления.
 
@@ -49,7 +49,7 @@
 - Queues, caches, retry, telemetry и worker resources имеют явные bounds.
 - Ошибка best-effort telemetry не меняет fit, model/job lifecycle, startup или
   shutdown.
-- Потерянное CUDA device не возвращается в scheduler до безопасной границы,
+- Потерянное GPU device не возвращается в scheduler до безопасной границы,
   определённой Operations Guide.
 
 ## Безопасность и эксплуатация

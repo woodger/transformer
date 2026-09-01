@@ -6,10 +6,13 @@ import time
 from collections.abc import Iterator
 from dataclasses import replace
 
+import torch
+
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v7 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v7.config import ModelConfig, TrainConfig
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v9 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v9.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -29,6 +32,11 @@ from app.worker.application.documents import (
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.events import WorkerEventEmitter
 from app.worker.application.inputs import DurableInputStream
+from app.worker.checkpoints.model import (
+    CheckpointCorrupt,
+    CheckpointFormatMismatch,
+    load_checkpoint,
+)
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -61,13 +69,19 @@ def execute_fit(
     train_config = TrainConfig.from_dict(object_field(manifest, "training"))
     if model_config is None or train_config is None:
         raise ValueError("fit configuration is unavailable")
-    if object_field(manifest, "mlContract") != ml_contract(train_config):
-        raise ValueError("fit ML contract differs from training configuration")
+    objective = objective_from_ml_contract(object_field(manifest, "mlContract"))
+    diagnostics = DiagnosticsConfig.from_document(
+        object_field(manifest, "diagnostics")
+    )
+    train_config = replace(train_config, diagnostics=diagnostics)
+    if model_config.out_dim != objective.target_width:
+        raise ValueError("fit model shape differs from objective targets")
     configure_reproducibility(train_config.seed, train_config.deterministic)
     device = get_device(string_field(object_field(manifest, "device"), "kind"))
     data_contract = object_field(manifest, "dataContract")
+    ml_contract = object_field(manifest, "mlContract")
     expected_feature_dim = integer_field(data_contract, "featureDim")
-    expected_target_dim = 6
+    expected_target_dim = objective.target_width
     committed_inputs = CommittedInputArtifacts()
 
     def read_payload(item: JsonObject) -> TrainingBatch:
@@ -78,6 +92,7 @@ def execute_fit(
             path,
             expected_rows=integer_field(item, "rows"),
             source_width=model_config.seq_len * expected_feature_dim,
+            targets=objective.targets,
         )
         batch = TrainingBatch(
             features=reshape_source(batch.features, model_config.seq_len),
@@ -99,14 +114,37 @@ def execute_fit(
         raise ValueError("fit requires at least one non-empty input")
 
     actual_config = replace(model_config, feature_dim=expected_feature_dim)
-    model = build_model(actual_config, first.features, first.targets, device)
+    initialization, parent_checkpoint = _load_initialization(
+        manifest,
+        device,
+        actual_config,
+        data_contract,
+        ml_contract,
+    )
+    model = build_model(
+        actual_config,
+        first.features,
+        first.targets,
+        device,
+        objective,
+    )
     trainer = build_trainer(
         train_config,
         model,
         device,
         actual_config,
         data_contract=data_contract,
+        objective=objective,
+        initialization=initialization,
     )
+    if parent_checkpoint is not None:
+        try:
+            trainer.load_payload(parent_checkpoint)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise WorkerExecutionError(
+                "MODEL_CORRUPT",
+                "parent checkpoint model state could not be loaded",
+            ) from exc
 
     recovery_value = manifest.get("recovery")
     recovery = (
@@ -239,7 +277,6 @@ def execute_fit(
             "progress": {
                 "epoch": epoch + 1,
                 "step": metrics.step,
-                "loss_stage": metrics.loss_stage,
                 "loss": metrics.loss,
             },
             "trainingComplete": boolean_value(
@@ -286,6 +323,62 @@ def execute_fit(
     result.update(result_fields)
     validate_document(result, "result-manifest")
     return result
+
+
+def _load_initialization(
+    manifest: JsonObject,
+    device: torch.device,
+    model_config: ModelConfig,
+    data_contract: JsonObject,
+    ml_contract: JsonObject,
+) -> tuple[JsonObject, dict[str, object] | None]:
+    initialization = object_field(manifest, "initialization")
+    kind = string_field(initialization, "kind")
+    if kind == "random":
+        return {"kind": "random"}, None
+
+    checkpoint_document = object_field(initialization, "checkpoint")
+    parent_sha256 = string_field(
+        initialization,
+        "parentCheckpointSha256",
+    )
+    if parent_sha256 != string_field(checkpoint_document, "sha256"):
+        raise ValueError(
+            "parent checkpoint digest differs from initialization"
+        )
+    checkpoint_path = validate_artifact(checkpoint_document)
+    try:
+        checkpoint = load_checkpoint(checkpoint_path, device)
+    except CheckpointFormatMismatch as exc:
+        raise WorkerExecutionError(
+            "MODEL_SCHEMA_MISMATCH",
+            "parent checkpoint belongs to another ML contract",
+        ) from exc
+    except CheckpointCorrupt as exc:
+        raise WorkerExecutionError(
+            "MODEL_CORRUPT",
+            "parent checkpoint semantic metadata is invalid",
+        ) from exc
+    if (
+        checkpoint["model_config"] != model_config.to_dict()
+        or checkpoint["data_contract"] != data_contract
+        or checkpoint["ml_contract"] != ml_contract
+    ):
+        raise WorkerExecutionError(
+            "MODEL_SCHEMA_MISMATCH",
+            "parent checkpoint contract differs from the fit job",
+        )
+    return (
+        {
+            "kind": "publishedModel",
+            "parentModelRef": string_field(
+                initialization,
+                "parentModelRef",
+            ),
+            "parentCheckpointSha256": parent_sha256,
+        },
+        checkpoint,
+    )
 
 
 __all__ = ["execute_fit"]

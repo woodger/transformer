@@ -105,6 +105,9 @@ references. Он не воспроизводит их значения, кома
 | [0015](0015-unified-indicator-identity-flight-v5.md) | Accepted | Использовать единую public identity индикаторов |
 | [0016](0016-hard-delete-published-models.md) | Accepted | Физически удалять модели с минимальным audit archive |
 | [0020](0020-local-opaque-api-access-tokens.md) | Accepted | Использовать local opaque database-backed access tokens |
+| [0021](0021-provider-neutral-gpu-device-interface.md) | Accepted | Использовать provider-neutral public identity `gpu` |
+| [0022](0022-declarative-target-objectives.md) | Accepted | Передавать выбранные targets и declarative objective через Flight |
+| [0023](0023-weights-only-published-model-initialization.md) | Accepted | Инициализировать новый fit только weights опубликованной модели |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

@@ -3,6 +3,7 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessError,
 )
@@ -14,7 +15,7 @@ from app.service.application.services.attempt_executor import (
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 
-ML_CONTRACT = {"objectiveId": "transformer.objective.target-aligned.v2"}
+ML_CONTRACT = ml_contract(default_objective())
 
 
 class _Ledger:

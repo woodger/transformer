@@ -11,12 +11,12 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app import config as defaults
-from app.contracts.flight.v5.arrow import (
-    TARGET_WIDTH,
+from app.contracts.flight.v8.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     validate_target_space_values,
 )
+from app.contracts.ml import TARGET_IDENTITIES, canonical_targets
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
 
@@ -95,35 +95,50 @@ class _ValidatedArrowColumns:
     targets: np.ndarray | None
 
 
-def table_to_tensors(table: pa.Table) -> TrainingBatch:
+def table_to_tensors(
+    table: pa.Table,
+    targets: Sequence[str] = TARGET_IDENTITIES,
+) -> TrainingBatch:
     columns = _validated_arrow_columns(
         table,
         require_target=True,
+        targets=targets,
     )
     features = _list_values_to_tensor(columns.features)
     if columns.targets is None:
         raise AssertionError("fit Arrow validation did not return targets")
-    targets = _list_values_to_tensor(columns.targets)
+    target_tensor = _list_values_to_tensor(columns.targets)
 
-    return TrainingBatch(features=features, targets=targets)
+    return TrainingBatch(features=features, targets=target_tensor)
 
 
 def table_to_source_tensor(table: pa.Table) -> torch.Tensor:
-    columns = _validated_arrow_columns(table, require_target=False)
+    columns = _validated_arrow_columns(
+        table,
+        require_target=False,
+        targets=TARGET_IDENTITIES,
+    )
     return _list_values_to_tensor(columns.features)
 
 
 def validate_arrow_table(
     table: pa.Table,
     require_target: bool = False,
+    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> None:
-    _validated_arrow_columns(table, require_target=require_target)
+    _validated_arrow_columns(
+        table,
+        require_target=require_target,
+        targets=targets,
+    )
 
 
 def _validated_arrow_columns(
     table: pa.Table,
     require_target: bool,
+    targets: Sequence[str],
 ) -> _ValidatedArrowColumns:
+    selected = canonical_targets(targets)
     typed_table = cast(_ArrowTable, table)
     source_values = _validate_list_column(
         typed_table,
@@ -136,9 +151,9 @@ def _validated_arrow_columns(
             typed_table,
             "tgt",
             allow_nan=False,
-            expected_width=TARGET_WIDTH,
+            expected_width=len(selected),
         )
-        _validate_target_values(target_values)
+        _validate_target_values(target_values, selected)
 
     return _ValidatedArrowColumns(
         features=source_values,
@@ -148,12 +163,13 @@ def _validated_arrow_columns(
 
 def read_arrow(
     path: str | os.PathLike[str],
+    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> TrainingBatch:
     with open(path, "rb") as f:
         reader = cast(_ArrowReader, ipc.RecordBatchFileReader(f))
         table = reader.read_all()
 
-    return table_to_tensors(table)
+    return table_to_tensors(table, targets)
 
 
 def read_source_arrow(path: str | os.PathLike[str]) -> torch.Tensor:
@@ -169,6 +185,7 @@ def read_committed_fit_arrow(
     *,
     expected_rows: int,
     source_width: int,
+    targets: Sequence[str],
 ) -> TrainingBatch:
     """Replay one service-validated immutable fit artifact.
 
@@ -183,10 +200,11 @@ def read_committed_fit_arrow(
         expected_rows=expected_rows,
         source_width=source_width,
         require_target=True,
+        targets=targets,
     )
     return TrainingBatch(
         features=_committed_column_to_tensor(table, "src", source_width),
-        targets=_committed_column_to_tensor(table, "tgt", TARGET_WIDTH),
+        targets=_committed_column_to_tensor(table, "tgt", len(targets)),
     )
 
 
@@ -203,6 +221,7 @@ def read_committed_source_arrow(
         expected_rows=expected_rows,
         source_width=source_width,
         require_target=False,
+        targets=TARGET_IDENTITIES,
     )
     return _committed_column_to_tensor(table, "src", source_width)
 
@@ -213,6 +232,7 @@ def _read_committed_table(
     expected_rows: int,
     source_width: int,
     require_target: bool,
+    targets: Sequence[str],
 ) -> _ArrowTable:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
@@ -222,6 +242,7 @@ def _read_committed_table(
     expected_schema = canonical_input_schema(
         "fit" if require_target else "predict",
         source_width,
+        targets,
     )
 
     with open(path, "rb") as source:
@@ -374,8 +395,11 @@ def _list_values_to_tensor(values: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(values)  # pyright: ignore[reportUnknownMemberType]
 
 
-def _validate_target_values(values: np.ndarray) -> None:
-    validate_target_space_values(values)
+def _validate_target_values(
+    values: np.ndarray,
+    targets: Sequence[str],
+) -> None:
+    validate_target_space_values(values, targets)
 
 
 def _first_true(values: np.ndarray) -> int | None:
@@ -437,11 +461,13 @@ def write_arrow(
     predictions: torch.Tensor,
     col_name: str,
     expected_rows: int | None = None,
+    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> None:
     table = predictions_to_table(
         predictions,
         col_name,
         expected_rows=expected_rows,
+        targets=targets,
     )
 
     with atomic_output_path(path) as temporary_path:
@@ -460,12 +486,14 @@ def predictions_to_table(
     predictions: torch.Tensor,
     col_name: str,
     expected_rows: int | None = None,
+    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> pa.Table:
     import torch
 
-    if predictions.ndim != 2 or predictions.shape[1] != TARGET_WIDTH:
+    selected = canonical_targets(targets)
+    if predictions.ndim != 2 or predictions.shape[1] != len(selected):
         raise ValueError(
-            f"Predictions must have shape [rows, {TARGET_WIDTH}], "
+            f"Predictions must have shape [rows, {len(selected)}], "
             f"got {list(predictions.shape)}"
         )
     if expected_rows is not None and predictions.shape[0] != expected_rows:
@@ -476,16 +504,19 @@ def predictions_to_table(
     arr = predictions.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
-    validate_target_space_values(arr)
+    validate_target_space_values(arr, selected)
     arr = np.ascontiguousarray(arr)
     values = pa.array(arr.reshape(-1), type=pa.float32())
-    column = pa.FixedSizeListArray.from_arrays(values, TARGET_WIDTH)
-    schema = canonical_prediction_schema(col_name)
+    column = pa.FixedSizeListArray.from_arrays(values, len(selected))
+    schema = canonical_prediction_schema(col_name, selected)
     return pa.Table.from_arrays([column], schema=schema)
 
 
-def empty_predictions_table(col_name: str) -> pa.Table:
-    schema = canonical_prediction_schema(col_name)
+def empty_predictions_table(
+    col_name: str,
+    targets: Sequence[str] = TARGET_IDENTITIES,
+) -> pa.Table:
+    schema = canonical_prediction_schema(col_name, targets)
     return pa.Table.from_arrays(
         [pa.array([], type=schema.field(0).type)],
         schema=schema,

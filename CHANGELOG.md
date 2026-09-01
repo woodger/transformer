@@ -7,6 +7,47 @@
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-09-01
+
+### Changed
+
+- Public device identity изменена с `cuda` на `gpu` в local fit/predict CLI и
+  новом единственном Arrow Flight v8 contract. CUDA остаётся внутренним
+  execution backend; adapter boundary преобразует public `gpu` во внутренний
+  `cuda`.
+- Flight actions, descriptor paths, schemas и envelopes переведены с v5 на v8.
+  Capabilities, health, GPU OOM errors и связанные operational metrics
+  используют provider-neutral GPU terminology.
+- Flight v8 принимает каноническое непустое подмножество public `targets` и
+  закрытый декларативный objective. Выбранный набор определяет физическую
+  ширину `tgt`, public model heads и prediction; Transformer проверяет
+  operators и зависимости, вычисляет canonical digest и навсегда связывает с
+  ним checkpoint.
+- Все objective components активны с первого optimizer step. Loss stages и
+  stage schedule удалены; training policy и optional gradient-interaction
+  diagnostics остаются отдельными от objective identity.
+- Fit требует явный `initialization`: `random` либо точный owner-scoped
+  `publishedModel`. Второй режим загружает только weights совместимой immutable
+  generation, начинает новый optimizer/training state, сохраняет parent
+  lineage и публикует новый `modelRef`.
+- Migration `0021` сохраняет canonical initialization fit job и помечает
+  существующие fit jobs как `random`; downgrade блокируется при наличии
+  warm-start jobs.
+- Internal worker contract повышен до v9, checkpoint/recovery formats — до v5,
+  training metrics — до v4, fit-run summary — до v3. Новые metrics сохраняют
+  фактический target subset, auxiliary losses и sampled gradient norms/cosines.
+- TransformerEncoder inference использует стабильный dense-tensor path с
+  отключённой экспериментальной Nested Tensor оптимизацией PyTorch.
+- Обычный запуск `pytest` автоматически выполняет CUDA-сценарии при наличии
+  доступного GPU и явно пропускает их в остальных средах; отдельный `gpu`
+  marker profile удалён.
+
+### Removed
+
+- Flight v5/v6/v7, worker v8, checkpoint/recovery v4, прежние metrics contracts, loss-stage
+  options и публичное значение device `cuda` удалены без aliases или parallel
+  compatibility runtime. Модели прежнего ML contract требуют переобучения.
+
 ## [0.1.16] - 2026-08-24
 
 ### Changed
@@ -703,7 +744,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.16...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.17...HEAD
+[0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/woodger/transformer/compare/0.1.14...0.1.15
 [0.1.14]: https://github.com/woodger/transformer/compare/0.1.13...0.1.14

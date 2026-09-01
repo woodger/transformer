@@ -1,12 +1,18 @@
 import torch
 from torch import nn
 
+from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.model.transformer import TransformerModel, public_predictions
 
 
 class PassThroughEncoder(nn.Module):
     def forward(self, values, src_key_padding_mask):
         return values
+
+
+class PassThroughHead(nn.Module):
+    def forward_with_shared_representation(self, values):
+        return values, values
 
 
 def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
@@ -16,14 +22,15 @@ def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
         hidden_dim=2,
         layers=1,
         dropout=0.0,
-        out_dim=2,
+        targets=TARGET_IDENTITIES[:2],
+        include_return_scale=False,
         nhead=2,
         context_mode="strict",
     )
     model.input_proj = nn.Identity()
     model.pos = nn.Identity()
     model.encoder = PassThroughEncoder()
-    model.head = nn.Identity()
+    model.head = PassThroughHead()
     missing = [float("nan"), float("nan")]
     features = torch.tensor([
         [missing, [10.0, 11.0], [20.0, 21.0], missing],
@@ -49,7 +56,8 @@ def test_transformer_forward_with_missing_tokens_is_finite():
         hidden_dim=16,
         layers=1,
         dropout=0.0,
-        out_dim=6,
+        targets=TARGET_IDENTITIES,
+        include_return_scale=True,
         nhead=4,
         context_mode="relaxed",
     )
@@ -62,6 +70,10 @@ def test_transformer_forward_with_missing_tokens_is_finite():
 
     assert output.shape == (3, 7)
     assert torch.isfinite(output).all()
-    predictions = public_predictions(output)
+    predictions = public_predictions(
+        output,
+        TARGET_IDENTITIES,
+        include_return_scale=True,
+    )
     assert predictions.shape == (3, 6)
     assert torch.isfinite(predictions).all()

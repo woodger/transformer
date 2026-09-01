@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "aggregation": "WeightedSum",
+  "reduction": "GlobalRowMean",
+  "directLosses": [
+    {"target": "MeanReturn", "operator": "SmoothL1", "weight": 1.0},
+    {"target": "SigmaReturn", "operator": "SmoothL1", "weight": 1.0},
+    {"target": "ProbTP", "operator": "BinaryCrossEntropyWithLogits", "weight": 1.0},
+    {"target": "ProbSL", "operator": "BinaryCrossEntropyWithLogits", "weight": 1.0},
+    {"target": "VolatilityNext", "operator": "LogMSE", "weight": 1.0},
+    {"target": "HittingProbTP", "operator": "BinaryCrossEntropyWithLogits", "weight": 1.0}
+  ],
+  "auxiliaryLosses": [
+    {"operator": "GaussianNLL", "weight": 1.0},
+    {
+      "operator": "RiskAdjustedExpectedValue",
+      "weight": 0.3,
+      "riskPenalty": 0.1
+    }
+  ],
+  "balancing": {"operator": "Static"}
+}

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v7 import (
+from app.contracts.worker.v9 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
@@ -216,7 +216,7 @@ class WorkerSubprocessRunner:
             if not job.assigned_device_id:
                 raise WorkerSubprocessError(
                     ErrorCode.INTERNAL,
-                    "CUDA attempt has no assigned physical device",
+                    "GPU attempt has no assigned physical device",
                 )
             environment["CUDA_VISIBLE_DEVICES"] = job.assigned_device_id
         supervised_argv = [
@@ -410,7 +410,7 @@ class WorkerSubprocessRunner:
             else None
         )
         if classified_exit is not None and classified_exit.code in (
-            ErrorCode.CUDA_OUT_OF_MEMORY,
+            ErrorCode.GPU_OUT_OF_MEMORY,
             ErrorCode.DEVICE_UNAVAILABLE,
             ErrorCode.DEVICE_LOST,
         ):
@@ -450,7 +450,7 @@ class WorkerSubprocessRunner:
                 "worker execution failed",
             )
             try:
-                code = ErrorCode(code_text)
+                code = _worker_error_code(code_text)
             except ValueError:
                 code = ErrorCode.SUBPROCESS_FAILED
             raise WorkerSubprocessError(code, message, exit_code)
@@ -916,8 +916,8 @@ class WorkerSubprocessRunner:
             b"out of memory" in text or b"outofmemoryerror" in text
         ):
             return WorkerSubprocessError(
-                ErrorCode.CUDA_OUT_OF_MEMORY,
-                "CUDA execution ran out of memory",
+                ErrorCode.GPU_OUT_OF_MEMORY,
+                "GPU execution ran out of memory",
                 exit_code,
             )
         if b"cuda" in text and any(fragment in text for fragment in (
@@ -934,7 +934,7 @@ class WorkerSubprocessRunner:
         )):
             return WorkerSubprocessError(
                 ErrorCode.DEVICE_LOST,
-                "CUDA device became unavailable during execution",
+                "GPU device became unavailable during execution",
                 exit_code,
             )
         return WorkerSubprocessError(
@@ -942,6 +942,12 @@ class WorkerSubprocessRunner:
             f"worker subprocess exited with status {exit_code}",
             exit_code,
         )
+
+
+def _worker_error_code(value: str) -> ErrorCode:
+    if value == "CUDA_OUT_OF_MEMORY":
+        return ErrorCode.GPU_OUT_OF_MEMORY
+    return ErrorCode(value)
 
 
 def _cancellation_failure(

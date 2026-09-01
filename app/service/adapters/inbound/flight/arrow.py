@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
 
@@ -5,13 +6,13 @@ import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v5.arrow import (
-    TARGET_WIDTH,
+from app.contracts.flight.v8.arrow import (
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,
     validate_target_space_values,
 )
+from app.contracts.ml import canonical_targets
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted
 
 _FLOAT32_MAX = float(np.finfo(np.float32).max)
@@ -60,6 +61,7 @@ class InputBatchValidator:
         operation: str,
         schema: pa.Schema,
         *,
+        targets: Sequence[str],
         seq_len: int,
         expected_feature_dim: int | None,
         max_batch_bytes: int,
@@ -69,6 +71,7 @@ class InputBatchValidator:
         if operation not in ("fit", "predict"):
             raise invalid("unsupported input operation")
         self.operation = operation
+        self.targets = canonical_targets(targets)
         self.schema = schema
         self.seq_len = seq_len
         self.expected_feature_dim = expected_feature_dim
@@ -85,9 +88,16 @@ class InputBatchValidator:
         self.src_width = source_width
         self.tgt_width = _fixed_width(schema, "tgt") if operation == "fit" else None
         self._validate_source_width(self.src_width)
-        if self.tgt_width is not None and self.tgt_width != TARGET_WIDTH:
-            raise invalid(f"tgt list width must be {TARGET_WIDTH}")
-        expected_schema = canonical_input_schema(operation, self.src_width)
+        if (
+            self.tgt_width is not None
+            and self.tgt_width != len(self.targets)
+        ):
+            raise invalid(f"tgt list width must be {len(self.targets)}")
+        expected_schema = canonical_input_schema(
+            operation,
+            self.src_width,
+            self.targets,
+        )
         if not schema.equals(expected_schema, check_metadata=False):
             raise invalid(
                 f"{operation} input differs from the canonical physical schema"
@@ -115,7 +125,11 @@ class InputBatchValidator:
 
         table = pa.Table.from_batches([batch], schema=self.schema)
         try:
-            _validate_arrow_table(table, require_target=self.operation == "fit")
+            _validate_arrow_table(
+                table,
+                require_target=self.operation == "fit",
+                targets=self.targets,
+            )
         except ValueError as exc:
             raise invalid(str(exc)) from exc
 
@@ -128,8 +142,11 @@ class InputBatchValidator:
         self.src_width = _merge_width("src", self.src_width, source_width)
         self.tgt_width = _merge_width("tgt", self.tgt_width, target_width)
         self._validate_source_width(self.src_width)
-        if self.tgt_width is not None and self.tgt_width != TARGET_WIDTH:
-            raise invalid(f"tgt list width must be {TARGET_WIDTH}")
+        if (
+            self.tgt_width is not None
+            and self.tgt_width != len(self.targets)
+        ):
+            raise invalid(f"tgt list width must be {len(self.targets)}")
 
         self.rows += batch.num_rows
         self.batches += 1
@@ -168,12 +185,15 @@ def validate_prediction_file(
     path: str,
     prediction_column: str,
     expected_rows: int,
+    targets: Sequence[str],
 ) -> ArrowStats:
+    selected = canonical_targets(targets)
     try:
         stats = validate_contract_prediction_file(
             path,
             prediction_column,
             expected_rows,
+            selected,
         )
     except ValueError as exc:
         raise invalid(str(exc)) from exc
@@ -181,7 +201,7 @@ def validate_prediction_file(
         rows=stats.rows,
         batches=stats.batches,
         schema_fingerprint=stats.schema_fingerprint,
-        src_width=TARGET_WIDTH,
+        src_width=len(selected),
     )
 
 
@@ -205,16 +225,21 @@ def _validate_input_schema(schema: pa.Schema, operation: str) -> None:
             raise invalid(f"Arrow column '{name}' must be non-nullable")
 
 
-def _validate_arrow_table(table: pa.Table, *, require_target: bool) -> None:
+def _validate_arrow_table(
+    table: pa.Table,
+    *,
+    require_target: bool,
+    targets: tuple[str, ...],
+) -> None:
     _validate_list_column(table, "src", allow_nan=True)
     if require_target:
         target_values = _validate_list_column(
             table,
             "tgt",
             allow_nan=False,
-            expected_width=TARGET_WIDTH,
+            expected_width=len(targets),
         )
-        _validate_target_values(target_values)
+        _validate_target_values(target_values, targets)
 
 
 def _validate_list_column(
@@ -297,8 +322,11 @@ def _validate_list_column(
     return values
 
 
-def _validate_target_values(values: np.ndarray) -> None:
-    validate_target_space_values(values)
+def _validate_target_values(
+    values: np.ndarray,
+    targets: tuple[str, ...],
+) -> None:
+    validate_target_space_values(values, targets)
 
 
 def _fixed_width(schema: pa.Schema, name: str) -> int | None:

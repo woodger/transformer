@@ -8,8 +8,8 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v7.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v7.objective import ml_contract
+from app.contracts.worker.v9.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v9.objective import default_objective
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -33,9 +33,8 @@ from tests.support.authentication import StaticAccessTokenAuthenticator
 
 SECURITY_TRAIN_CONFIG = TrainConfig(
     epochs=1,
-    loss_schedule="none",
 )
-SECURITY_ML_CONTRACT = ml_contract(SECURITY_TRAIN_CONFIG)
+SECURITY_OBJECTIVE = default_objective()
 
 
 def _auth(token="secret"):
@@ -48,7 +47,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 8,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -56,16 +55,19 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 5,
+        "version": 8,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
         "clientExecutionId": str(uuid.uuid4()),
         "operation": "fit",
         "device": "cpu",
+        "initialization": {"kind": "random"},
         "modelLabel": "returns.daily",
         "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
         "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),
+        "targets": list(SECURITY_OBJECTIVE.targets),
+        "objective": SECURITY_OBJECTIVE.objective,
         "dataContract": {
             "id": "inventory.learning-dataset",
             "version": 2,
@@ -75,7 +77,6 @@ def _create_fit_document(**overrides):
             "featureDim": 1,
             "targetSchemaId": "inventory.target.v2",
         },
-        "mlContract": SECURITY_ML_CONTRACT,
     }
     document.update(overrides)
     return document

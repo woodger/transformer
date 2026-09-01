@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v2 import RUN_INDEX
-from app.contracts.metrics.v3 import POINT_INDEX
+from app.contracts.metrics.fit_run.v3 import RUN_INDEX
+from app.contracts.metrics.v4 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
@@ -23,7 +23,7 @@ from app.service.application.telemetry.records import (
     TelemetryArtifactCleanup,
     TrainingMetricsArtifactRecord,
 )
-from tests.support.flight_v5_helpers import (
+from tests.support.flight_v8_helpers import (
     create_test_metrics_artifact,
     create_test_run_summary_artifact,
 )
@@ -32,7 +32,7 @@ from tests.support.flight_v5_helpers import (
 def _entry() -> MetricsOutboxRecord:
     artifact = TrainingMetricsArtifactRecord(
         model_ref="mdl_" + "1" * 32,
-        format="transformer.training-metrics.v3",
+        format="transformer.training-metrics.v4",
         media_type="application/x-ndjson",
         relative_path=(
             "11111111-1111-4111-8111-111111111111/metrics.jsonl"
@@ -49,7 +49,7 @@ def _entry() -> MetricsOutboxRecord:
     )
     return MetricsOutboxRecord(
         training_metrics=artifact,
-        projection_version="inventory.metrics.v4",
+        projection_version="inventory.metrics.v5",
         status="PENDING",
         cursor=0,
         attempts=0,
@@ -395,7 +395,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         entry,
         training_metrics=replace(
             entry.training_metrics,
-            format="transformer.training-metrics.v3",
+            format="transformer.training-metrics.v4",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
             sha256=artifact.sha256,
@@ -404,7 +404,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=FitRunSummaryArtifactRecord(
             model_ref=entry.training_metrics.model_ref,
-            format="transformer.fit-run-summary.v2",
+            format="transformer.fit-run-summary.v3",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -416,7 +416,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="inventory.metrics.v4",
+        projection_version="inventory.metrics.v5",
     )
 
     projection = TrainingMetricsProjection(spool)

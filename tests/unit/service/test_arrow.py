@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v5.arrow import canonical_input_schema
+from app.contracts.flight.v8.arrow import canonical_input_schema
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -12,6 +12,11 @@ from app.service.adapters.inbound.flight.arrow import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
+
+TARGETS = (
+    "MeanReturn", "SigmaReturn", "ProbTP", "ProbSL",
+    "VolatilityNext", "HittingProbTP",
+)
 
 
 def fit_schema(source_width=4):
@@ -45,6 +50,7 @@ def test_multi_batch_input_is_validated_as_one_logical_payload():
     validator = InputBatchValidator(
         "fit",
         fit_schema(),
+        targets=TARGETS,
         seq_len=2,
         expected_feature_dim=None,
         max_batch_bytes=1024 * 1024,
@@ -66,6 +72,7 @@ def test_record_batch_must_keep_the_doput_fixed_schema():
     validator = InputBatchValidator(
         "fit",
         fit_schema(),
+        targets=TARGETS,
         seq_len=2,
         expected_feature_dim=None,
         max_batch_bytes=1024 * 1024,
@@ -109,6 +116,7 @@ def test_input_schema_rejects_noncanonical_nested_nullability(
         InputBatchValidator(
             operation,
             pa.schema(fields),
+            targets=TARGETS,
             seq_len=2,
             expected_feature_dim=2,
             max_batch_bytes=1024,
@@ -125,6 +133,7 @@ def test_payload_quota_is_enforced_across_batches_before_full_staging():
     validator = InputBatchValidator(
         "fit",
         fit_schema(),
+        targets=TARGETS,
         seq_len=2,
         expected_feature_dim=None,
         max_batch_bytes=1024,
@@ -142,6 +151,7 @@ def test_predict_schema_rejects_tgt_and_expected_feature_mismatch():
         InputBatchValidator(
             "predict",
             fit_schema(),
+            targets=TARGETS,
             seq_len=2,
             expected_feature_dim=2,
             max_batch_bytes=1024,
@@ -156,6 +166,7 @@ def test_predict_schema_rejects_tgt_and_expected_feature_mismatch():
         InputBatchValidator(
             "predict",
             schema,
+            targets=TARGETS,
             seq_len=2,
             expected_feature_dim=2,
             max_batch_bytes=1024,
@@ -181,7 +192,9 @@ def test_prediction_file_stream_validation_supports_typed_empty(tmp_path):
     )
     write_table(path, table)
 
-    stats = validate_prediction_file(str(path), "out", expected_rows=0)
+    stats = validate_prediction_file(
+        str(path), "out", expected_rows=0, targets=TARGETS
+    )
 
     assert stats.rows == 0
     assert stats.batches == 0
@@ -202,7 +215,9 @@ def test_prediction_file_rejects_noncanonical_nested_nullability(tmp_path):
     write_table(path, table)
 
     with pytest.raises(ServiceError, match="FixedSizeList<float32>"):
-        validate_prediction_file(str(path), "out", expected_rows=0)
+        validate_prediction_file(
+            str(path), "out", expected_rows=0, targets=TARGETS
+        )
 
 
 def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
@@ -218,7 +233,9 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
     ]))
     write_table(path, table)
     with pytest.raises(ServiceError, match="non-finite"):
-        validate_prediction_file(str(path), "out", expected_rows=1)
+        validate_prediction_file(
+            str(path), "out", expected_rows=1, targets=TARGETS
+        )
 
     write_table(path, pa.table({
         "out": pa.array([[0.0] * 6], type=pa.list_(pa.float32(), 6))
@@ -226,7 +243,9 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
         pa.field("out", pa.list_(pa.float32(), 6), nullable=False),
     ])))
     with pytest.raises(ServiceError, match="row count 1 does not match"):
-        validate_prediction_file(str(path), "out", expected_rows=2)
+        validate_prediction_file(
+            str(path), "out", expected_rows=2, targets=TARGETS
+        )
 
 
 @pytest.mark.parametrize(
@@ -264,7 +283,9 @@ def test_prediction_file_rejects_invalid_list_structure(
     write_table(path, table)
 
     with pytest.raises(ServiceError, match=message):
-        validate_prediction_file(str(path), "out", expected_rows=1)
+        validate_prediction_file(
+            str(path), "out", expected_rows=1, targets=TARGETS
+        )
 
 
 def test_schema_fingerprint_ignores_nonsemantic_metadata():

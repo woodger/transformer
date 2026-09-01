@@ -1,11 +1,11 @@
 # Локальный Arrow и stream contract
 
 > Тип: справочник. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v5 contract.
+> переопределяет public Arrow Flight v8 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v5`](../app/contracts/flight/v5/README.md); local CLI
+[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md); local CLI
 использует те же shapes там, где они пересекаются.
 
 ## Arrow IPC input
@@ -36,7 +36,7 @@ Target и prediction используют одинаковый порядок:
 | `tgt[4]` | `VolatilityNext` |
 | `tgt[5]` | `HittingProbTP` |
 
-На максимальном loss stage каждая координата имеет прямой supervised path.
+Каждая координата имеет прямой supervised path с первого optimizer step.
 Private Gaussian scale не входит в этот вектор.
 
 После валидации `float64` и `float32` input преобразуется в PyTorch `float32`;
@@ -48,7 +48,7 @@ finite `float64`, который выходит за диапазон `float32`,
 ```
 
 Ширина `src` должна делиться на `--seq-len`. В stream `feature_dim` не может
-меняться между frames; при prediction с checkpoint v4 она также должна совпасть
+меняться между frames; при prediction с checkpoint v5 она также должна совпасть
 с сохранённым значением. Missing-data semantics для `NaN` определяет
 [training reference](./training-runtime.md).
 

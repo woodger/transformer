@@ -82,7 +82,7 @@ class ServiceStatusQuery:
 
     def capabilities(self) -> ServiceCapabilities:
         inventory = self.device_inventory.snapshot()
-        self.metrics.set("cudaAvailable", inventory.cuda_capacity > 0)
+        self.metrics.set("gpuAvailable", inventory.cuda_capacity > 0)
         return ServiceCapabilities(
             device_inventory=inventory,
             cpu_capacity=self.cpu_capacity,
@@ -102,7 +102,7 @@ class ServiceStatusQuery:
             )
         ready = not self.availability.draining and ledger_ready
         inventory = self.device_inventory.snapshot()
-        self.metrics.set("cudaAvailable", inventory.cuda_capacity > 0)
+        self.metrics.set("gpuAvailable", inventory.cuda_capacity > 0)
         self.metrics.set("ready", ready)
         self.metrics.set("diskTotalBytes", runtime_usage.total)
         self.metrics.set("diskUsedBytes", runtime_usage.used)

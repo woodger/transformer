@@ -16,20 +16,21 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v7 import (
+from app.contracts.worker.v9 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v7.config import (
+from app.contracts.worker.v9.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v7.objective import (
+from app.contracts.worker.v9.objective import (
+    default_objective,
     ml_contract,
     objective_config_sha256,
 )
@@ -43,7 +44,7 @@ from app.service.domain.errors import failed_precondition
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 from app.worker.application import artifacts as worker_artifacts
-from app.worker.checkpoints.model import save_checkpoint
+from app.worker.checkpoints.model import load_checkpoint, save_checkpoint
 from app.worker.training.factory import build_model
 
 DATA_CONTRACT_SHA256 = "c" * 64
@@ -81,7 +82,7 @@ def _write_input(path: Path, rows, *, fit: bool) -> None:
 def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
     return {
         "schemaId": (
-            "inventory.sequence.fit.v2"
+            "inventory.sequence.fit.v3"
             if fit
             else "inventory.sequence.predict.v2"
         ),
@@ -130,7 +131,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=7",
+            "--contract-version=9",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -172,18 +173,23 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
     train_config = TrainConfig(
         batch_size=2,
         epochs=1,
-        loss_stage=4,
-        loss_schedule="none",
-        stage_size=1,
     )
+    objective = default_objective()
     source = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]])
-    model = build_model(model_config, source, None, torch.device("cpu"))
+    model = build_model(
+        model_config,
+        source,
+        None,
+        torch.device("cpu"),
+        objective,
+    )
     checkpoint = tmp_path / "model.pth"
     save_checkpoint(
         str(checkpoint),
         model,
         model_config=model_config,
         train_config=train_config,
+        objective=objective,
         data_contract=_data_contract(),
     )
     input_path = tmp_path / "input.arrow"
@@ -191,7 +197,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 7,
+        "protocolVersion": 9,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -208,7 +214,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
             "checkpoint": _artifact(checkpoint),
         },
         "dataContract": _data_contract(),
-        "mlContract": ml_contract(train_config),
+        "mlContract": ml_contract(objective),
     }
     manifest_path = workspace / "worker-command.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -250,12 +256,10 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     train_config = TrainConfig(
         batch_size=2,
         epochs=1,
-        loss_stage=4,
-        loss_schedule="none",
-        stage_size=1,
         seed=7,
         deterministic=True,
     )
+    objective = default_objective()
     inputs = []
     for ordinal, rows in enumerate((
         [[1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0]],
@@ -267,7 +271,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 7,
+        "protocolVersion": 9,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -282,13 +286,18 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
             "label": "returns.daily",
             "config": model_config_to_manifest(model_config),
         },
+        "initialization": {"kind": "random"},
         "training": train_config_to_manifest(train_config),
+        "diagnostics": {
+            "schemaVersion": 1,
+            "gradientInteractions": None,
+        },
         "dataContract": _data_contract(),
-        "mlContract": ml_contract(train_config),
+        "mlContract": ml_contract(objective),
         "recovery": {
             "configSha256": "a" * 64,
             "dataContractSha256": DATA_CONTRACT_SHA256,
-            "objectiveConfigSha256": objective_config_sha256(train_config),
+            "objectiveConfigSha256": objective_config_sha256(objective),
             "manifestSha256": MANIFEST_SHA256,
         },
     }
@@ -312,7 +321,6 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert checkpoint_event["progress"] == {
         "epoch": 1,
         "step": checkpoint_event["globalStep"],
-        "loss_stage": checkpoint_event["metrics"]["loss_stage"],
         "loss": checkpoint_event["metrics"]["loss"],
     }
     assert validate_document(
@@ -339,8 +347,137 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert result_manifest["manifestSha256"] == MANIFEST_SHA256
     assert result_manifest["artifacts"] == []
     assert result_manifest["checkpointMetadata"]["dataContract"] == _data_contract()
+    assert result_manifest["checkpointMetadata"]["initialization"] == {
+        "kind": "random"
+    }
     assert Path(result_manifest["checkpoint"]["path"]).is_file()
     assert result_manifest["checkpointSerializationMs"] >= 0
+
+
+def test_published_model_fit_starts_from_parent_weights_with_fresh_training_state(
+    tmp_path,
+):
+    job_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    workspace = tmp_path / "attempt"
+    workspace.mkdir()
+    model_config = ModelConfig(
+        seq_len=2,
+        hidden=8,
+        layers=1,
+        dropout=0.0,
+        nhead=2,
+        feature_dim=2,
+    )
+    objective = default_objective()
+    source = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]])
+    parent_model = build_model(
+        model_config,
+        source,
+        None,
+        torch.device("cpu"),
+        objective,
+    )
+    with torch.no_grad():
+        for parameter in parent_model.parameters():
+            parameter.fill_(0.125)
+    parent_path = tmp_path / "parent.pth"
+    save_checkpoint(
+        str(parent_path),
+        parent_model,
+        model_config=model_config,
+        train_config=TrainConfig(epochs=5),
+        objective=objective,
+        data_contract=_data_contract(),
+    )
+    parent_artifact = _artifact(parent_path)
+    input_path = tmp_path / "input.arrow"
+    _write_input(
+        input_path,
+        [[1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0]],
+        fit=True,
+    )
+    train_config = TrainConfig(
+        lr=1e-20,
+        batch_size=2,
+        epochs=1,
+        seed=7,
+        deterministic=True,
+    )
+    initialization = {
+        "kind": "publishedModel",
+        "parentModelRef": "mdl_parent",
+        "parentCheckpointSha256": parent_artifact["sha256"],
+        "checkpoint": parent_artifact,
+    }
+    manifest = {
+        "contract": "transformer-worker",
+        "protocolVersion": 9,
+        "jobId": job_id,
+        "attempt": 1,
+        "attemptId": attempt_id,
+        "operation": "fit",
+        "device": {"kind": "cpu"},
+        "inputs": [_input_manifest(input_path, 0, 2, fit=True)],
+        "inputRevision": 1,
+        "inputClosed": True,
+        "manifestSha256": MANIFEST_SHA256,
+        "workspace": {"root": str(workspace)},
+        "model": {
+            "label": "returns.daily.fine-tuned",
+            "config": model_config_to_manifest(model_config),
+        },
+        "initialization": initialization,
+        "training": train_config_to_manifest(train_config),
+        "diagnostics": {
+            "schemaVersion": 1,
+            "gradientInteractions": None,
+        },
+        "dataContract": _data_contract(),
+        "mlContract": ml_contract(objective),
+        "recovery": {
+            "configSha256": "a" * 64,
+            "dataContractSha256": DATA_CONTRACT_SHA256,
+            "objectiveConfigSha256": objective_config_sha256(objective),
+            "manifestSha256": MANIFEST_SHA256,
+        },
+    }
+    manifest_path = workspace / "worker-command.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = _run_worker(manifest_path, job_id, attempt_id, timeout=45)
+
+    assert result.returncode == 0, result.stderr.decode()
+    events = [
+        parse_event(line) for line in result.stdout.splitlines(keepends=True)
+    ]
+    assert events[1]["type"] == "checkpoint"
+    assert events[1]["payload"]["globalStep"] == 1
+    result_manifest = load_document(
+        workspace / "worker-result.json",
+        "result-manifest",
+    )
+    expected_lineage = {
+        "kind": "publishedModel",
+        "parentModelRef": "mdl_parent",
+        "parentCheckpointSha256": parent_artifact["sha256"],
+    }
+    assert result_manifest["checkpointMetadata"]["initialization"] == (
+        expected_lineage
+    )
+    parent_checkpoint = load_checkpoint(str(parent_path), "cpu")
+    child_checkpoint = load_checkpoint(
+        result_manifest["checkpoint"]["path"],
+        "cpu",
+    )
+    assert child_checkpoint["extra"]["initialization"] == expected_lineage
+    for name, parent_value in parent_checkpoint["state_dict"].items():
+        torch.testing.assert_close(
+            child_checkpoint["state_dict"][name],
+            parent_value,
+            rtol=0,
+            atol=0,
+        )
 
 
 def test_service_rejects_progress_after_attempt_ownership_changes():
@@ -359,7 +496,7 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=None,
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
-        ml_contract=ml_contract(TrainConfig()),
+        ml_contract=ml_contract(default_objective()),
         config_hash="a" * 64,
         manifest_sha256=MANIFEST_SHA256,
         feature_dim=2,
@@ -444,7 +581,7 @@ def test_duplicate_worker_event_is_rejected_before_repeating_its_side_effect():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
-        ml_contract=ml_contract(TrainConfig()),
+        ml_contract=ml_contract(default_objective()),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,
@@ -527,7 +664,7 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
-        ml_contract=ml_contract(TrainConfig()),
+        ml_contract=ml_contract(default_objective()),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,
@@ -542,7 +679,7 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
     committed = ExecutionInput(
         ordinal=0,
         commit_revision=1,
-        schema_id="inventory.sequence.fit.v2",
+        schema_id="inventory.sequence.fit.v3",
         data_contract_sha256=DATA_CONTRACT_SHA256,
         rows=2,
         byte_count=10,
@@ -644,7 +781,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=7",
+            "--contract-version=9",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
