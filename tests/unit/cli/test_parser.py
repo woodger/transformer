@@ -574,7 +574,6 @@ def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
         ("--weight-decay", "nan"),
         ("--batch-size", "0"),
         ("--epochs", "0"),
-        ("--stage-size", "0"),
         ("--selection-patience", "-1"),
         ("--seed", "-1"),
     ),

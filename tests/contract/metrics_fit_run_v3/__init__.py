@@ -1,1 +1,1 @@
-"""Contract tests for terminal fit run metrics v2."""
+"""Contract tests for terminal fit run metrics v3."""

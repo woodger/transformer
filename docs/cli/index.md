@@ -70,7 +70,7 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v4 содержит model config и `feature_dim`, поэтому при prediction
+Checkpoint v5 содержит model config и `feature_dim`, поэтому при prediction
 model options передавать не требуется. Явно переданные `--seq-len`, `--hidden`,
 `--layers`, `--dropout`, `--nhead` и `--mode` — это проверка: значение должно
 совпасть с checkpoint, иначе команда завершится, например, ошибкой
@@ -222,7 +222,7 @@ core, но не является полной гарантией темпера�
 | `--lr` | Learning rate | `0.0005` |
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
-| `--epochs` | Эпохи для file fit / максимум на stdin frame / эпохи всего Flight job | `25` |
+| `--epochs` | Эпохи для file fit / максимум на stdin frame | `25` |
 | `--direct-loss-weights` | Шесть положительных весов `L0…L5` через запятую | `1,1,1,1,1,1` |
 | `--[no-]select-best-checkpoint` | Выбирать best checkpoint по direct losses завершённой epoch | выключено |
 | `--selection-min-delta` | Минимальное улучшение selection score | `0.0` |
