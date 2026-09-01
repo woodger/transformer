@@ -27,6 +27,8 @@
 - Internal worker contract повышен до v8, checkpoint/recovery formats — до v5,
   training metrics — до v4, fit-run summary — до v3. Новые metrics сохраняют
   фактический target subset, auxiliary losses и sampled gradient norms/cosines.
+- TransformerEncoder inference использует стабильный dense-tensor path с
+  отключённой экспериментальной Nested Tensor оптимизацией PyTorch.
 
 ### Removed
 

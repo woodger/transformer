@@ -131,6 +131,7 @@ class TransformerModel(nn.Module):
         self.encoder = nn.TransformerEncoder(
             encoder_layer,
             num_layers=layers,
+            enable_nested_tensor=False,
         )
         self.head = TradingHead(
             hidden_dim,

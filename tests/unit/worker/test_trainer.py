@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import threading
+import warnings
 from contextlib import nullcontext
 from dataclasses import asdict
 
@@ -272,11 +273,17 @@ def test_single_target_objective_trains_and_predicts_one_public_value():
     )
 
     metrics = trainer.fit_batch(batch)
-    predictions = trainer.predict(batch.features)
+    with warnings.catch_warnings(record=True) as emitted:
+        warnings.simplefilter("always")
+        predictions = trainer.predict(batch.features)
 
     assert metrics.direct_loss_values.keys() == {"MeanReturn"}
     assert metrics.auxiliary_loss_values.keys() == {"GaussianNLL"}
     assert predictions.shape == (4, 1)
+    assert not any(
+        "nested tensors is in prototype stage" in str(item.message)
+        for item in emitted
+    )
 
 
 def test_target_error_telemetry_failure_does_not_interrupt_training(
