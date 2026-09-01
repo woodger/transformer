@@ -3,7 +3,7 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessError,
 )

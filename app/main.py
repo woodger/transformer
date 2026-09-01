@@ -13,8 +13,8 @@ from app.cli.args import parse_args
 if TYPE_CHECKING:
     import torch
 
-    from app.contracts.worker.v8.config import ModelConfig
-    from app.contracts.worker.v8.objective import ObjectiveConfig
+    from app.contracts.worker.v9.config import ModelConfig
+    from app.contracts.worker.v9.objective import ObjectiveConfig
     from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
     from app.local.fit_stream import FitStreamArguments
     from app.local.plot_metrics import PlotMetricsArguments

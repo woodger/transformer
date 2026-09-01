@@ -10,13 +10,13 @@
 ### Changed
 
 - Public device identity изменена с `cuda` на `gpu` в local fit/predict CLI и
-  новом единственном Arrow Flight v7 contract. CUDA остаётся внутренним
+  новом единственном Arrow Flight v8 contract. CUDA остаётся внутренним
   execution backend; adapter boundary преобразует public `gpu` во внутренний
   `cuda`.
-- Flight actions, descriptor paths, schemas и envelopes переведены с v5 на v7.
+- Flight actions, descriptor paths, schemas и envelopes переведены с v5 на v8.
   Capabilities, health, GPU OOM errors и связанные operational metrics
   используют provider-neutral GPU terminology.
-- Flight v7 принимает каноническое непустое подмножество public `targets` и
+- Flight v8 принимает каноническое непустое подмножество public `targets` и
   закрытый декларативный objective. Выбранный набор определяет физическую
   ширину `tgt`, public model heads и prediction; Transformer проверяет
   operators и зависимости, вычисляет canonical digest и навсегда связывает с
@@ -24,7 +24,14 @@
 - Все objective components активны с первого optimizer step. Loss stages и
   stage schedule удалены; training policy и optional gradient-interaction
   diagnostics остаются отдельными от objective identity.
-- Internal worker contract повышен до v8, checkpoint/recovery formats — до v5,
+- Fit требует явный `initialization`: `random` либо точный owner-scoped
+  `publishedModel`. Второй режим загружает только weights совместимой immutable
+  generation, начинает новый optimizer/training state, сохраняет parent
+  lineage и публикует новый `modelRef`.
+- Migration `0021` сохраняет canonical initialization fit job и помечает
+  существующие fit jobs как `random`; downgrade блокируется при наличии
+  warm-start jobs.
+- Internal worker contract повышен до v9, checkpoint/recovery formats — до v5,
   training metrics — до v4, fit-run summary — до v3. Новые metrics сохраняют
   фактический target subset, auxiliary losses и sampled gradient norms/cosines.
 - TransformerEncoder inference использует стабильный dense-tensor path с
@@ -32,7 +39,7 @@
 
 ### Removed
 
-- Flight v5/v6, checkpoint/recovery v4, прежние metrics contracts, loss-stage
+- Flight v5/v6/v7, worker v8, checkpoint/recovery v4, прежние metrics contracts, loss-stage
   options и публичное значение device `cuda` удалены без aliases или parallel
   compatibility runtime. Модели прежнего ML contract требуют переобучения.
 

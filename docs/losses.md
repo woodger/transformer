@@ -3,7 +3,7 @@
 > Тип: справочник. Текущая семантика model heads и декларативного objective.
 
 Нормативные wire schema и public target identity задаёт
-[`Flight v7 contract`](../app/contracts/flight/v7/README.md). Consumer выбирает
+[`Flight v8 contract`](../app/contracts/flight/v8/README.md). Consumer выбирает
 каноническое непустое подмножество из следующего target universe:
 
 | Public semantic | Внутреннее представление | Direct operator | Диапазон prediction |

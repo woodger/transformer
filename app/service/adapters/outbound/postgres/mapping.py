@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,
@@ -36,6 +36,7 @@ def execution_job_from_mapping(
         selected_device=row_optional_string(value, "selected_device"),
         model_label=row_optional_string(value, "model_label"),
         input_model_ref=row_optional_string(value, "resolved_model_ref"),
+        initialization=row_optional_json_object(value, "initialization"),
         prediction_column=row_string(value, "prediction_column"),
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
@@ -89,6 +90,9 @@ def job_record(row: Job | None) -> JobRecord | None:
         requested_device=row.requested_device,
         selected_device=row.selected_device,
         resolved_model_ref=row.resolved_model_ref,
+        initialization=(
+            None if row.initialization is None else dict(row.initialization)
+        ),
         prediction_column=row.prediction_column,
         data_contract=dict(row.data_contract),
         ml_contract=dict(row.ml_contract),
@@ -243,6 +247,16 @@ def row_json_object(
     return cast(JsonObject, dict(mapping))
 
 
+def row_optional_json_object(
+    value: Mapping[str, object],
+    key: str,
+) -> JsonObject | None:
+    item = value.get(key)
+    if item is None:
+        return None
+    return row_json_object(value, key)
+
+
 def _row_value(value: Mapping[str, object], key: str) -> object:
     if key not in value:
         raise ValueError(f"database field {key} is missing")
@@ -261,6 +275,7 @@ __all__ = [
     "row_json_object",
     "row_optional_float",
     "row_optional_integer",
+    "row_optional_json_object",
     "row_optional_string",
     "row_string",
 ]

@@ -3,7 +3,7 @@ from typing import cast
 
 import torch
 
-from app.contracts.worker.v8.objective import ObjectiveConfig
+from app.contracts.worker.v9.objective import ObjectiveConfig
 from app.worker.model.transformer import TransformerModel
 from app.worker.telemetry.paths import resolve_metrics_path
 from app.worker.training.run_config import (
@@ -60,6 +60,7 @@ def build_trainer(
     *,
     metrics_path: str | None = None,
     objective: ObjectiveConfig | None = None,
+    initialization: Mapping[str, object] | None = None,
 ) -> Trainer:
     train_config = _coerce_train_config(args_or_config)
     if model_config is None:
@@ -98,6 +99,7 @@ def build_trainer(
         data_contract=(
             None if data_contract is None else dict(data_contract)
         ),
+        initialization=initialization,
     )
 
 

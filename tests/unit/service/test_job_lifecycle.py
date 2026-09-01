@@ -1,10 +1,10 @@
-from app.contracts.flight.v7.constants import (
+from app.contracts.flight.v8.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CREATE_ACTION,
     INPUT_CLOSE_ACTION,
 )
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_created
 from app.service.adapters.outbound.postgres.job_lifecycle import (
     JobActionNames,
@@ -20,7 +20,7 @@ from app.service.domain.job import ExecutionState, InputState
 ML_CONTRACT = ml_contract(default_objective())
 
 
-def test_persisted_v7_wire_result_replays_without_new_mutation():
+def test_persisted_create_result_replays_without_new_mutation():
     limits = ServiceLimits(
         max_message_bytes=1024,
         target_batch_bytes=512,
@@ -58,6 +58,7 @@ def test_persisted_v7_wire_result_replays_without_new_mutation():
         },
         ml_contract=ML_CONTRACT,
         limits=limits,
+        initialization={"kind": "random"},
     )
     wire_result = present_job_created(created)
 
@@ -94,6 +95,7 @@ def test_persisted_v7_wire_result_replays_without_new_mutation():
         prediction_column="out",
         data_contract=created.data_contract,
         ml_contract=ML_CONTRACT,
+        initialization_kind="random",
     )
 
     def fail_prepare(_model):

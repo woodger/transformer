@@ -1,11 +1,11 @@
 # Локальный Arrow и stream contract
 
 > Тип: справочник. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v7 contract.
+> переопределяет public Arrow Flight v8 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v7`](../app/contracts/flight/v7/README.md); local CLI
+[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md); local CLI
 использует те же shapes там, где они пересекаются.
 
 ## Arrow IPC input

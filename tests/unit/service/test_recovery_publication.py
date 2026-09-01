@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.worker.v8.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v9.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,

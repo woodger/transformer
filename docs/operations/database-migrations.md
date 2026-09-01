@@ -53,11 +53,13 @@ heads текущего checkout. `Current revision: none` означает, чт
 тот же status. Успешный результат должен содержать `Pending migrations: no`.
 Повторный `apply` при актуальной schema не меняет её.
 
-Текущий head `0020` является baseline полной актуальной schema:
+Revision `0020` является baseline, а текущий head `0021` добавляет persisted
+fit initialization:
 
-- новая пустая database создаётся одной migration;
-- database, ранее доведённая опубликованной цепочкой до `0020`, совместима без
-  повторного DDL;
+- новая пустая database сначала создаётся baseline, затем получает последующие
+  revisions;
+- database, ранее доведённая опубликованной цепочкой до `0020`, имеет прямой
+  поддерживаемый upgrade до `0021`;
 - revisions ниже `0020` текущим checkout не поддерживаются.
 
 Для legacy database ниже `0020` сначала разверните tag `0.1.15`, примените его
@@ -73,10 +75,10 @@ instructions сохранены в tag `0.1.15`, Git history и release notes.
 ./.venv/bin/python ./app/main.py db migrations rollback
 ```
 
-Baseline `0020` необратима: rollback на ней завершается ошибкой и не удаляет
-schema или данные. Если в будущем поверх baseline появятся новые revisions,
-возможность downgrade определяется реализацией конкретной migration и её
-release instructions.
+Downgrade `0021 → 0020` допустим только при отсутствии fit jobs с
+`publishedModel` initialization; иначе migration останавливается без изменения
+schema. Он удаляет persisted initialization у остальных jobs. Baseline `0020`
+необратима: rollback на ней завершается ошибкой и не удаляет schema или данные.
 
 Не выполняйте rollback как пробный или штатный способ проверки production
 schema. Для восстановления после неуспешного изменения используйте заранее

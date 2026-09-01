@@ -13,13 +13,13 @@ from typing import TypedDict, cast
 import numpy as np
 import torch
 
-from app.contracts.json_types import JsonValue
-from app.contracts.worker.v8.config import (
+from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.worker.v9.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.objective import (
     ObjectiveConfig,
     objective_config_sha256,
 )
@@ -79,6 +79,7 @@ class Trainer:
         metrics_context: Mapping[str, JsonValue] | None = None,
         model_config: ModelConfig | None = None,
         data_contract: Mapping[str, object] | None = None,
+        initialization: Mapping[str, object] | None = None,
     ) -> None:
         self.model = model
         self.device = device
@@ -94,6 +95,11 @@ class Trainer:
         self.model_config = model_config
         self.data_contract = (
             None if data_contract is None else dict(data_contract)
+        )
+        self.initialization: JsonObject | None = (
+            None
+            if initialization is None
+            else cast(JsonObject, dict(initialization))
         )
         self.seed = train_config.seed
         self.best_selection_score: float = float("inf")
@@ -957,6 +963,11 @@ class Trainer:
                         else "last_epoch"
                     ),
                 },
+                **(
+                    {}
+                    if self.initialization is None
+                    else {"initialization": self.initialization}
+                ),
             },
         )
 

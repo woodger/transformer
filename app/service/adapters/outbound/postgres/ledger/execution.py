@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -628,6 +628,11 @@ def _execution_job_record(
         selected_device=record.selected_device,
         model_label=record.model_label,
         input_model_ref=record.resolved_model_ref,
+        initialization=(
+            None
+            if record.initialization is None
+            else json_value(record.initialization)
+        ),
         prediction_column=record.prediction_column,
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),

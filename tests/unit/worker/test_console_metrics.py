@@ -1,10 +1,10 @@
 import torch
 
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )
-from app.contracts.worker.v8.objective import default_objective
+from app.contracts.worker.v9.objective import default_objective
 from app.worker.telemetry import (
     EpochTelemetry,
     ObservedTrainingEpoch,

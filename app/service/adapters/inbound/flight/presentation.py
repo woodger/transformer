@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8.objective import CHECKPOINT_FORMAT
+from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.worker.v9.objective import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,
@@ -26,6 +26,8 @@ from app.service.application.messages.jobs import (
     ModelDescription,
     ServiceLimits,
 )
+from app.service.application.services.model_contract import model_initialization
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import TERMINAL_EXECUTION_STATES, ExecutionState
 from app.service.domain.records import (
     JobRecord,
@@ -53,7 +55,12 @@ def present_job_created(result: JobCreated) -> JsonObject:
             "requested": device_to_api(result.requested_device),
             "selected": device_to_api(result.selected_device),
         },
-        resolvedModelRef=result.resolved_model_ref,
+        initialization=result.initialization,
+        resolvedModelRef=(
+            result.resolved_model_ref
+            if result.operation == "predict"
+            else None
+        ),
         dataContract=data_contract_to_api(result.data_contract),
         mlContract=dict(result.ml_contract),
         limits=limits_to_api(result.limits),
@@ -154,7 +161,10 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
         },
         dataContract=data_contract_to_api(job.data_contract),
         mlContract=dict(job.ml_contract),
-        resolvedModelRef=job.resolved_model_ref,
+        initialization=job.initialization,
+        resolvedModelRef=(
+            job.resolved_model_ref if job.operation == "predict" else None
+        ),
         predictionColumn=job.prediction_column,
         progress=job.progress,
         recovery=_safe_recovery(snapshot.recovery),
@@ -162,7 +172,7 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
         results={
             "outputCount": snapshot.output_count,
             "modelRef": durable_result.get("modelRef"),
-            "checkpoint": durable_result.get("checkpoint"),
+            "checkpoint": _checkpoint_to_api(job, durable_result),
         },
         pollAfterMs=0 if terminal else 500,
     )
@@ -234,6 +244,7 @@ def present_model_description(result: ModelDescription) -> JsonObject:
         dataContract=data_contract_to_api(model.data_contract),
         mlContract=dict(model.ml_contract),
         modelConfig=model_config_to_api(result.model_config),
+        initialization=model_initialization(model),
         checkpoint={
             "format": CHECKPOINT_FORMAT,
             "sha256": model.sha256,
@@ -257,6 +268,22 @@ def limits_to_api(limits: ServiceLimits) -> JsonObject:
         "inputIdleTimeoutSeconds": limits.input_idle_timeout_seconds,
         "transportMessageLimitEnforced": False,
     }
+
+
+def _checkpoint_to_api(
+    job: JobRecord,
+    result: JsonObject,
+) -> JsonValue:
+    value = result.get("checkpoint")
+    if job.operation != "fit" or not isinstance(value, dict):
+        return value
+    checkpoint = dict(value)
+    if "initialization" not in checkpoint:
+        checkpoint["initialization"] = validate_initialization(
+            job.initialization,
+            missing_is_random=True,
+        )
+    return checkpoint
 
 
 def _error_to_api(code: str | None, message: str | None) -> JsonObject:

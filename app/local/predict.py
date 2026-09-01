@@ -4,7 +4,7 @@ from typing import Protocol
 
 import torch
 
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.objective import (
     ObjectiveConfig,
     objective_from_ml_contract,
 )

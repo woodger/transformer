@@ -18,8 +18,8 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v7            публичный Flight contract
-app/contracts/worker/v8            внутренний process contract
+app/contracts/flight/v8            публичный Flight contract
+app/contracts/worker/v9            внутренний process contract
 app/contracts/metrics/v4           epoch artifact и OpenSearch points
 app/contracts/metrics/fit_run/v3   terminal fit summary
 ```
@@ -93,7 +93,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v8/config.py`.
+остаются в `app/contracts/worker/v9/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -108,10 +108,10 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v7/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v8/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/ml.py` — единая Python identity target, ML-контракта,
   checkpoint и recovery formats;
-- `app/contracts/worker/v8/` — command/result manifests, capability document,
+- `app/contracts/worker/v9/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - `app/contracts/metrics/v4/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
@@ -125,6 +125,13 @@ Alembic-команды имеют отдельный короткоживущи�
 задают ширину fit target vector, публичные prediction heads и prediction
 output. Objective, training policy и необязательные diagnostics остаются
 отдельными contract sections; checkpoint навсегда связан с targets и objective.
+
+Fit initialization также является отдельной частью job identity. Service
+разрешает owner-scoped immutable parent `modelRef`, проверяет точное совпадение
+model/data/ML contracts и передаёт worker-у проверенный checkpoint artifact.
+Worker использует только parent weights и создаёт новое training state. Lineage
+с parent reference и digest сохраняется в job, checkpoint и metadata новой
+immutable model generation.
 
 Эти contracts версионируются независимо. Worker `attemptId` является UUID
 execution identity и equality fence; публичный `attempt` — положительный
@@ -142,7 +149,8 @@ metadata и metrics outbox. OpenSearch — best-effort аналитическа�
 Filesystem artifacts проходят staged lifecycle до появления ссылки на них в
 PostgreSQL. Prediction artifacts и attempt workspaces являются runtime-данными;
 fit inputs и completed-epoch checkpoints обеспечивают recovery; опубликованные
-model generations неизменяемы. Точные каталоги, failure semantics и процедуры
+model generations неизменяемы. Незавершённый warm-start fit удерживает parent
+generation от явного удаления. Точные каталоги, failure semantics и процедуры
 reconciliation задаёт
 [операционное руководство Flight](./operations/flight-service.md).
 

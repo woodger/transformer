@@ -4,18 +4,18 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v7.codec import (
+from app.contracts.flight.v8.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v9.objective import (
     ObjectiveConfig,
     ml_contract,
     objective_from_ml_contract,
@@ -95,6 +95,7 @@ class CreateRequestFields(RequestIdFields):
     model_config: NotRequired[ModelConfig]
     train_config: NotRequired[TrainConfig]
     objective_config: NotRequired[ObjectiveConfig]
+    initialization_kind: NotRequired[str]
 
 
 class AcquireRequestFields(RequestIdFields):
@@ -296,6 +297,12 @@ def _validate_create(
         common["model_config"] = resolved_model_config
         common["train_config"] = train_config
         common["objective_config"] = objective_config
+        initialization = _object(document, "initialization")
+        initialization_kind = _string(initialization, "kind")
+        common["initialization_kind"] = initialization_kind
+        if initialization_kind == "publishedModel":
+            common["model_ref"] = _string(initialization, "modelRef")
+            common["model_selector"] = "modelRef"
     else:
         selector = "modelRef" if "modelRef" in document else "modelAlias"
         common["model_ref"] = _string(document, selector)

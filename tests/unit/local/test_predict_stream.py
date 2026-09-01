@@ -9,8 +9,8 @@ import torch
 
 import app.main as main_module
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.worker.data.arrow import iter_framed_arrow
 
 predict_stream_module = importlib.import_module("app.local.predict_stream")

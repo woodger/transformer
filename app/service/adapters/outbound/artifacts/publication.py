@@ -11,17 +11,17 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.flight.v7.arrow import validate_prediction_file
+from app.contracts.flight.v8.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v9.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v8.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v9.objective import (
     CHECKPOINT_FORMAT,
     ObjectiveConfig,
     objective_config_sha256,
@@ -35,6 +35,7 @@ from app.service.application.ports.observability import (
 from app.service.application.ports.workers import ExecutionInput
 from app.service.application.services.errors import AttemptExecutionError
 from app.service.domain.errors import ServiceError
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode, ExecutionState
 from app.service.domain.records import (
     CommittedInputRecord,
@@ -410,6 +411,12 @@ class WorkerArtifactPublisher:
                 actual_train,
                 objective,
             )
+            initialization = validate_initialization(job.initialization)
+            if checkpoint_metadata.get("initialization") != initialization:
+                raise WorkerArtifactError(
+                    ErrorCode.MALFORMED_OUTPUT,
+                    "fit checkpoint initialization differs from the job",
+                )
             safe_checkpoint: JsonObject = {
                 "format": checkpoint_format,
                 "serviceVersion": service_version,
@@ -421,6 +428,7 @@ class WorkerArtifactPublisher:
                 "dataContract": _data_contract_to_api(job.data_contract),
                 "mlContract": expected_ml_contract,
                 "objective": objective.to_document(),
+                "initialization": initialization,
                 "checkpointSelection": checkpoint_selection,
             }
         except WorkerArtifactError:
@@ -448,6 +456,7 @@ class WorkerArtifactPublisher:
                 "data_contract": dict(job.data_contract),
                 "ml_contract": expected_ml_contract,
                 "objective": objective.to_document(),
+                "initialization": initialization,
                 "data_schema": data_schema,
                 "checkpoint": safe_checkpoint,
             }
@@ -476,6 +485,8 @@ class WorkerArtifactPublisher:
                 modelRef=model_ref,
                 bytes=byte_count,
                 sha256=digest,
+                initialization=initialization["kind"],
+                parentModelRef=initialization.get("parentModelRef"),
             )
             return PublishedModelArtifacts(
                 model_ref=model_ref,

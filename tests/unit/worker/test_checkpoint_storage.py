@@ -4,7 +4,7 @@ import pytest
 import torch
 
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.worker.checkpoints.model import (
     CHECKPOINT_FORMAT,
     load_checkpoint,

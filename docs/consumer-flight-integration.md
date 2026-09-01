@@ -1,10 +1,10 @@
-# Интеграция Consumer-ов с Transformer Arrow Flight v7
+# Интеграция Consumer-ов с Transformer Arrow Flight v8
 
 > Тип: интеграционное руководство. Durable workflow Consumer-а поверх
 > текущего протокола.
 
 Нормативный wire-контракт находится в
-[`app/contracts/flight/v7`](../app/contracts/flight/v7/README.md). JSON Schema и
+[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md). JSON Schema и
 эталонные фикстуры из этого каталога имеют приоритет над данным руководством.
 Эксплуатация сервиса и восстановление описаны в
 [`руководстве по эксплуатации Flight`](operations/flight-service.md). Выдача,
@@ -16,9 +16,9 @@ Rationale единой cross-language indicator identity сохранён в
 [ADR 0015](adr/0015-unified-indicator-identity-flight-v5.md); текущие значения
 задаёт нормативный Flight contract.
 
-Transformer Flight v7 — единственный текущий удалённый API. Consumer должен
-требовать `protocolVersions`, равный `[7]`, и использовать нормативные actions,
-descriptors и семантику состояний v7. V5/v6 actions, descriptors, semantic
+Transformer Flight v8 — единственный текущий удалённый API. Consumer должен
+требовать `protocolVersions`, равный `[8]`, и использовать нормативные actions,
+descriptors и семантику состояний v8. V5–v7 actions, descriptors, semantic
 aliases и fallback отсутствуют.
 
 ## Транспорт и аутентификация
@@ -36,7 +36,7 @@ Credential представляет одного owner subject, и доступ 
 задаёт [справочник аутентификации](authentication.md).
 
 Точный action envelope, transport methods и error representation задаёт
-[Flight contract](../app/contracts/flight/v7/README.md#конверт-и-аутентификация).
+[Flight contract](../app/contracts/flight/v8/README.md#конверт-и-аутентификация).
 Для каждой мутации заранее сохраните стабильный `idempotencyKey` и канонический
 request. Повторяйте потерянный запрос с тем же содержимым; не используйте ключ
 для другой операции.
@@ -44,12 +44,13 @@ request. Повторяйте потерянный запрос с тем же �
 ## Проверка capabilities
 
 Полный список actions и их точные schemas задаёт
-[Flight contract](../app/contracts/flight/v7/README.md#actions).
+[Flight contract](../app/contracts/flight/v8/README.md#actions).
 
 При запуске вызовите `capabilities` и завершитесь с ошибкой, если
-`protocolVersions` не равен `[7]`. Одновременно проверьте объявленный
-`mlContract`; несовпадение semantic IDs является ошибкой совместимости до
-создания job. Эффективные лимиты из ответа являются
+`protocolVersions` не равен `[8]`. Одновременно проверьте объявленный
+`mlContract` и точный список
+`fitInitializations: ["random", "publishedModel"]`; несовпадение является
+ошибкой совместимости до создания job. Эффективные лимиты из ответа являются
 нормативными для текущего runtime; не копируйте значения по умолчанию из
 репозитория в код Consumer-а.
 
@@ -73,13 +74,13 @@ durable state следующие значения:
 - `idempotencyKey` для create и неизменяемый документ create.
 
 Для fit этот неизменяемый документ включает выбранные `targets`, declarative
-`objective`, training policy и optional diagnostics. Их нельзя менять при
-транспортном retry того же create.
+`objective`, training policy, optional diagnostics и обязательный
+`initialization`. Их нельзя менять при транспортном retry того же create.
 
 Fit create соответствует фикстуре
-[`create-fit.request.json`](../app/contracts/flight/v7/fixtures/json/create-fit.request.json).
+[`create-fit.request.json`](../app/contracts/flight/v8/fixtures/json/create-fit.request.json).
 Predict create соответствует
-[`create-predict.request.json`](../app/contracts/flight/v7/fixtures/json/create-predict.request.json).
+[`create-predict.request.json`](../app/contracts/flight/v8/fixtures/json/create-predict.request.json).
 Predict передаёт ровно один `modelRef` или ограниченный owner-ом `modelAlias`.
 Transformer атомарно разрешает alias и возвращает неизменяемый
 `resolvedModelRef`.
@@ -92,8 +93,9 @@ execution.state = WAITING_INPUT
 fencingToken    = "1"
 ```
 
-Сохраните результат целиком, особенно `resolvedModelRef`, сведения о владении
-и лимиты загрузки. Если ответ потерян, повторите тот же логический create.
+Сохраните результат целиком, особенно разрешённый `initialization` fit либо
+`resolvedModelRef` predict, сведения о владении и лимиты загрузки. Если ответ
+потерян, повторите тот же логический create.
 `jobId` создаётся клиентом, а Transformer сохраняет его компактную идентичность
 после удаления тяжёлых данных job, поэтому отдельный resolve-вызов не нужен.
 
@@ -101,7 +103,7 @@ fencingToken    = "1"
 
 Точные формы `dataContract` и `mlContract`, текущие semantic IDs и примеры
 create принадлежат
-[Flight contract](../app/contracts/flight/v7/README.md#ml-контракт-данных-и-модели)
+[Flight contract](../app/contracts/flight/v8/README.md#ml-контракт-данных-и-модели)
 и его fixtures. Не переносите их копию в Consumer как независимую
 спецификацию.
 
@@ -120,26 +122,56 @@ direct/auxiliary operators и их статические веса в рамка
 задаёт ширину `tgt`, public model heads и prediction.
 
 Точная форма objective задана
-[`objective-config.schema.json`](../app/contracts/flight/v7/schemas/objective-config.schema.json),
+[`objective-config.schema.json`](../app/contracts/flight/v8/schemas/objective-config.schema.json),
 а нормативная cross-language пара документ/digest — фикстурами
-[`objective-config.fit.json`](../app/contracts/flight/v7/fixtures/json/objective-config.fit.json)
+[`objective-config.fit.json`](../app/contracts/flight/v8/fixtures/json/objective-config.fit.json)
 и create-fit fixture. Objective оборачивается вместе с `targets`; полученный
 документ канонизируется строго по
 [RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785.html), после чего SHA-256
 вычисляется над полученными UTF-8 bytes. Cross-language проверка находится в
-[`objective_config_sha256.mjs`](../app/contracts/flight/v7/fixtures/objective_config_sha256.mjs).
+[`objective_config_sha256.mjs`](../app/contracts/flight/v8/fixtures/objective_config_sha256.mjs).
 Transformer отклоняет неподдерживаемый operator, неверный порядок или
 неудовлетворённую target dependency до создания job.
 
 Training policy и diagnostics не входят в objective digest. Для исследования
 gradient interactions отдельно передайте `diagnostics` согласно
-[`diagnostics.schema.json`](../app/contracts/flight/v7/schemas/diagnostics.schema.json).
+[`diagnostics.schema.json`](../app/contracts/flight/v8/schemas/diagnostics.schema.json).
 Эта настройка включает только наблюдение sampled gradient norms/cosines и не
 меняет loss или checkpoint compatibility.
 
 Predict должен передать точный `mlContract`, возвращённый `model.describe` для
 выбранной модели. Нельзя подставлять только IDs из capabilities: конкретный
 `objectiveConfigSha256` является свойством обученной модели.
+
+## Выбор инициализации fit
+
+Для нового независимого обучения передайте:
+
+```json
+{"initialization":{"kind":"random"}}
+```
+
+Для weights-only warm start передайте точный `modelRef` существующей
+generation того же owner-а:
+
+```json
+{
+  "initialization": {
+    "kind": "publishedModel",
+    "modelRef": "mdl_..."
+  }
+}
+```
+
+Alias, label и filesystem path здесь недопустимы. Transformer проверяет точное
+совпадение model config, `dataContract` и `mlContract`; другой target subset
+или objective возвращает `MODEL_SCHEMA_MISMATCH` до создания job. Отсутствующий
+или чужой `modelRef` выглядит как `NOT_FOUND`.
+
+Create и status возвращают canonical lineage с `parentModelRef` и
+`parentCheckpointSha256`. Сохраните его как часть identity run. Warm start не
+возобновляет optimizer, AMP scaler, RNG, progress или selection parent-а и
+всегда создаёт новую immutable model generation. Parent не изменяется.
 
 ## Межсистемное fencing и перехват владения
 
@@ -154,7 +186,7 @@ Predict должен передать точный `mlContract`, возвращ�
 
 Token представляет собой каноническую положительную десятичную строку, а не
 JSON integer. При перехвате lease Consumer вызывает
-`transformer.v7.job.acquire` с предыдущим execution ID, ожидаемым token и новым
+`transformer.v8.job.acquire` с предыдущим execution ID, ожидаемым token и новым
 execution ID. Transformer атомарно сравнивает старую пару и возвращает
 следующий token. Сохраните этот ответ до выполнения мутаций от нового claim.
 
@@ -168,8 +200,8 @@ execution ID. Transformer атомарно сравнивает старую п�
 Один DoPut представляет один семантический payload. Границы RecordBatch нужны
 только для транспортного разбиения. Descriptor, application metadata и точные
 Arrow schemas берите из разделов
-[«Загрузка»](../app/contracts/flight/v7/README.md#загрузка) и
-[«Arrow-схемы»](../app/contracts/flight/v7/README.md#arrow-схемы) нормативного
+[«Загрузка»](../app/contracts/flight/v8/README.md#загрузка) и
+[«Arrow-схемы»](../app/contracts/flight/v8/README.md#arrow-схемы) нормативного
 контракта.
 
 Завершение DoPut не по порядку разрешено. Сервер возвращает один PutResult
@@ -187,7 +219,7 @@ Arrow schemas берите из разделов
 
 Если PutResult потерян, не считайте транспортную ошибку доказательством
 неуспешной фиксации. Выполните сверку через
-`transformer.v7.job.inputs.list`. Первая страница передаёт `afterRevision` и
+`transformer.v8.job.inputs.list`. Первая страница передаёт `afterRevision` и
 фиксирует возвращённый `snapshotRevision`. Продолжайте с тем же snapshot и
 возвращённым cursor, пока выполняется:
 
@@ -210,7 +242,7 @@ ordinal является конфликтом.
 Close обозначает EOF, а не команду запуска. Рассчитайте канонический digest по
 всем server receipts, отсортированным по ordinal. Точный набор покрытых полей и
 close request задаёт
-[Flight contract](../app/contracts/flight/v7/README.md#закрытие-входа-и-digest-манифеста).
+[Flight contract](../app/contracts/flight/v8/README.md#закрытие-входа-и-digest-манифеста).
 Исключите `commitRevision`, timestamps и порядок поступления и передайте только
 каноническую сводку.
 
@@ -227,7 +259,7 @@ close request задаёт
 
 Status предоставляет независимые input и execution state axes; точные enums и
 terminal rules задаёт
-[Flight contract](../app/contracts/flight/v7/README.md#состояние).
+[Flight contract](../app/contracts/flight/v8/README.md#состояние).
 
 Сочетание `OPEN + RUNNING` является нормальным. Для terminal success требуется
 закрытый input и атомарная публикация. Выполняйте polling не чаще, чем указано
@@ -249,13 +281,13 @@ fallback.
 
 Результаты доступны только после `execution.state=SUCCEEDED`:
 
-1. Получите все страницы `transformer.v7.job.outputs.list`.
+1. Получите все страницы `transformer.v8.job.outputs.list`.
 2. Для каждого ordinal вызовите `GetFlightInfo` с нормативным output
    descriptor.
 3. До expiration используйте возвращённый непрозрачный ticket в `DoGet`.
 
 Descriptor, ticket semantics и точную output schema задаёт
-[Flight contract](../app/contracts/flight/v7/README.md#доступ-к-результатам).
+[Flight contract](../app/contracts/flight/v8/README.md#доступ-к-результатам).
 Проверьте полученную Arrow schema до обработки строк. Значения уже находятся в
 target-space, поэтому Consumer вычисляет per-target метрики напрямую, но не
 использует общую MAE/MSE по разнородным координатам как quality score.
@@ -275,7 +307,10 @@ Transformer может готовить результаты локально д
 immutable `modelRef`. Для predict используйте этот точный reference и полный
 `dataContract`/`mlContract` из ответа. `predictionColumn` относится к prediction
 job, а не к модели. Exact request, response и lifecycle error codes принадлежат
-[Flight contract](../app/contracts/flight/v7/README.md#ml-контракт-данных-и-модели).
+[Flight contract](../app/contracts/flight/v8/README.md#ml-контракт-данных-и-модели).
+Поле `initialization` в `model.describe` показывает lineage generation. Пока
+warm-start fit не завершён, Transformer не разрешит оператору удалить его
+parent model.
 
 ## Решения о повторных запросах
 
@@ -297,14 +332,17 @@ job, а не к модели. Exact request, response и lifecycle error codes �
 ## Проверка интеграции
 
 1. Проверьте аутентифицированные `capabilities` и `health`; требуйте
-   `protocolVersions`, равный `[7]`, и поддерживаемые objective operators.
+   `protocolVersions`, равный `[8]`, поддерживаемые objective operators и оба
+   значения `fitInitializations`.
 2. Проверьте идемпотентный повтор create и перехват владения.
 3. Проверьте DoPut с fencing, пагинацию по revision и сверку после потери
    `PutResult`.
 4. Проверьте single-target fit и multi-target fit: Arrow width, returned
    `mlContract.targets` и prediction должны точно совпадать с create.
-5. Проверьте streaming fit, закрытие EOF и terminal-публикацию модели.
-6. Проверьте получение target-aligned outputs и прямой расчёт per-target
+5. Проверьте `random` fit и `publishedModel` warm start: canonical lineage,
+   новый `modelRef` и неизменность parent generation.
+6. Проверьте streaming fit, закрытие EOF и terminal-публикацию модели.
+7. Проверьте получение target-aligned outputs и прямой расчёт per-target
    metrics только для выбранного subset.
-7. Проверьте, что другой target subset, objective или прежний checkpoint
-   возвращает `MODEL_SCHEMA_MISMATCH` для predict.
+8. Проверьте, что другой target subset, objective или несовместимый parent
+   возвращает `MODEL_SCHEMA_MISMATCH`.

@@ -1,0 +1,328 @@
+{
+  "contract": "transformer-flight",
+  "version": 8,
+  "requestId": "88888888-8888-4888-8888-888888888888",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "operation": "fit",
+  "revision": 6,
+  "input": {
+    "state": "CLOSED",
+    "revision": 1,
+    "nextOrdinal": 1,
+    "payloadCount": 1,
+    "totalRows": 3,
+    "totalBytes": 1290,
+    "manifestSha256": "c02a01bfafab05f7c634bac55d4bc98f7057aad52ee89887e768b813ba686a86"
+  },
+  "execution": {
+    "state": "SUCCEEDED",
+    "attempt": 1
+  },
+  "ownership": {
+    "clientExecutionId": "56565656-5656-4565-8565-565656565656",
+    "fencingToken": "2"
+  },
+  "timestamps": {
+    "createdAt": "2026-08-10T12:00:00Z",
+    "updatedAt": "2026-08-10T12:05:00Z",
+    "inputClosedAt": "2026-08-10T12:00:10Z",
+    "queuedAt": "2026-08-10T12:00:05Z",
+    "startedAt": "2026-08-10T12:00:06Z",
+    "cancelRequestedAt": null,
+    "finishedAt": "2026-08-10T12:05:00Z"
+  },
+  "device": {
+    "requested": "gpu",
+    "selected": "gpu"
+  },
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 2,
+    "profile": "research-dividend-events-v2",
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v2"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v2",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v3",
+    "objectiveId": "transformer.objective.declarative.v1",
+    "objectiveConfigSha256": "ffd75380fa9a303f44a38205bd32ae8f63350782f4d306e32796190f955de115",
+    "checkpointFormat": "transformer-checkpoint-v5",
+    "targets": [
+      "MeanReturn",
+      "SigmaReturn",
+      "ProbTP",
+      "ProbSL",
+      "VolatilityNext",
+      "HittingProbTP"
+    ],
+    "targetWidth": 6,
+    "predictionSpace": "target",
+    "objective": {
+      "schemaVersion": 1,
+      "aggregation": "WeightedSum",
+      "reduction": "GlobalRowMean",
+      "directLosses": [
+        {
+          "target": "MeanReturn",
+          "operator": "SmoothL1",
+          "weight": 1.0
+        },
+        {
+          "target": "SigmaReturn",
+          "operator": "SmoothL1",
+          "weight": 1.0
+        },
+        {
+          "target": "ProbTP",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        },
+        {
+          "target": "ProbSL",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        },
+        {
+          "target": "VolatilityNext",
+          "operator": "LogMSE",
+          "weight": 1.0
+        },
+        {
+          "target": "HittingProbTP",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        }
+      ],
+      "auxiliaryLosses": [
+        {
+          "operator": "GaussianNLL",
+          "weight": 1.0
+        },
+        {
+          "operator": "RiskAdjustedExpectedValue",
+          "weight": 0.3,
+          "riskPenalty": 0.1
+        }
+      ],
+      "balancing": {
+        "operator": "Static"
+      }
+    }
+  },
+  "initialization": {
+    "kind": "random"
+  },
+  "resolvedModelRef": null,
+  "predictionColumn": "out",
+  "progress": {
+    "epoch": 25,
+    "step": 25,
+    "loss": -3.149016
+  },
+  "recovery": {
+    "latestCheckpoint": {
+      "generation": 25,
+      "completedEpochs": 25,
+      "globalStep": 25,
+      "trainingComplete": true
+    },
+    "resumedFromGeneration": null,
+    "retryCount": 0,
+    "lastRetryCode": null,
+    "boundary": "globalEpoch"
+  },
+  "error": null,
+  "results": {
+    "outputCount": 0,
+    "modelRef": "mdl_01j2x5f4x6h7k8m9n0p1q2r3s4",
+    "checkpoint": {
+      "format": "transformer-checkpoint-v5",
+      "serviceVersion": "0.2.0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 123456,
+      "generation": 1,
+      "modelConfig": {
+        "seqLen": 2,
+        "hidden": 256,
+        "layers": 5,
+        "dropout": 0.1,
+        "nhead": 8,
+        "mode": "relaxed",
+        "outDim": 6,
+        "featureDim": 2
+      },
+      "trainingConfig": {
+        "lr": 0.0005,
+        "batchSize": 256,
+        "epochs": 25,
+        "useAmp": false,
+        "weightDecay": 0.00001,
+        "selection": {
+          "minDelta": 0,
+          "patience": 5
+        },
+        "seed": 42,
+        "deterministic": true
+      },
+      "dataContract": {
+        "id": "inventory.learning-dataset",
+        "version": 2,
+        "profile": "research-dividend-events-v2",
+        "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "seqLen": 2,
+        "featureDim": 2,
+        "targetSchemaId": "inventory.target.v2"
+      },
+      "mlContract": {
+        "targetSchemaId": "inventory.target.v2",
+        "predictionSchemaId": "transformer.prediction.target-aligned.v3",
+        "objectiveId": "transformer.objective.declarative.v1",
+        "objectiveConfigSha256": "ffd75380fa9a303f44a38205bd32ae8f63350782f4d306e32796190f955de115",
+        "checkpointFormat": "transformer-checkpoint-v5",
+        "targets": [
+          "MeanReturn",
+          "SigmaReturn",
+          "ProbTP",
+          "ProbSL",
+          "VolatilityNext",
+          "HittingProbTP"
+        ],
+        "targetWidth": 6,
+        "predictionSpace": "target",
+        "objective": {
+          "schemaVersion": 1,
+          "aggregation": "WeightedSum",
+          "reduction": "GlobalRowMean",
+          "directLosses": [
+            {
+              "target": "MeanReturn",
+              "operator": "SmoothL1",
+              "weight": 1.0
+            },
+            {
+              "target": "SigmaReturn",
+              "operator": "SmoothL1",
+              "weight": 1.0
+            },
+            {
+              "target": "ProbTP",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            },
+            {
+              "target": "ProbSL",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            },
+            {
+              "target": "VolatilityNext",
+              "operator": "LogMSE",
+              "weight": 1.0
+            },
+            {
+              "target": "HittingProbTP",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            }
+          ],
+          "auxiliaryLosses": [
+            {
+              "operator": "GaussianNLL",
+              "weight": 1.0
+            },
+            {
+              "operator": "RiskAdjustedExpectedValue",
+              "weight": 0.3,
+              "riskPenalty": 0.1
+            }
+          ],
+          "balancing": {
+            "operator": "Static"
+          }
+        }
+      },
+      "checkpointSelection": {
+        "enabled": true,
+        "objectiveConfigSha256": "ffd75380fa9a303f44a38205bd32ae8f63350782f4d306e32796190f955de115",
+        "bestSelectionScore": 0.85,
+        "bestFrame": 1,
+        "bestEpoch": 25,
+        "source": "best_selection_score"
+      },
+      "initialization": {
+        "kind": "random"
+      },
+      "objective": {
+        "targets": [
+          "MeanReturn",
+          "SigmaReturn",
+          "ProbTP",
+          "ProbSL",
+          "VolatilityNext",
+          "HittingProbTP"
+        ],
+        "objective": {
+          "schemaVersion": 1,
+          "aggregation": "WeightedSum",
+          "reduction": "GlobalRowMean",
+          "directLosses": [
+            {
+              "target": "MeanReturn",
+              "operator": "SmoothL1",
+              "weight": 1.0
+            },
+            {
+              "target": "SigmaReturn",
+              "operator": "SmoothL1",
+              "weight": 1.0
+            },
+            {
+              "target": "ProbTP",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            },
+            {
+              "target": "ProbSL",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            },
+            {
+              "target": "VolatilityNext",
+              "operator": "LogMSE",
+              "weight": 1.0
+            },
+            {
+              "target": "HittingProbTP",
+              "operator": "BinaryCrossEntropyWithLogits",
+              "weight": 1.0
+            }
+          ],
+          "auxiliaryLosses": [
+            {
+              "operator": "GaussianNLL",
+              "weight": 1.0
+            },
+            {
+              "operator": "RiskAdjustedExpectedValue",
+              "weight": 0.3,
+              "riskPenalty": 0.1
+            }
+          ],
+          "balancing": {
+            "operator": "Static"
+          }
+        }
+      },
+      "diagnostics": {
+        "schemaVersion": 1,
+        "gradientInteractions": {
+          "sampleEverySteps": 10
+        }
+      }
+    }
+  },
+  "pollAfterMs": 0
+}

@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -43,6 +43,7 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         "selected_device": "cuda",
         "model_label": "daily",
         "resolved_model_ref": None,
+        "initialization": {"kind": "random"},
         "prediction_column": "out",
         "model_config": ModelConfig(
             seq_len=2,
@@ -115,6 +116,7 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             model_label="daily",
             model_config=ModelConfig(seq_len=2, feature_dim=2),
             training_config=train_config,
+            initialization={"kind": "random"},
             now=1.0,
             connection=session,
         )

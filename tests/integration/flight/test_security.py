@@ -8,8 +8,8 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v8.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v8.objective import default_objective
+from app.contracts.worker.v9.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v9.objective import default_objective
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -47,7 +47,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 7,
+        "version": 8,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -55,13 +55,14 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 7,
+        "version": 8,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
         "clientExecutionId": str(uuid.uuid4()),
         "operation": "fit",
         "device": "cpu",
+        "initialization": {"kind": "random"},
         "modelLabel": "returns.daily",
         "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
         "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),

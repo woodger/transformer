@@ -9,7 +9,7 @@ from app.cli.options import (
     seed,
 )
 from app.cli.parsers import SubparserTarget
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_HIDDEN,
     DEFAULT_LAYERS,

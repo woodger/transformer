@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v8.config import ModelConfig
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.config import ModelConfig
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,

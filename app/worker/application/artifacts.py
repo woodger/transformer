@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v8 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v9.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config_sha256,
@@ -75,6 +75,8 @@ def checkpoint_metadata(
         raise ValueError("fit checkpoint feature dimension is unavailable")
     if data_contract is None:
         raise ValueError("fit checkpoint data contract is unavailable")
+    if trainer.initialization is None:
+        raise ValueError("fit checkpoint initialization is unavailable")
     best_selection_score = trainer.best_selection_score
     if not math.isfinite(best_selection_score):
         best_selection_score = None
@@ -89,6 +91,7 @@ def checkpoint_metadata(
         "modelConfig": model_config_to_manifest(model_config),
         "trainingConfig": train_config_to_manifest(train_config),
         "diagnostics": train_config.diagnostics.to_document(),
+        "initialization": dict(trainer.initialization),
         "dataContract": dict(data_contract),
         "mlContract": ml,
         "objective": trainer.objective.to_document(),

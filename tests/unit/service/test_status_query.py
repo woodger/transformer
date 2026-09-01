@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -64,6 +64,7 @@ def _job(**overrides):
         started_at=4.0,
         cancel_requested_at=None,
         finished_at=8.0,
+        initialization={"kind": "random"},
     )
     return replace(value, **overrides)
 
@@ -149,6 +150,26 @@ def test_status_exposes_bounded_state_without_artifact_paths():
     assert result["recovery"]["latestCheckpoint"]["generation"] == 2
     assert result["pollAfterMs"] == 0
     assert "private" not in repr(result)
+
+
+def test_status_adds_implicit_random_lineage_to_existing_checkpoint_metadata():
+    snapshot = StatusSnapshot(
+        job=_job(result={
+            "modelRef": "mdl_generation",
+            "checkpoint": {
+                "format": "transformer-checkpoint-v5",
+                "sha256": "c" * 64,
+            },
+        }),
+        output_count=0,
+        recovery=None,
+    )
+
+    result = _execute(_query(snapshot), "request-existing-checkpoint")
+
+    assert result["results"]["checkpoint"]["initialization"] == {
+        "kind": "random"
+    }
 
 
 def test_failed_status_has_stable_error_and_nonterminal_status_polls():

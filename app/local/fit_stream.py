@@ -10,7 +10,7 @@ import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.objective import (
     ObjectiveConfig,
     objective_config_sha256,
 )

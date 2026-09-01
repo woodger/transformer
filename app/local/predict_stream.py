@@ -6,7 +6,7 @@ from typing import Protocol, cast
 import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v8.objective import (
+from app.contracts.worker.v9.objective import (
     ObjectiveConfig,
     objective_from_ml_contract,
 )

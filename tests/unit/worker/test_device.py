@@ -27,7 +27,7 @@ def test_worker_capabilities_follow_the_v8_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 8,
+        "protocolVersion": 9,
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
         "devices": [],

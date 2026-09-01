@@ -109,14 +109,13 @@ class PublishedModelStore:
 
             active_jobs = session.scalar(
                 select(func.count(Job.job_id)).where(
-                    Job.operation == "predict",
                     Job.resolved_model_ref == model_ref,
                     Job.execution_state.not_in(_TERMINAL_EXECUTION_STATES),
                 )
             )
             if active_jobs:
                 raise ModelDeletionBlocked(
-                    f"model generation has {active_jobs} active predict job(s): "
+                    f"model generation has {active_jobs} active dependent job(s): "
                     f"{model_ref}"
                 )
 

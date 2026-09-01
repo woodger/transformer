@@ -7,7 +7,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 
 - local CLI для обучения и prediction из Arrow IPC files;
 - stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v7 service с durable streaming jobs,
+- single-instance Arrow Flight v8 service с durable streaming jobs,
   PostgreSQL state, cross-system fencing, recovery, API tokens и GPU
   scheduling;
 - versioned public Flight и internal worker contracts;
@@ -20,7 +20,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 | --- | --- | --- | --- |
 | File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
 | Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v7 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v7/README.md) |
+| Arrow Flight v8 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v8/README.md) |
 
 ## Быстрый старт
 
@@ -76,8 +76,8 @@ user-site. Полный локальный сценарий находится �
 - [Локальный Arrow и stream contract](./docs/local-arrow-protocol.md)
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
-- [Arrow Flight v7 contract](./app/contracts/flight/v7/README.md)
-- [Worker process contract v8](./app/contracts/worker/v8/README.md)
+- [Arrow Flight v8 contract](./app/contracts/flight/v8/README.md)
+- [Worker process contract v9](./app/contracts/worker/v9/README.md)
 - [Training metrics contract v4](./app/contracts/metrics/v4/README.md)
 - [Аутентификация Flight](./docs/authentication.md)
 - [Операционные руководства](./docs/operations/index.md)
@@ -95,7 +95,7 @@ app/main.py          # тонкий CLI entrypoint
 app/config.py        # единый источник встроенных operational defaults
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # public Flight v7, internal worker v8 и metrics v4
+app/contracts/       # public Flight v8, internal worker v9 и metrics v4
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

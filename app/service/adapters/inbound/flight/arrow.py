@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v7.arrow import (
+from app.contracts.flight.v8.arrow import (
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,

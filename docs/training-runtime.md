@@ -7,7 +7,7 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v7`](../app/contracts/flight/v7/README.md).
+[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
@@ -25,6 +25,10 @@ Rationale target-aligned public semantics сохранён в
 - канонический документ `objective` с выбранными targets;
 - metadata выбора checkpoint.
 
+Checkpoint, опубликованный Flight fit, дополнительно сохраняет разрешённый
+`initialization` с lineage parent checkpoint. У локального fit parent
+отсутствует и отдельная Flight lineage metadata не создаётся.
+
 Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `dropout`,
 `nhead`, `context_mode` и public `out_dim`. Значение `out_dim` равно числу
 выбранных targets от `1` до `6`. Private `returnScale` head существует только
@@ -36,9 +40,17 @@ checkpoint не интерпретируются автоматически. Д�
 корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
 противоречивой semantic metadata даёт `MODEL_CORRUPT`.
 
-`fit` и `fit-stream` всегда создают новую модель. `--checkpoint-out` задаёт
-конечную цель: существующий файл атомарно заменяется только после успешного
-обучения и validation.
+Локальные `fit` и `fit-stream` всегда начинают со случайной инициализации.
+`--checkpoint-out` задаёт конечную цель: существующий файл атомарно заменяется
+только после успешного обучения и validation.
+
+Flight fit также может использовать опубликованную generation как weights-only
+warm start. Parent checkpoint должен иметь те же model/data/ML contracts;
+optimizer, AMP scaler, RNG, progress и checkpoint selection не наследуются.
+Результатом остаётся новая immutable generation, а не изменение parent и не
+продолжение его training run. Точную wire-форму `initialization` задаёт
+[Flight contract](../app/contracts/flight/v8/README.md#инициализация-fit-и-lineage-модели).
+Recovery относится к состоянию уже созданного нового job.
 
 ## Target selection и objective
 

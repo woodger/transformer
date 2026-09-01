@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v8.config import ModelConfig, TrainConfig
+from app.contracts.worker.v9.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.model import ModelLifecycleState
@@ -35,6 +35,7 @@ class ExecutionJobRecord:
     resume_generation: int | None
     queued_at: float | None
     started_at: float | None
+    initialization: JsonObject | None = None
     attempt_id: str | None = None
 
 
@@ -89,6 +90,7 @@ class JobRecord:
     started_at: float | None
     cancel_requested_at: float | None
     finished_at: float | None
+    initialization: JsonObject | None = None
 
 
 @dataclass(frozen=True, slots=True)

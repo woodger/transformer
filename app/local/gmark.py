@@ -11,13 +11,13 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9.config import (
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DROPOUT,
     DEFAULT_LR,
     DEFAULT_WEIGHT_DECAY,
 )
-from app.contracts.worker.v8.objective import default_objective
+from app.contracts.worker.v9.objective import default_objective
 from app.worker.training.constants import GRAD_CLIP_NORM
 
 MIB = 1024**2

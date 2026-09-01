@@ -5,20 +5,21 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v8 import (
+from app.contracts.worker.v9 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v8.config import (
+from app.contracts.worker.v9.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode, InputState
 from app.service.domain.records import (
     ExecutionJobRecord,
@@ -233,6 +234,23 @@ class WorkerPlanBuilder:
                     "fit job configuration is unavailable",
                 )
             model_manifest["label"] = job.model_label
+            initialization = validate_initialization(job.initialization)
+            initialization_document = dict(initialization)
+            if initialization["kind"] == "publishedModel":
+                model = self._validated_model(job)
+                if model.sha256 != initialization["parentCheckpointSha256"]:
+                    raise WorkerPlanError(
+                        ErrorCode.MODEL_CORRUPT,
+                        "parent checkpoint digest differs from fit initialization",
+                    )
+                initialization_document["checkpoint"] = {
+                    "path": self.spool.model_absolute_path(
+                        model.checkpoint_path
+                    ),
+                    "byteCount": model.byte_count,
+                    "sha256": model.sha256,
+                }
+            document["initialization"] = initialization_document
             document["training"] = train_config_to_manifest(
                 job.training_config
             )
@@ -301,7 +319,7 @@ class WorkerPlanBuilder:
         if model_ref is None:
             raise WorkerPlanError(
                 ErrorCode.MODEL_SCHEMA_MISMATCH,
-                "predict job does not identify a model generation",
+                "job does not identify a model generation",
             )
         model = self.ledger.get_model_artifact(
             model_ref,
