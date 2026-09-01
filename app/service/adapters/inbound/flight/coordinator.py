@@ -248,7 +248,9 @@ class JobCoordinator:
                 "predictionSpace": "target",
                 "objectiveSchemaVersion": OBJECTIVE_SCHEMA_VERSION,
                 "diagnosticsSchemaVersion": DIAGNOSTICS_SCHEMA_VERSION,
-                "directLossOperators": sorted(set(DIRECT_LOSS_OPERATORS.values())),
+                "directLossOperators": list(
+                    dict.fromkeys(DIRECT_LOSS_OPERATORS.values())
+                ),
                 "auxiliaryLossOperators": list(AUXILIARY_LOSS_OPERATORS),
                 "balancingOperators": ["Static"],
             },

@@ -188,6 +188,11 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     health = coordinator.health("request-health")
 
     assert capabilities["protocolVersions"] == [7]
+    assert capabilities["mlContract"]["directLossOperators"] == [
+        "SmoothL1",
+        "BinaryCrossEntropyWithLogits",
+        "LogMSE",
+    ]
     assert capabilities["devices"] == {
         "cpu": {"available": True},
         "gpu": {
