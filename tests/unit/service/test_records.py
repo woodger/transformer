@@ -1,13 +1,20 @@
 from dataclasses import FrozenInstanceError, fields
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.contracts.worker.v8.config import ModelConfig, TrainConfig
 from app.contracts.worker.v8.objective import default_objective, ml_contract
+from app.service.adapters.outbound.postgres.config import DatabaseConfig
+from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
     execution_job_from_mapping,
     recoverable_attempt_from_mapping,
 )
+from app.service.adapters.outbound.postgres.session import Database
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import (
     CommittedInputRecord,
@@ -69,6 +76,53 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
     )
     assert record.ml_contract == contract
     _assert_frozen_slots(record)
+
+
+def test_job_creation_persists_round_trippable_training_diagnostics():
+    job_id = "00000000-0000-4000-8000-000000000001"
+    train_config = TrainConfig()
+    database = Database(
+        DatabaseConfig(
+            host="localhost",
+            database="transformer",
+            user="transformer",
+            password="secret",
+        ),
+        engine=create_engine("sqlite+pysqlite:///:memory:"),
+    )
+    ledger = Ledger(database)
+    session = cast(
+        Session,
+        SimpleNamespace(add=lambda _record: None, flush=lambda: None),
+    )
+
+    try:
+        stored = ledger.create_job(
+            job_id=job_id,
+            owner_subject="inventory",
+            client_execution_id="00000000-0000-4000-8000-000000000002",
+            operation="fit",
+            requested_device="cuda",
+            prediction_column="out",
+            config_hash="b" * 64,
+            data_contract={
+                "data_contract_sha256": "a" * 64,
+                "seq_len": 2,
+                "feature_dim": 2,
+            },
+            ml_contract=ml_contract(default_objective()),
+            create_result={"jobId": job_id},
+            model_label="daily",
+            model_config=ModelConfig(seq_len=2, feature_dim=2),
+            training_config=train_config,
+            now=1.0,
+            connection=session,
+        )
+    finally:
+        database.close()
+
+    assert stored["training_config"] == train_config.to_dict()
+    assert TrainConfig.from_dict(stored["training_config"]) == train_config
 
 
 def test_committed_input_record_carries_order_and_contract_identity():

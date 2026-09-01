@@ -231,7 +231,11 @@ class Ledger:
             training_config=(
                 None
                 if training_config is None
-                else _json_value(training_config)
+                else _json_value(
+                    training_config.to_dict()
+                    if isinstance(training_config, TrainConfig)
+                    else training_config
+                )
             ),
             data_contract=_json_value(typed_data_contract),
             data_contract_sha256=contract_sha256,
