@@ -186,7 +186,10 @@ class FlightApplication:
             recovery_store.acquire_lock()
             spool.acquire_lock()
             database_config = database_config or load_database_config()
-            ledger = Ledger(Database(database_config)).initialize()
+            ledger = Ledger(
+                Database(database_config),
+                logger=logger,
+            ).initialize()
             published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)

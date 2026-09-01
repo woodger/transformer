@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Flight v8 predict jobs сохраняют отсутствующий `initialization` как SQL
+  `NULL`, а не JSONB `null`; неожиданные PostgreSQL integrity violations больше
+  не представляются Consumer-у как дубликат `jobId`.
+
 ## [0.1.17] - 2026-09-01
 
 ### Changed

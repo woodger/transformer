@@ -45,6 +45,7 @@ from app.service.adapters.outbound.postgres.models import (
     TrainingRecoveryCheckpoint,
 )
 from app.service.adapters.outbound.postgres.session import Database
+from app.service.application.ports.observability import EventLogger
 from app.service.domain.errors import (
     ServiceError,
     conflict,
@@ -83,16 +84,26 @@ _FIT_RETRY_CODES = (
     ErrorCode.SUBPROCESS_FAILED.value,
     ErrorCode.SUBPROCESS_HUNG.value,
 )
+_JOB_IDENTITY_CONSTRAINTS = frozenset({
+    "job_identities_pkey",
+    "jobs_pkey",
+})
 
 
 class Ledger:
     """PostgreSQL source of truth for Flight jobs and published artifacts."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        *,
+        logger: EventLogger | None = None,
+    ) -> None:
         runtime_database = cast(object, database)
         if not isinstance(runtime_database, Database):
             raise TypeError("Ledger requires a PostgreSQL Database")
         self.database = runtime_database
+        self.logger = logger
         self._sessions = LedgerSessions(runtime_database)
         self._inputs = InputLedgerSlice(self._sessions)
         self._execution = ExecutionLedgerSlice(self._sessions)
@@ -278,7 +289,23 @@ class Ledger:
                 session.add(job)
                 session.flush()
         except IntegrityError as exc:
-            raise conflict(f"job already exists: {job_id}") from exc
+            constraint_name = _constraint_name(exc)
+            sqlstate = _sqlstate(exc)
+            if (
+                sqlstate == "23505"
+                and constraint_name in _JOB_IDENTITY_CONSTRAINTS
+            ):
+                raise conflict(f"job already exists: {job_id}") from exc
+            if self.logger is not None:
+                self.logger.event(
+                    "postgres.job.create_integrity_error",
+                    jobId=job_id,
+                    constraintName=constraint_name or "unknown",
+                    sqlstate=sqlstate or "unknown",
+                )
+            raise RuntimeError(
+                "job creation violated persistence invariants"
+            ) from exc
         return _decode(job)
 
     def lock_job_identity(
@@ -1383,6 +1410,17 @@ def _transition_updates(updates: Mapping[str, object]) -> RowMapping:
             value = _at(cast(float, value))
         encoded[target] = value
     return encoded
+
+
+def _constraint_name(error: IntegrityError) -> str | None:
+    diagnostic = getattr(error.orig, "diag", None)
+    value = getattr(diagnostic, "constraint_name", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _sqlstate(error: IntegrityError) -> str | None:
+    value = getattr(error.orig, "sqlstate", None)
+    return value if isinstance(value, str) and value else None
 
 
 def _raise_missing_job(

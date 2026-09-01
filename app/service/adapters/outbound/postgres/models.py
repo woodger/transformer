@@ -155,7 +155,9 @@ class Job(Base):
     selected_device: Mapped[str | None] = mapped_column(String(8))
     model_label: Mapped[str | None] = mapped_column(String(256))
     resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
-    initialization: Mapped[JsonObject | None] = mapped_column(JSONB)
+    initialization: Mapped[JsonObject | None] = mapped_column(
+        JSONB(none_as_null=True)
+    )
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
     model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
