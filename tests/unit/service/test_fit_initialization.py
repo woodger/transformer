@@ -156,9 +156,12 @@ def test_predict_still_rejects_a_new_data_contract_digest():
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("id", "another-data-contract"),
+        ("version", 3),
         ("profile", "another-profile"),
         ("seq_len", 3),
         ("feature_dim", 3),
+        ("target_schema_id", "another-target-schema"),
     ],
 )
 def test_published_model_fit_rejects_a_structurally_different_data_contract(

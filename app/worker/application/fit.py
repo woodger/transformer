@@ -11,6 +11,7 @@ import torch
 from app.contracts.json_types import JsonObject
 from app.contracts.worker.v10 import FIT_INPUT_SCHEMA_ID, validate_document
 from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.data_contract import DataContractStructure
 from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
 from app.contracts.worker.v10.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
@@ -396,10 +397,9 @@ def _load_initialization(
         raise ValueError(
             "fit data contract digest differs from initialization"
         )
-    if not _data_contracts_structurally_compatible(
-        parent_contract,
-        data_contract,
-    ):
+    if DataContractStructure.from_document(
+        parent_contract
+    ) != DataContractStructure.from_document(data_contract):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",
             "parent model data contract is not compatible with fit job",
@@ -417,21 +417,6 @@ def _load_initialization(
         },
         checkpoint,
     )
-
-
-def _data_contracts_structurally_compatible(
-    parent: JsonObject,
-    current: JsonObject,
-) -> bool:
-    fields = (
-        "id",
-        "version",
-        "profile",
-        "seqLen",
-        "featureDim",
-        "targetSchemaId",
-    )
-    return all(parent.get(field) == current.get(field) for field in fields)
 
 
 __all__ = ["execute_fit"]

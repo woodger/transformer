@@ -7,7 +7,7 @@ from app.contracts.worker.v10.objective import (
     ml_contract,
     objective_config_sha256,
 )
-from app.service.application.services.model_contract import verify_model_semantics
+from app.service.application.services.model_contract import verify_model_for_predict
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
 from app.service.domain.records import PublishedModelRecord
@@ -61,9 +61,10 @@ def test_model_rejects_a_different_target_subset_as_schema_mismatch():
     })
 
     with pytest.raises(ServiceError) as raised:
-        verify_model_semantics(
+        verify_model_for_predict(
             model,
-            requested_ml_contract=ml_contract(requested_objective),
+            data_contract=data_contract,
+            ml_contract=ml_contract(requested_objective),
         )
 
     assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH

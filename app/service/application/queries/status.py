@@ -13,7 +13,7 @@ from app.service.application.messages.jobs import (
 from app.service.application.ports.job_lifecycle import ModelArtifactVerifier
 from app.service.application.ports.job_queries import JobQueryStore
 from app.service.application.services.model_contract import (
-    verify_model_semantics,
+    verify_model_integrity,
 )
 from app.service.domain.errors import ServiceError, not_found
 from app.service.domain.job import ErrorCode
@@ -113,7 +113,7 @@ class DescribeModel:
             )
         if model is None:
             raise not_found("model generation not found")
-        model_config = verify_model_semantics(model)
+        model_config = verify_model_integrity(model)
         self._model_verifier.verify(model)
         return ModelDescription(query.request_id, model, model_config)
 

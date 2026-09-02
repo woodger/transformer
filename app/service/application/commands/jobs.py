@@ -25,8 +25,8 @@ from app.service.application.ports.observability import (
     OperationalMetricSink,
 )
 from app.service.application.services.model_contract import (
-    verify_model_semantics,
-    verify_published_model_fit_semantics,
+    verify_model_for_predict,
+    verify_parent_model_for_fit,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import (
@@ -88,10 +88,10 @@ class CreateJobAction:
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                model_config = verify_model_semantics(
+                model_config = verify_model_for_predict(
                     model,
                     data_contract=command.data_contract,
-                    requested_ml_contract=command.ml_contract,
+                    ml_contract=command.ml_contract,
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
@@ -103,16 +103,12 @@ class CreateJobAction:
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                parent_config = verify_published_model_fit_semantics(
+                model_config = verify_parent_model_for_fit(
                     model,
+                    model_config=model_config,
                     data_contract=command.data_contract,
-                    requested_ml_contract=command.ml_contract,
+                    ml_contract=command.ml_contract,
                 )
-                if model_config != parent_config:
-                    raise ServiceError(
-                        ErrorCode.MODEL_SCHEMA_MISMATCH,
-                        "parent model configuration does not match fit job",
-                    )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
                 if model.data_contract is None:

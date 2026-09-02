@@ -16,6 +16,7 @@ from app.contracts.worker.v10.constants import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
 )
+from app.contracts.worker.v10.data_contract import DataContractStructure
 from app.contracts.worker.v10.diagnostics import (
     DIAGNOSTICS_SCHEMA_VERSION,
     DiagnosticsConfig,
@@ -58,6 +59,7 @@ __all__ = [
     "TARGET_IDENTITIES",
     "TARGET_SCHEMA_ID",
     "TRAINING_RECOVERY_FORMAT",
+    "DataContractStructure",
     "DiagnosticsConfig",
     "ObjectiveConfig",
     "WorkerContractError",
