@@ -17,12 +17,16 @@
 
 - Public Flight contract повышен до v9, worker process contract — до v10,
   terminal fit summary — до v4, а OpenSearch outbox projection — до v6.
-  Checkpoint/recovery formats v5 и PostgreSQL revision `0021` не изменены.
+  Checkpoint/recovery formats v5 не изменены.
 - Fit initialization упрощён до `random` и `publishedModel`. Второй режим
   загружает полный parent `state_dict` в новое training state и требует точного
   совпадения model/ML contracts и `dataContractSha256`. Поэтому warm start
   разрешён для другого временного периода той же модели, но не для иной
   semantic data binding. Predict сохраняет exact data-contract validation.
+- PostgreSQL стал единственным control-plane источником published model
+  metadata. Model directories содержат только `checkpoint.pth`; revision
+  `0022` удаляет дублирующий `metadata_path`, а startup reconciliation —
+  прежние sidecar-файлы.
 
 ### Fixed
 

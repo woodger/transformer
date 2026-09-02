@@ -25,7 +25,6 @@ def test_model_rejects_a_different_target_subset_as_schema_mismatch():
         label="returns.daily",
         generation=1,
         checkpoint_path="mdl_generation/checkpoint.pth",
-        metadata_path="mdl_generation/metadata.json",
         byte_count=1024,
         sha256="b" * 64,
         metadata={

@@ -151,9 +151,11 @@ metadata и metrics outbox. OpenSearch — best-effort аналитическа�
 Filesystem artifacts проходят staged lifecycle до появления ссылки на них в
 PostgreSQL. Prediction artifacts и attempt workspaces являются runtime-данными;
 fit inputs и completed-epoch checkpoints обеспечивают recovery; опубликованные
-model generations неизменяемы. Незавершённый warm-start fit удерживает parent
-generation от явного удаления. Точные каталоги, failure semantics и процедуры
-reconciliation задаёт
+model directories содержат только неизменяемый binary checkpoint, а отдельная
+control-plane metadata хранится только в PostgreSQL. Checkpoint сохраняет
+собственную process-contract metadata для проверки worker-ом. Незавершённый
+warm-start fit удерживает parent generation от явного удаления. Точные
+каталоги, failure semantics и процедуры reconciliation задаёт
 [операционное руководство Flight](./operations/flight-service.md).
 
 Process-local memory хранит bounded queues, token verification cache и handles

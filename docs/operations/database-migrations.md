@@ -53,13 +53,15 @@ heads текущего checkout. `Current revision: none` означает, чт
 тот же status. Успешный результат должен содержать `Pending migrations: no`.
 Повторный `apply` при актуальной schema не меняет её.
 
-Revision `0020` является baseline, а текущий head `0021` добавляет persisted
-fit initialization:
+Revision `0020` является baseline. Revision `0021` добавляет persisted fit
+initialization, а текущий head `0022` удаляет дублирующий путь model metadata:
 
 - новая пустая database сначала создаётся baseline, затем получает последующие
   revisions;
-- database, ранее доведённая опубликованной цепочкой до `0020`, имеет прямой
-  поддерживаемый upgrade до `0021`;
+- database на revision `0020` или `0021` имеет прямой поддерживаемый upgrade до
+  `0022`;
+- перед применением `0022` Flight service должен быть остановлен: предыдущий
+  executable ещё записывает удаляемую колонку при публикации модели;
 - revisions ниже `0020` текущим checkout не поддерживаются.
 
 Для legacy database ниже `0020` сначала разверните tag `0.1.15`, примените его
@@ -75,7 +77,9 @@ instructions сохранены в tag `0.1.15`, Git history и release notes.
 ./.venv/bin/python ./app/main.py db migrations rollback
 ```
 
-Downgrade `0021 → 0020` допустим только при отсутствии fit jobs с
+Downgrade `0022 → 0021` восстанавливает обязательный `metadata_path` по
+`modelRef`, но не создаёт удалённые filesystem sidecars. Downgrade
+`0021 → 0020` допустим только при отсутствии fit jobs с
 `publishedModel` initialization; иначе migration останавливается без изменения
 schema. Он удаляет persisted initialization у остальных jobs. Baseline `0020`
 необратима: rollback на ней завершается ошибкой и не удаляет schema или данные.

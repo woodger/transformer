@@ -236,7 +236,6 @@ def _published_model_command(
         label="returns.daily",
         generation=1,
         checkpoint_path="mdl_parent/checkpoint.pth",
-        metadata_path="mdl_parent/metadata.json",
         byte_count=1024,
         sha256="b" * 64,
         metadata={

@@ -196,7 +196,6 @@ class PublishedModelRecord:
     label: str
     generation: int
     checkpoint_path: str
-    metadata_path: str
     byte_count: int
     sha256: str
     metadata: JsonObject

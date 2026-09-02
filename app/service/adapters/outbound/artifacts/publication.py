@@ -67,7 +67,6 @@ class _PublicationLedger(Protocol):
         label: str,
         generation: int | None,
         checkpoint_path: str,
-        metadata_path: str,
         byte_count: int,
         sha256: str,
         metadata: JsonObject,
@@ -99,20 +98,12 @@ class _PublicationSpool(Protocol):
 
     def model_checkpoint_path(self, model_ref: str) -> str: ...
 
-    def model_metadata_path(self, model_ref: str) -> str: ...
-
     def model_relative_path(self, absolute_path: str) -> str: ...
 
     def staged_file(
         self,
         destination: str,
     ) -> AbstractContextManager[tuple[BinaryIO, str]]: ...
-
-    def atomic_write_json(
-        self,
-        destination: str,
-        document: JsonObject,
-    ) -> str: ...
 
     def remove(self, path: str) -> bool: ...
 
@@ -385,7 +376,6 @@ class WorkerArtifactPublisher:
         model_ref = f"mdl_{uuid.uuid4().hex}"
         model_directory = self.spool.model_directory(model_ref)
         checkpoint_path = self.spool.model_checkpoint_path(model_ref)
-        metadata_path = self.spool.model_metadata_path(model_ref)
         try:
             service_version = _string(
                 checkpoint_metadata.get("serviceVersion"),
@@ -460,7 +450,6 @@ class WorkerArtifactPublisher:
                 "data_schema": data_schema,
                 "checkpoint": safe_checkpoint,
             }
-            self.spool.atomic_write_json(metadata_path, metadata)
             self.ledger.publish_model(
                 job.job_id,
                 job.attempt,
@@ -469,7 +458,6 @@ class WorkerArtifactPublisher:
                 label=_model_label(job),
                 generation=None,
                 checkpoint_path=self.spool.model_relative_path(checkpoint_path),
-                metadata_path=self.spool.model_relative_path(metadata_path),
                 byte_count=byte_count,
                 sha256=digest,
                 metadata=metadata,

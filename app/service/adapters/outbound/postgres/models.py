@@ -445,7 +445,6 @@ class PublishedModel(Base):
     __table_args__ = (
         UniqueConstraint("owner_subject", "label", "generation", name="models_generation_uq"),
         UniqueConstraint("checkpoint_path", name="models_checkpoint_path_uq"),
-        UniqueConstraint("metadata_path", name="models_metadata_path_uq"),
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
@@ -475,7 +474,6 @@ class PublishedModel(Base):
     label: Mapped[str] = mapped_column(String(256), nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     checkpoint_path: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata_path: Mapped[str] = mapped_column(Text, nullable=False)
     checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[JsonObject] = mapped_column("metadata", JSONB, nullable=False)

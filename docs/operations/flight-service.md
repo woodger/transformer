@@ -98,7 +98,6 @@ Fit inputs и восстанавливаемое состояние обучен
 <project-root>/models/
   {modelRef}/
     checkpoint.pth
-    metadata.json
 ```
 
 Успешный fit может независимо получить best-effort telemetry run:
@@ -114,11 +113,12 @@ Fit inputs и восстанавливаемое состояние обучен
 через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
 Recovery checkpoint становится видимым только после надёжной записи файла и
 регистрации его generation. Epoch telemetry фиксируется отдельной best-effort
-транзакцией PostgreSQL. При публикации модели checkpoint successful attempt и
-metadata атомарно публикуются в `models/`; только после прикладного commit
-service может собрать файлы в `telemetry/` и зарегистрировать отдельный
-OpenSearch outbox. Ошибка telemetry не меняет model generation или terminal
-state. Неуспешные и прерванные attempts не создают generation модели.
+транзакцией PostgreSQL. При публикации модели checkpoint successful attempt
+атомарно записывается в `models/`, после чего ссылка, digest и semantic metadata
+фиксируются вместе с generation одной транзакцией PostgreSQL. Только после
+прикладного commit service может собрать файлы в `telemetry/` и зарегистрировать
+отдельный OpenSearch outbox. Ошибка telemetry не меняет model generation или
+terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
 `service.lock`. V9 остаётся single-instance: PostgreSQL не превращает
@@ -304,8 +304,9 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    predictions как `FAILED / EXECUTION_INTERRUPTED`, а прерванные
    `CANCELLING` jobs завершает как `CANCELLED`;
 7. удаляет незавершённые upload reservations и unpublished/orphan artifacts;
-8. сверяет постоянные каталоги моделей с metadata PostgreSQL, сохраняя
-   `AVAILABLE` и ожидающие удаления `DELETING` generations;
+8. удаляет прежние model sidecars и сверяет постоянные каталоги моделей с
+   metadata PostgreSQL, сохраняя `AVAILABLE` и ожидающие удаления `DELETING`
+   generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
 10. создаёт пустой bounded cache-aside API tokens без preload и listener;

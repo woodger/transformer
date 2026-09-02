@@ -231,9 +231,6 @@ class Spool:
     def model_checkpoint_path(self, model_ref: str) -> str:
         return os.path.join(self.model_directory(model_ref), "checkpoint.pth")
 
-    def model_metadata_path(self, model_ref: str) -> str:
-        return os.path.join(self.model_directory(model_ref), "metadata.json")
-
     def telemetry_run_directory(self, job_id: str) -> str:
         return os.path.join(
             self.telemetry_dir,
@@ -560,8 +557,8 @@ class Spool:
                 removed.append(name)
         return tuple(sorted(removed))
 
-    def cleanup_legacy_model_telemetry(self) -> tuple[str, ...]:
-        """Remove model-owned telemetry retired by migration 0010."""
+    def cleanup_retired_model_artifacts(self) -> tuple[str, ...]:
+        """Remove sidecars no longer owned by published model directories."""
 
         removed: list[str] = []
         for name in os.listdir(self.models_dir):
@@ -570,7 +567,11 @@ class Spool:
             directory = os.path.join(self.models_dir, name)
             if not os.path.isdir(directory) or os.path.islink(directory):
                 continue
-            for artifact_name in ("metrics.jsonl", "run-summary.json"):
+            for artifact_name in (
+                "metadata.json",
+                "metrics.jsonl",
+                "run-summary.json",
+            ):
                 candidate = os.path.join(directory, artifact_name)
                 if self.remove(candidate):
                     removed.append(self.model_relative_path(candidate))

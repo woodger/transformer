@@ -125,7 +125,6 @@ class ArtifactLedgerSlice:
         label: str,
         generation: int | None,
         checkpoint_path: str,
-        metadata_path: str,
         byte_count: int,
         sha256: str,
         metadata: JsonObject,
@@ -134,7 +133,6 @@ class ArtifactLedgerSlice:
     ) -> RowMapping:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
-        validate_relative_path(metadata_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
@@ -213,7 +211,6 @@ class ArtifactLedgerSlice:
                     label=label,
                     generation=generation,
                     checkpoint_path=checkpoint_path,
-                    metadata_path=metadata_path,
                     checkpoint_bytes=byte_count,
                     sha256=sha256,
                     metadata_json=json_value(metadata),
@@ -265,7 +262,6 @@ class ArtifactLedgerSlice:
                 "models_pkey",
                 "models_generation_uq",
                 "models_checkpoint_path_uq",
-                "models_metadata_path_uq",
                 "models_producing_job_id_key",
             }:
                 raise conflict("model generation already exists") from exc

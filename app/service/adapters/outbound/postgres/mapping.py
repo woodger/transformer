@@ -157,7 +157,6 @@ def published_model_record(
         label=row.label,
         generation=row.generation,
         checkpoint_path=row.checkpoint_path,
-        metadata_path=row.metadata_path,
         byte_count=row.checkpoint_bytes,
         sha256=row.sha256,
         metadata=dict(row.metadata_json),
