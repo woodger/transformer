@@ -45,12 +45,12 @@ checkpoint не интерпретируются автоматически. Д�
 только после успешного обучения и validation.
 
 Flight fit также может использовать опубликованную generation как weights-only
-initialization. `publishedModel` требует те же model и ML contracts и
-структурные поля data contract, но разрешает новый data-contract digest. При
-этом optimizer, AMP scaler, RNG, progress и checkpoint selection не
-наследуются. Результатом остаётся новая immutable generation с data contract
-текущего fit, а не изменение parent и не продолжение его training run. Точную
-wire-форму `initialization` задаёт
+initialization. `publishedModel` требует те же model и ML contracts и точный
+`dataContractSha256`; другой временной период допустим, поскольку его границы
+не входят в digest. Optimizer, AMP scaler, RNG, progress и checkpoint selection
+не наследуются. Результатом остаётся новая immutable generation, а не изменение
+parent или продолжение его training run. Точную wire-форму `initialization`
+задаёт
 [Flight contract](../app/contracts/flight/v9/README.md#инициализация-fit-и-lineage-модели).
 Recovery относится к состоянию уже созданного нового job.
 

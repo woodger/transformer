@@ -1,6 +1,7 @@
 # ADR 0025: unified published-model initialization
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 0026](0026-strict-published-model-warm-start.md)
 - Decision date: 2026-09-02
 - Supersedes: [ADR 0024](0024-cross-instrument-transfer-initialization.md)
 

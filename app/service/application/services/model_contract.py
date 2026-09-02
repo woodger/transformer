@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from typing import cast
 
 from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.data_contract import DataContractStructure
 from app.contracts.worker.v10.objective import (
     objective_config_sha256,
     objective_from_ml_contract,
@@ -70,9 +69,9 @@ def verify_parent_model_for_fit(
         data_contract=parent_data_contract,
         ml_contract=parent_ml_contract,
     )
-    if DataContractStructure.from_document(
-        parent_data_contract
-    ) != DataContractStructure.from_document(data_contract):
+    parent_digest = parent_data_contract.get("data_contract_sha256")
+    current_digest = data_contract.get("data_contract_sha256")
+    if parent_digest != current_digest:
         raise ServiceError(
             ErrorCode.MODEL_SCHEMA_MISMATCH,
             "parent model data contract is not compatible with fit job",

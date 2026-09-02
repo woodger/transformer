@@ -166,15 +166,17 @@ generation того же owner-а:
 ```
 
 Alias, label и filesystem path здесь недопустимы. Transformer требует тот же
-`profile`, размеры, model config, targets и objective, разрешая отличаться
-только `dataContractSha256`; feature blocks не переставляются. Выбирая parent
-с другим digest, Consumer принимает новое предметное наполнение совместимых
-target/context slots. Несовместимость возвращает `MODEL_SCHEMA_MISMATCH` до
-создания job, а отсутствующий или чужой `modelRef` выглядит как `NOT_FOUND`.
+model config, весь `mlContract` и `dataContractSha256`. Поэтому warm start
+применяется к той же семантической привязке target/context slots, но может
+обучаться на другом временном периоде: Consumer-side `from`/`to` не входят в
+Flight `dataContract` или его digest. Несовпадение возвращает
+`MODEL_SCHEMA_MISMATCH` до создания job, а отсутствующий или чужой `modelRef`
+выглядит как `NOT_FOUND`.
 
 Create и status возвращают canonical lineage с `parentModelRef` и
 `parentCheckpointSha256`, а также parent и current data-contract digests.
-Сохраните его как часть identity run. `publishedModel` не возобновляет
+Для принятого warm start оба data-contract digest совпадают. Сохраните lineage
+как часть identity run. `publishedModel` не возобновляет
 optimizer, AMP scaler, RNG, progress или selection parent-а и всегда создаёт
 новую immutable model generation. Parent не изменяется, а predict child требует
 её точный новый data contract.

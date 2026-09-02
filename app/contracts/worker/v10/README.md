@@ -109,10 +109,9 @@ Fit manifest всегда содержит закрытый `initialization`. Д
 `parentModelRef`, зафиксированные checkpoint и parent/current data-contract
 digests и проверенный service-owned checkpoint artifact. Worker повторно
 проверяет artifact digest и checkpoint format, требует точного совпадения model
-и ML contracts и структурных полей data contract (`id`, `version`, `profile`,
-`seqLen`, `featureDim`, `targetSchemaId`), разрешая отличаться только полному
-data-contract digest. Feature blocks не переставляются и их предметная
-семантика не интерпретируется.
+и ML contracts и равенства parent/current `dataContractSha256`. Различающиеся
+digests отклоняются как `MODEL_SCHEMA_MISMATCH`. Границы временного периода не
+пересекают worker contract и не участвуют в этой проверке.
 
 Published model является только источником полного `state_dict`. Worker
 сначала создаёт новый trainer с optimizer, AMP scaler, RNG, selection и

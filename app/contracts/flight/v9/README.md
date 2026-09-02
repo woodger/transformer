@@ -311,12 +311,11 @@ checkpoint не являются допустимыми selectors.
 
 При `publishedModel` Transformer до создания job требует точного совпадения
 `modelConfig`, всего `mlContract`, включая `targets` и `objective`, и
-структурных полей `dataContract`: `id`, `version`, `profile`, `seqLen`,
-`featureDim` и `targetSchemaId`. Отличаться разрешено только
-`dataContractSha256`, то есть принадлежащее Consumer-у семантическое наполнение
-совместимых target/context slots. Transformer не интерпретирует предметные
-идентификаторы и не переставляет feature blocks. Несовместимость возвращает
-`MODEL_SCHEMA_MISMATCH` до создания job.
+`dataContractSha256`. Поэтому parent и текущий fit должны использовать одну
+Consumer-owned семантическую привязку target/context slots. Границы временного
+периода `from`/`to` не входят в Flight `dataContract` или его digest и могут
+отличаться. Несовпадение digest возвращает `MODEL_SCHEMA_MISMATCH` до создания
+job.
 
 После проверки сервис фиксирует разрешённый lineage:
 
@@ -330,9 +329,10 @@ checkpoint не являются допустимыми selectors.
 }
 ```
 
-`publishedModel` является weights-only initialization, а не продолжением
-прежнего training run. Worker загружает весь `state_dict` без частичной
-выборки и semantic remapping. Optimizer, AMP
+Для принятого warm start значения `parentDataContractSha256` и
+`dataContractSha256` совпадают. `publishedModel` является weights-only
+initialization, а не продолжением прежнего training run. Worker загружает весь
+`state_dict` без частичной выборки и semantic remapping. Optimizer, AMP
 scaler, RNG, global step, checkpoint selection и recovery state создаются
 заново из нового fit request; все параметры модели остаются обучаемыми. Успех
 всегда публикует новую immutable generation с новым `modelRef`, точным новым

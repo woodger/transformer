@@ -364,16 +364,21 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("parent_data_digest", "current_data_digest"),
+    ("parent_data_digest", "current_data_digest", "expected_error"),
     [
-        (DATA_CONTRACT_SHA256, DATA_CONTRACT_SHA256),
-        ("e" * 64, DATA_CONTRACT_SHA256),
+        (DATA_CONTRACT_SHA256, DATA_CONTRACT_SHA256, None),
+        (
+            "e" * 64,
+            DATA_CONTRACT_SHA256,
+            "parent model data contract is not compatible with fit job",
+        ),
     ],
 )
-def test_published_model_initialization_loads_all_weights_into_fresh_training(
+def test_published_model_initialization_requires_exact_data_contract_digest(
     tmp_path,
     parent_data_digest,
     current_data_digest,
+    expected_error,
 ):
     job_id = str(uuid.uuid4())
     attempt_id = str(uuid.uuid4())
@@ -474,6 +479,20 @@ def test_published_model_initialization_loads_all_weights_into_fresh_training(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     result = _run_worker(manifest_path, job_id, attempt_id, timeout=45)
+
+    if expected_error is not None:
+        assert result.returncode == 1
+        events = [
+            parse_event(line)
+            for line in result.stdout.splitlines(keepends=True)
+        ]
+        assert events[-1]["type"] == "error"
+        assert events[-1]["payload"] == {
+            "code": "MODEL_SCHEMA_MISMATCH",
+            "message": expected_error,
+        }
+        assert not (workspace / "worker-result.json").exists()
+        return
 
     assert result.returncode == 0, result.stderr.decode()
     events = [

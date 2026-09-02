@@ -103,31 +103,24 @@ def test_published_model_fit_rejects_a_different_model_configuration():
     )
 
 
-def test_published_model_fit_accepts_a_new_data_contract_digest():
+def test_published_model_fit_rejects_a_new_data_contract_digest():
     command, parent = _published_model_command()
-    current_data_contract = {
-        **command.data_contract,
-        "data_contract_sha256": "d" * 64,
-    }
     command = replace(
         command,
-        data_contract=current_data_contract,
+        data_contract={
+            **command.data_contract,
+            "data_contract_sha256": "d" * 64,
+        },
     )
-    action, prepared, verified = _action_for_parent(parent)
+    action, _, _ = _action_for_parent(parent)
 
-    result = action.create(command)
+    with pytest.raises(ServiceError) as raised:
+        action.create(command)
 
-    assert result.initialization == {
-        "kind": "publishedModel",
-        "parentModelRef": parent.model_ref,
-        "parentCheckpointSha256": parent.sha256,
-        "parentDataContractSha256": "a" * 64,
-        "dataContractSha256": "d" * 64,
-    }
-    assert result.data_contract == current_data_contract
-    assert result.resolved_model_ref == parent.model_ref
-    assert prepared[0].resolved_model_ref == parent.model_ref
-    assert verified == [parent]
+    assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+    assert raised.value.message == (
+        "parent model data contract is not compatible with fit job"
+    )
 
 
 def test_predict_still_rejects_a_new_data_contract_digest():
@@ -150,41 +143,6 @@ def test_predict_still_rejects_a_new_data_contract_digest():
     assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
     assert raised.value.message == (
         "model data contract does not match the requested job"
-    )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("id", "another-data-contract"),
-        ("version", 3),
-        ("profile", "another-profile"),
-        ("seq_len", 3),
-        ("feature_dim", 3),
-        ("target_schema_id", "another-target-schema"),
-    ],
-)
-def test_published_model_fit_rejects_a_structurally_different_data_contract(
-    field,
-    value,
-):
-    command, parent = _published_model_command()
-    command = replace(
-        command,
-        data_contract={
-            **command.data_contract,
-            "data_contract_sha256": "d" * 64,
-            field: value,
-        },
-    )
-    action, _, _ = _action_for_parent(parent)
-
-    with pytest.raises(ServiceError) as raised:
-        action.create(command)
-
-    assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
-    assert raised.value.message == (
-        "parent model data contract is not compatible with fit job"
     )
 
 

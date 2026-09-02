@@ -127,11 +127,11 @@ output. Objective, training policy и необязательные diagnostics �
 отдельными contract sections; checkpoint навсегда связан с targets и objective.
 
 Fit initialization также является отдельной частью job identity.
-`publishedModel` требует точного совпадения model и ML contracts и всех
-структурных полей data contract, разрешая отличаться только его digest. Service
-разрешает owner-scoped immutable parent `modelRef` и передаёт worker-у
-проверенный checkpoint artifact. Worker загружает полный parent `state_dict` и
-создаёт новое training state. Lineage с parent reference, checkpoint digest и
+`publishedModel` требует точного совпадения model и ML contracts и
+`dataContractSha256`. Service разрешает owner-scoped immutable parent
+`modelRef` и передаёт worker-у проверенный checkpoint artifact. Worker повторно
+проверяет digest, загружает полный parent `state_dict` и создаёт новое training
+state. Lineage с parent reference, checkpoint digest и совпадающими
 parent/current data-contract digests сохраняется в job, checkpoint, model
 metadata и terminal fit telemetry.
 

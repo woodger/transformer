@@ -109,7 +109,8 @@ references. Он не воспроизводит их значения, кома
 | [0022](0022-declarative-target-objectives.md) | Accepted | Передавать выбранные targets и declarative objective через Flight |
 | [0023](0023-weights-only-published-model-initialization.md) | Accepted | Инициализировать новый fit только weights опубликованной модели |
 | [0024](0024-cross-instrument-transfer-initialization.md) | Superseded | Отделить cross-instrument transfer от strict warm start |
-| [0025](0025-unified-published-model-initialization.md) | Accepted | Объединить structural weights-only initialization в `publishedModel` |
+| [0025](0025-unified-published-model-initialization.md) | Superseded | Объединить structural weights-only initialization в `publishedModel` |
+| [0026](0026-strict-published-model-warm-start.md) | Accepted | Ограничить `publishedModel` точным data-contract digest |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

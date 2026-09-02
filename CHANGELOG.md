@@ -19,10 +19,10 @@
   terminal fit summary — до v4, а OpenSearch outbox projection — до v6.
   Checkpoint/recovery formats v5 и PostgreSQL revision `0021` не изменены.
 - Fit initialization упрощён до `random` и `publishedModel`. Второй режим
-  загружает полный parent `state_dict` в новое training state, требует точного
-  совпадения model/ML contracts и структурных полей data contract и разрешает
-  отличаться только `dataContractSha256`. Predict сохраняет exact data-contract
-  validation.
+  загружает полный parent `state_dict` в новое training state и требует точного
+  совпадения model/ML contracts и `dataContractSha256`. Поэтому warm start
+  разрешён для другого временного периода той же модели, но не для иной
+  semantic data binding. Predict сохраняет exact data-contract validation.
 
 ### Fixed
 
