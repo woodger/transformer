@@ -272,7 +272,6 @@ class JobCoordinator:
             fitInitializations=[
                 "random",
                 "publishedModel",
-                "publishedModelTransfer",
             ],
             features={
                 "doExchange": False,

@@ -39,15 +39,6 @@
             "kind": {"const": "publishedModel"},
             "modelRef": {"$ref": "common.schema.json#/$defs/label"}
           }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "modelRef"],
-          "properties": {
-            "kind": {"const": "publishedModelTransfer"},
-            "modelRef": {"$ref": "common.schema.json#/$defs/label"}
-          }
         }
       ]
     },

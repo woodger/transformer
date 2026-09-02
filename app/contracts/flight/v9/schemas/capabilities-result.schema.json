@@ -111,12 +111,11 @@
       "type": "array",
       "prefixItems": [
         {"const": "random"},
-        {"const": "publishedModel"},
-        {"const": "publishedModelTransfer"}
+        {"const": "publishedModel"}
       ],
       "items": false,
-      "minItems": 3,
-      "maxItems": 3
+      "minItems": 2,
+      "maxItems": 2
     },
     "features": {
       "type": "object",

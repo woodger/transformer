@@ -53,23 +53,18 @@ def test_published_model_fit_resolves_immutable_parent_lineage():
         "kind": "publishedModel",
         "parentModelRef": parent.model_ref,
         "parentCheckpointSha256": parent.sha256,
+        "parentDataContractSha256": "a" * 64,
+        "dataContractSha256": "a" * 64,
     }
     assert result.resolved_model_ref == parent.model_ref
     assert prepared[0].resolved_model_ref == parent.model_ref
     assert verified == [parent]
 
 
-@pytest.mark.parametrize(
-    "initialization_kind",
-    ["publishedModel", "publishedModelTransfer"],
-)
-def test_published_model_fit_rejects_a_different_model_configuration(
-    initialization_kind,
-):
+def test_published_model_fit_rejects_a_different_model_configuration():
     command, parent = _published_model_command()
     command = replace(
         command,
-        initialization_kind=initialization_kind,
         model_config=ModelConfig(
             seq_len=2,
             hidden=16,
@@ -108,7 +103,7 @@ def test_published_model_fit_rejects_a_different_model_configuration(
     )
 
 
-def test_transfer_fit_accepts_a_new_instrument_binding_and_persists_lineage():
+def test_published_model_fit_accepts_a_new_data_contract_digest():
     command, parent = _published_model_command()
     current_data_contract = {
         **command.data_contract,
@@ -117,14 +112,13 @@ def test_transfer_fit_accepts_a_new_instrument_binding_and_persists_lineage():
     command = replace(
         command,
         data_contract=current_data_contract,
-        initialization_kind="publishedModelTransfer",
     )
     action, prepared, verified = _action_for_parent(parent)
 
     result = action.create(command)
 
     assert result.initialization == {
-        "kind": "publishedModelTransfer",
+        "kind": "publishedModel",
         "parentModelRef": parent.model_ref,
         "parentCheckpointSha256": parent.sha256,
         "parentDataContractSha256": "a" * 64,
@@ -136,14 +130,17 @@ def test_transfer_fit_accepts_a_new_instrument_binding_and_persists_lineage():
     assert verified == [parent]
 
 
-def test_strict_warm_start_still_rejects_a_new_instrument_binding():
+def test_predict_still_rejects_a_new_data_contract_digest():
     command, parent = _published_model_command()
     command = replace(
         command,
+        operation="predict",
         data_contract={
             **command.data_contract,
             "data_contract_sha256": "d" * 64,
         },
+        model_label=None,
+        initialization_kind=None,
     )
     action, _, _ = _action_for_parent(parent)
 
@@ -164,7 +161,7 @@ def test_strict_warm_start_still_rejects_a_new_instrument_binding():
         ("feature_dim", 3),
     ],
 )
-def test_transfer_fit_rejects_a_structurally_different_data_contract(
+def test_published_model_fit_rejects_a_structurally_different_data_contract(
     field,
     value,
 ):
@@ -176,7 +173,6 @@ def test_transfer_fit_rejects_a_structurally_different_data_contract(
             "data_contract_sha256": "d" * 64,
             field: value,
         },
-        initialization_kind="publishedModelTransfer",
     )
     action, _, _ = _action_for_parent(parent)
 
@@ -185,11 +181,11 @@ def test_transfer_fit_rejects_a_structurally_different_data_contract(
 
     assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
     assert raised.value.message == (
-        "parent model data contract is not compatible with transfer fit"
+        "parent model data contract is not compatible with fit job"
     )
 
 
-def test_transfer_fit_rejects_a_different_objective():
+def test_published_model_fit_rejects_a_different_objective():
     command, parent = _published_model_command()
     single_target = ObjectiveConfig.from_document({
         "targets": ["MeanReturn"],
@@ -215,7 +211,6 @@ def test_transfer_fit_rejects_a_different_objective():
             "data_contract_sha256": "d" * 64,
         },
         ml_contract=ml_contract(single_target),
-        initialization_kind="publishedModelTransfer",
     )
     action, _, _ = _action_for_parent(parent)
 

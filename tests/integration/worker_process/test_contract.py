@@ -364,15 +364,14 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("initialization_kind", "parent_data_digest", "current_data_digest"),
+    ("parent_data_digest", "current_data_digest"),
     [
-        ("publishedModel", DATA_CONTRACT_SHA256, DATA_CONTRACT_SHA256),
-        ("publishedModelTransfer", "e" * 64, DATA_CONTRACT_SHA256),
+        (DATA_CONTRACT_SHA256, DATA_CONTRACT_SHA256),
+        ("e" * 64, DATA_CONTRACT_SHA256),
     ],
 )
 def test_published_model_initialization_loads_all_weights_into_fresh_training(
     tmp_path,
-    initialization_kind,
     parent_data_digest,
     current_data_digest,
 ):
@@ -424,16 +423,13 @@ def test_published_model_initialization_loads_all_weights_into_fresh_training(
         deterministic=True,
     )
     initialization = {
-        "kind": initialization_kind,
+        "kind": "publishedModel",
         "parentModelRef": "mdl_parent",
         "parentCheckpointSha256": parent_artifact["sha256"],
+        "parentDataContractSha256": parent_data_digest,
+        "dataContractSha256": current_data_digest,
         "checkpoint": parent_artifact,
     }
-    if initialization_kind == "publishedModelTransfer":
-        initialization.update({
-            "parentDataContractSha256": parent_data_digest,
-            "dataContractSha256": current_data_digest,
-        })
     manifest = {
         "contract": "transformer-worker",
         "protocolVersion": 10,
@@ -490,15 +486,12 @@ def test_published_model_initialization_loads_all_weights_into_fresh_training(
         "result-manifest",
     )
     expected_lineage = {
-        "kind": initialization_kind,
+        "kind": "publishedModel",
         "parentModelRef": "mdl_parent",
         "parentCheckpointSha256": parent_artifact["sha256"],
+        "parentDataContractSha256": parent_data_digest,
+        "dataContractSha256": current_data_digest,
     }
-    if initialization_kind == "publishedModelTransfer":
-        expected_lineage.update({
-            "parentDataContractSha256": parent_data_digest,
-            "dataContractSha256": current_data_digest,
-        })
     assert result_manifest["checkpointMetadata"]["initialization"] == (
         expected_lineage
     )

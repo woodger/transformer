@@ -41,9 +41,9 @@ State: DELETING
 
 Request transaction:
 
-- блокирует новые prediction jobs и strict/transfer fit для этой generation;
+- блокирует новые prediction jobs и `publishedModel` fit для этой generation;
 - отклоняется, если на модель ссылается любой незавершённый prediction или
-  strict либо transfer fit job;
+  `publishedModel` fit job;
 - снимает alias, только если он всё ещё указывает на удаляемую generation;
 - переводит модель в `DELETING`.
 
@@ -94,8 +94,8 @@ lifecycle.
 Для проверки выбранной generation:
 
 1. Найдите точный `MODEL REF` через `models list`.
-2. Убедитесь, что у generation нет незавершённых prediction либо strict или
-   transfer fit jobs.
+2. Убедитесь, что у generation нет незавершённых prediction либо
+   `publishedModel` fit jobs.
 3. Выполните `models delete <MODEL_REF>` и проверьте `State: DELETING`.
 4. Убедитесь, что generation исчезла из обычного `models list`.
 5. Наблюдайте `models list --deleted`, пока state не станет `DELETED` и не

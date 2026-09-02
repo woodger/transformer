@@ -269,27 +269,6 @@ def test_fit_manifest_carries_resolved_parent_and_checkpoint_artifact():
         "kind": "publishedModel",
         "parentModelRef": "mdl_parent",
         "parentCheckpointSha256": SHA256,
-        "checkpoint": {
-            "path": "/srv/transformer/models/mdl_parent/checkpoint.pth",
-            "byteCount": 1024,
-            "sha256": SHA256,
-        },
-    }
-
-    assert validate_document(manifest, "command-manifest") is manifest
-
-    missing_artifact = deepcopy(manifest)
-    del missing_artifact["initialization"]["checkpoint"]
-    with pytest.raises(WorkerContractError, match="initialization"):
-        validate_document(missing_artifact, "command-manifest")
-
-
-def test_fit_manifest_carries_transfer_lineage_and_checkpoint_artifact():
-    manifest = _fit_manifest()
-    manifest["initialization"] = {
-        "kind": "publishedModelTransfer",
-        "parentModelRef": "mdl_parent",
-        "parentCheckpointSha256": SHA256,
         "parentDataContractSha256": "2" * 64,
         "dataContractSha256": DATA_CONTRACT_SHA256,
         "checkpoint": {

@@ -216,10 +216,7 @@ class Ledger:
                 initialization["kind"] == "random"
                 and resolved_model_ref is not None
             ) or (
-                initialization["kind"] in (
-                    "publishedModel",
-                    "publishedModelTransfer",
-                )
+                initialization["kind"] == "publishedModel"
                 and resolved_model_ref != parent_model_ref
             ):
                 raise ValueError(

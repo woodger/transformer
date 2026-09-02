@@ -14,7 +14,7 @@ from app.service.domain.job import ErrorCode
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import PublishedModelRecord
 
-_TRANSFER_DATA_CONTRACT_FIELDS = (
+_STRUCTURAL_DATA_CONTRACT_FIELDS = (
     "id",
     "version",
     "profile",
@@ -86,7 +86,7 @@ def verify_model_semantics(
     return model_config
 
 
-def verify_transfer_model_semantics(
+def verify_published_model_fit_semantics(
     model: PublishedModelRecord,
     *,
     data_contract: JsonObject,
@@ -104,11 +104,11 @@ def verify_transfer_model_semantics(
         )
     if any(
         parent_data_contract.get(field) != data_contract.get(field)
-        for field in _TRANSFER_DATA_CONTRACT_FIELDS
+        for field in _STRUCTURAL_DATA_CONTRACT_FIELDS
     ):
         raise ServiceError(
             ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "parent model data contract is not compatible with transfer fit",
+            "parent model data contract is not compatible with fit job",
         )
     return model_config
 
@@ -138,5 +138,5 @@ def _object(value: object, label: str) -> JsonObject:
 __all__ = [
     "model_initialization",
     "verify_model_semantics",
-    "verify_transfer_model_semantics",
+    "verify_published_model_fit_semantics",
 ]

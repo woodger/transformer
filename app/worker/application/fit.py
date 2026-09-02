@@ -336,6 +336,8 @@ def _load_initialization(
     kind = string_field(initialization, "kind")
     if kind == "random":
         return {"kind": "random"}, None
+    if kind != "publishedModel":
+        raise ValueError("fit initialization kind is invalid")
 
     checkpoint_document = object_field(initialization, "checkpoint")
     parent_sha256 = string_field(
@@ -367,25 +369,8 @@ def _load_initialization(
             "MODEL_SCHEMA_MISMATCH",
             "parent checkpoint contract differs from the fit job",
         )
-    parent_data_contract = checkpoint.get("data_contract")
-    if kind == "publishedModel":
-        if parent_data_contract != data_contract:
-            raise WorkerExecutionError(
-                "MODEL_SCHEMA_MISMATCH",
-                "parent checkpoint data contract differs from the fit job",
-            )
-        lineage: JsonObject = {
-            "kind": "publishedModel",
-            "parentModelRef": string_field(
-                initialization,
-                "parentModelRef",
-            ),
-            "parentCheckpointSha256": parent_sha256,
-        }
-        return lineage, checkpoint
-
     parent_contract = object_document(
-        parent_data_contract,
+        checkpoint.get("data_contract"),
         "parent checkpoint data contract",
     )
     parent_data_contract_sha256 = string_field(
@@ -411,17 +396,17 @@ def _load_initialization(
         raise ValueError(
             "fit data contract digest differs from initialization"
         )
-    if not _transfer_data_contracts_compatible(
+    if not _data_contracts_structurally_compatible(
         parent_contract,
         data_contract,
     ):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",
-            "parent model data contract is not compatible with transfer fit",
+            "parent model data contract is not compatible with fit job",
         )
     return (
         {
-            "kind": "publishedModelTransfer",
+            "kind": "publishedModel",
             "parentModelRef": string_field(
                 initialization,
                 "parentModelRef",
@@ -434,7 +419,7 @@ def _load_initialization(
     )
 
 
-def _transfer_data_contracts_compatible(
+def _data_contracts_structurally_compatible(
     parent: JsonObject,
     current: JsonObject,
 ) -> bool:

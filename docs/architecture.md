@@ -126,14 +126,14 @@ Alembic-команды имеют отдельный короткоживущи�
 output. Objective, training policy и необязательные diagnostics остаются
 отдельными contract sections; checkpoint навсегда связан с targets и objective.
 
-Fit initialization также является отдельной частью job identity. Strict warm
-start требует точного совпадения model/data/ML contracts. Отдельный
-cross-instrument transfer сохраняет model и ML contracts и все структурные
-поля data contract, разрешая отличаться только его digest. Service разрешает
-owner-scoped immutable parent `modelRef` и передаёт worker-у проверенный
-checkpoint artifact. Worker использует только все parent weights и создаёт
-новое training state. Lineage с parent reference и digests сохраняется в job,
-checkpoint, model metadata и terminal fit telemetry.
+Fit initialization также является отдельной частью job identity.
+`publishedModel` требует точного совпадения model и ML contracts и всех
+структурных полей data contract, разрешая отличаться только его digest. Service
+разрешает owner-scoped immutable parent `modelRef` и передаёт worker-у
+проверенный checkpoint artifact. Worker загружает полный parent `state_dict` и
+создаёт новое training state. Lineage с parent reference, checkpoint digest и
+parent/current data-contract digests сохраняется в job, checkpoint, model
+metadata и terminal fit telemetry.
 
 Эти contracts версионируются независимо. Worker `attemptId` является UUID
 execution identity и equality fence; публичный `attempt` — положительный

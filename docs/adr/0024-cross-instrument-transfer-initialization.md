@@ -1,6 +1,7 @@
 # ADR 0024: explicit cross-instrument transfer initialization
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 0025](0025-unified-published-model-initialization.md)
 - Decision date: 2026-09-02
 
 > Historical decision record; not a current system reference. See

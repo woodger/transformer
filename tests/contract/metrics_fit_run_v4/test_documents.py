@@ -36,7 +36,7 @@ def _summary():
         git_commit="c" * 40,
         targets=("MeanReturn",),
         initialization={
-            "kind": "publishedModelTransfer",
+            "kind": "publishedModel",
             "parentModelRef": "mdl_" + "4" * 32,
             "parentCheckpointSha256": "e" * 64,
             "parentDataContractSha256": "f" * 64,
@@ -95,9 +95,7 @@ def test_run_document_is_idempotent_and_does_not_expose_storage_path():
 
     assert document["schema"] == "inventory.metrics.fit-run.v4"
     assert document["runId"] == JOB_ID
-    assert document["initialization"]["kind"] == (
-        "publishedModelTransfer"
-    )
+    assert document["initialization"]["kind"] == "publishedModel"
     assert document["initialization"]["parentDataContractSha256"] == (
         "f" * 64
     )

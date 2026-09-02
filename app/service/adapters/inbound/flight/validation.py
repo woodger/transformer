@@ -300,10 +300,7 @@ def _validate_create(
         initialization = _object(document, "initialization")
         initialization_kind = _string(initialization, "kind")
         common["initialization_kind"] = initialization_kind
-        if initialization_kind in (
-            "publishedModel",
-            "publishedModelTransfer",
-        ):
+        if initialization_kind == "publishedModel":
             common["model_ref"] = _string(initialization, "modelRef")
             common["model_selector"] = "modelRef"
     else:

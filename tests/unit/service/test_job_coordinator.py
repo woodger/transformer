@@ -193,7 +193,6 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     assert capabilities["fitInitializations"] == [
         "random",
         "publishedModel",
-        "publishedModelTransfer",
     ]
     assert capabilities["mlContract"]["directLossOperators"] == [
         "SmoothL1",

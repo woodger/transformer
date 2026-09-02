@@ -118,14 +118,14 @@ def test_fit_job_keeps_initialization_document():
     assert stored["initialization"] == {"kind": "random"}
 
 
-def test_transfer_fit_keeps_resolved_parent_and_complete_lineage():
+def test_published_model_fit_keeps_resolved_parent_and_complete_lineage():
     records = []
     session = cast(
         Session,
         SimpleNamespace(add=records.append, flush=lambda: None),
     )
     initialization = {
-        "kind": "publishedModelTransfer",
+        "kind": "publishedModel",
         "parentModelRef": _MODEL_REF,
         "parentCheckpointSha256": "c" * 64,
         "parentDataContractSha256": "d" * 64,

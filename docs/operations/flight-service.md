@@ -357,7 +357,7 @@ Published model generation имеет независимый двухфазны�
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
 Запрос удаления блокируется не только незавершённым prediction, но и любым
-незавершённым fit, использующим generation как strict или transfer parent.
+незавершённым fit, использующим generation как `publishedModel` parent.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из

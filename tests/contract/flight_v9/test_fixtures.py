@@ -64,7 +64,6 @@ REQUEST_FIXTURES = {
     "health.request.json": "query.schema.json",
     "create-fit.request.json": "create.schema.json",
     "create-fit-published-model.request.json": "create.schema.json",
-    "create-fit-published-model-transfer.request.json": "create.schema.json",
     "create-predict.request.json": "create.schema.json",
     "acquire.request.json": "acquire.schema.json",
     "status.request.json": "status.schema.json",
@@ -96,7 +95,6 @@ ACTION_REQUESTS = {
     "health.request.json": HEALTH_ACTION,
     "create-fit.request.json": CREATE_ACTION,
     "create-fit-published-model.request.json": CREATE_ACTION,
-    "create-fit-published-model-transfer.request.json": CREATE_ACTION,
     "create-predict.request.json": CREATE_ACTION,
     "acquire.request.json": ACQUIRE_ACTION,
     "status.request.json": STATUS_ACTION,
@@ -227,9 +225,9 @@ def test_status_exposes_only_operation_specific_compact_progress():
         validate_contract_document(extended, schema)
 
 
-def test_results_preserve_complete_transfer_lineage():
+def test_results_preserve_complete_published_model_lineage():
     lineage = {
-        "kind": "publishedModelTransfer",
+        "kind": "publishedModel",
         "parentModelRef": "mdl_01j2x5f4x6h7k8m9n0p1q2r3s4",
         "parentCheckpointSha256": "e" * 64,
         "parentDataContractSha256": "4" * 64,

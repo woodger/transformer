@@ -302,46 +302,27 @@ gradients и не меняют checkpoint compatibility.
 {"kind":"publishedModel","modelRef":"mdl_..."}
 ```
 
-или:
-
-```json
-{"kind":"publishedModelTransfer","modelRef":"mdl_..."}
-```
-
 Capabilities возвращает поддерживаемый порядок
-`fitInitializations: ["random", "publishedModel", "publishedModelTransfer"]`.
-Оба published-model режима принимают только точный неизменяемый `modelRef` того
-же owner-а; alias, label и путь к checkpoint не являются допустимыми selectors.
+`fitInitializations: ["random", "publishedModel"]`. `publishedModel` принимает
+только точный неизменяемый `modelRef` того же owner-а; alias, label и путь к
+checkpoint не являются допустимыми selectors.
 Отсутствующая или принадлежащая другому owner-у generation возвращает
 `NOT_FOUND`.
 
 При `publishedModel` Transformer до создания job требует точного совпадения
-`modelConfig`, всего `dataContract` и всего `mlContract`, включая `targets` и
-`objective`. Несовместимость возвращает `MODEL_SCHEMA_MISMATCH`. После
-проверки сервис фиксирует разрешённый lineage:
+`modelConfig`, всего `mlContract`, включая `targets` и `objective`, и
+структурных полей `dataContract`: `id`, `version`, `profile`, `seqLen`,
+`featureDim` и `targetSchemaId`. Отличаться разрешено только
+`dataContractSha256`, то есть принадлежащее Consumer-у семантическое наполнение
+совместимых target/context slots. Transformer не интерпретирует предметные
+идентификаторы и не переставляет feature blocks. Несовместимость возвращает
+`MODEL_SCHEMA_MISMATCH` до создания job.
+
+После проверки сервис фиксирует разрешённый lineage:
 
 ```json
 {
   "kind": "publishedModel",
-  "parentModelRef": "mdl_...",
-  "parentCheckpointSha256": "<sha256>"
-}
-```
-
-`publishedModelTransfer` является отдельным явным cross-instrument transfer.
-Для него должны точно совпадать `modelConfig`, весь `mlContract` и структурные
-поля `dataContract`: `id`, `version`, `profile`, `seqLen`, `featureDim` и
-`targetSchemaId`. Отличаться разрешено только `dataContractSha256`, то есть
-принадлежащее Consumer-у семантическое наполнение совместимых target/context
-slots. Transformer не интерпретирует FIGI и не переставляет feature blocks.
-Несовпадение profile, targets, objective, ширины tensor-ов или архитектуры
-возвращает `MODEL_SCHEMA_MISMATCH` до создания job.
-
-Разрешённый transfer lineage имеет вид:
-
-```json
-{
-  "kind": "publishedModelTransfer",
   "parentModelRef": "mdl_...",
   "parentCheckpointSha256": "<sha256>",
   "parentDataContractSha256": "<sha256>",
@@ -349,9 +330,9 @@ slots. Transformer не интерпретирует FIGI и не переста
 }
 ```
 
-Оба режима являются weights-only initialization, а не продолжением прежнего
-training run. Worker загружает весь `state_dict` без частичной выборки и
-semantic remapping. Optimizer, AMP
+`publishedModel` является weights-only initialization, а не продолжением
+прежнего training run. Worker загружает весь `state_dict` без частичной
+выборки и semantic remapping. Optimizer, AMP
 scaler, RNG, global step, checkpoint selection и recovery state создаются
 заново из нового fit request; все параметры модели остаются обучаемыми. Успех
 всегда публикует новую immutable generation с новым `modelRef`, точным новым

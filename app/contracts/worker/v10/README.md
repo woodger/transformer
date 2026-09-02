@@ -106,23 +106,21 @@ declarative objective и canonical digest. Для fit worker повторно в
 
 Fit manifest всегда содержит закрытый `initialization`. Для `random` это
 только `{"kind":"random"}`. Для `publishedModel` сервис передаёт
-`parentModelRef`, зафиксированный `parentCheckpointSha256` и проверенный
-service-owned checkpoint artifact. Worker повторно проверяет artifact digest,
-checkpoint format и точное совпадение model/data/ML contracts.
+`parentModelRef`, зафиксированные checkpoint и parent/current data-contract
+digests и проверенный service-owned checkpoint artifact. Worker повторно
+проверяет artifact digest и checkpoint format, требует точного совпадения model
+и ML contracts и структурных полей data contract (`id`, `version`, `profile`,
+`seqLen`, `featureDim`, `targetSchemaId`), разрешая отличаться только полному
+data-contract digest. Feature blocks не переставляются и их предметная
+семантика не интерпретируется.
 
-Для `publishedModelTransfer` manifest дополнительно фиксирует parent и current
-`dataContractSha256`. Worker требует точного совпадения model и ML contracts и
-структурных полей data contract (`id`, `version`, `profile`, `seqLen`,
-`featureDim`, `targetSchemaId`), разрешая отличаться только digest. Feature
-blocks не переставляются и их предметная семантика не интерпретируется.
-
-Оба published-model режима являются только источником `state_dict`. Worker
+Published model является только источником полного `state_dict`. Worker
 сначала создаёт новый trainer с optimizer, AMP scaler, RNG, selection и
-progress нового job, затем загружает parent weights. Training state parent-а не
-читается. Recovery checkpoint, если он есть, относится уже к текущему job и
-восстанавливается после parent weights. Terminal checkpoint и
-`checkpointMetadata` сохраняют разрешённый lineage без внутреннего artifact
-path.
+progress нового job, затем загружает все parent weights. Training state
+parent-а не читается. Recovery checkpoint, если он есть, относится уже к
+текущему job и восстанавливается после parent weights. Terminal checkpoint и
+`checkpointMetadata` сохраняют разрешённый lineage с parent/current
+data-contract digests без внутреннего artifact path.
 
 Predict может формировать локальные для attempt outputs по мере поступления
 inputs, включая typed-empty outputs. Result manifest публикуется только после

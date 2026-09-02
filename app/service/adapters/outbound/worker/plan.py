@@ -236,34 +236,30 @@ class WorkerPlanBuilder:
             model_manifest["label"] = job.model_label
             initialization = validate_initialization(job.initialization)
             initialization_document = dict(initialization)
-            if initialization["kind"] in (
-                "publishedModel",
-                "publishedModelTransfer",
-            ):
+            if initialization["kind"] == "publishedModel":
                 model = self._validated_model(job)
                 if model.sha256 != initialization["parentCheckpointSha256"]:
                     raise WorkerPlanError(
                         ErrorCode.MODEL_CORRUPT,
                         "parent checkpoint digest differs from fit initialization",
                     )
-                if initialization["kind"] == "publishedModelTransfer":
-                    if (
-                        model.data_contract is None
-                        or model.data_contract.get("data_contract_sha256")
-                        != initialization["parentDataContractSha256"]
-                    ):
-                        raise WorkerPlanError(
-                            ErrorCode.MODEL_CORRUPT,
-                            "parent data contract digest differs from fit initialization",
-                        )
-                    if (
-                        job.data_contract.get("data_contract_sha256")
-                        != initialization["dataContractSha256"]
-                    ):
-                        raise WorkerPlanError(
-                            ErrorCode.INTERNAL,
-                            "fit data contract digest differs from initialization",
-                        )
+                if (
+                    model.data_contract is None
+                    or model.data_contract.get("data_contract_sha256")
+                    != initialization["parentDataContractSha256"]
+                ):
+                    raise WorkerPlanError(
+                        ErrorCode.MODEL_CORRUPT,
+                        "parent data contract digest differs from fit initialization",
+                    )
+                if (
+                    job.data_contract.get("data_contract_sha256")
+                    != initialization["dataContractSha256"]
+                ):
+                    raise WorkerPlanError(
+                        ErrorCode.INTERNAL,
+                        "fit data contract digest differs from initialization",
+                    )
                 initialization_document["checkpoint"] = {
                     "path": self.spool.model_absolute_path(
                         model.checkpoint_path

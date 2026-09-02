@@ -95,7 +95,9 @@
   "initialization": {
     "kind": "publishedModel",
     "parentModelRef": "mdl_parent",
-    "parentCheckpointSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    "parentCheckpointSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "parentDataContractSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "checkpoint": {
     "format": "transformer-checkpoint-v5",

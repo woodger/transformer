@@ -16,23 +16,11 @@ def random_initialization() -> JsonObject:
 def published_model_initialization(
     model_ref: str,
     checkpoint_sha256: str,
-) -> JsonObject:
-    initialization: JsonObject = {
-        "kind": "publishedModel",
-        "parentModelRef": model_ref,
-        "parentCheckpointSha256": checkpoint_sha256,
-    }
-    return validate_initialization(initialization)
-
-
-def published_model_transfer_initialization(
-    model_ref: str,
-    checkpoint_sha256: str,
     parent_data_contract_sha256: str,
     data_contract_sha256: str,
 ) -> JsonObject:
     initialization: JsonObject = {
-        "kind": "publishedModelTransfer",
+        "kind": "publishedModel",
         "parentModelRef": model_ref,
         "parentCheckpointSha256": checkpoint_sha256,
         "parentDataContractSha256": parent_data_contract_sha256,
@@ -61,16 +49,10 @@ def validate_initialization(
         "kind",
         "parentModelRef",
         "parentCheckpointSha256",
-    }
-    transfer_fields = {
-        *published_model_fields,
         "parentDataContractSha256",
         "dataContractSha256",
     }
-    if not (
-        kind == "publishedModel" and set(document) == published_model_fields
-        or kind == "publishedModelTransfer" and set(document) == transfer_fields
-    ):
+    if kind != "publishedModel" or set(document) != published_model_fields:
         raise ValueError("model initialization is invalid")
     model_ref = document.get("parentModelRef")
     checkpoint_sha256 = document.get("parentCheckpointSha256")
@@ -81,23 +63,18 @@ def validate_initialization(
         "parent checkpoint digest",
     )
     result: JsonObject = {
-        "kind": (
-            "publishedModelTransfer"
-            if kind == "publishedModelTransfer"
-            else "publishedModel"
-        ),
+        "kind": "publishedModel",
         "parentModelRef": model_ref,
         "parentCheckpointSha256": checkpoint_sha256,
-    }
-    if kind == "publishedModelTransfer":
-        result["parentDataContractSha256"] = _digest(
+        "parentDataContractSha256": _digest(
             document.get("parentDataContractSha256"),
             "parent data contract digest",
-        )
-        result["dataContractSha256"] = _digest(
+        ),
+        "dataContractSha256": _digest(
             document.get("dataContractSha256"),
             "data contract digest",
-        )
+        ),
+    }
     return result
 
 
@@ -113,7 +90,6 @@ def _digest(value: object, label: str) -> str:
 
 __all__ = [
     "published_model_initialization",
-    "published_model_transfer_initialization",
     "random_initialization",
     "validate_initialization",
 ]

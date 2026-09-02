@@ -41,26 +41,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kind", "parentModelRef", "parentCheckpointSha256"
-          ],
-          "properties": {
-            "kind": {"const": "publishedModel"},
-            "parentModelRef": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-            },
-            "parentCheckpointSha256": {"$ref": "#/$defs/sha256"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
             "kind", "parentModelRef", "parentCheckpointSha256",
             "parentDataContractSha256", "dataContractSha256"
           ],
           "properties": {
-            "kind": {"const": "publishedModelTransfer"},
+            "kind": {"const": "publishedModel"},
             "parentModelRef": {
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
@@ -84,27 +69,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kind", "parentModelRef", "parentCheckpointSha256", "checkpoint"
-          ],
-          "properties": {
-            "kind": {"const": "publishedModel"},
-            "parentModelRef": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-            },
-            "parentCheckpointSha256": {"$ref": "#/$defs/sha256"},
-            "checkpoint": {"$ref": "#/$defs/artifact"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
             "kind", "parentModelRef", "parentCheckpointSha256",
             "parentDataContractSha256", "dataContractSha256", "checkpoint"
           ],
           "properties": {
-            "kind": {"const": "publishedModelTransfer"},
+            "kind": {"const": "publishedModel"},
             "parentModelRef": {
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"

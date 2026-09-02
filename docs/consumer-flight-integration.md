@@ -49,8 +49,7 @@ request. Повторяйте потерянный запрос с тем же �
 При запуске вызовите `capabilities` и завершитесь с ошибкой, если
 `protocolVersions` не равен `[9]`. Одновременно проверьте объявленный
 `mlContract` и точный список
-`fitInitializations: ["random", "publishedModel", "publishedModelTransfer"]`;
-несовпадение является
+`fitInitializations: ["random", "publishedModel"]`; несовпадение является
 ошибкой совместимости до создания job. Эффективные лимиты из ответа являются
 нормативными для текущего runtime; не копируйте значения по умолчанию из
 репозитория в код Consumer-а.
@@ -80,8 +79,8 @@ durable state следующие значения:
 
 Fit create соответствует фикстуре
 [`create-fit.request.json`](../app/contracts/flight/v9/fixtures/json/create-fit.request.json).
-Cross-instrument transfer соответствует фикстуре
-[`create-fit-published-model-transfer.request.json`](../app/contracts/flight/v9/fixtures/json/create-fit-published-model-transfer.request.json).
+Published-model initialization соответствует фикстуре
+[`create-fit-published-model.request.json`](../app/contracts/flight/v9/fixtures/json/create-fit-published-model.request.json).
 Predict create соответствует
 [`create-predict.request.json`](../app/contracts/flight/v9/fixtures/json/create-predict.request.json).
 Predict передаёт ровно один `modelRef` или ограниченный owner-ом `modelAlias`.
@@ -166,34 +165,19 @@ generation того же owner-а:
 }
 ```
 
-Alias, label и filesystem path здесь недопустимы. Transformer проверяет точное
-совпадение model config, `dataContract` и `mlContract`; другой target subset
-или objective возвращает `MODEL_SCHEMA_MISMATCH` до создания job. Отсутствующий
-или чужой `modelRef` выглядит как `NOT_FOUND`.
-
-Для weights-only переноса на другое предметное наполнение тех же
-target/context slots используйте отдельный режим:
-
-```json
-{
-  "initialization": {
-    "kind": "publishedModelTransfer",
-    "modelRef": "mdl_..."
-  }
-}
-```
-
-Consumer тем самым явно принимает новую привязку инструментов. Transformer
-требует тот же `profile`, размеры, model config, targets и objective, разрешая
-отличаться только `dataContractSha256`; feature blocks не переставляются.
-Обычный `publishedModel` при таком отличии по-прежнему отклоняется.
+Alias, label и filesystem path здесь недопустимы. Transformer требует тот же
+`profile`, размеры, model config, targets и objective, разрешая отличаться
+только `dataContractSha256`; feature blocks не переставляются. Выбирая parent
+с другим digest, Consumer принимает новое предметное наполнение совместимых
+target/context slots. Несовместимость возвращает `MODEL_SCHEMA_MISMATCH` до
+создания job, а отсутствующий или чужой `modelRef` выглядит как `NOT_FOUND`.
 
 Create и status возвращают canonical lineage с `parentModelRef` и
-`parentCheckpointSha256`; transfer lineage также содержит parent и current
-data-contract digests. Сохраните его как часть identity run. Ни один
-published-model режим не возобновляет optimizer, AMP scaler, RNG, progress или
-selection parent-а и всегда создаёт новую immutable model generation. Parent
-не изменяется, а predict child требует её точный новый data contract.
+`parentCheckpointSha256`, а также parent и current data-contract digests.
+Сохраните его как часть identity run. `publishedModel` не возобновляет
+optimizer, AMP scaler, RNG, progress или selection parent-а и всегда создаёт
+новую immutable model generation. Parent не изменяется, а predict child требует
+её точный новый data contract.
 
 ## Межсистемное fencing и перехват владения
 

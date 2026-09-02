@@ -46,27 +46,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kind", "parentModelRef", "parentCheckpointSha256"
-          ],
-          "properties": {
-            "kind": {"const": "publishedModel"},
-            "parentModelRef": {
-              "type": "string", "pattern": "^mdl_[0-9a-f]{32}$"
-            },
-            "parentCheckpointSha256": {
-              "type": "string", "pattern": "^[0-9a-f]{64}$"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
             "kind", "parentModelRef", "parentCheckpointSha256",
             "parentDataContractSha256", "dataContractSha256"
           ],
           "properties": {
-            "kind": {"const": "publishedModelTransfer"},
+            "kind": {"const": "publishedModel"},
             "parentModelRef": {
               "type": "string", "pattern": "^mdl_[0-9a-f]{32}$"
             },

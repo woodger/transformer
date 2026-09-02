@@ -175,23 +175,11 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kind", "parentModelRef", "parentCheckpointSha256"
-          ],
-          "properties": {
-            "kind": {"const": "publishedModel"},
-            "parentModelRef": {"$ref": "#/$defs/label"},
-            "parentCheckpointSha256": {"$ref": "#/$defs/sha256"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
             "kind", "parentModelRef", "parentCheckpointSha256",
             "parentDataContractSha256", "dataContractSha256"
           ],
           "properties": {
-            "kind": {"const": "publishedModelTransfer"},
+            "kind": {"const": "publishedModel"},
             "parentModelRef": {"$ref": "#/$defs/label"},
             "parentCheckpointSha256": {"$ref": "#/$defs/sha256"},
             "parentDataContractSha256": {"$ref": "#/$defs/sha256"},

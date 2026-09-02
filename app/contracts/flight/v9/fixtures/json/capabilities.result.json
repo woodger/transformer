@@ -82,8 +82,7 @@
   ],
   "fitInitializations": [
     "random",
-    "publishedModel",
-    "publishedModelTransfer"
+    "publishedModel"
   ],
   "features": {
     "doExchange": false,

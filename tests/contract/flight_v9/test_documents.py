@@ -158,30 +158,21 @@ def test_fit_target_subset_derives_physical_model_and_ml_contract_width():
     assert parsed["ml_contract"]["targetWidth"] == 1
 
 
-@pytest.mark.parametrize(
-    "kind",
-    ["publishedModel", "publishedModelTransfer"],
-)
-def test_fit_accepts_only_closed_published_model_initializations(kind):
+def test_fit_accepts_only_closed_published_model_initialization():
     parsed = validate_action_request(
         CREATE_ACTION,
         _fit_create(initialization={
-            "kind": kind,
+            "kind": "publishedModel",
             "modelRef": "mdl_parent",
         }),
     )
 
-    assert parsed["initialization_kind"] == kind
+    assert parsed["initialization_kind"] == "publishedModel"
     assert parsed["model_selector"] == "modelRef"
     assert parsed["model_ref"] == "mdl_parent"
 
     for invalid in (
         {"kind": "publishedModel", "modelAlias": "current"},
-        {
-            "kind": "publishedModelTransfer",
-            "modelRef": "mdl_parent",
-            "allowDataContractMismatch": True,
-        },
         {"kind": "resume", "modelRef": "mdl_parent"},
         {"kind": "random", "modelRef": "mdl_parent"},
     ):
@@ -343,12 +334,14 @@ def test_request_hash_ignores_transport_retry_identity_only():
     }
     assert canonical_request_hash(first) != canonical_request_hash(warm_start)
 
-    transfer = json.loads(json.dumps(first))
-    transfer["initialization"] = {
-        "kind": "publishedModelTransfer",
-        "modelRef": "mdl_parent",
+    another_parent = json.loads(json.dumps(first))
+    another_parent["initialization"] = {
+        "kind": "publishedModel",
+        "modelRef": "mdl_another_parent",
     }
-    assert canonical_request_hash(warm_start) != canonical_request_hash(transfer)
+    assert canonical_request_hash(warm_start) != canonical_request_hash(
+        another_parent
+    )
 
 
 def test_action_body_is_bounded_utf8_json_object():

@@ -45,10 +45,9 @@ checkpoint не интерпретируются автоматически. Д�
 только после успешного обучения и validation.
 
 Flight fit также может использовать опубликованную generation как weights-only
-initialization. Strict warm start требует те же model/data/ML contracts;
-cross-instrument transfer отдельно разрешает новый data-contract digest при
-неизменных structural fields, model config, targets и objective. В обоих
-случаях optimizer, AMP scaler, RNG, progress и checkpoint selection не
+initialization. `publishedModel` требует те же model и ML contracts и
+структурные поля data contract, но разрешает новый data-contract digest. При
+этом optimizer, AMP scaler, RNG, progress и checkpoint selection не
 наследуются. Результатом остаётся новая immutable generation с data contract
 текущего fit, а не изменение parent и не продолжение его training run. Точную
 wire-форму `initialization` задаёт
