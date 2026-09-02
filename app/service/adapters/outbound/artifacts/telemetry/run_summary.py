@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v3 import (
+from app.contracts.metrics.fit_run.v4 import (
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_summary,
@@ -45,6 +45,7 @@ def publish_fit_run_summary(
     application_version: str,
     git_commit: str,
     targets: Sequence[str],
+    initialization: JsonObject,
     terminal_checkpoint_serialization_ms: float,
     terminal_checkpoint_publication_ms: float,
 ) -> StagedFitRunSummary:
@@ -68,6 +69,7 @@ def publish_fit_run_summary(
         application_version=application_version,
         git_commit=git_commit,
         targets=targets,
+        initialization=initialization,
         milestones={
             "createdAt": _timestamp(source.created_at),
             "firstInputCommittedAt": _timestamp(

@@ -4,18 +4,18 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v8.codec import (
+from app.contracts.flight.v9.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v10.objective import (
     ObjectiveConfig,
     ml_contract,
     objective_from_ml_contract,
@@ -300,7 +300,10 @@ def _validate_create(
         initialization = _object(document, "initialization")
         initialization_kind = _string(initialization, "kind")
         common["initialization_kind"] = initialization_kind
-        if initialization_kind == "publishedModel":
+        if initialization_kind in (
+            "publishedModel",
+            "publishedModelTransfer",
+        ):
             common["model_ref"] = _string(initialization, "modelRef")
             common["model_selector"] = "modelRef"
     else:

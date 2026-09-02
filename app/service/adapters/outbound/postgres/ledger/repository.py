@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -216,7 +216,10 @@ class Ledger:
                 initialization["kind"] == "random"
                 and resolved_model_ref is not None
             ) or (
-                initialization["kind"] == "publishedModel"
+                initialization["kind"] in (
+                    "publishedModel",
+                    "publishedModelTransfer",
+                )
                 and resolved_model_ref != parent_model_ref
             ):
                 raise ValueError(

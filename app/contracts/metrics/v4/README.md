@@ -1,7 +1,7 @@
 # Контракт централизованных training metrics v4
 
 Этот каталог содержит нормативный контракт между Transformer и общей
-платформой OpenSearch. Он не является частью Flight v8: сбой доставки метрик
+платформой OpenSearch. Он не является частью Flight v9: сбой доставки метрик
 не меняет lifecycle job и не влияет на публикацию уже проверенной модели.
 
 ## Durable artifact
@@ -123,6 +123,6 @@ terminal `BLOCKED` до retention cleanup.
 вместе со штатным job retention.
 
 Итоговые lifecycle durations и counters успешного fit принадлежат контракту
-[`fit_run/v3`](../fit_run/v3/README.md) и индексу `metrics-runs-v3`. Epoch
+[`fit_run/v4`](../fit_run/v4/README.md) и индексу `metrics-runs-v4`. Epoch
 points и terminal run summary доставляются одной outbox projection
-`inventory.metrics.v5`.
+`inventory.metrics.v6`.

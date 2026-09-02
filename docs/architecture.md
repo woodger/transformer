@@ -18,10 +18,10 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v8            публичный Flight contract
-app/contracts/worker/v9            внутренний process contract
-app/contracts/metrics/v4           epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v3   terminal fit summary
+app/contracts/flight/v9             публичный Flight contract
+app/contracts/worker/v10            внутренний process contract
+app/contracts/metrics/v4            epoch artifact и OpenSearch points
+app/contracts/metrics/fit_run/v4    terminal fit summary и lineage
 ```
 
 Каждый исполняемый процесс имеет собственный composition root. Service
@@ -93,7 +93,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v9/config.py`.
+остаются в `app/contracts/worker/v10/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -108,15 +108,15 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v8/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v9/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/ml.py` — единая Python identity target, ML-контракта,
   checkpoint и recovery formats;
-- `app/contracts/worker/v9/` — command/result manifests, capability document,
+- `app/contracts/worker/v10/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - `app/contracts/metrics/v4/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
-- `app/contracts/metrics/fit_run/v3/` — terminal fit summary, lifecycle
-  durations и counters.
+- `app/contracts/metrics/fit_run/v4/` — terminal fit summary, initialization
+  lineage, lifecycle durations и counters.
 
 В публичном Flight contract Consumer выбирает непустое подмножество
 канонических targets и передаёт закрытый декларативный objective. Transformer
@@ -126,12 +126,14 @@ Alembic-команды имеют отдельный короткоживущи�
 output. Objective, training policy и необязательные diagnostics остаются
 отдельными contract sections; checkpoint навсегда связан с targets и objective.
 
-Fit initialization также является отдельной частью job identity. Service
-разрешает owner-scoped immutable parent `modelRef`, проверяет точное совпадение
-model/data/ML contracts и передаёт worker-у проверенный checkpoint artifact.
-Worker использует только parent weights и создаёт новое training state. Lineage
-с parent reference и digest сохраняется в job, checkpoint и metadata новой
-immutable model generation.
+Fit initialization также является отдельной частью job identity. Strict warm
+start требует точного совпадения model/data/ML contracts. Отдельный
+cross-instrument transfer сохраняет model и ML contracts и все структурные
+поля data contract, разрешая отличаться только его digest. Service разрешает
+owner-scoped immutable parent `modelRef` и передаёт worker-у проверенный
+checkpoint artifact. Worker использует только все parent weights и создаёт
+новое training state. Lineage с parent reference и digests сохраняется в job,
+checkpoint, model metadata и terminal fit telemetry.
 
 Эти contracts версионируются независимо. Worker `attemptId` является UUID
 execution identity и equality fence; публичный `attempt` — положительный

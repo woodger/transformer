@@ -5,7 +5,11 @@ import json
 import sys
 from contextlib import redirect_stdout
 
-from app.contracts.worker.v9 import CONTRACT_VERSION, WorkerContractError, load_document
+from app.contracts.worker.v10 import (
+    CONTRACT_VERSION,
+    WorkerContractError,
+    load_document,
+)
 from app.worker.application.events import WorkerEventEmitter
 
 

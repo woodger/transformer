@@ -7,7 +7,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.worker.v9.objective import ObjectiveConfig
+from app.contracts.worker.v10.objective import ObjectiveConfig
 from app.worker.model.transformer import public_predictions
 
 

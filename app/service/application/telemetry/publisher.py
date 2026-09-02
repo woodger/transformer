@@ -5,7 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.fit_run.v3 import RUN_INDEX
+from app.contracts.metrics.fit_run.v4 import RUN_INDEX
 from app.contracts.metrics.v4 import POINT_INDEX
 from app.service.application.ports.observability import (
     EventLogger,

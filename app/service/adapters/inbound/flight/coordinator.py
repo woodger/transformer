@@ -3,8 +3,8 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
+from app.contracts.worker.v10.objective import (
     AUXILIARY_LOSS_OPERATORS,
     CHECKPOINT_FORMAT,
     DIRECT_LOSS_OPERATORS,
@@ -269,7 +269,11 @@ class JobCoordinator:
                 "singleInstance": True,
             },
             supportedOperations=["fit", "predict"],
-            fitInitializations=["random", "publishedModel"],
+            fitInitializations=[
+                "random",
+                "publishedModel",
+                "publishedModelTransfer",
+            ],
             features={
                 "doExchange": False,
                 "pollFlightInfo": False,

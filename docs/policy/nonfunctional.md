@@ -6,7 +6,7 @@
 топологию, wire schemas, configuration defaults или runbook. Их источники:
 
 - [архитектура](../architecture.md) — процессы и data ownership;
-- [Flight v8 contract](../../app/contracts/flight/v8/README.md) — wire и
+- [Flight v9 contract](../../app/contracts/flight/v9/README.md) — wire и
   lifecycle semantics;
 - [training runtime](../training-runtime.md) — checkpoint, recovery и обучение;
 - [аутентификация](../authentication.md) — credential verification и security

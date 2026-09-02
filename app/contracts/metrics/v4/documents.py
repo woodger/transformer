@@ -17,7 +17,7 @@ from app.contracts.ml import canonical_targets
 
 ARTIFACT_FORMAT = "transformer.training-metrics.v4"
 ARTIFACT_MEDIA_TYPE = "application/x-ndjson"
-PROJECTION_VERSION = "inventory.metrics.v5"
+PROJECTION_VERSION = "inventory.metrics.v6"
 POINT_DOCUMENT_SCHEMA = "inventory.metrics.point.v4"
 POINT_INDEX = "metrics-points-v4"
 

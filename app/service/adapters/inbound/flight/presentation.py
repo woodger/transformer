@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v9.objective import CHECKPOINT_FORMAT
+from app.contracts.worker.v10.objective import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,

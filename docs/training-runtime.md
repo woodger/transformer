@@ -7,7 +7,7 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md).
+[`app/contracts/flight/v9`](../app/contracts/flight/v9/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
@@ -45,11 +45,14 @@ checkpoint не интерпретируются автоматически. Д�
 только после успешного обучения и validation.
 
 Flight fit также может использовать опубликованную generation как weights-only
-warm start. Parent checkpoint должен иметь те же model/data/ML contracts;
-optimizer, AMP scaler, RNG, progress и checkpoint selection не наследуются.
-Результатом остаётся новая immutable generation, а не изменение parent и не
-продолжение его training run. Точную wire-форму `initialization` задаёт
-[Flight contract](../app/contracts/flight/v8/README.md#инициализация-fit-и-lineage-модели).
+initialization. Strict warm start требует те же model/data/ML contracts;
+cross-instrument transfer отдельно разрешает новый data-contract digest при
+неизменных structural fields, model config, targets и objective. В обоих
+случаях optimizer, AMP scaler, RNG, progress и checkpoint selection не
+наследуются. Результатом остаётся новая immutable generation с data contract
+текущего fit, а не изменение parent и не продолжение его training run. Точную
+wire-форму `initialization` задаёт
+[Flight contract](../app/contracts/flight/v9/README.md#инициализация-fit-и-lineage-модели).
 Recovery относится к состоянию уже созданного нового job.
 
 ## Target selection и objective

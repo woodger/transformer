@@ -7,11 +7,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- Flight v9 добавляет отдельную `publishedModelTransfer` initialization для
+  weights-only cross-instrument transfer при неизменных structural data fields,
+  model config, targets и objective. Strict `publishedModel` сохраняет точное
+  совпадение всего data contract.
+- Transfer lineage с parent model/checkpoint и parent/current data-contract
+  digests сохраняется в job, checkpoint, model metadata, fit result и terminal
+  fit telemetry.
+
+### Changed
+
+- Public Flight contract повышен до v9, worker process contract — до v10,
+  terminal fit summary — до v4, а OpenSearch outbox projection — до v6.
+  Checkpoint/recovery formats v5 и PostgreSQL revision `0021` не изменены.
+
 ### Fixed
 
-- Flight v8 predict jobs сохраняют отсутствующий `initialization` как SQL
+- Flight predict jobs сохраняют отсутствующий `initialization` как SQL
   `NULL`, а не JSONB `null`; неожиданные PostgreSQL integrity violations больше
   не представляются Consumer-у как дубликат `jobId`.
+
+### Removed
+
+- Flight v8 и worker v9 удалены без aliases или parallel compatibility layer.
 
 ## [0.1.17] - 2026-09-01
 

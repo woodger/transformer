@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.messages.jobs import (
@@ -12,7 +12,7 @@ from app.service.application.messages.jobs import (
 from app.service.domain.job import ExecutionState, InputState
 
 
-def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v8():
+def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v9():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -96,7 +96,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v8():
     }
     document = {
         "contract": "transformer-flight",
-        "version": 8,
+        "version": 9,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -116,7 +116,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v8():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 8
+    assert result["version"] == 9
     assert result["jobId"] == job_id
     assert result["device"] == {"requested": "gpu", "selected": None}
     assert result["ownership"] == {
@@ -126,7 +126,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v8():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v8",
+            "v9",
             "jobs",
             job_id,
             "inputs",
@@ -189,10 +189,11 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     capabilities = coordinator.capabilities("request-capabilities")
     health = coordinator.health("request-health")
 
-    assert capabilities["protocolVersions"] == [8]
+    assert capabilities["protocolVersions"] == [9]
     assert capabilities["fitInitializations"] == [
         "random",
         "publishedModel",
+        "publishedModelTransfer",
     ]
     assert capabilities["mlContract"]["directLossOperators"] == [
         "SmoothL1",

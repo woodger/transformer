@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.objective import (
     CHECKPOINT_FORMAT,
     objective_from_ml_contract,
 )
@@ -22,6 +22,7 @@ from app.service.application.ports.observability import (
     OperationalMetricSink,
 )
 from app.service.application.ports.telemetry import TrainingTelemetryRepository
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.records import ExecutionJobRecord
 
 _OUTBOX_ENTRY_LIMIT = 10_000
@@ -124,6 +125,7 @@ class FitRunTelemetryPublisher:
                 application_version=self.application_version,
                 git_commit=self.git_commit,
                 targets=targets,
+                initialization=validate_initialization(job.initialization),
                 terminal_checkpoint_serialization_ms=(
                     checkpoint_serialization_ms
                 ),

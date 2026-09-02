@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol, cast, runtime_checkable
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10.config import (
     ModelConfig,
     TrainConfig,
     train_config_to_manifest,

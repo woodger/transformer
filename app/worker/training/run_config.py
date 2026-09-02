@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import TypeVar, cast
 
 from app.contracts.ml import MAX_TARGET_WIDTH
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
@@ -19,7 +19,7 @@ from app.contracts.worker.v9.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v9.objective import ObjectiveConfig, default_objective
+from app.contracts.worker.v10.objective import ObjectiveConfig, default_objective
 
 T = TypeVar("T")
 

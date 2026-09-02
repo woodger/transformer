@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
@@ -50,7 +50,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 8,
+        "version": 9,
         "requestId": request_id,
     }).encode("utf-8")
 

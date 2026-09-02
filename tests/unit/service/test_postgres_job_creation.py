@@ -6,8 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
@@ -37,6 +37,7 @@ def _create_job(
     *,
     operation="predict",
     initialization=None,
+    resolved_model_ref=None,
 ):
     return ledger.create_job(
         job_id=_JOB_ID,
@@ -54,7 +55,11 @@ def _create_job(
         ml_contract=ml_contract(default_objective()),
         create_result={"jobId": _JOB_ID},
         model_label="daily" if operation == "fit" else None,
-        resolved_model_ref=None if operation == "fit" else _MODEL_REF,
+        resolved_model_ref=(
+            resolved_model_ref
+            if operation == "fit"
+            else _MODEL_REF
+        ),
         model_config=ModelConfig(seq_len=2, feature_dim=1),
         training_config=TrainConfig() if operation == "fit" else None,
         initialization=initialization,
@@ -111,6 +116,35 @@ def test_fit_job_keeps_initialization_document():
         database.close()
 
     assert stored["initialization"] == {"kind": "random"}
+
+
+def test_transfer_fit_keeps_resolved_parent_and_complete_lineage():
+    records = []
+    session = cast(
+        Session,
+        SimpleNamespace(add=records.append, flush=lambda: None),
+    )
+    initialization = {
+        "kind": "publishedModelTransfer",
+        "parentModelRef": _MODEL_REF,
+        "parentCheckpointSha256": "c" * 64,
+        "parentDataContractSha256": "d" * 64,
+        "dataContractSha256": "a" * 64,
+    }
+    database = _database()
+    try:
+        stored = _create_job(
+            Ledger(database),
+            session,
+            operation="fit",
+            initialization=initialization,
+            resolved_model_ref=_MODEL_REF,
+        )
+    finally:
+        database.close()
+
+    assert stored["resolved_model_ref"] == _MODEL_REF
+    assert stored["initialization"] == initialization
 
 
 @pytest.mark.parametrize(

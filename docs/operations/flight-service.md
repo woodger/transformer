@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v8
+# Сервис Transformer Arrow Flight: операционное руководство v9
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v8`](../../app/contracts/flight/v8/README.md). Текущие
+[`app/contracts/flight/v9`](../../app/contracts/flight/v9/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -121,7 +121,7 @@ OpenSearch outbox. Ошибка telemetry не меняет model generation и�
 state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V8 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. V9 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,7 +214,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v8 определяет
+certificate options команды `flight serve`. Flight v9 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -353,11 +353,11 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v8 нет сетевого action для её удаления. Команды оператора,
+во Flight v9 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
-Запрос удаления блокируется не только незавершённым prediction, но и
-незавершённым warm-start fit, использующим generation как parent.
+Запрос удаления блокируется не только незавершённым prediction, но и любым
+незавершённым fit, использующим generation как strict или transfer parent.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -367,7 +367,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v8.health`.
+аутентифицированный Flight action `transformer.v9.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -414,7 +414,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v8
+## Известные ограничения v9
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v3 import RUN_INDEX
+from app.contracts.metrics.fit_run.v4 import RUN_INDEX
 from app.contracts.metrics.v4 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
@@ -23,7 +23,7 @@ from app.service.application.telemetry.records import (
     TelemetryArtifactCleanup,
     TrainingMetricsArtifactRecord,
 )
-from tests.support.flight_v8_helpers import (
+from tests.support.flight_v9_helpers import (
     create_test_metrics_artifact,
     create_test_run_summary_artifact,
 )
@@ -49,7 +49,7 @@ def _entry() -> MetricsOutboxRecord:
     )
     return MetricsOutboxRecord(
         training_metrics=artifact,
-        projection_version="inventory.metrics.v5",
+        projection_version="inventory.metrics.v6",
         status="PENDING",
         cursor=0,
         attempts=0,
@@ -404,7 +404,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=FitRunSummaryArtifactRecord(
             model_ref=entry.training_metrics.model_ref,
-            format="transformer.fit-run-summary.v3",
+            format="transformer.fit-run-summary.v4",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -416,7 +416,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="inventory.metrics.v5",
+        projection_version="inventory.metrics.v6",
     )
 
     projection = TrainingMetricsProjection(spool)

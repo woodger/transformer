@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v9 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v10.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config_sha256,

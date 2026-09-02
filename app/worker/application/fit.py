@@ -9,10 +9,10 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v9.objective import objective_from_ml_contract
+from app.contracts.worker.v10 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v10.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -361,24 +361,92 @@ def _load_initialization(
         ) from exc
     if (
         checkpoint["model_config"] != model_config.to_dict()
-        or checkpoint["data_contract"] != data_contract
         or checkpoint["ml_contract"] != ml_contract
     ):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",
             "parent checkpoint contract differs from the fit job",
         )
-    return (
-        {
+    parent_data_contract = checkpoint.get("data_contract")
+    if kind == "publishedModel":
+        if parent_data_contract != data_contract:
+            raise WorkerExecutionError(
+                "MODEL_SCHEMA_MISMATCH",
+                "parent checkpoint data contract differs from the fit job",
+            )
+        lineage: JsonObject = {
             "kind": "publishedModel",
             "parentModelRef": string_field(
                 initialization,
                 "parentModelRef",
             ),
             "parentCheckpointSha256": parent_sha256,
+        }
+        return lineage, checkpoint
+
+    parent_contract = object_document(
+        parent_data_contract,
+        "parent checkpoint data contract",
+    )
+    parent_data_contract_sha256 = string_field(
+        initialization,
+        "parentDataContractSha256",
+    )
+    current_data_contract_sha256 = string_field(
+        initialization,
+        "dataContractSha256",
+    )
+    if (
+        string_field(parent_contract, "dataContractSha256")
+        != parent_data_contract_sha256
+    ):
+        raise WorkerExecutionError(
+            "MODEL_CORRUPT",
+            "parent checkpoint data contract digest differs from initialization",
+        )
+    if (
+        string_field(data_contract, "dataContractSha256")
+        != current_data_contract_sha256
+    ):
+        raise ValueError(
+            "fit data contract digest differs from initialization"
+        )
+    if not _transfer_data_contracts_compatible(
+        parent_contract,
+        data_contract,
+    ):
+        raise WorkerExecutionError(
+            "MODEL_SCHEMA_MISMATCH",
+            "parent model data contract is not compatible with transfer fit",
+        )
+    return (
+        {
+            "kind": "publishedModelTransfer",
+            "parentModelRef": string_field(
+                initialization,
+                "parentModelRef",
+            ),
+            "parentCheckpointSha256": parent_sha256,
+            "parentDataContractSha256": parent_data_contract_sha256,
+            "dataContractSha256": current_data_contract_sha256,
         },
         checkpoint,
     )
+
+
+def _transfer_data_contracts_compatible(
+    parent: JsonObject,
+    current: JsonObject,
+) -> bool:
+    fields = (
+        "id",
+        "version",
+        "profile",
+        "seqLen",
+        "featureDim",
+        "targetSchemaId",
+    )
+    return all(parent.get(field) == current.get(field) for field in fields)
 
 
 __all__ = ["execute_fit"]

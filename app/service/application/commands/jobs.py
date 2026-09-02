@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 from app.service.application.messages.jobs import (
     AcquireJobCommand,
@@ -25,10 +26,12 @@ from app.service.application.ports.observability import (
 )
 from app.service.application.services.model_contract import (
     verify_model_semantics,
+    verify_transfer_model_semantics,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import (
     published_model_initialization,
+    published_model_transfer_initialization,
     random_initialization,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
@@ -95,17 +98,27 @@ class CreateJobAction:
                 resolved_model_ref = model.model_ref
             elif command.initialization_kind == "random":
                 initialization = random_initialization()
-            elif command.initialization_kind == "publishedModel":
+            elif command.initialization_kind in (
+                "publishedModel",
+                "publishedModelTransfer",
+            ):
                 if model is None:
                     raise ServiceError(
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                parent_config = verify_model_semantics(
-                    model,
-                    data_contract=command.data_contract,
-                    requested_ml_contract=command.ml_contract,
-                )
+                if command.initialization_kind == "publishedModel":
+                    parent_config = verify_model_semantics(
+                        model,
+                        data_contract=command.data_contract,
+                        requested_ml_contract=command.ml_contract,
+                    )
+                else:
+                    parent_config = verify_transfer_model_semantics(
+                        model,
+                        data_contract=command.data_contract,
+                        requested_ml_contract=command.ml_contract,
+                    )
                 if model_config != parent_config:
                     raise ServiceError(
                         ErrorCode.MODEL_SCHEMA_MISMATCH,
@@ -113,10 +126,28 @@ class CreateJobAction:
                     )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
-                initialization = published_model_initialization(
-                    model.model_ref,
-                    model.sha256,
-                )
+                if command.initialization_kind == "publishedModel":
+                    initialization = published_model_initialization(
+                        model.model_ref,
+                        model.sha256,
+                    )
+                else:
+                    if model.data_contract is None:
+                        raise AssertionError(
+                            "verified transfer parent has no data contract"
+                        )
+                    initialization = published_model_transfer_initialization(
+                        model.model_ref,
+                        model.sha256,
+                        cast(
+                            str,
+                            model.data_contract["data_contract_sha256"],
+                        ),
+                        cast(
+                            str,
+                            command.data_contract["data_contract_sha256"],
+                        ),
+                    )
             else:
                 raise ServiceError(
                     ErrorCode.INVALID_ARGUMENT,

@@ -1,0 +1,109 @@
+{
+  "contract": "transformer-flight",
+  "version": 9,
+  "requestId": "22222222-2222-4222-8222-222222222222",
+  "idempotencyKey": "inventory-fit-20260810-1",
+  "jobId": "33333333-3333-4333-8333-333333333333",
+  "clientExecutionId": "44444444-4444-4444-8444-444444444444",
+  "operation": "fit",
+  "device": "cpu",
+  "initialization": {
+    "kind": "random"
+  },
+  "modelLabel": "returns.daily",
+  "modelConfig": {
+    "seqLen": 2,
+    "hidden": 256,
+    "layers": 5,
+    "dropout": 0.1,
+    "nhead": 8,
+    "mode": "relaxed"
+  },
+  "trainingConfig": {
+    "lr": 0.0005,
+    "batchSize": 256,
+    "epochs": 25,
+    "useAmp": false,
+    "weightDecay": 0.00001,
+    "selection": {
+      "minDelta": 0,
+      "patience": 5
+    },
+    "seed": 42,
+    "deterministic": true
+  },
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 2,
+    "profile": "research-dividend-events-v2",
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 2,
+    "targetSchemaId": "inventory.target.v2"
+  },
+  "targets": [
+    "MeanReturn",
+    "SigmaReturn",
+    "ProbTP",
+    "ProbSL",
+    "VolatilityNext",
+    "HittingProbTP"
+  ],
+  "objective": {
+    "schemaVersion": 1,
+    "aggregation": "WeightedSum",
+    "reduction": "GlobalRowMean",
+    "directLosses": [
+      {
+        "target": "MeanReturn",
+        "operator": "SmoothL1",
+        "weight": 1.0
+      },
+      {
+        "target": "SigmaReturn",
+        "operator": "SmoothL1",
+        "weight": 1.0
+      },
+      {
+        "target": "ProbTP",
+        "operator": "BinaryCrossEntropyWithLogits",
+        "weight": 1.0
+      },
+      {
+        "target": "ProbSL",
+        "operator": "BinaryCrossEntropyWithLogits",
+        "weight": 1.0
+      },
+      {
+        "target": "VolatilityNext",
+        "operator": "LogMSE",
+        "weight": 1.0
+      },
+      {
+        "target": "HittingProbTP",
+        "operator": "BinaryCrossEntropyWithLogits",
+        "weight": 1.0
+      }
+    ],
+    "auxiliaryLosses": [
+      {
+        "operator": "GaussianNLL",
+        "weight": 1.0
+      },
+      {
+        "operator": "RiskAdjustedExpectedValue",
+        "weight": 0.3,
+        "riskPenalty": 0.1
+      }
+    ],
+    "balancing": {
+      "operator": "Static"
+    }
+  },
+  "diagnostics": {
+    "schemaVersion": 1,
+    "gradientInteractions": {
+      "sampleEverySteps": 10
+    }
+  }
+}

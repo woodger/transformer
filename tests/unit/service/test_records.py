@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (

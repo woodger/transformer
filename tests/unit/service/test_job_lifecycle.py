@@ -1,10 +1,10 @@
-from app.contracts.flight.v8.constants import (
+from app.contracts.flight.v9.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CREATE_ACTION,
     INPUT_CLOSE_ACTION,
 )
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_created
 from app.service.adapters.outbound.postgres.job_lifecycle import (
     JobActionNames,

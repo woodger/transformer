@@ -8,8 +8,8 @@ from typing import cast
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import (
     CHECKPOINT_FORMAT,
     DATA_CONTRACT_ID,
     DATA_CONTRACT_VERSION,

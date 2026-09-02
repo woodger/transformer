@@ -1,0 +1,18 @@
+from app.contracts.worker.v10.objective import PREDICTION_SCHEMA_ID
+
+FIT_INPUT_SCHEMA_ID = "inventory.sequence.fit.v3"
+PREDICT_INPUT_SCHEMA_ID = "inventory.sequence.predict.v2"
+PREDICTION_OUTPUT_SCHEMA_ID = PREDICTION_SCHEMA_ID
+
+ARROW_SCHEMA_IDS = (
+    FIT_INPUT_SCHEMA_ID,
+    PREDICT_INPUT_SCHEMA_ID,
+    PREDICTION_OUTPUT_SCHEMA_ID,
+)
+
+__all__ = [
+    "ARROW_SCHEMA_IDS",
+    "FIT_INPUT_SCHEMA_ID",
+    "PREDICTION_OUTPUT_SCHEMA_ID",
+    "PREDICT_INPUT_SCHEMA_ID",
+]

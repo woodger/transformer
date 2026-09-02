@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from app.contracts.worker.v9.objective import ObjectiveConfig, default_objective
+from app.contracts.worker.v10.objective import ObjectiveConfig, default_objective
 from app.worker.training.losses import combined_loss
 
 

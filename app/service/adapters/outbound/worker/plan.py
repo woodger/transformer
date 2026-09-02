@@ -5,14 +5,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9 import (
+from app.contracts.worker.v10 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -236,13 +236,34 @@ class WorkerPlanBuilder:
             model_manifest["label"] = job.model_label
             initialization = validate_initialization(job.initialization)
             initialization_document = dict(initialization)
-            if initialization["kind"] == "publishedModel":
+            if initialization["kind"] in (
+                "publishedModel",
+                "publishedModelTransfer",
+            ):
                 model = self._validated_model(job)
                 if model.sha256 != initialization["parentCheckpointSha256"]:
                     raise WorkerPlanError(
                         ErrorCode.MODEL_CORRUPT,
                         "parent checkpoint digest differs from fit initialization",
                     )
+                if initialization["kind"] == "publishedModelTransfer":
+                    if (
+                        model.data_contract is None
+                        or model.data_contract.get("data_contract_sha256")
+                        != initialization["parentDataContractSha256"]
+                    ):
+                        raise WorkerPlanError(
+                            ErrorCode.MODEL_CORRUPT,
+                            "parent data contract digest differs from fit initialization",
+                        )
+                    if (
+                        job.data_contract.get("data_contract_sha256")
+                        != initialization["dataContractSha256"]
+                    ):
+                        raise WorkerPlanError(
+                            ErrorCode.INTERNAL,
+                            "fit data contract digest differs from initialization",
+                        )
                 initialization_document["checkpoint"] = {
                     "path": self.spool.model_absolute_path(
                         model.checkpoint_path

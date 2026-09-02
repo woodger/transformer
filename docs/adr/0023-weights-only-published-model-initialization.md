@@ -69,8 +69,8 @@ v7 runtime и aliases не поддерживаются.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v8](../../app/contracts/flight/v8/README.md)
-- [Worker process contract v9](../../app/contracts/worker/v9/README.md)
+- [Контракт Arrow Flight v9](../../app/contracts/flight/v9/README.md)
+- [Worker process contract v10](../../app/contracts/worker/v10/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
 - [Training runtime](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

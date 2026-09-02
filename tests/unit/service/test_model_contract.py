@@ -1,7 +1,7 @@
 import pytest
 
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import (
     ObjectiveConfig,
     default_objective,
     ml_contract,

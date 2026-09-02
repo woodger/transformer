@@ -16,20 +16,20 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v9 import (
+from app.contracts.worker.v10 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v10.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.objective import (
     default_objective,
     ml_contract,
     objective_config_sha256,
@@ -51,12 +51,14 @@ DATA_CONTRACT_SHA256 = "c" * 64
 MANIFEST_SHA256 = "d" * 64
 
 
-def _data_contract() -> dict:
+def _data_contract(
+    data_contract_sha256: str = DATA_CONTRACT_SHA256,
+) -> dict:
     return {
         "id": "inventory.learning-dataset",
         "version": 2,
         "profile": "research-dividend-events-v2",
-        "dataContractSha256": DATA_CONTRACT_SHA256,
+        "dataContractSha256": data_contract_sha256,
         "seqLen": 2,
         "featureDim": 2,
         "targetSchemaId": "inventory.target.v2",
@@ -79,7 +81,14 @@ def _write_input(path: Path, rows, *, fit: bool) -> None:
             writer.write_table(table)
 
 
-def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
+def _input_manifest(
+    path: Path,
+    ordinal: int,
+    rows: int,
+    *,
+    fit: bool,
+    data_contract_sha256: str = DATA_CONTRACT_SHA256,
+) -> dict:
     return {
         "schemaId": (
             "inventory.sequence.fit.v3"
@@ -88,7 +97,7 @@ def _input_manifest(path: Path, ordinal: int, rows: int, *, fit: bool) -> dict:
         ),
         "ordinal": ordinal,
         "commitRevision": ordinal + 1,
-        "dataContractSha256": DATA_CONTRACT_SHA256,
+        "dataContractSha256": data_contract_sha256,
         "rows": rows,
         "artifact": _artifact(path),
     }
@@ -131,7 +140,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=9",
+            "--contract-version=10",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -197,7 +206,7 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 9,
+        "protocolVersion": 10,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -271,7 +280,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 9,
+        "protocolVersion": 10,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -354,8 +363,18 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert result_manifest["checkpointSerializationMs"] >= 0
 
 
-def test_published_model_fit_starts_from_parent_weights_with_fresh_training_state(
+@pytest.mark.parametrize(
+    ("initialization_kind", "parent_data_digest", "current_data_digest"),
+    [
+        ("publishedModel", DATA_CONTRACT_SHA256, DATA_CONTRACT_SHA256),
+        ("publishedModelTransfer", "e" * 64, DATA_CONTRACT_SHA256),
+    ],
+)
+def test_published_model_initialization_loads_all_weights_into_fresh_training(
     tmp_path,
+    initialization_kind,
+    parent_data_digest,
+    current_data_digest,
 ):
     job_id = str(uuid.uuid4())
     attempt_id = str(uuid.uuid4())
@@ -388,7 +407,7 @@ def test_published_model_fit_starts_from_parent_weights_with_fresh_training_stat
         model_config=model_config,
         train_config=TrainConfig(epochs=5),
         objective=objective,
-        data_contract=_data_contract(),
+        data_contract=_data_contract(parent_data_digest),
     )
     parent_artifact = _artifact(parent_path)
     input_path = tmp_path / "input.arrow"
@@ -405,20 +424,33 @@ def test_published_model_fit_starts_from_parent_weights_with_fresh_training_stat
         deterministic=True,
     )
     initialization = {
-        "kind": "publishedModel",
+        "kind": initialization_kind,
         "parentModelRef": "mdl_parent",
         "parentCheckpointSha256": parent_artifact["sha256"],
         "checkpoint": parent_artifact,
     }
+    if initialization_kind == "publishedModelTransfer":
+        initialization.update({
+            "parentDataContractSha256": parent_data_digest,
+            "dataContractSha256": current_data_digest,
+        })
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 9,
+        "protocolVersion": 10,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "fit",
         "device": {"kind": "cpu"},
-        "inputs": [_input_manifest(input_path, 0, 2, fit=True)],
+        "inputs": [
+            _input_manifest(
+                input_path,
+                0,
+                2,
+                fit=True,
+                data_contract_sha256=current_data_digest,
+            )
+        ],
         "inputRevision": 1,
         "inputClosed": True,
         "manifestSha256": MANIFEST_SHA256,
@@ -433,11 +465,11 @@ def test_published_model_fit_starts_from_parent_weights_with_fresh_training_stat
             "schemaVersion": 1,
             "gradientInteractions": None,
         },
-        "dataContract": _data_contract(),
+        "dataContract": _data_contract(current_data_digest),
         "mlContract": ml_contract(objective),
         "recovery": {
             "configSha256": "a" * 64,
-            "dataContractSha256": DATA_CONTRACT_SHA256,
+            "dataContractSha256": current_data_digest,
             "objectiveConfigSha256": objective_config_sha256(objective),
             "manifestSha256": MANIFEST_SHA256,
         },
@@ -458,10 +490,15 @@ def test_published_model_fit_starts_from_parent_weights_with_fresh_training_stat
         "result-manifest",
     )
     expected_lineage = {
-        "kind": "publishedModel",
+        "kind": initialization_kind,
         "parentModelRef": "mdl_parent",
         "parentCheckpointSha256": parent_artifact["sha256"],
     }
+    if initialization_kind == "publishedModelTransfer":
+        expected_lineage.update({
+            "parentDataContractSha256": parent_data_digest,
+            "dataContractSha256": current_data_digest,
+        })
     assert result_manifest["checkpointMetadata"]["initialization"] == (
         expected_lineage
     )
@@ -471,6 +508,9 @@ def test_published_model_fit_starts_from_parent_weights_with_fresh_training_stat
         "cpu",
     )
     assert child_checkpoint["extra"]["initialization"] == expected_lineage
+    assert child_checkpoint["data_contract"] == _data_contract(
+        current_data_digest
+    )
     for name, parent_value in parent_checkpoint["state_dict"].items():
         torch.testing.assert_close(
             child_checkpoint["state_dict"][name],
@@ -781,7 +821,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=9",
+            "--contract-version=10",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

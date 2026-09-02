@@ -3,8 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import (
+from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v10.objective import (
+    ObjectiveConfig,
     default_objective,
     ml_contract,
     objective_config_sha256,
@@ -58,10 +59,17 @@ def test_published_model_fit_resolves_immutable_parent_lineage():
     assert verified == [parent]
 
 
-def test_published_model_fit_rejects_a_different_model_configuration():
+@pytest.mark.parametrize(
+    "initialization_kind",
+    ["publishedModel", "publishedModelTransfer"],
+)
+def test_published_model_fit_rejects_a_different_model_configuration(
+    initialization_kind,
+):
     command, parent = _published_model_command()
     command = replace(
         command,
+        initialization_kind=initialization_kind,
         model_config=ModelConfig(
             seq_len=2,
             hidden=16,
@@ -95,6 +103,153 @@ def test_published_model_fit_rejects_a_different_model_configuration():
         action.create(command)
 
     assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+    assert raised.value.message == (
+        "parent model configuration does not match fit job"
+    )
+
+
+def test_transfer_fit_accepts_a_new_instrument_binding_and_persists_lineage():
+    command, parent = _published_model_command()
+    current_data_contract = {
+        **command.data_contract,
+        "data_contract_sha256": "d" * 64,
+    }
+    command = replace(
+        command,
+        data_contract=current_data_contract,
+        initialization_kind="publishedModelTransfer",
+    )
+    action, prepared, verified = _action_for_parent(parent)
+
+    result = action.create(command)
+
+    assert result.initialization == {
+        "kind": "publishedModelTransfer",
+        "parentModelRef": parent.model_ref,
+        "parentCheckpointSha256": parent.sha256,
+        "parentDataContractSha256": "a" * 64,
+        "dataContractSha256": "d" * 64,
+    }
+    assert result.data_contract == current_data_contract
+    assert result.resolved_model_ref == parent.model_ref
+    assert prepared[0].resolved_model_ref == parent.model_ref
+    assert verified == [parent]
+
+
+def test_strict_warm_start_still_rejects_a_new_instrument_binding():
+    command, parent = _published_model_command()
+    command = replace(
+        command,
+        data_contract={
+            **command.data_contract,
+            "data_contract_sha256": "d" * 64,
+        },
+    )
+    action, _, _ = _action_for_parent(parent)
+
+    with pytest.raises(ServiceError) as raised:
+        action.create(command)
+
+    assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+    assert raised.value.message == (
+        "model data contract does not match the requested job"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("profile", "another-profile"),
+        ("seq_len", 3),
+        ("feature_dim", 3),
+    ],
+)
+def test_transfer_fit_rejects_a_structurally_different_data_contract(
+    field,
+    value,
+):
+    command, parent = _published_model_command()
+    command = replace(
+        command,
+        data_contract={
+            **command.data_contract,
+            "data_contract_sha256": "d" * 64,
+            field: value,
+        },
+        initialization_kind="publishedModelTransfer",
+    )
+    action, _, _ = _action_for_parent(parent)
+
+    with pytest.raises(ServiceError) as raised:
+        action.create(command)
+
+    assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+    assert raised.value.message == (
+        "parent model data contract is not compatible with transfer fit"
+    )
+
+
+def test_transfer_fit_rejects_a_different_objective():
+    command, parent = _published_model_command()
+    single_target = ObjectiveConfig.from_document({
+        "targets": ["MeanReturn"],
+        "objective": {
+            "schemaVersion": 1,
+            "aggregation": "WeightedSum",
+            "reduction": "GlobalRowMean",
+            "directLosses": [
+                {
+                    "target": "MeanReturn",
+                    "operator": "SmoothL1",
+                    "weight": 1.0,
+                }
+            ],
+            "auxiliaryLosses": [],
+            "balancing": {"operator": "Static"},
+        },
+    })
+    command = replace(
+        command,
+        data_contract={
+            **command.data_contract,
+            "data_contract_sha256": "d" * 64,
+        },
+        ml_contract=ml_contract(single_target),
+        initialization_kind="publishedModelTransfer",
+    )
+    action, _, _ = _action_for_parent(parent)
+
+    with pytest.raises(ServiceError) as raised:
+        action.create(command)
+
+    assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+
+
+def _action_for_parent(parent):
+    verified = []
+    prepared = []
+
+    def create(_command, *, max_active_jobs, preflight, prepare):
+        assert max_active_jobs == 2
+        preflight()
+        result = prepare(parent)
+        prepared.append(result)
+        return LifecycleMutation(result.result, replayed=False)
+
+    action = CreateJobAction(
+        SimpleNamespace(create=create),
+        max_active_jobs=2,
+        limits=_limits(),
+        cuda_available=lambda: False,
+        is_draining=lambda: False,
+        model_verifier=SimpleNamespace(verify=verified.append),
+        metrics=SimpleNamespace(
+            add=lambda *_args: None,
+            record_transition=lambda *_args: None,
+        ),
+        logger=SimpleNamespace(event=lambda *_args, **_kwargs: None),
+    )
+    return action, prepared, verified
 
 
 def _published_model_command(

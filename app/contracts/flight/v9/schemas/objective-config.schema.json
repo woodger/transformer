@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v9/objective-config.schema.json",
+  "title": "Transformer declarative objective v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "aggregation", "reduction", "directLosses",
+    "auxiliaryLosses", "balancing"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "aggregation": {"const": "WeightedSum"},
+    "reduction": {"const": "GlobalRowMean"},
+    "directLosses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/directLoss"},
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "auxiliaryLosses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/auxiliaryLoss"},
+      "maxItems": 3
+    },
+    "balancing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator"],
+      "properties": {"operator": {"const": "Static"}}
+    }
+  },
+  "$defs": {
+    "targetName": {
+      "enum": [
+        "MeanReturn", "SigmaReturn", "ProbTP", "ProbSL",
+        "VolatilityNext", "HittingProbTP"
+      ]
+    },
+    "directLoss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "operator", "weight"],
+      "properties": {
+        "target": {"$ref": "#/$defs/targetName"},
+        "operator": {
+          "enum": [
+            "SmoothL1", "BinaryCrossEntropyWithLogits", "LogMSE"
+          ]
+        },
+        "weight": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "auxiliaryLoss": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operator", "weight"],
+          "properties": {
+            "operator": {"const": "GaussianNLL"},
+            "weight": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operator", "weight"],
+          "properties": {
+            "operator": {"const": "ExpectedValue"},
+            "weight": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operator", "weight", "riskPenalty"],
+          "properties": {
+            "operator": {"const": "RiskAdjustedExpectedValue"},
+            "weight": {"type": "number", "exclusiveMinimum": 0},
+            "riskPenalty": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      ]
+    }
+  }
+}

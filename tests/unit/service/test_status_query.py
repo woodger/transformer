@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v10.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
