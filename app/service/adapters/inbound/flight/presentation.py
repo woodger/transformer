@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v10.objective import CHECKPOINT_FORMAT
+from app.contracts.worker.v11.objective import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,
@@ -61,6 +61,7 @@ def present_job_created(result: JobCreated) -> JsonObject:
             if result.operation == "predict"
             else None
         ),
+        sourceEncoding=dict(result.source_encoding),
         dataContract=data_contract_to_api(result.data_contract),
         mlContract=dict(result.ml_contract),
         limits=limits_to_api(result.limits),
@@ -78,7 +79,7 @@ def present_job_created(result: JobCreated) -> JsonObject:
                 if result.operation == "fit"
                 else PREDICT_SCHEMA_ID
             ),
-            "oneDoPutIsOneSemanticPayload": True,
+            "oneDoPutIsOnePhysicalPayload": True,
         },
     )
 
@@ -104,7 +105,10 @@ def present_input_closed(result: InputClosed) -> JsonObject:
             "state": result.input_state.value,
             "revision": result.input_revision,
             "payloadCount": result.payload_count,
-            "totalRows": result.total_rows,
+            "totalChunks": result.total_chunks,
+            "totalLogicalRows": result.total_rows,
+            "totalNativeRows": list(result.total_native_rows),
+            "rangeCount": result.range_count,
             "totalBytes": result.total_bytes,
             "manifestSha256": result.manifest_sha256,
         },
@@ -142,7 +146,10 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
             "revision": job.input_revision,
             "nextOrdinal": job.next_input_ordinal,
             "payloadCount": job.payload_count,
-            "totalRows": job.total_rows,
+            "totalChunks": job.total_chunks,
+            "totalLogicalRows": job.total_rows,
+            "totalNativeRows": list(job.total_native_rows),
+            "rangeCount": job.range_count,
             "totalBytes": job.total_bytes,
             "manifestSha256": job.manifest_sha256,
         },
@@ -159,6 +166,7 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
             "requested": device_to_api(job.requested_device),
             "selected": device_to_api(job.selected_device),
         },
+        sourceEncoding=dict(job.source_encoding),
         dataContract=data_contract_to_api(job.data_contract),
         mlContract=dict(job.ml_contract),
         initialization=job.initialization,
@@ -192,7 +200,13 @@ def present_job_inputs(result: JobInputsPage) -> JsonObject:
                 "commitRevision": item.commit_revision,
                 "schemaId": item.schema_id,
                 "dataContractSha256": item.data_contract_sha256,
-                "rows": item.rows,
+                "chunks": item.chunks,
+                "logicalRows": item.rows,
+                "nativeRows": list(item.native_rows),
+                "firstRangeOrdinal": item.first_range_ordinal,
+                "firstExampleOffset": item.first_example_offset,
+                "lastRangeOrdinal": item.last_range_ordinal,
+                "nextExampleOffset": item.next_example_offset,
                 "batches": item.batches,
                 "bytes": item.byte_count,
                 "sha256": item.sha256,

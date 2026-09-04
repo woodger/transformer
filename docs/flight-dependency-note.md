@@ -5,7 +5,7 @@
 ## Область действия
 
 Эта заметка фиксирует два подтверждённых ограничения `pyarrow==24.0.0`,
-влияющих на контракт Transformer Flight v9. Это ограничения Python binding
+влияющих на контракт Transformer Flight v10. Это ограничения Python binding
 сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или Consumer-а.
 
 Окружение, в котором воспроизведено поведение:
@@ -76,7 +76,7 @@ failed precondition и exception для resource exhausted.
 
 ### Ожидаемый результат и влияние на contract
 
-Flight v9 требует, чтобы ошибочный RPC содержал нормативный gRPC code;
+Flight v10 требует, чтобы ошибочный RPC содержал нормативный gRPC code;
 кодирование ошибки внутри успешного JSON result неприемлемо. Поэтому service
 на чистом Python не может пройти wire-status gate с точными
 `ALREADY_EXISTS`, `FAILED_PRECONDITION` и `RESOURCE_EXHAUSTED`. Стабильные
@@ -146,15 +146,15 @@ Transformer должен иметь возможность применить и
 24 payload-ы больше исторического значения gRPC 4 MiB работают, поскольку
 receive size не ограничен, но application validation выполняется только после
 того, как gRPC уже выделил память под входящее сообщение. Поэтому квоты batch,
-logical payload, rows, job и queue на уровне приложения не дают такую же
-защиту до выделения памяти.
+physical payload, logical rows, job и queue на уровне приложения не дают такую
+же защиту до выделения памяти.
 
 ### Безопасное временное поведение
 
 - Consumer настраивает `maxSendMessageLength` и `maxReceiveMessageLength` и
   формирует RecordBatches примерно по 8 MiB.
-- Transformer применяет лимиты batch, logical payload, total job и rows при
-  чтении каждого chunk.
+- Transformer применяет лимиты batch, physical payload, total job и logical
+  rows при чтении каждого chunk.
 - Capabilities описывают 16 MiB как цель interoperability, а не как жёсткий
   transport limit server-а PyArrow.
 - Доверенная граница TLS/network может добавить независимую policy размера

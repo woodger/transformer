@@ -3,7 +3,7 @@ from typing import cast
 
 import torch
 
-from app.contracts.worker.v10.objective import ObjectiveConfig
+from app.contracts.worker.v11.objective import ObjectiveConfig
 from app.worker.model.transformer import TransformerModel
 from app.worker.telemetry.paths import resolve_metrics_path
 from app.worker.training.run_config import (

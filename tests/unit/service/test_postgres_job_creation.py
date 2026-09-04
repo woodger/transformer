@@ -6,8 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
@@ -47,6 +47,12 @@ def _create_job(
         requested_device="cpu",
         prediction_column="prediction",
         config_hash="b" * 64,
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
+            ],
+        },
         data_contract={
             "data_contract_sha256": "a" * 64,
             "seq_len": 2,

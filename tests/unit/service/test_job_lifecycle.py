@@ -1,10 +1,10 @@
-from app.contracts.flight.v9.constants import (
+from app.contracts.flight.v10.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CREATE_ACTION,
     INPUT_CLOSE_ACTION,
 )
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_created
 from app.service.adapters.outbound.postgres.job_lifecycle import (
     JobActionNames,
@@ -47,6 +47,12 @@ def test_persisted_create_result_replays_without_new_mutation():
         requested_device="cpu",
         selected_device=None,
         resolved_model_ref=None,
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
+            ],
+        },
         data_contract={
             "id": "inventory.learning-dataset",
             "version": 2,
@@ -93,6 +99,7 @@ def test_persisted_create_result_replays_without_new_mutation():
         operation="fit",
         requested_device="cpu",
         prediction_column="out",
+        source_encoding=created.source_encoding,
         data_contract=created.data_contract,
         ml_contract=ML_CONTRACT,
         initialization_kind="random",

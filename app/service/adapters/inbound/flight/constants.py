@@ -1,6 +1,6 @@
-"""Flight v9 wire constants combined with service lifecycle values."""
+"""Flight v10 wire constants combined with service lifecycle values."""
 
-from app.contracts.flight.v9.constants import (
+from app.contracts.flight.v10.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,

@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from app.contracts.ml import canonical_targets
-from app.contracts.worker.v10.config import DEFAULT_CONTEXT_MODE
+from app.contracts.worker.v11.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,

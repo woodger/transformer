@@ -11,17 +11,17 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.flight.v9.arrow import validate_prediction_file
+from app.contracts.flight.v10.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v11.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v11.objective import (
     CHECKPOINT_FORMAT,
     ObjectiveConfig,
     objective_config_sha256,

@@ -11,13 +11,13 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v11.objective import (
     CHECKPOINT_FORMAT,
     ObjectiveConfig,
     default_objective,

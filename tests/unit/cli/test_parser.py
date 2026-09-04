@@ -8,7 +8,7 @@ from app.config import (
     HOST_DEFAULT,
     PORT_DEFAULT,
 )
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,

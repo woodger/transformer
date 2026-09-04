@@ -1,0 +1,10 @@
+{
+  "kind": "indexedFeatureBlocks",
+  "featureBlocks": [
+    {
+      "position": 0,
+      "windowRows": 100,
+      "nativeRowWidth": 891
+    }
+  ]
+}

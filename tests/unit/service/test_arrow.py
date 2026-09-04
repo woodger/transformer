@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v9.arrow import canonical_input_schema
+from app.contracts.flight.v10.arrow import canonical_input_schema
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -17,162 +17,153 @@ TARGETS = (
     "MeanReturn", "SigmaReturn", "ProbTP", "ProbSL",
     "VolatilityNext", "HittingProbTP",
 )
+SOURCE_ENCODING = {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+        {"position": 0, "windowRows": 2, "nativeRowWidth": 1},
+        {"position": 2, "windowRows": 1, "nativeRowWidth": 2},
+    ],
+}
 
 
-def fit_schema(source_width=4):
-    return pa.schema([
-        pa.field(
-            "src",
-            pa.list_(pa.float32(), source_width),
-            nullable=False,
-        ),
-        pa.field(
-            "tgt",
-            pa.list_(pa.float32(), 6),
-            nullable=False,
-        ),
-    ])
+def input_schema(operation="fit"):
+    return canonical_input_schema(
+        operation,
+        SOURCE_ENCODING,
+        seq_len=2,
+        feature_dim=4,
+    )
 
 
-def fit_batch(source_rows, *, source_width=4):
-    targets = [[0.0, 0.1, 0.0, 0.0, 0.2, 1.0] for _ in source_rows]
-    schema = fit_schema(source_width)
-    return pa.record_batch(
-        [
-            pa.array(source_rows, type=schema.field("src").type),
-            pa.array(targets, type=schema.field("tgt").type),
-        ],
-        schema=schema,
+def compact_batch(*, operation="fit", range_ordinal=0, example_offset=0):
+    schema = input_schema(operation)
+    columns = [
+        pa.array([range_ordinal], type=schema.field("rangeOrdinal").type),
+        pa.array([example_offset], type=schema.field("exampleOffset").type),
+        pa.array([{
+            "b0": {
+                "nativeRows": [[1.0], [2.0], [3.0]],
+                "observationOffsets": [[0, 1]],
+            },
+            "b1": {
+                "nativeRows": [[4.0, 5.0], [6.0, 7.0]],
+                "observationOffsets": [[0, 1]],
+            },
+        }], type=schema.field("features").type),
+    ]
+    if operation == "fit":
+        columns.append(pa.array(
+            [[[0.0, 0.1, 0.0, 0.0, 0.2, 1.0]]],
+            type=schema.field("tgt").type,
+        ))
+    return pa.record_batch(columns, schema=schema)
+
+
+def validator(operation="fit", *, schema=None, max_payload_bytes=2 * 1024 * 1024):
+    return InputBatchValidator(
+        operation,
+        input_schema(operation) if schema is None else schema,
+        source_encoding=SOURCE_ENCODING,
+        targets=TARGETS,
+        seq_len=2,
+        expected_feature_dim=4,
+        max_batch_bytes=1024 * 1024,
+        max_payload_bytes=max_payload_bytes,
+        max_rows=10,
     )
 
 
 def test_multi_batch_input_is_validated_as_one_logical_payload():
-    validator = InputBatchValidator(
-        "fit",
-        fit_schema(),
-        targets=TARGETS,
-        seq_len=2,
-        expected_feature_dim=None,
-        max_batch_bytes=1024 * 1024,
-        max_payload_bytes=2 * 1024 * 1024,
-        max_rows=10,
-    )
+    payload = validator()
 
-    validator.validate_batch(fit_batch([[1.0, 2.0, 3.0, 4.0]]))
-    validator.validate_batch(fit_batch([[5.0, 6.0, 7.0, 8.0]]))
+    payload.validate_batch(compact_batch())
+    payload.validate_batch(compact_batch(example_offset=1))
 
-    stats = validator.stats()
+    stats = payload.stats()
     assert stats.rows == 2
+    assert stats.chunks == 2
+    assert stats.native_rows == (6, 4)
     assert stats.batches == 2
-    assert stats.src_width == 4
-    assert stats.tgt_width == 6
+    assert (stats.first_range_ordinal, stats.first_example_offset) == (0, 0)
+    assert (stats.last_range_ordinal, stats.next_example_offset) == (0, 2)
 
 
 def test_record_batch_must_keep_the_doput_fixed_schema():
-    validator = InputBatchValidator(
-        "fit",
-        fit_schema(),
-        targets=TARGETS,
-        seq_len=2,
-        expected_feature_dim=None,
-        max_batch_bytes=1024 * 1024,
-        max_payload_bytes=2 * 1024 * 1024,
-        max_rows=10,
-    )
-    validator.validate_batch(fit_batch([[1.0, 2.0, 3.0, 4.0]]))
+    payload = validator()
+    payload.validate_batch(compact_batch())
 
     with pytest.raises(ServiceError, match="schema differs"):
-        validator.validate_batch(
-            fit_batch([[1.0, 2.0]], source_width=2)
-        )
+        payload.validate_batch(compact_batch(operation="predict"))
 
 
 @pytest.mark.parametrize(
-    ("operation", "column"),
-    [
-        ("fit", "src"),
-        ("fit", "tgt"),
-        ("predict", "src"),
-    ],
+    "operation",
+    ["fit", "predict"],
 )
-def test_input_schema_rejects_noncanonical_nested_nullability(
-    operation,
-    column,
-):
-    schema = canonical_input_schema(operation, 4)
+def test_input_schema_rejects_noncanonical_nullability(operation):
+    schema = input_schema(operation)
     fields = list(schema)
-    index = schema.get_field_index(column)
-    width = schema.field(index).type.list_size
-    fields[index] = pa.field(
-        column,
-        pa.list_(
-            pa.field("item", pa.float32(), nullable=False),
-            width,
-        ),
-        nullable=False,
+    fields[0] = pa.field(
+        "rangeOrdinal",
+        pa.uint32(),
+        nullable=True,
     )
 
     with pytest.raises(ServiceError) as error:
-        InputBatchValidator(
-            operation,
-            pa.schema(fields),
-            targets=TARGETS,
-            seq_len=2,
-            expected_feature_dim=2,
-            max_batch_bytes=1024,
-            max_payload_bytes=2048,
-            max_rows=10,
-        )
+        validator(operation, schema=pa.schema(fields))
 
     assert error.value.code is ErrorCode.INVALID_ARGUMENT
     assert "canonical physical schema" in error.value.message
 
 
 def test_payload_quota_is_enforced_across_batches_before_full_staging():
-    first = fit_batch([[1.0, 2.0, 3.0, 4.0]])
-    validator = InputBatchValidator(
-        "fit",
-        fit_schema(),
-        targets=TARGETS,
-        seq_len=2,
-        expected_feature_dim=None,
-        max_batch_bytes=1024,
-        max_payload_bytes=first.nbytes,
-        max_rows=10,
-    )
-    validator.validate_batch(first)
+    first = compact_batch()
+    payload = validator(max_payload_bytes=first.nbytes)
+    payload.validate_batch(first)
 
     with pytest.raises(ServiceError, match="payload data size exceeds limit"):
-        validator.validate_batch(first)
+        payload.validate_batch(first)
 
 
-def test_predict_schema_rejects_tgt_and_expected_feature_mismatch():
-    with pytest.raises(ServiceError, match="columns must be exactly src"):
+def test_predict_schema_rejects_fit_schema_and_feature_mismatch():
+    with pytest.raises(ServiceError, match="canonical physical schema"):
+        validator("predict", schema=input_schema("fit"))
+
+    with pytest.raises(ValueError, match=r"must equal dataContract\.featureDim"):
         InputBatchValidator(
             "predict",
-            fit_schema(),
+            input_schema("predict"),
+            source_encoding=SOURCE_ENCODING,
             targets=TARGETS,
             seq_len=2,
-            expected_feature_dim=2,
+            expected_feature_dim=5,
             max_batch_bytes=1024,
             max_payload_bytes=2048,
             max_rows=10,
         )
 
-    schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 6), nullable=False),
-    ])
-    with pytest.raises(ServiceError, match="does not match model feature dimension"):
-        InputBatchValidator(
-            "predict",
-            schema,
-            targets=TARGETS,
-            seq_len=2,
-            expected_feature_dim=2,
-            max_batch_bytes=1024,
-            max_payload_bytes=2048,
-            max_rows=10,
-        )
+
+def test_compact_input_rejects_noncontiguous_and_out_of_bounds_offsets():
+    payload = validator()
+    payload.validate_batch(compact_batch())
+    with pytest.raises(ServiceError, match="exampleOffset is not contiguous"):
+        payload.validate_batch(compact_batch(example_offset=2))
+
+    schema = input_schema()
+    invalid = compact_batch()
+    columns = [invalid.column(index) for index in range(invalid.num_columns)]
+    columns[2] = pa.array([{
+        "b0": {
+            "nativeRows": [[1.0], [2.0]],
+            "observationOffsets": [[0, 1]],
+        },
+        "b1": {
+            "nativeRows": [[4.0, 5.0], [6.0, 7.0]],
+            "observationOffsets": [[0, 1]],
+        },
+    }], type=schema.field("features").type)
+    with pytest.raises(ServiceError, match="outside range chunk"):
+        validator().validate_batch(pa.record_batch(columns, schema=schema))
 
 
 def write_table(path, table):
@@ -289,22 +280,23 @@ def test_prediction_file_rejects_invalid_list_structure(
 
 
 def test_schema_fingerprint_ignores_nonsemantic_metadata():
-    plain = canonical_input_schema("predict", 4)
+    plain = input_schema("predict")
     annotated = plain.with_metadata({b"producer": b"inventory"})
-    nested_annotated = pa.schema([
-        pa.field(
-            "src",
-            pa.list_(
-                pa.field(
-                    "item",
-                    pa.float32(),
-                    nullable=True,
-                    metadata={b"producer": b"inventory"},
-                ),
-                4,
-            ),
-            nullable=False,
-        ),
-    ])
+    fields = list(plain)
+    features = plain.field("features")
+    fields[2] = pa.field(
+        "features",
+        pa.struct([
+            pa.field(
+                field.name,
+                field.type,
+                nullable=field.nullable,
+                metadata={b"producer": b"inventory"},
+            )
+            for field in features.type
+        ]),
+        nullable=False,
+    )
+    nested_annotated = pa.schema(fields)
     assert schema_fingerprint(plain) == schema_fingerprint(annotated)
     assert schema_fingerprint(plain) == schema_fingerprint(nested_annotated)

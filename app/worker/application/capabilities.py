@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v10 import (
+from app.contracts.worker.v11 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     validate_document,

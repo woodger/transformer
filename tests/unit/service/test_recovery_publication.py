@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.worker.v10.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v11.objective import TRAINING_RECOVERY_FORMAT
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,
@@ -91,6 +91,12 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         model_label="daily",
         input_model_ref=None,
         prediction_column="predictions",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         model_config=None,
         training_config=None,
         data_contract={},

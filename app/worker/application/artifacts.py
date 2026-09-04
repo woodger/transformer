@@ -10,17 +10,23 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v10 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v11.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.objective import (
     CHECKPOINT_FORMAT,
     ml_contract,
     objective_config_sha256,
 )
-from app.worker.application.documents import integer_field, object_field, string_field
+from app.worker.application.documents import (
+    integer_field,
+    integer_list,
+    object_field,
+    optional_integer_field,
+    string_field,
+)
 from app.worker.runtime.version import __version__
 from app.worker.training.trainer import Trainer
 
@@ -215,7 +221,14 @@ def _input_receipt_identity(item: JsonObject) -> tuple[object, ...]:
         integer_field(item, "ordinal"),
         integer_field(item, "commitRevision"),
         string_field(item, "dataContractSha256"),
-        integer_field(item, "rows"),
+        integer_field(item, "chunks"),
+        integer_field(item, "logicalRows"),
+        integer_list(item.get("nativeRows"), "nativeRows"),
+        optional_integer_field(item, "firstRangeOrdinal"),
+        optional_integer_field(item, "firstExampleOffset"),
+        optional_integer_field(item, "lastRangeOrdinal"),
+        optional_integer_field(item, "nextExampleOffset"),
+        integer_field(item, "batches"),
         string_field(artifact, "path"),
         integer_field(artifact, "byteCount"),
         string_field(artifact, "sha256"),

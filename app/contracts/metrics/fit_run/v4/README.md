@@ -15,6 +15,12 @@ Duration-поля могут перекрываться: потоковое об
 Поэтому их нельзя суммировать для вычисления полного времени; критический путь
 задаётся `remoteFitMs`.
 
+В `counts` поле `inputPayloads` считает физические committed DoPut artifacts,
+`inputRows` — logical training examples после compact-реконструкции, а
+`inputBytes` — физические bytes сохранённых Arrow IPC artifacts. Flight v10 не
+меняет schema или identity metrics v4; он только делает различие физического и
+логического объёма явным.
+
 Поле `modelRef` является корреляционным top-level keyword, поэтому terminal
 summary опубликованного run находится точным запросом по модели. Статистики
 исходных training targets не входят в Transformer telemetry: этими данными и

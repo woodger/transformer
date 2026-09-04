@@ -3,7 +3,7 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessError,
 )
@@ -134,6 +134,12 @@ def _job() -> ExecutionJobRecord:
         model_label="daily",
         input_model_ref=None,
         prediction_column="out",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         model_config=None,
         training_config=None,
         data_contract={"data_contract_sha256": "d" * 64},

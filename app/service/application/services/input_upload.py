@@ -4,6 +4,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
+from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
@@ -28,7 +29,7 @@ class InputKindMismatch(Exception):
 
 
 class InputUploadLifecycle:
-    """Authorize and commit one semantic payload around transport staging."""
+    """Authorize and commit one physical payload around transport staging."""
 
     def __init__(
         self,
@@ -180,6 +181,17 @@ def _match_upload(
         raise ServiceError(
             ErrorCode.MODEL_SCHEMA_MISMATCH,
             "metadata dataContractSha256 does not match the job",
+        )
+    feature_dim = job.model_config.feature_dim
+    if feature_dim is None:
+        raise failed_precondition("job feature dimension is unavailable")
+    blocks = feature_block_dimensions(
+        job.source_encoding,
+        feature_dim=feature_dim,
+    )
+    if len(metadata.native_rows) != len(blocks):
+        raise failed_precondition(
+            "metadata nativeRows does not match sourceEncoding"
         )
 
 

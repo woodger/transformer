@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v11/prediction-manifest.schema.json",
+  "title": "Transformer worker v11 prediction artifact manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId", "ordinal", "commitRevision", "dataContractSha256",
+    "rows", "artifact"
+  ],
+  "properties": {
+    "schemaId": {"const": "transformer.prediction.target-aligned.v3"},
+    "ordinal": {"type": "integer", "minimum": 0},
+    "commitRevision": {"type": "integer", "minimum": 1},
+    "dataContractSha256": {
+      "$ref": "https://transformer.local/contracts/worker/v11/common.schema.json#/$defs/sha256"
+    },
+    "rows": {"type": "integer", "minimum": 0},
+    "artifact": {
+      "$ref": "https://transformer.local/contracts/worker/v11/common.schema.json#/$defs/artifact"
+    }
+  }
+}

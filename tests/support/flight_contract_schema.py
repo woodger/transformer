@@ -12,7 +12,7 @@ SCHEMA_ROOT = (
     PROJECT_ROOT / "app"
     / "contracts"
     / "flight"
-    / "v9"
+    / "v10"
     / "schemas"
 )
 

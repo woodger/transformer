@@ -7,7 +7,7 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v9`](../app/contracts/flight/v9/README.md).
+[`app/contracts/flight/v10`](../app/contracts/flight/v10/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
@@ -19,7 +19,7 @@ Rationale target-aligned public semantics сохранён в
 
 - `state_dict` и версию приложения;
 - полные `model_config` и `train_config`;
-- physical/model input schema;
+- model input shape;
 - `data_contract`;
 - полный `ml_contract` с `objectiveConfigSha256`;
 - канонический документ `objective` с выбранными targets;
@@ -51,7 +51,7 @@ initialization. `publishedModel` требует те же model и ML contracts 
 не наследуются. Результатом остаётся новая immutable generation, а не изменение
 parent или продолжение его training run. Точную wire-форму `initialization`
 задаёт
-[Flight contract](../app/contracts/flight/v9/README.md#инициализация-fit-и-lineage-модели).
+[Flight contract](../app/contracts/flight/v10/README.md#инициализация-fit-и-lineage-модели).
 Recovery относится к состоянию уже созданного нового job.
 
 ## Target selection и objective
@@ -113,14 +113,17 @@ Flight fit использует durable input stream. Epoch 0 начинает �
 ordinal при открытом input. `input.close` задаёт EOF. Последующие epochs
 перечитывают закрытый immutable dataset.
 
-RecordBatch и payload boundaries не являются optimizer batch, shuffle window
-или epoch boundaries. CPU pipeline закрытых epochs готовит не более одного
-следующего batch параллельно текущему training step. Pinned memory и
-asynchronous H2D намеренно не используются.
+Flight v10 хранит Consumer-computed features как indexed native blocks и
+локальные observation offsets. Worker восстанавливает прежний dense logical
+tensor срезами ограниченного размера. RecordBatch, range chunk и payload
+boundaries не являются optimizer batch, shuffle window или epoch boundaries.
+CPU pipeline закрытых epochs готовит не более одного следующего batch
+параллельно текущему training step. Pinned memory и asynchronous H2D намеренно
+не используются.
 
 Полная physical/value validation выполняется до durable commit DoPut. Worker
 один раз за attempt проверяет receipt, размер и SHA-256, затем использует fast
-replay с проверкой schema и row count.
+replay с проверкой schema и physical/logical counters.
 
 ## Recovery
 

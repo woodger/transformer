@@ -26,8 +26,8 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/flight/v9/`, используемый внешними consumers и contract tests;
-- `app/contracts/worker/v10/`, используемый service и worker processes;
+- `app/contracts/flight/v10/`, используемый внешними consumers и contract tests;
+- `app/contracts/worker/v11/`, используемый service и worker processes;
 - `app/contracts/metrics/v4/` и `app/contracts/metrics/fit_run/v4/`,
   используемые telemetry publisher-ом и OpenSearch;
 - `.env.example`, `pyproject.toml` и deployment reference;

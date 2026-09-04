@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.objective import (
     CHECKPOINT_FORMAT,
     objective_from_ml_contract,
 )

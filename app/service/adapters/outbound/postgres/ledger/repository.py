@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -159,6 +160,7 @@ class Ledger:
         operation: str,
         requested_device: str,
         prediction_column: str,
+        source_encoding: JsonObject,
         config_hash: str,
         data_contract: JsonObject,
         ml_contract: JsonObject,
@@ -191,6 +193,10 @@ class Ledger:
         if not isinstance(raw_ml_contract, dict):
             raise ValueError("ml_contract must be an object")
         typed_ml_contract = cast(JsonObject, raw_ml_contract)
+        raw_source_encoding = cast(object, source_encoding)
+        if not isinstance(raw_source_encoding, dict):
+            raise ValueError("source_encoding must be an object")
+        typed_source_encoding = cast(JsonObject, raw_source_encoding)
         contract_sha256 = _digest(
             typed_data_contract.get("data_contract_sha256"),
             "data_contract_sha256",
@@ -206,6 +212,10 @@ class Ledger:
         feature_dim = _positive(
             typed_data_contract.get("feature_dim"),
             "data_contract.feature_dim",
+        )
+        blocks = feature_block_dimensions(
+            typed_source_encoding,
+            feature_dim=feature_dim,
         )
         if operation == "fit":
             if not model_label:
@@ -256,6 +266,7 @@ class Ledger:
                 None if initialization is None else _json_value(initialization)
             ),
             prediction_column=prediction_column,
+            source_encoding=_json_value(typed_source_encoding),
             model_config=(
                 None if model_config is None else _json_value(model_config)
             ),
@@ -274,6 +285,7 @@ class Ledger:
             config_hash=config_hash,
             source_width=seq_len * feature_dim,
             feature_dim=feature_dim,
+            total_native_rows=[0] * len(blocks),
             progress={},
             attempt=0,
             created_at=timestamp,
@@ -805,13 +817,17 @@ class Ledger:
         relative_path: str,
         schema_id: str,
         data_contract_sha256: str,
+        chunks: int,
         rows: int,
+        native_rows: tuple[int, ...],
+        first_range_ordinal: int | None,
+        first_example_offset: int | None,
+        last_range_ordinal: int | None,
+        next_example_offset: int | None,
         batches: int,
         byte_count: int,
         sha256: str,
         schema_fingerprint: str,
-        source_width: int,
-        feature_dim: int,
         selected_device: str,
         max_payloads: int,
         max_job_bytes: int,
@@ -826,13 +842,17 @@ class Ledger:
             relative_path=relative_path,
             schema_id=schema_id,
             data_contract_sha256=data_contract_sha256,
+            chunks=chunks,
             rows=rows,
+            native_rows=native_rows,
+            first_range_ordinal=first_range_ordinal,
+            first_example_offset=first_example_offset,
+            last_range_ordinal=last_range_ordinal,
+            next_example_offset=next_example_offset,
             batches=batches,
             byte_count=byte_count,
             sha256=sha256,
             schema_fingerprint=schema_fingerprint,
-            source_width=source_width,
-            feature_dim=feature_dim,
             selected_device=selected_device,
             max_payloads=max_payloads,
             max_job_bytes=max_job_bytes,
@@ -885,7 +905,10 @@ class Ledger:
         client_execution_id: str,
         fencing_token: int,
         payload_count: int,
+        total_chunks: int,
         total_rows: int,
+        total_native_rows: tuple[int, ...],
+        range_count: int,
         total_bytes: int,
         manifest_sha256: str,
         selected_device: str,
@@ -897,7 +920,10 @@ class Ledger:
             client_execution_id=client_execution_id,
             fencing_token=fencing_token,
             payload_count=payload_count,
+            total_chunks=total_chunks,
             total_rows=total_rows,
+            total_native_rows=total_native_rows,
+            range_count=range_count,
             total_bytes=total_bytes,
             expected_manifest_sha256=manifest_sha256,
             selected_device=selected_device,

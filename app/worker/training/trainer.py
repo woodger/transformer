@@ -14,12 +14,12 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.objective import (
     ObjectiveConfig,
     objective_config_sha256,
 )

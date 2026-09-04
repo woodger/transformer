@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v9`](../../app/contracts/flight/v9/README.md).
+находится в [`app/contracts/flight/v10`](../../app/contracts/flight/v10/README.md).
 
 ## File commands
 

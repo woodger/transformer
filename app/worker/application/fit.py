@@ -9,10 +9,10 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v10.objective import objective_from_ml_contract
+from app.contracts.worker.v11 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v11.objective import objective_from_ml_contract
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -24,6 +24,7 @@ from app.worker.application.artifacts import (
 )
 from app.worker.application.documents import (
     integer_field,
+    integer_list,
     object_document,
     object_field,
     optional_string_field,
@@ -41,10 +42,9 @@ from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
 )
-from app.worker.data.arrow import read_committed_fit_arrow
+from app.worker.data.arrow import iter_committed_fit_arrow
 from app.worker.data.tensors import (
     TrainingBatch,
-    reshape_source,
     validate_feature_dim,
     validate_target_dim,
 )
@@ -81,31 +81,39 @@ def execute_fit(
     data_contract = object_field(manifest, "dataContract")
     ml_contract = object_field(manifest, "mlContract")
     expected_feature_dim = integer_field(data_contract, "featureDim")
+    source_encoding = object_field(manifest, "sourceEncoding")
     expected_target_dim = objective.target_width
     committed_inputs = CommittedInputArtifacts()
 
-    def read_payload(item: JsonObject) -> TrainingBatch:
+    def read_payload(item: JsonObject) -> Iterator[TrainingBatch]:
         if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
             raise ValueError("fit input schemaId is invalid")
         path = committed_inputs.path(item)
-        batch = read_committed_fit_arrow(
+        yield from iter_committed_fit_arrow(
             path,
-            expected_rows=integer_field(item, "rows"),
-            source_width=model_config.seq_len * expected_feature_dim,
+            expected_rows=integer_field(item, "logicalRows"),
+            expected_chunks=integer_field(item, "chunks"),
+            expected_native_rows=integer_list(
+                item.get("nativeRows"),
+                "nativeRows",
+            ),
+            source_encoding=source_encoding,
+            seq_len=model_config.seq_len,
+            feature_dim=expected_feature_dim,
             targets=objective.targets,
         )
-        batch = TrainingBatch(
-            features=reshape_source(batch.features, model_config.seq_len),
-            targets=batch.targets,
-        )
-        validate_feature_dim(batch.features, expected_feature_dim)
-        validate_target_dim(batch.targets, expected_target_dim)
-        return batch
+
+    def decoded(items: Iterator[JsonObject]) -> Iterator[TrainingBatch]:
+        for item in items:
+            for batch in read_payload(item):
+                validate_feature_dim(batch.features, expected_feature_dim)
+                validate_target_dim(batch.targets, expected_target_dim)
+                yield batch
 
     stream = iter(input_stream.items())
+    decoded_stream = decoded(stream)
     first = None
-    for item in stream:
-        batch = read_payload(item)
+    for batch in decoded_stream:
         if batch.features.size(0) == 0:
             continue
         first = batch
@@ -201,16 +209,14 @@ def execute_fit(
 
     def first_epoch_payloads() -> Iterator[TrainingBatch]:
         yield first
-        for item in stream:
-            batch = read_payload(item)
+        for batch in decoded_stream:
             if batch.features.size(0) != 0:
                 yield batch
 
     def closed_payloads() -> Iterator[TrainingBatch]:
         if not input_stream.closed:
             raise ValueError("complete input is unavailable for replay")
-        for item in input_stream.inputs:
-            batch = read_payload(item)
+        for batch in decoded(iter(input_stream.inputs)):
             if batch.features.size(0) != 0:
                 yield batch
 

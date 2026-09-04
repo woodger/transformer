@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
@@ -38,6 +38,7 @@ class CreateJobCommand:
     operation: str
     requested_device: str
     prediction_column: str
+    source_encoding: JsonObject
     data_contract: JsonObject
     ml_contract: JsonObject
     model_label: str | None = None
@@ -70,7 +71,10 @@ class CloseInputCommand:
     client_execution_id: str
     fencing_token: int
     payload_count: int
+    total_chunks: int
     total_rows: int
+    total_native_rows: tuple[int, ...]
+    range_count: int
     total_bytes: int
     manifest_sha256: str
 
@@ -136,6 +140,7 @@ class JobCreated:
     requested_device: str
     selected_device: str | None
     resolved_model_ref: str | None
+    source_encoding: JsonObject
     data_contract: JsonObject
     ml_contract: JsonObject
     limits: ServiceLimits
@@ -159,7 +164,10 @@ class InputClosed:
     input_state: InputState
     input_revision: int
     payload_count: int
+    total_chunks: int
     total_rows: int
+    total_native_rows: tuple[int, ...]
+    range_count: int
     total_bytes: int
     manifest_sha256: str
     execution_state: ExecutionState

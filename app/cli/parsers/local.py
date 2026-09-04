@@ -14,7 +14,7 @@ from app.cli.options import (
 )
 from app.cli.parsers import SubparserTarget
 from app.config import DEFAULT_DEVICE, DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,

@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v10.config import CheckpointSelectionConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.config import CheckpointSelectionConfig
+from app.contracts.worker.v11.objective import (
     default_objective,
     objective_config_sha256,
 )

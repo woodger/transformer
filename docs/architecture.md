@@ -18,10 +18,11 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v9             публичный Flight contract
-app/contracts/worker/v10            внутренний process contract
-app/contracts/metrics/v4            epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v4    terminal fit summary и lineage
+app/contracts/flight/v10                 публичный Flight contract
+app/contracts/worker/v11                внутренний process contract
+app/contracts/indexed_feature_blocks.py  общие compact-input invariants
+app/contracts/metrics/v4                epoch artifact и OpenSearch points
+app/contracts/metrics/fit_run/v4        terminal fit summary и lineage
 ```
 
 Каждый исполняемый процесс имеет собственный composition root. Service
@@ -72,6 +73,12 @@ device/reproducibility runtime и checkpoint staging. Один процесс о
 пишет в attempt workspace и передаёт bounded NDJSON events через stdout, а
 diagnostics — через stderr.
 
+Flight input хранится как compact indexed feature blocks. Worker memory-map-ит
+immutable artifacts и восстанавливает dense `[rows, seqLen, featureDim]`
+ограниченными срезами непосредственно перед batching. Полный развёрнутый
+dataset не материализуется; physical chunk/payload boundaries не меняют
+логический порядок, bounded shuffle или optimizer batches.
+
 Worker не подключается к PostgreSQL и не управляет Flight identity, public job
 state, artifact publication, recovery generation или model generation. Его
 внутренний executor напрямую использует PyArrow, Torch и filesystem как части
@@ -93,7 +100,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v10/config.py`.
+остаются в `app/contracts/worker/v11/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -108,10 +115,12 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v9/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v10/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/indexed_feature_blocks.py` — общая pure-валидация ordered
+  block geometry между service и worker без зависимости от Flight adapter;
 - `app/contracts/ml.py` — единая Python identity target, ML-контракта,
   checkpoint и recovery formats;
-- `app/contracts/worker/v10/` — command/result manifests, capability document,
+- `app/contracts/worker/v11/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
 - `app/contracts/metrics/v4/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
@@ -125,6 +134,11 @@ Alembic-команды имеют отдельный короткоживущи�
 задают ширину fit target vector, публичные prediction heads и prediction
 output. Objective, training policy и необязательные diagnostics остаются
 отдельными contract sections; checkpoint навсегда связан с targets и objective.
+
+`sourceEncoding` описывает только физическое compact-представление
+Consumer-owned features. Оно входит в immutable job configuration и recovery
+fencing, но не в data-contract, objective, checkpoint или model identity при
+численно эквивалентном logical tensor.
 
 Fit initialization также является отдельной частью job identity.
 `publishedModel` требует точного совпадения model и ML contracts и
@@ -150,12 +164,12 @@ metadata и metrics outbox. OpenSearch — best-effort аналитическа�
 
 Filesystem artifacts проходят staged lifecycle до появления ссылки на них в
 PostgreSQL. Prediction artifacts и attempt workspaces являются runtime-данными;
-fit inputs и completed-epoch checkpoints обеспечивают recovery; опубликованные
-model directories содержат только неизменяемый binary checkpoint, а отдельная
-control-plane metadata хранится только в PostgreSQL. Checkpoint сохраняет
-собственную process-contract metadata для проверки worker-ом. Незавершённый
-warm-start fit удерживает parent generation от явного удаления. Точные
-каталоги, failure semantics и процедуры reconciliation задаёт
+compact fit inputs и completed-epoch checkpoints обеспечивают recovery;
+опубликованные model directories содержат только неизменяемый binary
+checkpoint, а отдельная control-plane metadata хранится только в PostgreSQL.
+Checkpoint сохраняет собственную process-contract metadata для проверки
+worker-ом. Незавершённый warm-start fit удерживает parent generation от явного
+удаления. Точные каталоги, failure semantics и процедуры reconciliation задаёт
 [операционное руководство Flight](./operations/flight-service.md).
 
 Process-local memory хранит bounded queues, token verification cache и handles

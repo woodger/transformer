@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.objective import (
     ObjectiveConfig,
     default_objective,
     ml_contract,
@@ -262,6 +262,12 @@ def _published_model_command(
         operation="fit",
         requested_device="cpu",
         prediction_column="out",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         data_contract=data_contract,
         ml_contract=model_contract,
         model_label="returns.daily.fine-tuned",

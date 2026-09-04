@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v10_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v11_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,7 +27,7 @@ def test_worker_capabilities_follow_the_v10_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 10,
+        "protocolVersion": 11,
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
         "devices": [],

@@ -1,0 +1,96 @@
+{
+  "contract": "transformer-flight",
+  "version": 10,
+  "requestId": "23232323-2323-4232-8232-232323232323",
+  "idempotencyKey": "inventory-predict-20260810-1",
+  "jobId": "34343434-3434-4343-8343-343434343434",
+  "clientExecutionId": "45454545-4545-4454-8454-454545454545",
+  "operation": "predict",
+  "device": "gpu",
+  "modelAlias": "returns.daily",
+  "predictionColumn": "forecast",
+  "sourceEncoding": {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+      {"position": 0, "windowRows": 2, "nativeRowWidth": 1},
+      {"position": 2, "windowRows": 1, "nativeRowWidth": 2}
+    ]
+  },
+  "dataContract": {
+    "id": "inventory.learning-dataset",
+    "version": 2,
+    "profile": "research-dividend-events-v2",
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seqLen": 2,
+    "featureDim": 4,
+    "targetSchemaId": "inventory.target.v2"
+  },
+  "mlContract": {
+    "targetSchemaId": "inventory.target.v2",
+    "predictionSchemaId": "transformer.prediction.target-aligned.v3",
+    "objectiveId": "transformer.objective.declarative.v1",
+    "objectiveConfigSha256": "ffd75380fa9a303f44a38205bd32ae8f63350782f4d306e32796190f955de115",
+    "checkpointFormat": "transformer-checkpoint-v5",
+    "targets": [
+      "MeanReturn",
+      "SigmaReturn",
+      "ProbTP",
+      "ProbSL",
+      "VolatilityNext",
+      "HittingProbTP"
+    ],
+    "targetWidth": 6,
+    "predictionSpace": "target",
+    "objective": {
+      "schemaVersion": 1,
+      "aggregation": "WeightedSum",
+      "reduction": "GlobalRowMean",
+      "directLosses": [
+        {
+          "target": "MeanReturn",
+          "operator": "SmoothL1",
+          "weight": 1.0
+        },
+        {
+          "target": "SigmaReturn",
+          "operator": "SmoothL1",
+          "weight": 1.0
+        },
+        {
+          "target": "ProbTP",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        },
+        {
+          "target": "ProbSL",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        },
+        {
+          "target": "VolatilityNext",
+          "operator": "LogMSE",
+          "weight": 1.0
+        },
+        {
+          "target": "HittingProbTP",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1.0
+        }
+      ],
+      "auxiliaryLosses": [
+        {
+          "operator": "GaussianNLL",
+          "weight": 1.0
+        },
+        {
+          "operator": "RiskAdjustedExpectedValue",
+          "weight": 0.3,
+          "riskPenalty": 0.1
+        }
+      ],
+      "balancing": {
+        "operator": "Static"
+      }
+    }
+  }
+}

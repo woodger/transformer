@@ -416,6 +416,7 @@ class ArtifactLedgerSlice:
             job = session.scalar(select(Job.job_id).where(
                 Job.job_id == job_id,
                 Job.owner_subject == owner_subject,
+                Job.source_encoding.is_not(None),
             ))
             if job is None:
                 raise not_found("job not found")

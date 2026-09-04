@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.worker.v10.config import ModelConfig
+from app.contracts.worker.v11.config import ModelConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
     row_integer,
+    row_integer_tuple,
+    row_json_object,
+    row_optional_integer,
     row_optional_string,
     row_string,
 )
@@ -41,7 +44,7 @@ class PostgresInputUploadStore:
             job_id,
             owner_subject=owner_subject,
         )
-        if value is None:
+        if value is None or value.get("source_encoding") is None:
             return None
         model_config = ModelConfig.from_dict(value["model_config"])
         if model_config is None:
@@ -67,6 +70,7 @@ class PostgresInputUploadStore:
             input_revision=row_integer(value, "input_revision"),
             next_input_ordinal=row_integer(value, "next_input_ordinal"),
             data_contract_sha256=row_string(value, "data_contract_sha256"),
+            source_encoding=row_json_object(value, "source_encoding"),
             ml_contract=ml_contract,
             model_config=model_config,
         )
@@ -134,13 +138,17 @@ class PostgresInputUploadStore:
             relative_path=receipt.relative_path,
             schema_id=metadata.schema_id,
             data_contract_sha256=metadata.data_contract_sha256,
+            chunks=receipt.chunks,
             rows=receipt.rows,
+            native_rows=receipt.native_rows,
+            first_range_ordinal=receipt.first_range_ordinal,
+            first_example_offset=receipt.first_example_offset,
+            last_range_ordinal=receipt.last_range_ordinal,
+            next_example_offset=receipt.next_example_offset,
             batches=receipt.batches,
             byte_count=receipt.byte_count,
             sha256=receipt.sha256,
             schema_fingerprint=receipt.schema_fingerprint,
-            source_width=receipt.source_width,
-            feature_dim=receipt.feature_dim,
             selected_device=authorization.selected_device,
             max_payloads=max_payloads,
             max_job_bytes=max_job_bytes,
@@ -156,15 +164,19 @@ def _committed_input(value: Mapping[str, object]) -> CommittedInput:
         ordinal=row_integer(value, "ordinal"),
         schema_id=row_string(value, "schema_id"),
         data_contract_sha256=row_string(value, "data_contract_sha256"),
+        chunks=row_integer(value, "chunks"),
         rows=row_integer(value, "rows"),
+        native_rows=row_integer_tuple(value, "native_rows"),
+        first_range_ordinal=row_optional_integer(value, "first_range_ordinal"),
+        first_example_offset=row_optional_integer(value, "first_example_offset"),
+        last_range_ordinal=row_optional_integer(value, "last_range_ordinal"),
+        next_example_offset=row_optional_integer(value, "next_example_offset"),
         batches=row_integer(value, "batches"),
         byte_count=row_integer(value, "bytes"),
         sha256=row_string(value, "sha256"),
         schema_fingerprint=row_string(value, "schema_fingerprint"),
         relative_path=row_string(value, "relative_path"),
         storage_class=row_string(value, "storage_class"),
-        source_width=row_integer(value, "source_width"),
-        feature_dim=row_integer(value, "feature_dim"),
         input_revision=_integer_or_default(value, "input_revision", 0),
         next_input_ordinal=_integer_or_default(
             value,

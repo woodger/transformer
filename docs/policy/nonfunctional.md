@@ -6,7 +6,7 @@
 топологию, wire schemas, configuration defaults или runbook. Их источники:
 
 - [архитектура](../architecture.md) — процессы и data ownership;
-- [Flight v9 contract](../../app/contracts/flight/v9/README.md) — wire и
+- [Flight v10 contract](../../app/contracts/flight/v10/README.md) — wire и
   lifecycle semantics;
 - [training runtime](../training-runtime.md) — checkpoint, recovery и обучение;
 - [аутентификация](../authentication.md) — credential verification и security
@@ -27,7 +27,7 @@
 
 ## Контракты
 
-- Arrow schema, logical payload identity и protocol versioning меняются только
+- Arrow schema, logical dataset identity и protocol versioning меняются только
   намеренно вместе с нормативным contract.
 - Binary stdout не смешивается с diagnostics.
 - Checkpoint metadata достаточно для совместимого prediction; несовместимый

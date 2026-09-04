@@ -4,18 +4,19 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v9.codec import (
+from app.contracts.flight.v10.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
+from app.contracts.indexed_feature_blocks import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v10.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v11.objective import (
     ObjectiveConfig,
     ml_contract,
     objective_from_ml_contract,
@@ -87,6 +88,7 @@ class CreateRequestFields(RequestIdFields):
     operation: str
     device: str
     prediction_column: str
+    source_encoding: JsonObject
     data_contract: DataContractFields
     ml_contract: MlContractFields
     model_label: NotRequired[str]
@@ -120,7 +122,10 @@ class InputCloseRequestFields(RequestIdFields):
     client_execution_id: str
     fencing_token: int
     payload_count: int
+    total_chunks: int
     total_rows: int
+    total_native_rows: list[int]
+    range_count: int
     total_bytes: int
     manifest_sha256: str
 
@@ -152,7 +157,9 @@ class UploadMetadataFields(TypedDict):
     schema_id: str
     input_kind: str
     data_contract_sha256: str
+    chunks: int
     rows: int
+    native_rows: tuple[int, ...]
 
 
 ValidatedActionRequest = (
@@ -211,7 +218,9 @@ def validate_upload_metadata(document: JsonObject) -> UploadMetadataFields:
         "schema_id": schema_id,
         "input_kind": "fit" if schema_id == FIT_SCHEMA_ID else "predict",
         "data_contract_sha256": _string(document, "dataContractSha256"),
-        "rows": _integer(document, "rows"),
+        "chunks": _integer(document, "chunks"),
+        "rows": _integer(document, "logicalRows"),
+        "native_rows": tuple(_integer_list(document, "nativeRows")),
     }
 
 
@@ -255,6 +264,13 @@ def _validate_create(
 ) -> CreateRequestFields:
     operation = _string(document, "operation")
     data_contract = _data_contract(_object(document, "dataContract"))
+    try:
+        source_encoding = canonical_source_encoding(
+            document["sourceEncoding"],
+            feature_dim=data_contract["feature_dim"],
+        )
+    except ValueError as exc:
+        raise invalid(str(exc)) from exc
     requested_ml_contract = (
         _ml_contract(_object(document, "mlContract"))
         if operation == "predict"
@@ -268,6 +284,7 @@ def _validate_create(
         "operation": operation,
         "device": _string(document, "device"),
         "prediction_column": cast(str, document.get("predictionColumn", "out")),
+        "source_encoding": source_encoding,
         "data_contract": data_contract,
         "ml_contract": cast(MlContractFields, requested_ml_contract),
     }
@@ -367,7 +384,10 @@ def _validate_input_close(
         "client_execution_id": _uuid(document, "clientExecutionId"),
         "fencing_token": _fencing_token(document, "fencingToken"),
         "payload_count": _integer(document, "payloadCount"),
-        "total_rows": _integer(document, "totalRows"),
+        "total_chunks": _integer(document, "totalChunks"),
+        "total_rows": _integer(document, "totalLogicalRows"),
+        "total_native_rows": _integer_list(document, "totalNativeRows"),
+        "range_count": _integer(document, "rangeCount"),
         "total_bytes": _integer(document, "totalBytes"),
         "manifest_sha256": _string(document, "manifestSha256"),
     }
@@ -532,6 +552,10 @@ def _optional_integer(document: Mapping[str, object], key: str) -> int | None:
     if key not in document:
         return None
     return _integer(document, key)
+
+
+def _integer_list(document: Mapping[str, object], key: str) -> list[int]:
+    return cast(list[int], list(cast(list[object], document[key])))
 
 
 def _page_limit(document: Mapping[str, object]) -> int:

@@ -57,7 +57,7 @@ public identities в ADR 0015 сохранило сам target-aligned прин�
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v9](../../app/contracts/flight/v9/README.md)
+- [Контракт Arrow Flight v10](../../app/contracts/flight/v10/README.md)
 - [Функция потерь](../losses.md)
 - [Training runtime](../training-runtime.md)
 - [ADR 0015: единая identity индикаторов](0015-unified-indicator-identity-flight-v5.md)

@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v10.config import ModelConfig
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.config import ModelConfig
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -15,6 +15,13 @@ from app.service.application.services.input_upload import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, InputState
+
+SOURCE_ENCODING = {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+        {"position": 0, "windowRows": 1, "nativeRowWidth": 3},
+    ],
+}
 
 
 class UploadStore:
@@ -48,6 +55,7 @@ def _job(**overrides):
         input_revision=1,
         next_input_ordinal=1,
         data_contract_sha256="a" * 64,
+        source_encoding=SOURCE_ENCODING,
         ml_contract=ml_contract(objective),
         model_config=ModelConfig(seq_len=2, feature_dim=3),
     )
@@ -61,10 +69,12 @@ def _metadata(**overrides):
         fencing_token=7,
         payload_id="payload-id",
         ordinal=1,
-        schema_id="inventory.sequence.fit.v3",
+        schema_id="transformer.indexed-feature-blocks.fit.v1",
         input_kind="fit",
         data_contract_sha256="a" * 64,
+        chunks=1,
         rows=10,
+        native_rows=(10,),
     )
     return replace(metadata, **overrides)
 
@@ -125,17 +135,21 @@ def test_exact_replay_uses_current_input_frontier_without_recommit():
         job_id="job-id",
         payload_id="payload-id",
         ordinal=1,
-        schema_id="inventory.sequence.fit.v3",
+        schema_id="transformer.indexed-feature-blocks.fit.v1",
         data_contract_sha256="a" * 64,
+        chunks=1,
         rows=10,
+        native_rows=(10,),
+        first_range_ordinal=0,
+        first_example_offset=0,
+        last_range_ordinal=0,
+        next_example_offset=10,
         batches=1,
         byte_count=512,
         sha256="b" * 64,
         schema_fingerprint="c" * 64,
         relative_path="jobs/job-id/input.arrow",
         storage_class="recovery",
-        source_width=6,
-        feature_dim=3,
         input_revision=2,
         next_input_ordinal=2,
         queued=True,

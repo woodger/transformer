@@ -150,6 +150,7 @@ class CreateJobAction:
                 requested_device=command.requested_device,
                 selected_device=None,
                 resolved_model_ref=resolved_model_ref,
+                source_encoding=dict(command.source_encoding),
                 data_contract=dict(command.data_contract),
                 ml_contract=dict(command.ml_contract),
                 limits=self.limits,
@@ -263,7 +264,11 @@ class InputCloseAction:
                 requestId=outcome.result.request_id,
                 jobId=outcome.result.job_id,
                 payloadCount=outcome.result.payload_count,
-                totalRows=outcome.result.total_rows,
+                totalChunks=outcome.result.total_chunks,
+                totalLogicalRows=outcome.result.total_rows,
+                totalNativeRows=list(outcome.result.total_native_rows),
+                rangeCount=outcome.result.range_count,
+                totalBytes=outcome.result.total_bytes,
             )
             if outcome.queued:
                 self._queue_notifier(outcome.result.job_id)

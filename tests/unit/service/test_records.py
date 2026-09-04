@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -45,6 +45,12 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         "resolved_model_ref": None,
         "initialization": {"kind": "random"},
         "prediction_column": "out",
+        "source_encoding": {
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         "model_config": ModelConfig(
             seq_len=2,
             feature_dim=2,
@@ -106,6 +112,12 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             requested_device="cuda",
             prediction_column="out",
             config_hash="b" * 64,
+            source_encoding={
+                "kind": "indexedFeatureBlocks",
+                "featureBlocks": [
+                    {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                ],
+            },
             data_contract={
                 "data_contract_sha256": "a" * 64,
                 "seq_len": 2,
@@ -133,9 +145,15 @@ def test_committed_input_record_carries_order_and_contract_identity():
         ordinal=4,
         payload_id="00000000-0000-4000-8000-000000000002",
         commit_revision=7,
-        schema_id="inventory.sequence.fit.v3",
+        schema_id="transformer.indexed-feature-blocks.fit.v1",
         data_contract_sha256="a" * 64,
+        chunks=1,
         rows=10,
+        native_rows=(12,),
+        first_range_ordinal=0,
+        first_example_offset=0,
+        last_range_ordinal=0,
+        next_example_offset=10,
         batches=2,
         byte_count=4096,
         sha256="b" * 64,

@@ -111,6 +111,7 @@ references. Он не воспроизводит их значения, кома
 | [0024](0024-cross-instrument-transfer-initialization.md) | Superseded | Отделить cross-instrument transfer от strict warm start |
 | [0025](0025-unified-published-model-initialization.md) | Superseded | Объединить structural weights-only initialization в `publishedModel` |
 | [0026](0026-strict-published-model-warm-start.md) | Accepted | Ограничить `publishedModel` точным data-contract digest |
+| [0027](0027-compact-indexed-feature-block-input.md) | Accepted | Передавать Flight input как compact indexed feature blocks |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

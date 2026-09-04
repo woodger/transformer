@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,
@@ -38,6 +38,7 @@ def execution_job_from_mapping(
         input_model_ref=row_optional_string(value, "resolved_model_ref"),
         initialization=row_optional_json_object(value, "initialization"),
         prediction_column=row_string(value, "prediction_column"),
+        source_encoding=row_json_object(value, "source_encoding"),
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
         data_contract=row_json_object(value, "data_contract"),
@@ -70,7 +71,9 @@ def recoverable_attempt_from_mapping(
 
 
 def job_record(row: Job | None) -> JobRecord | None:
-    if row is None:
+    # Pre-v10 terminal jobs deliberately retain no compact source encoding
+    # after revision 0023 and are not part of the current public contract.
+    if row is None or row.source_encoding is None:
         return None
     return JobRecord(
         job_id=row.job_id,
@@ -82,7 +85,13 @@ def job_record(row: Job | None) -> JobRecord | None:
         input_revision=row.input_revision,
         next_input_ordinal=row.next_input_ordinal,
         payload_count=row.payload_count,
+        total_chunks=row.total_chunks,
         total_rows=row.total_rows,
+        total_native_rows=row_integer_tuple(
+            {"total_native_rows": row.total_native_rows},
+            "total_native_rows",
+        ),
+        range_count=row.range_count,
         total_bytes=row.total_bytes,
         manifest_sha256=row.manifest_sha256,
         client_execution_id=row.client_execution_id,
@@ -94,6 +103,7 @@ def job_record(row: Job | None) -> JobRecord | None:
             None if row.initialization is None else dict(row.initialization)
         ),
         prediction_column=row.prediction_column,
+        source_encoding=dict(row.source_encoding),
         data_contract=dict(row.data_contract),
         ml_contract=dict(row.ml_contract),
         progress=dict(row.progress or {}),
@@ -119,15 +129,22 @@ def input_record(row: JobInput) -> InputRecord:
         commit_revision=row.commit_revision,
         schema_id=row.schema_id,
         data_contract_sha256=row.data_contract_sha256,
+        chunks=row.chunks,
         rows=row.rows,
+        native_rows=row_integer_tuple(
+            {"native_rows": row.native_rows},
+            "native_rows",
+        ),
+        first_range_ordinal=row.first_range_ordinal,
+        first_example_offset=row.first_example_offset,
+        last_range_ordinal=row.last_range_ordinal,
+        next_example_offset=row.next_example_offset,
         batches=row.batches,
         byte_count=row.bytes,
         sha256=row.sha256,
         schema_fingerprint=row.schema_fingerprint,
         relative_path=row.relative_path,
         storage_class=row.storage_class,
-        source_width=row.source_width,
-        feature_dim=row.feature_dim,
         committed_at=row.committed_at.timestamp(),
     )
 
@@ -214,6 +231,22 @@ def row_optional_integer(
     return item
 
 
+def row_integer_tuple(
+    value: Mapping[str, object],
+    key: str,
+) -> tuple[int, ...]:
+    item = _row_value(value, key)
+    if not isinstance(item, list):
+        raise ValueError(f"database field {key} must be an integer array")
+    values = cast(list[object], item)
+    if any(
+        isinstance(element, bool) or not isinstance(element, int)
+        for element in values
+    ):
+        raise ValueError(f"database field {key} must be an integer array")
+    return tuple(cast(list[int], item))
+
+
 def row_boolean(value: Mapping[str, object], key: str) -> bool:
     item = _row_value(value, key)
     if not isinstance(item, bool):
@@ -271,6 +304,7 @@ __all__ = [
     "recoverable_attempt_from_mapping",
     "row_boolean",
     "row_integer",
+    "row_integer_tuple",
     "row_json_object",
     "row_optional_float",
     "row_optional_integer",

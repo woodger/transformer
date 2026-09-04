@@ -86,8 +86,13 @@ class Job(Base):
             name="jobs_queue_sequence_ck",
         ),
         CheckConstraint(
-            "payload_count >= 0 AND total_rows >= 0 AND total_bytes >= 0",
+            "payload_count >= 0 AND total_chunks >= 0 AND total_rows >= 0 "
+            "AND total_bytes >= 0",
             name="jobs_input_totals_ck",
+        ),
+        CheckConstraint(
+            "range_count IS NULL OR range_count >= 0",
+            name="jobs_range_count_ck",
         ),
         CheckConstraint(
             "execution_state <> 'SUCCEEDED' OR input_state = 'CLOSED'",
@@ -159,6 +164,7 @@ class Job(Base):
         JSONB(none_as_null=True)
     )
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_encoding: Mapped[JsonObject | None] = mapped_column(JSONB)
     model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
     data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
@@ -169,7 +175,14 @@ class Job(Base):
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
     manifest_sha256: Mapped[str | None] = mapped_column(String(64))
     payload_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_chunks: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_native_rows: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    range_count: Mapped[int | None] = mapped_column(BigInteger)
     total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     progress: Mapped[JsonObject] = mapped_column(
         JSONB,
@@ -239,6 +252,7 @@ class JobInput(Base):
         CheckConstraint("ordinal >= 0", name="job_inputs_ordinal_ck"),
         CheckConstraint("commit_revision > 0", name="job_inputs_revision_ck"),
         CheckConstraint("rows >= 0", name="job_inputs_rows_ck"),
+        CheckConstraint("chunks >= 0", name="job_inputs_chunks_ck"),
         CheckConstraint("batches >= 0", name="job_inputs_batches_ck"),
         CheckConstraint("bytes >= 0", name="job_inputs_bytes_ck"),
         CheckConstraint("source_width > 0", name="job_inputs_source_width_ck"),
@@ -260,7 +274,13 @@ class JobInput(Base):
     commit_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
     schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     rows: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    native_rows: Mapped[list[int]] = mapped_column(JSONB, nullable=False)
+    first_range_ordinal: Mapped[int | None] = mapped_column(BigInteger)
+    first_example_offset: Mapped[int | None] = mapped_column(BigInteger)
+    last_range_ordinal: Mapped[int | None] = mapped_column(BigInteger)
+    next_example_offset: Mapped[int | None] = mapped_column(BigInteger)
     batches: Mapped[int] = mapped_column(BigInteger, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)

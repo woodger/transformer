@@ -5,14 +5,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10 import (
+from app.contracts.worker.v11 import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     model_config_to_manifest,
     train_config_to_manifest,
 )
@@ -201,7 +201,14 @@ class WorkerPlanBuilder:
                     "ordinal": item.ordinal,
                     "commitRevision": item.commit_revision,
                     "dataContractSha256": item.data_contract_sha256,
-                    "rows": item.rows,
+                    "chunks": item.chunks,
+                    "logicalRows": item.rows,
+                    "nativeRows": list(item.native_rows),
+                    "firstRangeOrdinal": item.first_range_ordinal,
+                    "firstExampleOffset": item.first_example_offset,
+                    "lastRangeOrdinal": item.last_range_ordinal,
+                    "nextExampleOffset": item.next_example_offset,
+                    "batches": item.batches,
                     "artifact": {
                         "path": item.absolute_path,
                         "byteCount": item.byte_count,
@@ -215,6 +222,7 @@ class WorkerPlanBuilder:
             "manifestSha256": job.manifest_sha256,
             "workspace": {"root": workspace},
             "model": model_manifest,
+            "sourceEncoding": dict(job.source_encoding),
             "dataContract": _data_contract_manifest(job.data_contract),
             "mlContract": dict(job.ml_contract),
         }
@@ -495,7 +503,14 @@ class WorkerPlanBuilder:
                 commit_revision=item.commit_revision,
                 schema_id=item.schema_id,
                 data_contract_sha256=item.data_contract_sha256,
+                chunks=item.chunks,
                 rows=item.rows,
+                native_rows=item.native_rows,
+                first_range_ordinal=item.first_range_ordinal,
+                first_example_offset=item.first_example_offset,
+                last_range_ordinal=item.last_range_ordinal,
+                next_example_offset=item.next_example_offset,
+                batches=item.batches,
                 byte_count=item.byte_count,
                 sha256=item.sha256,
                 absolute_path=actual,

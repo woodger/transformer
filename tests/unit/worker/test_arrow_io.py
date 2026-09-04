@@ -5,17 +5,25 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
+from app.contracts.flight.v10.arrow import canonical_input_schema
 from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.data.arrow import (
+    iter_committed_fit_arrow,
+    iter_committed_source_arrow,
     iter_framed_arrow,
     read_arrow,
-    read_committed_fit_arrow,
-    read_committed_source_arrow,
     read_source_arrow,
     table_to_source_tensor,
     table_to_tensors,
     write_arrow,
 )
+
+SOURCE_ENCODING = {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+        {"position": 0, "windowRows": 2, "nativeRowWidth": 2},
+    ],
+}
 
 
 def test_arrow_file_io_preserves_tensor_values(tmp_path):
@@ -104,25 +112,38 @@ def test_read_source_arrow_does_not_require_target(tmp_path):
 
 
 def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
-    schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-        pa.field("tgt", pa.list_(pa.float32(), 6), nullable=False),
-    ])
+    schema = canonical_input_schema(
+        "fit",
+        SOURCE_ENCODING,
+        seq_len=1,
+        feature_dim=4,
+    )
     batches = [
         pa.record_batch(
             [
-                pa.array([[1.0, float("nan"), 3.0, 4.0]], type=schema.field(0).type),
-                pa.array([[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]], type=schema.field(1).type),
+                pa.array([0], type=schema.field(0).type),
+                pa.array([0], type=schema.field(1).type),
+                pa.array([{
+                    "b0": {
+                        "nativeRows": [[1.0, float("nan")], [3.0, 4.0]],
+                        "observationOffsets": [[0]],
+                    },
+                }], type=schema.field(2).type),
+                pa.array([[[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]]], type=schema.field(3).type),
             ],
             schema=schema,
         ),
         pa.record_batch(
             [
-                pa.array([[5.0, 6.0, 7.0, 8.0]], type=schema.field(0).type),
-                pa.array(
-                    [[-0.5, 0.1, 0.2, 0.3, 0.4, 0.0]],
-                    type=schema.field(1).type,
-                ),
+                pa.array([0], type=schema.field(0).type),
+                pa.array([1], type=schema.field(1).type),
+                pa.array([{
+                    "b0": {
+                        "nativeRows": [[5.0, 6.0], [7.0, 8.0]],
+                        "observationOffsets": [[0]],
+                    },
+                }], type=schema.field(2).type),
+                pa.array([[[-0.5, 0.1, 0.2, 0.3, 0.4, 0.0]]], type=schema.field(3).type),
             ],
             schema=schema,
         ),
@@ -133,28 +154,45 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
             for batch in batches:
                 writer.write_batch(batch)
 
-    batch = read_committed_fit_arrow(
+    batches = list(iter_committed_fit_arrow(
         str(path),
         expected_rows=2,
-        source_width=4,
+        expected_chunks=2,
+        expected_native_rows=(4,),
+        source_encoding=SOURCE_ENCODING,
+        seq_len=1,
+        feature_dim=4,
         targets=TARGET_IDENTITIES,
-    )
+    ))
+    features = torch.cat([batch.features for batch in batches])
+    targets = torch.cat([batch.targets for batch in batches])
 
-    assert batch.features.shape == (2, 4)
-    assert torch.isnan(batch.features[0, 1])
-    assert batch.features[1].tolist() == [5.0, 6.0, 7.0, 8.0]
-    assert torch.allclose(batch.targets, torch.tensor([
+    assert features.shape == (2, 1, 4)
+    assert torch.isnan(features[0, 0, 1])
+    assert features[1, 0].tolist() == [5.0, 6.0, 7.0, 8.0]
+    assert torch.allclose(targets, torch.tensor([
         [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
         [-0.5, 0.1, 0.2, 0.3, 0.4, 0.0],
     ]))
 
 
 def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
-    schema = pa.schema([
-        pa.field("src", pa.list_(pa.float32(), 4), nullable=False),
-    ])
-    table = pa.Table.from_arrays(
-        [pa.array([[1.0, 2.0, 3.0, 4.0]], type=schema.field(0).type)],
+    schema = canonical_input_schema(
+        "predict",
+        SOURCE_ENCODING,
+        seq_len=1,
+        feature_dim=4,
+    )
+    table = pa.Table.from_arrays([
+        pa.array([0], type=schema.field(0).type),
+        pa.array([0], type=schema.field(1).type),
+        pa.array([{
+            "b0": {
+                "nativeRows": [[1.0, 2.0], [3.0, 4.0]],
+                "observationOffsets": [[0]],
+            },
+        }], type=schema.field(2).type),
+    ],
         schema=schema,
     )
     path = tmp_path / "committed-predict.arrow"
@@ -163,18 +201,31 @@ def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
             writer.write_table(table)
 
     with pytest.raises(ValueError, match=r"row count 1.*receipt row count 2"):
-        read_committed_source_arrow(
+        list(iter_committed_source_arrow(
             str(path),
             expected_rows=2,
-            source_width=4,
-        )
+            expected_chunks=1,
+            expected_native_rows=(2,),
+            source_encoding=SOURCE_ENCODING,
+            seq_len=1,
+            feature_dim=4,
+        ))
 
     with pytest.raises(ValueError, match="physical schema"):
-        read_committed_source_arrow(
+        list(iter_committed_source_arrow(
             str(path),
             expected_rows=1,
-            source_width=5,
-        )
+            expected_chunks=1,
+            expected_native_rows=(1,),
+            source_encoding={
+                "kind": "indexedFeatureBlocks",
+                "featureBlocks": [
+                    {"position": 0, "windowRows": 1, "nativeRowWidth": 5},
+                ],
+            },
+            seq_len=1,
+            feature_dim=5,
+        ))
 
 
 def test_table_to_source_tensor_rejects_inconsistent_src_width():

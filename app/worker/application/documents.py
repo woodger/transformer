@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10 import WorkerContractError
+from app.contracts.worker.v11 import WorkerContractError
 
 
 def object_document(value: object, label: str) -> JsonObject:
@@ -52,6 +52,27 @@ def integer_field(document: JsonObject, name: str) -> int:
     return value
 
 
+def integer_list(value: object, label: str) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise WorkerContractError(f"worker {label} must be an integer array")
+    values = cast(list[object], value)
+    if any(
+        isinstance(item, bool) or not isinstance(item, int)
+        for item in values
+    ):
+        raise WorkerContractError(f"worker {label} must be an integer array")
+    return tuple(cast(list[int], value))
+
+
+def optional_integer_field(document: JsonObject, name: str) -> int | None:
+    value = document.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise WorkerContractError(f"worker {name} must be an integer or null")
+    return value
+
+
 def boolean_field(document: JsonObject, name: str) -> bool:
     value = document.get(name)
     if not isinstance(value, bool):
@@ -62,9 +83,11 @@ def boolean_field(document: JsonObject, name: str) -> bool:
 __all__ = [
     "boolean_field",
     "integer_field",
+    "integer_list",
     "object_document",
     "object_field",
     "object_list",
+    "optional_integer_field",
     "optional_string_field",
     "string_field",
 ]

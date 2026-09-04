@@ -16,20 +16,21 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.worker.v10 import (
+from app.contracts.flight.v10.arrow import canonical_input_schema
+from app.contracts.worker.v11 import (
     encode_event,
     load_document,
     parse_control_message,
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v10.config import (
+from app.contracts.worker.v11.config import (
     ModelConfig,
     TrainConfig,
     model_config_to_manifest,
     train_config_to_manifest,
 )
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.objective import (
     default_objective,
     ml_contract,
     objective_config_sha256,
@@ -49,6 +50,12 @@ from app.worker.training.factory import build_model
 
 DATA_CONTRACT_SHA256 = "c" * 64
 MANIFEST_SHA256 = "d" * 64
+SOURCE_ENCODING = {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+        {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+    ],
+}
 
 
 def _data_contract(
@@ -65,16 +72,39 @@ def _data_contract(
     }
 
 
-def _write_input(path: Path, rows, *, fit: bool) -> None:
-    fields = [pa.field("src", pa.list_(pa.float32(), 4), nullable=False)]
-    arrays = [pa.array(rows, type=fields[0].type)]
+def _write_input(
+    path: Path,
+    rows,
+    *,
+    fit: bool,
+    range_ordinal: int = 0,
+) -> None:
+    schema = canonical_input_schema(
+        "fit" if fit else "predict",
+        SOURCE_ENCODING,
+        seq_len=2,
+        feature_dim=2,
+    )
+    native_rows = [row[index:index + 2] for row in rows for index in (0, 2)]
+    offsets = [[index * 2, index * 2 + 1] for index in range(len(rows))]
+    arrays = [
+        pa.array([range_ordinal], type=schema.field("rangeOrdinal").type),
+        pa.array([0], type=schema.field("exampleOffset").type),
+        pa.array([{
+            "b0": {
+                "nativeRows": native_rows,
+                "observationOffsets": offsets,
+            },
+        }], type=schema.field("features").type),
+    ]
     if fit:
-        fields.append(pa.field("tgt", pa.list_(pa.float32(), 6), nullable=False))
         arrays.append(pa.array(
-            [[0.0, 0.0, 0.0, 0.0, 0.2, 1.0] for _ in rows],
-            type=fields[1].type,
+            [[
+                [0.0, 0.0, 0.0, 0.0, 0.2, 1.0]
+                for _ in rows
+            ]],
+            type=schema.field("tgt").type,
         ))
-    schema = pa.schema(fields)
     table = pa.Table.from_arrays(arrays, schema=schema)
     with pa.OSFile(str(path), "wb") as sink:
         with ipc.new_file(sink, schema) as writer:
@@ -91,14 +121,21 @@ def _input_manifest(
 ) -> dict:
     return {
         "schemaId": (
-            "inventory.sequence.fit.v3"
+            "transformer.indexed-feature-blocks.fit.v1"
             if fit
-            else "inventory.sequence.predict.v2"
+            else "transformer.indexed-feature-blocks.predict.v1"
         ),
         "ordinal": ordinal,
         "commitRevision": ordinal + 1,
         "dataContractSha256": data_contract_sha256,
-        "rows": rows,
+        "chunks": 1,
+        "logicalRows": rows,
+        "nativeRows": [rows * 2],
+        "firstRangeOrdinal": ordinal,
+        "firstExampleOffset": 0,
+        "lastRangeOrdinal": ordinal,
+        "nextExampleOffset": rows,
+        "batches": 1,
         "artifact": _artifact(path),
     }
 
@@ -140,7 +177,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=10",
+            "--contract-version=11",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -206,13 +243,14 @@ def test_closed_predict_worker_publishes_only_one_terminal_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 10,
+        "protocolVersion": 11,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "predict",
         "predictionColumn": "predictions",
         "device": {"kind": "cpu"},
+        "sourceEncoding": SOURCE_ENCODING,
         "inputs": [_input_manifest(input_path, 0, 1, fit=False)],
         "inputRevision": 1,
         "inputClosed": True,
@@ -275,17 +313,18 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
         [[3.0, 4.0, 5.0, 6.0], [4.0, 5.0, 6.0, 7.0]],
     )):
         input_path = tmp_path / f"input-{ordinal}.arrow"
-        _write_input(input_path, rows, fit=True)
+        _write_input(input_path, rows, fit=True, range_ordinal=ordinal)
         inputs.append(_input_manifest(input_path, ordinal, len(rows), fit=True))
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 10,
+        "protocolVersion": 11,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "fit",
         "device": {"kind": "cpu"},
+        "sourceEncoding": SOURCE_ENCODING,
         "inputs": inputs,
         "inputRevision": 2,
         "inputClosed": True,
@@ -437,12 +476,13 @@ def test_published_model_initialization_requires_exact_data_contract_digest(
     }
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 10,
+        "protocolVersion": 11,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "fit",
         "device": {"kind": "cpu"},
+        "sourceEncoding": SOURCE_ENCODING,
         "inputs": [
             _input_manifest(
                 input_path,
@@ -545,6 +585,7 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
         model_label=None,
         input_model_ref="mdl_seed",
         prediction_column="predictions",
+        source_encoding=SOURCE_ENCODING,
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=None,
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
@@ -630,6 +671,7 @@ def test_duplicate_worker_event_is_rejected_before_repeating_its_side_effect():
         model_label="forecast",
         input_model_ref=None,
         prediction_column="out",
+        source_encoding=SOURCE_ENCODING,
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
@@ -713,6 +755,7 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
         model_label="forecast",
         input_model_ref=None,
         prediction_column="out",
+        source_encoding=SOURCE_ENCODING,
         model_config=ModelConfig(seq_len=2, feature_dim=2),
         training_config=TrainConfig(),
         data_contract={"data_contract_sha256": DATA_CONTRACT_SHA256},
@@ -731,9 +774,16 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
     committed = ExecutionInput(
         ordinal=0,
         commit_revision=1,
-        schema_id="inventory.sequence.fit.v3",
+        schema_id="transformer.indexed-feature-blocks.fit.v1",
         data_contract_sha256=DATA_CONTRACT_SHA256,
+        chunks=1,
         rows=2,
+        native_rows=(4,),
+        first_range_ordinal=0,
+        first_example_offset=0,
+        last_range_ordinal=0,
+        next_example_offset=2,
+        batches=1,
         byte_count=10,
         sha256="b" * 64,
         absolute_path="/srv/transformer/recovery/0.arrow",
@@ -761,7 +811,10 @@ def test_worker_control_poll_recovers_a_lost_input_notification():
             return {
                 "input_revision": 1,
                 "payload_count": 1,
+                "total_chunks": 1,
                 "total_rows": 2,
+                "total_native_rows": [4],
+                "range_count": 1,
                 "total_bytes": 10,
                 "manifest_sha256": MANIFEST_SHA256,
             }
@@ -833,7 +886,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=10",
+            "--contract-version=11",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",

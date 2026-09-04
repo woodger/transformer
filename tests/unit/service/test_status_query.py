@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v10.objective import default_objective, ml_contract
+from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -29,7 +29,10 @@ def _job(**overrides):
         input_revision=3,
         next_input_ordinal=3,
         payload_count=3,
+        total_chunks=4,
         total_rows=12,
+        total_native_rows=(15,),
+        range_count=2,
         total_bytes=4096,
         manifest_sha256="a" * 64,
         client_execution_id="00000000-0000-4000-8000-000000000002",
@@ -38,6 +41,12 @@ def _job(**overrides):
         selected_device="cuda",
         resolved_model_ref=None,
         prediction_column="predictions",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         data_contract={
             "id": "inventory.learning-dataset",
             "version": 2,
@@ -130,7 +139,10 @@ def test_status_exposes_bounded_state_without_artifact_paths():
         "revision": 3,
         "nextOrdinal": 3,
         "payloadCount": 3,
-        "totalRows": 12,
+        "totalChunks": 4,
+        "totalLogicalRows": 12,
+        "totalNativeRows": [15],
+        "rangeCount": 2,
         "totalBytes": 4096,
         "manifestSha256": "a" * 64,
     }

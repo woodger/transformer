@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import BinaryIO
 
+from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10 import WorkerContractError, parse_control_message
+from app.contracts.worker.v11 import WorkerContractError, parse_control_message
 from app.worker.application.documents import (
     boolean_field as _boolean_field,
     integer_field as _integer_field,
+    integer_list as _integer_list,
     object_field as _object_field,
     object_list as _object_list,
     optional_string_field as _optional_string_field,
@@ -39,6 +41,11 @@ class DurableInputStream:
         )
         self._expected_sequence = 1
         self._inputs = _object_list(manifest.get("inputs"), "inputs")
+        data_contract = _object_field(manifest, "dataContract")
+        self._feature_block_count = len(feature_block_dimensions(
+            _object_field(manifest, "sourceEncoding"),
+            feature_dim=_integer_field(data_contract, "featureDim"),
+        ))
         self._validate_snapshot()
 
     @property
@@ -92,6 +99,7 @@ class DurableInputStream:
                     )
                 self.input_revision = max(self.input_revision, revision)
                 self._inputs.append(item)
+                self._validate_range_sequence()
                 self.emitter.input_ack(
                     ordinal=ordinal,
                     next_ordinal=self.next_ordinal,
@@ -114,6 +122,7 @@ class DurableInputStream:
                 raise WorkerContractError(
                     "startup input receipt exceeds inputRevision"
                 )
+        self._validate_range_sequence()
         if self.closed and self.manifest_sha256 is None:
             raise WorkerContractError(
                 "closed startup input has no manifestSha256"
@@ -125,6 +134,11 @@ class DurableInputStream:
         if _string_field(item, "dataContractSha256") != expected:
             raise WorkerContractError(
                 "input data contract differs from the job"
+            )
+        native_rows = _integer_list(item.get("nativeRows"), "nativeRows")
+        if len(native_rows) != self._feature_block_count:
+            raise WorkerContractError(
+                "input native row counters differ from sourceEncoding"
             )
 
     def _validate_envelope(self, message: JsonObject) -> None:
@@ -153,11 +167,45 @@ class DurableInputStream:
             raise WorkerContractError(
                 "input.closed payload count differs from accepted inputs"
             )
-        if _integer_field(payload, "totalRows") != sum(
-            _integer_field(item, "rows") for item in self._inputs
+        if _integer_field(payload, "totalChunks") != sum(
+            _integer_field(item, "chunks") for item in self._inputs
         ):
             raise WorkerContractError(
-                "input.closed row count differs from accepted inputs"
+                "input.closed chunk count differs from accepted inputs"
+            )
+        if _integer_field(payload, "totalLogicalRows") != sum(
+            _integer_field(item, "logicalRows") for item in self._inputs
+        ):
+            raise WorkerContractError(
+                "input.closed logical row count differs from accepted inputs"
+            )
+        expected_native_rows = [0] * self._feature_block_count
+        for item in self._inputs:
+            for index, count in enumerate(
+                _integer_list(item.get("nativeRows"), "nativeRows")
+            ):
+                expected_native_rows[index] += count
+        if _integer_list(
+            payload.get("totalNativeRows"),
+            "totalNativeRows",
+        ) != tuple(expected_native_rows):
+            raise WorkerContractError(
+                "input.closed native row counts differ from accepted inputs"
+            )
+        nonempty = [
+            item
+            for item in self._inputs
+            if _integer_field(item, "chunks") > 0
+        ]
+        range_count = _integer_field(payload, "rangeCount")
+        expected_range_count = (
+            0
+            if not nonempty
+            else _integer_field(nonempty[-1], "lastRangeOrdinal") + 1
+        )
+        if range_count != expected_range_count:
+            raise WorkerContractError(
+                "input.closed range count differs from accepted inputs"
             )
         if _integer_field(payload, "totalBytes") != sum(
             _integer_field(_object_field(item, "artifact"), "byteCount")
@@ -169,4 +217,38 @@ class DurableInputStream:
         self.input_revision = input_revision
         self.manifest_sha256 = _string_field(payload, "manifestSha256")
         self.closed = True
+
+    def _validate_range_sequence(self) -> None:
+        nonempty = [
+            item
+            for item in self._inputs
+            if _integer_field(item, "chunks") > 0
+        ]
+        if not nonempty:
+            return
+        first = nonempty[0]
+        if (
+            _integer_field(first, "firstRangeOrdinal") != 0
+            or _integer_field(first, "firstExampleOffset") != 0
+        ):
+            raise WorkerContractError(
+                "input range sequence must start at range and example zero"
+            )
+        for previous, current in zip(nonempty, nonempty[1:], strict=False):
+            previous_range = _integer_field(previous, "lastRangeOrdinal")
+            current_range = _integer_field(current, "firstRangeOrdinal")
+            current_offset = _integer_field(current, "firstExampleOffset")
+            same_range = (
+                current_range == previous_range
+                and current_offset
+                == _integer_field(previous, "nextExampleOffset")
+            )
+            next_range = (
+                current_range == previous_range + 1
+                and current_offset == 0
+            )
+            if not (same_range or next_range):
+                raise WorkerContractError(
+                    "input range sequence is not contiguous"
+                )
 __all__ = ["DurableInputStream"]

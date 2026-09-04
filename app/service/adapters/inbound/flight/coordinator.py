@@ -3,8 +3,8 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v10.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
+from app.contracts.worker.v11.objective import (
     AUXILIARY_LOSS_OPERATORS,
     CHECKPOINT_FORMAT,
     DIRECT_LOSS_OPERATORS,
@@ -237,6 +237,7 @@ class JobCoordinator:
                 "predictInput": PREDICT_SCHEMA_ID,
                 "predictionOutput": PREDICTION_SCHEMA_ID,
             },
+            sourceEncodings=["indexedFeatureBlocks"],
             mlContract={
                 "targetSchemaId": TARGET_SCHEMA_ID,
                 "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
@@ -327,6 +328,7 @@ def _create_command(
         operation=request["operation"],
         requested_device=device_from_api(request["device"]),
         prediction_column=request["prediction_column"],
+        source_encoding=dict(request["source_encoding"]),
         data_contract=cast(JsonObject, dict(request["data_contract"])),
         ml_contract=cast(JsonObject, dict(request["ml_contract"])),
         model_label=request.get("model_label"),
@@ -377,7 +379,10 @@ def _close_command(
         client_execution_id=request["client_execution_id"],
         fencing_token=request["fencing_token"],
         payload_count=request["payload_count"],
+        total_chunks=request["total_chunks"],
         total_rows=request["total_rows"],
+        total_native_rows=tuple(request["total_native_rows"]),
+        range_count=request["range_count"],
         total_bytes=request["total_bytes"],
         manifest_sha256=request["manifest_sha256"],
     )

@@ -10,8 +10,8 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.ml import TARGET_SCHEMA_ID
-from app.contracts.worker.v10.config import ModelConfig, TrainConfig
-from app.contracts.worker.v10.objective import (
+from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v11.objective import (
     TRAINING_RECOVERY_FORMAT,
     ObjectiveConfig,
     ml_contract,

@@ -9,15 +9,24 @@
 
 ### Added
 
-- Flight v9 сохраняет parent model/checkpoint и parent/current data-contract
+- Flight v10 сохраняет parent model/checkpoint и parent/current data-contract
   digests для каждого `publishedModel` fit в job, checkpoint, model metadata,
   fit result и terminal fit telemetry.
 
 ### Changed
 
-- Public Flight contract повышен до v9, worker process contract — до v10,
+- Public Flight contract повышен до v10, worker process contract — до v11,
   terminal fit summary — до v4, а OpenSearch outbox projection — до v6.
   Checkpoint/recovery formats v5 не изменены.
+- Flight input теперь использует только compact `indexedFeatureBlocks`:
+  Consumer передаёт native feature rows и локальные observation offsets для
+  ordered single- или multi-timeframe blocks, а worker восстанавливает прежний
+  dense logical tensor ограниченными срезами. Payload/range boundaries не
+  меняют batching, shuffle, losses или prediction semantics.
+- Input receipts, status и close разделяют physical chunks/native rows/bytes и
+  logical training rows. Revision `0023` сохраняет source encoding, counters и
+  range boundaries; upgrade требует отсутствия non-terminal jobs прежнего
+  контракта.
 - Fit initialization упрощён до `random` и `publishedModel`. Второй режим
   загружает полный parent `state_dict` в новое training state и требует точного
   совпадения model/ML contracts и `dataContractSha256`. Поэтому warm start
@@ -36,7 +45,8 @@
 
 ### Removed
 
-- Flight v8 и worker v9 удалены без aliases или parallel compatibility layer.
+- Flight v8/v9 dense input и worker v9/v10 удалены без aliases или parallel
+  compatibility layer.
 
 ## [0.1.17] - 2026-09-01
 

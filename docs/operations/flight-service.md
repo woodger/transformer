@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v9
+# Сервис Transformer Arrow Flight: операционное руководство v10
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v9`](../../app/contracts/flight/v9/README.md). Текущие
+[`app/contracts/flight/v10`](../../app/contracts/flight/v10/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -121,7 +121,7 @@ Recovery checkpoint становится видимым только после 
 terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V9 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v10 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,7 +214,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v9 определяет
+certificate options команды `flight serve`. Flight v10 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -230,10 +230,10 @@ modes.
 | `TRANSFORMER_MAX_MESSAGE_BYTES` | `16777216` | Целевой лимит interoperability клиента |
 | `TRANSFORMER_TARGET_BATCH_BYTES` | `8388608` | Рекомендуемый размер RecordBatch producer-а |
 | `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Прикладной лимит RecordBatch |
-| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Лимит логического DoPut и сохранённого IPC-файла |
-| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Число строк в одном DoPut |
-| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Число логических payload-ов в job |
-| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Общий объём committed inputs одной job |
+| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Лимит compact DoPut и сохранённого IPC-файла |
+| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Число logical examples в одном DoPut |
+| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Число физических payload-ов в job |
+| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Общий физический объём committed IPC inputs одной job |
 | `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Число non-terminal jobs на subject |
 
 Проверяемый порядок:
@@ -354,7 +354,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v9 нет сетевого action для её удаления. Команды оператора,
+во Flight v10 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
 Запрос удаления блокируется не только незавершённым prediction, но и любым
@@ -368,7 +368,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v9.health`.
+аутентифицированный Flight action `transformer.v10.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -409,24 +409,24 @@ filesystem, credentials и stderr subprocess не должны попадать 
    `ALREADY_EXISTS`, `FAILED_PRECONDITION` или `RESOURCE_EXHAUSTED`; сервис
    сохраняет стабильный application code в безопасном тексте.
 2. Python `FlightServerBase` не позволяет настроить жёсткий server limit для
-   размера принимаемого сообщения. Лимиты batch, logical payload, rows и job
-   по-прежнему контролируются приложением.
+   размера принимаемого сообщения. Лимиты batch, physical payload, logical
+   rows и job по-прежнему контролируются приложением.
 
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v9
+## Известные ограничения v10
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.
 - Нет планирования replicas и автоматического failover.
 - Нет `DoExchange` и `PollFlightInfo`.
-- Не более 100000 logical payload-ов на job. Inputs возвращаются ограниченной
+- Не более 100000 физических payload-ов на job. Inputs возвращаются ограниченной
   revision pagination, а close передаёт только итоги постоянного размера и
   digest.
-- Один DoPut соответствует одному semantic payload; chunking RecordBatch и
-  разбиение payload-ов не определяют optimizer batches, shuffle windows или
-  epochs.
+- Один DoPut соответствует одному физическому compact payload; разбиение на
+  RecordBatch, range chunks и payload-ы не определяет optimizer batches,
+  shuffle windows или epochs.
 - Одна predict job однократно загружает один checkpoint и формирует один output
   на каждый ordinal input.
 - Fit recovery выполняется только на границе завершённой global epoch;

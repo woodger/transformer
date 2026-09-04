@@ -35,7 +35,7 @@ resources.
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
 - service/worker обмениваются данными только через
-  `app/contracts/worker/v10`;
+  `app/contracts/worker/v11`;
 - local CLI может напрямую использовать worker-код, потому что это один
   локальный execution path, а не Flight service boundary.
 
