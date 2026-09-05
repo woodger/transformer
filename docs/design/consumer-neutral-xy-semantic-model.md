@@ -4,10 +4,11 @@
 > совместного обсуждения с Consumer-ами. Это не ADR, не Flight или Worker
 > schema, не план миграции и не описание реализованного поведения.
 
-- Статус: к совместному архитектурному обсуждению
+- Статус: schema-neutral semantic model согласована сторонами; wire design не начат
 - Срез: 2026-09-05, техническая исходная точка Flight v10 / Worker v11
 - Основание: [аудит consumer-neutral границы](./consumer-neutral-xy-boundary.md)
-- Входные материалы: два Consumer-side аудита и ответы Inventory от 2026-09-05
+- Входные материалы: два Consumer-side аудита, review semantic model и ответы
+  владельца от 2026-09-05
 
 ## Назначение и границы
 
@@ -83,9 +84,11 @@ observed y[T] ----------------------------> observed constraint
 Raw coordinate — логическое понятие model contract. Она не публикуется и не
 предписывает Transformer конкретный head, layer или tensor layout.
 
-Все значения `y`, raw model coordinates, loss estimates и public predictions
-обязаны оставаться finite Float32. Float32 является общим tensor invariant, а
-не настраиваемым свойством каждого slot.
+Значения `y` и public predictions на Arrow boundary обязаны быть finite
+Float32. Raw model coordinates, loss estimates и private resources должны быть
+finite согласно operator semantics, но их внутренний dtype остаётся
+Transformer-owned implementation detail. В частности, semantic model не
+запрещает AMP и не фиксирует dtype внутренних tensor operations.
 
 ### Objective
 
@@ -140,8 +143,8 @@ Semantic binding использует два непересекающихся в
   resource между operators.
 
 ComponentIdentity остаётся локальной стабильной identity objective component
-для telemetry и diagnostics. Нужны ли semantic references на components
-внутри самого objective, пока не решено и в начальную модель не добавляется.
+для telemetry и diagnostics. Semantic references на components внутри
+начального objective не вводятся.
 
 Отдельный stable slot ID не вводится. При текущем invariant уникальности target
 identity он не добавляет разрешающей способности. Если появится сценарий двух
@@ -154,7 +157,7 @@ contract и делает прежнюю model generation несовместим�
 
 ## Минимальный закрытый язык constraints
 
-Предлагаемый начальный каталог содержит только два kinds:
+Согласованный начальный каталог содержит только два kinds:
 
 | Constraint | Семантика |
 | --- | --- |
@@ -177,11 +180,12 @@ operator-а остаются отдельной Transformer-owned проверк
 
 ## Минимальный закрытый язык transformations
 
-Начальный каталог содержит три element-wise differentiable transformations:
+Согласованный начальный каталог содержит три element-wise differentiable
+transformations:
 
 | Transformation | Логическая семантика | Codomain для finite raw value |
 | --- | --- | --- |
-| `Identity` | `f(z) = z` | finite Float32 |
+| `Identity` | `f(z) = z` | finite numeric value |
 | `Tanh` | hyperbolic tangent | `(-1, 1)` |
 | `Sigmoid` | logistic sigmoid | `(0, 1)` |
 
@@ -310,12 +314,27 @@ Operator также принимает положительный finite `riskPe
 Каждый component возвращает per-observation loss; `GlobalRowMean` materialize
 его scalar, после чего `WeightedSum` применяет static weights.
 
-Типовая модель не запрещает два instances одного operator. Она также не даёт
-математического основания автоматически считать `ExpectedValue` и
-`RiskAdjustedExpectedValue` взаимоисключающими. Текущий запрет Flight v10
-является отдельной objective policy. Перед будущей schema нужно совместно
-решить, сохраняется ли он как явное правило language revision или удаляется
-как скрытый preset constraint.
+Типовая модель не запрещает два instances одного operator. `ExpectedValue` и
+`RiskAdjustedExpectedValue` также могут одновременно присутствовать как два
+независимых components с собственными identities и weights. Их сумма
+математически определена, поэтому скрытое взаимоисключение Flight v10 не
+переносится в начальный language invariant.
+
+### Checkpoint selection
+
+Selection остаётся Transformer-owned training policy и не становится частью
+Consumer-owned objective. Начальная generic semantics сохраняет действующее
+правило:
+
+```text
+selectionScore = sum(
+  directComponent.weight * epochMean(directComponent.loss)
+)
+```
+
+Auxiliary components в selection score не входят. Явный ComponentRef для
+selection не вводится. Selection configuration и state участвуют в exact job
+и recovery fencing, но не меняют mathematical objective digest.
 
 ## Abstract private resource
 
@@ -374,8 +393,9 @@ Model description возвращает abstract declaration, но не private v
 - неиспользуемая declaration отклоняется;
 - один resource может использоваться несколькими components;
 - kind обязан удовлетворять typed role каждого consumer;
-- каждый trainable resource имеет хотя бы один gradient-producing путь от
-  objective component;
+- каждый trainable resource имеет структурный путь к total loss через активный
+  component с положительным weight и role, operator semantics которой
+  передаёт gradient в resource;
 - stop-gradient задаётся consuming operator-ом, а не resource declaration;
 - добавление нового kind требует явной Transformer-owned semantic definition и
   capability.
@@ -414,7 +434,8 @@ Transformer валидирует materialized model в следующем лог
 6. **Private resource graph**
    - kinds поддержаны;
    - sharing однозначен;
-   - каждый resource используется и имеет gradient-producing path;
+   - каждый trainable resource структурно достижим из total loss через
+     gradient-producing role активного component с положительным weight;
    - resulting private model layout однозначен.
 7. **Canonicalization и compatibility**
    - validated documents канонизируются;
@@ -425,7 +446,7 @@ Transformer валидирует materialized model в следующем лог
    - каждый observed value удовлетворяет своему constraint;
    - проверка не ветвится по TargetIdentity.
 9. **Training и prediction runtime**
-   - raw, transformed и resource values finite;
+   - raw, transformed и resource values finite согласно operator semantics;
    - objective исполняется по resolved indices;
    - наружу выходят только ordered public predictions;
    - private resources не попадают в Arrow output.
@@ -433,6 +454,10 @@ Transformer валидирует materialized model в следующем лог
 Любая semantic несовместимость должна обнаруживаться до durable input upload.
 Corrupt persisted metadata и несовместимый корректный contract остаются
 разными классами ошибок.
+
+Gradient reachability является структурной проверкой graph. Она подтверждает
+возможность прохождения gradient согласно operator semantics, но не требует
+ненулевого численного gradient на каждом batch.
 
 ## Проверка на шести schema-neutral сценариях
 
@@ -530,29 +555,26 @@ Transformer возвращает semantic mismatch до upload. Текущая s
 warm start сохраняет требование exact Consumer data digest; её изменение не
 является частью этой модели.
 
+### Отрицательные подслучаи
+
+Основные сценарии дополняются следующими обязательными проверками:
+
+| Подслучай | Ожидаемый результат |
+| --- | --- |
+| Private resource имеет только stop-gradient consumers | Objective отклоняется: resource не имеет структурного gradient-producing path к total loss |
+| Slot с `ClosedInterval(0, 1)` использует public `Identity` | Declaration отклоняется: `Identity` не доказывает bounded public codomain |
+| Два resources имеют один kind, но разные ResourceIdentity | Они materialize как два независимых private model outputs; совпадение kind не означает sharing |
+| Objective содержит `ExpectedValue` и `RiskAdjustedExpectedValue` | Оба components принимаются и независимо входят в `WeightedSum`, если все их roles валидны |
+| Изменена loss/public transformation | Меняется TargetContractDigest; predict и warm start получают target-layer mismatch до upload |
+| Изменён ResourceRef в operator binding | Меняется ObjectiveDigest и вслед за ним ModelContractDigest; возвращается objective-layer mismatch до upload |
+
+Одинаковый ResourceKind с разными identities может привести и к последующей
+ошибке reachability, если один из созданных ресурсов используется только через
+stop-gradient role. Это отдельная graph validation, а не правило sharing.
+
 ## Digest decomposition
 
-### Общие инварианты
-
-Независимо от выбранного варианта:
-
-- canonical full documents остаются источником смысла;
-- digest является equality/fencing key, а не заменой document;
-- ordered TargetIdentity, constraints и обе transformations покрываются
-  model-compatible identity;
-- resource identities, kinds, operators, role bindings, weights и parameters
-  покрываются objective/model identity;
-- component identities присутствуют в canonical objective для references и
-  observability; включать ли их буквально в mathematical digest или
-  канонизировать graph независимо от локальных labels, пока не решено;
-- derived physical target index отдельно не хэшируется: его однозначно задаёт
-  ordered target layout;
-- source encoding не становится model identity при неизменном logical `x`, но
-  входит в exact job/recovery fencing;
-- checkpoint digest продолжает идентифицировать physical artifact bytes;
-- descriptive labels не должны случайно менять mathematical identity.
-
-### Вариант D1: layered digests
+### Согласованная модель D1: layered digests
 
 ```text
 ConsumerDataDigest
@@ -563,176 +585,144 @@ JobConfigHash
 CheckpointDigest
 ```
 
-- Consumer вычисляет exact data semantic digest.
-- Transformer вычисляет target и objective digests от validated canonical
-  documents.
-- Model digest связывает model geometry/configuration, target contract,
-  objective-dependent private layout и operator language identity.
-- Job hash дополнительно покрывает execution, source encoding и recovery state.
+Canonical full documents остаются единственными источниками смысла. Все
+digests являются производными equality/fencing keys:
 
-Преимущество — точная mismatch diagnostics. Недостаток — больше public fields и
-необходимость исключить противоречия между component digests и composite
-identity.
+- `ConsumerDataDigest` вычисляет Consumer от принадлежащего ему exact data
+  semantic document;
+- `TargetContractDigest` вычисляет Transformer после validation ordered slots;
+  он покрывает TargetIdentity, порядок, constraints и обе transformations;
+- `ObjectiveDigest` вычисляет Transformer от validated resources и components;
+  он покрывает ComponentIdentity, ResourceIdentity, resource kinds, operators,
+  role bindings, weights, parameters, aggregation и reduction;
+- `ModelContractDigest` вычисляет Transformer; он связывает model geometry и
+  configuration, language identity, target и objective digests и abstract
+  private resource declarations;
+- `JobConfigHash` дополнительно покрывает execution policy, source encoding и
+  exact recovery configuration;
+- `CheckpointDigest` идентифицирует physical artifact bytes.
 
-### Вариант D2: data digest и один composite ML digest
+ComponentIdentity и ResourceIdentity являются contract identities, а не
+descriptive labels. Они входят в `ObjectiveDigest`. Отдельные public digests
+каждого component не вводятся.
 
-Public model identity содержит Consumer data digest и один Transformer-computed
-digest canonical model/target/objective document. Component digests могут
-вычисляться только для diagnostics.
+Derived physical target index отдельно не хэшируется: его однозначно задаёт
+ordered target layout. Source encoding не становится model identity при
+неизменном logical `x`, но входит в job/recovery fencing. Descriptive metadata
+не должно случайно менять mathematical identities.
 
-Преимущество — компактная граница. Недостаток — один digest снова может
-смешать разные причины incompatibility и затруднить объяснение mismatch.
+Mismatch diagnostics должна различать как минимум data, target, objective и
+model layers. Точное wire placement digests и canonicalization bytes будут
+определены на следующем этапе.
 
-### Вариант D3: content-addressed semantic documents
+### Рассмотренные альтернативы
 
-Target, objective и model documents имеют собственные content identities;
-composite document ссылается на них по digest.
+D2 с одним composite ML digest не выбран, потому что снова смешивает причины
+несовместимости. D3 с content-addressed semantic documents не выбран из-за
+лишней для текущего масштаба сложности references и lifecycle.
 
-Преимущество — независимая эволюция и явная композиция. Недостатки — наиболее
-сложные canonicalization, reference resolution и lifecycle. Для текущего
-масштаба вариант может оказаться избыточным.
-
-До выбора варианта нужно совместно определить:
-
-- кто канонизирует и вычисляет каждый digest;
-- какие Consumer metadata являются semantic, а какие descriptive;
-- нужен ли Consumer-у component-level mismatch response;
-- входят ли ComponentIdentity в mathematical equality или только в
-  observability identity;
-- какие digests являются public, а какие остаются internal fences.
-
-## Независимое версионирование operator language и Flight
+## Lifecycle operator language и Flight
 
 Constraints, transformations, resource kinds, operator role schemas,
 parameters, reduction и gradient semantics вместе образуют закрытый
 Transformer-owned mathematical language.
 
-Meaning существующей identity не изменяется in place. Изменение formula,
-role schema, resource lifecycle или gradient flow требует новой operator,
-resource или language identity.
+Meaning существующей identity не изменяется in place.
 
-### Вариант V1: lockstep с Flight workflow
+### Согласованная модель V4: hybrid lifecycle
 
-Каждое изменение mathematical language выпускает новую Flight version.
+- immutable language revision задаёт type system, canonicalization, operator
+  role schemas, resource lifecycle и gradient semantics;
+- capabilities перечисляет фактически доступные primitives внутри revision;
+- новый target на уже доступных primitives не требует Transformer release;
+- новая implementation operator-а с уже выражаемыми types и roles может быть
+  capability addition: она требует установки поддерживающего Transformer
+  release, но не новой language revision или Flight workflow version;
+- изменение type system, role schema, resource lifecycle, formula или gradient
+  semantics создаёт новую language revision либо новую immutable primitive
+  identity;
+- Flight workflow не версионируется синхронно с каждым новым primitive;
+- clean cut не требует параллельной поддержки нескольких language revisions.
 
-Преимущество — один closed-world schema bundle. Недостаток — новый operator
-связывает Consumer release с изменением job transport, даже если lifecycle и
-Arrow channels не меняются.
+Capabilities описывает наличие immutable semantics, а не переопределяет её.
+Unknown или недоступный primitive отклоняется до upload.
 
-### Вариант V2: embedded independently versioned language
+### Рассмотренные альтернативы
 
-Flight переносит self-contained objective с собственной language identity.
-Capabilities объявляет поддерживаемые language revisions; exact schema и
-semantic validator выбираются по этой identity.
+V1 lockstep не выбран из-за связывания mathematical evolution с transport.
+V2 с обязательной поддержкой нескольких embedded revisions не нужен при clean
+cut. V3 с одним stable envelope недостаточно явно отделяет additive
+implementation от изменения type system. V4 сохраняет закрытый язык и при этом
+разделяет language identity и runtime availability.
 
-Преимущество — operator language эволюционирует отдельно от Flight workflow.
-Недостаток — Transformer может временно поддерживать несколько language
-revisions, если compatibility policy этого потребует.
+Это решение не назначает номер будущей Flight version и не задаёт wire shape
+capabilities.
 
-### Вариант V3: stable language envelope и negotiated catalog
+## Согласованный чистый переход
 
-Language envelope остаётся стабильным, а capabilities публикует поддержанные
-constraints, transformations, resource kinds и operators. Unknown identity
-отклоняется semantic validation.
+Выбран T1 с переобучением models:
 
-Преимущество — additive primitive не требует новой Flight schema. Недостаток —
-полный closed contract больше не выражается одной статической enum schema;
-нужны строгие правила negotiation и запрет изменения semantics существующих
-identities.
+- новый production runtime принимает только новую semantic model;
+- постоянные aliases, dual-write и параллельная поддержка старого contract
+  отсутствуют;
+- существующие modelRef, checkpoints и связанная runtime metadata удаляются;
+- старые models не используются для predict, warm start или recovery;
+- offline conversion weights не создаётся;
+- historical metrics и metadata не сохраняются как read-only contract и также
+  удаляются при переходе;
+- Consumer обучает новые model generations и получает новый metrics baseline.
 
-### Вариант V4: hybrid
+T2 с offline conversion и T3 с legacy reader не выбраны. T4 допустим только как
+временный локальный development bridge для equivalence tests. Он не
+развёртывается, не становится public compatibility layer и удаляется вместе с
+target-specific paths до release.
 
-Immutable language revision задаёт role model и canonicalization, а
-capabilities внутри revision объявляет additive implementations. Изменение
-types или semantics создаёт новую revision; добавление operator-а с уже
-выразимой role schema может быть capability addition.
+Эта запись определяет transition policy, но не выполняет удаление. Точный scope,
+порядок, transactional boundaries и operational verification удаления должны
+быть определены вместе с будущим implementation plan.
 
-Преимущество — разделяет type-system evolution и runtime availability.
-Недостаток — самая сложная compatibility classification.
+Активные jobs отсутствуют, а Flight v10 integration заморожена. Номер будущих
+checkpoint, recovery и metrics formats до wire design не назначается.
 
-Выбор language lifecycle не назначает номер будущей Flight version. Сначала
-нужно определить, какие additions Consumer должен переживать без синхронного
-transport release.
+## Итоговая матрица согласования
 
-## Варианты чистого перехода
+| Область | Итог |
+| --- | --- |
+| Materialization | Inventory materializer передаёт self-contained TargetLayout и Objective без внешнего lookup |
+| Target references | Semantic binding использует opaque TargetIdentity; physical index выводится после validation |
+| Slot model | Observed constraint, loss-input transformation и public transformation объявлены независимо |
+| Constraints | Начальный закрытый набор: `Finite`, `ClosedInterval` |
+| Transformations | Начальный закрытый набор: `Identity`, `Tanh`, `Sigmoid` |
+| Direct и auxiliary roles | Typed roles согласованы; dispatch по Consumer-owned target name запрещён |
+| Private resources | ResourceIdentity + Transformer-owned ResourceKind; начальный kind `PositiveScalarPerObservation` |
+| Resource sharing | Только повторная ссылка на одну ResourceIdentity означает sharing |
+| Dtype boundary | Arrow `y` и prediction — finite Float32; внутренние dtypes принадлежат Transformer |
+| Gradient reachability | Проверяется структурный путь trainable resource к total loss, а не ненулевой gradient каждого batch |
+| EV operators | `ExpectedValue` и `RiskAdjustedExpectedValue` могут быть независимыми components одного objective |
+| Selection | Transformer-owned weighted sum epoch-mean direct losses; auxiliary losses и ComponentRef не участвуют |
+| Digests | D1 layered decomposition; canonical documents остаются источниками смысла |
+| Language lifecycle | V4 hybrid: immutable revision и capability-advertised primitives |
+| Scenarios | Шесть основных и шесть отрицательных подслучаев согласованы |
+| Transition | T1 clean cut; models, checkpoints, runtime metadata и historical metrics удаляются; T4 возможен только локально и временно |
+| Transformer internals | Layers, parameterization, internal tensor layout, checkpoint storage и autograd implementation не входят в совместное решение |
 
-Все варианты исключают постоянные aliases, dual-write и параллельное создание
-jobs по старой и новой semantic model. Активные jobs отсутствуют, а Flight v10
-integration заморожена, поэтому clean cut технически доступен.
+Schema-neutral semantic model не имеет оставшихся межпроектных блокеров.
 
-### T1. Новые models с нуля
+## Следующий этап
 
-- прежние jobs и models не исполняются новым runtime;
-- target-named checkpoint layout не конвертируется;
-- Consumer переобучает модели;
-- новые metrics получают отдельную contract identity;
-- старые runtime paths удаляются до release.
+Предложение с точными структурами, правилами canonicalization, D1 digests,
+capabilities, error model и fixtures вынесено в
+[canonical contract proposal](./consumer-neutral-xy-canonical-contract.md).
 
-Это минимальная постоянная сложность, но weights и сравнимый metrics baseline
-нужно получить заново.
+До изменения кода стороны должны согласовать в этом proposal:
 
-### T2. Одноразовая offline conversion без runtime compatibility
+1. canonical target, objective и model documents;
+2. точный canonicalization algorithm и покрытие каждого D1 digest;
+3. wire representation language revision и capabilities;
+4. mismatch error model для data, target, objective и model layers;
+5. влияние на checkpoint, recovery, metrics и OpenSearch contracts;
+6. окончательную судьбу `indexedFeatureBlocks` в новом contract;
+7. безопасную operational procedure удаления прежних artifacts.
 
-- до cutover отдельный инструмент однозначно преобразует target-named weights
-  в positional layout и добавляет explicit semantic documents;
-- converted artifact получает новую checkpoint/model identity;
-- незавершённый optimizer/recovery state не переносится;
-- production runtime после cutover понимает только новую модель.
-
-Так сохраняются weights без compatibility layer, но требуется доказать
-numerical equivalence и atomic provenance conversion. Ошибка conversion опаснее
-переобучения.
-
-### T3. Clean runtime с read-only historical metadata
-
-- новый runtime исполняет только новую semantic model;
-- старые persisted model metadata и OpenSearch indices остаются read-only
-  history;
-- predict, warm start и recovery старых artifacts недоступны;
-- historical records не переписываются под новую semantics.
-
-Вариант может сочетаться с T1 или T2 и отдельно определяет retention, а не
-runtime compatibility. Должен ли новый `model.describe` читать historical
-metadata, решается отдельно: такая поддержка потребует bounded legacy reader и
-не возникает автоматически из retention.
-
-### T4. Временный development bridge
-
-- сначала generic internal model проверяется через одноразовый adapter из
-  текущего v10 document;
-- bridge используется только для equivalence tests и не развёртывается как
-  public compatibility layer;
-- перед release bridge и target-specific paths удаляются;
-- Consumer переключается одним clean cut.
-
-Так можно отделить numerical refactoring от public schema, но временный bridge
-должен иметь заранее заданное условие удаления.
-
-Перед выбором transition нужны решения владельца о ценности существующих
-weights, historical metrics и возможности повторного обучения. Номер будущих
-checkpoint, recovery и metrics formats до этого не назначается.
-
-## Вопросы следующего согласования
-
-1. Достаточны ли `Finite` и `ClosedInterval` для ближайших Consumer profiles?
-2. Достаточны ли `Identity`, `Tanh` и `Sigmoid` для ближайших objectives?
-3. Достаточен ли один начальный resource kind
-   `PositiveScalarPerObservation` для ближайших objectives?
-4. Принимается ли правило gradient reachability для каждого trainable private
-   resource?
-5. Должны ли `ExpectedValue` и `RiskAdjustedExpectedValue` оставаться
-   взаимоисключающими, и если да, чем обосновано это language rule?
-6. Нужен ли selection score явный ComponentRef или он остаётся фиксированной
-   Transformer policy?
-7. Какой вариант digest decomposition D1–D3 нужен для diagnostics без
-   дублирования источников правды?
-8. Какой lifecycle V1–V4 сохраняет закрытый operator language и допускает новый
-   target без Transformer release?
-9. Какой clean transition T1–T4 допустим для существующих models, checkpoints и
-   metrics?
-10. Нужны ли дополнительные schema-neutral scenarios до проектирования wire
-    format?
-
-После согласования этих вопросов стороны могут подготовить один canonical
-semantic document, затем выбрать wire representation. Только после этого
-обоснованно назначать Flight, Worker, checkpoint, recovery и metrics versions.
+Только после согласования этого design можно назначать Flight, Worker,
+checkpoint, recovery и metrics versions и переходить к реализации.
