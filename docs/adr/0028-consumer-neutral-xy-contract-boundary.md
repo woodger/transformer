@@ -77,6 +77,12 @@ recovery fencing, но не в target, objective или model identity. Пере
 
 ## Текущая документация
 
+- [Нормативный semantic contract v1](../../app/contracts/semantic/v1/README.md)
+- [Staged Flight v11 contract](../../app/contracts/flight/v11/README.md)
+- [Staged worker v12 contract](../../app/contracts/worker/v12/README.md)
+- [Staged checkpoint/recovery v6 contract](../../app/contracts/checkpoint/v6/README.md)
+- [Staged training metrics v5 contract](../../app/contracts/metrics/v5/README.md)
+- [Staged fit-run metrics v5 contract](../../app/contracts/metrics/fit_run/v5/README.md)
 - [Canonical contract proposal](../design/consumer-neutral-xy-canonical-contract.md)
 - [Schema-neutral semantic model](../design/consumer-neutral-xy-semantic-model.md)
 - [Аудит consumer-neutral границы](../design/consumer-neutral-xy-boundary.md)

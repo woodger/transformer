@@ -5,7 +5,9 @@
 > нормативная JSON Schema, не Flight или Worker contract и не описание
 > реализованного поведения.
 
-- Статус: согласовано Transformer и Inventory; основа будущего versioned contract
+- Статус: согласовано Transformer и Inventory; опубликовано как нормативный
+  [consumer-neutral contract package](../../app/contracts/semantic/v1/README.md),
+  runtime-реализация не начата
 - Срез: 2026-09-05, техническая исходная точка Flight v10 / Worker v11
 - Основание: [согласованная schema-neutral semantic model](./consumer-neutral-xy-semantic-model.md)
 - Область изменения: будущая consumer-neutral модель; действующие contracts и
@@ -14,8 +16,9 @@
 ## Назначение
 
 Документ переводит согласованную semantic model в однозначные JSON documents,
-но ещё не назначает им Flight action, protocol version, schema ID или
-persistence migration. Предлагаемая структура должна быть одинаково
+и послужил входом для нормативных Flight v11, Worker v12,
+checkpoint/recovery v6 и metrics v5 schemas. Runtime и persistence этим
+этапом не изменяются. Структура должна быть одинаково
 реализуема в Python и TypeScript и не требовать от Transformer знания значений
 `MeanReturn`, `ProbTP`, FIGI, interval, profile или других понятий Consumer-а.
 
@@ -30,10 +33,13 @@ persistence migration. Предлагаемая структура должна 
 - состав cross-project fixtures;
 - место `indexedFeatureBlocks` относительно semantic model.
 
-Не входят в предложение:
+Не входили в этап proposal и определены последующим contract package:
 
-- номер следующей Flight, Worker, checkpoint, recovery или metrics version;
-- имена будущих action и Arrow schema IDs;
+- версии Flight v11, Worker v12, checkpoint/recovery v6 и metrics v5;
+- action names и сохранённые physical Arrow schema IDs;
+
+По-прежнему не входят в этот Design Note:
+
 - физическая структура PyTorch modules и `state_dict`;
 - PostgreSQL columns, migration plan и OpenSearch index names;
 - implementation plan и временный compatibility code.
@@ -1249,7 +1255,7 @@ Transformer и Inventory подтвердили:
     Transformer-owned literals `inventory.*`;
 14. T1 deletion boundary и отсутствие legacy runtime.
 
-Cross-project approval завершён. Следующий этап — проектирование versioned
-Flight/Worker schemas, назначение format identities и подготовка implementation
-plan. До реализации этот document остаётся ненормативной основой будущего
-contract и не изменяет действующую систему.
+Cross-project approval завершён. Versioned schemas и format identities
+опубликованы в [нормативном contract package](../../app/contracts/semantic/v1/README.md).
+До implementation этот Design Note остаётся ненормативным обоснованием и не
+изменяет действующую систему.

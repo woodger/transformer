@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v11/model-describe-result.schema.json",
+  "title": "transformer.v11.model.describe result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "requestId", "modelRef", "label", "generation", "dataContract", "modelContract", "semanticDigests", "initialization", "checkpoint", "createdAt"],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 11},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/label"},
+    "label": {"$ref": "common.schema.json#/$defs/label"},
+    "generation": {"type": "integer", "minimum": 1},
+    "dataContract": {"$ref": "common.schema.json#/$defs/dataContract"},
+    "modelContract": {"$ref": "common.schema.json#/$defs/modelContract"},
+    "semanticDigests": {"$ref": "common.schema.json#/$defs/semanticDigests"},
+    "initialization": {"$ref": "common.schema.json#/$defs/resolvedInitialization"},
+    "checkpoint": {"type": "object", "additionalProperties": false, "required": ["format", "sha256", "bytes"], "properties": {"format": {"const": "transformer-checkpoint-v6"}, "sha256": {"$ref": "common.schema.json#/$defs/sha256"}, "bytes": {"type": "integer", "minimum": 1}}},
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}

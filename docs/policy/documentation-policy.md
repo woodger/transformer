@@ -43,6 +43,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Нормативный Flight v10 contract | `app/contracts/flight/v10/` |
 | Нормативный worker v11 contract | `app/contracts/worker/v11/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
+| Принятый, но ещё не подключённый consumer-neutral contract package | `app/contracts/{semantic/v1,flight/v11,worker/v12,checkpoint/v6,metrics/*/v5}/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -112,6 +113,14 @@ JSON Schemas и golden fixtures в `app/contracts/flight/v10/` норматив�
 format. README или operations guide не могут переопределять их. Flight v10 —
 единственный текущий remote API contract и базовая точка для дальнейших
 изменений.
+
+Consumer-neutral package `semantic/v1`, Flight v11, worker v12,
+checkpoint/recovery v6 и metrics v5 нормативен для следующей clean-cut
+границы, но ещё не является runtime contract. Наличие staged schemas не
+разрешает advertise или принимать новую версию до синхронной реализации
+parser/serializer, persistence, worker и Consumer integration. Living
+documentation до этого продолжает описывать только Flight v10, worker v11,
+checkpoint v5 и metrics v4 runtime.
 
 Изменение Flight contract требует синхронно проверить:
 

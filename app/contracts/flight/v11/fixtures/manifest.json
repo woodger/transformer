@@ -1,0 +1,24 @@
+{
+  "contract": "transformer-flight-fixtures",
+  "version": 11,
+  "files": [
+    {"path": "indexed-feature-blocks/heterogeneous-multi-block.json", "sha256": "7591003a429ee1ca41c5cdb03cb0bf6a43deb073caa6b74c1fa278911a794409"},
+    {"path": "indexed-feature-blocks/missing-native-prefix.json", "sha256": "ac68b5318486403010334da802a04d8be4dbed89cafe97ebf23a0c92385695ea"},
+    {"path": "indexed-feature-blocks/non-contiguous-native-offsets.json", "sha256": "a1c882be27ee8f808167b3fa308e1e4dd680ab9d0d76280316f486cc7e7c5337"},
+    {"path": "indexed-feature-blocks/payload-boundary-one-chunk.json", "sha256": "102ce2bf79cba6cdc21015cbb9594ba5e1a7967447e887a2b058066033eab13c"},
+    {"path": "indexed-feature-blocks/payload-boundary-two-chunks.json", "sha256": "ab58cfc00a3093c9afaf8b595c4053fff0bad7a10a4e67148043873d22d6fce6"},
+    {"path": "indexed-feature-blocks/single-block.json", "sha256": "b06224e7d98766e4580cd7d29301ea355b3da08638591c0f05afd53cd4bd3f2b"},
+    {"path": "json/capabilities.result.json", "sha256": "ffbc87ce2b3795aad303b626506c15790a31a73153bd151029b6dad3715ccdd6"},
+    {"path": "json/error.invalid-target.json", "sha256": "171b33e4b969483a11c9a1b6024397dd63616ec14afde8c2a6dfa9626e2a9647"},
+    {"path": "json/error.model-corrupt-contract.json", "sha256": "521d9003a385ff6d31adaab793c43d322f21c99ca552ce85d7106fa34b278eab"},
+    {"path": "json/error.model-corrupt-digest.json", "sha256": "3324cf9f3e9003db921f1d2fa65f0a984cf7fbcc133f78f669a552cd809f81d1"},
+    {"path": "json/error.primitive-unavailable.json", "sha256": "ae08fb0a04526602734fbffa28177dbbe97ff8b094997ede2da459a16d992e25"},
+    {"path": "json/error.recovery-fence.json", "sha256": "2e427b7d3a7d11414ee8047ac35b809e4ef3ad8819b02ddfe7205a4b5dd8bc79"},
+    {"path": "json/error.runtime-value.json", "sha256": "f3cbbe051f5ac9d8414a95171b46e69d3c2f95f93bfde0f219370a566ce634b7"},
+    {"path": "json/error.target-mismatch.json", "sha256": "f1cfd39ef0e2a8bc66636e24ab94f0e99ccb537c77b4cbe6b0f97235e0226c58"},
+    {"path": "json/error.target-value.json", "sha256": "f61a1b03773940545ba7f6c7fce10f5004b6561de1debde78ed44e55ad41b342"},
+    {"path": "json/job-config.fit.json", "sha256": "8e20cfc0c6d9161fc4b520ca34a6b46f1f6c49c57543ee80773c86923cf926c4"},
+    {"path": "json/job-config.predict.json", "sha256": "33f989fc1531ffeda05b8e9ff750c1dd1e57f72c58eb868976a432fd26b720b4"},
+    {"path": "json/job-config.published-model.json", "sha256": "7da930187b39163b48d11c7011b755f75ff8c38e1af5be5a3b5854413bcf7b50"}
+  ]
+}

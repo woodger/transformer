@@ -1,0 +1,24 @@
+{
+  "format": "transformer-recovery-v6",
+  "jobId": "22222222-2222-4222-8222-222222222222",
+  "generation": 2,
+  "inputRevision": 451,
+  "jobConfigSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "semanticDigests": {
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "targetContractSha256": "112f7ecf5fbeb7e70ad4b4657dcd753a1694bbc3cb6ae2d78dfdb91facad03ce",
+    "objectiveSha256": "7fba42999d866cc109ea709e55b0c668c4ac7379ecbe47f00b830b51190733e3",
+    "modelContractSha256": "a71d514e590fe1eef708a73b4fd08ac7f80b4e090392d5231ed863972315a49d"
+  },
+  "manifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "checkpoint": {
+    "format": "transformer-checkpoint-v6",
+    "byteCount": 19243587,
+    "checkpointSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "progress": {
+    "completedEpochs": 2,
+    "globalStep": 25200,
+    "trainingComplete": false
+  }
+}

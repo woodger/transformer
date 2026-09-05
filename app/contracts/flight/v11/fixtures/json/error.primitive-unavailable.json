@@ -1,0 +1,6 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "PRIMITIVE_UNAVAILABLE",
+  "path": "/modelContract/objective/directComponents/0/operator",
+  "message": "requested operator is not available in this deployment"
+}

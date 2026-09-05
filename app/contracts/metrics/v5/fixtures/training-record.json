@@ -1,0 +1,70 @@
+{
+  "format": "transformer.training-metrics.v5",
+  "recordedAt": "2026-09-05T12:00:00.000Z",
+  "jobId": "22222222-2222-4222-8222-222222222222",
+  "attemptId": "33333333-3333-4333-8333-333333333333",
+  "attempt": 1,
+  "modelRef": null,
+  "semanticDigests": {
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "targetContractSha256": "194487713474826db9e120dede269cfd9665fdd28b50803b89995a55d3f392f0",
+    "objectiveSha256": "d7b5e181e2c7c97ff02af381736e8e3054196fe3fe252ca0f51dab37a60af715",
+    "modelContractSha256": "2b09365f16ff67ed340b7c52988d016090d3e8b2b51f13adb1b0d3ba5f1cdbe3"
+  },
+  "checkpointFormat": "transformer-checkpoint-v6",
+  "transformerVersion": "0.2.0",
+  "transformerGitCommit": "cccccccccccccccccccccccccccccccccccccccc",
+  "mode": "fit-stream",
+  "frame": null,
+  "epoch": 1,
+  "step": 10,
+  "rows": 256,
+  "batches": 1,
+  "lr": 0.001,
+  "loss": 0.6931471805599453,
+  "targets": [
+    {"index": 0, "identity": "ConsumerDefined.EventProbability"}
+  ],
+  "directLosses": [
+    {
+      "componentIdentity": "direct.consumer-event",
+      "operator": "BinaryCrossEntropyWithLogits",
+      "targetIdentity": "ConsumerDefined.EventProbability",
+      "targetIndex": 0,
+      "value": 0.6931471805599453
+    }
+  ],
+  "auxiliaryLosses": [],
+  "targetMetrics": [
+    {
+      "targetIdentity": "ConsumerDefined.EventProbability",
+      "targetIndex": 0,
+      "mae": 0.5,
+      "rmse": 0.5
+    }
+  ],
+  "gradientInteractions": null,
+  "selectionScore": null,
+  "trainingBatchesCompleted": 1,
+  "optimizerUpdatesApplied": 1,
+  "optimizerUpdatesSkipped": 0,
+  "ampOverflowBatches": 0,
+  "finiteGradientBatches": 1,
+  "nonFiniteGradientBatches": 0,
+  "preClipGradientNormMean": 0.25,
+  "preClipGradientNormMax": 0.25,
+  "preClipGradientNormP95": 0.25,
+  "nanRatio": 0,
+  "maskedTokenRatio": 0,
+  "completeTokenRatio": 1,
+  "partialTokenRatio": 0,
+  "emptyTokenRatio": 0,
+  "inputPipelineMs": 1,
+  "missingStatsMs": 1,
+  "hostToDeviceMs": 1,
+  "trainStepMs": 2,
+  "elapsedMs": 5,
+  "checkpointBest": false,
+  "shouldStop": false,
+  "bestSelectionScore": null
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v1/fixture.schema.json",
+  "title": "Consumer-neutral cross-project semantic fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fixtureId", "modelContract", "expected"],
+  "properties": {
+    "fixtureId": {"$ref": "common.schema.json#/$defs/identity"},
+    "modelContract": {"$ref": "model-contract.schema.json"},
+    "numericalCases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity", "inputs", "outputs"],
+        "properties": {
+          "identity": {"$ref": "common.schema.json#/$defs/identity"},
+          "inputs": {"type": "object"},
+          "outputs": {"type": "object"},
+          "absoluteTolerance": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation", "targetContractSha256", "objectiveSha256",
+            "modelContractSha256"
+          ],
+          "properties": {
+            "validation": {"const": "accepted"},
+            "targetContractSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+            "objectiveSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+            "modelContractSha256": {"$ref": "common.schema.json#/$defs/sha256"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validation", "code", "reason"],
+          "properties": {
+            "validation": {"const": "rejected"},
+            "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$"},
+            "reason": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$"},
+            "path": {"type": "string", "maxLength": 2048},
+            "layer": {
+              "enum": [
+                "data", "target", "objective", "model", "jobConfig",
+                "inputManifest"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

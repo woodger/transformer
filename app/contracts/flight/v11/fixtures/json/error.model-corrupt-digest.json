@@ -1,0 +1,8 @@
+{
+  "code": "MODEL_CORRUPT",
+  "reason": "DIGEST_MISMATCH",
+  "layer": "model",
+  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "actualSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "message": "stored model contract digest does not match its canonical document"
+}

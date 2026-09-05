@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_TARGET_CONTRACT",
+  "path": "/modelContract/targetContract/slots/0/publicPredictionTransformation",
+  "message": "public transformation does not satisfy observed constraint"
+}
