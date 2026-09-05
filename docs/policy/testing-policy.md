@@ -63,7 +63,7 @@ CUDA/AMP и serialization.
 
 ```text
 tests/unit/{admin,cli,local,service,worker}
-tests/contract/{flight_v8,worker_v9,metrics_v4,metrics_fit_run_v3}
+tests/contract/consumer_neutral_v1
 tests/integration/{flight,worker_process}
 tests/architecture
 tests/support
@@ -118,9 +118,10 @@ assertions по прежним путям, именам packages и legacy sourc
 
 ## Contracts
 
-Contract tests проверяют нормативные schemas и golden fixtures Flight v8,
-worker v9 и metrics contracts. Fixture обновляется только при намеренном
-изменении contract, а не ради прохождения падающего теста.
+Contract tests проверяют нормативные schemas и golden fixtures versioned
+Flight, worker, checkpoint/recovery и metrics packages, включая принятые
+staged contracts до их подключения к runtime. Fixture обновляется только при
+намеренном изменении contract, а не ради прохождения падающего теста.
 
 Cross-language проверки используют локальный Node.js без npm dependencies и
 сравнивают RFC 8785/JCS digest с Python runtime. JSON Schemas проверяются как

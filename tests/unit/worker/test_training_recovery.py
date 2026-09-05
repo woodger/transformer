@@ -6,11 +6,10 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v9.config import CheckpointSelectionConfig
-from app.contracts.worker.v9.objective import (
-    default_objective,
-    objective_config_sha256,
-)
+from app.contracts.worker.v12.config import CheckpointSelectionConfig
+from app.worker.application.artifacts import checkpoint_metadata
+from app.worker.application.errors import WorkerExecutionError
+from app.worker.application.fit import _restore_recovery
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -18,9 +17,20 @@ from app.worker.checkpoints.recovery import (
 from app.worker.data.tensors import TrainingBatch
 from app.worker.training.run_config import ModelConfig, TrainConfig
 from app.worker.training.trainer import Trainer
+from tests.support.consumer_neutral import data_contract, model_contract
 
 CONFIG_HASH = "a" * 64
 MANIFEST_HASH = "b" * 64
+MODEL_CONTRACT = model_contract(
+    "multi-target-shared-resource",
+    seq_len=2,
+    feature_dim=2,
+    hidden=8,
+    layers=1,
+    dropout=0.2,
+    nhead=2,
+    mode="relaxed",
+)
 
 
 class InjectedInterruption(Exception):
@@ -36,20 +46,11 @@ def _model() -> nn.Module:
                 nn.Linear(4, 12),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(12, 7),
+                nn.Linear(12, 4),
             )
 
         def forward(self, value):
-            raw = self.layers(value)
-            return torch.stack((
-                torch.tanh(raw[:, 0]),
-                torch.sigmoid(raw[:, 1]),
-                raw[:, 2],
-                raw[:, 3],
-                torch.sigmoid(raw[:, 4]),
-                raw[:, 5],
-                torch.nn.functional.softplus(raw[:, 6]) + 1e-6,
-            ), dim=1)
+            return self.layers(value)
 
     return TargetAlignedLinear()
 
@@ -77,9 +78,36 @@ def _trainer(initial_state: dict) -> Trainer:
         model=model,
         device=torch.device("cpu"),
         train_config=train_config,
-        objective=default_objective(),
+        model_contract=MODEL_CONTRACT,
         model_config=model_config,
+        data_contract=data_contract(MODEL_CONTRACT),
+        initialization={"kind": "random"},
     )
+
+
+def _manifest() -> dict:
+    return {
+        "jobId": "11111111-1111-4111-8111-111111111111",
+        "dataContract": data_contract(MODEL_CONTRACT),
+        "modelContract": MODEL_CONTRACT.to_document(),
+        "semanticDigests": MODEL_CONTRACT.digests("d" * 64),
+        "jobConfigSha256": CONFIG_HASH,
+        "manifestSha256": MANIFEST_HASH,
+    }
+
+
+def _descriptor(metadata: dict) -> dict:
+    return {
+        key: metadata[key]
+        for key in (
+            "jobId",
+            "generation",
+            "jobConfigSha256",
+            "semanticDigests",
+            "manifestSha256",
+            "progress",
+        )
+    }
 
 
 def _payloads(features: torch.Tensor, targets: torch.Tensor):
@@ -123,8 +151,7 @@ def _assert_tree_equal(left, right) -> None:
 def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     _seed()
     source = torch.randn(11, 2, 2)
-    target = torch.rand(11, 6)
-    target[:, 0] = torch.rand(11) * 2 - 1
+    target = torch.rand(11, MODEL_CONTRACT.target_width)
     initial_state = copy.deepcopy(_model().state_dict())
     payloads = _payloads(source, target)
 
@@ -135,16 +162,17 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     checkpoint = tmp_path / "1.pth"
     _seed()
     interrupted = _trainer(initial_state)
+    saved_metadata = None
 
     def stop_after_first_epoch(*_args):
+        nonlocal saved_metadata
+        saved_metadata = checkpoint_metadata(interrupted, _manifest())
         event = save_training_recovery(
             str(checkpoint),
             interrupted,
-            generation=interrupted.state.global_epoch,
-            config_hash=CONFIG_HASH,
-            manifest_hash=MANIFEST_HASH,
+            metadata=saved_metadata,
         )
-        assert event["completed_epochs"] == 1
+        assert event["completedEpochs"] == 1
         raise InjectedInterruption
 
     with pytest.raises(InjectedInterruption):
@@ -153,14 +181,11 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
             on_epoch_committed=stop_after_first_epoch,
         )
 
+    assert saved_metadata is not None
     payload = load_training_recovery(
         str(checkpoint),
         torch.device("cpu"),
-        expected_config_hash=CONFIG_HASH,
-        expected_manifest_hash=MANIFEST_HASH,
-        expected_objective_config_sha256=objective_config_sha256(
-            interrupted.objective
-        ),
+        descriptor=_descriptor(saved_metadata),
     )
     resumed = _trainer(initial_state)
     resumed.load_recovery_state_dict(payload["trainer_state"])
@@ -189,27 +214,65 @@ def test_recovery_checkpoint_rejects_a_different_closed_input_set(
 ):
     _seed()
     source = torch.randn(3, 2, 2)
-    target = torch.rand(3, 6)
-    target[:, 0] = torch.rand(3) * 2 - 1
+    target = torch.rand(3, MODEL_CONTRACT.target_width)
     initial_state = copy.deepcopy(_model().state_dict())
     trainer = _trainer(initial_state)
     trainer.fit_payloads_resumable(_payloads(source, target))
     checkpoint = tmp_path / "3.pth"
+    metadata = checkpoint_metadata(trainer, _manifest())
     save_training_recovery(
         str(checkpoint),
         trainer,
-        generation=trainer.state.global_epoch,
-        config_hash=CONFIG_HASH,
-        manifest_hash=MANIFEST_HASH,
+        metadata=metadata,
     )
 
-    with pytest.raises(ValueError, match="closed job"):
+    descriptor = _descriptor(metadata)
+    descriptor["manifestSha256"] = "c" * 64
+    with pytest.raises(ValueError, match="fence"):
         load_training_recovery(
             str(checkpoint),
             torch.device("cpu"),
-            expected_config_hash=CONFIG_HASH,
-            expected_manifest_hash="c" * 64,
-            expected_objective_config_sha256=objective_config_sha256(
-                trainer.objective
-            ),
+            descriptor=descriptor,
         )
+
+
+def test_recovery_checkpoint_rejects_trainer_progress_that_differs_from_metadata(
+    tmp_path,
+):
+    _seed()
+    source = torch.randn(3, 2, 2)
+    target = torch.rand(3, MODEL_CONTRACT.target_width)
+    trainer = _trainer(copy.deepcopy(_model().state_dict()))
+    trainer.fit_payloads_resumable(_payloads(source, target))
+    checkpoint = tmp_path / "3.pth"
+    metadata = checkpoint_metadata(trainer, _manifest())
+    save_training_recovery(str(checkpoint), trainer, metadata=metadata)
+    payload = torch.load(checkpoint, weights_only=False)
+    payload["trainer_state"]["training_state"]["global_epoch"] = 99
+    torch.save(payload, checkpoint)
+
+    with pytest.raises(ValueError, match="trainer progress"):
+        load_training_recovery(
+            str(checkpoint),
+            torch.device("cpu"),
+            descriptor=_descriptor(metadata),
+        )
+
+
+def test_fit_rejects_recovery_descriptor_for_a_different_job_config():
+    manifest = {**_manifest(), "inputRevision": 3}
+    recovery = {
+        **manifest,
+        "jobConfigSha256": "c" * 64,
+    }
+
+    with pytest.raises(WorkerExecutionError) as raised:
+        _restore_recovery(
+            object(),  # type: ignore[arg-type]
+            recovery,
+            torch.device("cpu"),
+            manifest,
+        )
+
+    assert raised.value.code == "RECOVERY_CHECKPOINT_INCOMPATIBLE"
+    assert "fences differ" in raised.value.message

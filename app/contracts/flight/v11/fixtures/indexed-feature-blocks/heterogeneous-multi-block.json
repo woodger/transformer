@@ -1,0 +1,32 @@
+{
+  "fixtureId": "consumer-neutral.indexed.heterogeneous-multi-block.v1",
+  "sourceEncoding": {
+    "kind": "indexedFeatureBlocks",
+    "featureBlocks": [
+      {"position": 0, "windowRows": 2, "nativeRowWidth": 1},
+      {"position": 2, "windowRows": 1, "nativeRowWidth": 2}
+    ]
+  },
+  "seqLen": 2,
+  "featureDim": 4,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [[1], [2], [3]],
+          "observationOffsets": [[0, 1]]
+        },
+        {
+          "nativeRows": [[10, 11], [20, 21], [30, 31]],
+          "observationOffsets": [[0, 2]]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "logicalFeatures": [[[1, 2, 10, 11], [2, 3, 30, 31]]]
+  }
+}

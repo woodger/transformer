@@ -14,7 +14,14 @@ class ExecutionInput:
     commit_revision: int
     schema_id: str
     data_contract_sha256: str
+    chunks: int
     rows: int
+    native_rows: tuple[int, ...]
+    first_range_ordinal: int | None
+    first_example_offset: int | None
+    last_range_ordinal: int | None
+    next_example_offset: int | None
+    batches: int
     byte_count: int
     sha256: str
     absolute_path: str

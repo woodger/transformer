@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -45,6 +46,7 @@ from app.service.adapters.outbound.postgres.models import (
     TrainingRecoveryCheckpoint,
 )
 from app.service.adapters.outbound.postgres.session import Database
+from app.service.application.ports.observability import EventLogger
 from app.service.domain.errors import (
     ServiceError,
     conflict,
@@ -83,16 +85,26 @@ _FIT_RETRY_CODES = (
     ErrorCode.SUBPROCESS_FAILED.value,
     ErrorCode.SUBPROCESS_HUNG.value,
 )
+_JOB_IDENTITY_CONSTRAINTS = frozenset({
+    "job_identities_pkey",
+    "jobs_pkey",
+})
 
 
 class Ledger:
     """PostgreSQL source of truth for Flight jobs and published artifacts."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(
+        self,
+        database: Database,
+        *,
+        logger: EventLogger | None = None,
+    ) -> None:
         runtime_database = cast(object, database)
         if not isinstance(runtime_database, Database):
             raise TypeError("Ledger requires a PostgreSQL Database")
         self.database = runtime_database
+        self.logger = logger
         self._sessions = LedgerSessions(runtime_database)
         self._inputs = InputLedgerSlice(self._sessions)
         self._execution = ExecutionLedgerSlice(self._sessions)
@@ -148,9 +160,11 @@ class Ledger:
         operation: str,
         requested_device: str,
         prediction_column: str,
+        source_encoding: JsonObject,
         config_hash: str,
         data_contract: JsonObject,
-        ml_contract: JsonObject,
+        model_contract: JsonObject,
+        semantic_digests: JsonObject,
         create_result: JsonObject,
         model_label: str | None = None,
         resolved_model_ref: str | None = None,
@@ -176,25 +190,40 @@ class Ledger:
         if not isinstance(raw_data_contract, dict):
             raise ValueError("data_contract must be an object")
         typed_data_contract = cast(JsonObject, raw_data_contract)
-        raw_ml_contract = cast(object, ml_contract)
-        if not isinstance(raw_ml_contract, dict):
-            raise ValueError("ml_contract must be an object")
-        typed_ml_contract = cast(JsonObject, raw_ml_contract)
+        raw_model_contract = cast(object, model_contract)
+        if not isinstance(raw_model_contract, dict):
+            raise ValueError("model_contract must be an object")
+        typed_model_contract = cast(JsonObject, raw_model_contract)
+        raw_semantic_digests = cast(object, semantic_digests)
+        if not isinstance(raw_semantic_digests, dict):
+            raise ValueError("semantic_digests must be an object")
+        typed_semantic_digests = cast(JsonObject, raw_semantic_digests)
+        raw_source_encoding = cast(object, source_encoding)
+        if not isinstance(raw_source_encoding, dict):
+            raise ValueError("source_encoding must be an object")
+        typed_source_encoding = cast(JsonObject, raw_source_encoding)
         contract_sha256 = _digest(
-            typed_data_contract.get("data_contract_sha256"),
+            typed_data_contract.get("dataContractSha256"),
             "data_contract_sha256",
         )
-        _digest(
-            typed_ml_contract.get("objectiveConfigSha256"),
-            "objective_config_sha256",
-        )
+        for key in (
+            "dataContractSha256",
+            "targetContractSha256",
+            "objectiveSha256",
+            "modelContractSha256",
+        ):
+            _digest(typed_semantic_digests.get(key), key)
         seq_len = _positive(
-            typed_data_contract.get("seq_len"),
-            "data_contract.seq_len",
+            typed_data_contract.get("seqLen"),
+            "data_contract.seqLen",
         )
         feature_dim = _positive(
-            typed_data_contract.get("feature_dim"),
-            "data_contract.feature_dim",
+            typed_data_contract.get("featureDim"),
+            "data_contract.featureDim",
+        )
+        blocks = feature_block_dimensions(
+            typed_source_encoding,
+            feature_dim=feature_dim,
         )
         if operation == "fit":
             if not model_label:
@@ -245,6 +274,7 @@ class Ledger:
                 None if initialization is None else _json_value(initialization)
             ),
             prediction_column=prediction_column,
+            source_encoding=_json_value(typed_source_encoding),
             model_config=(
                 None if model_config is None else _json_value(model_config)
             ),
@@ -259,10 +289,12 @@ class Ledger:
             ),
             data_contract=_json_value(typed_data_contract),
             data_contract_sha256=contract_sha256,
-            ml_contract=_json_value(typed_ml_contract),
+            model_contract=_json_value(typed_model_contract),
+            semantic_digests=_json_value(typed_semantic_digests),
             config_hash=config_hash,
             source_width=seq_len * feature_dim,
             feature_dim=feature_dim,
+            total_native_rows=[0] * len(blocks),
             progress={},
             attempt=0,
             created_at=timestamp,
@@ -278,7 +310,23 @@ class Ledger:
                 session.add(job)
                 session.flush()
         except IntegrityError as exc:
-            raise conflict(f"job already exists: {job_id}") from exc
+            constraint_name = _constraint_name(exc)
+            sqlstate = _sqlstate(exc)
+            if (
+                sqlstate == "23505"
+                and constraint_name in _JOB_IDENTITY_CONSTRAINTS
+            ):
+                raise conflict(f"job already exists: {job_id}") from exc
+            if self.logger is not None:
+                self.logger.event(
+                    "postgres.job.create_integrity_error",
+                    jobId=job_id,
+                    constraintName=constraint_name or "unknown",
+                    sqlstate=sqlstate or "unknown",
+                )
+            raise RuntimeError(
+                "job creation violated persistence invariants"
+            ) from exc
         return _decode(job)
 
     def lock_job_identity(
@@ -559,6 +607,7 @@ class Ledger:
                             relative_path=checkpoint.relative_path,
                             byte_count=checkpoint.bytes,
                             sha256=checkpoint.sha256,
+                            input_revision=checkpoint.input_revision,
                             completed_epochs=checkpoint.completed_epochs,
                             global_step=checkpoint.global_step,
                             training_complete=checkpoint.training_complete,
@@ -778,13 +827,17 @@ class Ledger:
         relative_path: str,
         schema_id: str,
         data_contract_sha256: str,
+        chunks: int,
         rows: int,
+        native_rows: tuple[int, ...],
+        first_range_ordinal: int | None,
+        first_example_offset: int | None,
+        last_range_ordinal: int | None,
+        next_example_offset: int | None,
         batches: int,
         byte_count: int,
         sha256: str,
         schema_fingerprint: str,
-        source_width: int,
-        feature_dim: int,
         selected_device: str,
         max_payloads: int,
         max_job_bytes: int,
@@ -799,13 +852,17 @@ class Ledger:
             relative_path=relative_path,
             schema_id=schema_id,
             data_contract_sha256=data_contract_sha256,
+            chunks=chunks,
             rows=rows,
+            native_rows=native_rows,
+            first_range_ordinal=first_range_ordinal,
+            first_example_offset=first_example_offset,
+            last_range_ordinal=last_range_ordinal,
+            next_example_offset=next_example_offset,
             batches=batches,
             byte_count=byte_count,
             sha256=sha256,
             schema_fingerprint=schema_fingerprint,
-            source_width=source_width,
-            feature_dim=feature_dim,
             selected_device=selected_device,
             max_payloads=max_payloads,
             max_job_bytes=max_job_bytes,
@@ -858,7 +915,10 @@ class Ledger:
         client_execution_id: str,
         fencing_token: int,
         payload_count: int,
+        total_chunks: int,
         total_rows: int,
+        total_native_rows: tuple[int, ...],
+        range_count: int,
         total_bytes: int,
         manifest_sha256: str,
         selected_device: str,
@@ -870,7 +930,10 @@ class Ledger:
             client_execution_id=client_execution_id,
             fencing_token=fencing_token,
             payload_count=payload_count,
+            total_chunks=total_chunks,
             total_rows=total_rows,
+            total_native_rows=total_native_rows,
+            range_count=range_count,
             total_bytes=total_bytes,
             expected_manifest_sha256=manifest_sha256,
             selected_device=selected_device,
@@ -1048,13 +1111,13 @@ class Ledger:
         attempt: int,
         attempt_id: str,
         generation: int,
+        input_revision: int,
         format: str,
         relative_path: str,
         byte_count: int,
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss: float,
         training_complete: bool,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
@@ -1063,13 +1126,13 @@ class Ledger:
             attempt=attempt,
             attempt_id=attempt_id,
             generation=generation,
+            input_revision=input_revision,
             format=format,
             relative_path=relative_path,
             byte_count=byte_count,
             sha256=sha256,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss=loss,
             training_complete=training_complete,
             now=now,
         )
@@ -1156,7 +1219,6 @@ class Ledger:
         label: str,
         generation: int | None,
         checkpoint_path: str,
-        metadata_path: str,
         byte_count: int,
         sha256: str,
         metadata: JsonObject,
@@ -1171,7 +1233,6 @@ class Ledger:
             label=label,
             generation=generation,
             checkpoint_path=checkpoint_path,
-            metadata_path=metadata_path,
             byte_count=byte_count,
             sha256=sha256,
             metadata=metadata,
@@ -1383,6 +1444,17 @@ def _transition_updates(updates: Mapping[str, object]) -> RowMapping:
             value = _at(cast(float, value))
         encoded[target] = value
     return encoded
+
+
+def _constraint_name(error: IntegrityError) -> str | None:
+    diagnostic = getattr(error.orig, "diag", None)
+    value = getattr(diagnostic, "constraint_name", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _sqlstate(error: IntegrityError) -> str | None:
+    value = getattr(error.orig, "sqlstate", None)
+    return value if isinstance(value, str) and value else None
 
 
 def _raise_missing_job(

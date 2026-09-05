@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v1/model-contract.schema.json",
+  "title": "Consumer-neutral ModelContract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectiveLanguageRevision", "targetContract", "objective", "modelConfig"
+  ],
+  "properties": {
+    "objectiveLanguageRevision": {"const": 1},
+    "targetContract": {"$ref": "target-contract.schema.json"},
+    "objective": {"$ref": "objective.schema.json"},
+    "modelConfig": {"$ref": "common.schema.json#/$defs/modelConfig"}
+  }
+}

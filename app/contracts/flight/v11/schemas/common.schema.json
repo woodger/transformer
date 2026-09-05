@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v11/common.schema.json",
+  "title": "Transformer Flight v11 common definitions",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "label": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "idempotencyKey": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "fencingToken": {"type": "string", "pattern": "^[1-9][0-9]{0,18}$"},
+    "predictionColumn": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,63}$"},
+    "inputState": {"enum": ["OPEN", "CLOSED", "ABORTED"]},
+    "executionState": {"enum": ["WAITING_INPUT", "QUEUED", "RUNNING", "RETRYING", "CANCELLING", "SUCCEEDED", "FAILED", "CANCELLED"]},
+    "sourceEncoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "featureBlocks"],
+      "properties": {
+        "kind": {"const": "indexedFeatureBlocks"},
+        "featureBlocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["position", "windowRows", "nativeRowWidth"],
+            "properties": {
+              "position": {"type": "integer", "minimum": 0},
+              "windowRows": {"type": "integer", "minimum": 1},
+              "nativeRowWidth": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    "nativeRows": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0}},
+    "dataContract": {"$ref": "https://transformer.local/contracts/semantic/v1/common.schema.json#/$defs/dataContract"},
+    "modelContract": {"$ref": "https://transformer.local/contracts/semantic/model-contract-envelope.schema.json"},
+    "semanticDigests": {"$ref": "https://transformer.local/contracts/semantic/v1/semantic-digests.schema.json"},
+    "requestedInitialization": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "random"}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "modelRef"], "properties": {"kind": {"const": "publishedModel"}, "modelRef": {"$ref": "#/$defs/label"}}}
+      ]
+    },
+    "resolvedInitialization": {
+      "$ref": "https://transformer.local/contracts/semantic/v1/common.schema.json#/$defs/resolvedInitialization"
+    },
+    "selectionConfig": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "object", "additionalProperties": false, "required": ["minDelta", "patience"], "properties": {"minDelta": {"type": "number", "minimum": 0}, "patience": {"type": "integer", "minimum": 0}}}
+      ]
+    },
+    "trainingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lr", "batchSize", "epochs", "useAmp", "weightDecay", "selection", "seed", "deterministic"],
+      "properties": {
+        "lr": {"type": "number", "exclusiveMinimum": 0},
+        "batchSize": {"type": "integer", "minimum": 1},
+        "epochs": {"type": "integer", "minimum": 1},
+        "useAmp": {"type": "boolean"},
+        "weightDecay": {"type": "number", "minimum": 0},
+        "selection": {"$ref": "#/$defs/selectionConfig"},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "deterministic": {"type": "boolean"}
+      }
+    },
+    "diagnosticsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "gradientInteractions"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "gradientInteractions": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["everySteps", "maxBatches"], "properties": {"everySteps": {"type": "integer", "minimum": 1}, "maxBatches": {"type": "integer", "minimum": 1}}}
+          ]
+        }
+      }
+    },
+    "inputReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadId", "ordinal", "commitRevision", "schemaId", "dataContractSha256", "chunks", "logicalRows", "nativeRows", "firstRangeOrdinal", "firstExampleOffset", "lastRangeOrdinal", "nextExampleOffset", "batches", "bytes", "sha256", "schemaFingerprint"],
+      "properties": {
+        "payloadId": {"$ref": "#/$defs/uuid"},
+        "ordinal": {"type": "integer", "minimum": 0},
+        "commitRevision": {"type": "integer", "minimum": 1},
+        "schemaId": {"enum": ["transformer.indexed-feature-blocks.fit.v1", "transformer.indexed-feature-blocks.predict.v1"]},
+        "dataContractSha256": {"$ref": "#/$defs/sha256"},
+        "chunks": {"type": "integer", "minimum": 0},
+        "logicalRows": {"type": "integer", "minimum": 0},
+        "nativeRows": {"$ref": "#/$defs/nativeRows"},
+        "firstRangeOrdinal": {"type": ["integer", "null"], "minimum": 0},
+        "firstExampleOffset": {"type": ["integer", "null"], "minimum": 0},
+        "lastRangeOrdinal": {"type": ["integer", "null"], "minimum": 0},
+        "nextExampleOffset": {"type": ["integer", "null"], "minimum": 0},
+        "batches": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schemaFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "outputReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "descriptorPath", "rows", "bytes", "sha256"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "descriptorPath": {"type": "array", "prefixItems": [{"const": "transformer"}, {"const": "v11"}, {"const": "jobs"}, {"$ref": "#/$defs/uuid"}, {"const": "outputs"}, {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}], "items": false, "minItems": 6, "maxItems": 6},
+        "rows": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

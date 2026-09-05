@@ -1,0 +1,49 @@
+{
+  "format": "transformer.fit-run-summary.v5",
+  "recordedAt": "2026-09-05T12:03:00.000Z",
+  "jobId": "22222222-2222-4222-8222-222222222222",
+  "attemptId": "33333333-3333-4333-8333-333333333333",
+  "attempt": 1,
+  "modelRef": "mdl_44444444444444444444444444444444",
+  "semanticDigests": {
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "targetContractSha256": "194487713474826db9e120dede269cfd9665fdd28b50803b89995a55d3f392f0",
+    "objectiveSha256": "d7b5e181e2c7c97ff02af381736e8e3054196fe3fe252ca0f51dab37a60af715",
+    "modelContractSha256": "2b09365f16ff67ed340b7c52988d016090d3e8b2b51f13adb1b0d3ba5f1cdbe3"
+  },
+  "jobConfigSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "checkpointFormat": "transformer-checkpoint-v6",
+  "transformerVersion": "0.2.0",
+  "transformerGitCommit": "cccccccccccccccccccccccccccccccccccccccc",
+  "targets": [
+    {"index": 0, "identity": "ConsumerDefined.EventProbability"}
+  ],
+  "initialization": {"kind": "random"},
+  "milestones": {
+    "createdAt": "2026-09-05T12:00:00.000Z",
+    "firstInputCommittedAt": "2026-09-05T12:00:01.000Z",
+    "inputClosedAt": "2026-09-05T12:01:00.000Z",
+    "workerCompletedAt": "2026-09-05T12:02:59.000Z",
+    "publishedAt": "2026-09-05T12:03:00.000Z"
+  },
+  "durations": {
+    "firstInputWaitMs": 1000,
+    "eofWaitMs": 59000,
+    "queueWaitMs": 25,
+    "workerStartupMs": 450,
+    "trainingMs": 115000,
+    "checkpointSerializationMs": 200,
+    "checkpointPublicationMs": 100,
+    "modelPublicationMs": 1000,
+    "remoteFitMs": 180000
+  },
+  "counts": {
+    "attempts": 1,
+    "recoveries": 0,
+    "inputPayloads": 451,
+    "inputChunks": 12609,
+    "logicalRows": 1147419,
+    "nativeRows": [1260900, 100872],
+    "inputBytes": 67108864
+  }
+}

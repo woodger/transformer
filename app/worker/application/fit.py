@@ -3,30 +3,33 @@ from __future__ import annotations
 import os
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9 import FIT_INPUT_SCHEMA_ID, validate_document
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v9.objective import objective_from_ml_contract
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12 import (
+    FIT_INPUT_SCHEMA_ID,
+    validate_document,
+    validate_training_metrics_for_model,
+)
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
-    artifact_document,
-    boolean_value,
+    checkpoint_artifact_document,
     checkpoint_metadata,
     json_safe,
     result_identity,
-    validate_artifact,
+    validate_checkpoint_artifact,
 )
 from app.worker.application.documents import (
     integer_field,
+    integer_list,
     object_document,
     object_field,
-    optional_string_field,
     string_field,
 )
 from app.worker.application.errors import WorkerExecutionError
@@ -41,10 +44,9 @@ from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
 )
-from app.worker.data.arrow import read_committed_fit_arrow
+from app.worker.data.arrow import iter_committed_fit_arrow
 from app.worker.data.tensors import (
     TrainingBatch,
-    reshape_source,
     validate_feature_dim,
     validate_target_dim,
 )
@@ -53,7 +55,7 @@ from app.worker.runtime.reproducibility import configure_reproducibility
 from app.worker.telemetry import epoch_telemetry_document
 from app.worker.telemetry.epoch import ObservedTrainingEpoch
 from app.worker.training.factory import build_model, build_trainer
-from app.worker.training.trainer import SelectionPayload
+from app.worker.training.trainer import SelectionPayload, Trainer
 
 
 def execute_fit(
@@ -62,79 +64,69 @@ def execute_fit(
     input_stream: DurableInputStream,
     emitter: WorkerEventEmitter,
 ) -> JsonObject:
-    model_document = object_field(manifest, "model")
-    model_config = ModelConfig.from_dict(
-        object_field(model_document, "config")
-    )
+    model_contract = _validated_model_contract(manifest)
+    model_config = ModelConfig.from_manifest(model_contract.model_config)
     train_config = TrainConfig.from_dict(object_field(manifest, "training"))
-    if model_config is None or train_config is None:
-        raise ValueError("fit configuration is unavailable")
-    objective = objective_from_ml_contract(object_field(manifest, "mlContract"))
+    if train_config is None:
+        raise ValueError("fit training configuration is unavailable")
     diagnostics = DiagnosticsConfig.from_document(
         object_field(manifest, "diagnostics")
     )
     train_config = replace(train_config, diagnostics=diagnostics)
-    if model_config.out_dim != objective.target_width:
-        raise ValueError("fit model shape differs from objective targets")
     configure_reproducibility(train_config.seed, train_config.deterministic)
     device = get_device(string_field(object_field(manifest, "device"), "kind"))
     data_contract = object_field(manifest, "dataContract")
-    ml_contract = object_field(manifest, "mlContract")
-    expected_feature_dim = integer_field(data_contract, "featureDim")
-    expected_target_dim = objective.target_width
+    source_encoding = object_field(manifest, "sourceEncoding")
     committed_inputs = CommittedInputArtifacts()
 
-    def read_payload(item: JsonObject) -> TrainingBatch:
+    def read_payload(item: JsonObject) -> Iterator[TrainingBatch]:
         if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
             raise ValueError("fit input schemaId is invalid")
-        path = committed_inputs.path(item)
-        batch = read_committed_fit_arrow(
-            path,
-            expected_rows=integer_field(item, "rows"),
-            source_width=model_config.seq_len * expected_feature_dim,
-            targets=objective.targets,
+        yield from iter_committed_fit_arrow(
+            committed_inputs.path(item),
+            expected_rows=integer_field(item, "logicalRows"),
+            expected_chunks=integer_field(item, "chunks"),
+            expected_native_rows=integer_list(item.get("nativeRows"), "nativeRows"),
+            source_encoding=source_encoding,
+            seq_len=model_config.seq_len,
+            feature_dim=model_config.feature_dim,
+            target_contract=model_contract.target_contract,
         )
-        batch = TrainingBatch(
-            features=reshape_source(batch.features, model_config.seq_len),
-            targets=batch.targets,
-        )
-        validate_feature_dim(batch.features, expected_feature_dim)
-        validate_target_dim(batch.targets, expected_target_dim)
-        return batch
 
-    stream = iter(input_stream.items())
-    first = None
-    for item in stream:
-        batch = read_payload(item)
-        if batch.features.size(0) == 0:
-            continue
-        first = batch
-        break
+    def decoded(items: Iterator[JsonObject]) -> Iterator[TrainingBatch]:
+        for item in items:
+            for batch in read_payload(item):
+                validate_feature_dim(batch.features, model_config.feature_dim)
+                validate_target_dim(batch.targets, model_contract.target_width)
+                yield batch
+
+    decoded_stream = decoded(iter(input_stream.items()))
+    first = next(
+        (batch for batch in decoded_stream if batch.features.size(0) != 0),
+        None,
+    )
     if first is None:
         raise ValueError("fit requires at least one non-empty input")
 
-    actual_config = replace(model_config, feature_dim=expected_feature_dim)
     initialization, parent_checkpoint = _load_initialization(
         manifest,
         device,
-        actual_config,
-        data_contract,
-        ml_contract,
+        model_contract,
     )
     model = build_model(
-        actual_config,
+        model_config,
         first.features,
         first.targets,
         device,
-        objective,
+        model_contract,
     )
     trainer = build_trainer(
         train_config,
         model,
         device,
-        actual_config,
+        model_config,
         data_contract=data_contract,
-        objective=objective,
+        model_contract=model_contract,
         initialization=initialization,
     )
     if parent_checkpoint is not None:
@@ -152,65 +144,19 @@ def execute_fit(
         if recovery_value is None
         else object_document(recovery_value, "recovery")
     )
-    if recovery is not None and recovery.get("checkpoint") is not None:
-        if (
-            not input_stream.closed
-            or optional_string_field(recovery, "manifestSha256") is None
-        ):
-            raise ValueError(
-                "recovery checkpoint requires closed immutable input"
-            )
-        checkpoint_path = validate_artifact(
-            object_field(recovery, "checkpoint")
-        )
-        try:
-            payload = load_training_recovery(
-                checkpoint_path,
-                device,
-                expected_config_hash=string_field(recovery, "configSha256"),
-                expected_manifest_hash=string_field(
-                    recovery,
-                    "manifestSha256",
-                ),
-                expected_objective_config_sha256=string_field(
-                    recovery,
-                    "objectiveConfigSha256",
-                ),
-                expected_data_contract_sha256=string_field(
-                    recovery,
-                    "dataContractSha256",
-                ),
-            )
-            if (
-                trainer.model_config is None
-                or payload["model_config"] != trainer.model_config.to_dict()
-            ):
-                raise ValueError("recovery model configuration differs")
-            if payload["train_config"] != train_config.to_dict():
-                raise ValueError("recovery training configuration differs")
-            if payload["data_contract"] != data_contract:
-                raise ValueError("recovery data contract differs")
-            trainer.load_recovery_state_dict(
-                object_document(payload["trainer_state"], "trainer state")
-            )
-        except Exception as exc:
-            raise WorkerExecutionError(
-                "RECOVERY_CHECKPOINT_INCOMPATIBLE",
-                "training recovery checkpoint could not be restored",
-            ) from exc
+    if recovery is not None:
+        _restore_recovery(trainer, recovery, device, manifest)
 
     def first_epoch_payloads() -> Iterator[TrainingBatch]:
         yield first
-        for item in stream:
-            batch = read_payload(item)
-            if batch.features.size(0) != 0:
-                yield batch
+        yield from (
+            batch for batch in decoded_stream if batch.features.size(0) != 0
+        )
 
     def closed_payloads() -> Iterator[TrainingBatch]:
         if not input_stream.closed:
             raise ValueError("complete input is unavailable for replay")
-        for item in input_stream.inputs:
-            batch = read_payload(item)
+        for batch in decoded(iter(input_stream.inputs)):
             if batch.features.size(0) != 0:
                 yield batch
 
@@ -220,74 +166,40 @@ def execute_fit(
         monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:
-        if recovery is None:
-            return
-        manifest_sha256 = input_stream.manifest_sha256
-        if manifest_sha256 is None:
-            raise ValueError("recovery checkpoint cannot precede input EOF")
+        emitter.progress({
+            "epoch": epoch + 1,
+            "step": metrics.step,
+            "loss": metrics.loss,
+        })
+        completed_manifest = _completed_manifest(manifest, input_stream)
         generation = trainer.state.global_epoch
         checkpoint_path = os.path.join(
             workspace,
             "checkpoints",
             f"{generation}.pth",
         )
+        metadata = checkpoint_metadata(trainer, completed_manifest)
         serialization_started = time.monotonic()
         event = save_training_recovery(
             checkpoint_path,
             trainer,
-            generation=generation,
-            config_hash=string_field(recovery, "configSha256"),
-            manifest_hash=manifest_sha256,
+            metadata=metadata,
         )
-        checkpoint_serialization_ms = (
-            time.monotonic() - serialization_started
-        ) * 1000.0
-        metrics_payload = {
-            "mode": "fit-stream",
-            "frame": None,
-            "epoch": epoch + 1,
-            "selection_score": monitor_payload["selection_score"],
-            "checkpoint_best": monitor_payload["checkpoint_best"],
-            "should_stop": monitor_payload["should_stop"],
-            "best_selection_score": monitor_payload["best_selection_score"],
-        }
-        committed_metrics: JsonObject | None = None
-        try:
-            telemetry_document = epoch_telemetry_document(
-                metrics,
-                **metrics_payload,
-            )
-            if telemetry_document is None:
-                raise ValueError("training epoch telemetry is unavailable")
-            committed_metrics = object_document(
-                json_safe(telemetry_document),
-                "committed fit metrics",
-            )
-            validate_document(committed_metrics, "training-metrics")
-        except Exception as exc:
-            print(
-                "training epoch telemetry disabled: " + type(exc).__name__,
-                file=sys.stderr,
-                flush=True,
-            )
+        serialization_ms = (time.monotonic() - serialization_started) * 1000.0
+        metrics_document = _training_metrics(
+            metrics,
+            epoch,
+            monitor_payload,
+            model_contract,
+        )
         checkpoint_event: JsonObject = {
             "generation": integer_field(event, "generation"),
-            "completedEpochs": integer_field(event, "completed_epochs"),
-            "globalStep": integer_field(event, "global_step"),
-            "progress": {
-                "epoch": epoch + 1,
-                "step": metrics.step,
-                "loss": metrics.loss,
-            },
-            "trainingComplete": boolean_value(
-                event.get("training_complete"),
-                "training_complete",
-            ),
-            "artifact": artifact_document(checkpoint_path),
-            "checkpointSerializationMs": checkpoint_serialization_ms,
+            "progress": dict(object_field(metadata, "progress")),
+            "artifact": checkpoint_artifact_document(checkpoint_path),
+            "checkpointSerializationMs": serialization_ms,
         }
-        if committed_metrics is not None:
-            checkpoint_event["metrics"] = committed_metrics
+        if metrics_document is not None:
+            checkpoint_event["metrics"] = metrics_document
         emitter.checkpoint(checkpoint_event)
 
     if not trainer.training_complete:
@@ -303,82 +215,203 @@ def execute_fit(
                 on_epoch_committed=on_epoch_committed,
             )
 
-    checkpoint_path = os.path.join(workspace, "checkpoint.pth")
-    serialization_started = time.monotonic()
-    trainer.save(checkpoint_path)
-    checkpoint_serialization_ms = (
-        time.monotonic() - serialization_started
-    ) * 1000.0
     if not input_stream.closed:
         raise ValueError("fit result requires a closed immutable input")
+    completed_manifest = _completed_manifest(manifest, input_stream)
+    metadata = checkpoint_metadata(trainer, completed_manifest)
+    checkpoint_path = os.path.join(workspace, "checkpoint.pth")
+    serialization_started = time.monotonic()
+    trainer.save(checkpoint_path, metadata=metadata)
+    serialization_ms = (time.monotonic() - serialization_started) * 1000.0
     result = result_identity(manifest)
-    result_fields: JsonObject = {
+    result.update({
         "inputRevision": input_stream.input_revision,
         "manifestSha256": input_stream.manifest_sha256,
         "artifacts": [],
-        "checkpoint": artifact_document(checkpoint_path),
-        "checkpointMetadata": checkpoint_metadata(trainer, data_contract),
-        "checkpointSerializationMs": checkpoint_serialization_ms,
-    }
-    result.update(result_fields)
+        "checkpoint": checkpoint_artifact_document(checkpoint_path),
+        "checkpointMetadata": metadata,
+        "checkpointSerializationMs": serialization_ms,
+    })
     validate_document(result, "result-manifest")
     return result
+
+
+def _validated_model_contract(manifest: JsonObject) -> ModelContract:
+    model_contract = ModelContract.from_document(
+        object_field(manifest, "modelContract")
+    )
+    data_contract = object_field(manifest, "dataContract")
+    digests = model_contract.digests(
+        string_field(data_contract, "dataContractSha256")
+    )
+    if digests != object_field(manifest, "semanticDigests"):
+        raise ValueError("worker semantic digests do not match modelContract")
+    return model_contract
 
 
 def _load_initialization(
     manifest: JsonObject,
     device: torch.device,
-    model_config: ModelConfig,
-    data_contract: JsonObject,
-    ml_contract: JsonObject,
+    model_contract: ModelContract,
 ) -> tuple[JsonObject, dict[str, object] | None]:
     initialization = object_field(manifest, "initialization")
     kind = string_field(initialization, "kind")
     if kind == "random":
         return {"kind": "random"}, None
+    if kind != "publishedModel":
+        raise ValueError("fit initialization kind is invalid")
 
-    checkpoint_document = object_field(initialization, "checkpoint")
-    parent_sha256 = string_field(
-        initialization,
-        "parentCheckpointSha256",
+    artifact = object_field(object_field(manifest, "model"), "parentCheckpoint")
+    if string_field(initialization, "parentCheckpointSha256") != string_field(
+        artifact,
+        "checkpointSha256",
+    ):
+        raise ValueError("parent checkpoint digest differs from initialization")
+    checkpoint = _load_model_checkpoint(
+        validate_checkpoint_artifact(artifact),
+        device,
+        mismatch_message="parent checkpoint belongs to another model contract",
     )
-    if parent_sha256 != string_field(checkpoint_document, "sha256"):
-        raise ValueError(
-            "parent checkpoint digest differs from initialization"
-        )
-    checkpoint_path = validate_artifact(checkpoint_document)
-    try:
-        checkpoint = load_checkpoint(checkpoint_path, device)
-    except CheckpointFormatMismatch as exc:
-        raise WorkerExecutionError(
-            "MODEL_SCHEMA_MISMATCH",
-            "parent checkpoint belongs to another ML contract",
-        ) from exc
-    except CheckpointCorrupt as exc:
-        raise WorkerExecutionError(
-            "MODEL_CORRUPT",
-            "parent checkpoint semantic metadata is invalid",
-        ) from exc
+    metadata = object_document(checkpoint["metadata"], "checkpoint metadata")
+    semantic_digests = object_field(manifest, "semanticDigests")
     if (
-        checkpoint["model_config"] != model_config.to_dict()
-        or checkpoint["data_contract"] != data_contract
-        or checkpoint["ml_contract"] != ml_contract
+        metadata.get("modelContract") != model_contract.to_document()
+        or metadata.get("semanticDigests") != semantic_digests
     ):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",
             "parent checkpoint contract differs from the fit job",
         )
-    return (
-        {
-            "kind": "publishedModel",
-            "parentModelRef": string_field(
-                initialization,
-                "parentModelRef",
-            ),
-            "parentCheckpointSha256": parent_sha256,
-        },
-        checkpoint,
+    _validate_initialization_digests(initialization, semantic_digests)
+    return dict(initialization), checkpoint
+
+
+def _restore_recovery(
+    trainer: Trainer,
+    recovery: JsonObject,
+    device: torch.device,
+    manifest: JsonObject,
+) -> None:
+    if any(
+        recovery.get(field) != manifest.get(field)
+        for field in (
+            "jobId",
+            "inputRevision",
+            "jobConfigSha256",
+            "semanticDigests",
+            "manifestSha256",
+        )
+    ):
+        raise WorkerExecutionError(
+            "RECOVERY_CHECKPOINT_INCOMPATIBLE",
+            "training recovery fences differ from the job",
+        )
+    artifact = object_field(recovery, "checkpoint")
+    checkpoint_path = validate_checkpoint_artifact(artifact)
+    try:
+        payload = load_training_recovery(
+            checkpoint_path,
+            device,
+            descriptor=recovery,
+        )
+        metadata = object_document(payload["metadata"], "checkpoint metadata")
+        if (
+            metadata.get("dataContract") != manifest.get("dataContract")
+            or metadata.get("modelContract") != manifest.get("modelContract")
+        ):
+            raise ValueError("recovery semantic contracts differ")
+        trainer.load_recovery_state_dict(
+            object_document(payload["trainer_state"], "trainer state")
+        )
+    except Exception as exc:
+        raise WorkerExecutionError(
+            "RECOVERY_CHECKPOINT_INCOMPATIBLE",
+            "training recovery checkpoint could not be restored",
+        ) from exc
+
+
+def _load_model_checkpoint(
+    path: str,
+    device: torch.device,
+    *,
+    mismatch_message: str,
+) -> dict[str, object]:
+    try:
+        return load_checkpoint(path, device)
+    except CheckpointFormatMismatch as exc:
+        raise WorkerExecutionError("MODEL_SCHEMA_MISMATCH", mismatch_message) from exc
+    except CheckpointCorrupt as exc:
+        raise WorkerExecutionError(
+            "MODEL_CORRUPT",
+            "checkpoint semantic metadata is invalid",
+        ) from exc
+
+
+def _validate_initialization_digests(
+    initialization: Mapping[str, object],
+    semantic_digests: Mapping[str, object],
+) -> None:
+    pairs = (
+        ("parentDataContractSha256", "dataContractSha256"),
+        ("dataContractSha256", "dataContractSha256"),
+        ("parentTargetContractSha256", "targetContractSha256"),
+        ("targetContractSha256", "targetContractSha256"),
+        ("parentObjectiveSha256", "objectiveSha256"),
+        ("objectiveSha256", "objectiveSha256"),
+        ("parentModelContractSha256", "modelContractSha256"),
+        ("modelContractSha256", "modelContractSha256"),
     )
+    if any(
+        initialization.get(initialization_key)
+        != semantic_digests.get(digest_key)
+        for initialization_key, digest_key in pairs
+    ):
+        raise WorkerExecutionError(
+            "MODEL_SCHEMA_MISMATCH",
+            "published model initialization digests differ from the fit job",
+        )
+
+
+def _completed_manifest(
+    manifest: JsonObject,
+    input_stream: DurableInputStream,
+) -> JsonObject:
+    if input_stream.manifest_sha256 is None:
+        raise ValueError("closed input manifest digest is unavailable")
+    completed = dict(manifest)
+    completed["inputRevision"] = input_stream.input_revision
+    completed["manifestSha256"] = input_stream.manifest_sha256
+    return completed
+
+
+def _training_metrics(
+    metrics: ObservedTrainingEpoch,
+    epoch: int,
+    monitor_payload: SelectionPayload,
+    model_contract: ModelContract,
+) -> JsonObject | None:
+    try:
+        document = epoch_telemetry_document(
+            metrics,
+            mode="fit-stream",
+            frame=None,
+            epoch=epoch + 1,
+            selectionScore=monitor_payload["selection_score"],
+            checkpointBest=monitor_payload["checkpoint_best"],
+            shouldStop=monitor_payload["should_stop"],
+            bestSelectionScore=monitor_payload["best_selection_score"],
+        )
+        if document is None:
+            raise ValueError("training epoch telemetry is unavailable")
+        result = object_document(json_safe(document), "committed fit metrics")
+        return validate_training_metrics_for_model(result, model_contract)
+    except Exception as exc:
+        print(
+            "training epoch telemetry disabled: " + type(exc).__name__,
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
 
 
 __all__ = ["execute_fit"]

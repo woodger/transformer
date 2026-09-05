@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.objective import objective_from_ml_contract
+from app.contracts.semantic.v1 import ModelContract
 from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
 from app.service.adapters.inbound.flight.validation import validate_upload_metadata
@@ -138,18 +138,20 @@ class InputUploadSession:
                     self.artifact_store = self.artifact_stores[
                         self.authorization.storage_class
                     ]
+                    feature_dim = self.authorization.job.model_config.feature_dim
                     self.validator = InputBatchValidator(
                         self.authorization.job.operation,
                         self.reader.schema,
-                        targets=objective_from_ml_contract(
-                            self.authorization.job.ml_contract
-                        ).targets,
+                        source_encoding=(
+                            self.authorization.job.source_encoding
+                        ),
+                        target_contract=ModelContract.from_document(
+                            self.authorization.job.model_contract
+                        ).target_contract,
                         seq_len=(
                             self.authorization.job.model_config.seq_len
                         ),
-                        expected_feature_dim=(
-                            self.authorization.job.model_config.feature_dim
-                        ),
+                        expected_feature_dim=feature_dim,
                         max_batch_bytes=self.config.max_batch_bytes,
                         max_payload_bytes=self.config.max_payload_bytes,
                         max_rows=self.config.max_rows_per_payload,
@@ -231,8 +233,17 @@ class InputUploadSession:
             metadata = authorization.metadata
             if stats.rows != metadata.rows:
                 raise invalid(
-                    f"metadata rows {metadata.rows} does not match uploaded "
-                    f"row count {stats.rows}"
+                    f"metadata logicalRows {metadata.rows} does not match "
+                    f"uploaded logical row count {stats.rows}"
+                )
+            if stats.chunks != metadata.chunks:
+                raise invalid(
+                    f"metadata chunks {metadata.chunks} does not match "
+                    f"uploaded chunk count {stats.chunks}"
+                )
+            if stats.native_rows != metadata.native_rows:
+                raise invalid(
+                    "metadata nativeRows does not match uploaded native row counts"
                 )
 
             ipc_writer.close()
@@ -249,15 +260,6 @@ class InputUploadSession:
                     f"{self.config.max_payload_bytes}"
                 )
             digest = _sha256_file(temporary_path)
-            feature_dim = (
-                None
-                if stats.src_width is None
-                else stats.src_width
-                // authorization.job.model_config.seq_len
-            )
-            if stats.src_width is None or feature_dim is None:
-                raise invalid("input source width is unavailable")
-
             existing = authorization.existing
             if existing is not None:
                 _validate_exact_duplicate(
@@ -293,13 +295,17 @@ class InputUploadSession:
                 relative_path=artifact_store.relative_path(
                     destination
                 ),
+                chunks=stats.chunks,
                 rows=stats.rows,
+                native_rows=stats.native_rows,
+                first_range_ordinal=stats.first_range_ordinal,
+                first_example_offset=stats.first_example_offset,
+                last_range_ordinal=stats.last_range_ordinal,
+                next_example_offset=stats.next_example_offset,
                 batches=stats.batches,
                 byte_count=byte_count,
                 sha256=digest,
                 schema_fingerprint=stats.schema_fingerprint,
-                source_width=stats.src_width,
-                feature_dim=feature_dim,
             )
             try:
                 record = self.lifecycle.commit(
@@ -379,12 +385,17 @@ def _validate_exact_duplicate(
         and existing.schema_id == metadata.schema_id
         and existing.data_contract_sha256
         == metadata.data_contract_sha256
+        and existing.chunks == stats.chunks
         and existing.rows == stats.rows
+        and existing.native_rows == stats.native_rows
+        and existing.first_range_ordinal == stats.first_range_ordinal
+        and existing.first_example_offset == stats.first_example_offset
+        and existing.last_range_ordinal == stats.last_range_ordinal
+        and existing.next_example_offset == stats.next_example_offset
         and existing.batches == stats.batches
         and existing.byte_count == byte_count
         and existing.sha256 == digest
         and existing.schema_fingerprint == stats.schema_fingerprint
-        and existing.source_width == stats.src_width
     )
     if not matches:
         raise conflict(

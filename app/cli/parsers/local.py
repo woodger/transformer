@@ -4,26 +4,19 @@ from app.cli.formatting import COMMAND_EXAMPLES, COMMAND_HELP, HelpFormatter
 from app.cli.options import (
     ArgumentTarget,
     add_hidden_help_argument,
-    dropout,
     nonnegative_float,
     nonnegative_int,
     positive_float,
     positive_int,
     seed,
-    six_positive_floats,
 )
 from app.cli.parsers import SubparserTarget
 from app.config import DEFAULT_DEVICE, DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v12.config import (
     DEFAULT_BATCH_SIZE,
-    DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
-    DEFAULT_DROPOUT,
     DEFAULT_EPOCHS,
-    DEFAULT_HIDDEN,
-    DEFAULT_LAYERS,
     DEFAULT_LR,
-    DEFAULT_NHEAD,
     DEFAULT_SEED,
     DEFAULT_WEIGHT_DECAY,
 )
@@ -55,111 +48,6 @@ def _add_max_frame_bytes_argument(group: ArgumentTarget) -> None:
     )
 
 
-def _add_model_arguments(
-    parser: argparse.ArgumentParser,
-    *,
-    required_seq_len: bool,
-    training: bool,
-) -> None:
-    model = parser.add_argument_group("Model")
-    if required_seq_len:
-        model.add_argument(
-            "--seq-len",
-            type=positive_int,
-            required=True,
-            default=argparse.SUPPRESS,
-            help="Sequence length.",
-        )
-    else:
-        model.add_argument(
-            "--seq-len",
-            type=positive_int,
-            default=None,
-            help=(
-                "Sequence length; read from the checkpoint. If specified, "
-                "it must match."
-            ),
-        )
-
-    if training:
-        defaults = {
-            "hidden": DEFAULT_HIDDEN,
-            "layers": DEFAULT_LAYERS,
-            "dropout": DEFAULT_DROPOUT,
-            "nhead": DEFAULT_NHEAD,
-            "context_mode": DEFAULT_CONTEXT_MODE,
-        }
-        argument_help = {
-            "hidden": "Transformer hidden dimension.",
-            "layers": "Number of Transformer encoder layers.",
-            "dropout": "Dropout probability.",
-            "nhead": "Number of attention heads.",
-            "context_mode": "How NaNs in context timesteps are handled.",
-        }
-    else:
-        defaults = {
-            "hidden": None,
-            "layers": None,
-            "dropout": None,
-            "nhead": None,
-            "context_mode": None,
-        }
-        argument_help = {
-            "hidden": (
-                "Transformer hidden dimension; read from the checkpoint. "
-                "If specified, it must match."
-            ),
-            "layers": (
-                "Number of Transformer encoder layers; read from the "
-                "checkpoint. If specified, it must match."
-            ),
-            "dropout": (
-                "Dropout probability; read from the checkpoint. If "
-                "specified, it must match."
-            ),
-            "nhead": (
-                "Number of attention heads; read from the checkpoint. "
-                "If specified, it must match."
-            ),
-            "context_mode": (
-                "NaN handling mode; read from the checkpoint. If specified, "
-                "it must match."
-            ),
-        }
-
-    model.add_argument(
-        "--hidden",
-        type=positive_int,
-        default=defaults["hidden"],
-        help=argument_help["hidden"],
-    )
-    model.add_argument(
-        "--layers",
-        type=positive_int,
-        default=defaults["layers"],
-        help=argument_help["layers"],
-    )
-    model.add_argument(
-        "--dropout",
-        type=dropout,
-        default=defaults["dropout"],
-        help=argument_help["dropout"],
-    )
-    model.add_argument(
-        "--nhead",
-        type=positive_int,
-        default=defaults["nhead"],
-        help=argument_help["nhead"],
-    )
-    model.add_argument(
-        "--mode",
-        choices=["strict", "relaxed"],
-        default=defaults["context_mode"],
-        dest="context_mode",
-        help=argument_help["context_mode"],
-    )
-
-
 def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
     train = parser.add_argument_group("Training")
     train.add_argument(
@@ -185,13 +73,6 @@ def _add_training_arguments(parser: argparse.ArgumentParser) -> None:
         type=positive_int,
         default=DEFAULT_EPOCHS,
         help="Epoch count.",
-    )
-    train.add_argument(
-        "--direct-loss-weights",
-        type=six_positive_floats,
-        default=None,
-        metavar="W0,W1,W2,W3,W4,W5",
-        help="Positive weights for the six target-aligned direct losses.",
     )
     train.add_argument(
         "--select-best-checkpoint",
@@ -283,43 +164,13 @@ def _add_fit_parser(
     )
     if stream:
         _add_max_frame_bytes_argument(runtime)
-        runtime.add_argument(
-            "--input-spool-dir",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--input-frame-count",
-            type=nonnegative_int,
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--recovery-checkpoint-dir",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--recovery-events-out",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--resume-checkpoint",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--recovery-config-hash",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-        runtime.add_argument(
-            "--recovery-manifest-hash",
-            default=None,
-            help=argparse.SUPPRESS,
-        )
-    _add_model_arguments(parser, required_seq_len=True, training=True)
+    model = parser.add_argument_group("Model")
+    model.add_argument(
+        "--model-contract",
+        required=True,
+        metavar="JSON",
+        help="Consumer-neutral ModelContract JSON file.",
+    )
     _add_training_arguments(parser)
 
 
@@ -350,8 +201,8 @@ def _add_predict_parser(
         dest="model_name",
         default="model_weights.pth",
         help=(
-            "Checkpoint input path; relative paths are resolved inside "
-            "models/."
+            "Checkpoint input path, including its model contract; relative "
+            "paths are resolved inside models/."
         ),
     )
     runtime.add_argument(
@@ -380,7 +231,6 @@ def _add_predict_parser(
             default="out",
             help="Prediction column name.",
         )
-    _add_model_arguments(parser, required_seq_len=False, training=False)
 
 
 def _add_plot_metrics_parser(subparsers: SubparserTarget) -> None:

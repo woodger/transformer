@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-from app.contracts.worker.v9.objective import default_objective, ml_contract
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
+    CONTRACT_VERSION,
 )
 from app.service.adapters.inbound.flight.documents import (
     encode_document,
@@ -23,6 +23,7 @@ from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 from tests.support.authentication import StaticAccessTokenAuthenticator
+from tests.support.consumer_neutral import model_contract
 
 
 class RecordingLogger:
@@ -50,7 +51,7 @@ def _call_options(token="secret"):
 def _action_body(request_id):
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 8,
+        "version": CONTRACT_VERSION,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -110,6 +111,19 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
 
 def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     job_id = str(uuid.uuid4())
+    contract = model_contract(
+        "single-regression",
+        seq_len=2,
+        feature_dim=2,
+    )
+    data_contract = {
+        "identity": "test.dataset",
+        "revision": 1,
+        "profile": "test.profile",
+        "dataContractSha256": "d" * 64,
+        "seqLen": 2,
+        "featureDim": 2,
+    }
     claimed = ExecutionJobRecord(
         job_id=job_id,
         owner_subject="inventory",
@@ -121,10 +135,17 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         model_label="model",
         input_model_ref=None,
         prediction_column="predictions",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
         model_config=None,
         training_config=None,
-        data_contract={"data_contract_sha256": "d" * 64},
-        ml_contract=ml_contract(default_objective()),
+        data_contract=data_contract,
+        model_contract=contract.to_document(),
+        semantic_digests=contract.digests("d" * 64),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

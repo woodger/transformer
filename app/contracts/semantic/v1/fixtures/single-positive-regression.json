@@ -1,0 +1,58 @@
+{
+  "fixtureId": "consumer-neutral.single-positive-regression.v1",
+  "modelContract": {
+    "objectiveLanguageRevision": 1,
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "PositiveMagnitude",
+          "observedConstraint": {"kind": "ClosedInterval", "minimum": 0, "maximum": 1},
+          "lossInputTransformation": {"kind": "Sigmoid"},
+          "publicPredictionTransformation": {"kind": "Sigmoid"}
+        }
+      ]
+    },
+    "objective": {
+      "aggregation": {"kind": "WeightedSum"},
+      "reduction": {"kind": "GlobalRowMean"},
+      "resources": [],
+      "directComponents": [
+        {
+          "identity": "direct.positive-magnitude",
+          "operator": "LogMSE",
+          "weight": 1,
+          "roles": {
+            "estimate": {"kind": "target", "identity": "PositiveMagnitude", "view": "lossEstimate"},
+            "observed": {"kind": "target", "identity": "PositiveMagnitude", "view": "observed"}
+          },
+          "parameters": {}
+        }
+      ],
+      "auxiliaryComponents": []
+    },
+    "modelConfig": {
+      "architecture": {"identity": "transformer.sequence-model", "revision": 1},
+      "seqLen": 10,
+      "featureDim": 64848,
+      "hidden": 256,
+      "layers": 5,
+      "dropout": 0.1,
+      "nhead": 8,
+      "mode": "relaxed"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "positive-log-mse",
+      "inputs": {"rawCoordinate": 0, "observed": 0.25},
+      "outputs": {"publicPrediction": 0.5, "componentLoss": 0.4804502413417971},
+      "absoluteTolerance": 0.000001
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "48aaae9518e71cb5cbd3b230238f0496a9381045ae83db89539f849cc15319b4",
+    "objectiveSha256": "d6b48f5f6db1b48713ece9bd85e82818d354817eb7608c4303ef456b20c10dc2",
+    "modelContractSha256": "ed707114e86267fdeec6d256bd4053fb84d543fc5a33ac944a25ab89fac77268"
+  }
+}

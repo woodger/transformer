@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v9 import (
+from app.contracts.worker.v12 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
@@ -506,23 +506,14 @@ class WorkerSubprocessRunner:
                         attempt=job.attempt,
                         attempt_id=attempt_id,
                         sequence=sequence,
-                        message_type="input.committed",
-                        payload={
-                            "inputRevision": current.input_revision,
-                            "input": _worker_input_manifest(item),
-                        },
+                        message_type="input",
+                        payload={"input": _worker_input_manifest(item)},
                     ))
                     stream.flush()
                     next_ordinal = item.ordinal + 1
                 if current.input_state == InputState.CLOSED:
-                    row = self.ledger.get_job(job.job_id)
-                    if row is None:
-                        raise WorkerSubprocessError(
-                            ErrorCode.INTERNAL,
-                            "closed input summary is unavailable",
-                        )
                     manifest_sha256 = _optional_string(
-                        row.get("manifest_sha256"),
+                        current.manifest_sha256,
                         "closed input manifestSha256",
                     )
                     if manifest_sha256 is None:
@@ -530,6 +521,10 @@ class WorkerSubprocessRunner:
                             ErrorCode.INTERNAL,
                             "closed input summary is unavailable",
                         )
+                    closed_payload = cast(JsonObject, {
+                        "inputRevision": current.input_revision,
+                        "manifestSha256": manifest_sha256,
+                    })
                     sequence += 1
                     stream.write(encode_control_message(
                         job_id=job.job_id,
@@ -537,25 +532,7 @@ class WorkerSubprocessRunner:
                         attempt_id=attempt_id,
                         sequence=sequence,
                         message_type="input.closed",
-                        payload={
-                            "inputRevision": _integer(
-                                row.get("input_revision"),
-                                "closed input revision",
-                            ),
-                            "payloadCount": _integer(
-                                row.get("payload_count"),
-                                "closed input payload count",
-                            ),
-                            "totalRows": _integer(
-                                row.get("total_rows"),
-                                "closed input row count",
-                            ),
-                            "totalBytes": _integer(
-                                row.get("total_bytes"),
-                                "closed input byte count",
-                            ),
-                            "manifestSha256": manifest_sha256,
-                        },
+                        payload=closed_payload,
                     ))
                     stream.flush()
                     stream.close()
@@ -777,6 +754,9 @@ class WorkerSubprocessRunner:
             != _active_attempt_id(job)
             or _string(result["operation"], "result operation")
             != job.operation
+            or _string(result["jobConfigSha256"], "result jobConfigSha256")
+            != job.config_hash
+            or result["semanticDigests"] != job.semantic_digests
         ):
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,
@@ -980,7 +960,14 @@ def _worker_input_manifest(item: ExecutionInput) -> JsonObject:
         "ordinal": item.ordinal,
         "commitRevision": item.commit_revision,
         "dataContractSha256": item.data_contract_sha256,
-        "rows": item.rows,
+        "chunks": item.chunks,
+        "logicalRows": item.rows,
+        "nativeRows": list(item.native_rows),
+        "firstRangeOrdinal": item.first_range_ordinal,
+        "firstExampleOffset": item.first_example_offset,
+        "lastRangeOrdinal": item.last_range_ordinal,
+        "nextExampleOffset": item.next_example_offset,
+        "batches": item.batches,
         "artifact": {
             "path": item.absolute_path,
             "byteCount": item.byte_count,

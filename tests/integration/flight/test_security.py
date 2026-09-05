@@ -8,11 +8,11 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v9.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v9.objective import default_objective
+from app.contracts.worker.v12.config import TrainConfig, train_config_to_manifest
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
+    CONTRACT_VERSION,
     CREATE_ACTION,
     ErrorCode,
 )
@@ -30,11 +30,18 @@ from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.errors import ServiceError
 from app.service.domain.records import OutputRecord
 from tests.support.authentication import StaticAccessTokenAuthenticator
+from tests.support.consumer_neutral import data_contract, model_contract
 
 SECURITY_TRAIN_CONFIG = TrainConfig(
     epochs=1,
 )
-SECURITY_OBJECTIVE = default_objective()
+SECURITY_MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=1,
+    hidden=8,
+    nhead=2,
+)
 
 
 def _auth(token="secret"):
@@ -47,7 +54,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 8,
+        "version": CONTRACT_VERSION,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -55,7 +62,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 8,
+        "version": CONTRACT_VERSION,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
@@ -64,19 +71,15 @@ def _create_fit_document(**overrides):
         "device": "cpu",
         "initialization": {"kind": "random"},
         "modelLabel": "returns.daily",
-        "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
         "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),
-        "targets": list(SECURITY_OBJECTIVE.targets),
-        "objective": SECURITY_OBJECTIVE.objective,
-        "dataContract": {
-            "id": "inventory.learning-dataset",
-            "version": 2,
-            "profile": "research-dividend-events-v2",
-            "dataContractSha256": "d" * 64,
-            "seqLen": 2,
-            "featureDim": 1,
-            "targetSchemaId": "inventory.target.v2",
+        "sourceEncoding": {
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
+            ],
         },
+        "dataContract": data_contract(SECURITY_MODEL_CONTRACT),
+        "modelContract": SECURITY_MODEL_CONTRACT.to_document(),
     }
     document.update(overrides)
     return document
@@ -201,6 +204,32 @@ def test_paths_and_arbitrary_cli_arguments_are_rejected_before_dispatch(
             flight.Action(CREATE_ACTION, body),
             options=_auth(),
         ))
+
+    assert coordinator.calls == []
+
+
+def test_model_contract_failures_include_structured_reason_and_path(
+    protected_server,
+):
+    coordinator, _, _, _, client = protected_server
+    malformed = _create_fit_document()
+    del malformed["modelContract"]["modelConfig"]
+    geometry = _create_fit_document()
+    geometry["modelContract"]["modelConfig"]["seqLen"] = 3
+
+    for document in (malformed, geometry):
+        with pytest.raises(flight.FlightServerError) as raised:
+            list(client.do_action(
+                flight.Action(
+                    CREATE_ACTION,
+                    json.dumps(document).encode("utf-8"),
+                ),
+                options=_auth(),
+            ))
+        detail = json.loads(raised.value.extra_info)
+        assert detail["code"] == "INVALID_ARGUMENT"
+        assert detail["reason"] == "INVALID_MODEL_CONTRACT"
+        assert detail["path"].startswith("/modelContract")
 
     assert coordinator.calls == []
 

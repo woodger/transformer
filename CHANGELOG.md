@@ -7,6 +7,57 @@
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-09-05
+
+### Added
+
+- Consumer-neutral semantic language v1 с ordered opaque target slots,
+  явными constraints/transformations, declarative objective bindings,
+  abstract private resources и layered D1 digests.
+- Structured semantic error details, hybrid language capabilities и
+  cross-language golden fixtures для Flight v11.
+
+### Changed
+
+- Public Flight contract повышен до v11, worker process contract — до v12,
+  checkpoint/recovery formats — до v6, training metrics и terminal fit
+  summary — до v5. Все runtime boundaries используют один validated
+  consumer-neutral ModelContract.
+- Transformer больше не выбирает heads, transformations, losses или auxiliary
+  dependencies по Consumer-owned target names. Model output и telemetry
+  выводятся из ordered slots, explicit operator roles и resource declarations.
+- `indexedFeatureBlocks` сохранён без изменения physical schemas или
+  reconstruction semantics; target/prediction width теперь выводится из
+  TargetContract.
+- `publishedModel` остаётся strict weights-only warm start и требует exact
+  совпадения data, target, objective и model digest layers.
+- Revision `0024` выполняет согласованный clean cut persistence: удаляет legacy
+  jobs, models и runtime telemetry metadata, сохраняет consumer-neutral model
+  contract/D1 digests и fencing input revision.
+- OpenSearch projection использует отдельные `metrics-points-v5` и
+  `metrics-runs-v5` templates и indices.
+
+### Fixed
+
+- Local fit вычисляет model identity до появления полного data-contract digest,
+  не смешивая независимые D1 model и data layers.
+- Service CUDA inventory выбирает CUDA device из полного Worker v12 списка
+  `cpu + cuda`, не отбрасывая исправный GPU из-за CPU entry.
+- Consumer-neutral runtime проверяет все recovery/result fences, внутреннюю
+  semantic целостность checkpoint и соответствие telemetry точному Objective;
+  non-finite raw outputs не могут быть скрыты bounded transformation.
+- JSON number spellings обрабатываются по единой binary64-семантике, а
+  `ClosedInterval` сравнивает точное Float32-значение с Binary64 bounds.
+- Локальные metrics plots больше не разбирают opaque target/component
+  identities по символам `.` и `__`.
+
+### Removed
+
+- Flight v10, worker v11, checkpoint/recovery v5 и metrics v4 runtime/packages
+  удалены без aliases, legacy reader или parallel compatibility layer.
+- Fixed Consumer target catalog, скрытые target-to-operator mappings и лимит
+  шести target coordinates удалены из Transformer runtime.
+
 ## [0.1.17] - 2026-09-01
 
 ### Changed
@@ -744,7 +795,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.17...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.18...HEAD
+[0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/woodger/transformer/compare/0.1.14...0.1.15

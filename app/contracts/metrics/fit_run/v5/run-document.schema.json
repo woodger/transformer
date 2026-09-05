@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/metrics/fit-run/v5/run-document.schema.json",
+  "title": "Transformer OpenSearch fit run document v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "summaryId", "deploymentId", "runId", "modelRef", "recordedAt", "semanticDigests", "jobConfigSha256", "checkpointFormat", "targets", "initialization", "milestones", "durations", "counts", "artifact"],
+  "properties": {
+    "schema": {"const": "transformer.metrics-fit-run.v5"}, "summaryId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "deploymentId": {"type": "string", "minLength": 1, "maxLength": 128}, "runId": {"type": "string", "format": "uuid"}, "modelRef": {"type": "string", "pattern": "^mdl_[0-9a-f]{32}$"}, "recordedAt": {"type": "string", "format": "date-time"}, "semanticDigests": {"$ref": "https://transformer.local/contracts/semantic/v1/semantic-digests.schema.json"}, "jobConfigSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "checkpointFormat": {"const": "transformer-checkpoint-v6"},
+    "targets": {"$ref": "run-summary.schema.json#/properties/targets"}, "initialization": {"$ref": "run-summary.schema.json#/properties/initialization"}, "milestones": {"$ref": "run-summary.schema.json#/properties/milestones"}, "durations": {"$ref": "run-summary.schema.json#/properties/durations"}, "counts": {"$ref": "run-summary.schema.json#/properties/counts"},
+    "artifact": {"type": "object", "additionalProperties": false, "required": ["byteCount", "sha256"], "properties": {"byteCount": {"type": "integer", "minimum": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  }
+}

@@ -53,5 +53,5 @@ models выполняет service.
 ## Текущая документация
 
 - [Архитектурная политика](../policy/architecture.md)
-- [Worker process contract v9](../../app/contracts/worker/v9/README.md)
-- [Контракт Arrow Flight v8](../../app/contracts/flight/v8/README.md)
+- [Worker process contract v12](../../app/contracts/worker/v12/README.md)
+- [Контракт Arrow Flight v11](../../app/contracts/flight/v11/README.md)

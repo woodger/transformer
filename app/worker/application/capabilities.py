@@ -3,9 +3,15 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v9 import (
+from app.contracts.semantic.v1 import semantic_capabilities
+from app.contracts.worker.v12 import (
+    CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
+    FIT_INPUT_SCHEMA_ID,
+    PREDICT_INPUT_SCHEMA_ID,
+    PREDICTION_OUTPUT_SCHEMA_ID,
+    RECOVERY_FORMAT,
     validate_document,
 )
 
@@ -19,7 +25,11 @@ def inspect_capabilities() -> JsonObject:
 
     import torch
 
-    devices: list[JsonValue] = []
+    devices: list[JsonValue] = [{
+        "kind": "cpu",
+        "opaqueId": "cpu",
+        "name": "CPU",
+    }]
     if torch.cuda.is_available():
         for ordinal in range(torch.cuda.device_count()):
             properties = cast(
@@ -29,12 +39,21 @@ def inspect_capabilities() -> JsonObject:
                 ),
             )
             devices.append({
-                "ordinal": ordinal,
+                "kind": "cuda",
+                "opaqueId": f"cuda:{ordinal}",
                 "name": properties.name,
             })
     document: JsonObject = {
         "contract": CONTRACT_NAME,
         "protocolVersion": CONTRACT_VERSION,
+        "checkpointFormat": CHECKPOINT_FORMAT,
+        "recoveryFormat": RECOVERY_FORMAT,
+        "schemaIds": {
+            "fitInput": FIT_INPUT_SCHEMA_ID,
+            "predictInput": PREDICT_INPUT_SCHEMA_ID,
+            "predictionOutput": PREDICTION_OUTPUT_SCHEMA_ID,
+        },
+        "semantic": semantic_capabilities(),
         "torchVersion": str(torch.__version__),
         "cudaRuntimeVersion": torch.version.cuda,
         "devices": devices,

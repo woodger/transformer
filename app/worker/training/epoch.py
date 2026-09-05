@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from app.contracts.ml import TARGET_IDENTITIES, canonical_targets
 from app.worker.training.losses import MaterializedLossStatistics
 
 
@@ -15,8 +14,9 @@ def _empty_loss_values() -> dict[str, float]:
 class TrainingEpochResult:
     """Core ML result of one completed global epoch."""
 
-    targets: tuple[str, ...] = TARGET_IDENTITIES
-    auxiliary_operators: tuple[str, ...] = ()
+    targets: tuple[str, ...]
+    direct_components: tuple[tuple[str, str], ...]
+    auxiliary_components: tuple[tuple[str, str], ...] = ()
     rows: int = 0
     batches: int = 0
     loss: float = 0.0
@@ -31,14 +31,17 @@ class TrainingEpochResult:
     lr: float = 0.0
 
     def __post_init__(self) -> None:
-        self.targets = canonical_targets(self.targets)
+        if not self.targets or len(self.targets) != len(set(self.targets)):
+            raise ValueError("epoch target identities must be non-empty and unique")
+        if len(self.direct_components) != len(self.targets):
+            raise ValueError("epoch direct components differ from target layout")
         self.direct_loss_values = {
-            target: float(self.direct_loss_values.get(target, 0.0))
-            for target in self.targets
+            identity: float(self.direct_loss_values.get(identity, 0.0))
+            for identity, _operator in self.direct_components
         }
         self.auxiliary_loss_values = {
-            operator: float(self.auxiliary_loss_values.get(operator, 0.0))
-            for operator in self.auxiliary_operators
+            identity: float(self.auxiliary_loss_values.get(identity, 0.0))
+            for identity, _operator in self.auxiliary_components
         }
 
     def update(
@@ -54,26 +57,27 @@ class TrainingEpochResult:
         if len(statistics.direct_losses) != len(self.targets):
             raise ValueError("direct loss statistics differ from target selection")
         if tuple(
-            operator for operator, _value in statistics.auxiliary_losses
-        ) != self.auxiliary_operators:
+            (identity, operator)
+            for identity, operator, _value in statistics.auxiliary_losses
+        ) != self.auxiliary_components:
             raise ValueError("auxiliary loss statistics differ from objective")
 
         def average(current: float, value: float) -> float:
             return math.fsum((current * self.rows, value * rows)) / total_rows
 
         self.loss = average(self.loss, statistics.loss)
-        for target, value in zip(
-            self.targets,
+        for (identity, _operator), value in zip(
+            self.direct_components,
             statistics.direct_losses,
             strict=True,
         ):
-            self.direct_loss_values[target] = average(
-                self.direct_loss_values[target],
+            self.direct_loss_values[identity] = average(
+                self.direct_loss_values[identity],
                 value,
             )
-        for operator, value in statistics.auxiliary_losses:
-            self.auxiliary_loss_values[operator] = average(
-                self.auxiliary_loss_values[operator],
+        for identity, _operator, value in statistics.auxiliary_losses:
+            self.auxiliary_loss_values[identity] = average(
+                self.auxiliary_loss_values[identity],
                 value,
             )
 
@@ -84,7 +88,10 @@ class TrainingEpochResult:
     def direct_losses(self) -> tuple[float, ...]:
         if self.rows <= 0:
             raise ValueError("selection score is incomplete: epoch has no rows")
-        values = tuple(self.direct_loss_values[target] for target in self.targets)
+        values = tuple(
+            self.direct_loss_values[identity]
+            for identity, _operator in self.direct_components
+        )
         if not all(math.isfinite(value) for value in values):
             raise ValueError("selection score contains a non-finite component")
         return values

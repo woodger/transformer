@@ -186,7 +186,10 @@ class FlightApplication:
             recovery_store.acquire_lock()
             spool.acquire_lock()
             database_config = database_config or load_database_config()
-            ledger = Ledger(Database(database_config)).initialize()
+            ledger = Ledger(
+                Database(database_config),
+                logger=logger,
+            ).initialize()
             published_models = PublishedModelStore(ledger.database)
             build_identity = load_build_identity()
             metrics_outbox = PostgresMetricsOutbox(ledger.database)
@@ -277,8 +280,8 @@ class FlightApplication:
                 known_job_ids=ledger.active_recovery_job_ids(),
                 temporary_paths=recovery_temporary_paths,
             )
-            removed_legacy_telemetry = (
-                spool.cleanup_legacy_model_telemetry()
+            removed_retired_model_artifacts = (
+                spool.cleanup_retired_model_artifacts()
             )
             removed_models = spool.reconcile_model_directories(
                 published_models.retained_model_refs()
@@ -433,7 +436,9 @@ class FlightApplication:
                 ),
                 removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
-                removedLegacyTelemetry=len(removed_legacy_telemetry),
+                removedRetiredModelArtifacts=len(
+                    removed_retired_model_artifacts
+                ),
                 removedTelemetryRuns=len(removed_telemetry_runs),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -14,8 +14,16 @@ from app.service.domain.records import (
     StatusSnapshot,
     TrainingRecoveryCheckpointRecord,
 )
+from tests.support.consumer_neutral import model_contract
 
 JOB_ID = "00000000-0000-4000-8000-000000000001"
+MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=2,
+)
+MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
+SEMANTIC_DIGESTS = MODEL_CONTRACT.digests("b" * 64)
 
 
 def _job(**overrides):
@@ -29,7 +37,10 @@ def _job(**overrides):
         input_revision=3,
         next_input_ordinal=3,
         payload_count=3,
+        total_chunks=4,
         total_rows=12,
+        total_native_rows=(15,),
+        range_count=2,
         total_bytes=4096,
         manifest_sha256="a" * 64,
         client_execution_id="00000000-0000-4000-8000-000000000002",
@@ -38,16 +49,23 @@ def _job(**overrides):
         selected_device="cuda",
         resolved_model_ref=None,
         prediction_column="predictions",
-        data_contract={
-            "id": "inventory.learning-dataset",
-            "version": 2,
-            "profile": "research-dividend-events-v2",
-            "data_contract_sha256": "b" * 64,
-            "seq_len": 2,
-            "feature_dim": 2,
-            "target_schema_id": "inventory.target.v2",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
         },
-        ml_contract=ml_contract(default_objective()),
+        data_contract={
+            "identity": "test.dataset",
+            "revision": 1,
+            "profile": "test.profile",
+            "dataContractSha256": "b" * 64,
+            "seqLen": 2,
+            "featureDim": 2,
+        },
+        model_contract=MODEL_CONTRACT_DOCUMENT,
+        semantic_digests=SEMANTIC_DIGESTS,
+        config_hash="d" * 64,
         progress={
             "epoch": 2,
             "step": 6,
@@ -105,7 +123,8 @@ def test_status_exposes_bounded_state_without_artifact_paths():
             job_id=JOB_ID,
             generation=2,
             attempt=1,
-            format="transformer-training-recovery-v5",
+            input_revision=3,
+            format=RECOVERY_FORMAT,
             relative_path="private/checkpoint.pth",
             byte_count=4096,
             sha256="c" * 64,
@@ -130,7 +149,10 @@ def test_status_exposes_bounded_state_without_artifact_paths():
         "revision": 3,
         "nextOrdinal": 3,
         "payloadCount": 3,
-        "totalRows": 12,
+        "totalChunks": 4,
+        "totalLogicalRows": 12,
+        "totalNativeRows": [15],
+        "rangeCount": 2,
         "totalBytes": 4096,
         "manifestSha256": "a" * 64,
     }
@@ -152,13 +174,15 @@ def test_status_exposes_bounded_state_without_artifact_paths():
     assert "private" not in repr(result)
 
 
-def test_status_adds_implicit_random_lineage_to_existing_checkpoint_metadata():
+def test_status_keeps_initialization_separate_from_checkpoint_identity():
     snapshot = StatusSnapshot(
         job=_job(result={
             "modelRef": "mdl_generation",
             "checkpoint": {
-                "format": "transformer-checkpoint-v5",
+                "format": CHECKPOINT_FORMAT,
                 "sha256": "c" * 64,
+                "bytes": 4096,
+                "generation": 2,
             },
         }),
         output_count=0,
@@ -167,8 +191,12 @@ def test_status_adds_implicit_random_lineage_to_existing_checkpoint_metadata():
 
     result = _execute(_query(snapshot), "request-existing-checkpoint")
 
-    assert result["results"]["checkpoint"]["initialization"] == {
-        "kind": "random"
+    assert result["initialization"] == {"kind": "random"}
+    assert result["results"]["checkpoint"] == {
+        "format": CHECKPOINT_FORMAT,
+        "sha256": "c" * 64,
+        "bytes": 4096,
+        "generation": 2,
     }
 
 
@@ -187,6 +215,7 @@ def test_failed_status_has_stable_error_and_nonterminal_status_polls():
     assert failure["error"] == {
         "code": "INPUT_TIMEOUT",
         "message": "input timed out",
+        "detail": None,
     }
 
     running = StatusSnapshot(
@@ -224,6 +253,7 @@ def test_status_maps_legacy_internal_cuda_oom_to_public_gpu_error():
     assert result["error"] == {
         "code": "GPU_OUT_OF_MEMORY",
         "message": "GPU execution ran out of memory",
+        "detail": None,
     }
 
 
@@ -244,6 +274,7 @@ def test_status_hides_cuda_backend_name_from_public_error_message():
     assert result["error"] == {
         "code": "DEVICE_LOST",
         "message": "GPU device became unavailable during execution",
+        "detail": None,
     }
 
 

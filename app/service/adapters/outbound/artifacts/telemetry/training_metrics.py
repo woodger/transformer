@@ -8,11 +8,14 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 
-from app.contracts.metrics.v4 import (
+from app.contracts.json_types import JsonObject
+from app.contracts.metrics.v5 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     build_training_record,
 )
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12 import validate_training_metrics_for_model
 from app.service.application.telemetry.records import TrainingMetricIntervalRecord
 
 
@@ -40,12 +43,12 @@ def publish_training_metrics(
     *,
     job_id: str,
     model_ref: str,
-    data_contract_sha256: str,
-    objective_config_sha256: str,
+    semantic_digests: JsonObject,
     checkpoint_format: str,
     application_version: str,
     git_commit: str,
     targets: Sequence[str],
+    model_contract: ModelContract,
 ) -> StagedTrainingMetrics:
     if not intervals:
         raise ValueError("fit run telemetry requires committed epoch metrics")
@@ -60,10 +63,9 @@ def publish_training_metrics(
     with spool.staged_file(destination) as (target, _):
         for interval in intervals:
             if interval.job_id != job_id:
-                raise ValueError(
-                    "committed training metrics job identity differs"
-                )
+                raise ValueError("committed training metrics job identity differs")
             metrics = interval.metrics
+            validate_training_metrics_for_model(metrics, model_contract)
             if metrics.get("epoch") != interval.generation:
                 raise ValueError(
                     "committed training metrics epoch differs from generation"
@@ -89,8 +91,7 @@ def publish_training_metrics(
                 attempt_id=interval.attempt_id,
                 attempt=interval.attempt,
                 model_ref=model_ref,
-                data_contract_sha256=data_contract_sha256,
-                objective_config_sha256=objective_config_sha256,
+                semantic_digests=semantic_digests,
                 checkpoint_format=checkpoint_format,
                 application_version=application_version,
                 git_commit=git_commit,

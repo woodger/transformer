@@ -9,6 +9,7 @@ from app.contracts.json_types import JsonObject, JsonValue
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
     row_integer,
+    row_integer_tuple,
     row_json_object,
     row_optional_string,
     row_string,
@@ -122,9 +123,11 @@ class PostgresJobLifecycle:
                 operation=command.operation,
                 requested_device=command.requested_device,
                 prediction_column=command.prediction_column,
-                config_hash=command.request_hash,
+                source_encoding=command.source_encoding,
+                config_hash=prepared.result.job_config_sha256,
                 data_contract=command.data_contract,
-                ml_contract=command.ml_contract,
+                model_contract=command.model_contract,
+                semantic_digests=command.semantic_digests,
                 create_result=encoded,
                 model_label=command.model_label,
                 resolved_model_ref=prepared.resolved_model_ref,
@@ -223,7 +226,10 @@ class PostgresJobLifecycle:
                 client_execution_id=command.client_execution_id,
                 fencing_token=command.fencing_token,
                 payload_count=command.payload_count,
+                total_chunks=command.total_chunks,
                 total_rows=command.total_rows,
+                total_native_rows=command.total_native_rows,
+                range_count=command.range_count,
                 total_bytes=command.total_bytes,
                 manifest_sha256=command.manifest_sha256,
                 selected_device=selected,
@@ -243,7 +249,10 @@ class PostgresJobLifecycle:
                 input_state=InputState(row_string(job, "input_state")),
                 input_revision=row_integer(job, "input_revision"),
                 payload_count=row_integer(job, "payload_count"),
+                total_chunks=row_integer(job, "total_chunks"),
                 total_rows=row_integer(job, "total_rows"),
+                total_native_rows=row_integer_tuple(job, "total_native_rows"),
+                range_count=row_integer(job, "range_count"),
                 total_bytes=row_integer(job, "total_bytes"),
                 manifest_sha256=row_string(job, "manifest_sha256"),
                 execution_state=ExecutionState(
@@ -407,8 +416,11 @@ def _encode_created(result: JobCreated) -> JsonObject:
         "requested_device": result.requested_device,
         "selected_device": result.selected_device,
         "resolved_model_ref": result.resolved_model_ref,
+        "source_encoding": dict(result.source_encoding),
         "data_contract": dict(result.data_contract),
-        "ml_contract": dict(result.ml_contract),
+        "model_contract": dict(result.model_contract),
+        "semantic_digests": dict(result.semantic_digests),
+        "job_config_sha256": result.job_config_sha256,
         "initialization": result.initialization,
         "limits": _encode_limits(result.limits),
     }
@@ -438,36 +450,15 @@ def _decode_created(document: JsonObject) -> JobCreated:
                 document,
                 "resolved_model_ref",
             ),
+            source_encoding=_object(document, "source_encoding"),
             data_contract=_object(document, "data_contract"),
-            ml_contract=_object(document, "ml_contract"),
+            model_contract=_object(document, "model_contract"),
+            semantic_digests=_object(document, "semantic_digests"),
+            job_config_sha256=_string(document, "job_config_sha256"),
             initialization=_optional_object(document, "initialization"),
             limits=_decode_limits(_object(document, "limits")),
         )
-    ownership = _object(document, "ownership")
-    input_document = _object(document, "input")
-    execution = _object(document, "execution")
-    device = _object(document, "device")
-    return JobCreated(
-        request_id=_string(document, "requestId"),
-        job_id=_string(document, "jobId"),
-        operation=_string(document, "operation"),
-        revision=_integer(document, "revision"),
-        input_state=InputState(_string(input_document, "state")),
-        input_revision=_integer(input_document, "revision"),
-        next_input_ordinal=_integer(input_document, "nextOrdinal"),
-        execution_state=ExecutionState(_string(execution, "state")),
-        client_execution_id=_string(ownership, "clientExecutionId"),
-        fencing_token=_integer_text(ownership, "fencingToken"),
-        requested_device=_string(device, "requested"),
-        selected_device=_optional_string(device, "selected"),
-        resolved_model_ref=_optional_string(document, "resolvedModelRef"),
-        data_contract=_wire_data_contract(
-            _object(document, "dataContract")
-        ),
-        ml_contract=_object(document, "mlContract"),
-        initialization=_optional_object(document, "initialization"),
-        limits=_wire_limits(_object(document, "limits")),
-    )
+    raise ValueError("stored create result belongs to an unsupported contract")
 
 
 def _encode_acquired(result: JobAcquired) -> JsonObject:
@@ -512,7 +503,10 @@ def _encode_closed(result: InputClosed) -> JsonObject:
         "input_state": result.input_state.value,
         "input_revision": result.input_revision,
         "payload_count": result.payload_count,
+        "total_chunks": result.total_chunks,
         "total_rows": result.total_rows,
+        "total_native_rows": list(result.total_native_rows),
+        "range_count": result.range_count,
         "total_bytes": result.total_bytes,
         "manifest_sha256": result.manifest_sha256,
         "execution_state": result.execution_state.value,
@@ -528,7 +522,10 @@ def _decode_closed(document: JsonObject) -> InputClosed:
             input_state=InputState(_string(document, "input_state")),
             input_revision=_integer(document, "input_revision"),
             payload_count=_integer(document, "payload_count"),
+            total_chunks=_integer(document, "total_chunks"),
             total_rows=_integer(document, "total_rows"),
+            total_native_rows=row_integer_tuple(document, "total_native_rows"),
+            range_count=_integer(document, "range_count"),
             total_bytes=_integer(document, "total_bytes"),
             manifest_sha256=_string(document, "manifest_sha256"),
             execution_state=ExecutionState(
@@ -544,7 +541,10 @@ def _decode_closed(document: JsonObject) -> InputClosed:
         input_state=InputState(_string(input_document, "state")),
         input_revision=_integer(input_document, "revision"),
         payload_count=_integer(input_document, "payloadCount"),
-        total_rows=_integer(input_document, "totalRows"),
+        total_chunks=_integer(input_document, "totalChunks"),
+        total_rows=_integer(input_document, "totalLogicalRows"),
+        total_native_rows=row_integer_tuple(input_document, "totalNativeRows"),
+        range_count=_integer(input_document, "rangeCount"),
         total_bytes=_integer(input_document, "totalBytes"),
         manifest_sha256=_string(input_document, "manifestSha256"),
         execution_state=ExecutionState(_string(execution, "state")),
@@ -618,42 +618,6 @@ def _decode_limits(document: JsonObject) -> ServiceLimits:
             "input_idle_timeout_seconds",
         ),
     )
-
-
-def _wire_limits(document: JsonObject) -> ServiceLimits:
-    return ServiceLimits(
-        max_message_bytes=_integer(document, "maxMessageBytes"),
-        target_batch_bytes=_integer(document, "targetBatchBytes"),
-        max_batch_bytes=_integer(document, "maxBatchBytes"),
-        max_payload_bytes=_integer(document, "maxPayloadBytes"),
-        max_rows_per_payload=_integer(document, "maxRowsPerPayload"),
-        max_payloads_per_job=_integer(document, "maxPayloadsPerJob"),
-        max_job_bytes=_integer(document, "maxJobBytes"),
-        max_active_jobs_per_subject=_integer(
-            document,
-            "maxActiveJobsPerSubject",
-        ),
-        max_page_items=_integer(document, "maxPageItems"),
-        input_idle_timeout_seconds=_number(
-            document,
-            "inputIdleTimeoutSeconds",
-        ),
-    )
-
-
-def _wire_data_contract(document: JsonObject) -> JsonObject:
-    return {
-        "id": _string(document, "id"),
-        "version": _integer(document, "version"),
-        "profile": _string(document, "profile"),
-        "data_contract_sha256": _string(
-            document,
-            "dataContractSha256",
-        ),
-        "seq_len": _integer(document, "seqLen"),
-        "feature_dim": _integer(document, "featureDim"),
-        "target_schema_id": _string(document, "targetSchemaId"),
-    }
 
 
 def _string(document: JsonObject, key: str) -> str:

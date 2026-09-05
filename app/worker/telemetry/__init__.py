@@ -14,10 +14,10 @@ from app.worker.telemetry.io import (
     load_metrics_jsonl,
     reset_metrics_log,
 )
-from app.worker.telemetry.plot import PLOT_METRICS, plot_metrics
+from app.worker.telemetry.plot import SCALAR_METRICS, plot_metrics
 
 __all__ = [
-    "PLOT_METRICS",
+    "SCALAR_METRICS",
     "EpochTelemetry",
     "GradientInteractionObservation",
     "ObservedTrainingEpoch",

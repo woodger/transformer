@@ -6,10 +6,10 @@ from typing import Protocol, cast
 import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
-from app.contracts.worker.v9.objective import (
-    ObjectiveConfig,
-    objective_from_ml_contract,
-)
+from app.contracts.json_types import JsonObject
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12.config import ModelConfig
+from app.local.semantic import checkpoint_model_contract
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.arrow import (
     empty_predictions_table,
@@ -18,16 +18,12 @@ from app.worker.data.arrow import (
     table_to_source_tensor,
     write_framed_arrow,
 )
-from app.worker.data.tensors import (
-    reshape_source,
-    validate_checkpoint_feature_dim,
-)
+from app.worker.data.tensors import reshape_source, validate_checkpoint_feature_dim
 from app.worker.training.factory import build_model, build_trainer
-from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
 
 ModelBuilder = Callable[
-    [object, torch.Tensor, torch.Tensor | None, torch.device, ObjectiveConfig],
+    [object, torch.Tensor, torch.Tensor | None, torch.device, ModelContract],
     torch.nn.Module,
 ]
 TrainerBuilder = Callable[..., Trainer]
@@ -49,12 +45,9 @@ def run(
             args.model_name,
             device,
         )
-    model_config = model_config_from_args(
-        args,
-        checkpoint_config=checkpoint.get("model_config"),
-        require_seq_len=True,
-    )
-    objective = objective_from_ml_contract(checkpoint["ml_contract"])
+    metadata = cast(JsonObject, checkpoint["metadata"])
+    contract = checkpoint_model_contract(metadata)
+    model_config = ModelConfig.from_manifest(contract.model_config)
     model = None
     trainer = None
     received_frames = 0
@@ -68,7 +61,10 @@ def run(
         if table.num_rows == 0:
             write_framed_arrow(
                 sys.stdout.buffer,
-                empty_predictions_table(args.pred_col, objective.targets),
+                empty_predictions_table(
+                    args.pred_col,
+                    contract.target_contract,
+                ),
             )
             print(
                 f"frame {received_frames}, emitted empty predictions",
@@ -76,12 +72,11 @@ def run(
             )
             continue
 
-        features_cpu = table_to_source_tensor(table)
-        features_cpu = reshape_source(features_cpu, model_config.seq_len)
-        validate_checkpoint_feature_dim(
-            features_cpu,
-            model_config.feature_dim,
+        features_cpu = reshape_source(
+            table_to_source_tensor(table),
+            model_config.seq_len,
         )
+        validate_checkpoint_feature_dim(features_cpu, model_config.feature_dim)
 
         if model is None:
             with redirect_stdout(sys.stderr):
@@ -90,19 +85,17 @@ def run(
                     features_cpu,
                     None,
                     device,
-                    objective,
+                    contract,
                 )
                 trainer = build_trainer_fn(
                     args,
                     model,
                     device,
                     model_config,
-                    objective=objective,
+                    model_contract=contract,
                 )
                 if checkpoint is None:
-                    raise AssertionError(
-                        "prediction checkpoint was already consumed"
-                    )
+                    raise AssertionError("prediction checkpoint was consumed")
                 trainer.load_payload(checkpoint)
                 checkpoint = None
             print("features:", features_cpu.shape, file=sys.stderr)
@@ -117,8 +110,8 @@ def run(
             predictions_to_table(
                 predictions,
                 args.pred_col,
+                contract.target_contract,
                 expected_rows=features_cpu.shape[0],
-                targets=objective.targets,
             ),
         )
         predicted_frames += 1
@@ -142,3 +135,6 @@ def _max_frame_bytes(args: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError("max_frame_bytes must be an integer")
     return value
+
+
+__all__ = ["PredictStreamArguments", "run"]

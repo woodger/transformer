@@ -42,7 +42,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v8 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v11 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     CREATE_ACTION: "Create a durable streaming job.",
     ACQUIRE_ACTION: "Transfer externally fenced job ownership.",

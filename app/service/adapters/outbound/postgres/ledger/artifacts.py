@@ -125,7 +125,6 @@ class ArtifactLedgerSlice:
         label: str,
         generation: int | None,
         checkpoint_path: str,
-        metadata_path: str,
         byte_count: int,
         sha256: str,
         metadata: JsonObject,
@@ -134,7 +133,6 @@ class ArtifactLedgerSlice:
     ) -> RowMapping:
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         validate_relative_path(checkpoint_path)
-        validate_relative_path(metadata_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
         digest(sha256, "sha256")
@@ -213,17 +211,13 @@ class ArtifactLedgerSlice:
                     label=label,
                     generation=generation,
                     checkpoint_path=checkpoint_path,
-                    metadata_path=metadata_path,
                     checkpoint_bytes=byte_count,
                     sha256=sha256,
                     metadata_json=json_value(metadata),
                     data_contract=json_value(job.data_contract),
                     data_contract_sha256=job.data_contract_sha256,
-                    ml_contract=json_value(job.ml_contract),
-                    objective_config_sha256=digest(
-                        job.ml_contract.get("objectiveConfigSha256"),
-                        "objectiveConfigSha256",
-                    ),
+                    model_contract=json_value(job.model_contract),
+                    semantic_digests=json_value(job.semantic_digests),
                     producing_job_id=job_id,
                     created_at=published_at,
                 ))
@@ -265,7 +259,6 @@ class ArtifactLedgerSlice:
                 "models_pkey",
                 "models_generation_uq",
                 "models_checkpoint_path_uq",
-                "models_metadata_path_uq",
                 "models_producing_job_id_key",
             }:
                 raise conflict("model generation already exists") from exc
@@ -420,6 +413,7 @@ class ArtifactLedgerSlice:
             job = session.scalar(select(Job.job_id).where(
                 Job.job_id == job_id,
                 Job.owner_subject == owner_subject,
+                Job.source_encoding.is_not(None),
             ))
             if job is None:
                 raise not_found("job not found")
@@ -562,15 +556,9 @@ def _model_artifact_record(
         checkpoint_path=record.checkpoint_path,
         byte_count=record.checkpoint_bytes,
         sha256=record.sha256,
-        data_contract=(
-            None
-            if record.data_contract is None
-            else dict(record.data_contract)
-        ),
-        ml_contract=(
-            None if record.ml_contract is None else dict(record.ml_contract)
-        ),
-        objective_config_sha256=record.objective_config_sha256,
+        data_contract=dict(record.data_contract),
+        model_contract=dict(record.model_contract),
+        semantic_digests=dict(record.semantic_digests),
     )
 
 

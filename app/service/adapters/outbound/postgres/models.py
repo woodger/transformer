@@ -86,8 +86,13 @@ class Job(Base):
             name="jobs_queue_sequence_ck",
         ),
         CheckConstraint(
-            "payload_count >= 0 AND total_rows >= 0 AND total_bytes >= 0",
+            "payload_count >= 0 AND total_chunks >= 0 AND total_rows >= 0 "
+            "AND total_bytes >= 0",
             name="jobs_input_totals_ck",
+        ),
+        CheckConstraint(
+            "range_count IS NULL OR range_count >= 0",
+            name="jobs_range_count_ck",
         ),
         CheckConstraint(
             "execution_state <> 'SUCCEEDED' OR input_state = 'CLOSED'",
@@ -155,19 +160,30 @@ class Job(Base):
     selected_device: Mapped[str | None] = mapped_column(String(8))
     model_label: Mapped[str | None] = mapped_column(String(256))
     resolved_model_ref: Mapped[str | None] = mapped_column(String(128))
-    initialization: Mapped[JsonObject | None] = mapped_column(JSONB)
+    initialization: Mapped[JsonObject | None] = mapped_column(
+        JSONB(none_as_null=True)
+    )
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_encoding: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
     data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    ml_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    model_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    semantic_digests: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_width: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
     manifest_sha256: Mapped[str | None] = mapped_column(String(64))
     payload_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_chunks: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_native_rows: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    range_count: Mapped[int | None] = mapped_column(BigInteger)
     total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     progress: Mapped[JsonObject] = mapped_column(
         JSONB,
@@ -237,6 +253,7 @@ class JobInput(Base):
         CheckConstraint("ordinal >= 0", name="job_inputs_ordinal_ck"),
         CheckConstraint("commit_revision > 0", name="job_inputs_revision_ck"),
         CheckConstraint("rows >= 0", name="job_inputs_rows_ck"),
+        CheckConstraint("chunks >= 0", name="job_inputs_chunks_ck"),
         CheckConstraint("batches >= 0", name="job_inputs_batches_ck"),
         CheckConstraint("bytes >= 0", name="job_inputs_bytes_ck"),
         CheckConstraint("source_width > 0", name="job_inputs_source_width_ck"),
@@ -258,7 +275,13 @@ class JobInput(Base):
     commit_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
     schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     rows: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    native_rows: Mapped[list[int]] = mapped_column(JSONB, nullable=False)
+    first_range_ordinal: Mapped[int | None] = mapped_column(BigInteger)
+    first_example_offset: Mapped[int | None] = mapped_column(BigInteger)
+    last_range_ordinal: Mapped[int | None] = mapped_column(BigInteger)
+    next_example_offset: Mapped[int | None] = mapped_column(BigInteger)
     batches: Mapped[int] = mapped_column(BigInteger, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -350,6 +373,7 @@ class TrainingRecoveryCheckpoint(Base):
     job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
     generation: Mapped[int] = mapped_column(Integer)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
     format: Mapped[str] = mapped_column(String(64), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -443,7 +467,6 @@ class PublishedModel(Base):
     __table_args__ = (
         UniqueConstraint("owner_subject", "label", "generation", name="models_generation_uq"),
         UniqueConstraint("checkpoint_path", name="models_checkpoint_path_uq"),
-        UniqueConstraint("metadata_path", name="models_metadata_path_uq"),
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
@@ -452,12 +475,6 @@ class PublishedModel(Base):
             "(lifecycle_state = 'DELETING' "
             "AND deletion_requested_at IS NOT NULL)",
             name="models_lifecycle_ck",
-        ),
-        CheckConstraint(
-            "(ml_contract IS NULL AND objective_config_sha256 IS NULL) OR "
-            "(ml_contract IS NOT NULL AND objective_config_sha256 IS NOT NULL "
-            "AND data_contract IS NOT NULL AND data_contract_sha256 IS NOT NULL)",
-            name="models_ml_contract_ck",
         ),
         Index(
             "models_deleting_idx",
@@ -473,14 +490,13 @@ class PublishedModel(Base):
     label: Mapped[str] = mapped_column(String(256), nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     checkpoint_path: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata_path: Mapped[str] = mapped_column(Text, nullable=False)
     checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[JsonObject] = mapped_column("metadata", JSONB, nullable=False)
-    data_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
-    data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
-    ml_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
-    objective_config_sha256: Mapped[str | None] = mapped_column(String(64))
+    data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    semantic_digests: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="SET NULL"),

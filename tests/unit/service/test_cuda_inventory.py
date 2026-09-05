@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import app.service.adapters.outbound.cuda.inventory as device_inventory_module
 from app.service.adapters.outbound.cuda.inventory import (
     CudaDeviceInventory,
@@ -153,6 +155,44 @@ def test_inventory_probe_failure_keeps_cpu_service_startable():
 
     assert inventory.snapshot().devices == ()
     assert inventory.snapshot().cuda_capacity == 0
+
+
+def test_default_probe_selects_cuda_from_worker_v12_devices(
+    monkeypatch,
+):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(
+        device_inventory_module,
+        "_worker_inspect",
+        lambda _environment=None: {
+            "cudaRuntimeVersion": "13.0",
+            "torchVersion": "2.12.0+cu130",
+            "devices": [
+                {"kind": "cpu", "opaqueId": "cpu", "name": "CPU"},
+                {
+                    "kind": "cuda",
+                    "opaqueId": "cuda:0",
+                    "name": "NVIDIA GPU",
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        device_inventory_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="0, GPU-a, NVIDIA GPU\n",
+        ),
+    )
+
+    inventory = CudaDeviceInventory().initialize()
+
+    snapshot = inventory.snapshot()
+    assert snapshot.cuda_capacity == 1
+    assert snapshot.device_count == 1
+    assert snapshot.devices[0].device_id == "GPU-a"
+    assert snapshot.devices[0].name == "NVIDIA GPU"
 
 
 def test_default_probe_is_independent_of_service_working_directory(

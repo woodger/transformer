@@ -5,17 +5,16 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9 import (
+from app.contracts.worker.v12 import (
+    CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
+    RECOVERY_FORMAT,
     validate_document,
 )
-from app.contracts.worker.v9.config import (
-    model_config_to_manifest,
-    train_config_to_manifest,
-)
+from app.contracts.worker.v12.config import train_config_to_manifest
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
@@ -174,15 +173,7 @@ class WorkerPlanBuilder:
                 ErrorCode.INTERNAL,
                 "GPU attempt has no assigned physical device",
             )
-        model_config = job.model_config
-        if model_config is None:
-            raise WorkerPlanError(
-                ErrorCode.INTERNAL,
-                "worker model configuration is unavailable",
-            )
-        model_manifest: JsonObject = {
-            "config": model_config_to_manifest(model_config),
-        }
+        model_manifest: JsonObject = {}
         document: JsonObject = {
             "contract": CONTRACT_NAME,
             "protocolVersion": CONTRACT_VERSION,
@@ -201,7 +192,14 @@ class WorkerPlanBuilder:
                     "ordinal": item.ordinal,
                     "commitRevision": item.commit_revision,
                     "dataContractSha256": item.data_contract_sha256,
-                    "rows": item.rows,
+                    "chunks": item.chunks,
+                    "logicalRows": item.rows,
+                    "nativeRows": list(item.native_rows),
+                    "firstRangeOrdinal": item.first_range_ordinal,
+                    "firstExampleOffset": item.first_example_offset,
+                    "lastRangeOrdinal": item.last_range_ordinal,
+                    "nextExampleOffset": item.next_example_offset,
+                    "batches": item.batches,
                     "artifact": {
                         "path": item.absolute_path,
                         "byteCount": item.byte_count,
@@ -215,8 +213,11 @@ class WorkerPlanBuilder:
             "manifestSha256": job.manifest_sha256,
             "workspace": {"root": workspace},
             "model": model_manifest,
-            "dataContract": _data_contract_manifest(job.data_contract),
-            "mlContract": dict(job.ml_contract),
+            "sourceEncoding": dict(job.source_encoding),
+            "dataContract": dict(job.data_contract),
+            "modelContract": dict(job.model_contract),
+            "semanticDigests": dict(job.semantic_digests),
+            "jobConfigSha256": job.config_hash,
         }
         if job.operation == "predict":
             model = self._validated_model(job)
@@ -224,8 +225,9 @@ class WorkerPlanBuilder:
             document["predictionColumn"] = job.prediction_column
             model_manifest["checkpoint"] = {
                 "path": checkpoint,
+                "format": CHECKPOINT_FORMAT,
                 "byteCount": model.byte_count,
-                "sha256": model.sha256,
+                "checkpointSha256": model.sha256,
             }
         else:
             if job.model_label is None or job.training_config is None:
@@ -243,12 +245,29 @@ class WorkerPlanBuilder:
                         ErrorCode.MODEL_CORRUPT,
                         "parent checkpoint digest differs from fit initialization",
                     )
-                initialization_document["checkpoint"] = {
+                if (
+                    model.data_contract.get("dataContractSha256")
+                    != initialization["parentDataContractSha256"]
+                ):
+                    raise WorkerPlanError(
+                        ErrorCode.MODEL_CORRUPT,
+                        "parent data contract digest differs from fit initialization",
+                    )
+                if (
+                    job.data_contract.get("dataContractSha256")
+                    != initialization["dataContractSha256"]
+                ):
+                    raise WorkerPlanError(
+                        ErrorCode.INTERNAL,
+                        "fit data contract digest differs from initialization",
+                    )
+                model_manifest["parentCheckpoint"] = {
                     "path": self.spool.model_absolute_path(
                         model.checkpoint_path
                     ),
+                    "format": CHECKPOINT_FORMAT,
                     "byteCount": model.byte_count,
-                    "sha256": model.sha256,
+                    "checkpointSha256": model.sha256,
                 }
             document["initialization"] = initialization_document
             document["training"] = train_config_to_manifest(
@@ -272,16 +291,6 @@ class WorkerPlanBuilder:
                         ErrorCode.INTERNAL,
                         "closed fit manifest hash is unavailable",
                     )
-                recovery: JsonObject = {
-                    "configSha256": job.config_hash,
-                    "dataContractSha256": job.data_contract[
-                        "data_contract_sha256"
-                    ],
-                    "objectiveConfigSha256": job.ml_contract[
-                        "objectiveConfigSha256"
-                    ],
-                    "manifestSha256": job.manifest_sha256,
-                }
                 if (
                     job.resume_generation is not None
                     and recovery_checkpoint is None
@@ -295,12 +304,27 @@ class WorkerPlanBuilder:
                         job,
                         recovery_checkpoint,
                     )
-                    recovery["checkpoint"] = {
-                        "path": path,
-                        "byteCount": recovery_checkpoint.byte_count,
-                        "sha256": recovery_checkpoint.sha256,
+                    recovery: JsonObject = {
+                        "format": RECOVERY_FORMAT,
+                        "jobId": job.job_id,
+                        "generation": recovery_checkpoint.generation,
+                        "inputRevision": recovery_checkpoint.input_revision,
+                        "jobConfigSha256": job.config_hash,
+                        "semanticDigests": dict(job.semantic_digests),
+                        "manifestSha256": job.manifest_sha256,
+                        "checkpoint": {
+                            "path": path,
+                            "format": CHECKPOINT_FORMAT,
+                            "byteCount": recovery_checkpoint.byte_count,
+                            "checkpointSha256": recovery_checkpoint.sha256,
+                        },
+                        "progress": {
+                            "completedEpochs": recovery_checkpoint.completed_epochs,
+                            "globalStep": recovery_checkpoint.global_step,
+                            "trainingComplete": recovery_checkpoint.training_complete,
+                        },
                     }
-                document["recovery"] = recovery
+                    document["recovery"] = recovery
         validate_document(document, "command-manifest")
         try:
             self.spool.write_json_once(manifest_path, document)
@@ -478,7 +502,14 @@ class WorkerPlanBuilder:
                 commit_revision=item.commit_revision,
                 schema_id=item.schema_id,
                 data_contract_sha256=item.data_contract_sha256,
+                chunks=item.chunks,
                 rows=item.rows,
+                native_rows=item.native_rows,
+                first_range_ordinal=item.first_range_ordinal,
+                first_example_offset=item.first_example_offset,
+                last_range_ordinal=item.last_range_ordinal,
+                next_example_offset=item.next_example_offset,
+                batches=item.batches,
                 byte_count=item.byte_count,
                 sha256=item.sha256,
                 absolute_path=actual,
@@ -497,23 +528,9 @@ class WorkerPlanBuilder:
             raise ValueError("invalid streaming input ordinal")
         return self._validated_inputs(job, start_ordinal=start_ordinal)
 
-
-
 def _sha256_file(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as source:
         for chunk in iter(lambda: source.read(_COPY_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _data_contract_manifest(value: JsonObject) -> JsonObject:
-    return {
-        "id": value["id"],
-        "version": value["version"],
-        "profile": value["profile"],
-        "dataContractSha256": value["data_contract_sha256"],
-        "seqLen": value["seq_len"],
-        "featureDim": value["feature_dim"],
-        "targetSchemaId": value["target_schema_id"],
-    }

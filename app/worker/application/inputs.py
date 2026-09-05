@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import BinaryIO
 
+from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9 import WorkerContractError, parse_control_message
+from app.contracts.worker.v12 import WorkerContractError, parse_control_message
 from app.worker.application.documents import (
     boolean_field as _boolean_field,
     integer_field as _integer_field,
+    integer_list as _integer_list,
     object_field as _object_field,
     object_list as _object_list,
     optional_string_field as _optional_string_field,
@@ -39,6 +41,11 @@ class DurableInputStream:
         )
         self._expected_sequence = 1
         self._inputs = _object_list(manifest.get("inputs"), "inputs")
+        data_contract = _object_field(manifest, "dataContract")
+        self._feature_block_count = len(feature_block_dimensions(
+            _object_field(manifest, "sourceEncoding"),
+            feature_dim=_integer_field(data_contract, "featureDim"),
+        ))
         self._validate_snapshot()
 
     @property
@@ -65,9 +72,9 @@ class DurableInputStream:
             message = parse_control_message(line)
             self._validate_envelope(message)
             payload = _object_field(message, "payload")
-            if _string_field(message, "type") == "input.committed":
+            if _string_field(message, "type") == "input":
                 item = _object_field(payload, "input")
-                revision = _integer_field(payload, "inputRevision")
+                revision = _integer_field(item, "commitRevision")
                 ordinal = _integer_field(item, "ordinal")
                 if ordinal < self.next_ordinal:
                     if item != self._inputs[ordinal]:
@@ -86,12 +93,9 @@ class DurableInputStream:
                         "input control ordinal is not contiguous"
                     )
                 self._validate_input(item)
-                if revision < _integer_field(item, "commitRevision"):
-                    raise WorkerContractError(
-                        "input control revision precedes its receipt"
-                    )
                 self.input_revision = max(self.input_revision, revision)
                 self._inputs.append(item)
+                self._validate_range_sequence()
                 self.emitter.input_ack(
                     ordinal=ordinal,
                     next_ordinal=self.next_ordinal,
@@ -114,6 +118,7 @@ class DurableInputStream:
                 raise WorkerContractError(
                     "startup input receipt exceeds inputRevision"
                 )
+        self._validate_range_sequence()
         if self.closed and self.manifest_sha256 is None:
             raise WorkerContractError(
                 "closed startup input has no manifestSha256"
@@ -125,6 +130,11 @@ class DurableInputStream:
         if _string_field(item, "dataContractSha256") != expected:
             raise WorkerContractError(
                 "input data contract differs from the job"
+            )
+        native_rows = _integer_list(item.get("nativeRows"), "nativeRows")
+        if len(native_rows) != self._feature_block_count:
+            raise WorkerContractError(
+                "input native row counters differ from sourceEncoding"
             )
 
     def _validate_envelope(self, message: JsonObject) -> None:
@@ -149,24 +159,41 @@ class DurableInputStream:
             raise WorkerContractError(
                 "input.closed revision precedes accepted inputs"
             )
-        if _integer_field(payload, "payloadCount") != len(self._inputs):
-            raise WorkerContractError(
-                "input.closed payload count differs from accepted inputs"
-            )
-        if _integer_field(payload, "totalRows") != sum(
-            _integer_field(item, "rows") for item in self._inputs
-        ):
-            raise WorkerContractError(
-                "input.closed row count differs from accepted inputs"
-            )
-        if _integer_field(payload, "totalBytes") != sum(
-            _integer_field(_object_field(item, "artifact"), "byteCount")
-            for item in self._inputs
-        ):
-            raise WorkerContractError(
-                "input.closed byte count differs from accepted inputs"
-            )
         self.input_revision = input_revision
         self.manifest_sha256 = _string_field(payload, "manifestSha256")
         self.closed = True
+
+    def _validate_range_sequence(self) -> None:
+        nonempty = [
+            item
+            for item in self._inputs
+            if _integer_field(item, "chunks") > 0
+        ]
+        if not nonempty:
+            return
+        first = nonempty[0]
+        if (
+            _integer_field(first, "firstRangeOrdinal") != 0
+            or _integer_field(first, "firstExampleOffset") != 0
+        ):
+            raise WorkerContractError(
+                "input range sequence must start at range and example zero"
+            )
+        for previous, current in zip(nonempty, nonempty[1:], strict=False):
+            previous_range = _integer_field(previous, "lastRangeOrdinal")
+            current_range = _integer_field(current, "firstRangeOrdinal")
+            current_offset = _integer_field(current, "firstExampleOffset")
+            same_range = (
+                current_range == previous_range
+                and current_offset
+                == _integer_field(previous, "nextExampleOffset")
+            )
+            next_range = (
+                current_range == previous_range + 1
+                and current_offset == 0
+            )
+            if not (same_range or next_range):
+                raise WorkerContractError(
+                    "input range sequence is not contiguous"
+                )
 __all__ = ["DurableInputStream"]

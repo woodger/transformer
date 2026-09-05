@@ -5,11 +5,9 @@ import os
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol
 
+from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.objective import (
-    CHECKPOINT_FORMAT,
-    objective_from_ml_contract,
-)
+from app.contracts.semantic.v1 import ModelContract
 from app.service.adapters.outbound.artifacts.telemetry.run_summary import (
     publish_fit_run_summary,
 )
@@ -22,6 +20,7 @@ from app.service.application.ports.observability import (
     OperationalMetricSink,
 )
 from app.service.application.ports.telemetry import TrainingTelemetryRepository
+from app.service.domain.initialization import validate_initialization
 from app.service.domain.records import ExecutionJobRecord
 
 _OUTBOX_ENTRY_LIMIT = 10_000
@@ -78,7 +77,8 @@ class FitRunTelemetryPublisher:
         metrics_path = self.spool.telemetry_metrics_path(job.job_id)
         run_summary_path = self.spool.telemetry_run_summary_path(job.job_id)
         try:
-            targets = objective_from_ml_contract(model.ml_contract).targets
+            model_contract = ModelContract.from_document(model.model_contract)
+            targets = model_contract.target_identities
             checkpoint_serialization_ms = _nonnegative_number(
                 worker_result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
@@ -94,42 +94,27 @@ class FitRunTelemetryPublisher:
                 self.repository.epoch_intervals(job.job_id),
                 job_id=job.job_id,
                 model_ref=model.model_ref,
-                data_contract_sha256=_string(
-                    job.data_contract.get("data_contract_sha256"),
-                    "fit data contract sha256",
-                ),
-                objective_config_sha256=_string(
-                    model.ml_contract.get("objectiveConfigSha256"),
-                    "fit objective config sha256",
-                ),
+                semantic_digests=dict(job.semantic_digests),
                 checkpoint_format=CHECKPOINT_FORMAT,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
                 targets=targets,
+                model_contract=model_contract,
             )
             run_summary = publish_fit_run_summary(
                 self.spool,
                 run_summary_path,
                 summary_source,
                 model_ref=model.model_ref,
-                data_contract_sha256=_string(
-                    job.data_contract.get("data_contract_sha256"),
-                    "fit data contract sha256",
-                ),
-                objective_config_sha256=_string(
-                    model.ml_contract.get("objectiveConfigSha256"),
-                    "fit objective config sha256",
-                ),
+                semantic_digests=dict(job.semantic_digests),
+                job_config_sha256=job.config_hash,
                 checkpoint_format=CHECKPOINT_FORMAT,
                 application_version=self.application_version,
                 git_commit=self.git_commit,
                 targets=targets,
-                terminal_checkpoint_serialization_ms=(
-                    checkpoint_serialization_ms
-                ),
-                terminal_checkpoint_publication_ms=(
-                    model.checkpoint_publication_ms
-                ),
+                initialization=validate_initialization(job.initialization),
+                terminal_checkpoint_serialization_ms=(checkpoint_serialization_ms),
+                terminal_checkpoint_publication_ms=(model.checkpoint_publication_ms),
             )
             registered = self.repository.register_run_artifacts(
                 model_ref=model.model_ref,
@@ -142,9 +127,7 @@ class FitRunTelemetryPublisher:
                 metrics_byte_count=training_metrics.byte_count,
                 metrics_sha256=training_metrics.sha256,
                 metrics_row_count=training_metrics.row_count,
-                run_summary_path=self.spool.telemetry_relative_path(
-                    run_summary_path
-                ),
+                run_summary_path=self.spool.telemetry_relative_path(run_summary_path),
                 run_summary_format=run_summary.format,
                 run_summary_media_type=run_summary.media_type,
                 run_summary_byte_count=run_summary.byte_count,
@@ -194,12 +177,6 @@ class FitRunTelemetryPublisher:
                     artifact=os.path.basename(path),
                     errorType=type(exc).__name__,
                 )
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{label} must be a non-empty string")
-    return value
 
 
 def _nonnegative_number(value: object, label: str) -> float:

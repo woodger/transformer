@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.model.transformer import TransformerModel, public_predictions
+from tests.support.consumer_neutral import model_contract
 
 
 class PassThroughEncoder(nn.Module):
@@ -16,14 +16,23 @@ class PassThroughHead(nn.Module):
 
 
 def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
+    contract = model_contract(
+        "target-reorder-a-b",
+        seq_len=4,
+        feature_dim=2,
+        hidden=2,
+        layers=1,
+        dropout=0.0,
+        nhead=2,
+        mode="strict",
+    )
     model = TransformerModel(
         input_dim=2,
         seq_len=4,
         hidden_dim=2,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES[:2],
-        include_return_scale=False,
+        model_contract=contract,
         nhead=2,
         context_mode="strict",
     )
@@ -50,14 +59,23 @@ def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
 
 
 def test_transformer_forward_with_missing_tokens_is_finite():
+    contract = model_contract(
+        "multi-target-shared-resource",
+        seq_len=4,
+        feature_dim=2,
+        hidden=16,
+        layers=1,
+        dropout=0.0,
+        nhead=4,
+        mode="relaxed",
+    )
     model = TransformerModel(
         input_dim=2,
         seq_len=4,
         hidden_dim=16,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=contract,
         nhead=4,
         context_mode="relaxed",
     )
@@ -68,12 +86,11 @@ def test_transformer_forward_with_missing_tokens_is_finite():
 
     output = model(features)
 
-    assert output.shape == (3, 7)
+    assert output.shape == (3, 4)
     assert torch.isfinite(output).all()
     predictions = public_predictions(
         output,
-        TARGET_IDENTITIES,
-        include_return_scale=True,
+        contract,
     )
-    assert predictions.shape == (3, 6)
+    assert predictions.shape == (3, 3)
     assert torch.isfinite(predictions).all()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 from app.service.application.messages.jobs import (
     AcquireJobCommand,
@@ -24,7 +25,8 @@ from app.service.application.ports.observability import (
     OperationalMetricSink,
 )
 from app.service.application.services.model_contract import (
-    verify_model_semantics,
+    verify_model_for_predict,
+    verify_parent_model_for_fit,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import (
@@ -32,6 +34,7 @@ from app.service.domain.initialization import (
     random_initialization,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
+from app.service.domain.json_types import JsonObject
 from app.service.domain.policies import resolve_device
 from app.service.domain.records import PublishedModelRecord
 
@@ -47,6 +50,7 @@ class CreateJobAction:
         limits: ServiceLimits,
         cuda_available: Callable[[], bool],
         is_draining: Callable[[], bool],
+        job_config_digest: Callable[[JsonObject], str],
         model_verifier: ModelArtifactVerifier,
         metrics: OperationalMetricSink,
         logger: EventLogger,
@@ -56,6 +60,7 @@ class CreateJobAction:
         self.limits = limits
         self._cuda_available = cuda_available
         self._is_draining = is_draining
+        self._job_config_digest = job_config_digest
         self._model_verifier = model_verifier
         self.metrics = metrics
         self.logger = logger
@@ -86,10 +91,10 @@ class CreateJobAction:
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                model_config = verify_model_semantics(
+                model_config = verify_model_for_predict(
                     model,
-                    data_contract=command.data_contract,
-                    requested_ml_contract=command.ml_contract,
+                    model_contract=command.model_contract,
+                    semantic_digests=command.semantic_digests,
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
@@ -101,21 +106,19 @@ class CreateJobAction:
                         ErrorCode.NOT_FOUND,
                         "model generation not found",
                     )
-                parent_config = verify_model_semantics(
+                model_config = verify_parent_model_for_fit(
                     model,
-                    data_contract=command.data_contract,
-                    requested_ml_contract=command.ml_contract,
+                    model_config=model_config,
+                    model_contract=command.model_contract,
+                    semantic_digests=command.semantic_digests,
                 )
-                if model_config != parent_config:
-                    raise ServiceError(
-                        ErrorCode.MODEL_SCHEMA_MISMATCH,
-                        "parent model configuration does not match fit job",
-                    )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
                 initialization = published_model_initialization(
                     model.model_ref,
                     model.sha256,
+                    model.semantic_digests,
+                    command.semantic_digests,
                 )
             else:
                 raise ServiceError(
@@ -127,6 +130,13 @@ class CreateJobAction:
                     ErrorCode.INVALID_ARGUMENT,
                     "job model configuration is unavailable",
                 )
+
+            config_document = _job_config_document(
+                command,
+                initialization=initialization,
+                resolved_model_ref=resolved_model_ref,
+            )
+            config_digest = self._job_config_digest(config_document)
 
             result = JobCreated(
                 request_id=command.request_id,
@@ -142,8 +152,11 @@ class CreateJobAction:
                 requested_device=command.requested_device,
                 selected_device=None,
                 resolved_model_ref=resolved_model_ref,
+                source_encoding=dict(command.source_encoding),
                 data_contract=dict(command.data_contract),
-                ml_contract=dict(command.ml_contract),
+                model_contract=dict(command.model_contract),
+                semantic_digests=dict(command.semantic_digests),
+                job_config_sha256=config_digest,
                 limits=self.limits,
                 initialization=initialization,
             )
@@ -176,6 +189,51 @@ class CreateJobAction:
                 executionState=outcome.result.execution_state.value,
             )
         return outcome.result
+
+
+def _job_config_document(
+    command: CreateJobCommand,
+    *,
+    initialization: JsonObject | None,
+    resolved_model_ref: str | None,
+) -> JsonObject:
+    common: JsonObject = {
+        "operation": command.operation,
+        "requestedDevice": (
+            "gpu" if command.requested_device == "cuda" else command.requested_device
+        ),
+        "sourceEncoding": dict(command.source_encoding),
+        "dataContractSha256": cast(
+            str,
+            command.semantic_digests["dataContractSha256"],
+        ),
+        "modelContractSha256": cast(
+            str,
+            command.semantic_digests["modelContractSha256"],
+        ),
+    }
+    if command.operation == "predict":
+        if resolved_model_ref is None:
+            raise AssertionError("predict model reference is unresolved")
+        common.update({
+            "resolvedModelRef": resolved_model_ref,
+            "predictionColumn": command.prediction_column,
+        })
+        return common
+
+    if (
+        command.model_label is None
+        or command.training_config is None
+        or initialization is None
+    ):
+        raise AssertionError("fit job configuration is unresolved")
+    common.update({
+        "modelLabel": command.model_label,
+        "trainingConfig": command.training_config.to_manifest(),
+        "diagnostics": command.training_config.diagnostics.to_document(),
+        "initialization": initialization,
+    })
+    return common
 
 
 class AcquireJobAction:
@@ -255,7 +313,11 @@ class InputCloseAction:
                 requestId=outcome.result.request_id,
                 jobId=outcome.result.job_id,
                 payloadCount=outcome.result.payload_count,
-                totalRows=outcome.result.total_rows,
+                totalChunks=outcome.result.total_chunks,
+                totalLogicalRows=outcome.result.total_rows,
+                totalNativeRows=list(outcome.result.total_native_rows),
+                rangeCount=outcome.result.range_count,
+                totalBytes=outcome.result.total_bytes,
             )
             if outcome.queued:
                 self._queue_notifier(outcome.result.job_id)

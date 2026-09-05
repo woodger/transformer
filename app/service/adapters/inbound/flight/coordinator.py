@@ -3,17 +3,11 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v9.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
-from app.contracts.worker.v9.objective import (
-    AUXILIARY_LOSS_OPERATORS,
+from app.contracts.semantic.v1 import semantic_capabilities
+from app.contracts.worker.v12.constants import (
     CHECKPOINT_FORMAT,
-    DIRECT_LOSS_OPERATORS,
-    MAX_TARGET_WIDTH,
-    OBJECTIVE_ID,
-    OBJECTIVE_SCHEMA_VERSION,
-    PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
-    TARGET_IDENTITIES,
-    TARGET_SCHEMA_ID,
+    CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
+    RECOVERY_FORMAT,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
@@ -237,23 +231,15 @@ class JobCoordinator:
                 "predictInput": PREDICT_SCHEMA_ID,
                 "predictionOutput": PREDICTION_SCHEMA_ID,
             },
-            mlContract={
-                "targetSchemaId": TARGET_SCHEMA_ID,
-                "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
-                "objectiveId": OBJECTIVE_ID,
-                "checkpointFormat": CHECKPOINT_FORMAT,
-                "targetIdentities": list(TARGET_IDENTITIES),
-                "minimumTargetWidth": 1,
-                "maximumTargetWidth": MAX_TARGET_WIDTH,
-                "predictionSpace": "target",
-                "objectiveSchemaVersion": OBJECTIVE_SCHEMA_VERSION,
-                "diagnosticsSchemaVersion": DIAGNOSTICS_SCHEMA_VERSION,
-                "directLossOperators": list(
-                    dict.fromkeys(DIRECT_LOSS_OPERATORS.values())
-                ),
-                "auxiliaryLossOperators": list(AUXILIARY_LOSS_OPERATORS),
-                "balancingOperators": ["Static"],
-            },
+            sourceEncodings=["indexedFeatureBlocks"],
+            workerProtocolVersion=WORKER_CONTRACT_VERSION,
+            checkpointFormat=CHECKPOINT_FORMAT,
+            recoveryFormat=RECOVERY_FORMAT,
+            metricsFormats=[
+                "transformer.fit-run-summary.v5",
+                "transformer.training-metrics.v5",
+            ],
+            semantic=semantic_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
@@ -269,7 +255,10 @@ class JobCoordinator:
                 "singleInstance": True,
             },
             supportedOperations=["fit", "predict"],
-            fitInitializations=["random", "publishedModel"],
+            fitInitializations=[
+                "publishedModel",
+                "random",
+            ],
             features={
                 "doExchange": False,
                 "pollFlightInfo": False,
@@ -280,6 +269,7 @@ class JobCoordinator:
                 "resumableFit": True,
                 "recoveryBoundary": "globalEpoch",
                 "deviceAwareGpu": True,
+                "structuredErrorDetails": True,
             },
         )
 
@@ -324,8 +314,10 @@ def _create_command(
         operation=request["operation"],
         requested_device=device_from_api(request["device"]),
         prediction_column=request["prediction_column"],
+        source_encoding=dict(request["source_encoding"]),
         data_contract=cast(JsonObject, dict(request["data_contract"])),
-        ml_contract=cast(JsonObject, dict(request["ml_contract"])),
+        model_contract=dict(request["model_contract"]),
+        semantic_digests=dict(request["semantic_digests"]),
         model_label=request.get("model_label"),
         model_selector=(
             None
@@ -374,7 +366,10 @@ def _close_command(
         client_execution_id=request["client_execution_id"],
         fencing_token=request["fencing_token"],
         payload_count=request["payload_count"],
+        total_chunks=request["total_chunks"],
         total_rows=request["total_rows"],
+        total_native_rows=tuple(request["total_native_rows"]),
+        range_count=request["range_count"],
         total_bytes=request["total_bytes"],
         manifest_sha256=request["manifest_sha256"],
     )

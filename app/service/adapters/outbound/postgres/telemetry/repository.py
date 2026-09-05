@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v3 import PROJECTION_VERSION
+from app.contracts.metrics.fit_run.v5 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     advisory_lock,
     canonical_uuid,
@@ -64,20 +64,14 @@ class PostgresTrainingTelemetry:
             (checkpoint_serialization_ms, "checkpoint_serialization_ms"),
             (checkpoint_publication_ms, "checkpoint_publication_ms"),
         ):
-            if (
-                type(value) not in (int, float)
-                or not math.isfinite(value)
-                or value < 0
-            ):
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"{label} must be finite and non-negative")
         metrics_value = json_value(metrics)
         if (
             metrics_value.get("epoch") != generation
             or metrics_value.get("step") != global_step
         ):
-            raise ValueError(
-                "training metrics identity differs from recovery progress"
-            )
+            raise ValueError("training metrics identity differs from recovery progress")
         recorded_at = timestamp_now(now)
         with self.database.transaction() as session:
             checkpoint = session.get(
@@ -93,13 +87,8 @@ class PostgresTrainingTelemetry:
                     "training metrics require the matching recovery checkpoint"
                 )
             attempt_record = session.get(JobAttempt, (job_id, attempt))
-            if (
-                attempt_record is None
-                or attempt_record.attempt_id != attempt_id
-            ):
-                raise failed_precondition(
-                    "training metrics attempt identity differs"
-                )
+            if attempt_record is None or attempt_record.attempt_id != attempt_id:
+                raise failed_precondition("training metrics attempt identity differs")
             existing = session.get(
                 TrainingMetricInterval,
                 (job_id, generation),
@@ -114,16 +103,18 @@ class PostgresTrainingTelemetry:
                 ):
                     return True
                 raise conflict("training metric interval already exists")
-            session.add(TrainingMetricInterval(
-                job_id=job_id,
-                generation=generation,
-                attempt=attempt,
-                attempt_id=attempt_id,
-                metrics=metrics_value,
-                checkpoint_serialization_ms=checkpoint_serialization_ms,
-                checkpoint_publication_ms=checkpoint_publication_ms,
-                recorded_at=recorded_at,
-            ))
+            session.add(
+                TrainingMetricInterval(
+                    job_id=job_id,
+                    generation=generation,
+                    attempt=attempt,
+                    attempt_id=attempt_id,
+                    metrics=metrics_value,
+                    checkpoint_serialization_ms=checkpoint_serialization_ms,
+                    checkpoint_publication_ms=checkpoint_publication_ms,
+                    recorded_at=recorded_at,
+                )
+            )
             session.flush()
             return False
 
@@ -153,7 +144,8 @@ class PostgresTrainingTelemetry:
             if (
                 job is None
                 or job.operation != "fit"
-                or job.execution_state not in (
+                or job.execution_state
+                not in (
                     ExecutionState.RUNNING.value,
                     ExecutionState.SUCCEEDED.value,
                 )
@@ -170,9 +162,7 @@ class PostgresTrainingTelemetry:
                 else job.finished_at
             )
             if publication_boundary is None:
-                raise failed_precondition(
-                    "fit publication boundary is unavailable"
-                )
+                raise failed_precondition("fit publication boundary is unavailable")
             attempts = session.scalars(
                 select(JobAttempt)
                 .where(JobAttempt.job_id == job_id)
@@ -189,9 +179,7 @@ class PostgresTrainingTelemetry:
                     "fit worker completion boundary is unavailable"
                 )
             first_input = session.scalar(
-                select(func.min(JobInput.committed_at)).where(
-                    JobInput.job_id == job_id
-                )
+                select(func.min(JobInput.committed_at)).where(JobInput.job_id == job_id)
             )
             if first_input is None:
                 raise failed_precondition("fit input boundary is unavailable")
@@ -208,9 +196,7 @@ class PostgresTrainingTelemetry:
             for item in attempts:
                 startup_end = item.worker_ready_at or item.finished_at
                 if startup_end is None:
-                    raise failed_precondition(
-                        "attempt startup boundary is unavailable"
-                    )
+                    raise failed_precondition("attempt startup boundary is unavailable")
                 queue_wait_ms += _duration_ms(
                     item.queue_entered_at,
                     item.claimed_at,
@@ -227,8 +213,8 @@ class PostgresTrainingTelemetry:
             checkpoint_publication_ms = 0.0
             for interval in intervals:
                 training_ms += _finite_nonnegative(
-                    interval.metrics.get("elapsed_ms"),
-                    "training elapsed_ms",
+                    interval.metrics.get("elapsedMs"),
+                    "training elapsedMs",
                 )
                 checkpoint_serialization_ms += _finite_nonnegative(
                     interval.checkpoint_serialization_ms,
@@ -258,7 +244,9 @@ class PostgresTrainingTelemetry:
                     item.resume_generation is not None for item in attempts
                 ),
                 input_payload_count=job.payload_count,
+                input_chunks=job.total_chunks,
                 input_rows=job.total_rows,
+                native_rows=tuple(job.total_native_rows),
                 input_bytes=job.total_bytes,
             )
 
@@ -301,31 +289,24 @@ class PostgresTrainingTelemetry:
                 raise ValueError(f"{label} must be a positive integer")
         digest(metrics_sha256, "metrics_sha256")
         digest(run_summary_sha256, "run_summary_sha256")
-        if not all((
-            metrics_format,
-            metrics_media_type,
-            run_summary_format,
-            run_summary_media_type,
-            application_version,
-        )):
-            raise ValueError("metrics artifact metadata must not be empty")
-        if (
-            len(git_commit) != 40
-            or any(
-                character not in "0123456789abcdef"
-                for character in git_commit
+        if not all(
+            (
+                metrics_format,
+                metrics_media_type,
+                run_summary_format,
+                run_summary_media_type,
+                application_version,
             )
         ):
-            raise ValueError(
-                "git_commit must be a lowercase 40-character digest"
-            )
+            raise ValueError("metrics artifact metadata must not be empty")
+        if len(git_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in git_commit
+        ):
+            raise ValueError("git_commit must be a lowercase 40-character digest")
         created_at = timestamp_now(now)
         with self.database.transaction() as session:
             model = session.get(PublishedModel, model_ref, with_for_update=True)
-            if (
-                model is None
-                or model.producing_job_id != job_id
-            ):
+            if model is None or model.producing_job_id != job_id:
                 return False
             advisory_lock(session, "metrics-outbox-admission")
             queued_entries, queued_bytes = session.execute(
@@ -333,21 +314,18 @@ class PostgresTrainingTelemetry:
                     func.count(MetricsOutboxEntry.job_id),
                     func.coalesce(
                         func.sum(
-                            TrainingMetricsArtifact.bytes
-                            + FitRunSummaryArtifact.bytes
+                            TrainingMetricsArtifact.bytes + FitRunSummaryArtifact.bytes
                         ),
                         0,
                     ),
                 )
                 .join(
                     TrainingMetricsArtifact,
-                    TrainingMetricsArtifact.job_id
-                    == MetricsOutboxEntry.job_id,
+                    TrainingMetricsArtifact.job_id == MetricsOutboxEntry.job_id,
                 )
                 .join(
                     FitRunSummaryArtifact,
-                    FitRunSummaryArtifact.job_id
-                    == MetricsOutboxEntry.job_id,
+                    FitRunSummaryArtifact.job_id == MetricsOutboxEntry.job_id,
                 )
             ).one()
             new_bytes = metrics_byte_count + run_summary_byte_count
@@ -356,46 +334,52 @@ class PostgresTrainingTelemetry:
                 or int(queued_bytes) + new_bytes > max_outbox_bytes
             ):
                 return False
-            session.add(TrainingMetricsArtifact(
-                job_id=job_id,
-                model_ref=model_ref,
-                format=metrics_format,
-                media_type=metrics_media_type,
-                relative_path=metrics_path,
-                bytes=metrics_byte_count,
-                sha256=metrics_sha256,
-                row_count=metrics_row_count,
-                attempt_id=attempt_id,
-                attempt=attempt,
-                application_version=application_version,
-                git_commit=git_commit,
-                created_at=created_at,
-            ))
-            session.add(FitRunSummaryArtifact(
-                job_id=job_id,
-                model_ref=model_ref,
-                format=run_summary_format,
-                media_type=run_summary_media_type,
-                relative_path=run_summary_path,
-                bytes=run_summary_byte_count,
-                sha256=run_summary_sha256,
-                attempt_id=attempt_id,
-                attempt=attempt,
-                application_version=application_version,
-                git_commit=git_commit,
-                created_at=created_at,
-            ))
+            session.add(
+                TrainingMetricsArtifact(
+                    job_id=job_id,
+                    model_ref=model_ref,
+                    format=metrics_format,
+                    media_type=metrics_media_type,
+                    relative_path=metrics_path,
+                    bytes=metrics_byte_count,
+                    sha256=metrics_sha256,
+                    row_count=metrics_row_count,
+                    attempt_id=attempt_id,
+                    attempt=attempt,
+                    application_version=application_version,
+                    git_commit=git_commit,
+                    created_at=created_at,
+                )
+            )
+            session.add(
+                FitRunSummaryArtifact(
+                    job_id=job_id,
+                    model_ref=model_ref,
+                    format=run_summary_format,
+                    media_type=run_summary_media_type,
+                    relative_path=run_summary_path,
+                    bytes=run_summary_byte_count,
+                    sha256=run_summary_sha256,
+                    attempt_id=attempt_id,
+                    attempt=attempt,
+                    application_version=application_version,
+                    git_commit=git_commit,
+                    created_at=created_at,
+                )
+            )
             session.flush()
-            session.add(MetricsOutboxEntry(
-                job_id=job_id,
-                projection_version=PROJECTION_VERSION,
-                status="PENDING",
-                cursor=0,
-                attempts=0,
-                next_attempt_at=created_at,
-                created_at=created_at,
-                updated_at=created_at,
-            ))
+            session.add(
+                MetricsOutboxEntry(
+                    job_id=job_id,
+                    projection_version=PROJECTION_VERSION,
+                    status="PENDING",
+                    cursor=0,
+                    attempts=0,
+                    next_attempt_at=created_at,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
             session.flush()
             return True
 
@@ -425,9 +409,7 @@ def _interval_record(
         value.checkpoint_serialization_ms is None
         or value.checkpoint_publication_ms is None
     ):
-        raise ValueError(
-            "training metric interval predates checkpoint timing contract"
-        )
+        raise ValueError("training metric interval predates checkpoint timing contract")
     return TrainingMetricIntervalRecord(
         job_id=value.job_id,
         generation=value.generation,

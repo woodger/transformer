@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 
 from app.service.domain.job import ErrorCode
+from app.service.domain.json_types import JsonObject
 
 
 @dataclass(eq=False)
 class ServiceError(Exception):
     code: ErrorCode
     message: str
+    detail: JsonObject | None = None
 
     def __post_init__(self) -> None:
         super().__init__(self.message)
@@ -33,4 +35,3 @@ def conflict(message: str) -> ServiceError:
 
 def resource_exhausted(message: str) -> ServiceError:
     return ServiceError(ErrorCode.RESOURCE_EXHAUSTED, message)
-

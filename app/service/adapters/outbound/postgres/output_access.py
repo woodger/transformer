@@ -26,7 +26,7 @@ class PostgresOutputAccessStore:
         job = self.ledger.get_job(job_id, owner_subject=owner_subject)
         return (
             None
-            if job is None
+            if job is None or job.get("source_encoding") is None
             else ExecutionState(row_string(job, "execution_state"))
         )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v9.config import ModelConfig
+from app.contracts.worker.v12.config import ModelConfig
 from app.service.domain.job import InputState
 from app.service.domain.json_types import JsonObject
 
@@ -17,7 +17,9 @@ class InputUploadMetadata:
     schema_id: str
     input_kind: str
     data_contract_sha256: str
+    chunks: int
     rows: int
+    native_rows: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +35,8 @@ class InputUploadJob:
     input_revision: int
     next_input_ordinal: int
     data_contract_sha256: str
-    ml_contract: JsonObject
+    source_encoding: JsonObject
+    model_contract: JsonObject
     model_config: ModelConfig
 
 
@@ -44,15 +47,19 @@ class CommittedInput:
     ordinal: int
     schema_id: str
     data_contract_sha256: str
+    chunks: int
     rows: int
+    native_rows: tuple[int, ...]
+    first_range_ordinal: int | None
+    first_example_offset: int | None
+    last_range_ordinal: int | None
+    next_example_offset: int | None
     batches: int
     byte_count: int
     sha256: str
     schema_fingerprint: str
     relative_path: str
     storage_class: str
-    source_width: int
-    feature_dim: int
     input_revision: int = 0
     next_input_ordinal: int = 0
     queued: bool = False
@@ -72,13 +79,17 @@ class InputUploadAuthorization:
 @dataclass(frozen=True, slots=True)
 class InputPayloadReceipt:
     relative_path: str
+    chunks: int
     rows: int
+    native_rows: tuple[int, ...]
+    first_range_ordinal: int | None
+    first_example_offset: int | None
+    last_range_ordinal: int | None
+    next_example_offset: int | None
     batches: int
     byte_count: int
     sha256: str
     schema_fingerprint: str
-    source_width: int
-    feature_dim: int
 
 
 __all__ = [

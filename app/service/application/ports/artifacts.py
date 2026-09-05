@@ -13,7 +13,7 @@ class PublishedModelArtifacts:
     """Core model publication result exposed to optional observers."""
 
     model_ref: str
-    ml_contract: JsonObject
+    model_contract: JsonObject
     checkpoint_publication_ms: float
 
 

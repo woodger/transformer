@@ -1,6 +1,7 @@
 # ADR 0022: declarative target objectives
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 0028](0028-consumer-neutral-xy-contract-boundary.md)
 - Decision date: 2026-08-31
 
 > Historical decision record; not a current system reference. See
@@ -70,7 +71,7 @@ Checkpoint навсегда связан с точными targets и objective.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v8](../../app/contracts/flight/v8/README.md)
+- [Контракт Arrow Flight v11](../../app/contracts/flight/v11/README.md)
 - [Функция потерь](../losses.md)
 - [Training runtime](../training-runtime.md)
-- [Training metrics v4](../../app/contracts/metrics/v4/README.md)
+- [Training metrics v5](../../app/contracts/metrics/v5/README.md)

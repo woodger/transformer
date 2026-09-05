@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields
 from typing import TypedDict, cast
 
 from app import config as defaults
-from app.contracts.flight.v8.constants import MAX_PAYLOADS_PER_JOB
+from app.contracts.flight.v11.constants import MAX_PAYLOADS_PER_JOB
 from app.project import PROJECT_ROOT
 
 ENV_PREFIX = "TRANSFORMER_"

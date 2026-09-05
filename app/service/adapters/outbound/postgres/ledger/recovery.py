@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import math
 from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.worker.v9.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.checkpoint.v6 import RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -46,13 +45,13 @@ class RecoveryLedgerSlice:
         attempt: int,
         attempt_id: str,
         generation: int,
+        input_revision: int,
         format: str,
         relative_path: str,
         byte_count: int,
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss: float,
         training_complete: bool,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
@@ -68,17 +67,12 @@ class RecoveryLedgerSlice:
             or raw_global_step < 0
         ):
             raise ValueError("global_step must be a non-negative integer")
-        raw_loss = cast(object, loss)
-        if (
-            isinstance(raw_loss, bool)
-            or not isinstance(raw_loss, (int, float))
-            or not math.isfinite(raw_loss)
-        ):
-            raise ValueError("loss must be a finite number")
+        if isinstance(input_revision, bool) or input_revision < 0:
+            raise ValueError("input_revision must be a non-negative integer")
         raw_training_complete = cast(object, training_complete)
         if not isinstance(raw_training_complete, bool):
             raise ValueError("training_complete must be a boolean")
-        if format != TRAINING_RECOVERY_FORMAT:
+        if format != RECOVERY_FORMAT:
             raise ValueError("unsupported training recovery format")
         validate_relative_path(relative_path)
         digest(sha256, "sha256")
@@ -96,6 +90,7 @@ class RecoveryLedgerSlice:
                 or job.execution_state != ExecutionState.RUNNING.value
                 or job.input_state != InputState.CLOSED.value
                 or job.attempt != attempt
+                or job.input_revision != input_revision
             ):
                 raise failed_precondition(
                     "job is not the active running fit attempt"
@@ -121,6 +116,7 @@ class RecoveryLedgerSlice:
                 if _same_checkpoint(
                     existing,
                     attempt=attempt,
+                    input_revision=input_revision,
                     format=format,
                     relative_path=relative_path,
                     byte_count=byte_count,
@@ -155,6 +151,7 @@ class RecoveryLedgerSlice:
                 job_id=job_id,
                 generation=generation,
                 attempt=attempt,
+                input_revision=input_revision,
                 format=format,
                 relative_path=relative_path,
                 bytes=byte_count,
@@ -166,11 +163,6 @@ class RecoveryLedgerSlice:
             )
             session.add(record)
             job.revision += 1
-            job.progress = {
-                "epoch": completed_epochs,
-                "step": global_step,
-                "loss": float(loss),
-            }
             job.updated_at = created_at
             session.flush()
             return _record(record), False
@@ -417,6 +409,7 @@ def _record(
         job_id=value.job_id,
         generation=value.generation,
         attempt=value.attempt,
+        input_revision=value.input_revision,
         format=value.format,
         relative_path=value.relative_path,
         byte_count=value.bytes,
@@ -431,6 +424,7 @@ def _same_checkpoint(
     value: TrainingRecoveryCheckpoint,
     *,
     attempt: int,
+    input_revision: int,
     format: str,
     relative_path: str,
     byte_count: int,
@@ -441,6 +435,7 @@ def _same_checkpoint(
 ) -> bool:
     return (
         value.attempt == attempt
+        and value.input_revision == input_revision
         and value.format == format
         and value.relative_path == relative_path
         and value.bytes == byte_count

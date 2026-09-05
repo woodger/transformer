@@ -1,5 +1,6 @@
 import importlib
 import io
+import uuid
 from types import SimpleNamespace
 
 import pyarrow as pa
@@ -9,11 +10,20 @@ import torch
 
 import app.main as main_module
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v9.config import ModelConfig, TrainConfig
-from app.contracts.worker.v9.objective import default_objective, ml_contract
+from app.contracts.worker.v12.config import TrainConfig, train_config_to_manifest
 from app.worker.data.arrow import iter_framed_arrow
+from tests.support.consumer_neutral import data_contract, model_contract
 
 predict_stream_module = importlib.import_module("app.local.predict_stream")
+MODEL_CONTRACT_VALUE = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=2,
+    hidden=32,
+    layers=1,
+    dropout=0.0,
+    nhead=4,
+)
 
 
 class FakeStdin:
@@ -55,17 +65,50 @@ def make_args(**overrides):
 
 
 def checkpoint_payload():
+    data = data_contract(MODEL_CONTRACT_VALUE)
+
     return {
-        "model_config": ModelConfig(
-            seq_len=2,
-            feature_dim=2,
-            hidden=32,
-            layers=1,
-            dropout=0.0,
-            nhead=4,
-        ).to_dict(),
-        "ml_contract": ml_contract(default_objective()),
+        "metadata": {
+            "dataContract": data,
+            "modelContract": MODEL_CONTRACT_VALUE.to_document(),
+            "semanticDigests": MODEL_CONTRACT_VALUE.digests(
+                data["dataContractSha256"],
+            ),
+        },
         "state_dict": {},
+    }
+
+
+def checkpoint_metadata():
+    contract = MODEL_CONTRACT_VALUE
+    data = data_contract(contract)
+    digests = contract.digests(data["dataContractSha256"])
+    training = TrainConfig()
+    return {
+        "format": "transformer-checkpoint-v6",
+        "serviceVersion": "test",
+        "generation": 1,
+        "jobId": str(uuid.uuid4()),
+        "dataContract": data,
+        "modelContract": contract.to_document(),
+        "semanticDigests": digests,
+        "trainingConfig": train_config_to_manifest(training),
+        "diagnostics": training.diagnostics.to_document(),
+        "selection": {
+            "enabled": False,
+            "modelContractSha256": digests["modelContractSha256"],
+            "bestSelectionScore": None,
+            "bestEpoch": None,
+            "source": "last_epoch",
+        },
+        "initialization": {"kind": "random"},
+        "jobConfigSha256": "a" * 64,
+        "manifestSha256": "b" * 64,
+        "progress": {
+            "completedEpochs": 1,
+            "globalStep": 1,
+            "trainingComplete": True,
+        },
     }
 
 
@@ -98,7 +141,7 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
             self.calls.append(features.shape)
             value = float(len(self.calls)) / 10.0
             return torch.tensor(
-                [[value, 0.2, 0.3, 0.4, 0.5, 0.6]],
+                [[value]],
                 dtype=torch.float32,
             )
 
@@ -141,10 +184,10 @@ def test_predict_stream_writes_framed_predictions(monkeypatch, capsys):
     assert len(frames) == 3
     assert frames[0].column("out").to_pylist() == []
     assert frames[1].column("out").to_pylist() == [
-        pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        pytest.approx([0.1])
     ]
     assert frames[2].column("out").to_pylist() == [
-        pytest.approx([0.2, 0.2, 0.3, 0.4, 0.5, 0.6])
+        pytest.approx([0.2])
     ]
     diagnostics = capsys.readouterr().err
     assert "accidental build stdout" in diagnostics
@@ -181,15 +224,7 @@ def test_predict_stream_loads_checkpoint_once_for_all_empty_input(
     checkpoint_module.save_checkpoint(
         checkpoint_path,
         torch.nn.Linear(1, 1),
-        model_config=ModelConfig(
-            seq_len=2,
-            feature_dim=2,
-            hidden=32,
-            layers=1,
-            dropout=0.0,
-            nhead=4,
-        ),
-        train_config=TrainConfig(),
+        metadata=checkpoint_metadata(),
     )
     empty = pa.table({
         "src": pa.array([], type=pa.list_(pa.float32())),
@@ -228,7 +263,7 @@ def test_predict_stream_loads_checkpoint_once_for_all_empty_input(
     frames = list(iter_framed_arrow(output_stream))
     assert len(frames) == 1
     field = frames[0].schema.field("out")
-    assert field.type == pa.list_(pa.float32(), 6)
+    assert field.type == pa.list_(pa.float32(), 1)
     assert field.nullable is False
     assert frames[0].num_rows == 0
 

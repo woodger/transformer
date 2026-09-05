@@ -7,15 +7,15 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.worker.v9.objective import ObjectiveConfig
-from app.worker.model.transformer import public_predictions
+from app.contracts.semantic.v1 import ModelContract
+from app.worker.model.transformer import apply_transformation, public_predictions
 
 
 @dataclass(frozen=True, slots=True)
 class MaterializedLossStatistics:
     loss: float
     direct_losses: tuple[float, ...]
-    auxiliary_losses: tuple[tuple[str, float], ...]
+    auxiliary_losses: tuple[tuple[str, str, float], ...]
     grad_norm: float | None
     observations: tuple[float, ...] = ()
 
@@ -24,7 +24,7 @@ class MaterializedLossStatistics:
 class LossStatistics:
     loss: torch.Tensor
     direct_losses: tuple[torch.Tensor, ...]
-    auxiliary_losses: tuple[tuple[str, torch.Tensor], ...]
+    auxiliary_losses: tuple[tuple[str, str, torch.Tensor], ...]
 
     def materialize(
         self,
@@ -34,7 +34,7 @@ class LossStatistics:
         core_values = (
             self.loss,
             *self.direct_losses,
-            *(value for _operator, value in self.auxiliary_losses),
+            *(value for _identity, _operator, value in self.auxiliary_losses),
         )
         device_values = (*core_values, *observations)
         if grad_norm is not None:
@@ -56,8 +56,8 @@ class LossStatistics:
                 for value in host_values[1:1 + direct_count]
             ),
             auxiliary_losses=tuple(
-                (operator, float(value))
-                for (operator, _tensor), value in zip(
+                (identity, operator, float(value))
+                for (identity, operator, _tensor), value in zip(
                     self.auxiliary_losses,
                     host_values[
                         1 + direct_count:
@@ -93,7 +93,7 @@ class MaterializedLossEvaluation:
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    objective: ObjectiveConfig,
+    model_contract: ModelContract,
     *,
     return_parts: Literal[False] = False,
     return_statistics: Literal[False] = False,
@@ -104,7 +104,7 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    objective: ObjectiveConfig,
+    model_contract: ModelContract,
     *,
     return_parts: Literal[True],
     return_statistics: Literal[False] = False,
@@ -115,7 +115,7 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    objective: ObjectiveConfig,
+    model_contract: ModelContract,
     *,
     return_parts: Literal[False] = False,
     return_statistics: Literal[True],
@@ -125,7 +125,7 @@ def combined_loss(
 def combined_loss(
     model_output: torch.Tensor,
     targets: torch.Tensor,
-    objective: ObjectiveConfig,
+    model_contract: ModelContract,
     *,
     return_parts: bool = False,
     return_statistics: bool = False,
@@ -137,7 +137,8 @@ def combined_loss(
             "return_parts and return_statistics are mutually exclusive"
         )
     expected_output_width = (
-        objective.target_width + int(objective.requires_return_scale)
+        model_contract.target_width
+        + len(model_contract.resource_declarations)
     )
     if model_output.ndim != 2 or model_output.shape[1] != expected_output_width:
         raise ValueError(
@@ -145,46 +146,51 @@ def combined_loss(
         )
     if targets.ndim != 2 or targets.shape != (
         model_output.shape[0],
-        objective.target_width,
+        model_contract.target_width,
     ):
         raise ValueError(
-            f"targets must have shape [rows, {objective.target_width}]"
+            f"targets must have shape [rows, {model_contract.target_width}]"
         )
 
     direct_means: list[torch.Tensor] = []
     task_components: dict[str, torch.Tensor] = {}
     loss = model_output.new_tensor(0.0)
     target_indices = {
-        target: index
-        for index, target in enumerate(objective.targets)
+        identity: index
+        for index, identity in enumerate(model_contract.target_identities)
+    }
+    resource_indices = {
+        str(resource["identity"]): model_contract.target_width + index
+        for index, resource in enumerate(model_contract.resource_declarations)
     }
 
-    for index, specification in enumerate(objective.direct_losses):
-        target = str(specification["target"])
+    for index, specification in enumerate(model_contract.direct_components):
         operator = str(specification["operator"])
+        slot = model_contract.target_slots[index]
+        estimate = apply_transformation(
+            model_output[:, index],
+            str(
+                cast(
+                    Mapping[str, object],
+                    slot["lossInputTransformation"],
+                )["kind"]
+            ),
+        )
         direct = _direct_loss(
             operator,
-            model_output[:, index],
+            estimate,
             targets[:, index],
         ).mean()
         weighted = _number(specification["weight"], "direct loss weight") * direct
         direct_means.append(direct)
-        task_components[f"target:{target}"] = weighted
+        task_components[str(specification["identity"])] = weighted
         loss = loss + weighted
 
-    auxiliary_means: list[tuple[str, torch.Tensor]] = []
-    return_scale = (
-        model_output[:, objective.target_width]
-        if objective.requires_return_scale
-        else None
-    )
-    predictions = public_predictions(
-        model_output,
-        objective.targets,
-        include_return_scale=objective.requires_return_scale,
-    )
+    auxiliary_means: list[tuple[str, str, torch.Tensor]] = []
+    predictions = public_predictions(model_output, model_contract)
 
-    for specification in objective.auxiliary_losses:
+    for specification in model_contract.auxiliary_components:
+        component_identity = str(specification["identity"])
         operator = str(specification["operator"])
         auxiliary = _auxiliary_loss(
             operator,
@@ -193,21 +199,16 @@ def combined_loss(
             predictions,
             targets,
             target_indices,
-            return_scale,
+            resource_indices,
+            model_contract,
         ).mean()
         weighted = _number(
             specification["weight"],
             "auxiliary loss weight",
         ) * auxiliary
-        auxiliary_means.append((operator, auxiliary))
+        auxiliary_means.append((component_identity, operator, auxiliary))
         loss = loss + weighted
-        component_name = f"auxiliary:{operator}"
-        if operator == "GaussianNLL":
-            component_name = "target:MeanReturn"
-        task_components[component_name] = (
-            task_components.get(component_name, model_output.new_tensor(0.0))
-            + weighted
-        )
+        task_components[component_identity] = weighted
 
     if not return_parts and not return_statistics:
         return loss
@@ -216,8 +217,8 @@ def combined_loss(
         loss=loss.detach(),
         direct_losses=tuple(value.detach() for value in direct_means),
         auxiliary_losses=tuple(
-            (operator, value.detach())
-            for operator, value in auxiliary_means
+            (identity, operator, value.detach())
+            for identity, operator, value in auxiliary_means
         ),
     )
     if return_statistics:
@@ -260,36 +261,73 @@ def _auxiliary_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
     target_indices: dict[str, int],
-    return_scale: torch.Tensor | None,
+    resource_indices: dict[str, int],
+    model_contract: ModelContract,
 ) -> torch.Tensor:
+    roles = cast(Mapping[str, object], specification["roles"])
     if operator == "GaussianNLL":
-        if return_scale is None:
-            raise ValueError("GaussianNLL requires returnScale")
-        index = target_indices["MeanReturn"]
-        variance = return_scale.square() + 1e-6
+        index = _target_index(roles["locationEstimate"], target_indices)
+        scale = model_output[
+            :,
+            _resource_index(roles["scale"], resource_indices),
+        ]
+        estimate = apply_transformation(
+            model_output[:, index],
+            str(
+                cast(
+                    Mapping[str, object],
+                    model_contract.target_slots[index][
+                        "lossInputTransformation"
+                    ],
+                )["kind"]
+            ),
+        )
+        variance = scale.square() + 1e-6
         return 0.5 * (
-            (targets[:, index] - model_output[:, index]).square() / variance
+            (targets[:, index] - estimate).square() / variance
             + torch.log(variance)
         )
 
+    positive_index = _target_index(
+        roles["positiveOutcomeProbability"],
+        target_indices,
+    )
+    negative_index = _target_index(
+        roles["negativeOutcomeProbability"],
+        target_indices,
+    )
     probability_delta = (
-        predictions[:, target_indices["ProbTP"]]
-        - predictions[:, target_indices["ProbSL"]]
+        predictions[:, positive_index]
+        - predictions[:, negative_index]
     )
     if operator == "ExpectedValue":
         return -probability_delta
     if operator == "RiskAdjustedExpectedValue":
-        if return_scale is None:
-            raise ValueError("RiskAdjustedExpectedValue requires returnScale")
-        risk_penalty = return_scale.detach() * torch.abs(probability_delta)
+        scale = model_output[
+            :,
+            _resource_index(roles["uncertaintyScale"], resource_indices),
+        ]
+        risk_penalty = scale.detach() * torch.abs(probability_delta)
         return -(
             probability_delta
             - _number(
-                specification["riskPenalty"],
+                cast(Mapping[str, object], specification["parameters"])[
+                    "riskPenalty"
+                ],
                 "risk adjustment penalty",
             ) * risk_penalty
         )
     raise ValueError(f"unsupported auxiliary loss operator: {operator}")
+
+
+def _target_index(value: object, indices: Mapping[str, int]) -> int:
+    reference = cast(Mapping[str, object], value)
+    return indices[str(reference["identity"])]
+
+
+def _resource_index(value: object, indices: Mapping[str, int]) -> int:
+    reference = cast(Mapping[str, object], value)
+    return indices[str(reference["identity"])]
 
 
 def _number(value: object, label: str) -> float:

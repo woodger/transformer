@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v12/capabilities.schema.json",
+  "title": "Transformer worker v12 capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "protocolVersion", "checkpointFormat", "recoveryFormat", "schemaIds", "semantic", "torchVersion", "cudaRuntimeVersion", "devices"],
+  "properties": {
+    "contract": {"const": "transformer-worker"}, "protocolVersion": {"const": 12}, "checkpointFormat": {"const": "transformer-checkpoint-v6"}, "recoveryFormat": {"const": "transformer-recovery-v6"},
+    "schemaIds": {"type": "object", "additionalProperties": false, "required": ["fitInput", "predictInput", "predictionOutput"], "properties": {"fitInput": {"const": "transformer.indexed-feature-blocks.fit.v1"}, "predictInput": {"const": "transformer.indexed-feature-blocks.predict.v1"}, "predictionOutput": {"const": "transformer.prediction.target-aligned.v3"}}},
+    "semantic": {"$ref": "https://transformer.local/contracts/semantic/v1/language-capabilities.schema.json"},
+    "torchVersion": {"type": "string", "minLength": 1, "maxLength": 64}, "cudaRuntimeVersion": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+    "devices": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["kind", "opaqueId", "name"], "properties": {"kind": {"enum": ["cpu", "cuda"]}, "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128}, "name": {"type": "string", "minLength": 1, "maxLength": 256}}}, "minItems": 1}
+  }
+}

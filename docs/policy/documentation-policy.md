@@ -36,11 +36,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Consumer integration | `docs/consumer-flight-integration.md` |
 | Текущие процессы, компоненты, contracts и data ownership | `docs/architecture.md` |
 | Dependency boundaries и размещение кода | `docs/policy/architecture.md` |
+| Активные ненормативные проектные предложения | `docs/design/index.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v8 contract | `app/contracts/flight/v8/` |
-| Нормативный worker v9 contract | `app/contracts/worker/v9/` |
+| Нормативный semantic language v1 | `app/contracts/semantic/v1/` |
+| Нормативный Flight v11 contract | `app/contracts/flight/v11/` |
+| Нормативный worker v12 contract | `app/contracts/worker/v12/` |
+| Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | История релизов | `CHANGELOG.md` |
 
@@ -94,7 +97,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Встроенные operational defaults находятся в
 `app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
-`app/service/bootstrap/config.py`, `app/contracts/worker/v9/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v12/config.py`,
 PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
@@ -107,10 +110,10 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v8/` нормативны для wire
-format. README или operations guide не могут переопределять их. Flight v8 —
-единственный текущий remote API contract и базовая точка для дальнейших
-изменений.
+JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
+v11, worker v12, checkpoint/recovery v6 и metrics v5 нормативны для текущего
+runtime. README или operations guide не могут переопределять их. Flight v11 —
+единственный текущий remote API contract; legacy aliases отсутствуют.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -122,7 +125,7 @@ format. README или operations guide не могут переопределя�
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v8 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v11 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## Документация текущего состояния
@@ -135,7 +138,7 @@ ADR хранит historical rationale отдельного архитектур�
 является system reference или нормативным источником текущего состояния.
 Admission, immutable lifecycle и допустимое содержание ADR задаёт
 [`docs/adr/index.md`](../adr/index.md). Решение, не проходящее admission,
-остаётся в issue или merge request.
+остаётся в issue, merge request или активном Design Note.
 
 После реализации release history сохраняет `CHANGELOG.md`, а точную историю
 изменений — Git. Текущий PostgreSQL baseline и последующую эволюцию schema
@@ -148,6 +151,19 @@ boundary явно фиксируется в operations. Эти историче�
 устаревшая и отменённая семантика удаляется, а не переносится в новый
 постоянный справочник. Сводный `decisions.md`, дублирующий ADR или current
 documentation, в проекте не ведётся.
+
+## Design Notes
+
+`docs/design/` содержит только активные ненормативные предложения, для которых
+ещё не принято архитектурное решение. Design Note может инвентаризировать
+текущее состояние и сравнивать варианты, но не определяет current behavior,
+contract или обязательную реализацию.
+
+После завершения обсуждения Design Note удаляется из текущей документации.
+Принятое долгосрочное решение при необходимости получает ADR, а реализованное
+состояние — профильную living documentation. История предложения остаётся в
+Git. Поэтому `docs/design/` не становится параллельным справочником системы или
+архивом отклонённых идей.
 
 ## Deployment и operations
 
@@ -176,7 +192,7 @@ reference-инструкцию не добавляются.
 - постоянные filenames — английский `kebab-case`, если путь уже не закреплён;
 - H1 — понятный русский заголовок;
 - metadata `> Тип: ...` называет фактическую роль файла: справочник, политика,
-  указатель, руководство, операционное руководство или контракт;
+  указатель, Design Note, руководство, операционное руководство или контракт;
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.
@@ -191,7 +207,8 @@ reference-инструкцию не добавляются.
 4. Не дублирует ли он contract, профильный источник, ADR или README?
 
 Временная идея без устойчивой роли остаётся issue/plan, а не постоянным
-документом.
+документом. Design Note допустим только как активный материал конкретного
+архитектурного обсуждения с lifecycle, заданным выше.
 
 ## Обновление
 

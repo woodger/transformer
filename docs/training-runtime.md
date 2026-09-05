@@ -7,35 +7,29 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v8`](../app/contracts/flight/v8/README.md).
+[`app/contracts/flight/v11`](../app/contracts/flight/v11/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
 
 ## Checkpoint contract
 
-Текущий формат — `transformer-checkpoint-v5`. Он содержит только закрытый
-набор полей:
+Текущий формат — `transformer-checkpoint-v6`. Binary container содержит ровно
+`metadata` и `state_dict`. Закрытая metadata фиксирует:
 
-- `state_dict` и версию приложения;
-- полные `model_config` и `train_config`;
-- physical/model input schema;
-- `data_contract`;
-- полный `ml_contract` с `objectiveConfigSha256`;
-- канонический документ `objective` с выбранными targets;
-- metadata выбора checkpoint.
+- полный Consumer-owned `dataContract`;
+- validated `ModelContract`, включая ordered target slots, Objective и model
+  configuration;
+- D1 `semanticDigests` и immutable job/input fences;
+- training/diagnostics policy, selection result и progress;
+- разрешённый `initialization` и версию приложения.
 
-Checkpoint, опубликованный Flight fit, дополнительно сохраняет разрешённый
-`initialization` с lineage parent checkpoint. У локального fit parent
-отсутствует и отдельная Flight lineage metadata не создаётся.
+Model config фиксирует architecture identity/revision, `seqLen`, `featureDim`,
+`hidden`, `layers`, `dropout`, `nhead` и `mode`. Public output width равен числу
+ordered target slots. Private resources создаются по Objective declarations и
+не меняют public width.
 
-Model config фиксирует `seq_len`, `feature_dim`, `hidden`, `layers`, `dropout`,
-`nhead`, `context_mode` и public `out_dim`. Значение `out_dim` равно числу
-выбранных targets от `1` до `6`. Private `returnScale` head существует только
-для objective с `GaussianNLL` или `RiskAdjustedExpectedValue` и не меняет
-public width.
-
-Loader принимает только точный формат v5. Предыдущие wrapped и raw legacy
+Loader принимает только точный формат v6. Предыдущие wrapped и raw legacy
 checkpoint не интерпретируются автоматически. Для Flight prediction другой
 корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
 противоречивой semantic metadata даёт `MODEL_CORRUPT`.
@@ -45,26 +39,27 @@ checkpoint не интерпретируются автоматически. Д�
 только после успешного обучения и validation.
 
 Flight fit также может использовать опубликованную generation как weights-only
-warm start. Parent checkpoint должен иметь те же model/data/ML contracts;
-optimizer, AMP scaler, RNG, progress и checkpoint selection не наследуются.
-Результатом остаётся новая immutable generation, а не изменение parent и не
-продолжение его training run. Точную wire-форму `initialization` задаёт
-[Flight contract](../app/contracts/flight/v8/README.md#инициализация-fit-и-lineage-модели).
+initialization. `publishedModel` требует точного совпадения data, target,
+objective и model digest layers; другой временной период допустим, поскольку
+его границы не входят в Consumer data digest. Optimizer, AMP scaler, RNG,
+progress и checkpoint selection не наследуются. Результатом остаётся новая
+immutable generation, а не изменение parent или продолжение его training run.
+Точную wire-форму `initialization` задаёт
+[Flight contract](../app/contracts/flight/v11/README.md#compatibility-и-artifacts).
 Recovery относится к состоянию уже созданного нового job.
 
-## Target selection и objective
+## Target contract и objective
 
-Flight fit выбирает каноническое непустое подмножество:
+Consumer передаёт self-contained `ModelContract`. Его `targetContract.slots`
+задаёт ordered opaque identities, constraints наблюдаемого `y`, transformation
+raw coordinate для direct loss и transformation public prediction. Transformer
+не ветвится по значению target identity.
 
-```text
-MeanReturn, SigmaReturn, ProbTP, ProbSL, VolatilityNext, HittingProbTP
-```
-
-`tgt`, model heads, prediction и per-target telemetry содержат только выбранные
-координаты в этом порядке. Общая MAE/MSE по разнородным величинам не
-вычисляется и не используется для оценки модели. Полный `{targets, objective}`
-входит в `objectiveConfigSha256`; все объявленные losses активны с первого
-optimizer step.
+Objective явно связывает каждый slot ровно с одним direct component и может
+объявлять auxiliary components и private resources. Transformer исполняет
+закрытый набор operators/resource kinds и проверяет typed role bindings. Все
+components с положительными weights активны с первого optimizer step. Полные
+target, objective и model documents покрываются отдельными D1 digests.
 
 Training policy задаёт optimizer, число epochs, weight decay, reproducibility,
 AMP и optional checkpoint selection. Она сохраняется отдельно от objective и
@@ -80,7 +75,7 @@ AMP и optional checkpoint selection. Она сохраняется отдель
 
 ```bash
 ./.venv/bin/python ./app/main.py fit ./data/train.arrow \
-  --seq-len=20 \
+  --model-contract=./data/model-contract.json \
   --select-best-checkpoint \
   --selection-min-delta=0.001 \
   --selection-patience=5
@@ -95,8 +90,8 @@ Candidate принимается только при `score < best - minDelta`; 
 `--selection-patience=0` отключает остановку, но сохраняет выбор лучшего
 candidate.
 
-Selection policy входит в `train_config` и recovery state, но не в
-`objectiveConfigSha256`.
+Selection policy входит в training config и recovery state, но не в
+`ObjectiveDigest`.
 
 ## File, standalone stream и Flight fit
 
@@ -111,18 +106,21 @@ Flight fit использует durable input stream. Epoch 0 начинает �
 ordinal при открытом input. `input.close` задаёт EOF. Последующие epochs
 перечитывают закрытый immutable dataset.
 
-RecordBatch и payload boundaries не являются optimizer batch, shuffle window
-или epoch boundaries. CPU pipeline закрытых epochs готовит не более одного
-следующего batch параллельно текущему training step. Pinned memory и
-asynchronous H2D намеренно не используются.
+Flight v11 хранит Consumer-computed features как indexed native blocks и
+локальные observation offsets. Worker восстанавливает прежний dense logical
+tensor срезами ограниченного размера. RecordBatch, range chunk и payload
+boundaries не являются optimizer batch, shuffle window или epoch boundaries.
+CPU pipeline закрытых epochs готовит не более одного следующего batch
+параллельно текущему training step. Pinned memory и asynchronous H2D намеренно
+не используются.
 
 Полная physical/value validation выполняется до durable commit DoPut. Worker
 один раз за attempt проверяет receipt, размер и SHA-256, затем использует fast
-replay с проверкой schema и row count.
+replay с проверкой schema и physical/logical counters.
 
 ## Recovery
 
-Текущий формат — `transformer-training-recovery-v5`. Checkpoint создаётся
+Текущий формат — `transformer-recovery-v6`. Checkpoint создаётся
 только на границе завершённой global epoch после EOF и содержит:
 
 - model, optimizer и AMP scaler state;
@@ -130,11 +128,12 @@ replay с проверкой schema и row count.
 - Python, NumPy, PyTorch и CUDA RNG state;
 - shuffle generator state;
 - selection state, best candidate и patience;
-- `objectiveConfigSha256`, model/train/data contracts.
+- validated data/model contracts, D1 digests, job config и input manifest
+  fences.
 
 Сбой в открытой epoch 0 повторяет её с начала; committed inputs не теряются.
-Recovery другого objective, data contract или immutable input manifest
-отклоняется.
+Recovery другого data, target, objective, model contract, job configuration
+или immutable input manifest отклоняется.
 
 ## Контекстные пропуски
 
@@ -164,7 +163,7 @@ Core loss scalars и optional target/gradient observations по-прежнему
 Компактная строка epoch для выбранных targets выглядит так:
 
 ```text
-epoch=4 selection=0.1842 loss=0.233100 MeanReturn_mae=0.012 SigmaReturn_mae=0.021 grad_mean=1.000 rows=67249 batches=263 time=181.7s
+epoch=4 selection=0.1842 loss=0.233100 TargetA_mae=0.012 TargetB_mae=0.021 grad_mean=1.000 rows=67249 batches=263 time=181.7s
 ```
 
 `selection=n/a` означает, что checkpoint selection выключен.
@@ -217,7 +216,7 @@ best-effort telemetry.
 
 ```bash
 ./.venv/bin/python ./app/main.py fit ./data/train.arrow \
-  --seq-len=20 \
+  --model-contract=./data/model-contract.json \
   --metrics-out=train.jsonl
 
 ./.venv/bin/python ./app/main.py plot-metrics train.jsonl \

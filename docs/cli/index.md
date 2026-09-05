@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v8`](../../app/contracts/flight/v8/README.md).
+находится в [`app/contracts/flight/v11`](../../app/contracts/flight/v11/README.md).
 
 ## File commands
 
@@ -54,8 +54,7 @@ Public remote API не является обёрткой над local CLI: ег�
 ./.venv/bin/python ./app/main.py fit ./data/train.arrow \
   --device=cpu \
   --checkpoint-out=model_weights.pth \
-  --seq-len=20 \
-  --mode=relaxed \
+  --model-contract=./data/model-contract.json \
   --epochs=25 \
   --batch-size=256
 ```
@@ -70,11 +69,9 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v5 содержит model config и `feature_dim`, поэтому при prediction
-model options передавать не требуется. Явно переданные `--seq-len`, `--hidden`,
-`--layers`, `--dropout`, `--nhead` и `--mode` — это проверка: значение должно
-совпасть с checkpoint, иначе команда завершится, например, ошибкой
-`--seq-len=30 conflicts with checkpoint value 20`.
+Checkpoint v6 содержит полный ModelContract, включая model config, target
+layout и Objective. Поэтому prediction не принимает отдельные model options и
+восстанавливает точную конфигурацию из checkpoint.
 
 Предыдущие checkpoint formats и raw `state_dict` не интерпретируются. Полный
 текущий формат определяет [training reference](../training-runtime.md).
@@ -95,8 +92,7 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 ./.venv/bin/python ./app/main.py fit-stream \
   --device=cpu \
   --checkpoint-out=model_weights.pth \
-  --seq-len=20 \
-  --mode=relaxed
+  --model-contract=./data/model-contract.json
 ```
 
 Пример prediction:
@@ -117,8 +113,8 @@ Arrow IPC payloads из stdin. Формат frame, schema, limits и прави�
 ## GPU stress test
 
 `gmark` выполняет синтетические optimizer steps через production
-`TransformerModel`: forward, полный default objective, backward, gradient clipping и
-Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
+`TransformerModel`: forward, consumer-neutral SmoothL1 objective, backward,
+gradient clipping и Adam. Входы, targets и параметры модели имеют `float32`; `--use-amp` включает
 тот же CUDA autocast и `GradScaler`, что и production worker. Команда проверяет
 loss, gradient norm, model parameters и optimizer state на `NaN` и `Inf`.
 Динамические метрики температуры, utilization и power читаются через системный
@@ -190,6 +186,7 @@ core, но не является полной гарантией темпера�
 | `--output` | `predict` | Arrow output file | `/tmp/preds.arrow` |
 | `--pred-col` | `predict`, `predict-stream` | имя единственной prediction-колонки | `out` |
 | `--metrics-out` | `fit`, `fit-stream` | metrics JSONL | не задан |
+| `--model-contract` | `fit`, `fit-stream` | self-contained ModelContract JSON file | обязательный |
 | `--max-frame-bytes` | `fit-stream`, `predict-stream` | максимальный размер одного payload | `536870912` (512 MiB) |
 | `--use-amp` | все fit/predict варианты | GPU mixed precision | выключено |
 | `--plots-dir` | `plot-metrics` | каталог для SVG | `metrics_plots` |
@@ -201,19 +198,11 @@ core, но не является полной гарантией темпера�
 
 ### Модель
 
-| Аргумент | Описание | Fit default |
-| --- | --- | --- |
-| `--seq-len` | Длина последовательности | обязательный для `fit` и `fit-stream` |
-| `--hidden` | Размер скрытого слоя | `256` |
-| `--layers` | Количество Transformer layers | `5` |
-| `--nhead` | Количество attention heads | `8` |
-| `--dropout` | Dropout | `0.1` |
-| `--mode` | Как обрабатывать `NaN` в context timesteps: `strict`, `relaxed` | `relaxed` |
-
-Для prediction эти options по умолчанию не заданы и читаются из checkpoint.
-Если option передан явно, он должен совпасть с checkpoint. Положительные
-размеры и `--dropout` в диапазоне `[0, 1)` проверяются parser; `hidden` должен
-делиться на `nhead`.
+`fit` и `fit-stream` получают architecture, tensor geometry, ordered target
+slots и Objective только из обязательного `--model-contract`. Документ
+валидируется до построения модели. `predict` и `predict-stream` используют его
+точную checkpoint-owned копию. Отдельных CLI options для `seqLen`, `hidden`,
+`layers`, `nhead`, `dropout`, `mode`, targets или direct operators нет.
 
 ### Обучение
 
@@ -223,7 +212,6 @@ core, но не является полной гарантией темпера�
 | `--weight-decay` | Adam weight decay | `0.00001` |
 | `--batch-size` | Размер mini-batch | `256` |
 | `--epochs` | Эпохи для file fit / максимум на stdin frame | `25` |
-| `--direct-loss-weights` | Шесть положительных весов `L0…L5` через запятую | `1,1,1,1,1,1` |
 | `--[no-]select-best-checkpoint` | Выбирать best checkpoint по direct losses завершённой epoch | выключено |
 | `--selection-min-delta` | Минимальное улучшение selection score | `0.0` |
 | `--selection-patience` | Число неулучшающихся epochs; `0` не останавливает обучение | `0` |

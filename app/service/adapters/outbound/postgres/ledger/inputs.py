@@ -149,13 +149,17 @@ class InputLedgerSlice:
         relative_path: str,
         schema_id: str,
         data_contract_sha256: str,
+        chunks: int,
         rows: int,
+        native_rows: tuple[int, ...],
+        first_range_ordinal: int | None,
+        first_example_offset: int | None,
+        last_range_ordinal: int | None,
+        next_example_offset: int | None,
         batches: int,
         byte_count: int,
         sha256: str,
         schema_fingerprint: str,
-        source_width: int,
-        feature_dim: int,
         selected_device: str,
         max_payloads: int,
         max_job_bytes: int,
@@ -170,15 +174,21 @@ class InputLedgerSlice:
         )
         _positive_fence(fencing_token)
         for value, name in (
+            (chunks, "chunks"),
             (rows, "rows"),
             (batches, "batches"),
             (byte_count, "bytes"),
-            (source_width, "source_width"),
-            (feature_dim, "feature_dim"),
         ):
             nonnegative(value, name)
-        if source_width == 0 or feature_dim == 0:
-            raise ValueError("input dimensions must be positive")
+        _validate_receipt_shape(
+            chunks=chunks,
+            rows=rows,
+            native_rows=native_rows,
+            first_range_ordinal=first_range_ordinal,
+            first_example_offset=first_example_offset,
+            last_range_ordinal=last_range_ordinal,
+            next_example_offset=next_example_offset,
+        )
         digest(sha256, "sha256")
         digest(schema_fingerprint, "schema_fingerprint")
         digest(data_contract_sha256, "data_contract_sha256")
@@ -218,12 +228,9 @@ class InputLedgerSlice:
                         ErrorCode.MODEL_SCHEMA_MISMATCH,
                         "input data contract does not match the job",
                     )
-                if (
-                    source_width != job.source_width
-                    or feature_dim != job.feature_dim
-                ):
+                if len(native_rows) != len(job.total_native_rows):
                     raise failed_precondition(
-                        "input dimensions do not match the job data contract"
+                        "native row counters do not match sourceEncoding"
                     )
                 if job.payload_count + 1 > max_payloads:
                     raise ServiceError(
@@ -261,15 +268,21 @@ class InputLedgerSlice:
                     commit_revision=job.input_revision,
                     schema_id=schema_id,
                     data_contract_sha256=data_contract_sha256,
+                    chunks=chunks,
                     rows=rows,
+                    native_rows=list(native_rows),
+                    first_range_ordinal=first_range_ordinal,
+                    first_example_offset=first_example_offset,
+                    last_range_ordinal=last_range_ordinal,
+                    next_example_offset=next_example_offset,
                     batches=batches,
                     bytes=byte_count,
                     sha256=sha256,
                     schema_fingerprint=schema_fingerprint,
                     relative_path=relative_path,
                     storage_class=storage_class,
-                    source_width=source_width,
-                    feature_dim=feature_dim,
+                    source_width=job.source_width,
+                    feature_dim=job.feature_dim,
                     committed_at=timestamp,
                 )
                 session.add(record)
@@ -282,9 +295,24 @@ class InputLedgerSlice:
                     prior_next,
                 )
                 job.payload_count += 1
+                job.total_chunks += chunks
                 job.total_rows += rows
+                job.total_native_rows = [
+                    current + added
+                    for current, added in zip(
+                        job.total_native_rows,
+                        native_rows,
+                        strict=True,
+                    )
+                ]
                 job.total_bytes += byte_count
                 frontier_advanced = job.next_input_ordinal > prior_next
+                if frontier_advanced:
+                    _validate_contiguous_prefix_boundaries(
+                        session,
+                        job_id,
+                        job.next_input_ordinal,
+                    )
                 if frontier_advanced and job.waiting_for_input:
                     _clear_input_wait(job)
 
@@ -347,6 +375,7 @@ class InputLedgerSlice:
                 .where(
                     Job.job_id == job_id,
                     Job.owner_subject == owner_subject,
+                    Job.source_encoding.is_not(None),
                 )
                 .with_for_update(read=True)
             )
@@ -410,7 +439,10 @@ class InputLedgerSlice:
         client_execution_id: str,
         fencing_token: int,
         payload_count: int,
+        total_chunks: int,
         total_rows: int,
+        total_native_rows: tuple[int, ...],
+        range_count: int,
         total_bytes: int,
         expected_manifest_sha256: str,
         selected_device: str,
@@ -424,10 +456,14 @@ class InputLedgerSlice:
         _positive_fence(fencing_token)
         for value, name in (
             (payload_count, "payload_count"),
+            (total_chunks, "total_chunks"),
             (total_rows, "total_rows"),
+            (range_count, "range_count"),
             (total_bytes, "total_bytes"),
         ):
             nonnegative(value, name)
+        for value in total_native_rows:
+            nonnegative(value, "total_native_rows")
         digest(expected_manifest_sha256, "manifest_sha256")
         _validate_selected_device(selected_device)
         timestamp = timestamp_now(now)
@@ -443,7 +479,10 @@ class InputLedgerSlice:
             if job.input_state == InputState.CLOSED.value:
                 exact = (
                     job.payload_count == payload_count
+                    and job.total_chunks == total_chunks
                     and job.total_rows == total_rows
+                    and tuple(job.total_native_rows) == total_native_rows
+                    and job.range_count == range_count
                     and job.total_bytes == total_bytes
                     and job.manifest_sha256 == expected_manifest_sha256
                 )
@@ -469,15 +508,23 @@ class InputLedgerSlice:
                     "input ordinals must be contiguous from zero"
                 )
             actual_rows = sum(row.rows for row in rows)
+            actual_chunks = sum(row.chunks for row in rows)
             actual_bytes = sum(row.bytes for row in rows)
+            actual_native_rows = _sum_native_rows(
+                rows,
+                width=len(job.total_native_rows),
+            )
             if (
                 len(rows) != payload_count
+                or actual_chunks != total_chunks
                 or actual_rows != total_rows
+                or actual_native_rows != total_native_rows
                 or actual_bytes != total_bytes
             ):
                 raise failed_precondition(
                     "input close totals do not match committed inputs"
                 )
+            _validate_complete_boundaries(rows, range_count)
             actual_manifest_sha256 = manifest_sha256(rows)
             if actual_manifest_sha256 != expected_manifest_sha256:
                 raise failed_precondition(
@@ -493,7 +540,10 @@ class InputLedgerSlice:
             job.input_closed_at = timestamp
             job.manifest_sha256 = actual_manifest_sha256
             job.payload_count = payload_count
+            job.total_chunks = total_chunks
             job.total_rows = total_rows
+            job.total_native_rows = list(total_native_rows)
+            job.range_count = range_count
             job.total_bytes = total_bytes
             _clear_input_wait(job)
             if job.execution_state == ExecutionState.WAITING_INPUT.value:
@@ -502,6 +552,132 @@ class InputLedgerSlice:
             job.updated_at = timestamp
             session.flush()
             return decode(job), False
+
+
+def _validate_receipt_shape(
+    *,
+    chunks: int,
+    rows: int,
+    native_rows: tuple[int, ...],
+    first_range_ordinal: int | None,
+    first_example_offset: int | None,
+    last_range_ordinal: int | None,
+    next_example_offset: int | None,
+) -> None:
+    if not native_rows:
+        raise ValueError("native_rows must contain one count per feature block")
+    for value in native_rows:
+        nonnegative(value, "native_rows")
+    boundaries = (
+        first_range_ordinal,
+        first_example_offset,
+        last_range_ordinal,
+        next_example_offset,
+    )
+    if chunks == 0:
+        if rows != 0 or any(native_rows) or any(
+            value is not None for value in boundaries
+        ):
+            raise ValueError("empty input receipt has inconsistent counters")
+        return
+    if rows == 0 or any(value is None for value in boundaries):
+        raise ValueError("non-empty input receipt has incomplete boundaries")
+    for value in cast(tuple[int, int, int, int], boundaries):
+        nonnegative(value, "input boundary")
+    if cast(int, last_range_ordinal) < cast(int, first_range_ordinal):
+        raise ValueError("input receipt range boundaries are reversed")
+
+
+def _validate_contiguous_prefix_boundaries(
+    session: Session,
+    job_id: str,
+    next_input_ordinal: int,
+) -> None:
+    rows = list(session.scalars(
+        select(JobInput)
+        .where(
+            JobInput.job_id == job_id,
+            JobInput.ordinal < next_input_ordinal,
+            JobInput.chunks > 0,
+        )
+        .order_by(JobInput.ordinal)
+    ))
+    if not rows:
+        return
+    if (
+        rows[0].first_range_ordinal != 0
+        or rows[0].first_example_offset != 0
+    ):
+        raise failed_precondition(
+            "first transmitted range must have rangeOrdinal and exampleOffset zero"
+        )
+    for previous, current in zip(rows, rows[1:], strict=False):
+        _validate_adjacent_boundaries(previous, current)
+
+
+def _validate_complete_boundaries(
+    rows: list[JobInput],
+    range_count: int,
+) -> None:
+    nonempty = [row for row in rows if row.chunks > 0]
+    if not nonempty:
+        if range_count != 0:
+            raise failed_precondition(
+                "empty input must declare rangeCount zero"
+            )
+        return
+    first = nonempty[0]
+    if first.first_range_ordinal != 0 or first.first_example_offset != 0:
+        raise failed_precondition(
+            "first transmitted range must have rangeOrdinal and exampleOffset zero"
+        )
+    for previous, current in zip(nonempty, nonempty[1:], strict=False):
+        _validate_adjacent_boundaries(previous, current)
+    if nonempty[-1].last_range_ordinal != range_count - 1:
+        raise failed_precondition(
+            "rangeCount does not match the dense transmitted range ordinals"
+        )
+
+
+def _validate_adjacent_boundaries(
+    previous: JobInput,
+    current: JobInput,
+) -> None:
+    if (
+        previous.last_range_ordinal is None
+        or previous.next_example_offset is None
+        or current.first_range_ordinal is None
+        or current.first_example_offset is None
+    ):
+        raise failed_precondition("input range boundary metadata is incomplete")
+    same_range = (
+        current.first_range_ordinal == previous.last_range_ordinal
+        and current.first_example_offset == previous.next_example_offset
+    )
+    next_range = (
+        current.first_range_ordinal == previous.last_range_ordinal + 1
+        and current.first_example_offset == 0
+    )
+    if not (same_range or next_range):
+        raise failed_precondition(
+            "input range chunks are not contiguous across payloads"
+        )
+
+
+def _sum_native_rows(
+    rows: list[JobInput],
+    *,
+    width: int,
+) -> tuple[int, ...]:
+    if width == 0 or any(len(row.native_rows) != width for row in rows):
+        raise failed_precondition(
+            "native row counters do not match sourceEncoding"
+        )
+    totals = [0] * width
+    for row in rows:
+        for index, count in enumerate(row.native_rows):
+            totals[index] += count
+    return tuple(totals)
 
 
 def _next_input_ordinal(
@@ -590,7 +766,13 @@ def _committed_input_record(record: JobInput) -> CommittedInputRecord:
         commit_revision=record.commit_revision,
         schema_id=record.schema_id,
         data_contract_sha256=record.data_contract_sha256,
+        chunks=record.chunks,
         rows=record.rows,
+        native_rows=tuple(record.native_rows),
+        first_range_ordinal=record.first_range_ordinal,
+        first_example_offset=record.first_example_offset,
+        last_range_ordinal=record.last_range_ordinal,
+        next_example_offset=record.next_example_offset,
         batches=record.batches,
         byte_count=record.bytes,
         sha256=record.sha256,

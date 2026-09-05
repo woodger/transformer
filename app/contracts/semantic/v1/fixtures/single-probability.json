@@ -1,0 +1,77 @@
+{
+  "fixtureId": "consumer-neutral.single-probability.v1",
+  "modelContract": {
+    "objectiveLanguageRevision": 1,
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "EventProbability",
+          "observedConstraint": {
+            "kind": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": {"kind": "Identity"},
+          "publicPredictionTransformation": {"kind": "Sigmoid"}
+        }
+      ]
+    },
+    "objective": {
+      "aggregation": {"kind": "WeightedSum"},
+      "reduction": {"kind": "GlobalRowMean"},
+      "resources": [],
+      "directComponents": [
+        {
+          "identity": "direct.event-probability",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "roles": {
+            "logit": {
+              "kind": "target",
+              "identity": "EventProbability",
+              "view": "lossEstimate"
+            },
+            "probability": {
+              "kind": "target",
+              "identity": "EventProbability",
+              "view": "observed"
+            }
+          },
+          "parameters": {}
+        }
+      ],
+      "auxiliaryComponents": []
+    },
+    "modelConfig": {
+      "architecture": {
+        "identity": "transformer.sequence-model",
+        "revision": 1
+      },
+      "seqLen": 2,
+      "featureDim": 8,
+      "hidden": 16,
+      "layers": 1,
+      "dropout": 0,
+      "nhead": 4,
+      "mode": "strict"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "zero-logit",
+      "inputs": {"rawCoordinate": 0, "observed": 1},
+      "outputs": {
+        "lossEstimate": 0,
+        "publicPrediction": 0.5,
+        "componentLoss": 0.6931471805599453
+      },
+      "absoluteTolerance": 0.000001
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "f6ce5e8cb6c04c0f4e422852a45dcbb1139367bc424549ef0099062be420091e",
+    "objectiveSha256": "8c1c0a60dc38c13e148db4607b20f9d5ab7431aac2cbe11f6de401aad603c112",
+    "modelContractSha256": "8685959d4aae5271f722aa94766cbbd27804ba7e987217b1d1e7fb6a957ae950"
+  }
+}

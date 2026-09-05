@@ -1,12 +1,9 @@
-from collections.abc import Sequence
 from typing import TypeVar, cast
 
-from app.contracts.ml import MAX_TARGET_WIDTH
-from app.contracts.worker.v9.config import (
+from app.contracts.worker.v12.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
-    DEFAULT_DIRECT_LOSS_WEIGHTS,
     DEFAULT_DROPOUT,
     DEFAULT_EPOCHS,
     DEFAULT_HIDDEN,
@@ -19,7 +16,6 @@ from app.contracts.worker.v9.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v9.objective import ObjectiveConfig, default_objective
 
 T = TypeVar("T")
 
@@ -32,6 +28,7 @@ def model_config_from_args(
     args: object,
     checkpoint_config: object = None,
     require_seq_len: bool = True,
+    feature_dim: int | None = None,
 ) -> ModelConfig:
     checkpoint_config = _coerce_model_config(checkpoint_config)
     if checkpoint_config is not None:
@@ -46,8 +43,17 @@ def model_config_from_args(
             raise ValueError("seq_len must be a positive integer")
         seq_len = 0
 
+    resolved_feature_dim = (
+        checkpoint_config.feature_dim
+        if checkpoint_config is not None
+        else feature_dim
+    )
+    if resolved_feature_dim is None:
+        raise ValueError("feature_dim must be a positive integer")
+
     config = ModelConfig(
         seq_len=seq_len,
+        feature_dim=resolved_feature_dim,
         hidden=_pick(
             _optional_arg(args, "hidden", int),
             (
@@ -87,17 +93,6 @@ def model_config_from_args(
                 if checkpoint_config is None
                 else checkpoint_config.context_mode
             ),
-        ),
-        out_dim=_pick(
-            _optional_arg(args, "out_dim", int),
-            (
-                MAX_TARGET_WIDTH
-                if checkpoint_config is None
-                else checkpoint_config.out_dim
-            ),
-        ),
-        feature_dim=(
-            None if checkpoint_config is None else checkpoint_config.feature_dim
         ),
     )
 
@@ -186,13 +181,6 @@ def train_config_from_args(
     )
 
 
-def objective_config_from_args(args: object) -> ObjectiveConfig:
-    weights = _optional_float_tuple(args, "direct_loss_weights")
-    return default_objective(
-        DEFAULT_DIRECT_LOSS_WEIGHTS if weights is None else weights
-    )
-
-
 def _validate_checkpoint_model_overrides(
     args: object,
     checkpoint_config: ModelConfig,
@@ -243,21 +231,3 @@ def _optional_arg(
     if not isinstance(value, expected_type):
         raise ValueError(f"{name} has an invalid type")
     return value
-
-
-def _optional_float_tuple(
-    args: object,
-    name: str,
-) -> tuple[float, ...] | None:
-    value = _argument(args, name)
-    if value is None:
-        return None
-    if not isinstance(value, (list, tuple)):
-        raise ValueError(f"{name} has an invalid type")
-    items = cast(Sequence[object], value)
-    if any(
-        isinstance(item, bool) or not isinstance(item, (int, float))
-        for item in items
-    ):
-        raise ValueError(f"{name} must contain only numbers")
-    return tuple(float(cast(int | float, item)) for item in items)

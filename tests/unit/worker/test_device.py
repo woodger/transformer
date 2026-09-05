@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v8_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,10 +27,50 @@ def test_worker_capabilities_follow_the_v8_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 9,
+        "protocolVersion": 12,
+        "checkpointFormat": "transformer-checkpoint-v6",
+        "recoveryFormat": "transformer-recovery-v6",
+        "schemaIds": {
+            "fitInput": "transformer.indexed-feature-blocks.fit.v1",
+            "predictInput": "transformer.indexed-feature-blocks.predict.v1",
+            "predictionOutput": "transformer.prediction.target-aligned.v3",
+        },
+        "semantic": {
+            "objectiveLanguage": {
+                "revision": 1,
+                "constraints": ["ClosedInterval", "Finite"],
+                "transformations": ["Identity", "Sigmoid", "Tanh"],
+                "resourceKinds": ["PositiveScalarPerObservation"],
+                "directOperators": [
+                    "BinaryCrossEntropyWithLogits",
+                    "LogMSE",
+                    "SmoothL1",
+                ],
+                "auxiliaryOperators": [
+                    "ExpectedValue",
+                    "GaussianNLL",
+                    "RiskAdjustedExpectedValue",
+                ],
+                "aggregations": ["WeightedSum"],
+                "reductions": ["GlobalRowMean"],
+            },
+            "semanticLimits": {
+                "maxTargetSlots": 128,
+                "maxObjectiveComponents": 256,
+                "maxPrivateResources": 64,
+            },
+            "modelArchitectures": [{
+                "identity": "transformer.sequence-model",
+                "revision": 1,
+            }],
+        },
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
-        "devices": [],
+        "devices": [{
+            "kind": "cpu",
+            "opaqueId": "cpu",
+            "name": "CPU",
+        }],
     }
 
 
@@ -112,7 +152,12 @@ Command details:
 
 
 def test_cli_use_amp(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["main.py", "fit-stream", "--seq-len=12", "--use-amp"])
+    monkeypatch.setattr(sys, "argv", [
+        "main.py",
+        "fit-stream",
+        "--model-contract=contract.json",
+        "--use-amp",
+    ])
 
     args = parse_args()
 

@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v8
+# Сервис Transformer Arrow Flight: операционное руководство v11
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v8`](../../app/contracts/flight/v8/README.md). Текущие
+[`app/contracts/flight/v11`](../../app/contracts/flight/v11/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -98,7 +98,6 @@ Fit inputs и восстанавливаемое состояние обучен
 <project-root>/models/
   {modelRef}/
     checkpoint.pth
-    metadata.json
 ```
 
 Успешный fit может независимо получить best-effort telemetry run:
@@ -114,14 +113,15 @@ Fit inputs и восстанавливаемое состояние обучен
 через fsync, атомарно переименовываются, после чего выполняется fsync каталога.
 Recovery checkpoint становится видимым только после надёжной записи файла и
 регистрации его generation. Epoch telemetry фиксируется отдельной best-effort
-транзакцией PostgreSQL. При публикации модели checkpoint successful attempt и
-metadata атомарно публикуются в `models/`; только после прикладного commit
-service может собрать файлы в `telemetry/` и зарегистрировать отдельный
-OpenSearch outbox. Ошибка telemetry не меняет model generation или terminal
-state. Неуспешные и прерванные attempts не создают generation модели.
+транзакцией PostgreSQL. При публикации модели checkpoint successful attempt
+атомарно записывается в `models/`, после чего ссылка, digest и semantic metadata
+фиксируются вместе с generation одной транзакцией PostgreSQL. Только после
+прикладного commit service может собрать файлы в `telemetry/` и зарегистрировать
+отдельный OpenSearch outbox. Ошибка telemetry не меняет model generation или
+terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. V8 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v11 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,7 +214,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v8 определяет
+certificate options команды `flight serve`. Flight v11 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -230,10 +230,10 @@ modes.
 | `TRANSFORMER_MAX_MESSAGE_BYTES` | `16777216` | Целевой лимит interoperability клиента |
 | `TRANSFORMER_TARGET_BATCH_BYTES` | `8388608` | Рекомендуемый размер RecordBatch producer-а |
 | `TRANSFORMER_MAX_BATCH_BYTES` | `16777216` | Прикладной лимит RecordBatch |
-| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Лимит логического DoPut и сохранённого IPC-файла |
-| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Число строк в одном DoPut |
-| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Число логических payload-ов в job |
-| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Общий объём committed inputs одной job |
+| `TRANSFORMER_MAX_PAYLOAD_BYTES` | `536870912` | Лимит compact DoPut и сохранённого IPC-файла |
+| `TRANSFORMER_MAX_ROWS_PER_PAYLOAD` | `2000000` | Число logical examples в одном DoPut |
+| `TRANSFORMER_MAX_PAYLOADS_PER_JOB` | `100000` | Число физических payload-ов в job |
+| `TRANSFORMER_MAX_JOB_BYTES` | `68719476736` | Общий физический объём committed IPC inputs одной job |
 | `TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT` | `32` | Число non-terminal jobs на subject |
 
 Проверяемый порядок:
@@ -304,8 +304,9 @@ cancelGraceSeconds` до внешнего SIGKILL и никогда не зап�
    predictions как `FAILED / EXECUTION_INTERRUPTED`, а прерванные
    `CANCELLING` jobs завершает как `CANCELLED`;
 7. удаляет незавершённые upload reservations и unpublished/orphan artifacts;
-8. сверяет постоянные каталоги моделей с metadata PostgreSQL, сохраняя
-   `AVAILABLE` и ожидающие удаления `DELETING` generations;
+8. удаляет прежние model sidecars и сверяет постоянные каталоги моделей с
+   metadata PostgreSQL, сохраняя `AVAILABLE` и ожидающие удаления `DELETING`
+   generations;
 9. инвентаризирует доступные физические CUDA devices, не инициализируя CUDA в
    Flight-процессе;
 10. создаёт пустой bounded cache-aside API tokens без preload и listener;
@@ -353,11 +354,11 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v8 нет сетевого action для её удаления. Команды оператора,
+во Flight v11 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
-Запрос удаления блокируется не только незавершённым prediction, но и
-незавершённым warm-start fit, использующим generation как parent.
+Запрос удаления блокируется не только незавершённым prediction, но и любым
+незавершённым fit, использующим generation как `publishedModel` parent.
 
 Сервис не использует настроенный admission watermark свободного места. Health
 возвращает текущий свободный объём runtime и recovery storage, но не выводит из
@@ -367,7 +368,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v8.health`.
+аутентифицированный Flight action `transformer.v11.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -399,8 +400,10 @@ Metrics сбрасываются при перезапуске сервиса и
 ## Стабильные ошибки и ограничения PyArrow
 
 Сервис завершает RPC ошибкой, а не возвращает error result. Стабильные codes
-включаются в безопасный текст ошибки и terminal status. Raw tracebacks, paths
-filesystem, credentials и stderr subprocess не должны попадать клиентам.
+включаются в безопасный текст ошибки и terminal status; consumer-neutral
+semantic errors дополнительно передают закрытый structured detail через
+`FlightError.extra_info`. Raw tracebacks, paths filesystem, credentials и
+stderr subprocess не должны попадать клиентам.
 
 В PyArrow 24 подтверждены два ограничения bindings:
 
@@ -408,24 +411,24 @@ filesystem, credentials и stderr subprocess не должны попадать 
    `ALREADY_EXISTS`, `FAILED_PRECONDITION` или `RESOURCE_EXHAUSTED`; сервис
    сохраняет стабильный application code в безопасном тексте.
 2. Python `FlightServerBase` не позволяет настроить жёсткий server limit для
-   размера принимаемого сообщения. Лимиты batch, logical payload, rows и job
-   по-прежнему контролируются приложением.
+   размера принимаемого сообщения. Лимиты batch, physical payload, logical
+   rows и job по-прежнему контролируются приложением.
 
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v8
+## Известные ограничения v11
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.
 - Нет планирования replicas и автоматического failover.
 - Нет `DoExchange` и `PollFlightInfo`.
-- Не более 100000 logical payload-ов на job. Inputs возвращаются ограниченной
+- Не более 100000 физических payload-ов на job. Inputs возвращаются ограниченной
   revision pagination, а close передаёт только итоги постоянного размера и
   digest.
-- Один DoPut соответствует одному semantic payload; chunking RecordBatch и
-  разбиение payload-ов не определяют optimizer batches, shuffle windows или
-  epochs.
+- Один DoPut соответствует одному физическому compact payload; разбиение на
+  RecordBatch, range chunks и payload-ы не определяет optimizer batches,
+  shuffle windows или epochs.
 - Одна predict job однократно загружает один checkpoint и формирует один output
   на каждый ordinal input.
 - Fit recovery выполняется только на границе завершённой global epoch;

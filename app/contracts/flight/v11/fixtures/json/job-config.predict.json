@@ -1,0 +1,18 @@
+{
+  "fixtureId": "consumer-neutral.job-config.predict.v1",
+  "jobConfig": {
+    "operation": "predict",
+    "requestedDevice": "gpu",
+    "resolvedModelRef": "mdl_0123456789abcdef0123456789abcdef",
+    "predictionColumn": "prediction",
+    "sourceEncoding": {
+      "kind": "indexedFeatureBlocks",
+      "featureBlocks": [
+        {"position": 0, "windowRows": 2, "nativeRowWidth": 2}
+      ]
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelContractSha256": "a71d514e590fe1eef708a73b4fd08ac7f80b4e090392d5231ed863972315a49d"
+  },
+  "expectedJobConfigSha256": "5b750e4d06e646edaad1e79b4b21f22bce9460c1180e7a8e3806d139e4ebb3e6"
+}
