@@ -11,13 +11,14 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app import config as defaults
-from app.contracts.flight.v10.arrow import (
+from app.contracts.flight.v11.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
-    validate_target_space_values,
+    target_width,
+    validate_target_values,
 )
 from app.contracts.indexed_feature_blocks import feature_block_dimensions
-from app.contracts.ml import TARGET_IDENTITIES, canonical_targets
+from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
 
@@ -103,12 +104,12 @@ class _ValidatedArrowColumns:
 
 def table_to_tensors(
     table: pa.Table,
-    targets: Sequence[str] = TARGET_IDENTITIES,
+    target_contract: JsonObject,
 ) -> TrainingBatch:
     columns = _validated_arrow_columns(
         table,
         require_target=True,
-        targets=targets,
+        target_contract=target_contract,
     )
     features = _list_values_to_tensor(columns.features)
     if columns.targets is None:
@@ -122,7 +123,7 @@ def table_to_source_tensor(table: pa.Table) -> torch.Tensor:
     columns = _validated_arrow_columns(
         table,
         require_target=False,
-        targets=TARGET_IDENTITIES,
+        target_contract=None,
     )
     return _list_values_to_tensor(columns.features)
 
@@ -130,21 +131,20 @@ def table_to_source_tensor(table: pa.Table) -> torch.Tensor:
 def validate_arrow_table(
     table: pa.Table,
     require_target: bool = False,
-    targets: Sequence[str] = TARGET_IDENTITIES,
+    target_contract: JsonObject | None = None,
 ) -> None:
     _validated_arrow_columns(
         table,
         require_target=require_target,
-        targets=targets,
+        target_contract=target_contract,
     )
 
 
 def _validated_arrow_columns(
     table: pa.Table,
     require_target: bool,
-    targets: Sequence[str],
+    target_contract: JsonObject | None,
 ) -> _ValidatedArrowColumns:
-    selected = canonical_targets(targets)
     typed_table = cast(_ArrowTable, table)
     source_values = _validate_list_column(
         typed_table,
@@ -153,13 +153,15 @@ def _validated_arrow_columns(
     )
     target_values = None
     if require_target:
+        if target_contract is None:
+            raise ValueError("target contract is required for fit Arrow")
         target_values = _validate_list_column(
             typed_table,
             "tgt",
             allow_nan=False,
-            expected_width=len(selected),
+            expected_width=target_width(target_contract),
         )
-        _validate_target_values(target_values, selected)
+        validate_target_values(target_values, target_contract)
 
     return _ValidatedArrowColumns(
         features=source_values,
@@ -169,13 +171,13 @@ def _validated_arrow_columns(
 
 def read_arrow(
     path: str | os.PathLike[str],
-    targets: Sequence[str] = TARGET_IDENTITIES,
+    target_contract: JsonObject,
 ) -> TrainingBatch:
     with open(path, "rb") as f:
         reader = cast(_ArrowReader, ipc.RecordBatchFileReader(f))
         table = reader.read_all()
 
-    return table_to_tensors(table, targets)
+    return table_to_tensors(table, target_contract)
 
 
 def read_source_arrow(path: str | os.PathLike[str]) -> torch.Tensor:
@@ -195,7 +197,7 @@ def iter_committed_fit_arrow(
     source_encoding: Mapping[str, object],
     seq_len: int,
     feature_dim: int,
-    targets: Sequence[str],
+    target_contract: JsonObject,
 ) -> Iterator[TrainingBatch]:
     """Decode one immutable compact fit artifact in bounded row slices.
 
@@ -212,7 +214,7 @@ def iter_committed_fit_arrow(
         seq_len=seq_len,
         feature_dim=feature_dim,
         require_target=True,
-        targets=targets,
+        target_contract=target_contract,
     ):
         if target_values is None:
             raise AssertionError("fit compact input has no target values")
@@ -231,6 +233,7 @@ def iter_committed_source_arrow(
     source_encoding: Mapping[str, object],
     seq_len: int,
     feature_dim: int,
+    target_contract: JsonObject,
 ) -> Iterator[torch.Tensor]:
     """Decode one immutable compact prediction artifact in bounded slices."""
     for features, _ in _iter_committed_indexed_arrow(
@@ -242,7 +245,7 @@ def iter_committed_source_arrow(
         seq_len=seq_len,
         feature_dim=feature_dim,
         require_target=False,
-        targets=TARGET_IDENTITIES,
+        target_contract=target_contract,
     ):
         yield _list_values_to_tensor(features)
 
@@ -257,7 +260,7 @@ def _iter_committed_indexed_arrow(
     seq_len: int,
     feature_dim: int,
     require_target: bool,
-    targets: Sequence[str],
+    target_contract: JsonObject,
 ) -> Iterator[tuple[np.ndarray, np.ndarray | None]]:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
@@ -277,7 +280,7 @@ def _iter_committed_indexed_arrow(
         source_encoding,
         seq_len,
         feature_dim,
-        targets,
+        target_contract,
     )
     observed_rows = 0
     observed_chunks = 0
@@ -334,11 +337,21 @@ def _iter_committed_indexed_arrow(
                     target_column,
                     chunk_index,
                     logical_rows,
-                    len(targets),
+                    target_width(target_contract),
                 )
+                if target_values is not None:
+                    validate_target_values(
+                        target_values,
+                        target_contract,
+                        logical_row_offset=observed_rows,
+                    )
                 row_bytes = 4 * (
                     seq_len * feature_dim
-                    + (len(targets) if require_target else 0)
+                    + (
+                        target_width(target_contract)
+                        if require_target
+                        else 0
+                    )
                 )
                 rows_per_slice = max(1, (8 * 1024 * 1024) // row_bytes)
                 for start in range(0, logical_rows, rows_per_slice):
@@ -536,13 +549,6 @@ def _list_values_to_tensor(values: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(values)  # pyright: ignore[reportUnknownMemberType]
 
 
-def _validate_target_values(
-    values: np.ndarray,
-    targets: Sequence[str],
-) -> None:
-    validate_target_space_values(values, targets)
-
-
 def _first_true(values: np.ndarray) -> int | None:
     indices = np.flatnonzero(values)
     return None if indices.size == 0 else int(indices[0])
@@ -601,14 +607,14 @@ def write_arrow(
     path: str,
     predictions: torch.Tensor,
     col_name: str,
+    target_contract: JsonObject,
     expected_rows: int | None = None,
-    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> None:
     table = predictions_to_table(
         predictions,
         col_name,
         expected_rows=expected_rows,
-        targets=targets,
+        target_contract=target_contract,
     )
 
     with atomic_output_path(path) as temporary_path:
@@ -626,15 +632,15 @@ def write_arrow(
 def predictions_to_table(
     predictions: torch.Tensor,
     col_name: str,
+    target_contract: JsonObject,
     expected_rows: int | None = None,
-    targets: Sequence[str] = TARGET_IDENTITIES,
 ) -> pa.Table:
     import torch
 
-    selected = canonical_targets(targets)
-    if predictions.ndim != 2 or predictions.shape[1] != len(selected):
+    width = target_width(target_contract)
+    if predictions.ndim != 2 or predictions.shape[1] != width:
         raise ValueError(
-            f"Predictions must have shape [rows, {len(selected)}], "
+            f"Predictions must have shape [rows, {width}], "
             f"got {list(predictions.shape)}"
         )
     if expected_rows is not None and predictions.shape[0] != expected_rows:
@@ -645,19 +651,19 @@ def predictions_to_table(
     arr = predictions.detach().cpu().to(dtype=torch.float32).numpy()
     if not np.isfinite(arr).all():
         raise ValueError("Predictions must contain only finite values")
-    validate_target_space_values(arr, selected)
+    validate_target_values(arr, target_contract)
     arr = np.ascontiguousarray(arr)
     values = pa.array(arr.reshape(-1), type=pa.float32())
-    column = pa.FixedSizeListArray.from_arrays(values, len(selected))
-    schema = canonical_prediction_schema(col_name, selected)
+    column = pa.FixedSizeListArray.from_arrays(values, width)
+    schema = canonical_prediction_schema(col_name, target_contract)
     return pa.Table.from_arrays([column], schema=schema)
 
 
 def empty_predictions_table(
     col_name: str,
-    targets: Sequence[str] = TARGET_IDENTITIES,
+    target_contract: JsonObject,
 ) -> pa.Table:
-    schema = canonical_prediction_schema(col_name, targets)
+    schema = canonical_prediction_schema(col_name, target_contract)
     return pa.Table.from_arrays(
         [pa.array([], type=schema.field(0).type)],
         schema=schema,

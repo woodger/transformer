@@ -12,8 +12,8 @@ from app.contracts.json_types import JsonObject
 class GradientInteractionObservation:
     """One sampled set of objective gradients at the shared head input."""
 
-    component_names: tuple[str, ...]
-    pair_names: tuple[tuple[str, str], ...]
+    component_identities: tuple[str, ...]
+    pair_identities: tuple[tuple[str, str], ...]
     values: tuple[torch.Tensor, ...]
 
     @classmethod
@@ -50,8 +50,8 @@ class GradientInteractionObservation:
                 pairs.append((names[left_index], names[right_index]))
                 cosines.append(cosine)
         return cls(
-            component_names=names,
-            pair_names=tuple(pairs),
+            component_identities=names,
+            pair_identities=tuple(pairs),
             values=(*norms, *cosines),
         )
 
@@ -60,19 +60,19 @@ class GradientInteractionObservation:
             list[float],
             torch.stack(self.values).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
         )
-        component_count = len(self.component_names)
+        component_count = len(self.component_identities)
         return {
             "components": [
-                {"name": name, "norm": float(host[index])}
-                for index, name in enumerate(self.component_names)
+                {"componentIdentity": identity, "norm": float(host[index])}
+                for index, identity in enumerate(self.component_identities)
             ],
             "pairs": [
                 {
-                    "left": left,
-                    "right": right,
+                    "leftComponentIdentity": left,
+                    "rightComponentIdentity": right,
                     "cosine": float(host[component_count + index]),
                 }
-                for index, (left, right) in enumerate(self.pair_names)
+                for index, (left, right) in enumerate(self.pair_identities)
             ],
         }
 

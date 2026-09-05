@@ -9,17 +9,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v11 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v11.config import (
-    model_config_to_manifest,
-    train_config_to_manifest,
-)
-from app.contracts.worker.v11.objective import (
+from app.contracts.checkpoint.v6 import (
     CHECKPOINT_FORMAT,
-    ml_contract,
-    objective_config_sha256,
+    validate_checkpoint_document,
 )
+from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.worker.v12 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v12.config import train_config_to_manifest
 from app.worker.application.documents import (
     integer_field,
     integer_list,
@@ -65,57 +61,55 @@ def result_identity(manifest: JsonObject) -> JsonObject:
         "attempt": integer_field(manifest, "attempt"),
         "attemptId": string_field(manifest, "attemptId"),
         "operation": string_field(manifest, "operation"),
+        "jobConfigSha256": string_field(manifest, "jobConfigSha256"),
+        "semanticDigests": dict(object_field(manifest, "semanticDigests")),
     }
 
 
 def checkpoint_metadata(
     trainer: Trainer,
-    data_contract: JsonObject | None = None,
+    manifest: JsonObject,
 ) -> JsonObject:
-    model_config = trainer.model_config
-    train_config = trainer.train_config
-    if model_config is None:
-        raise ValueError("fit checkpoint configuration is unavailable")
-    feature_dim = model_config.feature_dim
-    if feature_dim is None:
-        raise ValueError("fit checkpoint feature dimension is unavailable")
-    if data_contract is None:
-        raise ValueError("fit checkpoint data contract is unavailable")
     if trainer.initialization is None:
         raise ValueError("fit checkpoint initialization is unavailable")
     best_selection_score = trainer.best_selection_score
     if not math.isfinite(best_selection_score):
         best_selection_score = None
-    selection_enabled = trainer.selection is not None
-    ml = ml_contract(
-        trainer.objective,
-        target_schema_id=string_field(data_contract, "targetSchemaId"),
-    )
-    return {
+    metadata: JsonObject = {
         "format": CHECKPOINT_FORMAT,
         "serviceVersion": __version__,
-        "modelConfig": model_config_to_manifest(model_config),
-        "trainingConfig": train_config_to_manifest(train_config),
-        "diagnostics": train_config.diagnostics.to_document(),
-        "initialization": dict(trainer.initialization),
-        "dataContract": dict(data_contract),
-        "mlContract": ml,
-        "objective": trainer.objective.to_document(),
-        "checkpointSelection": {
-            "enabled": selection_enabled,
-            "objectiveConfigSha256": objective_config_sha256(
-                trainer.objective
+        "generation": trainer.state.global_epoch,
+        "jobId": string_field(manifest, "jobId"),
+        "dataContract": dict(object_field(manifest, "dataContract")),
+        "modelContract": dict(object_field(manifest, "modelContract")),
+        "semanticDigests": dict(object_field(manifest, "semanticDigests")),
+        "trainingConfig": train_config_to_manifest(trainer.train_config),
+        "diagnostics": trainer.train_config.diagnostics.to_document(),
+        "selection": {
+            "enabled": trainer.selection is not None,
+            "modelContractSha256": string_field(
+                object_field(manifest, "semanticDigests"),
+                "modelContractSha256",
             ),
             "bestSelectionScore": best_selection_score,
-            "bestFrame": trainer.best_frame,
             "bestEpoch": trainer.best_epoch,
             "source": (
-                "best_selection_score"
-                if selection_enabled
+                "best_direct_selection_score"
+                if trainer.selection is not None
                 else "last_epoch"
             ),
         },
+        "initialization": dict(trainer.initialization),
+        "jobConfigSha256": string_field(manifest, "jobConfigSha256"),
+        "manifestSha256": string_field(manifest, "manifestSha256"),
+        "progress": {
+            "completedEpochs": trainer.state.global_epoch,
+            "globalStep": trainer.state.train_step,
+            "trainingComplete": trainer.training_complete,
+        },
     }
+    validate_checkpoint_document(metadata, "checkpoint-metadata")
+    return metadata
 
 
 def validate_workspace(path: str) -> str:
@@ -144,12 +138,42 @@ def validate_artifact(document: JsonObject) -> str:
     return path
 
 
+def validate_checkpoint_artifact(document: JsonObject) -> str:
+    if string_field(document, "format") != CHECKPOINT_FORMAT:
+        raise ValueError("worker checkpoint format is unsupported")
+    documented_path = string_field(document, "path")
+    path = os.path.abspath(documented_path)
+    if not os.path.isabs(documented_path):
+        raise ValueError("worker checkpoint path must be absolute")
+    try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        raise ValueError("worker checkpoint is unavailable") from exc
+    if (
+        size != integer_field(document, "byteCount")
+        or _sha256_file(path)
+        != string_field(document, "checkpointSha256")
+    ):
+        raise ValueError("worker checkpoint integrity check failed")
+    return path
+
+
 def artifact_document(path: str) -> JsonObject:
     path = os.path.abspath(path)
     return {
         "path": path,
         "byteCount": os.path.getsize(path),
         "sha256": _sha256_file(path),
+    }
+
+
+def checkpoint_artifact_document(path: str) -> JsonObject:
+    path = os.path.abspath(path)
+    return {
+        "path": path,
+        "format": CHECKPOINT_FORMAT,
+        "byteCount": os.path.getsize(path),
+        "checkpointSha256": _sha256_file(path),
     }
 
 
@@ -258,10 +282,12 @@ __all__ = [
     "CommittedInputArtifacts",
     "artifact_document",
     "boolean_value",
+    "checkpoint_artifact_document",
     "checkpoint_metadata",
     "json_safe",
     "result_identity",
     "validate_artifact",
+    "validate_checkpoint_artifact",
     "validate_workspace",
     "write_json_once",
 ]

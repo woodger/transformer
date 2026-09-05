@@ -55,25 +55,34 @@ heads текущего checkout. `Current revision: none` означает, чт
 
 Revision `0020` является baseline. Revision `0021` добавляет persisted fit
 initialization, `0022` удаляет дублирующий путь model metadata, а текущий head
-`0023` сохраняет compact input encoding, физические счётчики и range
-boundaries Flight v10:
+`0024` переводит persistence на clean-cut consumer-neutral runtime:
 
 - новая пустая database сначала создаётся baseline, затем получает последующие
   revisions;
-- database на revision `0020`, `0021` или `0022` имеет прямой поддерживаемый
-  upgrade до `0023`;
+- database на revision `0020`–`0023` имеет прямой поддерживаемый upgrade до
+  `0024`;
 - перед применением `0022` Flight service должен быть остановлен: предыдущий
   executable ещё записывает удаляемую колонку при публикации модели;
 - перед применением `0023` Flight service также должен быть остановлен, а все
   jobs прежнего Flight contract должны находиться в terminal state. Migration
   явно отклоняется при наличии `WAITING_INPUT`, `QUEUED`, `RUNNING`,
   `RETRYING` или `CANCELLING` job;
+- перед применением `0024` service остаётся остановленным, а все Flight v10
+  jobs должны быть terminal. Revision удаляет прежние jobs, models, aliases,
+  idempotency records, runtime model metadata и telemetry outbox, после чего
+  заменяет `ml_contract` на `model_contract`, добавляет D1 semantic digests и
+  recovery input revision и делает compact `source_encoding` обязательным;
 - revisions ниже `0020` текущим checkout не поддерживаются.
 
 Revision `0023` не преобразует прежние dense input artifacts. Их terminal job
 records могут оставаться в PostgreSQL до штатной retention, но не становятся
 Flight v10 jobs, не адресуются через v10 API и не возобновляются новым
-worker-ом.
+worker-ом. Следующая revision `0024` удаляет и эти записи: перенос models,
+checkpoints, recovery или historical metrics в Flight v11 отсутствует.
+Filesystem artifacts, потерявшие PostgreSQL identity, удаляются startup
+reconciliation после успешного upgrade. OpenSearch indices не принадлежат
+PostgreSQL migration и переключаются отдельно по
+[`deployment guide`](../deployment/opensearch.md).
 
 Для legacy database ниже `0020` сначала разверните tag `0.1.15`, примените его
 полную migration chain до `0020` и только затем переходите на текущую версию.
@@ -88,8 +97,11 @@ instructions сохранены в tag `0.1.15`, Git history и release notes.
 ./.venv/bin/python ./app/main.py db migrations rollback
 ```
 
-Downgrade `0023 → 0022` допустим только до создания первой Flight v10 job;
-иначе migration останавливается, чтобы не потерять compact input metadata.
+Downgrade `0024 → 0023` является таким же clean cut: он удаляет все созданные
+Flight v11 jobs, models и runtime metadata и не восстанавливает данные v10.
+Используйте заранее подготовленный backup, если требуется вернуть прежнее
+состояние. Downgrade `0023 → 0022` допустим только до создания первой Flight
+v10 job; иначе migration останавливается, чтобы не потерять compact input metadata.
 Downgrade `0022 → 0021` восстанавливает обязательный `metadata_path` по
 `modelRef`, но не создаёт удалённые filesystem sidecars. Downgrade
 `0021 → 0020` допустим только при отсутствии fit jobs с

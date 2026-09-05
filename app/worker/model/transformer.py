@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping
+from typing import cast
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from app.contracts.ml import canonical_targets
-from app.contracts.worker.v11.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
     validate_context_mode,
 )
+from app.worker.model.output_head import OutputHead
 from app.worker.model.positional_encoding import PositionalEncoding
 
 
@@ -22,61 +23,6 @@ def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
         device=key_padding_mask.device,
     ).expand_as(key_padding_mask)
     return positions.masked_fill(key_padding_mask, -1).max(dim=1).values.clamp(min=0)
-
-
-class TradingHead(nn.Module):
-    def __init__(
-        self,
-        hidden_dim: int,
-        targets: Sequence[str],
-        *,
-        include_return_scale: bool,
-    ) -> None:
-        super().__init__()
-        if hidden_dim <= 0:
-            raise ValueError("hidden_dim must be a positive integer")
-
-        self.hidden_dim = hidden_dim
-        self.targets = canonical_targets(targets)
-        self.include_return_scale = include_return_scale
-        self.shared = nn.Sequential(
-            nn.Linear(hidden_dim, 128),
-            nn.GELU(),
-            nn.LayerNorm(128),
-        )
-        self.public_heads = nn.ModuleDict({
-            target: nn.Linear(128, 1)
-            for target in self.targets
-        })
-        self.return_scale_head = (
-            nn.Linear(128, 1)
-            if include_return_scale
-            else None
-        )
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        output, _shared = self.forward_with_shared_representation(hidden_states)
-        return output
-
-    def forward_with_shared_representation(
-        self,
-        hidden_states: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if hidden_states.ndim != 2 or hidden_states.shape[1] != self.hidden_dim:
-            raise ValueError("hidden states must have shape [batch, hidden]")
-
-        shared = self.shared(hidden_states)
-        public = [
-            _internal_public_value(target, self.public_heads[target](shared))
-            for target in self.targets
-        ]
-        values = public
-        if self.return_scale_head is not None:
-            values = [
-                *values,
-                F.softplus(self.return_scale_head(shared)) + 1e-6,
-            ]
-        return torch.cat(values, dim=1), shared
 
 
 class TransformerModel(nn.Module):
@@ -89,9 +35,8 @@ class TransformerModel(nn.Module):
         hidden_dim: int,
         layers: int,
         dropout: float,
-        targets: Sequence[str],
+        model_contract: ModelContract,
         *,
-        include_return_scale: bool,
         nhead: int = 8,
         context_mode: str = DEFAULT_CONTEXT_MODE,
     ) -> None:
@@ -112,8 +57,7 @@ class TransformerModel(nn.Module):
 
         self.input_dim = input_dim
         self.seq_len = seq_len
-        self.targets = canonical_targets(targets)
-        self.include_return_scale = include_return_scale
+        self.model_contract = model_contract
         self.context_mode = validate_context_mode(context_mode)
         self.input_proj = nn.Linear(
             context_input_dim(input_dim, self.context_mode),
@@ -133,10 +77,13 @@ class TransformerModel(nn.Module):
             num_layers=layers,
             enable_nested_tensor=False,
         )
-        self.head = TradingHead(
+        self.head = OutputHead(
             hidden_dim,
-            self.targets,
-            include_return_scale=include_return_scale,
+            model_contract.target_width,
+            tuple(
+                str(resource["kind"])
+                for resource in model_contract.resource_declarations
+            ),
         )
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
@@ -179,37 +126,42 @@ class TransformerModel(nn.Module):
 
 def public_predictions(
     model_output: torch.Tensor,
-    targets: Sequence[str],
-    *,
-    include_return_scale: bool = False,
+    model_contract: ModelContract,
 ) -> torch.Tensor:
-    selected = canonical_targets(targets)
-    expected_width = len(selected) + int(include_return_scale)
+    expected_width = (
+        model_contract.target_width + len(model_contract.resource_declarations)
+    )
     if model_output.ndim != 2 or model_output.shape[1] != expected_width:
         raise ValueError(
             f"model output must have shape [rows, {expected_width}]"
         )
-    return torch.stack(
-        tuple(
-            _public_value(target, model_output[:, index])
-            for index, target in enumerate(selected)
-        ),
-        dim=1,
+    values = tuple(
+        apply_transformation(
+            model_output[:, index],
+            str(
+                cast(
+                    Mapping[str, object],
+                    slot["publicPredictionTransformation"],
+                )["kind"]
+            ),
+        )
+        for index, slot in enumerate(model_contract.target_slots)
     )
+    return torch.stack(values, dim=1)
 
 
-def _internal_public_value(target: str, value: torch.Tensor) -> torch.Tensor:
-    if target == "MeanReturn":
+def apply_transformation(value: torch.Tensor, kind: str) -> torch.Tensor:
+    if kind == "Identity":
+        return value
+    if kind == "Tanh":
         return torch.tanh(value)
-    if target in {"SigmaReturn", "VolatilityNext"}:
+    if kind == "Sigmoid":
         return torch.sigmoid(value)
-    return value
+    raise ValueError(f"unsupported transformation: {kind}")
 
 
-def _public_value(target: str, value: torch.Tensor) -> torch.Tensor:
-    if target in {"ProbTP", "ProbSL", "HittingProbTP"}:
-        return torch.sigmoid(value)
-    return value
-
-
-__all__ = ["TradingHead", "TransformerModel", "public_predictions"]
+__all__ = [
+    "TransformerModel",
+    "apply_transformation",
+    "public_predictions",
+]

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
 
-from app.contracts.ml import canonical_targets
+from app.contracts.semantic.v1 import ModelContract
 from app.worker.model.transformer import public_predictions
 
 
@@ -21,16 +20,10 @@ class TargetErrorObservation:
         cls,
         model_output: torch.Tensor,
         expected: torch.Tensor,
-        targets: Sequence[str],
-        *,
-        include_return_scale: bool,
+        model_contract: ModelContract,
     ) -> TargetErrorObservation:
-        selected = canonical_targets(targets)
-        predictions = public_predictions(
-            model_output,
-            selected,
-            include_return_scale=include_return_scale,
-        ).detach().float()
+        selected = model_contract.target_identities
+        predictions = public_predictions(model_output, model_contract).detach().float()
         errors = predictions - expected.detach().float()
         absolute_errors = errors.abs()
         squared_errors = errors.square()

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -163,7 +163,8 @@ class Ledger:
         source_encoding: JsonObject,
         config_hash: str,
         data_contract: JsonObject,
-        ml_contract: JsonObject,
+        model_contract: JsonObject,
+        semantic_digests: JsonObject,
         create_result: JsonObject,
         model_label: str | None = None,
         resolved_model_ref: str | None = None,
@@ -189,29 +190,36 @@ class Ledger:
         if not isinstance(raw_data_contract, dict):
             raise ValueError("data_contract must be an object")
         typed_data_contract = cast(JsonObject, raw_data_contract)
-        raw_ml_contract = cast(object, ml_contract)
-        if not isinstance(raw_ml_contract, dict):
-            raise ValueError("ml_contract must be an object")
-        typed_ml_contract = cast(JsonObject, raw_ml_contract)
+        raw_model_contract = cast(object, model_contract)
+        if not isinstance(raw_model_contract, dict):
+            raise ValueError("model_contract must be an object")
+        typed_model_contract = cast(JsonObject, raw_model_contract)
+        raw_semantic_digests = cast(object, semantic_digests)
+        if not isinstance(raw_semantic_digests, dict):
+            raise ValueError("semantic_digests must be an object")
+        typed_semantic_digests = cast(JsonObject, raw_semantic_digests)
         raw_source_encoding = cast(object, source_encoding)
         if not isinstance(raw_source_encoding, dict):
             raise ValueError("source_encoding must be an object")
         typed_source_encoding = cast(JsonObject, raw_source_encoding)
         contract_sha256 = _digest(
-            typed_data_contract.get("data_contract_sha256"),
+            typed_data_contract.get("dataContractSha256"),
             "data_contract_sha256",
         )
-        _digest(
-            typed_ml_contract.get("objectiveConfigSha256"),
-            "objective_config_sha256",
-        )
+        for key in (
+            "dataContractSha256",
+            "targetContractSha256",
+            "objectiveSha256",
+            "modelContractSha256",
+        ):
+            _digest(typed_semantic_digests.get(key), key)
         seq_len = _positive(
-            typed_data_contract.get("seq_len"),
-            "data_contract.seq_len",
+            typed_data_contract.get("seqLen"),
+            "data_contract.seqLen",
         )
         feature_dim = _positive(
-            typed_data_contract.get("feature_dim"),
-            "data_contract.feature_dim",
+            typed_data_contract.get("featureDim"),
+            "data_contract.featureDim",
         )
         blocks = feature_block_dimensions(
             typed_source_encoding,
@@ -281,7 +289,8 @@ class Ledger:
             ),
             data_contract=_json_value(typed_data_contract),
             data_contract_sha256=contract_sha256,
-            ml_contract=_json_value(typed_ml_contract),
+            model_contract=_json_value(typed_model_contract),
+            semantic_digests=_json_value(typed_semantic_digests),
             config_hash=config_hash,
             source_width=seq_len * feature_dim,
             feature_dim=feature_dim,
@@ -598,6 +607,7 @@ class Ledger:
                             relative_path=checkpoint.relative_path,
                             byte_count=checkpoint.bytes,
                             sha256=checkpoint.sha256,
+                            input_revision=checkpoint.input_revision,
                             completed_epochs=checkpoint.completed_epochs,
                             global_step=checkpoint.global_step,
                             training_complete=checkpoint.training_complete,
@@ -1101,13 +1111,13 @@ class Ledger:
         attempt: int,
         attempt_id: str,
         generation: int,
+        input_revision: int,
         format: str,
         relative_path: str,
         byte_count: int,
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss: float,
         training_complete: bool,
         now: float | None = None,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]:
@@ -1116,13 +1126,13 @@ class Ledger:
             attempt=attempt,
             attempt_id=attempt_id,
             generation=generation,
+            input_revision=input_revision,
             format=format,
             relative_path=relative_path,
             byte_count=byte_count,
             sha256=sha256,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss=loss,
             training_complete=training_complete,
             now=now,
         )

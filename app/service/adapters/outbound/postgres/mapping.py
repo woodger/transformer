@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,
@@ -42,7 +42,8 @@ def execution_job_from_mapping(
         model_config=ModelConfig.from_dict(value.get("model_config")),
         training_config=TrainConfig.from_dict(value.get("training_config")),
         data_contract=row_json_object(value, "data_contract"),
-        ml_contract=row_json_object(value, "ml_contract"),
+        model_contract=row_json_object(value, "model_contract"),
+        semantic_digests=row_json_object(value, "semantic_digests"),
         config_hash=row_string(value, "config_hash"),
         manifest_sha256=row_optional_string(value, "manifest_sha256"),
         feature_dim=row_integer(value, "feature_dim"),
@@ -71,9 +72,7 @@ def recoverable_attempt_from_mapping(
 
 
 def job_record(row: Job | None) -> JobRecord | None:
-    # Pre-v10 terminal jobs deliberately retain no compact source encoding
-    # after revision 0023 and are not part of the current public contract.
-    if row is None or row.source_encoding is None:
+    if row is None:
         return None
     return JobRecord(
         job_id=row.job_id,
@@ -105,7 +104,9 @@ def job_record(row: Job | None) -> JobRecord | None:
         prediction_column=row.prediction_column,
         source_encoding=dict(row.source_encoding),
         data_contract=dict(row.data_contract),
-        ml_contract=dict(row.ml_contract),
+        model_contract=dict(row.model_contract),
+        semantic_digests=dict(row.semantic_digests),
+        config_hash=row.config_hash,
         progress=dict(row.progress or {}),
         attempt=row.attempt,
         error_code=row.error_code,
@@ -177,13 +178,9 @@ def published_model_record(
         byte_count=row.checkpoint_bytes,
         sha256=row.sha256,
         metadata=dict(row.metadata_json),
-        data_contract=(
-            None if row.data_contract is None else dict(row.data_contract)
-        ),
-        ml_contract=(
-            None if row.ml_contract is None else dict(row.ml_contract)
-        ),
-        objective_config_sha256=row.objective_config_sha256,
+        data_contract=dict(row.data_contract),
+        model_contract=dict(row.model_contract),
+        semantic_digests=dict(row.semantic_digests),
         producing_job_id=row.producing_job_id,
         created_at=row.created_at.timestamp(),
     )

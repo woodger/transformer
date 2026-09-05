@@ -1,16 +1,65 @@
 import os
+from copy import deepcopy
 
 import pytest
 import torch
 
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import TrainConfig
+from app.local.semantic import checkpoint_model_contract, load_model_contract
 from app.worker.checkpoints.model import (
     CHECKPOINT_FORMAT,
     load_checkpoint,
     model_path,
     save_checkpoint,
 )
+from tests.support.consumer_neutral import model_contract
+
+
+def _checkpoint_metadata():
+    contract = model_contract(
+        "single-regression",
+        seq_len=1,
+        feature_dim=2,
+        hidden=8,
+        layers=1,
+        dropout=0.0,
+        nhead=2,
+    )
+    digests = contract.digests("a" * 64)
+    return {
+        "format": CHECKPOINT_FORMAT,
+        "serviceVersion": "0.2.0",
+        "generation": 1,
+        "jobId": "11111111-1111-4111-8111-111111111111",
+        "dataContract": {
+            "identity": "test.dataset",
+            "revision": 1,
+            "profile": "test.profile",
+            "dataContractSha256": "a" * 64,
+            "seqLen": 1,
+            "featureDim": 2,
+        },
+        "modelContract": contract.to_document(),
+        "semanticDigests": digests,
+        "trainingConfig": TrainConfig().to_manifest(),
+        "diagnostics": TrainConfig().diagnostics.to_document(),
+        "selection": {
+            "enabled": False,
+            "modelContractSha256": digests["modelContractSha256"],
+            "bestSelectionScore": None,
+            "bestEpoch": None,
+            "source": "last_epoch",
+        },
+        "initialization": {"kind": "random"},
+        "jobConfigSha256": "b" * 64,
+        "manifestSha256": "c" * 64,
+        "progress": {
+            "completedEpochs": 1,
+            "globalStep": 1,
+            "trainingComplete": True,
+        },
+    }
 
 
 def test_relative_model_path_cannot_escape_models_directory(monkeypatch, tmp_path):
@@ -47,12 +96,11 @@ def test_checkpoint_save_atomically_replaces_existing_file(tmp_path):
     save_checkpoint(
         path,
         model,
-        model_config=ModelConfig(seq_len=1, feature_dim=2),
-        train_config=TrainConfig(),
+        metadata=_checkpoint_metadata(),
     )
 
     checkpoint = load_checkpoint(path, torch.device("cpu"))
-    assert checkpoint["format"] == CHECKPOINT_FORMAT
+    assert checkpoint["metadata"]["format"] == CHECKPOINT_FORMAT
     assert set(checkpoint["state_dict"]) == {"weight", "bias"}
     assert not [name for name in os.listdir(path.parent) if name.endswith(".tmp")]
 
@@ -60,9 +108,28 @@ def test_checkpoint_save_atomically_replaces_existing_file(tmp_path):
 def test_unknown_wrapped_checkpoint_format_is_rejected(tmp_path):
     path = tmp_path / "model.pth"
     torch.save(
-        {"format": "transformer-checkpoint-v999", "state_dict": {}},
+        {
+            "metadata": {"format": "transformer-checkpoint-v999"},
+            "state_dict": {},
+        },
         path,
     )
 
-    with pytest.raises(ValueError, match="Unsupported checkpoint format"):
+    with pytest.raises(ValueError, match="unsupported checkpoint format"):
         load_checkpoint(path, torch.device("cpu"))
+
+
+def test_local_checkpoint_rejects_inconsistent_semantic_digest():
+    metadata = deepcopy(_checkpoint_metadata())
+    metadata["semanticDigests"]["targetContractSha256"] = "d" * 64
+
+    with pytest.raises(ValueError, match="semantic digests are inconsistent"):
+        checkpoint_model_contract(metadata)
+
+
+def test_local_model_contract_rejects_duplicate_json_keys(tmp_path):
+    path = tmp_path / "model-contract.json"
+    path.write_text('{"slots":[],"slots":[]}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="model contract could not be read"):
+        load_model_contract(str(path))

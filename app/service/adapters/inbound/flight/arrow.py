@@ -2,20 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v10.arrow import (
+from app.contracts.flight.v11.arrow import (
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,
-    validate_target_space_values,
+    validate_target_values,
 )
+from app.contracts.flight.v11.target_value_error import TargetValueError
 from app.contracts.indexed_feature_blocks import feature_block_dimensions
-from app.contracts.ml import canonical_targets
+from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
 
 _POSTGRES_BIGINT_MAX = 2**63 - 1
 
@@ -42,7 +46,7 @@ class InputBatchValidator:
         schema: pa.Schema,
         *,
         source_encoding: Mapping[str, object],
-        targets: Sequence[str],
+        target_contract: JsonObject,
         seq_len: int,
         expected_feature_dim: int,
         max_batch_bytes: int,
@@ -52,7 +56,7 @@ class InputBatchValidator:
         if operation not in ("fit", "predict"):
             raise invalid("unsupported input operation")
         self.operation = operation
-        self.targets = canonical_targets(targets)
+        self.target_contract = target_contract
         self.schema = schema
         self.seq_len = seq_len
         self.expected_feature_dim = expected_feature_dim
@@ -78,7 +82,7 @@ class InputBatchValidator:
             source_encoding,
             seq_len,
             expected_feature_dim,
-            self.targets,
+            self.target_contract,
         )
         if not schema.equals(expected_schema, check_metadata=False):
             raise invalid(
@@ -229,9 +233,27 @@ class InputBatchValidator:
             _require_no_nulls(target_values, "tgt value")
             values = target_values.to_numpy(zero_copy_only=False).reshape(
                 -1,
-                len(self.targets),
+                len(cast(Sequence[object], self.target_contract["slots"])),
             )
-            validate_target_space_values(values, self.targets)
+            try:
+                validate_target_values(
+                    values,
+                    self.target_contract,
+                    logical_row_offset=self.rows,
+                )
+            except TargetValueError as exc:
+                raise ServiceError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    str(exc),
+                    detail={
+                        "code": "INVALID_ARGUMENT",
+                        "reason": "TARGET_VALUE_INVALID",
+                        "targetIdentity": exc.target_identity,
+                        "targetIndex": exc.target_index,
+                        "logicalRow": exc.logical_row,
+                        "message": str(exc),
+                    },
+                ) from exc
 
         for index, (raw_range, raw_start, logical_count) in enumerate(
             zip(ranges, starts, logical_lengths, strict=True)
@@ -277,15 +299,14 @@ def validate_prediction_file(
     path: str,
     prediction_column: str,
     expected_rows: int,
-    targets: Sequence[str],
+    target_contract: JsonObject,
 ) -> ArrowStats:
-    selected = canonical_targets(targets)
     try:
         stats = validate_contract_prediction_file(
             path,
             prediction_column,
             expected_rows,
-            selected,
+            target_contract,
         )
     except ValueError as exc:
         raise invalid(str(exc)) from exc

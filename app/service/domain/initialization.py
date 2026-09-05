@@ -16,15 +16,25 @@ def random_initialization() -> JsonObject:
 def published_model_initialization(
     model_ref: str,
     checkpoint_sha256: str,
-    parent_data_contract_sha256: str,
-    data_contract_sha256: str,
+    parent_digests: Mapping[str, object],
+    current_digests: Mapping[str, object],
 ) -> JsonObject:
-    initialization: JsonObject = {
+    initialization: dict[str, object] = {
         "kind": "publishedModel",
         "parentModelRef": model_ref,
         "parentCheckpointSha256": checkpoint_sha256,
-        "parentDataContractSha256": parent_data_contract_sha256,
-        "dataContractSha256": data_contract_sha256,
+        "parentDataContractSha256": parent_digests["dataContractSha256"],
+        "dataContractSha256": current_digests["dataContractSha256"],
+        "parentTargetContractSha256": parent_digests[
+            "targetContractSha256"
+        ],
+        "targetContractSha256": current_digests["targetContractSha256"],
+        "parentObjectiveSha256": parent_digests["objectiveSha256"],
+        "objectiveSha256": current_digests["objectiveSha256"],
+        "parentModelContractSha256": parent_digests[
+            "modelContractSha256"
+        ],
+        "modelContractSha256": current_digests["modelContractSha256"],
     }
     return validate_initialization(initialization)
 
@@ -51,6 +61,12 @@ def validate_initialization(
         "parentCheckpointSha256",
         "parentDataContractSha256",
         "dataContractSha256",
+        "parentTargetContractSha256",
+        "targetContractSha256",
+        "parentObjectiveSha256",
+        "objectiveSha256",
+        "parentModelContractSha256",
+        "modelContractSha256",
     }
     if kind != "publishedModel" or set(document) != published_model_fields:
         raise ValueError("model initialization is invalid")
@@ -73,6 +89,30 @@ def validate_initialization(
         "dataContractSha256": _digest(
             document.get("dataContractSha256"),
             "data contract digest",
+        ),
+        "parentTargetContractSha256": _digest(
+            document.get("parentTargetContractSha256"),
+            "parent target contract digest",
+        ),
+        "targetContractSha256": _digest(
+            document.get("targetContractSha256"),
+            "target contract digest",
+        ),
+        "parentObjectiveSha256": _digest(
+            document.get("parentObjectiveSha256"),
+            "parent objective digest",
+        ),
+        "objectiveSha256": _digest(
+            document.get("objectiveSha256"),
+            "objective digest",
+        ),
+        "parentModelContractSha256": _digest(
+            document.get("parentModelContractSha256"),
+            "parent model contract digest",
+        ),
+        "modelContractSha256": _digest(
+            document.get("modelContractSha256"),
+            "model contract digest",
         ),
     }
     return result

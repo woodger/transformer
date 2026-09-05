@@ -5,8 +5,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v10.arrow import canonical_input_schema
-from app.contracts.ml import TARGET_IDENTITIES
+from app.contracts.flight.v11.arrow import canonical_input_schema
 from app.worker.data.arrow import (
     iter_committed_fit_arrow,
     iter_committed_source_arrow,
@@ -17,6 +16,7 @@ from app.worker.data.arrow import (
     table_to_tensors,
     write_arrow,
 )
+from tests.support.consumer_neutral import model_contract
 
 SOURCE_ENCODING = {
     "kind": "indexedFeatureBlocks",
@@ -24,13 +24,14 @@ SOURCE_ENCODING = {
         {"position": 0, "windowRows": 2, "nativeRowWidth": 2},
     ],
 }
+TARGET_CONTRACT = model_contract("single-regression").target_contract
 
 
 def test_arrow_file_io_preserves_tensor_values(tmp_path):
     source_rows = [[1.0, 2.0], [3.0, 4.0]]
     target_rows = [
-        [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
-        [-0.5, 0.1, 0.2, 0.3, 0.4, 0.5],
+        [0.5],
+        [-0.5],
     ]
 
     table = pa.table({"src": source_rows, "tgt": target_rows})
@@ -40,7 +41,7 @@ def test_arrow_file_io_preserves_tensor_values(tmp_path):
         with ipc.new_file(sink, table.schema) as writer:
             writer.write_table(table)
 
-    batch = read_arrow(str(path))
+    batch = read_arrow(str(path), TARGET_CONTRACT)
 
     assert isinstance(batch.features, torch.Tensor)
     assert isinstance(batch.targets, torch.Tensor)
@@ -51,12 +52,12 @@ def test_arrow_file_io_preserves_tensor_values(tmp_path):
     )
 
     predictions = torch.tensor([
-        [1.0, 0.2, 0.3, 0.4, 0.5, 0.6],
-        [-1.0, 0.5, 0.4, 0.3, 0.2, 0.25],
+        [1.0],
+        [-1.0],
     ])
     out_path = tmp_path / "preds.arrow"
 
-    write_arrow(str(out_path), predictions, "out")
+    write_arrow(str(out_path), predictions, "out", TARGET_CONTRACT)
 
     with pa.memory_map(str(out_path), "r") as source:
         written = ipc.RecordBatchFileReader(source).read_all()
@@ -67,11 +68,11 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     tables = [
         pa.table({
             "src": [[1.0, 2.0]],
-            "tgt": [[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]],
+            "tgt": [[0.5]],
         }),
         pa.table({
             "src": [[3.0, 4.0]],
-            "tgt": [[-0.5, 0.1, 0.2, 0.3, 0.4, 0.5]],
+            "tgt": [[-0.5]],
         }),
     ]
 
@@ -89,12 +90,12 @@ def test_iter_framed_arrow_reads_multiple_payloads():
     result = list(iter_framed_arrow(stream))
 
     assert len(result) == 2
-    batch = table_to_tensors(result[1])
+    batch = table_to_tensors(result[1], TARGET_CONTRACT)
     assert isinstance(batch.features, torch.Tensor)
     assert batch.features.tolist() == [[3.0, 4.0]]
     assert torch.allclose(
         batch.targets,
-        torch.tensor([[-0.5, 0.1, 0.2, 0.3, 0.4, 0.5]]),
+        torch.tensor([[-0.5]]),
     )
 
 
@@ -117,6 +118,7 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
         SOURCE_ENCODING,
         seq_len=1,
         feature_dim=4,
+        target_contract=TARGET_CONTRACT,
     )
     batches = [
         pa.record_batch(
@@ -129,7 +131,7 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
                         "observationOffsets": [[0]],
                     },
                 }], type=schema.field(2).type),
-                pa.array([[[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]]], type=schema.field(3).type),
+                pa.array([[[0.5]]], type=schema.field(3).type),
             ],
             schema=schema,
         ),
@@ -143,7 +145,7 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
                         "observationOffsets": [[0]],
                     },
                 }], type=schema.field(2).type),
-                pa.array([[[-0.5, 0.1, 0.2, 0.3, 0.4, 0.0]]], type=schema.field(3).type),
+                pa.array([[[-0.5]]], type=schema.field(3).type),
             ],
             schema=schema,
         ),
@@ -162,7 +164,7 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
         source_encoding=SOURCE_ENCODING,
         seq_len=1,
         feature_dim=4,
-        targets=TARGET_IDENTITIES,
+        target_contract=TARGET_CONTRACT,
     ))
     features = torch.cat([batch.features for batch in batches])
     targets = torch.cat([batch.targets for batch in batches])
@@ -171,8 +173,8 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
     assert torch.isnan(features[0, 0, 1])
     assert features[1, 0].tolist() == [5.0, 6.0, 7.0, 8.0]
     assert torch.allclose(targets, torch.tensor([
-        [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
-        [-0.5, 0.1, 0.2, 0.3, 0.4, 0.0],
+        [0.5],
+        [-0.5],
     ]))
 
 
@@ -182,6 +184,7 @@ def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
         SOURCE_ENCODING,
         seq_len=1,
         feature_dim=4,
+        target_contract=TARGET_CONTRACT,
     )
     table = pa.Table.from_arrays([
         pa.array([0], type=schema.field(0).type),
@@ -209,6 +212,7 @@ def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
             source_encoding=SOURCE_ENCODING,
             seq_len=1,
             feature_dim=4,
+            target_contract=TARGET_CONTRACT,
         ))
 
     with pytest.raises(ValueError, match="physical schema"):
@@ -225,6 +229,7 @@ def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
             },
             seq_len=1,
             feature_dim=5,
+            target_contract=TARGET_CONTRACT,
         ))
 
 

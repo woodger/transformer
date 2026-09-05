@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import os
 import shutil
 import time
@@ -9,9 +8,9 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
+from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11 import WorkerContractError, validate_document
-from app.contracts.worker.v11.objective import TRAINING_RECOVERY_FORMAT
+from app.contracts.worker.v12 import WorkerContractError, validate_document
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -37,13 +36,13 @@ class _RecoveryLedger(Protocol):
         attempt: int,
         attempt_id: str,
         generation: int,
+        input_revision: int,
         format: str,
         relative_path: str,
         byte_count: int,
         sha256: str,
         completed_epochs: int,
         global_step: int,
-        loss: float,
         training_complete: bool,
     ) -> tuple[TrainingRecoveryCheckpointRecord, bool]: ...
 
@@ -84,7 +83,7 @@ class WorkerRecoveryError(AttemptExecutionError):
 
 
 class RecoveryCheckpointPublisher:
-    """Validate and register checkpoints emitted by an active fit process."""
+    """Validate and register v6 checkpoints emitted by an active fit process."""
 
     def __init__(
         self,
@@ -105,49 +104,28 @@ class RecoveryCheckpointPublisher:
         self.metrics = metrics
         self._monotonic = monotonic
 
-    def publish(
-        self,
-        job: ExecutionJobRecord,
-        event: JsonObject,
-    ) -> None:
-        publication_started: float | None = None
-        if "artifact" in event:
-            publication_started = self._monotonic()
-            event = self._publish_attempt_checkpoint(job, event)
-        required = {
-            "format",
-            "generation",
-            "completed_epochs",
-            "global_step",
-            "progress",
-            "training_complete",
-            "bytes",
-            "sha256",
-        }
-        optional = {
-            "metrics",
-            "checkpoint_serialization_ms",
-            "checkpoint_publication_ms",
-        }
-        expected_fields = (
-            required
-            if publication_started is None
-            else required - {"checkpoint_publication_ms"}
+    def publish(self, job: ExecutionJobRecord, event: JsonObject) -> None:
+        started = self._monotonic()
+        source_path, byte_count, digest = self._publish_artifact(job, event)
+        generation = _positive_integer(event["generation"], "generation")
+        progress = _object(event["progress"], "checkpoint progress")
+        completed_epochs = _positive_integer(
+            progress["completedEpochs"],
+            "completed epochs",
         )
-        if not required <= set(event) <= expected_fields | optional:
+        global_step = _nonnegative_integer(
+            progress["globalStep"],
+            "global step",
+        )
+        training_complete = _boolean(
+            progress["trainingComplete"],
+            "training complete",
+        )
+        if generation != completed_epochs:
             raise WorkerRecoveryError(
                 ErrorCode.MALFORMED_OUTPUT,
-                "fit subprocess emitted an invalid recovery event",
+                "checkpoint generation differs from completed epochs",
             )
-        if event["format"] != TRAINING_RECOVERY_FORMAT:
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
-                "fit subprocess emitted an unsupported recovery checkpoint",
-            )
-        generation = _positive_integer(
-            event["generation"],
-            "recovery generation",
-        )
         current = self.ledger.get_execution_job(job.job_id)
         if (
             current is None
@@ -160,132 +138,27 @@ class RecoveryCheckpointPublisher:
                 ErrorCode.INTERNAL,
                 "closed fit input manifest is unavailable",
             )
-        path = self.recovery_store.checkpoint_path(
-            job.job_id,
-            generation,
-        )
-        try:
-            byte_count = os.path.getsize(path)
-        except OSError as exc:
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit recovery checkpoint is unavailable",
-            ) from exc
-        if byte_count != _positive_integer(event["bytes"], "recovery bytes"):
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit recovery checkpoint size is invalid",
-            )
-        digest = _sha256_file(path)
-        if digest != _string(event["sha256"], "recovery sha256"):
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit recovery checkpoint digest is invalid",
-            )
-        completed_epochs = _positive_integer(
-            event["completed_epochs"],
-            "completed epochs",
-        )
-        global_step = _nonnegative_integer(
-            event["global_step"],
-            "global step",
-        )
-        progress = _core_progress(
-            event["progress"],
-            completed_epochs=completed_epochs,
-            global_step=global_step,
-        )
-        training_complete = _boolean(
-            event["training_complete"],
-            "training complete",
-        )
-        interval_metrics: JsonObject | None = None
-        checkpoint_serialization_ms: float | None = None
-        if "metrics" in event:
-            try:
-                interval_metrics = validate_document(
-                    event["metrics"],
-                    "training-metrics",
-                )
-                checkpoint_serialization_ms = _nonnegative_number(
-                    event.get("checkpoint_serialization_ms"),
-                    "checkpoint serialization duration",
-                )
-            except (WorkerContractError, WorkerRecoveryError) as exc:
-                self.metrics.add("trainingTelemetryCollectionErrors")
-                self.logger.event(
-                    "metrics.collection.failed",
-                    jobId=job.job_id,
-                    phase="recovery-checkpoint",
-                    errorType=type(exc).__name__,
-                )
-                interval_metrics = None
-                checkpoint_serialization_ms = None
-        if completed_epochs != generation:
-            raise WorkerRecoveryError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "fit recovery checkpoint metadata is inconsistent",
-            )
-        checkpoint_publication_ms: float | None = None
-        if interval_metrics is not None and self.telemetry is not None:
-            try:
-                checkpoint_publication_ms = (
-                    _nonnegative_number(
-                        event.get("checkpoint_publication_ms"),
-                        "checkpoint publication duration",
-                    )
-                    if publication_started is None
-                    else _nonnegative_number(
-                        (self._monotonic() - publication_started) * 1000.0,
-                        "checkpoint publication duration",
-                    )
-                )
-            except WorkerRecoveryError as exc:
-                self.metrics.add("trainingTelemetryCollectionErrors")
-                self.logger.event(
-                    "metrics.collection.failed",
-                    jobId=job.job_id,
-                    phase="recovery-checkpoint",
-                    errorType=type(exc).__name__,
-                )
-                interval_metrics = None
-                checkpoint_serialization_ms = None
         _, replayed = self.ledger.register_recovery_checkpoint(
             job_id=job.job_id,
             attempt=job.attempt,
             attempt_id=_attempt_id(job),
             generation=generation,
-            format=_string(event["format"], "recovery format"),
-            relative_path=self.recovery_store.relative_path(path),
+            input_revision=current.input_revision,
+            format=RECOVERY_FORMAT,
+            relative_path=self.recovery_store.relative_path(source_path),
             byte_count=byte_count,
             sha256=digest,
             completed_epochs=completed_epochs,
             global_step=global_step,
-            loss=_finite_number(progress["loss"], "progress loss"),
             training_complete=training_complete,
         )
-        if interval_metrics is not None and self.telemetry is not None:
-            assert checkpoint_serialization_ms is not None
-            assert checkpoint_publication_ms is not None
-            try:
-                self.telemetry.record_epoch_interval(
-                    job_id=job.job_id,
-                    attempt=job.attempt,
-                    attempt_id=_attempt_id(job),
-                    generation=generation,
-                    global_step=global_step,
-                    metrics=interval_metrics,
-                    checkpoint_serialization_ms=checkpoint_serialization_ms,
-                    checkpoint_publication_ms=checkpoint_publication_ms,
-                )
-            except Exception as exc:
-                self.metrics.add("trainingTelemetryCollectionErrors")
-                self.logger.event(
-                    "metrics.collection.failed",
-                    jobId=job.job_id,
-                    phase="recovery-persistence",
-                    errorType=type(exc).__name__,
-                )
+        self._record_metrics(
+            job,
+            event,
+            generation=generation,
+            global_step=global_step,
+            publication_ms=(self._monotonic() - started) * 1000.0,
+        )
         if not replayed:
             self.metrics.add("recoveryCheckpointsPublished")
             self.metrics.add("recoveryCheckpointBytes", byte_count)
@@ -298,10 +171,109 @@ class RecoveryCheckpointPublisher:
                 globalStep=global_step,
                 bytes=byte_count,
             )
-        for relative_path in self.ledger.prune_recovery_checkpoints(
+        self._prune(job.job_id)
+
+    def _publish_artifact(
+        self,
+        job: ExecutionJobRecord,
+        event: JsonObject,
+    ) -> tuple[str, int, str]:
+        if self.spool is None:
+            raise WorkerRecoveryError(
+                ErrorCode.INTERNAL,
+                "attempt spool is unavailable",
+            )
+        generation = _positive_integer(event["generation"], "generation")
+        artifact = _object(event["artifact"], "checkpoint artifact")
+        source = os.path.abspath(os.fspath(
+            _string(artifact.get("path"), "checkpoint path")
+        ))
+        expected = self.spool.attempt_recovery_checkpoint_path(
             job.job_id,
-            keep=2,
+            job.attempt,
+            generation,
+        )
+        if artifact.get("format") != CHECKPOINT_FORMAT:
+            raise WorkerRecoveryError(
+                ErrorCode.RECOVERY_CHECKPOINT_INCOMPATIBLE,
+                "worker checkpoint format is unsupported",
+            )
+        try:
+            byte_count = os.path.getsize(source)
+            digest = _sha256_file(source)
+        except OSError as exc:
+            raise WorkerRecoveryError(
+                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+                "worker checkpoint is unavailable",
+            ) from exc
+        if (
+            source != expected
+            or byte_count != _positive_integer(
+                artifact.get("byteCount"),
+                "checkpoint byteCount",
+            )
+            or digest != _string(
+                artifact.get("checkpointSha256"),
+                "checkpoint sha256",
+            )
         ):
+            raise WorkerRecoveryError(
+                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+                "worker checkpoint integrity check failed",
+            )
+        destination = self.recovery_store.checkpoint_path(
+            job.job_id,
+            generation,
+        )
+        try:
+            with open(source, "rb") as input_file:
+                with self.recovery_store.staged_file(destination) as (output, _):
+                    shutil.copyfileobj(input_file, output, _COPY_CHUNK_BYTES)
+        except OSError as exc:
+            raise WorkerRecoveryError(
+                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
+                "worker checkpoint could not be published",
+            ) from exc
+        return destination, byte_count, digest
+
+    def _record_metrics(
+        self,
+        job: ExecutionJobRecord,
+        event: JsonObject,
+        *,
+        generation: int,
+        global_step: int,
+        publication_ms: float,
+    ) -> None:
+        if "metrics" not in event or self.telemetry is None:
+            return
+        try:
+            metrics = validate_document(event["metrics"], "training-metrics")
+            serialization_ms = _nonnegative_number(
+                event.get("checkpointSerializationMs"),
+                "checkpoint serialization duration",
+            )
+            self.telemetry.record_epoch_interval(
+                job_id=job.job_id,
+                attempt=job.attempt,
+                attempt_id=_attempt_id(job),
+                generation=generation,
+                global_step=global_step,
+                metrics=metrics,
+                checkpoint_serialization_ms=serialization_ms,
+                checkpoint_publication_ms=publication_ms,
+            )
+        except (Exception, WorkerContractError) as exc:
+            self.metrics.add("trainingTelemetryCollectionErrors")
+            self.logger.event(
+                "metrics.collection.failed",
+                jobId=job.job_id,
+                phase="recovery-checkpoint",
+                errorType=type(exc).__name__,
+            )
+
+    def _prune(self, job_id: str) -> None:
+        for relative_path in self.ledger.prune_recovery_checkpoints(job_id, keep=2):
             try:
                 self.recovery_store.remove(
                     self.recovery_store.absolute_path(relative_path)
@@ -309,114 +281,9 @@ class RecoveryCheckpointPublisher:
             except OSError:
                 self.logger.event(
                     "flight.recovery.cleanup_failed",
-                    jobId=job.job_id,
+                    jobId=job_id,
                     artifact="checkpoint",
                 )
-
-    def _publish_attempt_checkpoint(
-        self,
-        job: ExecutionJobRecord,
-        event: JsonObject,
-    ) -> JsonObject:
-        required = {
-            "generation",
-            "completedEpochs",
-            "globalStep",
-            "progress",
-            "trainingComplete",
-            "artifact",
-        }
-        optional = {"checkpointSerializationMs", "metrics"}
-        if (
-            not required <= set(event) <= required | optional
-            or self.spool is None
-        ):
-            raise WorkerRecoveryError(
-                ErrorCode.MALFORMED_OUTPUT,
-                "fit worker emitted an invalid checkpoint event",
-            )
-        generation = _positive_integer(
-            event["generation"],
-            "worker checkpoint generation",
-        )
-        artifact = _object(event["artifact"], "worker checkpoint artifact")
-        source_path = os.path.abspath(os.fspath(
-            _string(artifact.get("path"), "worker checkpoint path")
-        ))
-        expected_source = self.spool.attempt_recovery_checkpoint_path(
-            job.job_id,
-            job.attempt,
-            generation,
-        )
-        try:
-            byte_count = os.path.getsize(source_path)
-        except OSError as exc:
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit worker checkpoint is unavailable",
-            ) from exc
-        if (
-            source_path != expected_source
-            or byte_count
-            != _positive_integer(
-                artifact.get("byteCount"),
-                "worker checkpoint byteCount",
-            )
-            or _sha256_file(source_path)
-            != _string(
-                artifact.get("sha256"),
-                "worker checkpoint sha256",
-            )
-        ):
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit worker checkpoint integrity check failed",
-            )
-        destination = self.recovery_store.checkpoint_path(
-            job.job_id,
-            generation,
-        )
-        try:
-            with open(source_path, "rb") as source:
-                with self.recovery_store.staged_file(destination) as (
-                    target,
-                    _,
-                ):
-                    shutil.copyfileobj(source, target, _COPY_CHUNK_BYTES)
-        except OSError as exc:
-            raise WorkerRecoveryError(
-                ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
-                "fit worker checkpoint could not be published",
-            ) from exc
-        published: JsonObject = {
-            "format": TRAINING_RECOVERY_FORMAT,
-            "generation": generation,
-            "completed_epochs": _positive_integer(
-                event["completedEpochs"],
-                "worker checkpoint completedEpochs",
-            ),
-            "global_step": _nonnegative_integer(
-                event["globalStep"],
-                "worker checkpoint globalStep",
-            ),
-            "progress": event["progress"],
-            "training_complete": _boolean(
-                event["trainingComplete"],
-                "worker checkpoint trainingComplete",
-            ),
-            "bytes": byte_count,
-            "sha256": _string(
-                artifact.get("sha256"),
-                "worker checkpoint sha256",
-            ),
-        }
-        if "checkpointSerializationMs" in event:
-            published["checkpoint_serialization_ms"] = event[
-                "checkpointSerializationMs"
-            ]
-        if "metrics" in event:
-            published["metrics"] = event["metrics"]
-        return published
 
 
 def _sha256_file(path: str) -> str:
@@ -455,54 +322,13 @@ def _nonnegative_number(value: object, label: str) -> float:
     if (
         isinstance(value, bool)
         or not isinstance(value, (int, float))
-        or not math.isfinite(value)
         or value < 0
     ):
         raise WorkerRecoveryError(
             ErrorCode.MALFORMED_OUTPUT,
-            f"{label} must be a finite non-negative number",
+            f"{label} must be a non-negative number",
         )
     return float(value)
-
-
-def _finite_number(value: object, label: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-    ):
-        raise WorkerRecoveryError(
-            ErrorCode.MALFORMED_OUTPUT,
-            f"{label} must be a finite number",
-        )
-    return float(value)
-
-
-def _core_progress(
-    value: object,
-    *,
-    completed_epochs: int,
-    global_step: int,
-) -> JsonObject:
-    progress = _object(value, "recovery progress")
-    if set(progress) != {"epoch", "step", "loss"}:
-        raise WorkerRecoveryError(
-            ErrorCode.MALFORMED_OUTPUT,
-            "recovery progress has invalid fields",
-        )
-    epoch = _positive_integer(progress["epoch"], "progress epoch")
-    step = _nonnegative_integer(progress["step"], "progress step")
-    loss = _finite_number(progress["loss"], "progress loss")
-    if epoch != completed_epochs or step != global_step:
-        raise WorkerRecoveryError(
-            ErrorCode.MALFORMED_OUTPUT,
-            "recovery progress differs from checkpoint metadata",
-        )
-    return {
-        "epoch": epoch,
-        "step": step,
-        "loss": loss,
-    }
 
 
 def _positive_integer(value: object, label: str) -> int:
@@ -541,7 +367,4 @@ def _attempt_id(job: ExecutionJobRecord) -> str:
     return job.attempt_id
 
 
-__all__ = [
-    "RecoveryCheckpointPublisher",
-    "WorkerRecoveryError",
-]
+__all__ = ["RecoveryCheckpointPublisher", "WorkerRecoveryError"]

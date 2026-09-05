@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.worker.v11.config import ModelConfig
+from app.contracts.worker.v12.config import ModelConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
     row_integer,
@@ -51,12 +51,12 @@ class PostgresInputUploadStore:
             raise failed_precondition(
                 "job model configuration is unavailable"
             )
-        raw_ml_contract = value["ml_contract"]
-        if not isinstance(raw_ml_contract, Mapping):
-            raise failed_precondition("job ML contract is unavailable")
-        ml_contract = cast(
+        raw_model_contract = value["model_contract"]
+        if not isinstance(raw_model_contract, Mapping):
+            raise failed_precondition("job model contract is unavailable")
+        model_contract = cast(
             JsonObject,
-            dict(cast(Mapping[str, object], raw_ml_contract)),
+            dict(cast(Mapping[str, object], raw_model_contract)),
         )
         return InputUploadJob(
             job_id=row_string(value, "job_id"),
@@ -71,7 +71,7 @@ class PostgresInputUploadStore:
             next_input_ordinal=row_integer(value, "next_input_ordinal"),
             data_contract_sha256=row_string(value, "data_contract_sha256"),
             source_encoding=row_json_object(value, "source_encoding"),
-            ml_contract=ml_contract,
+            model_contract=model_contract,
             model_config=model_config,
         )
 

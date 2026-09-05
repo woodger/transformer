@@ -164,12 +164,13 @@ class Job(Base):
         JSONB(none_as_null=True)
     )
     prediction_column: Mapped[str] = mapped_column(String(128), nullable=False)
-    source_encoding: Mapped[JsonObject | None] = mapped_column(JSONB)
+    source_encoding: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     model_config: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     training_config: Mapped[JsonObject | None] = mapped_column(JSONB)
     data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    ml_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    model_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    semantic_digests: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_width: Mapped[int] = mapped_column(Integer, nullable=False)
     feature_dim: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -372,6 +373,7 @@ class TrainingRecoveryCheckpoint(Base):
     job_id: Mapped[str] = mapped_column(Uuid(as_uuid=False))
     generation: Mapped[int] = mapped_column(Integer)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
     format: Mapped[str] = mapped_column(String(64), nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -474,12 +476,6 @@ class PublishedModel(Base):
             "AND deletion_requested_at IS NOT NULL)",
             name="models_lifecycle_ck",
         ),
-        CheckConstraint(
-            "(ml_contract IS NULL AND objective_config_sha256 IS NULL) OR "
-            "(ml_contract IS NOT NULL AND objective_config_sha256 IS NOT NULL "
-            "AND data_contract IS NOT NULL AND data_contract_sha256 IS NOT NULL)",
-            name="models_ml_contract_ck",
-        ),
         Index(
             "models_deleting_idx",
             "deletion_requested_at",
@@ -497,10 +493,10 @@ class PublishedModel(Base):
     checkpoint_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[JsonObject] = mapped_column("metadata", JSONB, nullable=False)
-    data_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
-    data_contract_sha256: Mapped[str | None] = mapped_column(String(64))
-    ml_contract: Mapped[JsonObject | None] = mapped_column(JSONB)
-    objective_config_sha256: Mapped[str | None] = mapped_column(String(64))
+    data_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    data_contract_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_contract: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    semantic_digests: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     producing_job_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey(f"{SCHEMA}.jobs.job_id", ondelete="SET NULL"),

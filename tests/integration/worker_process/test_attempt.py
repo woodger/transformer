@@ -3,7 +3,6 @@ import uuid
 from dataclasses import replace
 from types import SimpleNamespace
 
-from app.contracts.worker.v11.objective import default_objective, ml_contract
 from app.service.adapters.outbound.worker.runner import (
     WorkerSubprocessError,
 )
@@ -14,8 +13,18 @@ from app.service.application.services.attempt_executor import (
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
+from tests.support.consumer_neutral import data_contract, model_contract
 
-ML_CONTRACT = ml_contract(default_objective())
+MODEL_CONTRACT_VALUE = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=2,
+)
+MODEL_CONTRACT = MODEL_CONTRACT_VALUE.to_document()
+DATA_CONTRACT = data_contract(MODEL_CONTRACT_VALUE)
+SEMANTIC_DIGESTS = MODEL_CONTRACT_VALUE.digests(
+    DATA_CONTRACT["dataContractSha256"]
+)
 
 
 class _Ledger:
@@ -142,8 +151,9 @@ def _job() -> ExecutionJobRecord:
         },
         model_config=None,
         training_config=None,
-        data_contract={"data_contract_sha256": "d" * 64},
-        ml_contract=ML_CONTRACT,
+        data_contract=DATA_CONTRACT,
+        model_contract=MODEL_CONTRACT,
+        semantic_digests=SEMANTIC_DIGESTS,
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,
@@ -261,7 +271,7 @@ def test_terminal_telemetry_failure_does_not_change_published_fit():
             )
             return PublishedModelArtifacts(
                 model_ref="mdl_test",
-                ml_contract=ML_CONTRACT,
+                model_contract=MODEL_CONTRACT,
                 checkpoint_publication_ms=1.0,
             )
 

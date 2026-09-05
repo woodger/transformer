@@ -13,8 +13,8 @@ from app.cli.args import parse_args
 if TYPE_CHECKING:
     import torch
 
-    from app.contracts.worker.v11.config import ModelConfig
-    from app.contracts.worker.v11.objective import ObjectiveConfig
+    from app.contracts.semantic.v1 import ModelContract
+    from app.contracts.worker.v12.config import ModelConfig
     from app.local.fit import FitArguments, ModelBuilder, TrainerBuilder
     from app.local.fit_stream import FitStreamArguments
     from app.local.plot_metrics import PlotMetricsArguments
@@ -39,6 +39,7 @@ class CliArguments(Protocol):
     data: str | None
     metrics_name: str | None
     model_name: str
+    model_contract: str
     pred_col: str
     preds_path: str
     plots_dir: str
@@ -84,7 +85,7 @@ def build_model(
     features_cpu: torch.Tensor,
     targets_cpu: torch.Tensor | None,
     device: torch.device,
-    objective: ObjectiveConfig | None = None,
+    model_contract: ModelContract,
 ) -> torch.nn.Module:
     from app.worker.training.factory import build_model as implementation
 
@@ -93,7 +94,7 @@ def build_model(
         features_cpu,
         targets_cpu,
         device,
-        objective,
+        model_contract,
     )
 
 
@@ -104,7 +105,9 @@ def build_trainer(
     model_config: ModelConfig | None = None,
     data_contract: Mapping[str, object] | None = None,
     *,
-    objective: ObjectiveConfig | None = None,
+    metrics_path: str | None = None,
+    model_contract: ModelContract,
+    initialization: Mapping[str, object] | None = None,
 ) -> Trainer:
     from app.worker.training.factory import build_trainer as implementation
 
@@ -114,7 +117,9 @@ def build_trainer(
         device,
         model_config,
         data_contract,
-        objective=objective,
+        metrics_path=metrics_path,
+        model_contract=model_contract,
+        initialization=initialization,
     )
 
 

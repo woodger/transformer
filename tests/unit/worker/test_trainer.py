@@ -11,19 +11,14 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.worker.v11.config import (
+from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT
+from app.contracts.worker.v12.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v11.objective import (
-    CHECKPOINT_FORMAT,
-    ObjectiveConfig,
-    default_objective,
-    ml_contract,
-    objective_config,
-)
+from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
@@ -43,6 +38,27 @@ from app.worker.training.factory import build_trainer
 from app.worker.training.losses import MaterializedLossStatistics
 from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
+from tests.support.consumer_neutral import model_contract
+
+DEFAULT_MODEL_CONTRACT = model_contract(
+    "multi-target-shared-resource",
+    seq_len=5,
+    feature_dim=4,
+    hidden=32,
+    layers=1,
+    dropout=0.0,
+    nhead=4,
+    mode="relaxed",
+)
+TARGETS = DEFAULT_MODEL_CONTRACT.target_identities
+DIRECT_COMPONENTS = tuple(
+    (str(item["identity"]), str(item["operator"]))
+    for item in DEFAULT_MODEL_CONTRACT.direct_components
+)
+AUXILIARY_COMPONENTS = tuple(
+    (str(item["identity"]), str(item["operator"]))
+    for item in DEFAULT_MODEL_CONTRACT.auxiliary_components
+)
 
 
 @pytest.fixture(autouse=True)
@@ -54,8 +70,7 @@ def torch_rng():
 
 def make_dummy_data(n=32, seq_len=5, feat_dim=4):
     features = torch.randn(n, seq_len, feat_dim)
-    targets = torch.rand(n, 6)
-    targets[:, 0] = torch.rand(n) * 2 - 1
+    targets = torch.rand(n, DEFAULT_MODEL_CONTRACT.target_width)
     return TrainingBatch(features=features, targets=targets)
 
 
@@ -79,27 +94,42 @@ def model_config(*, seq_len=5, feature_dim=4):
 
 def data_contract(*, seq_len=5, feature_dim=4):
     return {
-        "id": "inventory.learning-dataset",
-        "version": 2,
-        "profile": "research-dividend-events-v2",
+        "identity": "test.learning-dataset",
+        "revision": 1,
+        "profile": "test.profile",
         "dataContractSha256": "d" * 64,
         "seqLen": seq_len,
         "featureDim": feature_dim,
-        "targetSchemaId": "inventory.target.v2",
     }
 
 
-def new_model(objective: ObjectiveConfig | None = None):
-    objective = default_objective() if objective is None else objective
+def new_model(contract=DEFAULT_MODEL_CONTRACT):
     return TransformerModel(
         input_dim=4,
         seq_len=5,
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        targets=objective.targets,
-        include_return_scale=objective.requires_return_scale,
+        model_contract=contract,
         nhead=4,
+    )
+
+
+def new_trainer(
+    train_config: TrainConfig,
+    *,
+    model: nn.Module | None = None,
+    contract=DEFAULT_MODEL_CONTRACT,
+) -> Trainer:
+    return Trainer(
+        model=new_model(contract) if model is None else model,
+        device=torch.device("cpu"),
+        train_config=train_config,
+        model_contract=contract,
+        data_contract=data_contract(
+            seq_len=int(contract.model_config["seqLen"]),
+            feature_dim=int(contract.model_config["featureDim"]),
+        ),
     )
 
 
@@ -110,26 +140,38 @@ def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
         epochs=1,
         use_amp=False,
     )
-    objective = default_objective()
     trainer = build_trainer(
         config,
         new_model(),
         torch.device("cpu"),
         model_config(),
         data_contract=data_contract(),
-        objective=objective,
+        model_contract=DEFAULT_MODEL_CONTRACT,
+        initialization={"kind": "random"},
     )
 
     path = tmp_path / "model.pth"
-    trainer.fit(batch, str(path))
+    manifest = {
+        "jobId": "11111111-1111-4111-8111-111111111111",
+        "dataContract": data_contract(),
+        "modelContract": DEFAULT_MODEL_CONTRACT.to_document(),
+        "semanticDigests": DEFAULT_MODEL_CONTRACT.digests("d" * 64),
+        "jobConfigSha256": "a" * 64,
+        "manifestSha256": "b" * 64,
+    }
+    trainer.fit(
+        batch,
+        str(path),
+        metadata=lambda: checkpoint_metadata(trainer, manifest),
+    )
 
     checkpoint = load_checkpoint(str(path), torch.device("cpu"))
-    assert checkpoint["format"] == CHECKPOINT_FORMAT
-    assert checkpoint["model_config"]["feature_dim"] == 4
-    assert checkpoint["train_config"] == config.to_dict()
-    assert checkpoint["data_contract"] == data_contract()
-    assert checkpoint["ml_contract"] == ml_contract(objective)
-    assert checkpoint["objective"] == objective_config(objective)
+    metadata = checkpoint["metadata"]
+    assert metadata["format"] == CHECKPOINT_FORMAT
+    assert metadata["modelContract"]["modelConfig"]["featureDim"] == 4
+    assert metadata["trainingConfig"] == config.to_manifest()
+    assert metadata["dataContract"] == data_contract()
+    assert metadata["modelContract"] == DEFAULT_MODEL_CONTRACT.to_document()
 
 
 def test_model_config_can_be_loaded_from_checkpoint_defaults():
@@ -146,6 +188,7 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
         Args(),
         checkpoint_config={
             "seq_len": 12,
+            "feature_dim": 48,
             "hidden": 512,
             "layers": 4,
             "context_mode": "relaxed",
@@ -161,16 +204,14 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
 def test_cpu_training_disables_amp_and_updates_parameters():
     batch = make_dummy_data(n=4)
     model = new_model()
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=4,
             epochs=1,
             use_amp=True,
         ),
-        objective=default_objective(),
+        model=model,
     )
     before = {
         name: value.detach().clone()
@@ -187,17 +228,27 @@ def test_cpu_training_disables_amp_and_updates_parameters():
     )
 
 
-def test_fit_batch_reports_six_target_metrics():
-    batch = make_dummy_data()
+def test_local_trainer_resolves_model_identity_before_data_digest():
     trainer = Trainer(
         model=new_model(),
         device=torch.device("cpu"),
-        train_config=TrainConfig(
+        train_config=TrainConfig(batch_size=4, epochs=1),
+        model_contract=DEFAULT_MODEL_CONTRACT,
+    )
+
+    assert trainer.metrics_context["model_contract_sha256"] == (
+        DEFAULT_MODEL_CONTRACT.digests("d" * 64)["modelContractSha256"]
+    )
+
+
+def test_fit_batch_reports_target_metrics():
+    batch = make_dummy_data()
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=8,
             epochs=1,
         ),
-        objective=default_objective(),
     )
 
     metrics = trainer.fit_batch(batch)
@@ -212,25 +263,22 @@ def test_fit_batch_reports_six_target_metrics():
     assert telemetry.amp_overflow_batches == 0
     assert telemetry.finite_gradient_batches == 4
     assert telemetry.non_finite_gradient_batches == 0
-    for target in default_objective().targets:
+    for target in TARGETS:
         assert telemetry.target_mae[target] >= 0
         assert telemetry.target_rmse[target] >= 0
 
 
 def test_gradient_interactions_are_sampled_at_completed_step_interval():
     batch = make_dummy_data(n=4)
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=2,
             epochs=1,
             diagnostics=DiagnosticsConfig(
-                gradient_sample_every_steps=2,
+                gradient_every_steps=2,
             ),
         ),
-        objective=default_objective(),
     )
 
     metrics = trainer.fit_batch(batch)
@@ -241,35 +289,24 @@ def test_gradient_interactions_are_sampled_at_completed_step_interval():
 
 
 def test_single_target_objective_trains_and_predicts_one_public_value():
-    objective = ObjectiveConfig.from_document({
-        "targets": ["MeanReturn"],
-        "objective": {
-            "schemaVersion": 1,
-            "aggregation": "WeightedSum",
-            "reduction": "GlobalRowMean",
-            "directLosses": [
-                {
-                    "target": "MeanReturn",
-                    "operator": "SmoothL1",
-                    "weight": 1.0,
-                }
-            ],
-            "auxiliaryLosses": [
-                {"operator": "GaussianNLL", "weight": 1.0}
-            ],
-            "balancing": {"operator": "Static"},
-        },
-    })
+    contract = model_contract(
+        "single-regression",
+        seq_len=5,
+        feature_dim=4,
+        hidden=32,
+        layers=1,
+        dropout=0.0,
+        nhead=4,
+        mode="relaxed",
+    )
     full_batch = make_dummy_data(n=4)
     batch = TrainingBatch(
         features=full_batch.features,
         targets=full_batch.targets[:, :1],
     )
-    trainer = Trainer(
-        model=new_model(objective),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(lr=1e-3, batch_size=4, epochs=1),
-        objective=objective,
+    trainer = new_trainer(
+        TrainConfig(lr=1e-3, batch_size=4, epochs=1),
+        contract=contract,
     )
 
     metrics = trainer.fit_batch(batch)
@@ -277,8 +314,8 @@ def test_single_target_objective_trains_and_predicts_one_public_value():
         warnings.simplefilter("always")
         predictions = trainer.predict(batch.features)
 
-    assert metrics.direct_loss_values.keys() == {"MeanReturn"}
-    assert metrics.auxiliary_loss_values.keys() == {"GaussianNLL"}
+    assert metrics.direct_loss_values.keys() == {"direct.mean-return"}
+    assert metrics.auxiliary_loss_values == {}
     assert predictions.shape == (4, 1)
     assert not any(
         "nested tensors is in prototype stage" in str(item.message)
@@ -301,15 +338,12 @@ def test_target_error_telemetry_failure_does_not_interrupt_training(
         BrokenTargetErrorObservation,
     )
     batch = make_dummy_data(n=4)
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=4,
             epochs=1,
         ),
-        objective=default_objective(),
     )
 
     result = trainer.fit_batch(batch)
@@ -335,18 +369,15 @@ def test_gradient_diagnostics_failure_does_not_interrupt_training(
         BrokenGradientInteractionObservation,
     )
     batch = make_dummy_data(n=4)
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=4,
             epochs=1,
             diagnostics=DiagnosticsConfig(
-                gradient_sample_every_steps=1,
+                gradient_every_steps=1,
             ),
         ),
-        objective=default_objective(),
     )
 
     result = trainer.fit_batch(batch)
@@ -360,7 +391,7 @@ def test_gradient_diagnostics_failure_does_not_interrupt_training(
 def test_predict_batches_model_and_returns_only_public_target_space():
     class RecordingLinear(nn.Linear):
         def __init__(self):
-            super().__init__(3, 7)
+            super().__init__(3, 4)
             self.forward_batch_sizes = []
 
         def forward(self, inputs):
@@ -368,15 +399,13 @@ def test_predict_batches_model_and_returns_only_public_target_space():
             return super().forward(inputs)
 
     model = RecordingLinear()
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-3,
             batch_size=4,
             epochs=1,
         ),
-        objective=default_objective(),
+        model=model,
     )
     source = torch.arange(30, dtype=torch.float32).reshape(10, 3)
     internal = torch.nn.functional.linear(
@@ -390,28 +419,21 @@ def test_predict_batches_model_and_returns_only_public_target_space():
     assert model.forward_batch_sizes == [4, 4, 2]
     assert torch.allclose(
         predictions,
-        public_predictions(
-            internal,
-            default_objective().targets,
-            include_return_scale=True,
-        ),
+        public_predictions(internal, DEFAULT_MODEL_CONTRACT),
     )
-    assert predictions.shape == (10, 6)
+    assert predictions.shape == (10, 3)
 
 
 def test_selection_starts_with_the_first_complete_epoch():
     batch = make_dummy_data(n=4)
     selection = CheckpointSelectionConfig(min_delta=0.0, patience=1)
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-30,
             batch_size=4,
             epochs=10,
             selection=selection,
         ),
-        objective=default_objective(),
     )
 
     metrics = trainer.fit_epochs(batch)
@@ -425,15 +447,12 @@ def test_selection_starts_with_the_first_complete_epoch():
 
 def test_selection_disabled_runs_fixed_epochs_and_keeps_last_checkpoint():
     batch = make_dummy_data(n=4)
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             lr=1e-30,
             batch_size=4,
             epochs=3,
         ),
-        objective=default_objective(),
     )
 
     metrics = trainer.fit_epochs(batch)
@@ -467,7 +486,10 @@ def test_selection_rejects_nonfinite_score():
 
 
 def test_train_metrics_uses_global_row_weighted_direct_losses():
-    first = TrainingEpochResult()
+    first = TrainingEpochResult(
+        targets=TARGETS,
+        direct_components=DIRECT_COMPONENTS,
+    )
     first.update(
         rows=1,
         statistics=_statistics(1.0),
@@ -479,11 +501,15 @@ def test_train_metrics_uses_global_row_weighted_direct_losses():
         step=2,
     )
 
-    assert first.direct_losses() == pytest.approx((2.5,) * 6)
+    assert first.direct_losses() == pytest.approx((2.5,) * len(TARGETS))
 
 
 def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
-    metrics = ObservedTrainingEpoch(telemetry=EpochTelemetry())
+    metrics = ObservedTrainingEpoch(
+        targets=TARGETS,
+        direct_components=DIRECT_COMPONENTS,
+        telemetry=EpochTelemetry(targets=TARGETS),
+    )
     for gradient, applied, overflow in (
         (1.0, True, False),
         (float("inf"), False, True),
@@ -520,7 +546,11 @@ def test_nonfinite_gradient_does_not_discard_finite_epoch_statistics():
 
 
 def test_invalid_gradient_telemetry_does_not_interrupt_metric_aggregation():
-    metrics = ObservedTrainingEpoch(telemetry=EpochTelemetry())
+    metrics = ObservedTrainingEpoch(
+        targets=TARGETS,
+        direct_components=DIRECT_COMPONENTS,
+        telemetry=EpochTelemetry(targets=TARGETS),
+    )
 
     metrics.update(
         rows=1,
@@ -550,14 +580,12 @@ def test_invalid_gradient_telemetry_does_not_interrupt_metric_aggregation():
 def test_amp_overflow_counts_a_skipped_update_and_keeps_later_gradient():
     batch = make_dummy_data(n=4)
     model = new_model()
-    trainer = Trainer(
-        model=model,
-        device=torch.device("cpu"),
-        train_config=TrainConfig(
+    trainer = new_trainer(
+        TrainConfig(
             batch_size=2,
             epochs=1,
         ),
-        objective=default_objective(),
+        model=model,
     )
     forward_calls = 0
 
@@ -657,6 +685,8 @@ def test_payload_partitioning_does_not_change_training_state():
             model,
             torch.device("cpu"),
             model_config(),
+            data_contract=data_contract(),
+            model_contract=DEFAULT_MODEL_CONTRACT,
         )
         metrics = trainer.fit_payloads(lambda: iter(payloads))
         return model.state_dict(), [
@@ -700,6 +730,8 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
             model,
             torch.device("cpu"),
             model_config(),
+            data_contract=data_contract(),
+            model_contract=DEFAULT_MODEL_CONTRACT,
         )
         epochs = []
 
@@ -747,10 +779,14 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
 def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
     path = tmp_path / "metrics.jsonl"
     metrics = ObservedTrainingEpoch(
+        targets=TARGETS,
+        direct_components=DIRECT_COMPONENTS,
+        auxiliary_components=AUXILIARY_COMPONENTS,
         rows=4,
         batches=1,
-        direct_loss_values={"MeanReturn": 0.2},
+        direct_loss_values={DIRECT_COMPONENTS[0][0]: 0.2},
         telemetry=EpochTelemetry(
+            targets=TARGETS,
             training_batches_completed=1,
             optimizer_updates_applied=1,
             finite_gradient_batches=1,
@@ -764,17 +800,15 @@ def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
     row = json.loads(path.read_text().strip())
 
     assert row["directLosses"][0] == {
-        "target": {"index": 0, "name": "MeanReturn"},
+        "componentIdentity": "direct.location",
+        "operator": "SmoothL1",
+        "targetIdentity": "Location",
+        "targetIndex": 0,
         "value": pytest.approx(0.2),
     }
-    assert [item["target"]["name"] for item in row["targetMetrics"]] == [
-        "MeanReturn",
-        "SigmaReturn",
-        "ProbTP",
-        "ProbSL",
-        "VolatilityNext",
-        "HittingProbTP",
-    ]
+    assert [item["targetIdentity"] for item in row["targetMetrics"]] == list(
+        TARGETS
+    )
     assert all(
         "mae" in item and "rmse" in item
         for item in row["targetMetrics"]
@@ -786,14 +820,19 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
     path = tmp_path / "metrics.jsonl"
     output = tmp_path / "plots"
     metrics = ObservedTrainingEpoch(
+        targets=TARGETS,
+        direct_components=DIRECT_COMPONENTS,
         rows=2,
-        telemetry=EpochTelemetry(target_mae={"MeanReturn": 0.25}),
+        telemetry=EpochTelemetry(
+            targets=TARGETS,
+            target_mae={"Location": 0.25},
+        ),
     )
     append_epoch_telemetry(str(path), metrics, mode="fit")
 
     paths = plot_metrics(str(path), str(output))
 
-    expected = output / "target.MeanReturn.mae.svg"
+    expected = output / "target.Location.mae.svg"
     assert str(expected) in paths
     assert "<svg" in expected.read_text()
 
@@ -811,7 +850,8 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
             epochs=1,
             use_amp=True,
         ),
-        objective=default_objective(),
+        model_contract=DEFAULT_MODEL_CONTRACT,
+        data_contract=data_contract(),
     )
     before = {
         name: value.detach().clone()
@@ -843,7 +883,7 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
 def _statistics(value: float) -> MaterializedLossStatistics:
     return MaterializedLossStatistics(
         loss=value,
-        direct_losses=(value,) * 6,
+        direct_losses=(value,) * len(TARGETS),
         auxiliary_losses=(),
         grad_norm=None,
     )
@@ -852,7 +892,7 @@ def _statistics(value: float) -> MaterializedLossStatistics:
 def _target_errors(value: float) -> dict[str, tuple[float, float]]:
     return {
         target: (value, value * value)
-        for target in default_objective().targets
+        for target in TARGETS
     }
 
 

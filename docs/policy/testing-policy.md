@@ -63,7 +63,7 @@ CUDA/AMP и serialization.
 
 ```text
 tests/unit/{admin,cli,local,service,worker}
-tests/contract/{flight_v10,worker_v11,metrics_v4,metrics_fit_run_v4,consumer_neutral_v1}
+tests/contract/consumer_neutral_v1
 tests/integration/{flight,worker_process}
 tests/architecture
 tests/support

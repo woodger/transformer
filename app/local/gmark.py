@@ -11,19 +11,20 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
-from app.contracts.worker.v11.config import (
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12.config import (
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DROPOUT,
     DEFAULT_LR,
     DEFAULT_WEIGHT_DECAY,
 )
-from app.contracts.worker.v11.objective import default_objective
 from app.worker.training.constants import GRAD_CLIP_NORM
 
 MIB = 1024**2
 GIB = 1024**3
 BALLAST_CHUNK_BYTES = 256 * MIB
 MAX_AMP_SCALE_BACKOFFS = 32
+SYNTHETIC_TARGET_WIDTH = 6
 
 
 class GmarkError(RuntimeError):
@@ -54,7 +55,7 @@ class TrainingWorkload:
         self._torch = torch
         self._device = device
         self._combined_loss = combined_loss
-        self._objective = default_objective()
+        self._model_contract = _synthetic_model_contract(args)
         self._use_amp = bool(args.use_amp)
         self._batch_size = args.batch_size
         self._amp_backoffs = 0
@@ -65,8 +66,7 @@ class TrainingWorkload:
             hidden_dim=args.hidden,
             layers=args.layers,
             dropout=DEFAULT_DROPOUT,
-            targets=self._objective.targets,
-            include_return_scale=self._objective.requires_return_scale,
+            model_contract=self._model_contract,
             nhead=args.nhead,
             context_mode=DEFAULT_CONTEXT_MODE,
         ).to(device)
@@ -83,21 +83,10 @@ class TrainingWorkload:
             dtype=torch.float32,
         )
         self._targets_cpu = torch.zeros(
-            (args.batch_size, self._objective.target_width),
+            (args.batch_size, self._model_contract.target_width),
             dtype=torch.float32,
         )
-        self._targets_cpu[:, 0] = (
-            torch.randn(args.batch_size, dtype=torch.float32) * 0.05
-        )
-        self._targets_cpu[:, 4] = (
-            torch.rand(args.batch_size, dtype=torch.float32) * 0.2 + 1e-3
-        )
-        self._targets_cpu[:, 5] = torch.randint(
-            0,
-            2,
-            (args.batch_size,),
-            dtype=torch.int64,
-        ).to(dtype=torch.float32)
+        self._targets_cpu.normal_(mean=0.0, std=0.1)
 
     @property
     def batch_size(self) -> int:
@@ -142,7 +131,7 @@ class TrainingWorkload:
             loss = self._combined_loss(
                 model_output,
                 batch_targets,
-                self._objective,
+                self._model_contract,
             )
 
         loss_value = float(loss.detach().cpu())
@@ -195,6 +184,67 @@ class TrainingWorkload:
                     raise GmarkError(
                         "integrity check failed: non-finite optimizer state"
                     )
+
+
+def _synthetic_model_contract(args: Any) -> ModelContract:
+    identities = tuple(
+        f"gmark.target.{index}"
+        for index in range(SYNTHETIC_TARGET_WIDTH)
+    )
+    slots = [
+        {
+            "identity": identity,
+            "observedConstraint": {"kind": "Finite"},
+            "lossInputTransformation": {"kind": "Identity"},
+            "publicPredictionTransformation": {"kind": "Identity"},
+        }
+        for identity in identities
+    ]
+    direct_components = [
+        {
+            "identity": f"gmark.direct.{index}",
+            "operator": "SmoothL1",
+            "weight": 1,
+            "roles": {
+                "estimate": {
+                    "kind": "target",
+                    "identity": identity,
+                    "view": "lossEstimate",
+                },
+                "observed": {
+                    "kind": "target",
+                    "identity": identity,
+                    "view": "observed",
+                },
+            },
+            "parameters": {},
+        }
+        for index, identity in enumerate(identities)
+    ]
+    return ModelContract.from_document({
+        "objectiveLanguageRevision": 1,
+        "targetContract": {"slots": slots},
+        "objective": {
+            "aggregation": {"kind": "WeightedSum"},
+            "reduction": {"kind": "GlobalRowMean"},
+            "resources": [],
+            "directComponents": direct_components,
+            "auxiliaryComponents": [],
+        },
+        "modelConfig": {
+            "architecture": {
+                "identity": "transformer.sequence-model",
+                "revision": 1,
+            },
+            "seqLen": args.seq_len,
+            "featureDim": args.feature_dim,
+            "hidden": args.hidden,
+            "layers": args.layers,
+            "dropout": DEFAULT_DROPOUT,
+            "nhead": args.nhead,
+            "mode": DEFAULT_CONTEXT_MODE,
+        },
+    })
 
 
 class NvidiaSmiMonitor:

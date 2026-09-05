@@ -216,11 +216,8 @@ class ArtifactLedgerSlice:
                     metadata_json=json_value(metadata),
                     data_contract=json_value(job.data_contract),
                     data_contract_sha256=job.data_contract_sha256,
-                    ml_contract=json_value(job.ml_contract),
-                    objective_config_sha256=digest(
-                        job.ml_contract.get("objectiveConfigSha256"),
-                        "objectiveConfigSha256",
-                    ),
+                    model_contract=json_value(job.model_contract),
+                    semantic_digests=json_value(job.semantic_digests),
                     producing_job_id=job_id,
                     created_at=published_at,
                 ))
@@ -559,15 +556,9 @@ def _model_artifact_record(
         checkpoint_path=record.checkpoint_path,
         byte_count=record.checkpoint_bytes,
         sha256=record.sha256,
-        data_contract=(
-            None
-            if record.data_contract is None
-            else dict(record.data_contract)
-        ),
-        ml_contract=(
-            None if record.ml_contract is None else dict(record.ml_contract)
-        ),
-        objective_config_sha256=record.objective_config_sha256,
+        data_contract=dict(record.data_contract),
+        model_contract=dict(record.model_contract),
+        semantic_digests=dict(record.semantic_digests),
     )
 
 

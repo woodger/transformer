@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.model import ModelLifecycleState
@@ -26,7 +26,8 @@ class ExecutionJobRecord:
     model_config: ModelConfig | None
     training_config: TrainConfig | None
     data_contract: JsonObject
-    ml_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
     config_hash: str
     manifest_sha256: str | None
     feature_dim: int
@@ -88,7 +89,9 @@ class JobRecord:
     prediction_column: str
     source_encoding: JsonObject
     data_contract: JsonObject
-    ml_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
+    config_hash: str
     progress: JsonObject
     attempt: int
     error_code: str | None
@@ -168,6 +171,7 @@ class TrainingRecoveryCheckpointRecord:
     job_id: str
     generation: int
     attempt: int
+    input_revision: int
     format: str
     relative_path: str
     byte_count: int
@@ -199,9 +203,9 @@ class ModelArtifactRecord:
     checkpoint_path: str
     byte_count: int
     sha256: str
-    data_contract: JsonObject | None
-    ml_contract: JsonObject | None
-    objective_config_sha256: str | None
+    data_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,9 +218,9 @@ class PublishedModelRecord:
     byte_count: int
     sha256: str
     metadata: JsonObject
-    data_contract: JsonObject | None
-    ml_contract: JsonObject | None
-    objective_config_sha256: str | None
+    data_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
     producing_job_id: str | None
     created_at: float
 

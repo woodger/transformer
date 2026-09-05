@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from app.contracts.flight.v11 import job_config_sha256
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -86,6 +87,7 @@ def build_job_coordinator(
         limits=limits,
         cuda_available=cuda_available,
         is_draining=lambda: availability.draining,
+        job_config_digest=job_config_sha256,
         model_verifier=model_verifier,
         metrics=metrics,
         logger=logger,

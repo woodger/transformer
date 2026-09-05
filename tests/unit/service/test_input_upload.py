@@ -2,8 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v11.config import ModelConfig
-from app.contracts.worker.v11.objective import default_objective, ml_contract
+from app.contracts.worker.v12.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -15,6 +14,7 @@ from app.service.application.services.input_upload import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, InputState
+from tests.support.consumer_neutral import model_contract
 
 SOURCE_ENCODING = {
     "kind": "indexedFeatureBlocks",
@@ -42,7 +42,11 @@ class UploadStore:
 
 
 def _job(**overrides):
-    objective = default_objective()
+    contract = model_contract(
+        "single-regression",
+        seq_len=2,
+        feature_dim=3,
+    )
     job = InputUploadJob(
         job_id="job-id",
         owner_subject="inventory",
@@ -56,7 +60,7 @@ def _job(**overrides):
         next_input_ordinal=1,
         data_contract_sha256="a" * 64,
         source_encoding=SOURCE_ENCODING,
-        ml_contract=ml_contract(objective),
+        model_contract=contract.to_document(),
         model_config=ModelConfig(seq_len=2, feature_dim=3),
     )
     return replace(job, **overrides)

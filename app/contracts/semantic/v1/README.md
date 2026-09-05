@@ -6,7 +6,8 @@
 
 JSON Schemas Draft 2020-12 и golden fixtures являются источником истины для
 формы документов. Семантические правила, которые JSON Schema выразить не
-может, заданы ниже. Runtime Flight v10 и worker v11 этот пакет не используют.
+может, заданы ниже. Текущие Flight v11 и worker v12 используют этот пакет
+на обеих process boundaries.
 
 Пакет состоит из этого общего semantic language, публичного
 [`Flight v11`](../../flight/v11/README.md), process-контракта

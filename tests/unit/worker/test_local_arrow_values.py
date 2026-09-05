@@ -15,8 +15,14 @@ from app.worker.data.arrow import (
     write_arrow,
 )
 from app.worker.data.tensors import reshape_source
+from tests.support.consumer_neutral import model_contract
 
 FLOAT_LIST = pa.list_(pa.float32())
+SIGNED_TARGET_CONTRACT = model_contract("single-regression").target_contract
+PROBABILITY_TARGET_CONTRACT = model_contract(
+    "new-opaque-target"
+).target_contract
+TWO_TARGET_CONTRACT = model_contract("target-reorder-a-b").target_contract
 
 
 def test_reshape_source_rejects_non_matrix_input():
@@ -25,7 +31,7 @@ def test_reshape_source_rejects_non_matrix_input():
 
 
 def make_target(values=None):
-    values = [0.0] * 6 if values is None else values
+    values = [0.0] if values is None else values
     return pa.array([values], type=FLOAT_LIST)
 
 
@@ -75,21 +81,21 @@ def test_empty_training_table_preserves_typed_empty_tensors():
         "tgt": pa.array([], type=FLOAT_LIST),
     })
 
-    batch = table_to_tensors(table)
+    batch = table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
     assert batch.features.shape == (0, 0)
-    assert batch.targets.shape == (0, 6)
+    assert batch.targets.shape == (0, 1)
 
 
 @pytest.mark.parametrize("name", ["src", "tgt"])
 @pytest.mark.parametrize("value_type", [pa.int32(), pa.bool_(), pa.string()])
 def test_columns_reject_non_float_value_types(name, value_type):
     if value_type == pa.string():
-        values = [["0"] * (2 if name == "src" else 6)]
+        values = [["0"] * (2 if name == "src" else 1)]
     elif value_type == pa.bool_():
-        values = [[False] * (2 if name == "src" else 6)]
+        values = [[False] * (2 if name == "src" else 1)]
     else:
-        values = [[0] * (2 if name == "src" else 6)]
+        values = [[0] * (2 if name == "src" else 1)]
 
     columns = {
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
@@ -99,7 +105,7 @@ def test_columns_reject_non_float_value_types(name, value_type):
     table = pa.table(columns)
 
     with pytest.raises(ValueError, match=r"list<float32> or list<float64>"):
-        table_to_tensors(table)
+        table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
 
 @pytest.mark.parametrize(
@@ -145,33 +151,32 @@ def test_source_rejects_infinity(value):
 def test_float64_values_must_be_representable_as_float32(name):
     columns = {
         "src": pa.array([[1.0, 2.0]], type=pa.list_(pa.float64())),
-        "tgt": pa.array([[0.0] * 6], type=pa.list_(pa.float64())),
+        "tgt": pa.array([[0.0]], type=pa.list_(pa.float64())),
     }
-    values = [1e100, 0.0] if name == "src" else [1e100] + [0.0] * 5
+    values = [1e100, 0.0] if name == "src" else [1e100]
     columns[name] = pa.array([values], type=pa.list_(pa.float64()))
 
     with pytest.raises(ValueError, match="outside float32 range"):
-        table_to_tensors(pa.table(columns))
+        table_to_tensors(pa.table(columns), SIGNED_TARGET_CONTRACT)
 
 
 @pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
 def test_target_rejects_non_finite_values(value):
-    target = [0.0] * 6
-    target[2] = value
+    target = [value]
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
         "tgt": make_target(target),
     })
 
     with pytest.raises(ValueError, match="non-finite value"):
-        table_to_tensors(table)
+        table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
 
 @pytest.mark.parametrize(
     ("target", "message"),
     [
         (pa.array([None], type=FLOAT_LIST), "null row"),
-        (pa.array([[0.0, 0.0, None, 0.0, 0.0, 0.0]], type=FLOAT_LIST), "null element"),
+        (pa.array([[None]], type=FLOAT_LIST), "null element"),
     ],
 )
 def test_target_rejects_arrow_nulls(target, message):
@@ -181,47 +186,42 @@ def test_target_rejects_arrow_nulls(target, message):
     })
 
     with pytest.raises(ValueError, match=message):
-        table_to_tensors(table)
+        table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
 
-def test_target_requires_six_values():
+def test_target_width_must_match_the_declared_slots():
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
-        "tgt": pa.array([[0.0] * 5], type=FLOAT_LIST),
+        "tgt": pa.array([[0.0, 0.0]], type=FLOAT_LIST),
     })
 
-    with pytest.raises(ValueError, match="must have list length 6, got 5"):
-        table_to_tensors(table)
+    with pytest.raises(ValueError, match="must have list length 1, got 2"):
+        table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
 
-@pytest.mark.parametrize("position", range(1, 6))
 @pytest.mark.parametrize("value", [-0.1, 1.1])
-def test_target_rejects_unit_interval_violation(position, value):
-    target = [0.0] * 6
-    target[position] = value
+def test_target_rejects_declared_unit_interval_violation(value):
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
-        "tgt": make_target(target),
+        "tgt": make_target([value]),
     })
 
-    target_name = (
-        "SigmaReturn", "ProbTP", "ProbSL", "VolatilityNext", "HittingProbTP"
-    )[position - 1]
-    with pytest.raises(ValueError, match=rf"{target_name} is outside \[0, 1\]"):
-        table_to_tensors(table)
+    with pytest.raises(
+        ValueError,
+        match=r"target ConsumerDefined\.EventProbability is invalid",
+    ):
+        table_to_tensors(table, PROBABILITY_TARGET_CONTRACT)
 
 
 @pytest.mark.parametrize("mean_return", [-1.1, 1.1])
 def test_target_rejects_mean_return_outside_signed_unit_interval(mean_return):
-    target = [0.0] * 6
-    target[0] = mean_return
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
-        "tgt": make_target(target),
+        "tgt": make_target([mean_return]),
     })
 
-    with pytest.raises(ValueError, match=r"MeanReturn is outside \[-1, 1\]"):
-        table_to_tensors(table)
+    with pytest.raises(ValueError, match="target MeanReturn is invalid"):
+        table_to_tensors(table, SIGNED_TARGET_CONTRACT)
 
 
 @pytest.mark.parametrize(
@@ -231,28 +231,33 @@ def test_target_rejects_mean_return_outside_signed_unit_interval(mean_return):
 def test_columns_reject_inconsistent_row_width(name):
     columns = {
         "src": pa.array([[1.0, 2.0], [3.0, 4.0]], type=FLOAT_LIST),
-        "tgt": pa.array([[0.0] * 6, [1.0] * 6], type=FLOAT_LIST),
+        "tgt": pa.array([[0.0], [1.0]], type=FLOAT_LIST),
     }
     columns[name] = pa.array(
-        [[0.0] * (2 if name == "src" else 6), [0.0]],
+        (
+            [[0.0, 0.0], [0.0]]
+            if name == "src"
+            else [[0.0], [0.0, 0.0]]
+        ),
         type=FLOAT_LIST,
     )
 
     with pytest.raises(ValueError, match="inconsistent list length at row 2"):
-        table_to_tensors(pa.table(columns))
+        table_to_tensors(pa.table(columns), SIGNED_TARGET_CONTRACT)
 
 
 def test_prediction_tables_always_use_fixed_size_list_float32():
     non_empty = predictions_to_table(
         torch.tensor(
-            [[-0.5, 0.2, 0.3, 0.4, 0.5, 0.6]],
+            [[-0.5, 0.2]],
             dtype=torch.float64,
         ),
         "predictions",
+        TWO_TARGET_CONTRACT,
     )
-    empty = empty_predictions_table("predictions")
+    empty = empty_predictions_table("predictions", TWO_TARGET_CONTRACT)
 
-    expected_type = pa.list_(pa.float32(), 6)
+    expected_type = pa.list_(pa.float32(), 2)
     for table in (non_empty, empty):
         field = table.schema.field("predictions")
         assert field.type == expected_type
@@ -260,37 +265,41 @@ def test_prediction_tables_always_use_fixed_size_list_float32():
         assert field.type.value_field.nullable is True
 
 
-def test_predictions_require_six_finite_values():
-    with pytest.raises(ValueError, match=r"shape \[rows, 6\]"):
-        predictions_to_table(torch.zeros((1, 5)), "predictions")
+def test_predictions_require_declared_width_and_finite_values():
+    with pytest.raises(ValueError, match=r"shape \[rows, 2\]"):
+        predictions_to_table(
+            torch.zeros((1, 1)),
+            "predictions",
+            TWO_TARGET_CONTRACT,
+        )
 
-    invalid = torch.zeros((1, 6))
-    invalid[0, 2] = torch.inf
+    invalid = torch.zeros((1, 2))
+    invalid[0, 1] = torch.inf
     with pytest.raises(ValueError, match="only finite values"):
-        predictions_to_table(invalid, "predictions")
+        predictions_to_table(invalid, "predictions", TWO_TARGET_CONTRACT)
 
     with pytest.raises(ValueError, match="row count 2 does not match input row count 1"):
         predictions_to_table(
-            torch.zeros((2, 6)),
+            torch.zeros((2, 2)),
             "predictions",
+            TWO_TARGET_CONTRACT,
             expected_rows=1,
         )
 
 
-def test_selected_target_subset_controls_training_and_prediction_width():
-    targets = ("MeanReturn",)
+def test_target_contract_controls_training_and_prediction_width():
     table = pa.table({
         "src": pa.array([[1.0, 2.0]], type=FLOAT_LIST),
         "tgt": pa.array([[0.25]], type=FLOAT_LIST),
     })
 
-    batch = table_to_tensors(table, targets)
+    batch = table_to_tensors(table, SIGNED_TARGET_CONTRACT)
     predictions = predictions_to_table(
         torch.tensor([[0.5]]),
         "predictions",
-        targets=targets,
+        SIGNED_TARGET_CONTRACT,
     )
-    empty = empty_predictions_table("predictions", targets)
+    empty = empty_predictions_table("predictions", SIGNED_TARGET_CONTRACT)
 
     assert batch.targets.shape == (1, 1)
     assert predictions.schema.field("predictions").type == pa.list_(
@@ -302,13 +311,23 @@ def test_selected_target_subset_controls_training_and_prediction_width():
 def test_prediction_file_is_atomically_replaced_and_parent_is_created(tmp_path):
     path = tmp_path / "nested" / "predictions.arrow"
 
-    write_arrow(path, torch.tensor([[-0.5, 0.2, 0.3, 0.4, 0.5, 0.6]]), "out")
-    write_arrow(path, torch.tensor([[0.6, 0.5, 0.4, 0.3, 0.2, 0.1]]), "out")
+    write_arrow(
+        path,
+        torch.tensor([[-0.5, 0.2]]),
+        "out",
+        TWO_TARGET_CONTRACT,
+    )
+    write_arrow(
+        path,
+        torch.tensor([[0.6, 0.5]]),
+        "out",
+        TWO_TARGET_CONTRACT,
+    )
 
     with pa.memory_map(str(path), "r") as source:
         table = ipc.RecordBatchFileReader(source).read_all()
     assert table.column("out").to_pylist() == [
-        pytest.approx([0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+        pytest.approx([0.6, 0.5])
     ]
     assert not list(path.parent.glob("*.tmp"))
 

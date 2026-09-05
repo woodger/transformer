@@ -4,7 +4,7 @@ import os
 from typing import BinaryIO
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11 import encode_event
+from app.contracts.worker.v12 import encode_event
 
 
 class WorkerEventEmitter:
@@ -77,7 +77,11 @@ class WorkerEventEmitter:
         self.emit("completed", {"resultManifest": result_manifest})
 
     def error(self, code: str, message: str) -> None:
-        self.emit("error", {"code": code, "message": message[:1024]})
+        self.emit("error", {
+            "code": code,
+            "message": message[:1024],
+            "detail": None,
+        })
 
 
 __all__ = ["WorkerEventEmitter"]

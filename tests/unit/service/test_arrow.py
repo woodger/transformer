@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v10.arrow import canonical_input_schema
+from app.contracts.flight.v11.arrow import canonical_input_schema
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -12,11 +12,14 @@ from app.service.adapters.inbound.flight.arrow import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
+from tests.support.consumer_neutral import model_contract
 
-TARGETS = (
-    "MeanReturn", "SigmaReturn", "ProbTP", "ProbSL",
-    "VolatilityNext", "HittingProbTP",
+MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=4,
 )
+TARGET_CONTRACT = MODEL_CONTRACT.target_contract
 SOURCE_ENCODING = {
     "kind": "indexedFeatureBlocks",
     "featureBlocks": [
@@ -32,6 +35,7 @@ def input_schema(operation="fit"):
         SOURCE_ENCODING,
         seq_len=2,
         feature_dim=4,
+        target_contract=TARGET_CONTRACT,
     )
 
 
@@ -53,7 +57,7 @@ def compact_batch(*, operation="fit", range_ordinal=0, example_offset=0):
     ]
     if operation == "fit":
         columns.append(pa.array(
-            [[[0.0, 0.1, 0.0, 0.0, 0.2, 1.0]]],
+            [[[0.1]]],
             type=schema.field("tgt").type,
         ))
     return pa.record_batch(columns, schema=schema)
@@ -64,7 +68,7 @@ def validator(operation="fit", *, schema=None, max_payload_bytes=2 * 1024 * 1024
         operation,
         input_schema(operation) if schema is None else schema,
         source_encoding=SOURCE_ENCODING,
-        targets=TARGETS,
+        target_contract=TARGET_CONTRACT,
         seq_len=2,
         expected_feature_dim=4,
         max_batch_bytes=1024 * 1024,
@@ -134,7 +138,7 @@ def test_predict_schema_rejects_fit_schema_and_feature_mismatch():
             "predict",
             input_schema("predict"),
             source_encoding=SOURCE_ENCODING,
-            targets=TARGETS,
+            target_contract=TARGET_CONTRACT,
             seq_len=2,
             expected_feature_dim=5,
             max_batch_bytes=1024,
@@ -174,7 +178,7 @@ def write_table(path, table):
 
 def test_prediction_file_stream_validation_supports_typed_empty(tmp_path):
     path = tmp_path / "empty.arrow"
-    output_type = pa.list_(pa.float32(), 6)
+    output_type = pa.list_(pa.float32(), 1)
     table = pa.Table.from_arrays(
         [pa.array([], type=output_type)],
         schema=pa.schema([
@@ -184,7 +188,7 @@ def test_prediction_file_stream_validation_supports_typed_empty(tmp_path):
     write_table(path, table)
 
     stats = validate_prediction_file(
-        str(path), "out", expected_rows=0, targets=TARGETS
+        str(path), "out", expected_rows=0, target_contract=TARGET_CONTRACT
     )
 
     assert stats.rows == 0
@@ -195,7 +199,7 @@ def test_prediction_file_rejects_noncanonical_nested_nullability(tmp_path):
     path = tmp_path / "nested-nonnullable.arrow"
     output_type = pa.list_(
         pa.field("item", pa.float32(), nullable=False),
-        6,
+        1,
     )
     table = pa.Table.from_arrays(
         [pa.array([], type=output_type)],
@@ -207,7 +211,7 @@ def test_prediction_file_rejects_noncanonical_nested_nullability(tmp_path):
 
     with pytest.raises(ServiceError, match="FixedSizeList<float32>"):
         validate_prediction_file(
-            str(path), "out", expected_rows=0, targets=TARGETS
+            str(path), "out", expected_rows=0, target_contract=TARGET_CONTRACT
         )
 
 
@@ -215,27 +219,27 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
     path = tmp_path / "bad.arrow"
     table = pa.table({
         "out": pa.array(
-            [[0.0, 1.0, 2.0, 3.0, 4.0, math.inf]],
-            type=pa.list_(pa.float32(), 6),
+            [[math.inf]],
+            type=pa.list_(pa.float32(), 1),
         )
     })
     table = table.cast(pa.schema([
-        pa.field("out", pa.list_(pa.float32(), 6), nullable=False),
+        pa.field("out", pa.list_(pa.float32(), 1), nullable=False),
     ]))
     write_table(path, table)
     with pytest.raises(ServiceError, match="non-finite"):
         validate_prediction_file(
-            str(path), "out", expected_rows=1, targets=TARGETS
+            str(path), "out", expected_rows=1, target_contract=TARGET_CONTRACT
         )
 
     write_table(path, pa.table({
-        "out": pa.array([[0.0] * 6], type=pa.list_(pa.float32(), 6))
+        "out": pa.array([[0.0]], type=pa.list_(pa.float32(), 1))
     }).cast(pa.schema([
-        pa.field("out", pa.list_(pa.float32(), 6), nullable=False),
+        pa.field("out", pa.list_(pa.float32(), 1), nullable=False),
     ])))
     with pytest.raises(ServiceError, match="row count 1 does not match"):
         validate_prediction_file(
-            str(path), "out", expected_rows=2, targets=TARGETS
+            str(path), "out", expected_rows=2, target_contract=TARGET_CONTRACT
         )
 
 
@@ -243,13 +247,13 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
     ("values", "message"),
     [
         (
-            pa.array([None], type=pa.list_(pa.float32(), 6)),
+            pa.array([None], type=pa.list_(pa.float32(), 1)),
             "null row",
         ),
         (
             pa.array(
-                [[0.0, 1.0, None, 3.0, 4.0, 5.0]],
-                type=pa.list_(pa.float32(), 6),
+                [[None]],
+                type=pa.list_(pa.float32(), 1),
             ),
             "non-finite or null value",
         ),
@@ -275,7 +279,10 @@ def test_prediction_file_rejects_invalid_list_structure(
 
     with pytest.raises(ServiceError, match=message):
         validate_prediction_file(
-            str(path), "out", expected_rows=1, targets=TARGETS
+            str(path),
+            "out",
+            expected_rows=1,
+            target_contract=TARGET_CONTRACT,
         )
 
 

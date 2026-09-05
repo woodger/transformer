@@ -1,8 +1,7 @@
 # Контракт Arrow Flight v11
 
-> CONTRACT DOCUMENT. Этот каталог задаёт будущий публичный consumer-neutral
-> wire contract Transformer. До отдельной runtime-реализации production
-> обслуживает только Flight v10.
+> CONTRACT DOCUMENT. Этот каталог задаёт текущий публичный consumer-neutral
+> wire contract Transformer.
 
 Flight v11 является clean-cut boundary: v10 aliases и dense fallback не
 предусмотрены. Action surface и durable job lifecycle сохраняются, а ML
@@ -51,7 +50,7 @@ Consumer-owned digest и `seqLen/featureDim`. Значения не имеют �
 ## Capabilities
 
 `capabilities-result.schema.json` объявляет Flight v11, Worker v12,
-checkpoint/recovery v6, прежние physical Arrow schema IDs и hybrid objective
+checkpoint/recovery v6, сохранённые physical Arrow schema IDs и hybrid objective
 language capabilities. Primitive arrays и architectures имеют canonical ASCII
 order. Schema проверяет форму; semantic registry определяет, какие primitive
 identities известны и доступны deployment-у.
@@ -140,6 +139,6 @@ Predict и `publishedModel` требуют exact data, target, objective и mode
 layers. Published model загружает полный state dictionary и создаёт новое
 training state. Recovery дополнительно проверяет job config и input manifest.
 
-Старые v10 models/checkpoints/metrics не читаются через v11. Их согласованное
-удаление, смена PostgreSQL layout, установка OpenSearch templates и включение
-runtime выполняются отдельными implementation/operations changes.
+Старые v10 models/checkpoints/metrics не читаются через v11. Их удаление и
+смену PostgreSQL layout выполняет clean-cut migration; OpenSearch templates
+устанавливаются отдельно по deployment procedure.

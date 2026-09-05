@@ -9,44 +9,43 @@
 
 ### Added
 
-- Flight v10 сохраняет parent model/checkpoint и parent/current data-contract
-  digests для каждого `publishedModel` fit в job, checkpoint, model metadata,
-  fit result и terminal fit telemetry.
+- Consumer-neutral semantic language v1 с ordered opaque target slots,
+  явными constraints/transformations, declarative objective bindings,
+  abstract private resources и layered D1 digests.
+- Structured semantic error details, hybrid language capabilities и
+  cross-language golden fixtures для Flight v11.
 
 ### Changed
 
-- Public Flight contract повышен до v10, worker process contract — до v11,
-  terminal fit summary — до v4, а OpenSearch outbox projection — до v6.
-  Checkpoint/recovery formats v5 не изменены.
-- Flight input теперь использует только compact `indexedFeatureBlocks`:
-  Consumer передаёт native feature rows и локальные observation offsets для
-  ordered single- или multi-timeframe blocks, а worker восстанавливает прежний
-  dense logical tensor ограниченными срезами. Payload/range boundaries не
-  меняют batching, shuffle, losses или prediction semantics.
-- Input receipts, status и close разделяют physical chunks/native rows/bytes и
-  logical training rows. Revision `0023` сохраняет source encoding, counters и
-  range boundaries; upgrade требует отсутствия non-terminal jobs прежнего
-  контракта.
-- Fit initialization упрощён до `random` и `publishedModel`. Второй режим
-  загружает полный parent `state_dict` в новое training state и требует точного
-  совпадения model/ML contracts и `dataContractSha256`. Поэтому warm start
-  разрешён для другого временного периода той же модели, но не для иной
-  semantic data binding. Predict сохраняет exact data-contract validation.
-- PostgreSQL стал единственным control-plane источником published model
-  metadata. Model directories содержат только `checkpoint.pth`; revision
-  `0022` удаляет дублирующий `metadata_path`, а startup reconciliation —
-  прежние sidecar-файлы.
+- Public Flight contract повышен до v11, worker process contract — до v12,
+  checkpoint/recovery formats — до v6, training metrics и terminal fit
+  summary — до v5. Все runtime boundaries используют один validated
+  consumer-neutral ModelContract.
+- Transformer больше не выбирает heads, transformations, losses или auxiliary
+  dependencies по Consumer-owned target names. Model output и telemetry
+  выводятся из ordered slots, explicit operator roles и resource declarations.
+- `indexedFeatureBlocks` сохранён без изменения physical schemas или
+  reconstruction semantics; target/prediction width теперь выводится из
+  TargetContract.
+- `publishedModel` остаётся strict weights-only warm start и требует exact
+  совпадения data, target, objective и model digest layers.
+- Revision `0024` выполняет согласованный clean cut persistence: удаляет legacy
+  jobs, models и runtime telemetry metadata, сохраняет consumer-neutral model
+  contract/D1 digests и fencing input revision.
+- OpenSearch projection использует отдельные `metrics-points-v5` и
+  `metrics-runs-v5` templates и indices.
 
 ### Fixed
 
-- Flight predict jobs сохраняют отсутствующий `initialization` как SQL
-  `NULL`, а не JSONB `null`; неожиданные PostgreSQL integrity violations больше
-  не представляются Consumer-у как дубликат `jobId`.
+- Local fit вычисляет model identity до появления полного data-contract digest,
+  не смешивая независимые D1 model и data layers.
 
 ### Removed
 
-- Flight v8/v9 dense input и worker v9/v10 удалены без aliases или parallel
-  compatibility layer.
+- Flight v10, worker v11, checkpoint/recovery v5 и metrics v4 runtime/packages
+  удалены без aliases, legacy reader или parallel compatibility layer.
+- Fixed Consumer target catalog, скрытые target-to-operator mappings и лимит
+  шести target coordinates удалены из Transformer runtime.
 
 ## [0.1.17] - 2026-09-01
 

@@ -183,8 +183,6 @@ def _match_upload(
             "metadata dataContractSha256 does not match the job",
         )
     feature_dim = job.model_config.feature_dim
-    if feature_dim is None:
-        raise failed_precondition("job feature dimension is unavailable")
     blocks = feature_block_dimensions(
         job.source_encoding,
         feature_dim=feature_dim,

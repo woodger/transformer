@@ -5,7 +5,7 @@
 ## Область действия
 
 Эта заметка фиксирует два подтверждённых ограничения `pyarrow==24.0.0`,
-влияющих на контракт Transformer Flight v10. Это ограничения Python binding
+влияющих на контракт Transformer Flight v11. Это ограничения Python binding
 сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или Consumer-а.
 
 Окружение, в котором воспроизведено поведение:
@@ -76,12 +76,13 @@ failed precondition и exception для resource exhausted.
 
 ### Ожидаемый результат и влияние на contract
 
-Flight v10 требует, чтобы ошибочный RPC содержал нормативный gRPC code;
-кодирование ошибки внутри успешного JSON result неприемлемо. Поэтому service
-на чистом Python не может пройти wire-status gate с точными
-`ALREADY_EXISTS`, `FAILED_PRECONDITION` и `RESOURCE_EXHAUSTED`. Стабильные
-application codes по-прежнему можно включать в безопасные сообщения и terminal
-status job, но они не заменяют transport code.
+Flight v11 требует завершать ошибочный RPC неуспехом и сохраняет стабильный
+application code в message, а для consumer-neutral semantic errors — также
+структурный detail в `FlightError.extra_info`. На чистом Python точные
+transport statuses `ALREADY_EXISTS`, `FAILED_PRECONDITION` и
+`RESOURCE_EXHAUSTED` всё равно недоступны; Consumer ветвится по стабильному
+application code и structured detail, а не выводит недоступный status из
+класса PyArrow exception.
 
 ### Безопасное временное поведение
 

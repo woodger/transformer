@@ -1,13 +1,13 @@
 # Локальный Arrow и stream contract
 
 > Тип: справочник. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v10 contract.
+> переопределяет public Arrow Flight v11 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v10`](../app/contracts/flight/v10/README.md); local CLI
+[`app/contracts/flight/v11`](../app/contracts/flight/v11/README.md); local CLI
 сохраняет отдельный dense `src`/`tgt` contract и не принимает compact
-`indexedFeatureBlocks` Flight v10.
+`indexedFeatureBlocks` Flight v11.
 
 ## Arrow IPC input
 
@@ -17,28 +17,19 @@ Arrow IPC files. Для remote API нормативны schemas и fixtures в
 
 ```text
 src: list<float32|float64>  # flattened [seq_len * feature_dim]
-tgt: list<float32|float64>  # width 6, required for training
+tgt: list<float32|float64>  # targetContract.slots.length, required for fit
 ```
 
 В обеих колонках запрещены Arrow null rows и null elements; длина list должна
 быть одинаковой у всех строк. `src` допускает IEEE `NaN` для пропусков, но
-отклоняет `+inf` и `-inf`. `tgt` должен быть полностью finite и иметь ровно
-шесть значений: `tgt[0]` находится в `[-1, 1]`, остальные координаты — в
-`[0, 1]`. У непустого input ширина `src` должна быть больше нуля.
+отклоняет `+inf` и `-inf`. `tgt` должен быть полностью finite, иметь ширину
+ordered `targetContract.slots` и удовлетворять объявленному для каждой позиции
+`observedConstraint`. У непустого input ширина `src` должна быть больше нуля.
 
-Target и prediction используют одинаковый порядок:
-
-| Позиция | Назначение |
-| --- | --- |
-| `tgt[0]` | `MeanReturn` |
-| `tgt[1]` | `SigmaReturn` |
-| `tgt[2]` | `ProbTP` |
-| `tgt[3]` | `ProbSL` |
-| `tgt[4]` | `VolatilityNext` |
-| `tgt[5]` | `HittingProbTP` |
-
-Каждая координата имеет прямой supervised path с первого optimizer step.
-Private Gaussian scale не входит в этот вектор.
+Local fit получает полный consumer-neutral `ModelContract` через обязательный
+`--model-contract=FILE`. Порядок `tgt` задаёт порядок opaque slot identities в
+этом документе. Каждая координата имеет ровно один direct supervised component
+с первого optimizer step. Private resources Objective не входят в `tgt`.
 
 После валидации `float64` и `float32` input преобразуется в PyTorch `float32`;
 finite `float64`, который выходит за диапазон `float32`, отклоняется до cast.
@@ -49,7 +40,7 @@ finite `float64`, который выходит за диапазон `float32`,
 ```
 
 Ширина `src` должна делиться на `--seq-len`. В stream `feature_dim` не может
-меняться между frames; при prediction с checkpoint v5 она также должна совпасть
+меняться между frames; при prediction с checkpoint v6 она также должна совпасть
 с сохранённым значением. Missing-data semantics для `NaN` определяет
 [training reference](./training-runtime.md).
 
@@ -57,18 +48,15 @@ finite `float64`, который выходит за диапазон `float32`,
 
 Для prediction `tgt` не требуется. File и stream prediction output содержит
 только одну колонку `--pred-col` типа `list<float32>`; input columns в output
-не копируются. Prediction runtime проверяет форму `[rows, 6]` и finite
+не копируются. Prediction runtime проверяет форму
+`[rows, targetContract.slots.length]`, declared public transformations и finite
 значения; row count и исходный порядок строк сохраняются. `predict` отклоняет
 одинаковый canonical input/output path, чтобы не уничтожить входной файл.
 
-Порядок шести output values:
-
-```text
-[MeanReturn, SigmaReturn, ProbTP, ProbSL, VolatilityNext, HittingProbTP]
-```
-
-`MeanReturn` находится в `[-1, 1]`, остальные координаты — в `[0, 1]`.
-`ProbTP` и `ProbSL` независимы. Raw logits не пересекают output boundary.
+Порядок output values совпадает с ordered slots сохранённого ModelContract.
+Transformer не интерпретирует их identities. Для каждой raw model coordinate
+применяется объявленная `publicPredictionTransformation`; private resources не
+пересекают output boundary.
 Пустой file input для `predict` создаёт типизированный пустой output; `fit`
 отклоняет training input без строк.
 

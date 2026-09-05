@@ -1,8 +1,7 @@
 # Контракт процесса Transformer worker v12
 
-> CONTRACT DOCUMENT. Этот каталог задаёт будущий внутренний process contract
-> consumer-neutral runtime. Действующий service продолжает запускать worker
-> v11 до отдельного implementation change.
+> CONTRACT DOCUMENT. Этот каталог задаёт текущий внутренний process contract
+> consumer-neutral runtime.
 
 Worker v12 получает уже validated `dataContract`, полный `modelContract`, D1
 digests и `jobConfigSha256`. Он повторно валидирует semantic documents и

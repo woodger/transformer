@@ -1,8 +1,7 @@
 # Контракт training metrics v5
 
-> CONTRACT DOCUMENT. Этот каталог задаёт будущие immutable training records и
-> OpenSearch projection consumer-neutral model. Runtime продолжает писать
-> metrics v4 до отдельного clean-cut change.
+> CONTRACT DOCUMENT. Этот каталог задаёт текущие immutable training records и
+> OpenSearch projection consumer-neutral model.
 
 Record v5 хранит D1 data/target/objective/model digests и generic references:
 direct loss содержит component identity, operator, opaque target identity и
@@ -12,7 +11,7 @@ gradient observations ссылаются на component identities. Identity н�
 
 `training-record.schema.json` — durable epoch artifact.
 `point.schema.json` — одна конечная числовая OpenSearch observation.
-`opensearch/metrics-points-v5.template.json` — future strict mapping с нулём
+`opensearch/metrics-points-v5.template.json` — strict mapping с нулём
 replicas. Его наличие в repository не устанавливает template и не меняет
 deployment.
 

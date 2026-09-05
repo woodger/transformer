@@ -18,11 +18,13 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/flight/v10                 публичный Flight contract
-app/contracts/worker/v11                внутренний process contract
+app/contracts/semantic/v1               consumer-neutral ML language
+app/contracts/flight/v11                 публичный Flight contract
+app/contracts/worker/v12                внутренний process contract
+app/contracts/checkpoint/v6             checkpoint/recovery metadata
 app/contracts/indexed_feature_blocks.py  общие compact-input invariants
-app/contracts/metrics/v4                epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v4        terminal fit summary и lineage
+app/contracts/metrics/v5                epoch artifact и OpenSearch points
+app/contracts/metrics/fit_run/v5        terminal fit summary и lineage
 ```
 
 Каждый исполняемый процесс имеет собственный composition root. Service
@@ -100,7 +102,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v11/config.py`.
+остаются в `app/contracts/worker/v12/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -115,25 +117,29 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/flight/v10/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/semantic/v1/` — закрытый mathematical language, canonical
+  TargetContract/Objective/ModelContract и D1 digests;
+- `app/contracts/flight/v11/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/indexed_feature_blocks.py` — общая pure-валидация ordered
   block geometry между service и worker без зависимости от Flight adapter;
-- `app/contracts/ml.py` — единая Python identity target, ML-контракта,
-  checkpoint и recovery formats;
-- `app/contracts/worker/v11/` — command/result manifests, capability document,
+- `app/contracts/worker/v12/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/metrics/v4/` — immutable epoch artifact, OpenSearch
+- `app/contracts/checkpoint/v6/` — embedded checkpoint metadata и recovery
+  fences;
+- `app/contracts/metrics/v5/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
-- `app/contracts/metrics/fit_run/v4/` — terminal fit summary, initialization
+- `app/contracts/metrics/fit_run/v5/` — terminal fit summary, initialization
   lineage, lifecycle durations и counters.
 
-В публичном Flight contract Consumer выбирает непустое подмножество
-канонических targets и передаёт закрытый декларативный objective. Transformer
-валидирует их совместимость, вычисляет canonical digest и владеет tensor-
-семантикой operators, model heads и autograd. Выбранные targets физически
-задают ширину fit target vector, публичные prediction heads и prediction
-output. Objective, training policy и необязательные diagnostics остаются
-отдельными contract sections; checkpoint навсегда связан с targets и objective.
+Consumer materializer передаёт self-contained ModelContract с ordered opaque
+target slots, numerical constraints, loss/public transformations, Objective и
+model configuration. Transformer не интерпретирует target identities, profile
+или data identity. Он валидирует generic geometry и typed bindings, вычисляет
+D1 digests и владеет tensor-семантикой operators, private resource kinds,
+model heads и autograd. Ordered slots физически задают ширину `tgt`, public
+heads и prediction output. Objective, training policy и diagnostics остаются
+разными contract sections; checkpoint навсегда связан с data, target,
+objective и model digest layers.
 
 `sourceEncoding` описывает только физическое compact-представление
 Consumer-owned features. Оно входит в immutable job configuration и recovery
@@ -141,8 +147,8 @@ fencing, но не в data-contract, objective, checkpoint или model identity
 численно эквивалентном logical tensor.
 
 Fit initialization также является отдельной частью job identity.
-`publishedModel` требует точного совпадения model и ML contracts и
-`dataContractSha256`. Service разрешает owner-scoped immutable parent
+`publishedModel` требует точного совпадения data, target, objective и model
+digests. Service разрешает owner-scoped immutable parent
 `modelRef` и передаёт worker-у проверенный checkpoint artifact. Worker повторно
 проверяет digest, загружает полный parent `state_dict` и создаёт новое training
 state. Lineage с parent reference, checkpoint digest и совпадающими

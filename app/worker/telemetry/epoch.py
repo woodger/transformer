@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.ml import target_identity
 from app.worker.telemetry.epoch_observations import EpochTelemetry
 from app.worker.telemetry.observed_epoch import ObservedTrainingEpoch
 from app.worker.telemetry.target_errors import TargetErrorObservation
@@ -24,28 +23,35 @@ def epoch_telemetry_document(
         "loss": result.loss,
         "directLosses": [
             {
-                "target": target_identity(index, target),
-                "value": result.direct_loss_values[target],
+                "componentIdentity": component_identity,
+                "operator": operator,
+                "targetIdentity": result.targets[index],
+                "targetIndex": index,
+                "value": result.direct_loss_values[component_identity],
             }
-            for index, target in enumerate(result.targets)
+            for index, (component_identity, operator) in enumerate(
+                result.direct_components
+            )
         ],
         "auxiliaryLosses": [
             {
+                "componentIdentity": component_identity,
                 "operator": operator,
-                "value": result.auxiliary_loss_values[operator],
+                "value": result.auxiliary_loss_values[component_identity],
             }
-            for operator in result.auxiliary_operators
+            for component_identity, operator in result.auxiliary_components
         ],
         "targetMetrics": [
             {
-                "target": target_identity(index, target),
+                "targetIdentity": target,
+                "targetIndex": index,
                 "mae": telemetry.target_mae[target],
                 "rmse": telemetry.target_rmse[target],
             }
             for index, target in enumerate(result.targets)
         ],
         "gradientInteractions": telemetry.gradient_interactions_document(),
-        "selection_score": result.selection_score,
+        "selectionScore": result.selection_score,
         "trainingBatchesCompleted": telemetry.training_batches_completed,
         "optimizerUpdatesApplied": telemetry.optimizer_updates_applied,
         "optimizerUpdatesSkipped": telemetry.optimizer_updates_skipped,
@@ -55,16 +61,16 @@ def epoch_telemetry_document(
         "preClipGradientNormMean": telemetry.pre_clip_gradient_norm_mean,
         "preClipGradientNormMax": telemetry.pre_clip_gradient_norm_max,
         "preClipGradientNormP95": telemetry.pre_clip_gradient_norm_p95,
-        "nan_ratio": telemetry.nan_ratio,
-        "masked_token_ratio": telemetry.masked_token_ratio,
-        "complete_token_ratio": telemetry.complete_token_ratio,
-        "partial_token_ratio": telemetry.partial_token_ratio,
-        "empty_token_ratio": telemetry.empty_token_ratio,
-        "input_pipeline_ms": telemetry.input_pipeline_ms,
-        "missing_stats_ms": telemetry.missing_stats_ms,
-        "host_to_device_ms": telemetry.host_to_device_ms,
-        "train_step_ms": telemetry.train_step_ms,
-        "elapsed_ms": telemetry.elapsed_ms,
+        "nanRatio": telemetry.nan_ratio,
+        "maskedTokenRatio": telemetry.masked_token_ratio,
+        "completeTokenRatio": telemetry.complete_token_ratio,
+        "partialTokenRatio": telemetry.partial_token_ratio,
+        "emptyTokenRatio": telemetry.empty_token_ratio,
+        "inputPipelineMs": telemetry.input_pipeline_ms,
+        "missingStatsMs": telemetry.missing_stats_ms,
+        "hostToDeviceMs": telemetry.host_to_device_ms,
+        "trainStepMs": telemetry.train_step_ms,
+        "elapsedMs": telemetry.elapsed_ms,
         "step": result.step,
         "lr": result.lr,
     }
@@ -83,12 +89,12 @@ def format_epoch_log_line(
         **extra,
         "loss": f"{result.loss:.6f}",
         **{
-            f"loss_{target}": f"{result.direct_loss_values[target]:.6f}"
-            for target in result.targets
+            f"loss_{identity}": f"{result.direct_loss_values[identity]:.6f}"
+            for identity, _operator in result.direct_components
         },
         **{
-            f"loss_{operator}": f"{result.auxiliary_loss_values[operator]:.6f}"
-            for operator in result.auxiliary_operators
+            f"loss_{identity}": f"{result.auxiliary_loss_values[identity]:.6f}"
+            for identity, _operator in result.auxiliary_components
         },
         "grad_mean": "n/a" if gradient_mean is None else f"{gradient_mean:.3f}",
         "rows": result.rows,

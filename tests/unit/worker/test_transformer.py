@@ -1,7 +1,6 @@
 import pytest
 import torch
 
-from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,
@@ -10,6 +9,25 @@ from app.worker.model.context import (
     prepare_context_input,
 )
 from app.worker.model.transformer import TransformerModel, public_predictions
+from tests.support.consumer_neutral import model_contract
+
+
+def _contract(
+    *,
+    seq_len: int,
+    feature_dim: int,
+    mode: str = "relaxed",
+):
+    return model_contract(
+        "multi-target-shared-resource",
+        seq_len=seq_len,
+        feature_dim=feature_dim,
+        hidden=32,
+        layers=1,
+        dropout=0.0,
+        nhead=4,
+        mode=mode,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +41,7 @@ def test_transformer_forward_shape():
     batch = 4
     seq_len = 10
     feat_dim = 8
-    out_dim = 6
+    contract = _contract(seq_len=seq_len, feature_dim=feat_dim)
 
     model = TransformerModel(
         input_dim=feat_dim,
@@ -31,20 +49,18 @@ def test_transformer_forward_shape():
         hidden_dim=32,
         layers=2,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=contract,
         nhead=4,
     )
 
     features = torch.randn(batch, seq_len, feat_dim)
     model_output = model(features)
 
-    assert model_output.shape == (batch, out_dim + 1)
+    assert model_output.shape == (batch, 4)
     assert public_predictions(
         model_output,
-        TARGET_IDENTITIES,
-        include_return_scale=True,
-    ).shape == (batch, out_dim)
+        contract,
+    ).shape == (batch, 3)
 
 
 @pytest.mark.parametrize(
@@ -57,14 +73,14 @@ def test_transformer_forward_shape():
     ],
 )
 def test_transformer_rejects_input_outside_tensor_contract(features, message):
+    contract = _contract(seq_len=3, feature_dim=8)
     model = TransformerModel(
         input_dim=8,
         seq_len=3,
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=contract,
         nhead=4,
     )
 
@@ -73,6 +89,7 @@ def test_transformer_rejects_input_outside_tensor_contract(features, message):
 
 
 def test_transformer_rejects_invalid_attention_dimensions():
+    contract = _contract(seq_len=3, feature_dim=8)
     with pytest.raises(ValueError, match="divisible"):
         TransformerModel(
             input_dim=8,
@@ -80,21 +97,25 @@ def test_transformer_rejects_invalid_attention_dimensions():
             hidden_dim=30,
             layers=1,
             dropout=0.0,
-            targets=TARGET_IDENTITIES,
-            include_return_scale=True,
+            model_contract=contract,
             nhead=8,
         )
 
 
 def test_transformer_input_dim_matches_context_mode():
+    relaxed_contract = _contract(seq_len=10, feature_dim=8)
+    strict_contract = _contract(
+        seq_len=10,
+        feature_dim=8,
+        mode="strict",
+    )
     relaxed = TransformerModel(
         input_dim=8,
         seq_len=10,
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=relaxed_contract,
         nhead=4,
         context_mode="relaxed",
     )
@@ -104,8 +125,7 @@ def test_transformer_input_dim_matches_context_mode():
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=strict_contract,
         nhead=4,
         context_mode="strict",
     )
@@ -198,14 +218,14 @@ def test_relaxed_keeps_missing_flags_after_nan_to_num():
 
 
 def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
+    contract = _contract(seq_len=3, feature_dim=3)
     model = TransformerModel(
         input_dim=3,
         seq_len=3,
         hidden_dim=32,
         layers=1,
         dropout=0.0,
-        targets=TARGET_IDENTITIES,
-        include_return_scale=True,
+        model_contract=contract,
         nhead=4,
         context_mode="relaxed",
     )
@@ -217,26 +237,22 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
 
     model_output = model(features)
 
-    assert model_output.shape == (2, 7)
+    assert model_output.shape == (2, 4)
     assert torch.isfinite(model_output).all()
 
 
-def test_public_predictions_are_target_aligned_and_bounded():
+def test_public_predictions_apply_declared_slot_transformations():
+    contract = _contract(seq_len=3, feature_dim=3)
     output = torch.tensor([
-        [-0.25, 0.4, 0.0, 2.0, 0.75, -2.0, 3.5],
+        [-0.25, 0.0, 2.0, 3.5],
     ])
 
-    prediction = public_predictions(
-        output,
-        TARGET_IDENTITIES,
-        include_return_scale=True,
-    )
+    prediction = public_predictions(output, contract)
 
-    assert prediction.shape == (1, 6)
+    assert prediction.shape == (1, 3)
     assert prediction[0, 0] == pytest.approx(-0.25)
-    assert prediction[0, 1] == pytest.approx(0.4)
-    assert prediction[0, 2] == pytest.approx(0.5)
-    assert prediction[0, 3] == pytest.approx(torch.sigmoid(torch.tensor(2.0)).item())
-    assert prediction[0, 4] == pytest.approx(0.75)
-    assert prediction[0, 5] == pytest.approx(torch.sigmoid(torch.tensor(-2.0)).item())
+    assert prediction[0, 1] == pytest.approx(0.5)
+    assert prediction[0, 2] == pytest.approx(
+        torch.sigmoid(torch.tensor(2.0)).item()
+    )
     assert torch.all((prediction[:, 1:] >= 0) & (prediction[:, 1:] <= 1))

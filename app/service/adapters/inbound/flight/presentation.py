@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v11.objective import CHECKPOINT_FORMAT
+from app.contracts.worker.v12.constants import CHECKPOINT_FORMAT
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,
@@ -12,7 +12,6 @@ from app.service.adapters.inbound.flight.constants import (
 from app.service.adapters.inbound.flight.devices import device_to_api
 from app.service.adapters.inbound.flight.documents import (
     data_contract_to_api,
-    model_config_to_api,
     response_document,
 )
 from app.service.application.messages.jobs import (
@@ -27,7 +26,6 @@ from app.service.application.messages.jobs import (
     ServiceLimits,
 )
 from app.service.application.services.model_contract import model_initialization
-from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import TERMINAL_EXECUTION_STATES, ExecutionState
 from app.service.domain.records import (
     JobRecord,
@@ -63,7 +61,9 @@ def present_job_created(result: JobCreated) -> JsonObject:
         ),
         sourceEncoding=dict(result.source_encoding),
         dataContract=data_contract_to_api(result.data_contract),
-        mlContract=dict(result.ml_contract),
+        modelContract=dict(result.model_contract),
+        semanticDigests=dict(result.semantic_digests),
+        jobConfigSha256=result.job_config_sha256,
         limits=limits_to_api(result.limits),
         upload={
             "descriptorPath": [
@@ -168,7 +168,9 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
         },
         sourceEncoding=dict(job.source_encoding),
         dataContract=data_contract_to_api(job.data_contract),
-        mlContract=dict(job.ml_contract),
+        modelContract=dict(job.model_contract),
+        semanticDigests=dict(job.semantic_digests),
+        jobConfigSha256=job.config_hash,
         initialization=job.initialization,
         resolvedModelRef=(
             job.resolved_model_ref if job.operation == "predict" else None
@@ -180,7 +182,7 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
         results={
             "outputCount": snapshot.output_count,
             "modelRef": durable_result.get("modelRef"),
-            "checkpoint": _checkpoint_to_api(job, durable_result),
+            "checkpoint": _checkpoint_to_api(durable_result),
         },
         pollAfterMs=0 if terminal else 500,
     )
@@ -248,16 +250,14 @@ def present_job_outputs(result: JobOutputsPage) -> JsonObject:
 
 def present_model_description(result: ModelDescription) -> JsonObject:
     model = result.model
-    if model.data_contract is None or model.ml_contract is None:
-        raise ValueError("published model is missing its ML contract")
     return response_document(
         result.request_id,
         modelRef=model.model_ref,
         label=model.label,
         generation=model.generation,
         dataContract=data_contract_to_api(model.data_contract),
-        mlContract=dict(model.ml_contract),
-        modelConfig=model_config_to_api(result.model_config),
+        modelContract=dict(model.model_contract),
+        semanticDigests=dict(model.semantic_digests),
         initialization=model_initialization(model),
         checkpoint={
             "format": CHECKPOINT_FORMAT,
@@ -285,19 +285,10 @@ def limits_to_api(limits: ServiceLimits) -> JsonObject:
 
 
 def _checkpoint_to_api(
-    job: JobRecord,
     result: JsonObject,
 ) -> JsonValue:
     value = result.get("checkpoint")
-    if job.operation != "fit" or not isinstance(value, dict):
-        return value
-    checkpoint = dict(value)
-    if "initialization" not in checkpoint:
-        checkpoint["initialization"] = validate_initialization(
-            job.initialization,
-            missing_is_random=True,
-        )
-    return checkpoint
+    return value
 
 
 def _error_to_api(code: str | None, message: str | None) -> JsonObject:
@@ -305,6 +296,7 @@ def _error_to_api(code: str | None, message: str | None) -> JsonObject:
         return {
             "code": "GPU_OUT_OF_MEMORY",
             "message": "GPU execution ran out of memory",
+            "detail": None,
         }
     if message is not None and "cuda" in message.lower():
         if code == "DEVICE_LOST":
@@ -313,7 +305,7 @@ def _error_to_api(code: str | None, message: str | None) -> JsonObject:
             message = "GPU subprocess failed"
         else:
             message = "GPU execution failed"
-    return {"code": code, "message": message}
+    return {"code": code, "message": message, "detail": None}
 
 
 def _safe_recovery(

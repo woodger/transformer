@@ -4,7 +4,6 @@ import math
 from dataclasses import dataclass, field
 
 from app.contracts.json_types import JsonObject
-from app.contracts.ml import TARGET_IDENTITIES, canonical_targets
 
 
 def _empty_float_list() -> list[float]:
@@ -19,11 +18,18 @@ def _empty_integer_map() -> dict[str, int]:
     return {}
 
 
+def _empty_component_target_map() -> dict[str, tuple[str, int]]:
+    return {}
+
+
 @dataclass
 class EpochTelemetry:
     """Optional runtime observations for one completed training epoch."""
 
-    targets: tuple[str, ...] = TARGET_IDENTITIES
+    targets: tuple[str, ...]
+    component_targets: dict[str, tuple[str, int]] = field(
+        default_factory=_empty_component_target_map
+    )
     target_mae: dict[str, float] = field(default_factory=_empty_float_map)
     target_rmse: dict[str, float] = field(default_factory=_empty_float_map)
     training_batches_completed: int = 0
@@ -67,9 +73,14 @@ class EpochTelemetry:
         default_factory=_empty_integer_map,
         repr=False,
     )
+    _pair_negative_counts: dict[str, int] = field(
+        default_factory=_empty_integer_map,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
-        self.targets = canonical_targets(self.targets)
+        if not self.targets or len(self.targets) != len(set(self.targets)):
+            raise ValueError("telemetry target identities must be non-empty and unique")
         self.target_mae = {
             target: float(self.target_mae.get(target, 0.0))
             for target in self.targets
@@ -156,7 +167,7 @@ class EpochTelemetry:
         for component in components:
             if not isinstance(component, dict):
                 raise ValueError("gradient component observation is invalid")
-            name = component.get("name")
+            name = component.get("componentIdentity")
             norm = component.get("norm")
             if not isinstance(name, str) or not isinstance(norm, (int, float)):
                 raise ValueError("gradient component observation is invalid")
@@ -173,8 +184,8 @@ class EpochTelemetry:
         for pair in pairs:
             if not isinstance(pair, dict):
                 raise ValueError("gradient pair observation is invalid")
-            left = pair.get("left")
-            right = pair.get("right")
+            left = pair.get("leftComponentIdentity")
+            right = pair.get("rightComponentIdentity")
             cosine = pair.get("cosine")
             if (
                 not isinstance(left, str)
@@ -191,6 +202,10 @@ class EpochTelemetry:
                 value,
             ))
             self._pair_cosine_counts[key] = self._pair_cosine_counts.get(key, 0) + 1
+            if value < 0:
+                self._pair_negative_counts[key] = (
+                    self._pair_negative_counts.get(key, 0) + 1
+                )
 
     def gradient_interactions_document(self) -> JsonObject | None:
         if self.gradient_interaction_samples == 0:
@@ -199,16 +214,28 @@ class EpochTelemetry:
             "samples": self.gradient_interaction_samples,
             "components": [
                 {
-                    "name": name,
+                    "componentIdentity": name,
                     "meanNorm": total / self._component_norm_counts[name],
+                    **(
+                        {}
+                        if name not in self.component_targets
+                        else {
+                            "targetIdentity": self.component_targets[name][0],
+                            "targetIndex": self.component_targets[name][1],
+                        }
+                    ),
                 }
                 for name, total in sorted(self._component_norm_sums.items())
             ],
             "pairs": [
                 {
-                    "left": key.split("\u0000", 1)[0],
-                    "right": key.split("\u0000", 1)[1],
+                    "leftComponentIdentity": key.split("\u0000", 1)[0],
+                    "rightComponentIdentity": key.split("\u0000", 1)[1],
                     "meanCosine": total / self._pair_cosine_counts[key],
+                    "negativeCosineFraction": (
+                        self._pair_negative_counts.get(key, 0)
+                        / self._pair_cosine_counts[key]
+                    ),
                 }
                 for key, total in sorted(self._pair_cosine_sums.items())
             ],

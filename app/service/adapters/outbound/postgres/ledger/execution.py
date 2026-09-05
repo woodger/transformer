@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -618,8 +618,6 @@ def _execution_job_record(
 ) -> ExecutionJobRecord | None:
     if record is None:
         return None
-    if record.source_encoding is None:
-        raise RuntimeError("job source encoding is unavailable")
     return ExecutionJobRecord(
         job_id=record.job_id,
         owner_subject=record.owner_subject,
@@ -640,7 +638,8 @@ def _execution_job_record(
         model_config=ModelConfig.from_dict(record.model_config),
         training_config=TrainConfig.from_dict(record.training_config),
         data_contract=json_value(record.data_contract),
-        ml_contract=json_value(record.ml_contract),
+        model_contract=json_value(record.model_contract),
+        semantic_digests=json_value(record.semantic_digests),
         config_hash=record.config_hash,
         manifest_sha256=record.manifest_sha256,
         feature_dim=record.feature_dim,

@@ -3,17 +3,11 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11.diagnostics import DIAGNOSTICS_SCHEMA_VERSION
-from app.contracts.worker.v11.objective import (
-    AUXILIARY_LOSS_OPERATORS,
+from app.contracts.semantic.v1 import semantic_capabilities
+from app.contracts.worker.v12.constants import (
     CHECKPOINT_FORMAT,
-    DIRECT_LOSS_OPERATORS,
-    MAX_TARGET_WIDTH,
-    OBJECTIVE_ID,
-    OBJECTIVE_SCHEMA_VERSION,
-    PREDICTION_SCHEMA_ID as ML_PREDICTION_SCHEMA_ID,
-    TARGET_IDENTITIES,
-    TARGET_SCHEMA_ID,
+    CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
+    RECOVERY_FORMAT,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
@@ -238,23 +232,14 @@ class JobCoordinator:
                 "predictionOutput": PREDICTION_SCHEMA_ID,
             },
             sourceEncodings=["indexedFeatureBlocks"],
-            mlContract={
-                "targetSchemaId": TARGET_SCHEMA_ID,
-                "predictionSchemaId": ML_PREDICTION_SCHEMA_ID,
-                "objectiveId": OBJECTIVE_ID,
-                "checkpointFormat": CHECKPOINT_FORMAT,
-                "targetIdentities": list(TARGET_IDENTITIES),
-                "minimumTargetWidth": 1,
-                "maximumTargetWidth": MAX_TARGET_WIDTH,
-                "predictionSpace": "target",
-                "objectiveSchemaVersion": OBJECTIVE_SCHEMA_VERSION,
-                "diagnosticsSchemaVersion": DIAGNOSTICS_SCHEMA_VERSION,
-                "directLossOperators": list(
-                    dict.fromkeys(DIRECT_LOSS_OPERATORS.values())
-                ),
-                "auxiliaryLossOperators": list(AUXILIARY_LOSS_OPERATORS),
-                "balancingOperators": ["Static"],
-            },
+            workerProtocolVersion=WORKER_CONTRACT_VERSION,
+            checkpointFormat=CHECKPOINT_FORMAT,
+            recoveryFormat=RECOVERY_FORMAT,
+            metricsFormats=[
+                "transformer.fit-run-summary.v5",
+                "transformer.training-metrics.v5",
+            ],
+            semantic=semantic_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
@@ -271,8 +256,8 @@ class JobCoordinator:
             },
             supportedOperations=["fit", "predict"],
             fitInitializations=[
-                "random",
                 "publishedModel",
+                "random",
             ],
             features={
                 "doExchange": False,
@@ -284,6 +269,7 @@ class JobCoordinator:
                 "resumableFit": True,
                 "recoveryBoundary": "globalEpoch",
                 "deviceAwareGpu": True,
+                "structuredErrorDetails": True,
             },
         )
 
@@ -330,7 +316,8 @@ def _create_command(
         prediction_column=request["prediction_column"],
         source_encoding=dict(request["source_encoding"]),
         data_contract=cast(JsonObject, dict(request["data_contract"])),
-        ml_contract=cast(JsonObject, dict(request["ml_contract"])),
+        model_contract=dict(request["model_contract"]),
+        semantic_digests=dict(request["semantic_digests"]),
         model_label=request.get("model_label"),
         model_selector=(
             None

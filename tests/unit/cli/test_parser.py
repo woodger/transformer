@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 
 from app.cli.parser import build_parser
@@ -8,7 +6,7 @@ from app.config import (
     HOST_DEFAULT,
     PORT_DEFAULT,
 )
-from app.contracts.worker.v11.config import (
+from app.contracts.worker.v12.config import (
     DEFAULT_DETERMINISTIC as DETERMINISTIC,
     DEFAULT_SEED as SEED,
     DEFAULT_WEIGHT_DECAY as WEIGHT_DECAY,
@@ -18,8 +16,6 @@ from app.worker.runtime.device import get_device
 from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,
-    model_config_from_args,
-    objective_config_from_args,
     train_config_from_args,
 )
 
@@ -29,18 +25,23 @@ def parse(*args):
 
 
 def test_fit_namespace_has_only_fit_options():
-    args = parse("fit", "train.arrow", "--seq-len", "20")
+    args = parse(
+        "fit",
+        "train.arrow",
+        "--model-contract",
+        "model.json",
+    )
 
     assert args.action == "fit"
     assert args.data == "train.arrow"
-    assert args.seq_len == 20
+    assert args.model_contract == "model.json"
     assert args.device == "cpu"
     assert args.metrics_name is None
     assert args.seed == SEED
     assert args.deterministic is DETERMINISTIC
     assert args.weight_decay == WEIGHT_DECAY
     assert args.select_best_checkpoint is None
-    assert args.direct_loss_weights is None
+    assert not hasattr(args, "seq_len")
     assert not hasattr(args, "preds_path")
     assert not hasattr(args, "pred_col")
     assert not hasattr(args, "plots_dir")
@@ -48,43 +49,38 @@ def test_fit_namespace_has_only_fit_options():
 
 
 def test_local_commands_accept_gpu_and_reject_cuda_spelling():
-    args = parse("fit", "train.arrow", "--seq-len", "20", "--device", "gpu")
+    args = parse(
+        "fit",
+        "train.arrow",
+        "--model-contract",
+        "model.json",
+        "--device",
+        "gpu",
+    )
 
     assert args.device == "gpu"
 
     with pytest.raises(SystemExit):
-        parse("fit", "train.arrow", "--seq-len", "20", "--device", "cuda")
+        parse(
+            "fit",
+            "train.arrow",
+            "--model-contract",
+            "model.json",
+            "--device",
+            "cuda",
+        )
 
 
-def test_predict_namespace_keeps_checkpoint_validation_overrides():
-    args = parse(
-        "predict",
-        "input.arrow",
-        "--seq-len",
-        "20",
-        "--hidden",
-        "128",
-        "--layers",
-        "3",
-        "--dropout",
-        "0.2",
-        "--nhead",
-        "4",
-        "--mode",
-        "strict",
-    )
+def test_predict_namespace_reads_the_model_contract_from_checkpoint():
+    args = parse("predict", "input.arrow")
 
     assert args.action == "predict"
     assert args.data == "input.arrow"
     assert args.preds_path == "/tmp/preds.arrow"
     assert args.pred_col == "out"
-    assert args.seq_len == 20
-    assert args.hidden == 128
-    assert args.layers == 3
-    assert args.dropout == 0.2
-    assert args.nhead == 4
-    assert args.context_mode == "strict"
     assert args.use_amp is False
+    assert not hasattr(args, "model_contract")
+    assert not hasattr(args, "seq_len")
     assert not hasattr(args, "epochs")
     assert not hasattr(args, "metrics_name")
     assert not hasattr(args, "max_frame_bytes")
@@ -94,8 +90,8 @@ def test_checkpoint_and_output_aliases_preserve_namespace_contract():
     fit_args = parse(
         "fit",
         "train.arrow",
-        "--seq-len",
-        "20",
+        "--model-contract",
+        "model.json",
         "--checkpoint-out",
         "trained.pth",
         "--metrics-out",
@@ -119,22 +115,31 @@ def test_checkpoint_and_output_aliases_preserve_namespace_contract():
 
 
 def test_stream_namespaces_have_no_positional_input():
-    fit_args = parse("fit-stream", "--seq-len", "12")
+    fit_args = parse(
+        "fit-stream",
+        "--model-contract",
+        "model.json",
+    )
     predict_args = parse("predict-stream")
 
     assert fit_args.action == "fit-stream"
     assert fit_args.data is None
-    assert fit_args.seq_len == 12
+    assert fit_args.model_contract == "model.json"
     assert fit_args.max_frame_bytes == DEFAULT_MAX_FRAME_BYTES
     assert fit_args.weight_decay == WEIGHT_DECAY
     assert predict_args.action == "predict-stream"
     assert predict_args.data is None
-    assert predict_args.seq_len is None
+    assert not hasattr(predict_args, "seq_len")
     assert predict_args.max_frame_bytes == DEFAULT_MAX_FRAME_BYTES
     assert not hasattr(predict_args, "weight_decay")
 
     with pytest.raises(SystemExit):
-        parse("fit-stream", "train.arrow", "--seq-len", "12")
+        parse(
+            "fit-stream",
+            "train.arrow",
+            "--model-contract",
+            "model.json",
+        )
     with pytest.raises(SystemExit):
         parse("predict-stream", "input.arrow")
 
@@ -142,8 +147,8 @@ def test_stream_namespaces_have_no_positional_input():
 def test_stream_frame_limit_is_configurable_and_positive():
     fit_args = parse(
         "fit-stream",
-        "--seq-len",
-        "12",
+        "--model-contract",
+        "model.json",
         "--max-frame-bytes",
         "1024",
     )
@@ -153,7 +158,13 @@ def test_stream_frame_limit_is_configurable_and_positive():
     assert predict_args.max_frame_bytes == 2048
 
     with pytest.raises(SystemExit):
-        parse("fit-stream", "--seq-len", "12", "--max-frame-bytes", "0")
+        parse(
+            "fit-stream",
+            "--model-contract",
+            "model.json",
+            "--max-frame-bytes",
+            "0",
+        )
     with pytest.raises(SystemExit):
         parse("predict-stream", "--max-frame-bytes", "-1")
 
@@ -161,7 +172,14 @@ def test_stream_frame_limit_is_configurable_and_positive():
 @pytest.mark.parametrize(
     "argv",
     (
-        ("fit", "train.arrow", "--seq-len", "12", "--max-frame-bytes", "10"),
+        (
+            "fit",
+            "train.arrow",
+            "--model-contract",
+            "model.json",
+            "--max-frame-bytes",
+            "10",
+        ),
         ("predict", "input.arrow", "--max-frame-bytes", "10"),
         ("plot-metrics", "train.jsonl", "--max-frame-bytes", "10"),
     ),
@@ -356,12 +374,11 @@ def test_command_help_contains_only_applicable_options(capsys):
         "--output=/tmp/preds.arrow"
     ) in predict_help
     assert "--preds-path" in predict_help
-    assert "--seq-len" in predict_help
+    assert "--seq-len" not in predict_help
     assert "--epochs" not in predict_help
     assert "--metrics-name" not in predict_help
     assert "--plots-dir" not in predict_help
-    assert "read from the checkpoint" in normalized_predict_help
-    assert "If specified, it must match" in normalized_predict_help
+    assert "model contract" in normalized_predict_help.lower()
 
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["fit-stream", "--help"])
@@ -373,6 +390,7 @@ def test_command_help_contains_only_applicable_options(capsys):
     assert "--weight-decay" in fit_stream_help
     assert "--seed" in fit_stream_help
     assert "--deterministic" in fit_stream_help
+    assert "--model-contract" in fit_stream_help
     assert "--preds-path" not in fit_stream_help
     assert "--pred-col" not in fit_stream_help
     assert "--plots-dir" not in fit_stream_help
@@ -487,7 +505,7 @@ def test_defaults_are_shown_in_command_help(capsys):
     output = capsys.readouterr().out
     normalized_output = " ".join(output.split())
     assert "Examples:" in output
-    assert "transformer fit ./data/train.arrow --seq-len=20" in output
+    assert "--model-contract" in output
     assert "omit to disable metrics logging" in normalized_output
     assert "(default: cpu)" in output
     assert f"(default: {SEED})" in output
@@ -560,13 +578,6 @@ def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
 @pytest.mark.parametrize(
     "options",
     (
-        ("--seq-len", "0"),
-        ("--hidden", "0"),
-        ("--layers", "-1"),
-        ("--dropout", "-0.1"),
-        ("--dropout", "1"),
-        ("--dropout", "nan"),
-        ("--nhead", "0"),
         ("--lr", "0"),
         ("--lr", "inf"),
         ("--weight-decay", "-1"),
@@ -580,17 +591,21 @@ def test_leaf_help_does_not_repeat_global_help_option(capsys, argv):
 )
 def test_training_numeric_options_are_validated_by_argparse(options):
     with pytest.raises(SystemExit):
-        parse("fit", "train.arrow", "--seq-len", "10", *options)
+        parse(
+            "fit",
+            "train.arrow",
+            "--model-contract",
+            "model.json",
+            *options,
+        )
 
 
-def test_zero_is_valid_for_dropout_selection_seed_and_weight_decay():
+def test_zero_is_valid_for_selection_seed_and_weight_decay():
     args = parse(
         "fit",
         "train.arrow",
-        "--seq-len",
-        "10",
-        "--dropout",
-        "0",
+        "--model-contract",
+        "model.json",
         "--select-best-checkpoint",
         "--selection-patience",
         "0",
@@ -602,7 +617,6 @@ def test_zero_is_valid_for_dropout_selection_seed_and_weight_decay():
         "0",
     )
 
-    assert args.dropout == 0
     assert args.selection_patience == 0
     assert args.selection_min_delta == 0
     assert args.seed == 0
@@ -611,29 +625,15 @@ def test_zero_is_valid_for_dropout_selection_seed_and_weight_decay():
 
 def test_model_config_rejects_hidden_not_divisible_by_nhead():
     with pytest.raises(ValueError, match=r"hidden .* must be divisible by nhead"):
-        ModelConfig(seq_len=10, hidden=30, nhead=8)
-
-
-def test_parser_rejects_hidden_not_divisible_by_nhead():
-    with pytest.raises(SystemExit):
-        parse(
-            "fit",
-            "train.arrow",
-            "--seq-len",
-            "10",
-            "--hidden",
-            "30",
-            "--nhead",
-            "8",
-        )
+        ModelConfig(seq_len=10, feature_dim=8, hidden=30, nhead=8)
 
 
 def test_training_seed_options_are_plumbed_into_train_config():
     args = parse(
         "fit",
         "train.arrow",
-        "--seq-len",
-        "10",
+        "--model-contract",
+        "model.json",
         "--seed",
         "7",
         "--deterministic",
@@ -647,29 +647,14 @@ def test_training_seed_options_are_plumbed_into_train_config():
     assert config.to_dict()["deterministic"] is True
 
 
-def test_direct_loss_weights_are_plumbed_into_local_objective():
-    args = parse(
-        "fit",
-        "train.arrow",
-        "--seq-len",
-        "10",
-        "--direct-loss-weights",
-        "1,2,3,4,5,6",
-    )
-
-    objective = objective_config_from_args(args)
-
-    assert objective.direct_loss_weights == (1, 2, 3, 4, 5, 6)
-
-
 @pytest.mark.parametrize("action", ("fit", "fit-stream"))
 def test_training_weight_decay_is_plumbed_into_train_config(action):
     positional = ("train.arrow",) if action == "fit" else ()
     args = parse(
         action,
         *positional,
-        "--seq-len",
-        "10",
+        "--model-contract",
+        "model.json",
         "--weight-decay",
         "0.0025",
     )
@@ -685,8 +670,8 @@ def test_checkpoint_selection_policy_is_plumbed_into_train_config(action):
     args = parse(
         action,
         *positional,
-        "--seq-len",
-        "10",
+        "--model-contract",
+        "model.json",
         "--select-best-checkpoint",
         "--selection-min-delta",
         "0.05",
@@ -709,17 +694,22 @@ def test_checkpoint_selection_policy_is_plumbed_into_train_config(action):
 )
 def test_bounded_training_options_are_validated_by_argparse(options):
     with pytest.raises(SystemExit):
-        parse("fit", "train.arrow", "--seq-len", "10", *options)
+        parse(
+            "fit",
+            "train.arrow",
+            "--model-contract",
+            "model.json",
+            *options,
+        )
 
 
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     (
-        ({"seq_len": 0}, "seq_len"),
-        ({"seq_len": 10, "layers": 0}, "layers"),
-        ({"seq_len": 10, "dropout": 1.0}, "dropout"),
-        ({"seq_len": 10, "context_mode": "unknown"}, "context_mode"),
-        ({"seq_len": 10, "out_dim": 7}, "out_dim"),
+        ({"seq_len": 0, "feature_dim": 8}, "seq_len"),
+        ({"seq_len": 10, "feature_dim": 8, "layers": 0}, "layers"),
+        ({"seq_len": 10, "feature_dim": 8, "dropout": 1.0}, "dropout"),
+        ({"seq_len": 10, "feature_dim": 8, "context_mode": "unknown"}, "context_mode"),
         ({"seq_len": 10, "feature_dim": 0}, "feature_dim"),
     ),
 )
@@ -741,7 +731,7 @@ def test_model_config_validates_programmatic_values(kwargs, message):
 )
 def test_train_config_validates_programmatic_values(kwargs, message):
     with pytest.raises(ValueError, match=message):
-        TrainConfig(**kwargs)
+        TrainConfig.from_dict(kwargs)
 
 
 def test_device_auto_selects_cuda_only_when_available(monkeypatch):
@@ -792,77 +782,3 @@ def test_explicit_cuda_errors_when_unavailable(monkeypatch):
 
     with pytest.raises(RuntimeError, match=r"CUDA .* not available"):
         get_device("cuda")
-
-
-CHECKPOINT_MODEL_CONFIG = {
-    "seq_len": 20,
-    "hidden": 256,
-    "layers": 5,
-    "dropout": 0.1,
-    "nhead": 8,
-    "context_mode": "relaxed",
-    "out_dim": 6,
-    "feature_dim": 17,
-}
-
-
-@pytest.mark.parametrize(
-    ("option", "value", "message"),
-    (
-        ("--seq-len", "30", "--seq-len=30 conflicts with checkpoint value 20"),
-        ("--hidden", "128", "--hidden=128 conflicts with checkpoint value 256"),
-        ("--layers", "4", "--layers=4 conflicts with checkpoint value 5"),
-        ("--dropout", "0.2", "--dropout=0.2 conflicts with checkpoint value 0.1"),
-        ("--nhead", "4", "--nhead=4 conflicts with checkpoint value 8"),
-        ("--mode", "strict", "--mode=strict conflicts with checkpoint value relaxed"),
-    ),
-)
-def test_prediction_model_overrides_must_match_checkpoint(option, value, message):
-    args = parse("predict", "input.arrow", option, value)
-
-    with pytest.raises(ValueError, match=message):
-        model_config_from_args(args, checkpoint_config=CHECKPOINT_MODEL_CONFIG)
-
-
-def test_matching_prediction_overrides_are_allowed_and_feature_dim_is_checkpoint_only():
-    args = parse(
-        "predict",
-        "input.arrow",
-        "--seq-len",
-        "20",
-        "--hidden",
-        "256",
-        "--layers",
-        "5",
-        "--dropout",
-        "0.1",
-        "--nhead",
-        "8",
-        "--mode",
-        "relaxed",
-    )
-    args.feature_dim = 999
-
-    config = model_config_from_args(args, checkpoint_config=CHECKPOINT_MODEL_CONFIG)
-
-    assert config.feature_dim == 17
-    assert config.seq_len == 20
-
-
-def test_training_model_config_without_checkpoint_uses_defaults():
-    args = SimpleNamespace(
-        seq_len=12,
-        hidden=None,
-        layers=None,
-        dropout=None,
-        nhead=None,
-        context_mode=None,
-        out_dim=None,
-    )
-
-    config = model_config_from_args(args)
-
-    assert config.seq_len == 12
-    assert config.hidden == 256
-    assert config.nhead == 8
-    assert config.feature_dim is None

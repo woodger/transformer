@@ -40,10 +40,11 @@ identifiers, команды, пути, значения enum и другие э�
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный Flight v10 contract | `app/contracts/flight/v10/` |
-| Нормативный worker v11 contract | `app/contracts/worker/v11/` |
+| Нормативный semantic language v1 | `app/contracts/semantic/v1/` |
+| Нормативный Flight v11 contract | `app/contracts/flight/v11/` |
+| Нормативный worker v12 contract | `app/contracts/worker/v12/` |
+| Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
-| Принятый, но ещё не подключённый consumer-neutral contract package | `app/contracts/{semantic/v1,flight/v11,worker/v12,checkpoint/v6,metrics/*/v5}/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -96,7 +97,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Встроенные operational defaults находятся в
 `app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
-`app/service/bootstrap/config.py`, `app/contracts/worker/v11/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v12/config.py`,
 PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
@@ -109,18 +110,10 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures в `app/contracts/flight/v10/` нормативны для wire
-format. README или operations guide не могут переопределять их. Flight v10 —
-единственный текущий remote API contract и базовая точка для дальнейших
-изменений.
-
-Consumer-neutral package `semantic/v1`, Flight v11, worker v12,
-checkpoint/recovery v6 и metrics v5 нормативен для следующей clean-cut
-границы, но ещё не является runtime contract. Наличие staged schemas не
-разрешает advertise или принимать новую версию до синхронной реализации
-parser/serializer, persistence, worker и Consumer integration. Living
-documentation до этого продолжает описывать только Flight v10, worker v11,
-checkpoint v5 и metrics v4 runtime.
+JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
+v11, worker v12, checkpoint/recovery v6 и metrics v5 нормативны для текущего
+runtime. README или operations guide не могут переопределять их. Flight v11 —
+единственный текущий remote API contract; legacy aliases отсутствуют.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -132,7 +125,7 @@ checkpoint v5 и metrics v4 runtime.
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v10 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v11 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## Документация текущего состояния

@@ -5,8 +5,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.fit_run.v4 import RUN_INDEX
-from app.contracts.metrics.v4 import POINT_INDEX
+from app.contracts.metrics.fit_run.v5 import RUN_INDEX
+from app.contracts.metrics.v5 import POINT_INDEX
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -111,7 +111,7 @@ class MetricsPublisher:
             if cursor > len(points):
                 raise ValueError("metrics outbox cursor exceeds projection")
             if cursor < len(points):
-                chunk = points[cursor:cursor + _MAX_BULK_DOCUMENTS]
+                chunk = points[cursor : cursor + _MAX_BULK_DOCUMENTS]
                 self.sink.create_documents(
                     POINT_INDEX,
                     chunk,
@@ -214,9 +214,7 @@ class MetricsPublisher:
         )
         for cleanup in cleanups:
             try:
-                self.storage.remove_telemetry_artifacts(
-                    cleanup.relative_paths
-                )
+                self.storage.remove_telemetry_artifacts(cleanup.relative_paths)
             except (OSError, ValueError) as exc:
                 self.metrics.add("trainingTelemetryCleanupErrors")
                 self.logger.event(
@@ -233,10 +231,7 @@ class MetricsPublisher:
         if (
             entries > _BACKLOG_ENTRY_LIMIT
             or byte_count > _BACKLOG_BYTE_LIMIT
-            or (
-                oldest_age is not None
-                and oldest_age > _BACKLOG_AGE_LIMIT_SECONDS
-            )
+            or (oldest_age is not None and oldest_age > _BACKLOG_AGE_LIMIT_SECONDS)
         ):
             self.logger.event(
                 "metrics.outbox.limit_exceeded",

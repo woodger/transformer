@@ -14,14 +14,11 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v11.config import (
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
-)
-from app.contracts.worker.v11.objective import (
-    ObjectiveConfig,
-    objective_config_sha256,
 )
 from app.worker.checkpoints.model import load_model, save_model
 from app.worker.data.tensors import TrainingBatch
@@ -72,7 +69,7 @@ class Trainer:
         model: torch.nn.Module,
         device: torch.device,
         train_config: TrainConfig,
-        objective: ObjectiveConfig,
+        model_contract: ModelContract,
         *,
         metrics_path: str | None = None,
         context_mode: str = DEFAULT_CONTEXT_MODE,
@@ -84,11 +81,11 @@ class Trainer:
         self.model = model
         self.device = device
         self.train_config = train_config
-        self.objective = objective
+        self.model_contract = model_contract
         self.batch_size = train_config.batch_size
         self._batcher = PayloadBatcher(self.batch_size)
         self.epochs = train_config.epochs
-        self.direct_loss_weights = objective.direct_loss_weights
+        self.direct_loss_weights = model_contract.direct_loss_weights
         self.selection = train_config.selection
         self.metrics_path = metrics_path
         self.context_mode = context_mode
@@ -122,8 +119,8 @@ class Trainer:
             "batch_size": self.batch_size,
             "device": str(self.device),
             "selection_enabled": self.selection is not None,
-            "targets": list(self.objective.targets),
-            "objective_config_sha256": self._objective_config_sha256(),
+            "targets": list(self.model_contract.target_identities),
+            "model_contract_sha256": self._model_contract_sha256(),
         }
         if metrics_context:
             self.metrics_context.update(metrics_context)
@@ -172,11 +169,29 @@ class Trainer:
     ) -> ObservedTrainingEpoch:
         self.model.train()
         epoch_result = ObservedTrainingEpoch(
-            targets=self.objective.targets,
-            auxiliary_operators=self.objective.auxiliary_operators,
+            targets=self.model_contract.target_identities,
+            direct_components=tuple(
+                (str(item["identity"]), str(item["operator"]))
+                for item in self.model_contract.direct_components
+            ),
+            auxiliary_components=tuple(
+                (str(item["identity"]), str(item["operator"]))
+                for item in self.model_contract.auxiliary_components
+            ),
             lr=self.optimizer.param_groups[0]["lr"],
             step=self.state.train_step,
-            telemetry=EpochTelemetry(targets=self.objective.targets),
+            telemetry=EpochTelemetry(
+                targets=self.model_contract.target_identities,
+                component_targets={
+                    str(item["identity"]): (
+                        self.model_contract.target_identities[index],
+                        index,
+                    )
+                    for index, item in enumerate(
+                        self.model_contract.direct_components
+                    )
+                },
+            ),
         )
         started = time.perf_counter()
 
@@ -227,7 +242,9 @@ class Trainer:
                     shared_representation: torch.Tensor | None = None
                     sample_gradient_interactions = (
                         epoch_result.telemetry is not None
-                        and self._sample_gradient_interactions()
+                        and self._sample_gradient_interactions(
+                            epoch_result.telemetry.gradient_interaction_samples
+                        )
                     )
                     raw_forward = getattr(
                         self.model,
@@ -261,7 +278,7 @@ class Trainer:
                         loss_evaluation = combined_loss(
                             model_output,
                             batch_targets,
-                            self.objective,
+                            self.model_contract,
                             return_statistics=True,
                         )
                         loss = loss_evaluation.loss
@@ -282,10 +299,7 @@ class Trainer:
                                 TargetErrorObservation.evaluate(
                                     model_output,
                                     batch_targets,
-                                    self.objective.targets,
-                                    include_return_scale=(
-                                        self.objective.requires_return_scale
-                                    ),
+                                    self.model_contract,
                                 )
                             )
                         except Exception as exc:
@@ -457,10 +471,11 @@ class Trainer:
         }
         self.model.load_state_dict(state_dict)
 
-    def _sample_gradient_interactions(self) -> bool:
+    def _sample_gradient_interactions(self, samples: int) -> bool:
         interval = self.train_config.diagnostics.gradient_sample_every_steps
         return (
             interval is not None
+            and samples < self.train_config.diagnostics.gradient_max_batches
             and (self.state.train_step + 1) % interval == 0
         )
 
@@ -632,7 +647,7 @@ class Trainer:
             ),
             "scaler_state_dict": copy.deepcopy(self.scaler.state_dict()),
             "training_state": asdict(self.state),
-            "objective_config_sha256": self._objective_config_sha256(),
+            "model_contract_sha256": self._model_contract_sha256(),
             "selection_state": (
                 None
                 if self.selection_state is None
@@ -675,7 +690,7 @@ class Trainer:
             "optimizer_state_dict",
             "scaler_state_dict",
             "training_state",
-            "objective_config_sha256",
+            "model_contract_sha256",
             "selection_state",
             "selection",
             "payload_shuffle_generator_state",
@@ -702,8 +717,8 @@ class Trainer:
             "train_step",
         }:
             raise ValueError("training recovery progress is invalid")
-        if payload["objective_config_sha256"] != self._objective_config_sha256():
-            raise ValueError("training recovery objective configuration differs")
+        if payload["model_contract_sha256"] != self._model_contract_sha256():
+            raise ValueError("training recovery model contract differs")
         if self.selection is None:
             if selection_state_value is not None:
                 raise ValueError("training recovery selection state is invalid")
@@ -859,6 +874,8 @@ class Trainer:
         self,
         batch: TrainingBatch,
         model_name: str,
+        *,
+        metadata: JsonObject | Callable[[], JsonObject],
     ) -> None:
         def on_epoch(
             epoch: int,
@@ -879,10 +896,10 @@ class Trainer:
                 mode="fit",
                 epoch=epoch + 1,
                 norm=stats["norm"],
-                selection_score=selection_payload["selection_score"],
-                checkpoint_best=selection_payload["checkpoint_best"],
-                should_stop=selection_payload["should_stop"],
-                best_selection_score=selection_payload[
+                selectionScore=selection_payload["selection_score"],
+                checkpointBest=selection_payload["checkpoint_best"],
+                shouldStop=selection_payload["should_stop"],
+                bestSelectionScore=selection_payload[
                     "best_selection_score"
                 ],
             )
@@ -890,7 +907,8 @@ class Trainer:
         print(self.config_line())
         self.fit_epochs(batch, on_epoch=on_epoch)
 
-        self.save(model_name)
+        resolved_metadata = metadata() if callable(metadata) else metadata
+        self.save(model_name, metadata=resolved_metadata)
         print("Model saved")
 
     def predict(self, features: torch.Tensor) -> torch.Tensor:
@@ -899,8 +917,7 @@ class Trainer:
             if features.size(0) == 0:
                 return public_predictions(
                     self.model(features.to(self.device)),
-                    self.objective.targets,
-                    include_return_scale=self.objective.requires_return_scale,
+                    self.model_contract,
                 )
 
             predictions = None
@@ -910,8 +927,7 @@ class Trainer:
                 ].to(self.device)
                 batch_predictions = public_predictions(
                     self.model(batch_features),
-                    self.objective.targets,
-                    include_return_scale=self.objective.requires_return_scale,
+                    self.model_contract,
                 )
                 if predictions is None:
                     predictions = torch.empty(
@@ -935,40 +951,14 @@ class Trainer:
             _tensor_state_dict(checkpoint.get("state_dict"), "checkpoint state")
         )
 
-    def save(self, model_name: str) -> None:
+    def save(self, model_name: str, *, metadata: JsonObject) -> None:
         if self.selection is not None and self.best_state_dict is not None:
             self._restore_best_state_dict()
 
         save_model(
             model_name,
             self.model,
-            model_config=self.model_config,
-            train_config=self.train_config,
-            objective=self.objective,
-            data_contract=self.data_contract,
-            extra={
-                "checkpoint_selection": {
-                    "enabled": self.selection is not None,
-                    "objective_config_sha256": self._objective_config_sha256(),
-                    "best_selection_score": (
-                        self.best_selection_score
-                        if math.isfinite(self.best_selection_score)
-                        else None
-                    ),
-                    "best_frame": self.best_frame,
-                    "best_epoch": self.best_epoch,
-                    "source": (
-                        "best_selection_score"
-                        if self.best_state_dict is not None
-                        else "last_epoch"
-                    ),
-                },
-                **(
-                    {}
-                    if self.initialization is None
-                    else {"initialization": self.initialization}
-                ),
-            },
+            metadata=metadata,
         )
 
     def config_line(self) -> str:
@@ -982,7 +972,7 @@ class Trainer:
             if key in context:
                 fields[key] = context[key]
         fields.update({
-            "targets": ",".join(self.objective.targets),
+            "targets": ",".join(self.model_contract.target_identities),
             "selection": "on" if self.selection is not None else "off",
             "context_mode": self.context_mode,
             "amp": self.use_amp,
@@ -991,8 +981,20 @@ class Trainer:
             f"{key}={value}" for key, value in fields.items()
         )
 
-    def _objective_config_sha256(self) -> str:
-        return objective_config_sha256(self.objective)
+    def _model_contract_sha256(self) -> str:
+        digest = (
+            None
+            if self.data_contract is None
+            else self.data_contract.get("dataContractSha256")
+        )
+        if digest is None:
+            # The D1 model digest does not include the Consumer data digest.
+            # Local training resolves its data identity only when the complete
+            # file or framed stream is known.
+            digest = "0" * 64
+        elif not isinstance(digest, str):
+            raise ValueError("data contract digest is unavailable")
+        return str(self.model_contract.digests(digest)["modelContractSha256"])
 
     def record_metrics(
         self,

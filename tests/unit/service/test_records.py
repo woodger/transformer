@@ -6,8 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
-from app.contracts.worker.v11.objective import default_objective, ml_contract
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -21,6 +20,23 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     RecoverableAttemptRecord,
 )
+from tests.support.consumer_neutral import model_contract
+
+MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=2,
+)
+MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
+SEMANTIC_DIGESTS = MODEL_CONTRACT.digests("a" * 64)
+DATA_CONTRACT = {
+    "identity": "test.dataset",
+    "revision": 1,
+    "profile": "test.profile",
+    "dataContractSha256": "a" * 64,
+    "seqLen": 2,
+    "featureDim": 2,
+}
 
 
 def _assert_frozen_slots(record):
@@ -32,7 +48,6 @@ def _assert_frozen_slots(record):
 
 def test_execution_mapping_preserves_both_state_axes_and_typed_config():
     train_config = TrainConfig(epochs=3, deterministic=True)
-    contract = ml_contract(default_objective())
     value = {
         "job_id": "00000000-0000-4000-8000-000000000001",
         "owner_subject": "inventory",
@@ -56,8 +71,9 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
             feature_dim=2,
         ).to_dict(),
         "training_config": train_config.to_dict(),
-        "data_contract": {"data_contract_sha256": "a" * 64},
-        "ml_contract": contract,
+        "data_contract": DATA_CONTRACT,
+        "model_contract": MODEL_CONTRACT_DOCUMENT,
+        "semantic_digests": SEMANTIC_DIGESTS,
         "config_hash": "b" * 64,
         "manifest_sha256": None,
         "feature_dim": 2,
@@ -81,7 +97,8 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         epochs=3,
         deterministic=True,
     )
-    assert record.ml_contract == contract
+    assert record.model_contract == MODEL_CONTRACT_DOCUMENT
+    assert record.semantic_digests == SEMANTIC_DIGESTS
     _assert_frozen_slots(record)
 
 
@@ -118,12 +135,9 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
                     {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
                 ],
             },
-            data_contract={
-                "data_contract_sha256": "a" * 64,
-                "seq_len": 2,
-                "feature_dim": 2,
-            },
-            ml_contract=ml_contract(default_objective()),
+            data_contract=DATA_CONTRACT,
+            model_contract=MODEL_CONTRACT_DOCUMENT,
+            semantic_digests=SEMANTIC_DIGESTS,
             create_result={"jobId": job_id},
             model_label="daily",
             model_config=ModelConfig(seq_len=2, feature_dim=2),

@@ -1,8 +1,7 @@
 # Контракт checkpoint и recovery v6
 
-> CONTRACT DOCUMENT. Этот каталог задаёт normative metadata нового
-> consumer-neutral checkpoint/recovery format. Текущий runtime продолжает
-> читать и писать checkpoint v5 до отдельного clean-cut implementation change.
+> CONTRACT DOCUMENT. Этот каталог задаёт normative metadata текущего
+> consumer-neutral checkpoint/recovery format.
 
 `checkpoint-metadata.schema.json` описывает metadata, встроенную в binary
 checkpoint `transformer-checkpoint-v6`. Tensor state, optimizer, AMP scaler,

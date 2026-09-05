@@ -8,11 +8,11 @@ import pyarrow.flight as flight
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.worker.v11.config import TrainConfig, train_config_to_manifest
-from app.contracts.worker.v11.objective import default_objective
+from app.contracts.worker.v12.config import TrainConfig, train_config_to_manifest
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
     CONTRACT_NAME,
+    CONTRACT_VERSION,
     CREATE_ACTION,
     ErrorCode,
 )
@@ -30,11 +30,18 @@ from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.errors import ServiceError
 from app.service.domain.records import OutputRecord
 from tests.support.authentication import StaticAccessTokenAuthenticator
+from tests.support.consumer_neutral import data_contract, model_contract
 
 SECURITY_TRAIN_CONFIG = TrainConfig(
     epochs=1,
 )
-SECURITY_OBJECTIVE = default_objective()
+SECURITY_MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=1,
+    hidden=8,
+    nhead=2,
+)
 
 
 def _auth(token="secret"):
@@ -47,7 +54,7 @@ def _auth(token="secret"):
 def _query_body():
     return json.dumps({
         "contract": CONTRACT_NAME,
-        "version": 10,
+        "version": CONTRACT_VERSION,
         "requestId": str(uuid.uuid4()),
     }).encode("utf-8")
 
@@ -55,7 +62,7 @@ def _query_body():
 def _create_fit_document(**overrides):
     document = {
         "contract": CONTRACT_NAME,
-        "version": 10,
+        "version": CONTRACT_VERSION,
         "requestId": str(uuid.uuid4()),
         "idempotencyKey": "security-create-1",
         "jobId": str(uuid.uuid4()),
@@ -64,7 +71,6 @@ def _create_fit_document(**overrides):
         "device": "cpu",
         "initialization": {"kind": "random"},
         "modelLabel": "returns.daily",
-        "modelConfig": {"seqLen": 2, "hidden": 8, "nhead": 2},
         "trainingConfig": train_config_to_manifest(SECURITY_TRAIN_CONFIG),
         "sourceEncoding": {
             "kind": "indexedFeatureBlocks",
@@ -72,17 +78,8 @@ def _create_fit_document(**overrides):
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
             ],
         },
-        "targets": list(SECURITY_OBJECTIVE.targets),
-        "objective": SECURITY_OBJECTIVE.objective,
-        "dataContract": {
-            "id": "inventory.learning-dataset",
-            "version": 2,
-            "profile": "research-dividend-events-v2",
-            "dataContractSha256": "d" * 64,
-            "seqLen": 2,
-            "featureDim": 1,
-            "targetSchemaId": "inventory.target.v2",
-        },
+        "dataContract": data_contract(SECURITY_MODEL_CONTRACT),
+        "modelContract": SECURITY_MODEL_CONTRACT.to_document(),
     }
     document.update(overrides)
     return document

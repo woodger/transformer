@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v4 import (
+from app.contracts.metrics.fit_run.v5 import (
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_summary,
@@ -39,8 +39,8 @@ def publish_fit_run_summary(
     source: FitRunSummarySource,
     *,
     model_ref: str,
-    data_contract_sha256: str,
-    objective_config_sha256: str,
+    semantic_digests: JsonObject,
+    job_config_sha256: str,
     checkpoint_format: str,
     application_version: str,
     git_commit: str,
@@ -63,8 +63,8 @@ def publish_fit_run_summary(
         attempt_id=source.attempt_id,
         attempt=source.attempt,
         model_ref=model_ref,
-        data_contract_sha256=data_contract_sha256,
-        objective_config_sha256=objective_config_sha256,
+        semantic_digests=semantic_digests,
+        job_config_sha256=job_config_sha256,
         checkpoint_format=checkpoint_format,
         application_version=application_version,
         git_commit=git_commit,
@@ -72,9 +72,7 @@ def publish_fit_run_summary(
         initialization=initialization,
         milestones={
             "createdAt": _timestamp(source.created_at),
-            "firstInputCommittedAt": _timestamp(
-                source.first_input_committed_at
-            ),
+            "firstInputCommittedAt": _timestamp(source.first_input_committed_at),
             "inputClosedAt": _timestamp(source.input_closed_at),
             "workerCompletedAt": _timestamp(source.worker_completed_at),
             "publishedAt": _timestamp(source.publication_boundary_at),
@@ -113,7 +111,9 @@ def publish_fit_run_summary(
             "attempts": source.attempt_count,
             "recoveries": source.recovery_count,
             "inputPayloads": source.input_payload_count,
-            "inputRows": source.input_rows,
+            "inputChunks": source.input_chunks,
+            "logicalRows": source.input_rows,
+            "nativeRows": list(source.native_rows),
             "inputBytes": source.input_bytes,
         },
     )

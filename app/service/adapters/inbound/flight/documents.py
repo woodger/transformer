@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol, cast, runtime_checkable
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v11.config import (
+from app.contracts.worker.v12.config import (
     ModelConfig,
     TrainConfig,
     train_config_to_manifest,
@@ -42,7 +42,10 @@ def parse_action_body(body: object) -> JsonObject:
             f"action body exceeds {MAX_ACTION_DOCUMENT_BYTES} bytes"
         )
     try:
-        document = json.loads(body_bytes.decode("utf-8"))
+        document = json.loads(
+            body_bytes.decode("utf-8"),
+            object_pairs_hook=_unique_object,
+        )
     except (UnicodeDecodeError, ValueError) as exc:
         raise invalid(
             "action body must be a valid UTF-8 JSON document"
@@ -50,6 +53,15 @@ def parse_action_body(body: object) -> JsonObject:
     if not isinstance(document, dict):
         raise invalid("action body must be a JSON object")
     return cast(JsonObject, document)
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
 
 
 def response_document(request_id: str, **fields: object) -> JsonObject:
@@ -98,16 +110,7 @@ def model_config_to_api(
         if parsed is None:
             raise invalid("model configuration must not be empty")
         config = parsed
-    return {
-        "seqLen": config.seq_len,
-        "hidden": config.hidden,
-        "layers": config.layers,
-        "dropout": config.dropout,
-        "nhead": config.nhead,
-        "mode": config.context_mode,
-        "outDim": config.out_dim,
-        "featureDim": config.feature_dim,
-    }
+    return config.to_manifest()
 
 
 def train_config_to_api(
@@ -123,14 +126,13 @@ def train_config_to_api(
 
 def data_contract_to_api(contract: Mapping[str, object]) -> JsonObject:
     return {
-        "id": cast(JsonValue, contract.get("id")),
-        "version": cast(JsonValue, contract.get("version")),
+        "identity": cast(JsonValue, contract.get("identity")),
+        "revision": cast(JsonValue, contract.get("revision")),
         "profile": cast(JsonValue, contract.get("profile")),
         "dataContractSha256": cast(
             JsonValue,
             contract.get(
-                "data_contract_sha256",
-                contract.get("dataContractSha256"),
+                "data_contract_sha256", contract.get("dataContractSha256")
             ),
         ),
         "seqLen": cast(
@@ -140,13 +142,6 @@ def data_contract_to_api(contract: Mapping[str, object]) -> JsonObject:
         "featureDim": cast(
             JsonValue,
             contract.get("feature_dim", contract.get("featureDim")),
-        ),
-        "targetSchemaId": cast(
-            JsonValue,
-            contract.get(
-                "target_schema_id",
-                contract.get("targetSchemaId"),
-            ),
         ),
     }
 

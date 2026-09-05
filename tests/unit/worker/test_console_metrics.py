@@ -1,31 +1,34 @@
 import torch
 
-from app.contracts.worker.v11.config import (
+from app.contracts.worker.v12.config import (
     CheckpointSelectionConfig,
     TrainConfig,
 )
-from app.contracts.worker.v11.objective import default_objective
 from app.worker.telemetry import (
     EpochTelemetry,
     ObservedTrainingEpoch,
     format_epoch_console_line,
 )
 from app.worker.training.trainer import Trainer
+from tests.support.consumer_neutral import model_contract
 
 
 def test_console_line_is_compact_and_human_readable():
+    targets = ("Consumer.Return", "Consumer.Probability")
     metrics = ObservedTrainingEpoch(
+        targets=targets,
+        direct_components=(
+            ("direct.return", "SmoothL1"),
+            ("direct.probability", "BinaryCrossEntropyWithLogits"),
+        ),
         rows=67249,
         batches=263,
         loss=-3.149016,
         telemetry=EpochTelemetry(
+            targets=targets,
             target_mae={
-                "MeanReturn": 0.0225603,
-                "SigmaReturn": 0.0231593,
-                "ProbTP": 0.12,
-                "ProbSL": 0.13,
-                "VolatilityNext": 0.14,
-                "HittingProbTP": 0.15,
+                "Consumer.Return": 0.0225603,
+                "Consumer.Probability": 0.12,
             },
             training_batches_completed=263,
             optimizer_updates_applied=263,
@@ -49,9 +52,8 @@ def test_console_line_is_compact_and_human_readable():
 
     assert output == (
         "frame=1 epoch=2 selection=3.82703 loss=-3.149016 "
-        "MeanReturn_mae=0.0225603 SigmaReturn_mae=0.0231593 "
-        "ProbTP_mae=0.12 ProbSL_mae=0.13 VolatilityNext_mae=0.14 "
-        "HittingProbTP_mae=0.15 grad_mean=476.013 rows=67249 "
+        "Consumer.Return_mae=0.0225603 Consumer.Probability_mae=0.12 "
+        "grad_mean=476.013 rows=67249 "
         "batches=263 time=181.7s"
     )
     assert "hidden=" not in output
@@ -60,7 +62,10 @@ def test_console_line_is_compact_and_human_readable():
 
 
 def test_console_line_reports_unavailable_selection_score():
-    metrics = ObservedTrainingEpoch()
+    metrics = ObservedTrainingEpoch(
+        targets=("Consumer.Target",),
+        direct_components=(("direct.target", "SmoothL1"),),
+    )
 
     assert "selection=n/a" in format_epoch_console_line(
         metrics,
@@ -70,8 +75,15 @@ def test_console_line_reports_unavailable_selection_score():
 
 
 def test_trainer_config_line_contains_static_run_configuration():
+    contract = model_contract(
+        "new-opaque-target",
+        seq_len=10,
+        feature_dim=2,
+        hidden=256,
+        layers=4,
+    )
     trainer = Trainer(
-        model=torch.nn.Linear(2, 7),
+        model=torch.nn.Linear(2, 1),
         device=torch.device("cpu"),
         train_config=TrainConfig(
             lr=5e-4,
@@ -82,13 +94,14 @@ def test_trainer_config_line_contains_static_run_configuration():
                 patience=1,
             ),
         ),
-        objective=default_objective(),
+        model_contract=contract,
         metrics_context={"hidden": 256, "layers": 4, "seq_len": 10},
+        data_contract={"dataContractSha256": "a" * 64},
     )
 
     assert trainer.config_line() == (
         "config device=cpu batch_size=256 lr=0.0005 hidden=256 layers=4 "
-        "seq_len=10 targets=MeanReturn,SigmaReturn,ProbTP,ProbSL,"
-        "VolatilityNext,HittingProbTP selection=on context_mode=relaxed "
+        "seq_len=10 targets=ConsumerDefined.EventProbability "
+        "selection=on context_mode=relaxed "
         "amp=False"
     )

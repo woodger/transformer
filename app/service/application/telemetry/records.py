@@ -35,7 +35,9 @@ class FitRunSummarySource:
     attempt_count: int
     recovery_count: int
     input_payload_count: int
+    input_chunks: int
     input_rows: int
+    native_rows: tuple[int, ...]
     input_bytes: int
 
 

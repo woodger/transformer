@@ -55,7 +55,7 @@ COMMAND_HELP = {
 }
 COMMAND_EXAMPLES = {
     "fit": """Examples:
-  transformer fit ./data/train.arrow --seq-len=20
+  transformer fit ./data/train.arrow --model-contract=./model-contract.json
 """,
     "predict": """Examples:
   transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow

@@ -5,7 +5,7 @@ from typing import BinaryIO
 
 from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11 import WorkerContractError, parse_control_message
+from app.contracts.worker.v12 import WorkerContractError, parse_control_message
 from app.worker.application.documents import (
     boolean_field as _boolean_field,
     integer_field as _integer_field,
@@ -72,9 +72,9 @@ class DurableInputStream:
             message = parse_control_message(line)
             self._validate_envelope(message)
             payload = _object_field(message, "payload")
-            if _string_field(message, "type") == "input.committed":
+            if _string_field(message, "type") == "input":
                 item = _object_field(payload, "input")
-                revision = _integer_field(payload, "inputRevision")
+                revision = _integer_field(item, "commitRevision")
                 ordinal = _integer_field(item, "ordinal")
                 if ordinal < self.next_ordinal:
                     if item != self._inputs[ordinal]:
@@ -93,10 +93,6 @@ class DurableInputStream:
                         "input control ordinal is not contiguous"
                     )
                 self._validate_input(item)
-                if revision < _integer_field(item, "commitRevision"):
-                    raise WorkerContractError(
-                        "input control revision precedes its receipt"
-                    )
                 self.input_revision = max(self.input_revision, revision)
                 self._inputs.append(item)
                 self._validate_range_sequence()
@@ -162,57 +158,6 @@ class DurableInputStream:
         if input_revision < self.input_revision:
             raise WorkerContractError(
                 "input.closed revision precedes accepted inputs"
-            )
-        if _integer_field(payload, "payloadCount") != len(self._inputs):
-            raise WorkerContractError(
-                "input.closed payload count differs from accepted inputs"
-            )
-        if _integer_field(payload, "totalChunks") != sum(
-            _integer_field(item, "chunks") for item in self._inputs
-        ):
-            raise WorkerContractError(
-                "input.closed chunk count differs from accepted inputs"
-            )
-        if _integer_field(payload, "totalLogicalRows") != sum(
-            _integer_field(item, "logicalRows") for item in self._inputs
-        ):
-            raise WorkerContractError(
-                "input.closed logical row count differs from accepted inputs"
-            )
-        expected_native_rows = [0] * self._feature_block_count
-        for item in self._inputs:
-            for index, count in enumerate(
-                _integer_list(item.get("nativeRows"), "nativeRows")
-            ):
-                expected_native_rows[index] += count
-        if _integer_list(
-            payload.get("totalNativeRows"),
-            "totalNativeRows",
-        ) != tuple(expected_native_rows):
-            raise WorkerContractError(
-                "input.closed native row counts differ from accepted inputs"
-            )
-        nonempty = [
-            item
-            for item in self._inputs
-            if _integer_field(item, "chunks") > 0
-        ]
-        range_count = _integer_field(payload, "rangeCount")
-        expected_range_count = (
-            0
-            if not nonempty
-            else _integer_field(nonempty[-1], "lastRangeOrdinal") + 1
-        )
-        if range_count != expected_range_count:
-            raise WorkerContractError(
-                "input.closed range count differs from accepted inputs"
-            )
-        if _integer_field(payload, "totalBytes") != sum(
-            _integer_field(_object_field(item, "artifact"), "byteCount")
-            for item in self._inputs
-        ):
-            raise WorkerContractError(
-                "input.closed byte count differs from accepted inputs"
             )
         self.input_revision = input_revision
         self.manifest_sha256 = _string_field(payload, "manifestSha256")

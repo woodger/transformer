@@ -147,6 +147,7 @@ def test_service_domain_and_application_dependencies_point_inward():
         "app.service.domain",
         "app.contracts.indexed_feature_blocks",
         "app.contracts.metrics",
+        "app.contracts.semantic",
         "app.contracts.worker",
     )
     forbidden_libraries = ("pyarrow", "sqlalchemy", "torch")
@@ -249,10 +250,12 @@ def test_application_internal_import_graph_is_acyclic():
 
 def test_canonical_contracts_and_composition_roots_exist():
     assert (APP_ROOT / "config.py").is_file()
-    assert (APP_ROOT / "contracts" / "flight" / "v10").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v11").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "v4").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v4").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v11").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v12").is_dir()
+    assert (APP_ROOT / "contracts" / "checkpoint" / "v6").is_dir()
+    assert (APP_ROOT / "contracts" / "semantic" / "v1").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "v5").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v5").is_dir()
     assert (APP_ROOT / "local" / "fit.py").is_file()
     assert (APP_ROOT / "cli" / "parser.py").is_file()
     assert (APP_ROOT / "cli" / "formatting.py").is_file()
@@ -360,7 +363,7 @@ def test_service_application_job_api_is_transport_neutral():
         for value in sorted(strings & forbidden_wire_values):
             violations.append(f"{relative}: {value}")
         for value in sorted(
-            item for item in strings if item.startswith("transformer.v10.")
+            item for item in strings if item.startswith("transformer.v11.")
         ):
             violations.append(f"{relative}: {value}")
     assert violations == [], "Flight presentation leaked into application:\n" + (

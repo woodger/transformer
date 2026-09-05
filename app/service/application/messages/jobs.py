@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
@@ -40,7 +40,8 @@ class CreateJobCommand:
     prediction_column: str
     source_encoding: JsonObject
     data_contract: JsonObject
-    ml_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
     model_label: str | None = None
     model_selector: str | None = None
     model_ref: str | None = None
@@ -142,7 +143,9 @@ class JobCreated:
     resolved_model_ref: str | None
     source_encoding: JsonObject
     data_contract: JsonObject
-    ml_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
+    job_config_sha256: str
     limits: ServiceLimits
     initialization: JsonObject | None
 

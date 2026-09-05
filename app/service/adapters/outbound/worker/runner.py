@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v11 import (
+from app.contracts.worker.v12 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
@@ -506,23 +506,14 @@ class WorkerSubprocessRunner:
                         attempt=job.attempt,
                         attempt_id=attempt_id,
                         sequence=sequence,
-                        message_type="input.committed",
-                        payload={
-                            "inputRevision": current.input_revision,
-                            "input": _worker_input_manifest(item),
-                        },
+                        message_type="input",
+                        payload={"input": _worker_input_manifest(item)},
                     ))
                     stream.flush()
                     next_ordinal = item.ordinal + 1
                 if current.input_state == InputState.CLOSED:
-                    row = self.ledger.get_job(job.job_id)
-                    if row is None:
-                        raise WorkerSubprocessError(
-                            ErrorCode.INTERNAL,
-                            "closed input summary is unavailable",
-                        )
                     manifest_sha256 = _optional_string(
-                        row.get("manifest_sha256"),
+                        current.manifest_sha256,
                         "closed input manifestSha256",
                     )
                     if manifest_sha256 is None:
@@ -531,34 +522,7 @@ class WorkerSubprocessRunner:
                             "closed input summary is unavailable",
                         )
                     closed_payload = cast(JsonObject, {
-                        "inputRevision": _integer(
-                            row.get("input_revision"),
-                            "closed input revision",
-                        ),
-                        "payloadCount": _integer(
-                            row.get("payload_count"),
-                            "closed input payload count",
-                        ),
-                        "totalChunks": _integer(
-                            row.get("total_chunks"),
-                            "closed input chunk count",
-                        ),
-                        "totalLogicalRows": _integer(
-                            row.get("total_rows"),
-                            "closed input logical row count",
-                        ),
-                        "totalNativeRows": _integer_array(
-                            row.get("total_native_rows"),
-                            "closed input native row counts",
-                        ),
-                        "rangeCount": _integer(
-                            row.get("range_count"),
-                            "closed input range count",
-                        ),
-                        "totalBytes": _integer(
-                            row.get("total_bytes"),
-                            "closed input byte count",
-                        ),
+                        "inputRevision": current.input_revision,
                         "manifestSha256": manifest_sha256,
                     })
                     sequence += 1
@@ -1040,15 +1004,3 @@ def _integer(value: object, label: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise WorkerContractError(f"{label} must be an integer")
     return value
-
-
-def _integer_array(value: object, label: str) -> list[int]:
-    if not isinstance(value, list):
-        raise WorkerContractError(f"{label} must be an integer array")
-    values = cast(list[object], value)
-    if any(
-        isinstance(item, bool) or not isinstance(item, int)
-        for item in values
-    ):
-        raise WorkerContractError(f"{label} must be an integer array")
-    return cast(list[int], value)

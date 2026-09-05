@@ -1,3 +1,4 @@
+import json
 from typing import Protocol, cast
 
 import pyarrow as pa
@@ -25,7 +26,11 @@ __all__ = [
 
 
 class _ExceptionFactory(Protocol):
-    def __call__(self, message: str) -> Exception: ...
+    def __call__(
+        self,
+        message: str,
+        extra_info: bytes = b"",
+    ) -> Exception: ...
 
 
 def to_flight_exception(error: ServiceError) -> Exception:
@@ -37,6 +42,15 @@ def to_flight_exception(error: ServiceError) -> Exception:
     The stable application code is kept in every error message.
     """
     text = error.safe_text()
+    if error.detail is not None:
+        detail = json.dumps(
+            error.detail,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return _flight_exception("FlightServerError", text, detail)
     if error.code == ErrorCode.UNAUTHENTICATED:
         return _flight_exception("FlightUnauthenticatedError", text)
     if error.code == ErrorCode.PERMISSION_DENIED:
@@ -65,7 +79,11 @@ def to_flight_exception(error: ServiceError) -> Exception:
     return pa.ArrowInvalid(text)
 
 
-def _flight_exception(name: str, message: str) -> Exception:
+def _flight_exception(
+    name: str,
+    message: str,
+    extra_info: bytes = b"",
+) -> Exception:
     """Construct a runtime Flight exception missing from PyArrow's stubs."""
     factory = cast(_ExceptionFactory, vars(flight)[name])
-    return factory(message)
+    return factory(message, extra_info)

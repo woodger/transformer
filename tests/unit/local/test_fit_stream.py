@@ -9,6 +9,7 @@ import torch
 import app.main as main_module
 from app.worker.data.tensors import TrainingBatch
 from app.worker.telemetry import ObservedTrainingEpoch
+from tests.support.consumer_neutral import model_contract
 
 
 class FakeStdin:
@@ -36,10 +37,10 @@ def make_args(**overrides):
     args = {
         "seq_len": 2,
         "model_name": "model.pth",
+        "model_contract": "model-contract.json",
         "lr": 1e-3,
         "batch_size": 8,
         "epochs": 1,
-        "direct_loss_weights": (1.0,) * 6,
         "use_amp": False,
         "hidden": 32,
         "layers": 1,
@@ -59,7 +60,7 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
     })
     non_empty = pa.table({
         "src": [[1.0, 2.0, 3.0, 4.0]],
-        "tgt": [[0.5, 0.0, 0.0, 0.0, 1.0, 1.0]],
+        "tgt": [[0.5]],
     })
 
     stream = io.BytesIO()
@@ -81,11 +82,15 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
             self.calls.append((batch.features.shape, batch.targets.shape))
             metrics_rows = [
                 ObservedTrainingEpoch(
+                    targets=("MeanReturn",),
+                    direct_components=(("direct.mean-return", "SmoothL1"),),
                     rows=1,
                     batches=1,
                     loss=1.25,
                 ),
                 ObservedTrainingEpoch(
+                    targets=("MeanReturn",),
+                    direct_components=(("direct.mean-return", "SmoothL1"),),
                     rows=1,
                     batches=1,
                     loss=1.10,
@@ -100,30 +105,57 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
                 })
             return metrics_rows
 
-        def save(self, model_name):
+        def config_line(self):
+            return "test trainer"
+
+        def save(self, model_name, *, metadata):
             self.saved_as = model_name
 
         def record_metrics(self, metrics, **extra):
             pass
 
     trainer = FakeTrainer()
+    contract = model_contract(
+        "single-regression",
+        seq_len=2,
+        feature_dim=2,
+        hidden=32,
+        layers=1,
+        dropout=0.0,
+        nhead=4,
+    )
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(stream))
-    monkeypatch.setattr(main_module, "build_model", lambda *args: object())
     monkeypatch.setattr(
-        main_module,
-        "build_trainer",
-        lambda *args, **kwargs: trainer,
+        "app.local.fit_stream.load_model_contract",
+        lambda _path: contract,
+    )
+    monkeypatch.setattr(
+        "app.local.fit_stream.local_checkpoint_metadata",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(main_module, "build_model", lambda *args: object())
+    trainer_arguments = {}
+
+    def build_trainer(*args, **kwargs):
+        trainer_arguments.update(kwargs)
+        return trainer
+
+    monkeypatch.setattr(
+        "app.worker.training.factory.build_trainer",
+        build_trainer,
     )
 
     main_module.fit_stream(make_args(model_name="stream.pth"), torch.device("cpu"))
 
-    assert trainer.calls == [(torch.Size([1, 2, 2]), torch.Size([1, 6]))]
+    assert trainer.calls == [(torch.Size([1, 2, 2]), torch.Size([1, 1]))]
     assert trainer.saved_as == "stream.pth"
+    assert trainer_arguments["model_contract"] is contract
+    assert trainer_arguments["initialization"] == {"kind": "random"}
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output
-    assert "features: torch.Size([1, 2, 2]) targets: torch.Size([1, 6])" in output
+    assert "features: torch.Size([1, 2, 2]) targets: torch.Size([1, 1])" in output
     assert "frame=2 epoch=1 selection=n/a" in output
     assert "loss=1.250000" in output
     assert "frame=2 epoch=2 selection=n/a" in output
@@ -142,99 +174,38 @@ def test_fit_stream_rejects_all_empty_frames(monkeypatch):
     stream.seek(0)
 
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(stream))
+    monkeypatch.setattr(
+        "app.local.fit_stream.load_model_contract",
+        lambda _path: model_contract(
+            "single-regression",
+            seq_len=2,
+            feature_dim=2,
+            hidden=32,
+            layers=1,
+            dropout=0.0,
+            nhead=4,
+        ),
+    )
 
     with pytest.raises(ValueError, match="No non-empty frames received"):
         main_module.fit_stream(make_args(), torch.device("cpu"))
 
 
-def test_fit_stream_spool_runs_epochs_over_all_payloads(tmp_path, monkeypatch, capsys):
-    empty = pa.table({
-        "src": pa.array([], type=pa.list_(pa.float32())),
-        "tgt": pa.array([], type=pa.list_(pa.float32())),
-    })
-    first = pa.table({
-        "src": [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
-        "tgt": [
-            [0.5, 0.0, 0.0, 0.0, 1.0, 1.0],
-            [0.4, 0.0, 0.0, 0.0, 1.0, 0.0],
-        ],
-    })
-    second = pa.table({
-        "src": [[9.0, 10.0, 11.0, 12.0]],
-        "tgt": [[0.3, 0.0, 0.0, 0.0, 1.0, 1.0]],
-    })
-    spool = tmp_path / "inputs"
-    spool.mkdir()
-    for ordinal, table in enumerate((empty, first, second)):
-        write_arrow_table(spool / f"{ordinal}.arrow", table)
-
-    class FakeTrainer:
-        def __init__(self):
-            self.payload_passes = []
-            self.metrics_rows = []
-            self.saved_as = None
-
-        def fit_payloads(self, payloads, on_epoch=None):
-            for epoch in range(2):
-                loaded = list(payloads())
-                self.payload_passes.append([
-                    (batch.features.shape, batch.targets.shape)
-                    for batch in loaded
-                ])
-                metrics = ObservedTrainingEpoch(
-                    rows=sum(batch.features.size(0) for batch in loaded),
-                    batches=len(loaded),
-                    loss=1.0 - epoch * 0.1,
-                )
-                on_epoch(epoch, metrics, {
-                    "selection_score": None,
-                    "checkpoint_best": True,
-                    "should_stop": False,
-                    "best_selection_score": metrics.loss,
-                })
-
-        def save(self, model_name):
-            self.saved_as = model_name
-
-        def record_metrics(self, metrics, **extra):
-            self.metrics_rows.append((metrics, extra))
-
-    trainer = FakeTrainer()
-    monkeypatch.setattr(main_module, "build_model", lambda *args: object())
-    monkeypatch.setattr(
-        main_module,
-        "build_trainer",
-        lambda *args, **kwargs: trainer,
-    )
-
-    main_module.fit_stream(
-        make_args(
-            model_name="spooled.pth",
-            input_spool_dir=str(spool),
-            input_frame_count=3,
-        ),
-        torch.device("cpu"),
-    )
-
-    expected_pass = [
-        (torch.Size([2, 2, 2]), torch.Size([2, 6])),
-        (torch.Size([1, 2, 2]), torch.Size([1, 6])),
-    ]
-    assert trainer.payload_passes == [expected_pass, expected_pass]
-    assert trainer.saved_as == "spooled.pth"
-    assert [extra["epoch"] for _, extra in trainer.metrics_rows] == [1, 2]
-    assert all("frame" not in extra for _, extra in trainer.metrics_rows)
-
-    output = capsys.readouterr().out
-    assert "frame 1, skipped empty payload" in output
-    assert "epoch=1 selection=n/a" in output
-    assert "frame=" not in output.split("epoch=1", 1)[1]
-    assert "2 trained frame(s), 2 epoch(s) from 3 received frame(s)" in output
-
-
 def test_fit_stream_applies_max_frame_bytes(monkeypatch):
     input_stream = io.BytesIO((11).to_bytes(8, byteorder="big") + b"payload")
     monkeypatch.setattr(main_module.sys, "stdin", FakeStdin(input_stream))
+    monkeypatch.setattr(
+        "app.local.fit_stream.load_model_contract",
+        lambda _path: model_contract(
+            "single-regression",
+            seq_len=2,
+            feature_dim=2,
+            hidden=32,
+            layers=1,
+            dropout=0.0,
+            nhead=4,
+        ),
+    )
 
     with pytest.raises(ValueError, match="exceeds maximum 10 bytes"):
         main_module.fit_stream(

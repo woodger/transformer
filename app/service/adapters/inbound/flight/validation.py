@@ -4,23 +4,19 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v10.codec import (
+from app.contracts.flight.v11.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.indexed_feature_blocks import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v11.config import (
+from app.contracts.semantic.v1 import ModelContract, SemanticContractError
+from app.contracts.worker.v12.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v11.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v11.objective import (
-    ObjectiveConfig,
-    ml_contract,
-    objective_from_ml_contract,
-)
+from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -36,6 +32,8 @@ from app.service.adapters.inbound.flight.constants import (
     STATUS_ACTION,
 )
 from app.service.adapters.inbound.flight.errors import invalid
+from app.service.domain.errors import ServiceError
+from app.service.domain.job import ErrorCode
 
 _ACTION_SCHEMAS: dict[str, FlightRequestSchema] = {
     ACQUIRE_ACTION: "acquire",
@@ -60,25 +58,12 @@ class StatusRequestFields(RequestIdFields):
 
 
 class DataContractFields(TypedDict):
-    id: str
-    version: int
+    identity: str
+    revision: int
     profile: str
-    data_contract_sha256: str
-    seq_len: int
-    feature_dim: int
-    target_schema_id: str
-
-
-class MlContractFields(TypedDict):
-    targetSchemaId: str
-    predictionSchemaId: str
-    objectiveId: str
-    objectiveConfigSha256: str
-    checkpointFormat: str
-    targetWidth: int
-    predictionSpace: str
-    targets: list[str]
-    objective: JsonObject
+    dataContractSha256: str
+    seqLen: int
+    featureDim: int
 
 
 class CreateRequestFields(RequestIdFields):
@@ -90,13 +75,13 @@ class CreateRequestFields(RequestIdFields):
     prediction_column: str
     source_encoding: JsonObject
     data_contract: DataContractFields
-    ml_contract: MlContractFields
+    model_contract: JsonObject
+    semantic_digests: JsonObject
     model_label: NotRequired[str]
     model_ref: NotRequired[str]
     model_selector: NotRequired[str]
     model_config: NotRequired[ModelConfig]
     train_config: NotRequired[TrainConfig]
-    objective_config: NotRequired[ObjectiveConfig]
     initialization_kind: NotRequired[str]
 
 
@@ -265,17 +250,43 @@ def _validate_create(
     operation = _string(document, "operation")
     data_contract = _data_contract(_object(document, "dataContract"))
     try:
+        model_contract = ModelContract.from_document(
+            document["modelContract"]
+        )
+    except SemanticContractError as exc:
+        code = (
+            ErrorCode.FAILED_PRECONDITION
+            if exc.reason in {
+                "LANGUAGE_REVISION_UNAVAILABLE",
+                "PRIMITIVE_UNAVAILABLE",
+            }
+            else ErrorCode.INVALID_ARGUMENT
+        )
+        raise ServiceError(
+            code,
+            str(exc),
+            detail={
+                "code": code.value,
+                "reason": exc.reason,
+                "path": "/modelContract" + exc.path,
+                "message": str(exc),
+            },
+        ) from exc
+    model_config = ModelConfig.from_manifest(model_contract.model_config)
+    if (
+        model_config.seq_len != data_contract["seqLen"]
+        or model_config.feature_dim != data_contract["featureDim"]
+    ):
+        raise invalid(
+            "modelContract.modelConfig geometry must match dataContract"
+        )
+    try:
         source_encoding = canonical_source_encoding(
             document["sourceEncoding"],
-            feature_dim=data_contract["feature_dim"],
+            feature_dim=data_contract["featureDim"],
         )
     except ValueError as exc:
         raise invalid(str(exc)) from exc
-    requested_ml_contract = (
-        _ml_contract(_object(document, "mlContract"))
-        if operation == "predict"
-        else None
-    )
     common: CreateRequestFields = {
         "request_id": request_id,
         "idempotency_key": _string(document, "idempotencyKey"),
@@ -286,34 +297,20 @@ def _validate_create(
         "prediction_column": cast(str, document.get("predictionColumn", "out")),
         "source_encoding": source_encoding,
         "data_contract": data_contract,
-        "ml_contract": cast(MlContractFields, requested_ml_contract),
+        "model_contract": model_contract.to_document(),
+        "semantic_digests": model_contract.digests(
+            data_contract["dataContractSha256"]
+        ),
     }
     if operation == "fit":
-        objective_config = _objective_config(document)
-        model_config = _model_config(_object(document, "modelConfig"))
-        if model_config.seq_len != data_contract["seq_len"]:
-            raise invalid("modelConfig.seqLen must match dataContract.seqLen")
-        resolved_model_config = replace(
-            model_config,
-            feature_dim=data_contract["feature_dim"],
-            out_dim=objective_config.target_width,
-        )
         train_config = _train_config(
             cast(Mapping[str, object], document.get("trainingConfig", {}))
         )
         diagnostics = _diagnostics_config(document.get("diagnostics"))
         train_config = replace(train_config, diagnostics=diagnostics)
-        common["ml_contract"] = cast(
-            MlContractFields,
-            ml_contract(
-                objective_config,
-                target_schema_id=data_contract["target_schema_id"],
-            )
-        )
         common["model_label"] = _string(document, "modelLabel")
-        common["model_config"] = resolved_model_config
+        common["model_config"] = model_config
         common["train_config"] = train_config
-        common["objective_config"] = objective_config
         initialization = _object(document, "initialization")
         initialization_kind = _string(initialization, "kind")
         common["initialization_kind"] = initialization_kind
@@ -432,32 +429,13 @@ def _validate_model_describe(
 
 def _data_contract(document: Mapping[str, object]) -> DataContractFields:
     return {
-        "id": _string(document, "id"),
-        "version": _integer(document, "version"),
+        "identity": _string(document, "identity"),
+        "revision": _integer(document, "revision"),
         "profile": _string(document, "profile"),
-        "data_contract_sha256": _string(document, "dataContractSha256"),
-        "seq_len": _integer(document, "seqLen"),
-        "feature_dim": _integer(document, "featureDim"),
-        "target_schema_id": _string(document, "targetSchemaId"),
+        "dataContractSha256": _string(document, "dataContractSha256"),
+        "seqLen": _integer(document, "seqLen"),
+        "featureDim": _integer(document, "featureDim"),
     }
-
-
-def _ml_contract(document: Mapping[str, object]) -> MlContractFields:
-    try:
-        objective_from_ml_contract(document)
-    except (TypeError, ValueError) as exc:
-        raise invalid(f"invalid mlContract: {exc}") from exc
-    return cast(MlContractFields, dict(document))
-
-
-def _objective_config(document: Mapping[str, object]) -> ObjectiveConfig:
-    try:
-        return ObjectiveConfig.from_document({
-            "targets": document["targets"],
-            "objective": document["objective"],
-        })
-    except (TypeError, ValueError) as exc:
-        raise invalid(f"invalid objective: {exc}") from exc
 
 
 def _diagnostics_config(document: object) -> DiagnosticsConfig:
@@ -467,39 +445,6 @@ def _diagnostics_config(document: object) -> DiagnosticsConfig:
         return DiagnosticsConfig.from_document(document)
     except (TypeError, ValueError) as exc:
         raise invalid(f"invalid diagnostics: {exc}") from exc
-
-
-def _model_config(document: Mapping[str, object]) -> ModelConfig:
-    mapped: dict[str, object] = {
-        "seq_len": document["seqLen"],
-        "hidden": document.get(
-            "hidden",
-            ModelConfig.__dataclass_fields__["hidden"].default,
-        ),
-        "layers": document.get(
-            "layers",
-            ModelConfig.__dataclass_fields__["layers"].default,
-        ),
-        "dropout": document.get(
-            "dropout",
-            ModelConfig.__dataclass_fields__["dropout"].default,
-        ),
-        "nhead": document.get(
-            "nhead",
-            ModelConfig.__dataclass_fields__["nhead"].default,
-        ),
-        "context_mode": document.get(
-            "mode",
-            ModelConfig.__dataclass_fields__["context_mode"].default,
-        ),
-    }
-    try:
-        config = ModelConfig.from_dict(mapped)
-        if config is None:
-            raise ValueError("model configuration must not be empty")
-        return config
-    except (TypeError, ValueError) as exc:
-        raise invalid(f"invalid modelConfig: {exc}") from exc
 
 
 def _train_config(document: Mapping[str, object]) -> TrainConfig:

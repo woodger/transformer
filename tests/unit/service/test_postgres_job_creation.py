@@ -6,17 +6,23 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
-from app.contracts.worker.v11.objective import default_objective, ml_contract
+from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
+from tests.support.consumer_neutral import model_contract
 
 _JOB_ID = "00000000-0000-4000-8000-000000000001"
 _EXECUTION_ID = "00000000-0000-4000-8000-000000000002"
 _MODEL_REF = "mdl_00000000000000000000000000000001"
+_MODEL_CONTRACT = model_contract(
+    "single-regression",
+    seq_len=2,
+    feature_dim=1,
+)
+_SEMANTIC_DIGESTS = _MODEL_CONTRACT.digests("a" * 64)
 
 
 def _database():
@@ -54,11 +60,15 @@ def _create_job(
             ],
         },
         data_contract={
-            "data_contract_sha256": "a" * 64,
-            "seq_len": 2,
-            "feature_dim": 1,
+            "identity": "test.dataset",
+            "revision": 1,
+            "profile": "test.profile",
+            "dataContractSha256": "a" * 64,
+            "seqLen": 2,
+            "featureDim": 1,
         },
-        ml_contract=ml_contract(default_objective()),
+        model_contract=_MODEL_CONTRACT.to_document(),
+        semantic_digests=_SEMANTIC_DIGESTS,
         create_result={"jobId": _JOB_ID},
         model_label="daily" if operation == "fit" else None,
         resolved_model_ref=(
@@ -66,7 +76,7 @@ def _create_job(
             if operation == "fit"
             else _MODEL_REF
         ),
-        model_config=ModelConfig(seq_len=2, feature_dim=1),
+        model_config=ModelConfig.from_manifest(_MODEL_CONTRACT.model_config),
         training_config=TrainConfig() if operation == "fit" else None,
         initialization=initialization,
         now=1.0,
@@ -136,6 +146,20 @@ def test_published_model_fit_keeps_resolved_parent_and_complete_lineage():
         "parentCheckpointSha256": "c" * 64,
         "parentDataContractSha256": "d" * 64,
         "dataContractSha256": "a" * 64,
+        "parentTargetContractSha256": _SEMANTIC_DIGESTS[
+            "targetContractSha256"
+        ],
+        "targetContractSha256": _SEMANTIC_DIGESTS[
+            "targetContractSha256"
+        ],
+        "parentObjectiveSha256": _SEMANTIC_DIGESTS["objectiveSha256"],
+        "objectiveSha256": _SEMANTIC_DIGESTS["objectiveSha256"],
+        "parentModelContractSha256": _SEMANTIC_DIGESTS[
+            "modelContractSha256"
+        ],
+        "modelContractSha256": _SEMANTIC_DIGESTS[
+            "modelContractSha256"
+        ],
     }
     database = _database()
     try:

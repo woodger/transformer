@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v10
+# Сервис Transformer Arrow Flight: операционное руководство v11
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v10`](../../app/contracts/flight/v10/README.md). Текущие
+[`app/contracts/flight/v11`](../../app/contracts/flight/v11/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -121,7 +121,7 @@ Recovery checkpoint становится видимым только после 
 terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. Flight v10 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v11 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,7 +214,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v10 определяет
+certificate options команды `flight serve`. Flight v11 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -354,7 +354,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v10 нет сетевого action для её удаления. Команды оператора,
+во Flight v11 нет сетевого action для её удаления. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
 Запрос удаления блокируется не только незавершённым prediction, но и любым
@@ -368,7 +368,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v10.health`.
+аутентифицированный Flight action `transformer.v11.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -400,8 +400,10 @@ Metrics сбрасываются при перезапуске сервиса и
 ## Стабильные ошибки и ограничения PyArrow
 
 Сервис завершает RPC ошибкой, а не возвращает error result. Стабильные codes
-включаются в безопасный текст ошибки и terminal status. Raw tracebacks, paths
-filesystem, credentials и stderr subprocess не должны попадать клиентам.
+включаются в безопасный текст ошибки и terminal status; consumer-neutral
+semantic errors дополнительно передают закрытый structured detail через
+`FlightError.extra_info`. Raw tracebacks, paths filesystem, credentials и
+stderr subprocess не должны попадать клиентам.
 
 В PyArrow 24 подтверждены два ограничения bindings:
 
@@ -415,7 +417,7 @@ filesystem, credentials и stderr subprocess не должны попадать 
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v10
+## Известные ограничения v11
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

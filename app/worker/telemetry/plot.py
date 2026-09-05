@@ -4,22 +4,12 @@ import os
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.ml import TARGET_IDENTITIES
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.telemetry.io import load_metrics_jsonl
 
-PLOT_METRICS = (
+SCALAR_METRICS = (
     "loss",
-    *(f"direct.{name}" for name in TARGET_IDENTITIES),
-    "auxiliary.GaussianNLL",
-    "auxiliary.ExpectedValue",
-    "auxiliary.RiskAdjustedExpectedValue",
-    *(
-        f"target.{name}.{statistic}"
-        for name in TARGET_IDENTITIES
-        for statistic in ("mae", "rmse")
-    ),
-    "selection_score",
+    "selectionScore",
     "trainingBatchesCompleted",
     "optimizerUpdatesApplied",
     "optimizerUpdatesSkipped",
@@ -29,20 +19,20 @@ PLOT_METRICS = (
     "preClipGradientNormMean",
     "preClipGradientNormMax",
     "preClipGradientNormP95",
-    "nan_ratio",
-    "masked_token_ratio",
-    "complete_token_ratio",
-    "partial_token_ratio",
-    "empty_token_ratio",
+    "nanRatio",
+    "maskedTokenRatio",
+    "completeTokenRatio",
+    "partialTokenRatio",
+    "emptyTokenRatio",
     "rows",
     "batches",
     "step",
     "lr",
-    "input_pipeline_ms",
-    "missing_stats_ms",
-    "host_to_device_ms",
-    "train_step_ms",
-    "elapsed_ms",
+    "inputPipelineMs",
+    "missingStatsMs",
+    "hostToDeviceMs",
+    "trainStepMs",
+    "elapsedMs",
 )
 
 
@@ -92,23 +82,25 @@ def _series(
 
 def _metric_value(row: JsonObject, metric: str) -> object:
     if metric.startswith("direct."):
-        return _structured_metric(
+        return _named_metric(
             row.get("directLosses"),
-            target_name=metric.removeprefix("direct."),
-            field="value",
+            name=metric.removeprefix("direct."),
+            name_field="componentIdentity",
+            value_field="value",
         )
     if metric.startswith("target."):
-        _, target_name, field = metric.split(".", 2)
-        return _structured_metric(
+        _, target_identity, field = metric.split(".", 2)
+        return _named_metric(
             row.get("targetMetrics"),
-            target_name=target_name,
-            field=field,
+            name=target_identity,
+            name_field="targetIdentity",
+            value_field=field,
         )
     if metric.startswith("auxiliary."):
         return _named_metric(
             row.get("auxiliaryLosses"),
             name=metric.removeprefix("auxiliary."),
-            name_field="operator",
+            name_field="componentIdentity",
             value_field="value",
         )
     if metric.startswith("gradient.component."):
@@ -118,7 +110,7 @@ def _metric_value(row: JsonObject, metric: str) -> object:
         return _named_metric(
             cast(JsonObject, interactions).get("components"),
             name=metric.removeprefix("gradient.component."),
-            name_field="name",
+            name_field="componentIdentity",
             value_field="meanNorm",
         )
     if metric.startswith("gradient.pair."):
@@ -137,7 +129,10 @@ def _metric_value(row: JsonObject, metric: str) -> object:
             if not isinstance(item, dict):
                 continue
             document = cast(JsonObject, item)
-            if document.get("left") == left and document.get("right") == right:
+            if (
+                document.get("leftComponentIdentity") == left
+                and document.get("rightComponentIdentity") == right
+            ):
                 return document.get("meanCosine")
         return None
     return row.get(metric)
@@ -146,41 +141,34 @@ def _metric_value(row: JsonObject, metric: str) -> object:
 def _metric_names(rows: list[JsonObject]) -> tuple[str, ...]:
     discovered: set[str] = set()
     for row in rows:
+        for component in _objects(row.get("directLosses")):
+            identity = component.get("componentIdentity")
+            if isinstance(identity, str):
+                discovered.add(f"direct.{identity}")
+        for component in _objects(row.get("auxiliaryLosses")):
+            identity = component.get("componentIdentity")
+            if isinstance(identity, str):
+                discovered.add(f"auxiliary.{identity}")
+        for target in _objects(row.get("targetMetrics")):
+            identity = target.get("targetIdentity")
+            if isinstance(identity, str):
+                discovered.add(f"target.{identity}.mae")
+                discovered.add(f"target.{identity}.rmse")
+
         interactions = row.get("gradientInteractions")
         if not isinstance(interactions, dict):
             continue
         document = cast(JsonObject, interactions)
         for component in _objects(document.get("components")):
-            name = component.get("name")
+            name = component.get("componentIdentity")
             if isinstance(name, str):
                 discovered.add(f"gradient.component.{name}")
         for pair in _objects(document.get("pairs")):
-            left = pair.get("left")
-            right = pair.get("right")
+            left = pair.get("leftComponentIdentity")
+            right = pair.get("rightComponentIdentity")
             if isinstance(left, str) and isinstance(right, str):
                 discovered.add(f"gradient.pair.{left}__{right}")
-    return (*PLOT_METRICS, *sorted(discovered))
-
-
-def _structured_metric(
-    value: object,
-    *,
-    target_name: str,
-    field: str,
-) -> object:
-    if not isinstance(value, list):
-        return None
-    for item in cast(list[object], value):
-        if not isinstance(item, dict):
-            continue
-        document = cast(JsonObject, item)
-        target = document.get("target")
-        if (
-            isinstance(target, dict)
-            and cast(JsonObject, target).get("name") == target_name
-        ):
-            return document.get(field)
-    return None
+    return (*SCALAR_METRICS, *sorted(discovered))
 
 
 def _named_metric(

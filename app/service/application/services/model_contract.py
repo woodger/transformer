@@ -1,80 +1,90 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
 
-from app.contracts.worker.v11.config import ModelConfig, TrainConfig
-from app.contracts.worker.v11.objective import (
-    objective_config_sha256,
-    objective_from_ml_contract,
-)
+from app.contracts.semantic.v1 import ModelContract, SemanticContractError
+from app.contracts.worker.v12.config import ModelConfig
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import PublishedModelRecord
 
+_DIGEST_LAYERS = (
+    ("data", "dataContractSha256"),
+    ("target", "targetContractSha256"),
+    ("objective", "objectiveSha256"),
+    ("model", "modelContractSha256"),
+)
+
 
 def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
-    data_contract, ml_contract = _model_contracts(model)
+    try:
+        contract = ModelContract.from_document(model.model_contract)
+        data_digest = _digest(
+            model.data_contract.get("dataContractSha256"),
+            "published model data contract digest",
+        )
+        calculated = contract.digests(data_digest)
+        if calculated != model.semantic_digests:
+            _raise_corrupt_digest(model.semantic_digests, calculated)
 
-    return _verify_model_integrity(
-        model,
-        data_contract=data_contract,
-        ml_contract=ml_contract,
-    )
+        metadata = model.metadata
+        if (
+            metadata.get("format") != "transformer-checkpoint-v6"
+            or metadata.get("dataContract") != model.data_contract
+            or metadata.get("modelContract") != model.model_contract
+            or metadata.get("semanticDigests") != model.semantic_digests
+        ):
+            raise ValueError("checkpoint metadata differs from published model")
+        model_config = ModelConfig.from_manifest(contract.model_config)
+        model_initialization(model)
+    except ServiceError:
+        raise
+    except (KeyError, SemanticContractError, TypeError, ValueError) as exc:
+        raise ServiceError(
+            ErrorCode.MODEL_CORRUPT,
+            "published model semantic metadata is invalid",
+            detail={
+                "code": "MODEL_CORRUPT",
+                "reason": "STORED_CONTRACT_INVALID",
+                "layer": "model",
+                "path": "",
+                "message": "published model semantic metadata is invalid",
+            },
+        ) from exc
+    return model_config
 
 
 def verify_model_for_predict(
     model: PublishedModelRecord,
     *,
-    data_contract: JsonObject,
-    ml_contract: JsonObject,
+    model_contract: JsonObject,
+    semantic_digests: JsonObject,
 ) -> ModelConfig:
-    model_data_contract, model_ml_contract = _model_contracts(model)
-    if model_data_contract != data_contract:
+    model_config = verify_model_integrity(model)
+    _verify_compatible(model.semantic_digests, semantic_digests)
+    if model.model_contract != model_contract:
         raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model data contract does not match the requested job",
+            ErrorCode.MODEL_CORRUPT,
+            "equal semantic digests identify different canonical documents",
         )
-    if model_ml_contract != ml_contract:
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model ML contract does not match the requested job",
-        )
-
-    return _verify_model_integrity(
-        model,
-        data_contract=model_data_contract,
-        ml_contract=model_ml_contract,
-    )
+    return model_config
 
 
 def verify_parent_model_for_fit(
     model: PublishedModelRecord,
     *,
     model_config: ModelConfig | None,
-    data_contract: JsonObject,
-    ml_contract: JsonObject,
+    model_contract: JsonObject,
+    semantic_digests: JsonObject,
 ) -> ModelConfig:
-    parent_data_contract, parent_ml_contract = _model_contracts(model)
-    if parent_ml_contract != ml_contract:
+    parent_model_config = verify_model_integrity(model)
+    _verify_compatible(model.semantic_digests, semantic_digests)
+    if model.model_contract != model_contract:
         raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model ML contract does not match the requested job",
-        )
-
-    parent_model_config = _verify_model_integrity(
-        model,
-        data_contract=parent_data_contract,
-        ml_contract=parent_ml_contract,
-    )
-    parent_digest = parent_data_contract.get("data_contract_sha256")
-    current_digest = data_contract.get("data_contract_sha256")
-    if parent_digest != current_digest:
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "parent model data contract is not compatible with fit job",
+            ErrorCode.MODEL_CORRUPT,
+            "equal semantic digests identify different canonical documents",
         )
     if model_config != parent_model_config:
         raise ServiceError(
@@ -84,67 +94,9 @@ def verify_parent_model_for_fit(
     return parent_model_config
 
 
-def _model_contracts(
-    model: PublishedModelRecord,
-) -> tuple[JsonObject, JsonObject]:
-    if model.data_contract is None or model.ml_contract is None:
-        raise ServiceError(
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-            "model generation belongs to another ML contract",
-        )
-    return model.data_contract, model.ml_contract
-
-
-def _verify_model_integrity(
-    model: PublishedModelRecord,
-    *,
-    data_contract: JsonObject,
-    ml_contract: JsonObject,
-) -> ModelConfig:
-    try:
-        model_config = ModelConfig.from_dict(model.metadata["model_config"])
-        train_config = TrainConfig.from_dict(model.metadata["train_config"])
-        if model_config is None or train_config is None:
-            raise ValueError("published model configuration is unavailable")
-        objective = objective_from_ml_contract(ml_contract)
-        checkpoint = _object(
-            model.metadata["checkpoint"],
-            "published model checkpoint metadata",
-        )
-        initialization = model_initialization(model)
-        checkpoint_initialization = validate_initialization(
-            checkpoint.get("initialization"),
-            missing_is_random=True,
-        )
-        consistent = (
-            model.metadata["data_contract"] == data_contract
-            and model.metadata["ml_contract"] == ml_contract
-            and model.metadata["objective"] == objective.to_document()
-            and model_config.out_dim == objective.target_width
-            and model.objective_config_sha256
-            == objective_config_sha256(objective)
-            and checkpoint["mlContract"] == ml_contract
-            and checkpoint_initialization == initialization
-        )
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        raise ServiceError(
-            ErrorCode.MODEL_CORRUPT,
-            "published model semantic metadata is invalid",
-        ) from exc
-    if not consistent:
-        raise ServiceError(
-            ErrorCode.MODEL_CORRUPT,
-            "published model semantic metadata is inconsistent",
-        )
-    return model_config
-
-
 def model_initialization(model: PublishedModelRecord) -> JsonObject:
     try:
-        return validate_initialization(
-            model.metadata.get("initialization"),
-            missing_is_random=True,
-        )
+        return validate_initialization(model.metadata.get("initialization"))
     except ValueError as exc:
         raise ServiceError(
             ErrorCode.MODEL_CORRUPT,
@@ -152,13 +104,61 @@ def model_initialization(model: PublishedModelRecord) -> JsonObject:
         ) from exc
 
 
-def _object(value: object, label: str) -> JsonObject:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{label} must be an object")
-    mapping = cast(Mapping[object, object], value)
-    if not all(isinstance(key, str) for key in mapping):
-        raise ValueError(f"{label} keys must be strings")
-    return cast(JsonObject, dict(mapping))
+def _verify_compatible(
+    expected: Mapping[str, object],
+    actual: Mapping[str, object],
+) -> None:
+    for layer, field in _DIGEST_LAYERS:
+        expected_digest = _digest(expected.get(field), f"stored {layer} digest")
+        actual_digest = _digest(actual.get(field), f"requested {layer} digest")
+        if expected_digest != actual_digest:
+            message = f"model {layer} contract does not match the requested job"
+            raise ServiceError(
+                ErrorCode.MODEL_SCHEMA_MISMATCH,
+                message,
+                detail={
+                    "code": "MODEL_SCHEMA_MISMATCH",
+                    "reason": "DIGEST_MISMATCH",
+                    "layer": layer,
+                    "expectedSha256": expected_digest,
+                    "actualSha256": actual_digest,
+                    "message": message,
+                },
+            )
+
+
+def _raise_corrupt_digest(
+    expected: Mapping[str, object],
+    actual: Mapping[str, object],
+) -> None:
+    for layer, field in _DIGEST_LAYERS:
+        expected_digest = _digest(expected.get(field), f"stored {layer} digest")
+        actual_digest = _digest(actual.get(field), f"calculated {layer} digest")
+        if expected_digest != actual_digest:
+            message = f"published model {layer} digest is inconsistent"
+            raise ServiceError(
+                ErrorCode.MODEL_CORRUPT,
+                message,
+                detail={
+                    "code": "MODEL_CORRUPT",
+                    "reason": "DIGEST_MISMATCH",
+                    "layer": layer,
+                    "expectedSha256": expected_digest,
+                    "actualSha256": actual_digest,
+                    "message": message,
+                },
+            )
+    raise ValueError("semantic digest document is invalid")
+
+
+def _digest(value: object, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ValueError(f"{label} is invalid")
+    return value
 
 
 __all__ = [
