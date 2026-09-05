@@ -41,6 +41,13 @@
   не смешивая независимые D1 model и data layers.
 - Service CUDA inventory выбирает CUDA device из полного Worker v12 списка
   `cpu + cuda`, не отбрасывая исправный GPU из-за CPU entry.
+- Consumer-neutral runtime проверяет все recovery/result fences, внутреннюю
+  semantic целостность checkpoint и соответствие telemetry точному Objective;
+  non-finite raw outputs не могут быть скрыты bounded transformation.
+- JSON number spellings обрабатываются по единой binary64-семантике, а
+  `ClosedInterval` сравнивает точное Float32-значение с Binary64 bounds.
+- Локальные metrics plots больше не разбирают opaque target/component
+  identities по символам `.` и `__`.
 
 ### Removed
 

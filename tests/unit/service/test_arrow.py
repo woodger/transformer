@@ -1,10 +1,16 @@
 import math
+from copy import deepcopy
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v11.arrow import canonical_input_schema
+from app.contracts.flight.v11.arrow import (
+    canonical_input_schema,
+    validate_target_values,
+)
+from app.contracts.flight.v11.target_value_error import TargetValueError
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -241,6 +247,15 @@ def test_prediction_file_rejects_nonfinite_values_and_wrong_rows(tmp_path):
         validate_prediction_file(
             str(path), "out", expected_rows=2, target_contract=TARGET_CONTRACT
         )
+
+
+def test_closed_interval_compares_exact_float32_value_to_binary64_bound():
+    target_contract = deepcopy(TARGET_CONTRACT)
+    target_contract["slots"][0]["observedConstraint"]["maximum"] = 1.0000001
+    values = np.array([[1.0000001192092896]], dtype=np.float32)
+
+    with pytest.raises(TargetValueError):
+        validate_target_values(values, target_contract)
 
 
 @pytest.mark.parametrize(

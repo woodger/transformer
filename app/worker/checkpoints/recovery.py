@@ -92,7 +92,36 @@ def load_training_recovery(
     }
     if actual != expected:
         raise ValueError("training recovery checkpoint fence does not match")
-    _object_dict(payload["trainer_state"], "training recovery trainer state")
+    trainer_state = _object_dict(
+        payload["trainer_state"],
+        "training recovery trainer state",
+    )
+    training_state = _object_dict(
+        trainer_state.get("training_state"),
+        "training recovery progress",
+    )
+    if (
+        _positive(metadata["generation"], "generation")
+        != _positive(progress["completedEpochs"], "completed epochs")
+        or _nonnegative(
+            training_state.get("global_epoch"),
+            "training global epoch",
+        )
+        != _positive(progress["completedEpochs"], "completed epochs")
+        or _nonnegative(
+            training_state.get("train_step"),
+            "training step",
+        )
+        != _nonnegative(progress["globalStep"], "global step")
+        or _boolean(
+            trainer_state.get("training_complete"),
+            "training completion marker",
+        )
+        != _boolean(progress["trainingComplete"], "training complete")
+    ):
+        raise ValueError(
+            "training recovery trainer progress does not match checkpoint metadata"
+        )
     payload["metadata"] = metadata
     return payload
 

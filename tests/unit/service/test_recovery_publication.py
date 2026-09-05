@@ -143,8 +143,8 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     logger = _Logger()
     monkeypatch.setattr(
         publication_module,
-        "validate_document",
-        lambda document, _schema: document,
+        "validate_training_metrics_for_model",
+        lambda document, _contract: document,
     )
     publisher = RecoveryCheckpointPublisher(
         ledger,

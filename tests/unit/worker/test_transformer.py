@@ -256,3 +256,15 @@ def test_public_predictions_apply_declared_slot_transformations():
         torch.sigmoid(torch.tensor(2.0)).item()
     )
     assert torch.all((prediction[:, 1:] >= 0) & (prediction[:, 1:] <= 1))
+
+
+def test_public_predictions_reject_raw_overflow_before_bounded_transformation():
+    contract = _contract(seq_len=3, feature_dim=3)
+    output = torch.full(
+        (1, contract.target_width + len(contract.resource_declarations)),
+        torch.finfo(torch.float32).max,
+    )
+    output = output * 2
+
+    with pytest.raises(ValueError, match="non-finite raw values"):
+        public_predictions(output, contract)

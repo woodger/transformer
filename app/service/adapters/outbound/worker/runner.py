@@ -754,6 +754,9 @@ class WorkerSubprocessRunner:
             != _active_attempt_id(job)
             or _string(result["operation"], "result operation")
             != job.operation
+            or _string(result["jobConfigSha256"], "result jobConfigSha256")
+            != job.config_hash
+            or result["semanticDigests"] != job.semantic_digests
         ):
             raise WorkerSubprocessError(
                 ErrorCode.WORKER_PROTOCOL_VIOLATION,

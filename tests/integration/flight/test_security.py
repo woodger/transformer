@@ -208,6 +208,32 @@ def test_paths_and_arbitrary_cli_arguments_are_rejected_before_dispatch(
     assert coordinator.calls == []
 
 
+def test_model_contract_failures_include_structured_reason_and_path(
+    protected_server,
+):
+    coordinator, _, _, _, client = protected_server
+    malformed = _create_fit_document()
+    del malformed["modelContract"]["modelConfig"]
+    geometry = _create_fit_document()
+    geometry["modelContract"]["modelConfig"]["seqLen"] = 3
+
+    for document in (malformed, geometry):
+        with pytest.raises(flight.FlightServerError) as raised:
+            list(client.do_action(
+                flight.Action(
+                    CREATE_ACTION,
+                    json.dumps(document).encode("utf-8"),
+                ),
+                options=_auth(),
+            ))
+        detail = json.loads(raised.value.extra_info)
+        assert detail["code"] == "INVALID_ARGUMENT"
+        assert detail["reason"] == "INVALID_MODEL_CONTRACT"
+        assert detail["path"].startswith("/modelContract")
+
+    assert coordinator.calls == []
+
+
 def test_mtls_settings_cannot_be_silently_ignored_by_plaintext_transport(tmp_path):
     certificate_authority = tmp_path / "ca.pem"
     certificate_authority.write_text("test CA", encoding="utf-8")

@@ -14,6 +14,12 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 from referencing import Registry, Resource
 
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12 import (
+    WorkerContractError,
+    validate_training_metrics_for_model,
+)
+from app.contracts.worker.v12.config import ModelConfig
 from app.project import PROJECT_ROOT
 
 SEMANTIC_ROOT = PROJECT_ROOT / "app" / "contracts" / "semantic" / "v1"
@@ -548,6 +554,52 @@ def test_numerical_golden_cases_match_operator_semantics():
         shared["outputs"]["gaussianNllLoss"], abs=shared["absoluteTolerance"]
     )
     assert risk == pytest.approx(shared["outputs"]["riskAdjustedExpectedValueLoss"])
+
+
+def test_runtime_treats_equivalent_json_number_spellings_consistently():
+    integral = deepcopy(_fixture("single-regression.json")["modelContract"])
+    integral["modelConfig"]["seqLen"] = 2.0
+    parsed = ModelContract.from_document(integral)
+    assert ModelConfig.from_manifest(parsed.model_config).seq_len == 2
+
+    integer_weight = deepcopy(integral)
+    floating_weight = deepcopy(integral)
+    integer_weight["objective"]["directComponents"][0]["weight"] = 10**20
+    floating_weight["objective"]["directComponents"][0]["weight"] = 1e20
+    assert ModelContract.from_document(integer_weight).digests(SHA_A) == (
+        ModelContract.from_document(floating_weight).digests(SHA_A)
+    )
+
+
+def test_worker_metrics_resolve_against_exact_model_objective():
+    record = _read(METRICS_ROOT / "fixtures" / "training-record.json")
+    schema = _read(WORKER_ROOT / "schemas" / "training-metrics.schema.json")
+    metrics = {key: record[key] for key in schema["required"]}
+    contract = ModelContract.from_document(
+        _fixture("new-opaque-target.json")["modelContract"]
+    )
+    assert validate_training_metrics_for_model(metrics, contract) is metrics
+
+    invalid = deepcopy(metrics)
+    invalid["directLosses"][0]["componentIdentity"] = "direct.unknown"
+    with pytest.raises(WorkerContractError, match="differ from objective"):
+        validate_training_metrics_for_model(invalid, contract)
+
+    invalid = deepcopy(metrics)
+    invalid["gradientInteractions"] = {
+        "samples": 1,
+        "components": [
+            {
+                "componentIdentity": "direct.consumer-event",
+                "targetIdentity": "ConsumerDefined.EventProbability",
+                "targetIndex": 99,
+                "meanNorm": 1.0,
+            }
+        ],
+        "pairs": [],
+    }
+    with pytest.raises(WorkerContractError, match="target differs"):
+        validate_training_metrics_for_model(invalid, contract)
 
 
 def test_hybrid_envelope_accepts_unknown_revision_before_registry_selection(

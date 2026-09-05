@@ -11,6 +11,7 @@ from app.contracts.checkpoint.v6 import (
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject
+from app.contracts.semantic.v1 import ModelContract
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import atomic_output_path, resolve_artifact_path
 from app.worker.checkpoints.checkpoint_corrupt import CheckpointCorrupt
@@ -76,6 +77,26 @@ def load_checkpoint(
     try:
         validate_checkpoint_document(metadata, "checkpoint-metadata")
         _tensor_state_dict(payload["state_dict"])
+        model_contract = ModelContract.from_document(metadata["modelContract"])
+        data_contract = _object_dict(
+            cast(Mapping[object, object], metadata["dataContract"]),
+            "checkpoint data contract",
+        )
+        data_digest = data_contract.get("dataContractSha256")
+        if not isinstance(data_digest, str):
+            raise ValueError("checkpoint data contract digest is invalid")
+        model_config = model_contract.model_config
+        if (
+            data_contract.get("seqLen") != model_config.get("seqLen")
+            or data_contract.get("featureDim") != model_config.get("featureDim")
+        ):
+            raise ValueError("checkpoint data and model geometry differ")
+        semantic_digests = _object_dict(
+            cast(Mapping[object, object], metadata["semanticDigests"]),
+            "checkpoint semantic digests",
+        )
+        if semantic_digests != model_contract.digests(data_digest):
+            raise ValueError("checkpoint semantic digests are inconsistent")
     except (TypeError, ValueError) as exc:
         raise CheckpointCorrupt("checkpoint contents are invalid") from exc
     payload["metadata"] = metadata

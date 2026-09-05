@@ -119,6 +119,30 @@ def test_unknown_wrapped_checkpoint_format_is_rejected(tmp_path):
         load_checkpoint(path, torch.device("cpu"))
 
 
+@pytest.mark.parametrize("corruption", ["data-digest", "target-contract"])
+def test_checkpoint_rejects_inconsistent_embedded_semantics(
+    tmp_path,
+    corruption,
+):
+    path = tmp_path / "model.pth"
+    save_checkpoint(
+        path,
+        torch.nn.Linear(2, 1),
+        metadata=_checkpoint_metadata(),
+    )
+    payload = torch.load(path, weights_only=False)
+    if corruption == "data-digest":
+        payload["metadata"]["dataContract"]["dataContractSha256"] = "d" * 64
+    else:
+        del payload["metadata"]["modelContract"]["targetContract"]["slots"][0][
+            "observedConstraint"
+        ]
+    torch.save(payload, path)
+
+    with pytest.raises(ValueError, match="checkpoint contents are invalid"):
+        load_checkpoint(path, torch.device("cpu"))
+
+
 def test_local_checkpoint_rejects_inconsistent_semantic_digest():
     metadata = deepcopy(_checkpoint_metadata())
     metadata["semanticDigests"]["targetContractSha256"] = "d" * 64

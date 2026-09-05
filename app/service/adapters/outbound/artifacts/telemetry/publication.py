@@ -77,9 +77,8 @@ class FitRunTelemetryPublisher:
         metrics_path = self.spool.telemetry_metrics_path(job.job_id)
         run_summary_path = self.spool.telemetry_run_summary_path(job.job_id)
         try:
-            targets = ModelContract.from_document(
-                model.model_contract
-            ).target_identities
+            model_contract = ModelContract.from_document(model.model_contract)
+            targets = model_contract.target_identities
             checkpoint_serialization_ms = _nonnegative_number(
                 worker_result.get("checkpointSerializationMs"),
                 "fit checkpoint serialization duration",
@@ -100,6 +99,7 @@ class FitRunTelemetryPublisher:
                 application_version=self.application_version,
                 git_commit=self.git_commit,
                 targets=targets,
+                model_contract=model_contract,
             )
             run_summary = publish_fit_run_summary(
                 self.spool,

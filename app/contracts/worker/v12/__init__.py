@@ -6,6 +6,7 @@ from app.contracts.worker.v12.codec import (
     parse_control_message,
     parse_event,
     validate_document,
+    validate_training_metrics_for_model,
 )
 from app.contracts.worker.v12.constants import (
     ARROW_SCHEMA_IDS,
@@ -42,4 +43,5 @@ __all__ = [
     "parse_control_message",
     "parse_event",
     "validate_document",
+    "validate_training_metrics_for_model",
 ]

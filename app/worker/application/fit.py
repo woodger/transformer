@@ -10,7 +10,11 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import FIT_INPUT_SCHEMA_ID, validate_document
+from app.contracts.worker.v12 import (
+    FIT_INPUT_SCHEMA_ID,
+    validate_document,
+    validate_training_metrics_for_model,
+)
 from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
 from app.worker.application.artifacts import (
@@ -186,6 +190,7 @@ def execute_fit(
             metrics,
             epoch,
             monitor_payload,
+            model_contract,
         )
         checkpoint_event: JsonObject = {
             "generation": integer_field(event, "generation"),
@@ -287,10 +292,19 @@ def _restore_recovery(
     device: torch.device,
     manifest: JsonObject,
 ) -> None:
-    if recovery.get("inputRevision") != manifest.get("inputRevision"):
+    if any(
+        recovery.get(field) != manifest.get(field)
+        for field in (
+            "jobId",
+            "inputRevision",
+            "jobConfigSha256",
+            "semanticDigests",
+            "manifestSha256",
+        )
+    ):
         raise WorkerExecutionError(
             "RECOVERY_CHECKPOINT_INCOMPATIBLE",
-            "training recovery input revision differs from the job",
+            "training recovery fences differ from the job",
         )
     artifact = object_field(recovery, "checkpoint")
     checkpoint_path = validate_checkpoint_artifact(artifact)
@@ -374,6 +388,7 @@ def _training_metrics(
     metrics: ObservedTrainingEpoch,
     epoch: int,
     monitor_payload: SelectionPayload,
+    model_contract: ModelContract,
 ) -> JsonObject | None:
     try:
         document = epoch_telemetry_document(
@@ -389,8 +404,7 @@ def _training_metrics(
         if document is None:
             raise ValueError("training epoch telemetry is unavailable")
         result = object_document(json_safe(document), "committed fit metrics")
-        validate_document(result, "training-metrics")
-        return result
+        return validate_training_metrics_for_model(result, model_contract)
     except Exception as exc:
         print(
             "training epoch telemetry disabled: " + type(exc).__name__,

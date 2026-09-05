@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import cast
 
@@ -31,8 +32,7 @@ def canonical_source_encoding(
     raw_blocks = source.get("featureBlocks")
     if not isinstance(raw_blocks, list) or not raw_blocks:
         raise ValueError("sourceEncoding.featureBlocks must be non-empty")
-    if isinstance(feature_dim, bool):
-        raise ValueError("featureDim must be an integer")
+    feature_dim = _integer(feature_dim, "featureDim")
     if feature_dim <= 0:
         raise ValueError("featureDim must be positive")
 
@@ -106,9 +106,20 @@ def _positive(value: object, name: str) -> int:
 
 
 def _positive_or_zero(value: object, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    parsed = _integer(value, name)
+    if parsed < 0:
         raise ValueError(f"{name} must be a non-negative integer")
-    return value
+    return parsed
+
+
+def _integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be an integer")
+    if isinstance(value, float) and (
+        not math.isfinite(value) or not value.is_integer()
+    ):
+        raise ValueError(f"{name} must be an integer")
+    return int(value)
 
 
 __all__ = ["canonical_source_encoding", "feature_block_dimensions"]

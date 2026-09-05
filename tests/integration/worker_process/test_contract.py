@@ -32,6 +32,7 @@ from app.contracts.worker.v12.config import (
 )
 from app.project import PROJECT_ROOT
 from app.service.adapters.outbound.worker.runner import (
+    WorkerSubprocessError,
     WorkerSubprocessRunner,
     _WorkerEventState,
 )
@@ -713,6 +714,72 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
     failure = errors.get_nowait()
     assert failure.code == ErrorCode.EXECUTION_INTERRUPTED
     assert failure.message == "worker attempt no longer owns job progress"
+
+
+@pytest.mark.parametrize("changed_field", ["jobConfigSha256", "semanticDigests"])
+def test_service_rejects_result_manifest_with_changed_semantic_fence(
+    tmp_path,
+    changed_field,
+):
+    job_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    result_path = tmp_path / "worker-result.json"
+    semantic_digests = _semantic_digests()
+    job = SimpleNamespace(
+        job_id=job_id,
+        attempt=1,
+        attempt_id=attempt_id,
+        operation="predict",
+        config_hash="a" * 64,
+        semantic_digests=semantic_digests,
+    )
+    result = {
+        "contract": "transformer-worker",
+        "protocolVersion": 12,
+        "jobId": job_id,
+        "attempt": 1,
+        "attemptId": attempt_id,
+        "operation": "predict",
+        "inputRevision": 1,
+        "manifestSha256": MANIFEST_SHA256,
+        "jobConfigSha256": "a" * 64,
+        "semanticDigests": semantic_digests,
+        "artifacts": [],
+    }
+    if changed_field == "jobConfigSha256":
+        result[changed_field] = "e" * 64
+    else:
+        result[changed_field] = {
+            **semantic_digests,
+            "objectiveSha256": "e" * 64,
+        }
+    encoded = json.dumps(result).encode("utf-8")
+    result_path.write_bytes(encoded)
+    artifact = {
+        "path": str(result_path),
+        "byteCount": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }
+    ledger = SimpleNamespace(get_job=lambda _job_id: {
+        "input_state": InputState.CLOSED.value,
+        "input_revision": 1,
+        "manifest_sha256": MANIFEST_SHA256,
+    })
+    spool = SimpleNamespace(
+        attempt_result_manifest_path=lambda _job_id, _attempt: str(result_path)
+    )
+    runner = WorkerSubprocessRunner(
+        object(),
+        ledger,
+        spool,
+        logger=object(),
+        python_executable=sys.executable,
+    )
+
+    with pytest.raises(WorkerSubprocessError) as raised:
+        runner._load_result_manifest(job, object(), artifact)  # type: ignore[arg-type]
+
+    assert raised.value.code is ErrorCode.WORKER_PROTOCOL_VIOLATION
 
 
 def test_duplicate_worker_event_is_rejected_before_repeating_its_side_effect():

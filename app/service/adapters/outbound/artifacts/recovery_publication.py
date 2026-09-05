@@ -10,7 +10,11 @@ from typing import BinaryIO, Protocol, cast
 
 from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v12 import WorkerContractError, validate_document
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12 import (
+    WorkerContractError,
+    validate_training_metrics_for_model,
+)
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -105,6 +109,7 @@ class RecoveryCheckpointPublisher:
         self._monotonic = monotonic
 
     def publish(self, job: ExecutionJobRecord, event: JsonObject) -> None:
+        metric_payload = self._validated_metrics(job, event)
         started = self._monotonic()
         source_path, byte_count, digest = self._publish_artifact(job, event)
         generation = _positive_integer(event["generation"], "generation")
@@ -154,7 +159,7 @@ class RecoveryCheckpointPublisher:
         )
         self._record_metrics(
             job,
-            event,
+            metric_payload,
             generation=generation,
             global_step=global_step,
             publication_ms=(self._monotonic() - started) * 1000.0,
@@ -239,20 +244,16 @@ class RecoveryCheckpointPublisher:
     def _record_metrics(
         self,
         job: ExecutionJobRecord,
-        event: JsonObject,
+        metric_payload: tuple[JsonObject, float] | None,
         *,
         generation: int,
         global_step: int,
         publication_ms: float,
     ) -> None:
-        if "metrics" not in event or self.telemetry is None:
+        if metric_payload is None or self.telemetry is None:
             return
+        metrics, serialization_ms = metric_payload
         try:
-            metrics = validate_document(event["metrics"], "training-metrics")
-            serialization_ms = _nonnegative_number(
-                event.get("checkpointSerializationMs"),
-                "checkpoint serialization duration",
-            )
             self.telemetry.record_epoch_interval(
                 job_id=job.job_id,
                 attempt=job.attempt,
@@ -263,7 +264,7 @@ class RecoveryCheckpointPublisher:
                 checkpoint_serialization_ms=serialization_ms,
                 checkpoint_publication_ms=publication_ms,
             )
-        except (Exception, WorkerContractError) as exc:
+        except Exception as exc:
             self.metrics.add("trainingTelemetryCollectionErrors")
             self.logger.event(
                 "metrics.collection.failed",
@@ -271,6 +272,29 @@ class RecoveryCheckpointPublisher:
                 phase="recovery-checkpoint",
                 errorType=type(exc).__name__,
             )
+
+    @staticmethod
+    def _validated_metrics(
+        job: ExecutionJobRecord,
+        event: JsonObject,
+    ) -> tuple[JsonObject, float] | None:
+        if "metrics" not in event:
+            return None
+        try:
+            metrics = validate_training_metrics_for_model(
+                event["metrics"],
+                ModelContract.from_document(job.model_contract),
+            )
+            serialization_ms = _nonnegative_number(
+                event.get("checkpointSerializationMs"),
+                "checkpoint serialization duration",
+            )
+        except (TypeError, ValueError, WorkerContractError) as exc:
+            raise WorkerRecoveryError(
+                ErrorCode.WORKER_PROTOCOL_VIOLATION,
+                "worker training metrics differ from the immutable model contract",
+            ) from exc
+        return metrics, serialization_ms
 
     def _prune(self, job_id: str) -> None:
         for relative_path in self.ledger.prune_recovery_checkpoints(job_id, keep=2):

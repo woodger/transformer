@@ -8,6 +8,8 @@ from torch import nn
 
 from app.contracts.worker.v12.config import CheckpointSelectionConfig
 from app.worker.application.artifacts import checkpoint_metadata
+from app.worker.application.errors import WorkerExecutionError
+from app.worker.application.fit import _restore_recovery
 from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
@@ -232,3 +234,45 @@ def test_recovery_checkpoint_rejects_a_different_closed_input_set(
             torch.device("cpu"),
             descriptor=descriptor,
         )
+
+
+def test_recovery_checkpoint_rejects_trainer_progress_that_differs_from_metadata(
+    tmp_path,
+):
+    _seed()
+    source = torch.randn(3, 2, 2)
+    target = torch.rand(3, MODEL_CONTRACT.target_width)
+    trainer = _trainer(copy.deepcopy(_model().state_dict()))
+    trainer.fit_payloads_resumable(_payloads(source, target))
+    checkpoint = tmp_path / "3.pth"
+    metadata = checkpoint_metadata(trainer, _manifest())
+    save_training_recovery(str(checkpoint), trainer, metadata=metadata)
+    payload = torch.load(checkpoint, weights_only=False)
+    payload["trainer_state"]["training_state"]["global_epoch"] = 99
+    torch.save(payload, checkpoint)
+
+    with pytest.raises(ValueError, match="trainer progress"):
+        load_training_recovery(
+            str(checkpoint),
+            torch.device("cpu"),
+            descriptor=_descriptor(metadata),
+        )
+
+
+def test_fit_rejects_recovery_descriptor_for_a_different_job_config():
+    manifest = {**_manifest(), "inputRevision": 3}
+    recovery = {
+        **manifest,
+        "jobConfigSha256": "c" * 64,
+    }
+
+    with pytest.raises(WorkerExecutionError) as raised:
+        _restore_recovery(
+            object(),  # type: ignore[arg-type]
+            recovery,
+            torch.device("cpu"),
+            manifest,
+        )
+
+    assert raised.value.code == "RECOVERY_CHECKPOINT_INCOMPATIBLE"
+    assert "fences differ" in raised.value.message

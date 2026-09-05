@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
@@ -216,6 +217,17 @@ def _validate_schema(
     try:
         validate_request_document(document, schema_name)
     except FlightContractError as exc:
+        validation_error = exc.validation_error
+        if (
+            schema_name == "create"
+            and validation_error is not None
+            and tuple(validation_error.absolute_path)[:1]
+            == ("modelContract",)
+        ):
+            try:
+                ModelContract.from_document(document.get("modelContract"))
+            except SemanticContractError as semantic_error:
+                raise _semantic_service_error(semantic_error) from exc
         raise invalid(_schema_error_message(document, schema_name, exc)) from exc
 
 
@@ -254,31 +266,22 @@ def _validate_create(
             document["modelContract"]
         )
     except SemanticContractError as exc:
-        code = (
-            ErrorCode.FAILED_PRECONDITION
-            if exc.reason in {
-                "LANGUAGE_REVISION_UNAVAILABLE",
-                "PRIMITIVE_UNAVAILABLE",
-            }
-            else ErrorCode.INVALID_ARGUMENT
-        )
-        raise ServiceError(
-            code,
-            str(exc),
-            detail={
-                "code": code.value,
-                "reason": exc.reason,
-                "path": "/modelContract" + exc.path,
-                "message": str(exc),
-            },
-        ) from exc
+        raise _semantic_service_error(exc) from exc
     model_config = ModelConfig.from_manifest(model_contract.model_config)
     if (
         model_config.seq_len != data_contract["seqLen"]
         or model_config.feature_dim != data_contract["featureDim"]
     ):
-        raise invalid(
-            "modelContract.modelConfig geometry must match dataContract"
+        message = "modelContract.modelConfig geometry must match dataContract"
+        raise ServiceError(
+            ErrorCode.INVALID_ARGUMENT,
+            message,
+            detail={
+                "code": ErrorCode.INVALID_ARGUMENT.value,
+                "reason": "INVALID_MODEL_CONTRACT",
+                "path": "/modelContract/modelConfig",
+                "message": message,
+            },
         )
     try:
         source_encoding = canonical_source_encoding(
@@ -490,7 +493,14 @@ def _string(document: Mapping[str, object], key: str) -> str:
 
 
 def _integer(document: Mapping[str, object], key: str) -> int:
-    return cast(int, document[key])
+    value = document[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise invalid(f"{key} must be an integer")
+    if isinstance(value, float) and (
+        not math.isfinite(value) or not value.is_integer()
+    ):
+        raise invalid(f"{key} must be an integer")
+    return int(value)
 
 
 def _optional_integer(document: Mapping[str, object], key: str) -> int | None:
@@ -500,7 +510,30 @@ def _optional_integer(document: Mapping[str, object], key: str) -> int | None:
 
 
 def _integer_list(document: Mapping[str, object], key: str) -> list[int]:
-    return cast(list[int], list(cast(list[object], document[key])))
+    values = cast(list[object], document[key])
+    return [_integer({key: value}, key) for value in values]
+
+
+def _semantic_service_error(error: SemanticContractError) -> ServiceError:
+    code = (
+        ErrorCode.FAILED_PRECONDITION
+        if error.reason in {
+            "LANGUAGE_REVISION_UNAVAILABLE",
+            "PRIMITIVE_UNAVAILABLE",
+        }
+        else ErrorCode.INVALID_ARGUMENT
+    )
+    message = str(error)
+    return ServiceError(
+        code,
+        message,
+        detail={
+            "code": code.value,
+            "reason": error.reason,
+            "path": "/modelContract" + error.path,
+            "message": message,
+        },
+    )
 
 
 def _page_limit(document: Mapping[str, object]) -> int:

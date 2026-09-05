@@ -1,6 +1,7 @@
 import html
 import math
 import os
+from dataclasses import dataclass
 from typing import cast
 
 from app.contracts.json_types import JsonObject
@@ -36,6 +37,37 @@ SCALAR_METRICS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _Metric:
+    kind: str
+    identity: str
+    field: str = ""
+    right_identity: str = ""
+
+    @property
+    def title(self) -> str:
+        if self.kind == "scalar":
+            return self.identity
+        if self.kind == "target":
+            return f"target.{self.identity}.{self.field}"
+        if self.kind == "gradient-pair":
+            return (
+                f"gradient.pair.{self.identity}__{self.right_identity}"
+            )
+        return f"{self.kind}.{self.identity}"
+
+    @property
+    def filename(self) -> str:
+        if self.kind != "gradient-pair":
+            return self.title
+        return (
+            "gradient.pair."
+            + _filename_identity(self.identity)
+            + "__"
+            + _filename_identity(self.right_identity)
+        )
+
+
 def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
     rows = load_metrics_jsonl(jsonl_path)
     if not rows:
@@ -48,8 +80,8 @@ def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
         if not points:
             continue
 
-        path = os.path.join(output_dir, f"{metric}.svg")
-        _write_svg(path, points, metric)
+        path = os.path.join(output_dir, f"{metric.filename}.svg")
+        _write_svg(path, points, metric.title)
         paths.append(path)
 
     return paths
@@ -57,7 +89,7 @@ def plot_metrics(jsonl_path: str, output_dir: str) -> list[str]:
 
 def _series(
     rows: list[JsonObject],
-    metric: str,
+    metric: _Metric,
 ) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
     for index, row in enumerate(rows, start=1):
@@ -80,47 +112,41 @@ def _series(
     return points
 
 
-def _metric_value(row: JsonObject, metric: str) -> object:
-    if metric.startswith("direct."):
+def _metric_value(row: JsonObject, metric: _Metric) -> object:
+    if metric.kind == "direct":
         return _named_metric(
             row.get("directLosses"),
-            name=metric.removeprefix("direct."),
+            name=metric.identity,
             name_field="componentIdentity",
             value_field="value",
         )
-    if metric.startswith("target."):
-        _, target_identity, field = metric.split(".", 2)
+    if metric.kind == "target":
         return _named_metric(
             row.get("targetMetrics"),
-            name=target_identity,
+            name=metric.identity,
             name_field="targetIdentity",
-            value_field=field,
+            value_field=metric.field,
         )
-    if metric.startswith("auxiliary."):
+    if metric.kind == "auxiliary":
         return _named_metric(
             row.get("auxiliaryLosses"),
-            name=metric.removeprefix("auxiliary."),
+            name=metric.identity,
             name_field="componentIdentity",
             value_field="value",
         )
-    if metric.startswith("gradient.component."):
+    if metric.kind == "gradient.component":
         interactions = row.get("gradientInteractions")
         if not isinstance(interactions, dict):
             return None
         return _named_metric(
             cast(JsonObject, interactions).get("components"),
-            name=metric.removeprefix("gradient.component."),
+            name=metric.identity,
             name_field="componentIdentity",
             value_field="meanNorm",
         )
-    if metric.startswith("gradient.pair."):
+    if metric.kind == "gradient-pair":
         interactions = row.get("gradientInteractions")
         if not isinstance(interactions, dict):
-            return None
-        left, separator, right = metric.removeprefix("gradient.pair.").partition(
-            "__"
-        )
-        if not separator:
             return None
         pairs = cast(JsonObject, interactions).get("pairs")
         if not isinstance(pairs, list):
@@ -130,30 +156,31 @@ def _metric_value(row: JsonObject, metric: str) -> object:
                 continue
             document = cast(JsonObject, item)
             if (
-                document.get("leftComponentIdentity") == left
-                and document.get("rightComponentIdentity") == right
+                document.get("leftComponentIdentity") == metric.identity
+                and document.get("rightComponentIdentity")
+                == metric.right_identity
             ):
                 return document.get("meanCosine")
         return None
-    return row.get(metric)
+    return row.get(metric.identity)
 
 
-def _metric_names(rows: list[JsonObject]) -> tuple[str, ...]:
-    discovered: set[str] = set()
+def _metric_names(rows: list[JsonObject]) -> tuple[_Metric, ...]:
+    discovered: set[_Metric] = set()
     for row in rows:
         for component in _objects(row.get("directLosses")):
             identity = component.get("componentIdentity")
             if isinstance(identity, str):
-                discovered.add(f"direct.{identity}")
+                discovered.add(_Metric("direct", identity))
         for component in _objects(row.get("auxiliaryLosses")):
             identity = component.get("componentIdentity")
             if isinstance(identity, str):
-                discovered.add(f"auxiliary.{identity}")
+                discovered.add(_Metric("auxiliary", identity))
         for target in _objects(row.get("targetMetrics")):
             identity = target.get("targetIdentity")
             if isinstance(identity, str):
-                discovered.add(f"target.{identity}.mae")
-                discovered.add(f"target.{identity}.rmse")
+                discovered.add(_Metric("target", identity, "mae"))
+                discovered.add(_Metric("target", identity, "rmse"))
 
         interactions = row.get("gradientInteractions")
         if not isinstance(interactions, dict):
@@ -162,13 +189,25 @@ def _metric_names(rows: list[JsonObject]) -> tuple[str, ...]:
         for component in _objects(document.get("components")):
             name = component.get("componentIdentity")
             if isinstance(name, str):
-                discovered.add(f"gradient.component.{name}")
+                discovered.add(_Metric("gradient.component", name))
         for pair in _objects(document.get("pairs")):
             left = pair.get("leftComponentIdentity")
             right = pair.get("rightComponentIdentity")
             if isinstance(left, str) and isinstance(right, str):
-                discovered.add(f"gradient.pair.{left}__{right}")
-    return (*SCALAR_METRICS, *sorted(discovered))
+                discovered.add(_Metric("gradient-pair", left, right_identity=right))
+    return (
+        *(_Metric("scalar", name) for name in SCALAR_METRICS),
+        *sorted(discovered, key=lambda metric: metric.title),
+    )
+
+
+def _filename_identity(value: str) -> str:
+    return "".join(
+        character
+        if character.isascii() and (character.isalnum() or character == "-")
+        else f"%{ord(character):02X}"
+        for character in value
+    )
 
 
 def _named_metric(

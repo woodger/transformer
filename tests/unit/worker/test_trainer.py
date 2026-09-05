@@ -837,6 +837,38 @@ def test_plot_metrics_writes_target_metric_svg(tmp_path):
     assert "<svg" in expected.read_text()
 
 
+def test_plot_metrics_treats_target_and_component_identities_as_opaque(tmp_path):
+    path = tmp_path / "metrics.jsonl"
+    output = tmp_path / "plots"
+    path.write_text(
+        json.dumps({
+            "step": 1,
+            "targetMetrics": [
+                {"targetIdentity": "Consumer.Target", "mae": 0.25},
+            ],
+            "gradientInteractions": {
+                "components": [],
+                "pairs": [
+                    {
+                        "leftComponentIdentity": "direct__left",
+                        "rightComponentIdentity": "aux__right",
+                        "meanCosine": -0.5,
+                    }
+                ],
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    paths = plot_metrics(str(path), str(output))
+
+    assert str(output / "target.Consumer.Target.mae.svg") in paths
+    pair = output / "gradient.pair.direct%5F%5Fleft__aux%5F%5Fright.svg"
+    assert str(pair) in paths
+    assert "gradient.pair.direct__left__aux__right" in pair.read_text()
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_cuda_amp_recovers_scale_and_updates_parameters():
     batch = make_dummy_data(n=4)

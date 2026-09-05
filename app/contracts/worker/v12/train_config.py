@@ -135,9 +135,13 @@ def _object(value: object) -> dict[str, object]:
 
 
 def _integer(value: object, label: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{label} must be an integer")
-    return value
+    if isinstance(value, float) and (
+        not math.isfinite(value) or not value.is_integer()
+    ):
+        raise ValueError(f"{label} must be an integer")
+    return int(value)
 
 
 def _number(value: object, label: str) -> float:
@@ -161,4 +165,3 @@ __all__ = [
     "DEFAULT_WEIGHT_DECAY",
     "TrainConfig",
 ]
-

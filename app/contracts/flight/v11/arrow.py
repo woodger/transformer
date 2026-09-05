@@ -208,7 +208,12 @@ def validate_target_values(
         if constraint["kind"] == "ClosedInterval":
             minimum = float(cast(int | float, constraint["minimum"]))
             maximum = float(cast(int | float, constraint["maximum"]))
-            invalid = invalid | (column < minimum) | (column > maximum)
+            exact_values = column.astype(np.float64, copy=False)
+            invalid = (
+                invalid
+                | (exact_values < minimum)
+                | (exact_values > maximum)
+            )
         row = _first_true(invalid)
         if row is not None:
             logical_row = logical_row_offset + row
@@ -293,4 +298,3 @@ __all__ = [
     "validate_prediction_file",
     "validate_target_values",
 ]
-

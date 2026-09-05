@@ -14,6 +14,8 @@ from app.contracts.metrics.v5 import (
     ARTIFACT_MEDIA_TYPE,
     build_training_record,
 )
+from app.contracts.semantic.v1 import ModelContract
+from app.contracts.worker.v12 import validate_training_metrics_for_model
 from app.service.application.telemetry.records import TrainingMetricIntervalRecord
 
 
@@ -46,6 +48,7 @@ def publish_training_metrics(
     application_version: str,
     git_commit: str,
     targets: Sequence[str],
+    model_contract: ModelContract,
 ) -> StagedTrainingMetrics:
     if not intervals:
         raise ValueError("fit run telemetry requires committed epoch metrics")
@@ -62,6 +65,7 @@ def publish_training_metrics(
             if interval.job_id != job_id:
                 raise ValueError("committed training metrics job identity differs")
             metrics = interval.metrics
+            validate_training_metrics_for_model(metrics, model_contract)
             if metrics.get("epoch") != interval.generation:
                 raise ValueError(
                     "committed training metrics epoch differs from generation"

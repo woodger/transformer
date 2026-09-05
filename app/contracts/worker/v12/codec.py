@@ -14,6 +14,7 @@ from referencing import Registry, Resource
 from referencing.jsonschema import Schema, SchemaRegistry
 
 from app.contracts.json_types import JsonObject, JsonValue
+from app.contracts.semantic.v1 import ModelContract
 from app.contracts.worker.v12.constants import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -64,6 +65,69 @@ def validate_document(document: object, schema_name: str) -> JsonObject:
     if schema_name == "training-metrics":
         _validate_training_metric_invariants(typed_document)
     return typed_document
+
+
+def validate_training_metrics_for_model(
+    document: object,
+    model_contract: ModelContract | object,
+) -> JsonObject:
+    metrics = validate_document(document, "training-metrics")
+    contract = (
+        model_contract
+        if isinstance(model_contract, ModelContract)
+        else ModelContract.from_document(model_contract)
+    )
+    slots = contract.target_identities
+    direct = _object_items(metrics, "directLosses")
+    target_metrics = _object_items(metrics, "targetMetrics")
+    auxiliary = _object_items(metrics, "auxiliaryLosses")
+
+    expected_direct = contract.direct_components
+    if len(direct) != len(expected_direct):
+        raise WorkerContractError("training direct losses differ from objective")
+    for index, (actual, expected) in enumerate(
+        zip(direct, expected_direct, strict=True)
+    ):
+        if (
+            actual.get("componentIdentity") != expected.get("identity")
+            or actual.get("operator") != expected.get("operator")
+            or actual.get("targetIdentity") != slots[index]
+            or actual.get("targetIndex") != index
+        ):
+            raise WorkerContractError(
+                "training direct losses differ from objective"
+            )
+
+    if len(target_metrics) != len(slots) or any(
+        item.get("targetIdentity") != identity
+        or item.get("targetIndex") != index
+        for index, (item, identity) in enumerate(
+            zip(target_metrics, slots, strict=True)
+        )
+    ):
+        raise WorkerContractError("training target metrics differ from target layout")
+
+    expected_auxiliary = contract.auxiliary_components
+    if len(auxiliary) != len(expected_auxiliary) or any(
+        actual.get("componentIdentity") != expected.get("identity")
+        or actual.get("operator") != expected.get("operator")
+        for actual, expected in zip(
+            auxiliary,
+            expected_auxiliary,
+            strict=True,
+        )
+    ):
+        raise WorkerContractError(
+            "training auxiliary losses differ from objective"
+        )
+
+    interactions = metrics["gradientInteractions"]
+    if interactions is not None:
+        _validate_gradient_interactions(
+            cast(JsonObject, interactions),
+            contract,
+        )
+    return metrics
 
 
 def load_document(path: str | os.PathLike[str], schema_name: str) -> JsonObject:
@@ -261,6 +325,73 @@ def _target_series(document: JsonObject, field: str) -> tuple[str, ...]:
     return tuple(identities)
 
 
+def _object_items(document: JsonObject, field: str) -> tuple[JsonObject, ...]:
+    value = document[field]
+    if not isinstance(value, list) or not all(
+        isinstance(item, dict) for item in value
+    ):
+        raise WorkerContractError(f"{field} must contain objects")
+    return tuple(cast(JsonObject, item) for item in value)
+
+
+def _validate_gradient_interactions(
+    document: JsonObject,
+    contract: ModelContract,
+) -> None:
+    components = _object_items(document, "components")
+    pairs = _object_items(document, "pairs")
+    direct_targets = {
+        str(component["identity"]): (index, contract.target_identities[index])
+        for index, component in enumerate(contract.direct_components)
+    }
+    objective_identities = {
+        str(component["identity"])
+        for component in (
+            *contract.direct_components,
+            *contract.auxiliary_components,
+        )
+    }
+    seen_components: set[str] = set()
+    for component in components:
+        identity = cast(str, component["componentIdentity"])
+        if identity not in objective_identities or identity in seen_components:
+            raise WorkerContractError(
+                "gradient component does not resolve to the objective"
+            )
+        seen_components.add(identity)
+        expected_target = direct_targets.get(identity)
+        actual_target = (
+            component.get("targetIndex"),
+            component.get("targetIdentity"),
+        )
+        if (
+            expected_target is None
+            and actual_target != (None, None)
+            or expected_target is not None
+            and actual_target != expected_target
+        ):
+            raise WorkerContractError(
+                "gradient component target differs from the objective"
+            )
+
+    seen_pairs: set[tuple[str, str]] = set()
+    for pair in pairs:
+        identity = (
+            cast(str, pair["leftComponentIdentity"]),
+            cast(str, pair["rightComponentIdentity"]),
+        )
+        if (
+            identity[0] == identity[1]
+            or identity[0] not in objective_identities
+            or identity[1] not in objective_identities
+            or identity in seen_pairs
+        ):
+            raise WorkerContractError(
+                "gradient pair does not resolve to distinct objective components"
+            )
+        seen_pairs.add(identity)
+
+
 def _integer(document: JsonObject, field: str) -> int:
     value = document[field]
     if isinstance(value, bool) or not isinstance(value, int):
@@ -320,4 +451,5 @@ __all__ = [
     "parse_control_message",
     "parse_event",
     "validate_document",
+    "validate_training_metrics_for_model",
 ]

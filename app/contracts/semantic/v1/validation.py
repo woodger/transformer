@@ -323,8 +323,17 @@ def _validate_model_config(model: Mapping[str, object]) -> None:
 
 
 def _validate_finite_json(value: JsonValue, path: str = "") -> None:
-    if isinstance(value, float) and not math.isfinite(value):
-        _fail("INVALID_MODEL_CONTRACT", path, "JSON numbers must be finite")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            finite = math.isfinite(float(value))
+        except OverflowError:
+            finite = False
+        if not finite:
+            _fail(
+                "INVALID_MODEL_CONTRACT",
+                path,
+                "JSON numbers must be finite IEEE 754 binary64",
+            )
     if isinstance(value, Mapping):
         for key, item in value.items():
             _validate_finite_json(item, f"{path}/{_pointer_part(str(key))}")

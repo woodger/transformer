@@ -135,6 +135,8 @@ def public_predictions(
         raise ValueError(
             f"model output must have shape [rows, {expected_width}]"
         )
+    if not bool(torch.isfinite(model_output).all()):
+        raise ValueError("model output contains non-finite raw values")
     values = tuple(
         apply_transformation(
             model_output[:, index],
