@@ -39,6 +39,8 @@
 
 - Local fit вычисляет model identity до появления полного data-contract digest,
   не смешивая независимые D1 model и data layers.
+- Service CUDA inventory выбирает CUDA device из полного Worker v12 списка
+  `cpu + cuda`, не отбрасывая исправный GPU из-за CPU entry.
 
 ### Removed
 

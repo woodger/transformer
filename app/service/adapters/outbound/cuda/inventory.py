@@ -331,11 +331,14 @@ def _probe_cuda() -> JsonObject:
             visible_devices = document["devices"]
             if not isinstance(visible_devices, list):
                 raise ValueError("worker CUDA devices must be an array")
-            if len(visible_devices) != 1:
+            cuda_devices = [
+                device
+                for device in visible_devices
+                if isinstance(device, dict) and device.get("kind") == "cuda"
+            ]
+            if len(cuda_devices) != 1:
                 continue
-            visible_device = visible_devices[0]
-            if not isinstance(visible_device, dict):
-                raise ValueError("worker CUDA device must be an object")
+            visible_device = cuda_devices[0]
             name = visible_device.get("name")
             if not isinstance(name, str) or not name:
                 name = reported_name
