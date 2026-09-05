@@ -14,4 +14,6 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-Активных предложений нет.
+- [Owner-scoped Model Catalog Query](./owner-scoped-model-catalog-query.md) —
+  Transformer-side предложение owner-scoped discovery, detail и bounded
+  comparison опубликованных model generations.
