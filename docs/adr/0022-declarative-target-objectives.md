@@ -1,6 +1,7 @@
 # ADR 0022: declarative target objectives
 
-- Status: Accepted
+- Status: Superseded
+- Superseded by: [ADR 0028](0028-consumer-neutral-xy-contract-boundary.md)
 - Decision date: 2026-08-31
 
 > Historical decision record; not a current system reference. See

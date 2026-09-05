@@ -5,7 +5,7 @@
 > нормативная JSON Schema, не Flight или Worker contract и не описание
 > реализованного поведения.
 
-- Статус: proposal к cross-project review
+- Статус: согласовано Transformer и Inventory; основа будущего versioned contract
 - Срез: 2026-09-05, техническая исходная точка Flight v10 / Worker v11
 - Основание: [согласованная schema-neutral semantic model](./consumer-neutral-xy-semantic-model.md)
 - Область изменения: будущая consumer-neutral модель; действующие contracts и
@@ -19,7 +19,7 @@ persistence migration. Предлагаемая структура должна 
 реализуема в Python и TypeScript и не требовать от Transformer знания значений
 `MeanReturn`, `ProbTP`, FIGI, interval, profile или других понятий Consumer-а.
 
-Предложение фиксирует для review:
+Согласованное предложение фиксирует:
 
 - точную структуру `TargetContract`, `Objective`, `ResourceDeclaration` и
   `ModelContract`;
@@ -38,8 +38,9 @@ persistence migration. Предлагаемая структура должна 
 - PostgreSQL columns, migration plan и OpenSearch index names;
 - implementation plan и временный compatibility code.
 
-До принятия proposal Flight v10 остаётся замороженной технической исходной
-точкой. Код, нормативные schemas, migrations и runtime contracts не меняются.
+До выпуска нового versioned contract Flight v10 остаётся замороженной
+технической исходной точкой. Само принятие proposal не меняет код, нормативные
+schemas, migrations или runtime contracts.
 
 ## Термины и общие типы
 
@@ -1227,9 +1228,9 @@ target/objective model.
 сохраняется его математическая reconstruction semantics, а public namespace и
 schema identity назначаются следующей Flight version.
 
-## Вопросы для cross-project approval
+## Результат cross-project approval
 
-Перед wire schema design стороны должны подтвердить:
+Transformer и Inventory подтвердили:
 
 1. exact spelling и lexical pattern трёх identity namespaces;
 2. точные field names четырёх canonical documents и reference forms;
@@ -1248,6 +1249,7 @@ schema identity назначаются следующей Flight version.
     Transformer-owned literals `inventory.*`;
 14. T1 deletion boundary и отсутствие legacy runtime.
 
-После этого можно проектировать versioned Flight/Worker schemas, назначать
-format identities и готовить implementation plan. До такого согласования этот
-document остаётся proposal и не изменяет действующую систему.
+Cross-project approval завершён. Следующий этап — проектирование versioned
+Flight/Worker schemas, назначение format identities и подготовка implementation
+plan. До реализации этот document остаётся ненормативной основой будущего
+contract и не изменяет действующую систему.
