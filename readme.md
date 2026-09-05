@@ -85,6 +85,7 @@ user-site. Полный локальный сценарий находится �
 - [Развёртывание через systemd](./docs/deployment/systemd.md)
 - [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
 - [Архитектура Transformer](./docs/architecture.md)
+- [Активные проектные предложения](./docs/design/index.md)
 - [Журнал архитектурных решений](./docs/adr/index.md)
 - [Политики проекта](./docs/policy/index.md)
 
