@@ -7,6 +7,7 @@
 - Статус: к совместному архитектурному обсуждению
 - Срез аудита: 2026-09-05, Transformer Flight v10 / Worker v11
 - Входные материалы: Consumer-side аудит Inventory от 2026-09-05
+- Следующий этап: [schema-neutral semantic model](./consumer-neutral-xy-semantic-model.md)
 
 ## Статус работ
 

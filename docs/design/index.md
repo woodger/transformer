@@ -14,5 +14,6 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-- [Восстановление consumer-neutral границы `x/y` в Transformer](./consumer-neutral-xy-boundary.md)
-
+- Восстановление consumer-neutral границы `x/y` в Transformer:
+  - [аудит границы и пространство вариантов](./consumer-neutral-xy-boundary.md);
+  - [schema-neutral semantic model](./consumer-neutral-xy-semantic-model.md).
