@@ -53,6 +53,12 @@ class WorkerSubprocessError(AttemptExecutionError):
     pass
 
 
+class _WorkerLogPersistenceError(WorkerSubprocessError):
+    """A secondary diagnostics failure that must not mask Worker output."""
+
+    pass
+
+
 WorkerSubprocessResult = ExecutionResult
 
 
@@ -398,11 +404,20 @@ class WorkerSubprocessRunner:
                 if self._control_wakes.get(job_id) is control_wake:
                     self._control_wakes.pop(job_id, None)
 
-        while failure is None:
+        observed_failures = [] if failure is None else [failure]
+        while True:
             try:
-                failure = errors.get_nowait()
+                observed_failures.append(errors.get_nowait())
             except queue.Empty:
                 break
+        failure = next(
+            (
+                item
+                for item in observed_failures
+                if not isinstance(item, _WorkerLogPersistenceError)
+            ),
+            observed_failures[0] if observed_failures else None,
+        )
         tail = stderr_tail[-1] if stderr_tail else b""
         classified_exit = (
             self._classify_subprocess_exit(exit_code, tail)
@@ -415,7 +430,10 @@ class WorkerSubprocessRunner:
             ErrorCode.DEVICE_LOST,
         ):
             raise classified_exit
-        if failure is not None:
+        if failure is not None and not (
+            isinstance(failure, _WorkerLogPersistenceError)
+            and event_state.terminal == "error"
+        ):
             raise WorkerSubprocessError(
                 failure.code,
                 failure.message,
@@ -798,6 +816,7 @@ class WorkerSubprocessRunner:
         persisted = 0
         captured = bytearray()
         target: BinaryIO | None = None
+        persistence_failed = False
         try:
             target = open(path, "wb")
             while True:
@@ -814,15 +833,8 @@ class WorkerSubprocessRunner:
                     target.flush()
                     persisted += len(kept)
         except OSError as exc:
-            code = (
-                ErrorCode.DISK_FULL
-                if exc.errno in _DISK_FULL_ERRNOS
-                else ErrorCode.INTERNAL
-            )
-            errors.put(WorkerSubprocessError(
-                code,
-                "worker log could not be persisted",
-            ))
+            persistence_failed = True
+            errors.put(_worker_log_persistence_error(exc))
             # Continue draining even after a logging failure to avoid deadlock.
             try:
                 while stream.read(64 * 1024):
@@ -831,7 +843,11 @@ class WorkerSubprocessRunner:
                 pass
         finally:
             if target is not None:
-                target.close()
+                try:
+                    target.close()
+                except OSError as exc:
+                    if not persistence_failed:
+                        errors.put(_worker_log_persistence_error(exc))
             if tail is not None:
                 tail.append(bytes(captured))
 
@@ -928,6 +944,18 @@ def _worker_error_code(value: str) -> ErrorCode:
     if value == "CUDA_OUT_OF_MEMORY":
         return ErrorCode.GPU_OUT_OF_MEMORY
     return ErrorCode(value)
+
+
+def _worker_log_persistence_error(exc: OSError) -> WorkerSubprocessError:
+    code = (
+        ErrorCode.DISK_FULL
+        if exc.errno in _DISK_FULL_ERRNOS
+        else ErrorCode.INTERNAL
+    )
+    return _WorkerLogPersistenceError(
+        code,
+        "worker log could not be persisted",
+    )
 
 
 def _cancellation_failure(

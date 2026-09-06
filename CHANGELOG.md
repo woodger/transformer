@@ -25,6 +25,9 @@
 
 ### Fixed
 
+- Epoch recovery checkpoints больше не накапливают staging-копии в runtime:
+  они удаляются после durable-регистрации и очищаются при старте после аварии.
+  Ошибка сохранения worker log не скрывает terminal error самого Worker.
 - Model Catalog detail проверяет canonical metadata и D1 digests до чтения
   checkpoint, сохраняя нормативный приоритет ошибки metadata и bounded I/O.
 - Streaming fit публикует checkpoint по финальному закрытому snapshot job,

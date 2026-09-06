@@ -135,6 +135,12 @@ replay с проверкой schema и physical/logical counters.
 Recovery другого data, target, objective, model contract, job configuration
 или immutable input manifest отклоняется.
 
+Worker создаёт epoch checkpoint во временном attempt workspace. Service
+копирует его в durable recovery store, регистрирует generation в PostgreSQL и
+сразу удаляет staging-копию. После аварийного завершения оставшиеся staging
+checkpoints удаляются при следующем старте сервиса после остановки прежних
+Worker process groups; зарегистрированные recovery generations не затрагиваются.
+
 ## Контекстные пропуски
 
 `src` может содержать `NaN` в отдельных features:

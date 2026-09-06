@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from pathlib import Path
+
+import pytest
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
 from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
@@ -146,13 +149,14 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         "validate_training_metrics_for_model",
         lambda document, _contract: document,
     )
+    operational_metrics = OperationalMetrics()
     publisher = RecoveryCheckpointPublisher(
         ledger,
         recovery_store,
         spool,
         telemetry=telemetry,
         logger=logger,
-        metrics=OperationalMetrics(),
+        metrics=operational_metrics,
     )
 
     publisher.publish(job, {
@@ -179,8 +183,107 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         "step": 2,
     }
     assert telemetry.metric_intervals == 1
+    assert not os.path.exists(checkpoint_path)
+    published_path = recovery_store.checkpoint_path(job_id, 1)
+    assert Path(published_path).read_bytes() == checkpoint
+    counters = operational_metrics.snapshot()["counters"]
+    assert counters["recoveryCheckpointStagingRemoved"] == 1
+    assert counters["recoveryCheckpointStagingBytesRemoved"] == len(checkpoint)
     assert any(
         event == "metrics.collection.failed"
         and fields["phase"] == "recovery-checkpoint"
         for event, fields in logger.events
     )
+
+
+def test_registration_failure_preserves_worker_checkpoint_staging(
+    tmp_path,
+):
+    job_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    contract = model_contract(
+        "single-regression",
+        seq_len=2,
+        feature_dim=2,
+    )
+    job = ExecutionJobRecord(
+        job_id=job_id,
+        owner_subject="inventory",
+        operation="fit",
+        input_state=InputState.CLOSED,
+        execution_state=ExecutionState.RUNNING,
+        input_revision=1,
+        selected_device="cpu",
+        model_label="daily",
+        input_model_ref=None,
+        prediction_column="predictions",
+        source_encoding={
+            "kind": "indexedFeatureBlocks",
+            "featureBlocks": [
+                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+            ],
+        },
+        model_config=None,
+        training_config=None,
+        data_contract={
+            "identity": "test.dataset",
+            "revision": 1,
+            "profile": "test.profile",
+            "dataContractSha256": "d" * 64,
+            "seqLen": 2,
+            "featureDim": 2,
+        },
+        model_contract=contract.to_document(),
+        semantic_digests=contract.digests("d" * 64),
+        config_hash="a" * 64,
+        manifest_sha256="b" * 64,
+        feature_dim=2,
+        input_frame_count=1,
+        attempt=1,
+        assigned_device_id=None,
+        resume_generation=None,
+        queued_at=1.0,
+        started_at=2.0,
+        attempt_id=attempt_id,
+    )
+
+    class FailingLedger(_Ledger):
+        def register_recovery_checkpoint(self, **_fields):
+            raise RuntimeError("injected registration failure")
+
+    recovery_store = RecoveryStore(str(tmp_path / "recovery")).initialize()
+    spool = Spool(
+        str(tmp_path / "runtime"),
+        str(tmp_path / "models"),
+        str(tmp_path / "telemetry"),
+    ).initialize()
+    checkpoint_path = spool.attempt_recovery_checkpoint_path(job_id, 1, 1)
+    spool.ensure_parent(checkpoint_path)
+    checkpoint = b"recovery checkpoint"
+    Path(checkpoint_path).write_bytes(checkpoint)
+    publisher = RecoveryCheckpointPublisher(
+        FailingLedger(job),
+        recovery_store,
+        spool,
+        logger=_Logger(),
+        metrics=OperationalMetrics(),
+    )
+
+    with pytest.raises(RuntimeError, match="injected registration failure"):
+        publisher.publish(job, {
+            "format": RECOVERY_FORMAT,
+            "generation": 1,
+            "progress": {
+                "completedEpochs": 1,
+                "globalStep": 2,
+                "trainingComplete": False,
+            },
+            "artifact": {
+                "path": checkpoint_path,
+                "format": CHECKPOINT_FORMAT,
+                "byteCount": len(checkpoint),
+                "checkpointSha256": hashlib.sha256(checkpoint).hexdigest(),
+            },
+        })
+
+    assert Path(checkpoint_path).read_bytes() == checkpoint

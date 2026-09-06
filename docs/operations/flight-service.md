@@ -78,6 +78,7 @@ Filesystem runtime намеренно является временным:
       attempts/{attempt}/
         stdout.log
         stderr.log
+        checkpoints/{completedEpoch}.pth  # staging до durable publication
         outputs/{ordinal}.arrow
         checkpoint.pth
 ```
