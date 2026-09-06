@@ -1,0 +1,6 @@
+{
+  "code": "RESOURCE_EXHAUSTED",
+  "reason": "CATALOG_RESPONSE_BUDGET_EXCEEDED",
+  "maxBytes": 8388608,
+  "message": "model catalog response exceeds the advertised budget"
+}

@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_CATALOG_QUERY",
+  "path": "/pageSize",
+  "message": "pageSize must be between 1 and 100"
+}

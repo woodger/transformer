@@ -1,0 +1,42 @@
+{
+  "contract": "transformer-model-catalog",
+  "revision": 1,
+  "requestId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "models": [
+    {
+      "modelRef": "mdl_33333333333333333333333333333333",
+      "label": "baseline",
+      "generation": 1,
+      "createdAt": "2026-09-04T10:00:00.000000Z",
+      "semanticDigests": {
+        "dataContractSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "targetContractSha256": "112f7ecf5fbeb7e70ad4b4657dcd753a1694bbc3cb6ae2d78dfdb91facad03ce",
+        "objectiveSha256": "7fba42999d866cc109ea709e55b0c668c4ac7379ecbe47f00b830b51190733e3",
+        "modelContractSha256": "a71d514e590fe1eef708a73b4fd08ac7f80b4e090392d5231ed863972315a49d"
+      },
+      "modelConfig": {
+        "architecture": {
+          "identity": "transformer.sequence-model",
+          "revision": 1
+        },
+        "seqLen": 10,
+        "featureDim": 64848,
+        "hidden": 256,
+        "layers": 5,
+        "dropout": 0.1,
+        "nhead": 8,
+        "mode": "relaxed"
+      },
+      "targetIdentities": ["MeanReturn"],
+      "initialization": {"kind": "random"},
+      "producingRunId": "33333333-3333-4333-8333-333333333333",
+      "checkpoint": {
+        "format": "transformer-checkpoint-v6",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "bytes": 19243587
+      }
+    }
+  ],
+  "nextCursor": null,
+  "cursorExpiresAt": null
+}

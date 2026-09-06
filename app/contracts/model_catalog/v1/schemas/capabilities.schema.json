@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-catalog/v1/capabilities.schema.json",
+  "title": "Transformer model catalog query v1 capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "revision", "operations", "transport", "consistency",
+    "limits", "features"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-model-catalog"},
+    "revision": {"const": 1},
+    "operations": {"const": ["detail", "list"]},
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actions"],
+      "properties": {
+        "kind": {"const": "ArrowFlightDoAction"},
+        "actions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["detail", "list"],
+          "properties": {
+            "detail": {"const": "transformer.model-catalog.v1.detail"},
+            "list": {"const": "transformer.model-catalog.v1.list"}
+          }
+        }
+      }
+    },
+    "consistency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "ordering", "concurrentPublication", "concurrentDeletion",
+        "cursorExpiration"
+      ],
+      "properties": {
+        "kind": {"const": "LiveHighWater"},
+        "ordering": {
+          "const": [
+            {"field": "createdAt", "direction": "DESC"},
+            {"field": "modelRef", "direction": "ASC"}
+          ]
+        },
+        "concurrentPublication": {"const": "ExcludedAfterHighWater"},
+        "concurrentDeletion": {"const": "MayOmit"},
+        "cursorExpiration": {"const": "RestartTraversal"}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxPageSize", "cursorTtlSeconds", "maxResponseBytes",
+        "maxCheckpointVerificationsPerDetail",
+        "maxCheckpointVerificationBytes"
+      ],
+      "properties": {
+        "maxPageSize": {"const": 100},
+        "cursorTtlSeconds": {"const": 900},
+        "maxResponseBytes": {"const": 8388608},
+        "maxCheckpointVerificationsPerDetail": {"const": 1},
+        "maxCheckpointVerificationBytes": {"const": 1073741824}
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownerScope", "filters", "batchDetail", "serverSideComparison",
+        "checkpointVerification", "structuredErrors"
+      ],
+      "properties": {
+        "ownerScope": {"const": "AuthenticatedSubject"},
+        "filters": {"const": false},
+        "batchDetail": {"const": false},
+        "serverSideComparison": {"const": false},
+        "checkpointVerification": {"const": "FullSha256"},
+        "structuredErrors": {"const": true}
+      }
+    }
+  }
+}

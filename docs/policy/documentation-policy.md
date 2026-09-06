@@ -45,6 +45,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Нормативный worker v12 contract | `app/contracts/worker/v12/` |
 | Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
+| Staged Model Catalog Query v1 для cross-project review | `app/contracts/model_catalog/v1/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -114,6 +115,10 @@ JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
 v11, worker v12, checkpoint/recovery v6 и metrics v5 нормативны для текущего
 runtime. README или operations guide не могут переопределять их. Flight v11 —
 единственный текущий remote API contract; legacy aliases отсутствуют.
+
+`app/contracts/model_catalog/v1/` является нормативным staged proposal для
+точного cross-project review. Он не расширяет действующий Flight v11 и не
+считается реализованным runtime contract до отдельного принятия и подключения.
 
 Изменение Flight contract требует синхронно проверить:
 

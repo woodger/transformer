@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_CATALOG_CURSOR",
+  "path": "/cursor",
+  "message": "catalog cursor is invalid"
+}

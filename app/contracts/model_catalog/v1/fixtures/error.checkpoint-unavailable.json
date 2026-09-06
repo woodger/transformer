@@ -1,0 +1,6 @@
+{
+  "code": "MODEL_CORRUPT",
+  "reason": "MODEL_CHECKPOINT_UNAVAILABLE",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "message": "model checkpoint is unavailable"
+}

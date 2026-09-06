@@ -1,0 +1,132 @@
+{
+  "contract": "transformer-model-catalog",
+  "revision": 1,
+  "requestId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "model": {
+    "summary": {
+      "modelRef": "mdl_11111111111111111111111111111111",
+      "label": "consumer-model",
+      "generation": 2,
+      "createdAt": "2026-09-05T12:00:00.000000Z",
+      "semanticDigests": {
+        "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "targetContractSha256": "194487713474826db9e120dede269cfd9665fdd28b50803b89995a55d3f392f0",
+        "objectiveSha256": "d7b5e181e2c7c97ff02af381736e8e3054196fe3fe252ca0f51dab37a60af715",
+        "modelContractSha256": "2b09365f16ff67ed340b7c52988d016090d3e8b2b51f13adb1b0d3ba5f1cdbe3"
+      },
+      "modelConfig": {
+        "architecture": {
+          "identity": "transformer.sequence-model",
+          "revision": 1
+        },
+        "seqLen": 2,
+        "featureDim": 8,
+        "hidden": 16,
+        "layers": 1,
+        "dropout": 0,
+        "nhead": 4,
+        "mode": "strict"
+      },
+      "targetIdentities": ["ConsumerDefined.EventProbability"],
+      "initialization": {"kind": "random"},
+      "producingRunId": "11111111-1111-4111-8111-111111111111",
+      "checkpoint": {
+        "format": "transformer-checkpoint-v6",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 150725827
+      }
+    },
+    "dataContract": {
+      "identity": "consumer.learning-dataset",
+      "revision": 1,
+      "profile": "consumer.profile.alpha",
+      "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seqLen": 2,
+      "featureDim": 8
+    },
+    "modelContract": {
+      "objectiveLanguageRevision": 1,
+      "targetContract": {
+        "slots": [
+          {
+            "identity": "ConsumerDefined.EventProbability",
+            "observedConstraint": {
+              "kind": "ClosedInterval",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "lossInputTransformation": {"kind": "Identity"},
+            "publicPredictionTransformation": {"kind": "Sigmoid"}
+          }
+        ]
+      },
+      "objective": {
+        "aggregation": {"kind": "WeightedSum"},
+        "reduction": {"kind": "GlobalRowMean"},
+        "resources": [],
+        "directComponents": [
+          {
+            "identity": "direct.consumer-event",
+            "operator": "BinaryCrossEntropyWithLogits",
+            "weight": 1,
+            "roles": {
+              "logit": {
+                "kind": "target",
+                "identity": "ConsumerDefined.EventProbability",
+                "view": "lossEstimate"
+              },
+              "probability": {
+                "kind": "target",
+                "identity": "ConsumerDefined.EventProbability",
+                "view": "observed"
+              }
+            },
+            "parameters": {}
+          }
+        ],
+        "auxiliaryComponents": []
+      },
+      "modelConfig": {
+        "architecture": {
+          "identity": "transformer.sequence-model",
+          "revision": 1
+        },
+        "seqLen": 2,
+        "featureDim": 8,
+        "hidden": 16,
+        "layers": 1,
+        "dropout": 0,
+        "nhead": 4,
+        "mode": "strict"
+      }
+    },
+    "trainingConfig": {
+      "lr": 0.0005,
+      "batchSize": 256,
+      "epochs": 25,
+      "useAmp": true,
+      "weightDecay": 0.00001,
+      "selection": null,
+      "seed": 42,
+      "deterministic": false
+    },
+    "diagnostics": {
+      "schemaVersion": 1,
+      "gradientInteractions": null
+    },
+    "selection": {
+      "enabled": false,
+      "modelContractSha256": "2b09365f16ff67ed340b7c52988d016090d3e8b2b51f13adb1b0d3ba5f1cdbe3",
+      "bestSelectionScore": null,
+      "bestEpoch": null,
+      "source": "last_epoch"
+    },
+    "progress": {
+      "completedEpochs": 25,
+      "globalStep": 112050,
+      "trainingComplete": true
+    },
+    "initialization": {"kind": "random"},
+    "jobConfigSha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  }
+}

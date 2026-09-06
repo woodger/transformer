@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Опубликован staged Model Catalog Query v1: owner-scoped list и single detail,
+  live high-water pagination, bounded checkpoint verification, independently
+  versioned capabilities, structured errors и cross-project golden fixtures.
+
 ### Fixed
 
 - Streaming fit публикует checkpoint по финальному закрытому snapshot job,

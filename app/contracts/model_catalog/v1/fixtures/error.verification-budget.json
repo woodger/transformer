@@ -1,0 +1,8 @@
+{
+  "code": "RESOURCE_EXHAUSTED",
+  "reason": "CHECKPOINT_VERIFICATION_BUDGET_EXCEEDED",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "checkpointBytes": 1073741825,
+  "maxBytes": 1073741824,
+  "message": "model checkpoint exceeds detail verification budget"
+}

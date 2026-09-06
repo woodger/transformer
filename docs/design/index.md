@@ -16,4 +16,5 @@ contract и не заменяет ADR.
 
 - [Owner-scoped Model Catalog Query](./owner-scoped-model-catalog-query.md) —
   Transformer-side предложение owner-scoped discovery, detail и bounded
-  comparison опубликованных model generations.
+  comparison опубликованных model generations; нормативный wire proposal v1
+  опубликован для точного Consumer review.

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-catalog/v1/detail-result.schema.json",
+  "title": "transformer.model-catalog.v1.detail result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "revision", "requestId", "model"],
+  "properties": {
+    "contract": {"const": "transformer-model-catalog"},
+    "revision": {"const": 1},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "model": {"$ref": "common.schema.json#/$defs/modelDetail"}
+  }
+}

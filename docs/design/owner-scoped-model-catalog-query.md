@@ -1,11 +1,12 @@
 # Owner-scoped Model Catalog Query
 
 > Тип: Design Note. Transformer-side предложение read-only query boundary для
-> совместного обсуждения с Consumer-ами. Это не ADR, не wire schema, не
-> назначение версии Flight и не описание уже реализованного API.
+> совместного обсуждения с Consumer-ами. Сам документ не заменяет wire schema
+> и не описывает уже реализованный API; точный staged contract опубликован в
+> [`app/contracts/model_catalog/v1`](../../app/contracts/model_catalog/v1/README.md).
 
-- Статус: согласовано с Consumer-ом для подготовки wire design
-- Срез: 2026-09-05, техническая исходная точка Flight v11
+- Статус: нормативный wire proposal v1 опубликован для точного Consumer review
+- Срез: 2026-09-06, техническая исходная точка Flight v11
 - Входной материал: Consumer-side запрос Inventory и Inventory ADR-0013
 - Область изменения: будущий query contract; текущие runtime, contracts,
   schemas, migrations и deployment не изменяются
@@ -31,9 +32,8 @@ metadata и checkpoint artifact.
 
 Arrow data plane, `indexedFeatureBlocks`, fit, predict, objective language и
 model lifecycle этим предложением не меняются. По характеру операция подходит
-для read-only control plane. Предпочтительным transport-кандидатом остаётся
-Flight `DoAction`, но wire surface и его версия определяются только после
-cross-project согласования.
+для read-only control plane. Wire proposal выбирает Flight `DoAction`, сохраняя
+для Model Catalog Query отдельную immutable revision.
 
 ## Проверенное текущее состояние
 
@@ -277,8 +277,7 @@ Consumer-у определить:
 Flight workflow не обязан семантически версионироваться вместе с каждым
 изменением catalog query. Однако текущий Flight v11 имеет закрытые schemas и
 замороженный action/capabilities surface, поэтому новый action нельзя молча
-добавить в нормативный v11 package. На wire-design этапе нужно выбрать один из
-вариантов:
+добавить в нормативный v11 package. Рассматривались следующие варианты:
 
 1. включить независимо versioned catalog query в следующий Flight contract;
 2. определить общий extension lifecycle, если он будет нужен не только
@@ -288,13 +287,15 @@ Flight workflow не обязан семантически версиониро�
 Для одной catalog capability третий вариант непропорционален: он добавит
 отдельные proto, listener, TLS/auth, deployment и client runtime. Он становится
 обоснованным только если формируется самостоятельный набор provider-owned
-control-plane queries. Предварительно предпочтителен Flight `DoAction` с
-отдельной query revision.
+control-plane queries. Нормативный proposal выбирает первый вариант: первичная
+активация двух `DoAction` требует Flight v12, после чего query revision живёт
+независимо от objective language и последующих Flight workflow revisions.
 
 ## Structured outcomes
 
-Точная wire taxonomy ещё не определяется. Семантически Consumer должен уметь
-различить без parsing message:
+Точная wire taxonomy опубликована в staged
+[`error-detail.schema.json`](../../app/contracts/model_catalog/v1/schemas/error-detail.schema.json).
+Consumer должен уметь различить без parsing message:
 
 | Ситуация | Категория outcome |
 | --- | --- |
@@ -396,18 +397,19 @@ catalog станет частью более широкого самостоят
   query рассматривается как отдельная будущая граница и не блокирует catalog.
 - Persisted selection всегда хранит exact immutable `modelRef`.
 
-## Вопросы совместного решения
+## Решения wire proposal для review
 
-- точная canonical форма high-water cursor и его expiration outcome;
-- точная canonical форма согласованной summary projection;
-- work budget physical checkpoint verification;
-- query capability/version lifecycle относительно Flight workflow;
-- срок жизни cursor и advertised page limit;
-- необходимость batch detail после проверки первой интеграции.
+- cursor остаётся opaque token формата `mc1.<base64url>`, связанным с owner,
+  ordering, high-water, page size и non-sliding expiration;
+- expired valid cursor возвращает отдельный restart-required outcome;
+- page limit равен 100, TTL — 900 секунд;
+- list не читает checkpoints; single detail выполняет одну полную SHA-256
+  проверку artifact размером не более 1 GiB;
+- Model Catalog Query имеет независимую revision, а первичная публикация actions
+  относится к Flight v12;
+- revision 1 содержит list и single detail; batch detail может быть рассмотрен
+  только после первой интеграции и потребует новой query revision.
 
-Consumer-side boundary достаточна для следующего этапа. Теперь Transformer
-может подготовить canonical wire proposal: выбрать exact cursor document,
-page limits, structured errors, capability lifecycle и место query относительно
-Flight workflow, а затем передать schemas и cross-project fixtures Inventory на
-review. Код, PostgreSQL migration и deployment следует менять только после
-принятия этого package.
+Точные documents, limits, invariants, errors и cross-project fixtures находятся
+в staged package. До его точного review и принятия код, PostgreSQL migrations,
+deployment и действующий Flight v11 не изменяются.
