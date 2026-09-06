@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Streaming fit публикует checkpoint по финальному закрытому snapshot job,
+  поэтому manifest digest, полученный после `input.closed`, не сравнивается с
+  устаревшим состоянием начала Worker attempt.
+
 ## [0.1.18] - 2026-09-05
 
 ### Added

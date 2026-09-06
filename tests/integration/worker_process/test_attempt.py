@@ -305,3 +305,51 @@ def test_terminal_telemetry_failure_does_not_change_published_fit():
         and fields["phase"] == "model-artifact"
         for event, fields in observed_events
     )
+
+
+def test_streaming_fit_publishes_with_closed_job_snapshot():
+    claimed = _job()
+    closed = replace(
+        claimed,
+        input_state=InputState.CLOSED,
+        input_revision=201,
+        manifest_sha256="b" * 64,
+    )
+    ledger = _Ledger(claimed)
+    published = []
+
+    class StreamingRunner:
+        def run(self, *_args, **_kwargs):
+            ledger.current = closed
+            return ExecutionResult(
+                exit_code=0,
+                stderr_tail=b"",
+                result_manifest={"checkpointMetadata": {}},
+            )
+
+    class PublishingArtifacts(_Artifacts):
+        def publish_model_from_manifest(self, current, _result):
+            published.append(current)
+            ledger.current = replace(
+                current,
+                execution_state=ExecutionState.SUCCEEDED,
+            )
+            return PublishedModelArtifacts(
+                model_ref="mdl_test",
+                model_contract=MODEL_CONTRACT,
+                checkpoint_publication_ms=1.0,
+            )
+
+    executor = WorkerAttemptExecutor(
+        ledger,
+        SimpleNamespace(build=lambda *_args: SimpleNamespace(inputs=())),
+        StreamingRunner(),
+        PublishingArtifacts(),
+        logger=_Logger(),
+        metrics=_Metrics(),
+    )
+
+    executor.execute(claimed)
+
+    assert published == [closed]
+    assert ledger.current.execution_state == ExecutionState.SUCCEEDED
