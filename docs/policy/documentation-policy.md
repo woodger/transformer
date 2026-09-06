@@ -41,11 +41,11 @@ identifiers, команды, пути, значения enum и другие э�
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный semantic language v1 | `app/contracts/semantic/v1/` |
-| Нормативный Flight v11 contract | `app/contracts/flight/v11/` |
+| Нормативный Flight v12 contract | `app/contracts/flight/v12/` |
 | Нормативный worker v12 contract | `app/contracts/worker/v12/` |
 | Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
-| Staged Model Catalog Query v1 для cross-project review | `app/contracts/model_catalog/v1/` |
+| Нормативный Model Catalog Query v1 | `app/contracts/model_catalog/v1/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -112,13 +112,14 @@ PostgreSQL и OpenSearch adapters.
 ## Нормативные contracts
 
 JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
-v11, worker v12, checkpoint/recovery v6 и metrics v5 нормативны для текущего
-runtime. README или operations guide не могут переопределять их. Flight v11 —
+v12, worker v12, checkpoint/recovery v6, metrics v5 и Model Catalog Query v1
+нормативны для текущего runtime. README или operations guide не могут
+переопределять их. Flight v12 —
 единственный текущий remote API contract; legacy aliases отсутствуют.
 
-`app/contracts/model_catalog/v1/` является нормативным staged proposal для
-точного cross-project review. Он не расширяет действующий Flight v11 и не
-считается реализованным runtime contract до отдельного принятия и подключения.
+`app/contracts/model_catalog/v1/` имеет независимую revision и активирован
+двумя Flight v12 actions. Изменение его query language не обязано синхронно
+менять job workflow Flight.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -130,7 +131,7 @@ runtime. README или operations guide не могут переопределя
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v11 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v12 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## Документация текущего состояния

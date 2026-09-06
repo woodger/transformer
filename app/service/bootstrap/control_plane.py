@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v11 import job_config_sha256
+from app.contracts.flight.v12 import job_config_sha256
+from app.contracts.model_catalog.v1 import (
+    CURSOR_TTL_SECONDS,
+    MAX_CHECKPOINT_VERIFICATION_BYTES,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -14,6 +18,7 @@ from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifacts.job_artifacts import (
     CandidateArtifactCleaner,
+    CatalogModelArtifactVerifier,
     ModelArtifactVerifier,
 )
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
@@ -26,6 +31,9 @@ from app.service.adapters.outbound.postgres.job_queries import (
     PostgresJobQueryStore,
 )
 from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.model_catalog import (
+    PostgresModelCatalogStore,
+)
 from app.service.application.commands.jobs import (
     AcquireJobAction,
     CancelJobAction,
@@ -34,12 +42,15 @@ from app.service.application.commands.jobs import (
 )
 from app.service.application.messages.jobs import ServiceLimits
 from app.service.application.ports.devices import WorkerCapabilities
+from app.service.application.queries.model_catalog import (
+    GetCatalogModel,
+    ListCatalogModels,
+)
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
 )
 from app.service.application.queries.status import (
-    DescribeModel,
     GetJobStatus,
     ListJobInputs,
     ListJobOutputs,
@@ -72,6 +83,7 @@ def build_job_coordinator(
     )
     queries = PostgresJobQueryStore(ledger)
     model_verifier = ModelArtifactVerifier(spool)
+    model_catalog_store = PostgresModelCatalogStore(ledger.database)
     artifact_cleaner = CandidateArtifactCleaner(
         spool,
         recovery_store,
@@ -131,9 +143,16 @@ def build_job_coordinator(
         get_status=GetJobStatus(queries),
         list_inputs=ListJobInputs(queries),
         list_outputs=ListJobOutputs(queries),
-        describe_model=DescribeModel(
-            queries,
-            model_verifier=model_verifier,
+        list_catalog_models=ListCatalogModels(
+            model_catalog_store,
+            cursor_ttl_seconds=CURSOR_TTL_SECONDS,
+        ),
+        get_catalog_model=GetCatalogModel(
+            model_catalog_store,
+            artifact_verifier=CatalogModelArtifactVerifier(
+                spool,
+                max_verification_bytes=MAX_CHECKPOINT_VERIFICATION_BYTES,
+            ),
         ),
         service_status=service_status,
         availability=availability,

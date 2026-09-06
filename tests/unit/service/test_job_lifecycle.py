@@ -1,4 +1,4 @@
-from app.contracts.flight.v11.constants import (
+from app.contracts.flight.v12.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CREATE_ACTION,

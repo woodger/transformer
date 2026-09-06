@@ -23,9 +23,10 @@ from app.contracts.worker.v12.config import ModelConfig
 from app.project import PROJECT_ROOT
 
 SEMANTIC_ROOT = PROJECT_ROOT / "app" / "contracts" / "semantic" / "v1"
-FLIGHT_ROOT = PROJECT_ROOT / "app" / "contracts" / "flight" / "v11"
+FLIGHT_ROOT = PROJECT_ROOT / "app" / "contracts" / "flight" / "v12"
 WORKER_ROOT = PROJECT_ROOT / "app" / "contracts" / "worker" / "v12"
 CHECKPOINT_ROOT = PROJECT_ROOT / "app" / "contracts" / "checkpoint" / "v6"
+MODEL_CATALOG_ROOT = PROJECT_ROOT / "app" / "contracts" / "model_catalog" / "v1"
 METRICS_ROOT = PROJECT_ROOT / "app" / "contracts" / "metrics" / "v5"
 FIT_RUN_ROOT = PROJECT_ROOT / "app" / "contracts" / "metrics" / "fit_run" / "v5"
 
@@ -34,6 +35,7 @@ SCHEMA_ROOTS = (
     FLIGHT_ROOT / "schemas",
     WORKER_ROOT / "schemas",
     CHECKPOINT_ROOT / "schemas",
+    MODEL_CATALOG_ROOT / "schemas",
     METRICS_ROOT,
     FIT_RUN_ROOT,
 )
@@ -980,7 +982,7 @@ def test_flight_worker_and_checkpoint_envelopes_compose(
 
     request = {
         "contract": "transformer-flight",
-        "version": 11,
+        "version": 12,
         "requestId": "11111111-1111-4111-8111-111111111111",
         "idempotencyKey": "fit-1",
         "jobId": JOB_ID,

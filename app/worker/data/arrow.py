@@ -11,7 +11,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app import config as defaults
-from app.contracts.flight.v11.arrow import (
+from app.contracts.flight.v12.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,

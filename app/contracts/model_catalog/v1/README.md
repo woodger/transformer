@@ -1,21 +1,18 @@
 # Контракт owner-scoped Model Catalog Query v1
 
-> CONTRACT DOCUMENT. Этот staged package задаёт нормативные JSON documents,
-> pagination semantics, capabilities и structured errors будущего read-only
-> каталога опубликованных моделей. Действующий Flight v11 этот query не
-> реализует.
+> CONTRACT DOCUMENT. Этот package задаёт нормативные JSON documents,
+> pagination semantics, capabilities и structured errors текущего read-only
+> каталога опубликованных моделей, активированного Flight v12.
 
 JSON Schemas Draft 2020-12 и перечисленные manifest-ом golden fixtures являются
 источником истины для формы документов. Этот README задаёт семантические
-инварианты, которые JSON Schema выразить не может. Runtime, PostgreSQL schema,
-model lifecycle и deployment данным package не изменяются.
+инварианты, которые JSON Schema выразить не может.
 
 ## Версия и Flight binding
 
 Query имеет независимые identity `transformer-model-catalog` и immutable
-`revision=1`. Первичная активация требует Flight v12, поскольку action и
-capabilities surface Flight v11 закрыты. Query revision после активации не
-обязана меняться синхронно с Flight workflow.
+`revision=1`. Первичная активация выполнена Flight v12. Query revision после
+активации не обязана меняться синхронно с Flight workflow.
 
 Revision 1 связывается с двумя `DoAction`:
 

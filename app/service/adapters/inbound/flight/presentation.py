@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v12.constants import CHECKPOINT_FORMAT
+from app.contracts.model_catalog.v1 import CONTRACT_NAME, CONTRACT_REVISION
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,
@@ -14,6 +14,10 @@ from app.service.adapters.inbound.flight.documents import (
     data_contract_to_api,
     response_document,
 )
+from app.service.adapters.inbound.flight.model_catalog import (
+    model_detail,
+    model_summary,
+)
 from app.service.application.messages.jobs import (
     InputClosed,
     JobAcquired,
@@ -22,10 +26,12 @@ from app.service.application.messages.jobs import (
     JobInputsPage,
     JobOutputsPage,
     JobStatusResult,
-    ModelDescription,
     ServiceLimits,
 )
-from app.service.application.services.model_contract import model_initialization
+from app.service.application.messages.model_catalog import (
+    CatalogModelDetail,
+    CatalogModelsPage,
+)
 from app.service.domain.job import TERMINAL_EXECUTION_STATES, ExecutionState
 from app.service.domain.records import (
     JobRecord,
@@ -248,24 +254,24 @@ def present_job_outputs(result: JobOutputsPage) -> JsonObject:
     )
 
 
-def present_model_description(result: ModelDescription) -> JsonObject:
-    model = result.model
-    return response_document(
-        result.request_id,
-        modelRef=model.model_ref,
-        label=model.label,
-        generation=model.generation,
-        dataContract=data_contract_to_api(model.data_contract),
-        modelContract=dict(model.model_contract),
-        semanticDigests=dict(model.semantic_digests),
-        initialization=model_initialization(model),
-        checkpoint={
-            "format": CHECKPOINT_FORMAT,
-            "sha256": model.sha256,
-            "bytes": model.byte_count,
-        },
-        createdAt=_timestamp(model.created_at),
-    )
+def present_catalog_models_page(result: CatalogModelsPage) -> JsonObject:
+    return {
+        "contract": CONTRACT_NAME,
+        "revision": CONTRACT_REVISION,
+        "requestId": result.request_id,
+        "models": [model_summary(model) for model in result.models],
+        "nextCursor": result.next_cursor,
+        "cursorExpiresAt": _catalog_timestamp(result.cursor_expires_at),
+    }
+
+
+def present_catalog_model_detail(result: CatalogModelDetail) -> JsonObject:
+    return {
+        "contract": CONTRACT_NAME,
+        "revision": CONTRACT_REVISION,
+        "requestId": result.request_id,
+        "model": model_detail(result.model),
+    }
 
 
 def limits_to_api(limits: ServiceLimits) -> JsonObject:
@@ -352,8 +358,20 @@ def _timestamp(value: float | datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _catalog_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return (
+        value.astimezone(UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
 __all__ = [
     "limits_to_api",
+    "present_catalog_model_detail",
+    "present_catalog_models_page",
     "present_input_closed",
     "present_job_acquired",
     "present_job_cancelled",
@@ -361,5 +379,4 @@ __all__ = [
     "present_job_inputs",
     "present_job_outputs",
     "present_job_status",
-    "present_model_description",
 ]

@@ -5,13 +5,19 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v11.codec import (
+from app.contracts.flight.v12.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
 from app.contracts.indexed_feature_blocks import canonical_source_encoding
 from app.contracts.json_types import JsonObject
+from app.contracts.model_catalog.v1 import (
+    DETAIL_ACTION as MODEL_CATALOG_DETAIL_ACTION,
+    LIST_ACTION as MODEL_CATALOG_LIST_ACTION,
+    ModelCatalogContractError,
+    validate_catalog_document,
+)
 from app.contracts.semantic.v1 import ModelContract, SemanticContractError
 from app.contracts.worker.v12.config import (
     ModelConfig,
@@ -28,11 +34,15 @@ from app.service.adapters.inbound.flight.constants import (
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MAX_PAGE_ITEMS,
-    MODEL_DESCRIBE_ACTION,
     OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
 )
 from app.service.adapters.inbound.flight.errors import invalid
+from app.service.adapters.inbound.flight.model_catalog import (
+    invalid_catalog_cursor,
+    invalid_catalog_query,
+    unavailable_catalog_revision,
+)
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
 
@@ -44,7 +54,6 @@ _ACTION_SCHEMAS: dict[str, FlightRequestSchema] = {
     HEALTH_ACTION: "query",
     INPUT_CLOSE_ACTION: "input-close",
     INPUTS_LIST_ACTION: "inputs-list",
-    MODEL_DESCRIBE_ACTION: "model-describe",
     OUTPUTS_LIST_ACTION: "outputs-list",
     STATUS_ACTION: "status",
 }
@@ -129,9 +138,13 @@ class CancelRequestFields(RequestIdFields):
     fencing_token: int
 
 
-class ModelDescribeRequestFields(RequestIdFields):
+class ModelCatalogListRequestFields(RequestIdFields):
+    page_size: int
+    cursor: str | None
+
+
+class ModelCatalogDetailRequestFields(RequestIdFields):
     model_ref: str
-    model_selector: str
 
 
 class UploadMetadataFields(TypedDict):
@@ -157,7 +170,8 @@ ValidatedActionRequest = (
     | InputCloseRequestFields
     | OutputsListRequestFields
     | CancelRequestFields
-    | ModelDescribeRequestFields
+    | ModelCatalogListRequestFields
+    | ModelCatalogDetailRequestFields
 )
 
 
@@ -165,6 +179,10 @@ def validate_action_request(
     action_name: str,
     document: JsonObject,
 ) -> ValidatedActionRequest:
+    if action_name == MODEL_CATALOG_LIST_ACTION:
+        return _validate_model_catalog_list(document)
+    if action_name == MODEL_CATALOG_DETAIL_ACTION:
+        return _validate_model_catalog_detail(document)
     schema_name = _ACTION_SCHEMAS.get(action_name)
     if schema_name is None:
         raise invalid(f"unsupported action: {action_name}")
@@ -187,8 +205,6 @@ def validate_action_request(
         return _validate_outputs_list(document, request_id)
     if action_name == CANCEL_ACTION:
         return _validate_cancel(document, request_id)
-    if action_name == MODEL_DESCRIBE_ACTION:
-        return _validate_model_describe(document, request_id)
     raise invalid(f"unsupported action: {action_name}")
 
 
@@ -244,8 +260,6 @@ def _schema_error_message(
             return "create request must match exactly one operation form"
         if schema_name == "inputs-list":
             return "snapshotRevision and cursor must be supplied together"
-        if schema_name == "model-describe":
-            return "model.describe requires exactly one of modelRef or modelAlias"
     if (
         schema_name == "upload-metadata"
         and validation_error.validator == "additionalProperties"
@@ -418,16 +432,51 @@ def _validate_cancel(
     }
 
 
-def _validate_model_describe(
+def _validate_model_catalog_list(
     document: JsonObject,
-    request_id: str,
-) -> ModelDescribeRequestFields:
-    selector = "modelRef" if "modelRef" in document else "modelAlias"
+) -> ModelCatalogListRequestFields:
+    _validate_catalog_schema(document, "list-request")
     return {
-        "request_id": request_id,
-        "model_ref": _string(document, selector),
-        "model_selector": selector,
+        "request_id": _uuid(document, "requestId"),
+        "page_size": _integer(document, "pageSize"),
+        "cursor": cast(str | None, document["cursor"]),
     }
+
+
+def _validate_model_catalog_detail(
+    document: JsonObject,
+) -> ModelCatalogDetailRequestFields:
+    _validate_catalog_schema(document, "detail-request")
+    return {
+        "request_id": _uuid(document, "requestId"),
+        "model_ref": _string(document, "modelRef"),
+    }
+
+
+def _validate_catalog_schema(document: JsonObject, schema_name: str) -> None:
+    try:
+        validate_catalog_document(document, schema_name)
+    except ModelCatalogContractError as exc:
+        validation_error = exc.validation_error
+        path = ""
+        if validation_error is not None:
+            path = "/" + "/".join(
+                str(part).replace("~", "~0").replace("/", "~1")
+                for part in validation_error.absolute_path
+            )
+            if path == "/":
+                path = ""
+        if (
+            schema_name == "list-request"
+            and path == "/cursor"
+            and document.get("cursor") is not None
+        ):
+            raise invalid_catalog_cursor() from exc
+        if schema_name in {"list-request", "detail-request"} and path == "/revision":
+            revision = _safe_json_integer(document.get("revision"))
+            if revision is not None and revision > 0:
+                raise unavailable_catalog_revision(revision) from exc
+        raise invalid_catalog_query(str(exc), path) from exc
 
 
 def _data_contract(document: Mapping[str, object]) -> DataContractFields:
@@ -501,6 +550,20 @@ def _integer(document: Mapping[str, object], key: str) -> int:
     ):
         raise invalid(f"{key} must be an integer")
     return int(value)
+
+
+def _safe_json_integer(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        parsed = int(value)
+    else:
+        return None
+    if not 0 <= parsed <= 9_007_199_254_740_991:
+        return None
+    return parsed
 
 
 def _optional_integer(document: Mapping[str, object], key: str) -> int | None:

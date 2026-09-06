@@ -55,12 +55,12 @@ heads текущего checkout. `Current revision: none` означает, чт
 
 Revision `0020` является baseline. Revision `0021` добавляет persisted fit
 initialization, `0022` удаляет дублирующий путь model metadata, а текущий head
-`0024` переводит persistence на clean-cut consumer-neutral runtime:
+`0025` добавляет bounded traversal Model Catalog:
 
 - новая пустая database сначала создаётся baseline, затем получает последующие
   revisions;
-- database на revision `0020`–`0023` имеет прямой поддерживаемый upgrade до
-  `0024`;
+- database на revision `0020`–`0024` имеет прямой поддерживаемый upgrade до
+  `0025`;
 - перед применением `0022` Flight service должен быть остановлен: предыдущий
   executable ещё записывает удаляемую колонку при публикации модели;
 - перед применением `0023` Flight service также должен быть остановлен, а все
@@ -72,6 +72,12 @@ initialization, `0022` удаляет дублирующий путь model meta
   idempotency records, runtime model metadata и telemetry outbox, после чего
   заменяет `ml_contract` на `model_contract`, добавляет D1 semantic digests и
   recovery input revision и делает compact `source_encoding` обязательным;
+- перед применением `0025` остановите Flight v11 service. Revision сохраняет
+  jobs и models, добавляет существующим и новым generations монотонный
+  `catalog_ordinal`, unique constraint и partial indices для bounded high-water
+  и keyset pagination. Лимит 1 GiB применяется runtime-ом только к новым
+  публикациям; существующая более крупная generation сохраняется и получает
+  structured verification-budget outcome при catalog detail;
 - revisions ниже `0020` текущим checkout не поддерживаются.
 
 Revision `0023` не преобразует прежние dense input artifacts. Их terminal job
@@ -97,6 +103,8 @@ instructions сохранены в tag `0.1.15`, Git history и release notes.
 ./.venv/bin/python ./app/main.py db migrations rollback
 ```
 
+Downgrade `0025 → 0024` удаляет только catalog ordinal и индекс; jobs, models и
+artifacts сохраняются, но Flight v12 service после downgrade запускать нельзя.
 Downgrade `0024 → 0023` является таким же clean cut: он удаляет все созданные
 Flight v11 jobs, models и runtime metadata и не восстанавливает данные v10.
 Используйте заранее подготовленный backup, если требуется вернуть прежнее

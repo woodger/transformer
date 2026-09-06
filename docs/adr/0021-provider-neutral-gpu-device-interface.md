@@ -60,7 +60,7 @@ parallel runtime, aliases или compatibility layer.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v11](../../app/contracts/flight/v11/README.md)
+- [Контракт Arrow Flight v12](../../app/contracts/flight/v12/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
 - [Local CLI](../cli/index.md)
 - [Архитектура](../architecture.md)

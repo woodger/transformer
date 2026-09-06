@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v12/error-detail.schema.json",
+  "title": "Transformer Flight v12 application error detail",
+  "oneOf": [
+    {"$ref": "https://transformer.local/contracts/semantic/v1/error-detail.schema.json"},
+    {"$ref": "https://transformer.local/contracts/model-catalog/v1/error-detail.schema.json"}
+  ]
+}

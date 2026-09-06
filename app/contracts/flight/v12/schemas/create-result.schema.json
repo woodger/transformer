@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v12/create-result.schema.json",
+  "title": "transformer.v12.job.create result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "requestId", "jobId", "operation", "revision", "input", "execution", "ownership", "device", "initialization", "resolvedModelRef", "sourceEncoding", "dataContract", "modelContract", "semanticDigests", "jobConfigSha256", "limits", "upload"],
+  "properties": {
+    "contract": {"const": "transformer-flight"},
+    "version": {"const": 12},
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "operation": {"enum": ["fit", "predict"]},
+    "revision": {"const": 1},
+    "input": {"type": "object", "additionalProperties": false, "required": ["state", "revision", "nextOrdinal"], "properties": {"state": {"const": "OPEN"}, "revision": {"const": 0}, "nextOrdinal": {"const": 0}}},
+    "execution": {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "WAITING_INPUT"}}},
+    "ownership": {"type": "object", "additionalProperties": false, "required": ["clientExecutionId", "fencingToken"], "properties": {"clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"}, "fencingToken": {"const": "1"}}},
+    "device": {"type": "object", "additionalProperties": false, "required": ["requested", "selected"], "properties": {"requested": {"enum": ["cpu", "gpu", "auto"]}, "selected": {"const": null}}},
+    "initialization": {"oneOf": [{"type": "null"}, {"$ref": "common.schema.json#/$defs/resolvedInitialization"}]},
+    "resolvedModelRef": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "sourceEncoding": {"$ref": "common.schema.json#/$defs/sourceEncoding"},
+    "dataContract": {"$ref": "common.schema.json#/$defs/dataContract"},
+    "modelContract": {"$ref": "common.schema.json#/$defs/modelContract"},
+    "semanticDigests": {"$ref": "common.schema.json#/$defs/semanticDigests"},
+    "jobConfigSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "limits": {"$ref": "#/$defs/limits"},
+    "upload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["descriptorPath", "schemaId", "oneDoPutIsOnePhysicalPayload"],
+      "properties": {
+        "descriptorPath": {"type": "array", "prefixItems": [{"const": "transformer"}, {"const": "v12"}, {"const": "jobs"}, {"$ref": "common.schema.json#/$defs/uuid"}, {"const": "inputs"}, {"const": "{ordinal}"}], "items": false, "minItems": 6, "maxItems": 6},
+        "schemaId": {"enum": ["transformer.indexed-feature-blocks.fit.v1", "transformer.indexed-feature-blocks.predict.v1"]},
+        "oneDoPutIsOnePhysicalPayload": {"const": true}
+      }
+    }
+  },
+  "$defs": {
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxMessageBytes", "targetBatchBytes", "maxBatchBytes", "maxPayloadBytes", "maxRowsPerPayload", "maxPayloadsPerJob", "maxJobBytes", "maxActiveJobsPerSubject", "maxPageItems", "inputIdleTimeoutSeconds", "transportMessageLimitEnforced"],
+      "properties": {
+        "maxMessageBytes": {"type": "integer", "minimum": 1}, "targetBatchBytes": {"type": "integer", "minimum": 1}, "maxBatchBytes": {"type": "integer", "minimum": 1}, "maxPayloadBytes": {"type": "integer", "minimum": 1}, "maxRowsPerPayload": {"type": "integer", "minimum": 1}, "maxPayloadsPerJob": {"type": "integer", "minimum": 1, "maximum": 100000}, "maxJobBytes": {"type": "integer", "minimum": 1}, "maxActiveJobsPerSubject": {"type": "integer", "minimum": 1}, "maxPageItems": {"type": "integer", "minimum": 1, "maximum": 100}, "inputIdleTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0}, "transportMessageLimitEnforced": {"const": false}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"operation": {"const": "fit"}}},
+      "then": {
+        "properties": {
+          "initialization": {"$ref": "common.schema.json#/$defs/resolvedInitialization"},
+          "resolvedModelRef": {"const": null}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"operation": {"const": "predict"}}},
+      "then": {
+        "properties": {
+          "initialization": {"const": null},
+          "resolvedModelRef": {"$ref": "common.schema.json#/$defs/label"}
+        }
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import re
 import time
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -20,7 +21,8 @@ from app.service.adapters.inbound.flight.constants import (
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
-    MODEL_DESCRIBE_ACTION,
+    MODEL_CATALOG_DETAIL_ACTION,
+    MODEL_CATALOG_LIST_ACTION,
     OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
 )
@@ -30,6 +32,9 @@ from app.service.adapters.inbound.flight.errors import (
     ServiceError,
     invalid,
     to_flight_exception,
+)
+from app.service.adapters.inbound.flight.model_catalog import (
+    unavailable_catalog_revision,
 )
 from app.service.adapters.inbound.flight.output import OutputHandler
 from app.service.adapters.inbound.flight.upload import PutMetadataWriter, UploadHandler
@@ -42,7 +47,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v11 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v12 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     CREATE_ACTION: "Create a durable streaming job.",
     ACQUIRE_ACTION: "Transfer externally fenced job ownership.",
@@ -51,7 +56,8 @@ ACTION_DESCRIPTIONS = {
     INPUT_CLOSE_ACTION: "Commit EOF and the immutable input manifest.",
     OUTPUTS_LIST_ACTION: "List atomically published outputs.",
     CANCEL_ACTION: "Cancel a job.",
-    MODEL_DESCRIBE_ACTION: "Describe one immutable model generation.",
+    MODEL_CATALOG_LIST_ACTION: "List owner-visible model generations.",
+    MODEL_CATALOG_DETAIL_ACTION: "Describe one owner-visible model generation.",
 }
 
 
@@ -75,6 +81,9 @@ class _ExceptionFactory(Protocol):
 
 
 _FLIGHT_ERROR = cast(type[Exception], vars(flight)["FlightError"])
+_CATALOG_ACTION = re.compile(
+    r"^transformer\.model-catalog\.v([1-9][0-9]*)\.(?:detail|list)$"
+)
 
 
 class TransformerFlightServer(
@@ -130,6 +139,11 @@ class TransformerFlightServer(
         try:
             owner = authenticated_owner_subject(context)
             if action.type not in ACTIONS:
+                catalog_action = _CATALOG_ACTION.fullmatch(action.type)
+                if catalog_action is not None:
+                    raise unavailable_catalog_revision(
+                        int(catalog_action.group(1))
+                    )
                 raise invalid(f"unsupported action: {action.type}")
             document = parse_action_body(action.body)
             request = validate_action_request(action.type, document)

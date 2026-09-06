@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v12/outputs-list-result.schema.json",
+  "title": "transformer.v12.job.outputs.list result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "requestId", "jobId", "cursor", "items", "nextCursor", "hasMore"],
+  "properties": {"contract": {"const": "transformer-flight"}, "version": {"const": 12}, "requestId": {"$ref": "common.schema.json#/$defs/uuid"}, "jobId": {"$ref": "common.schema.json#/$defs/uuid"}, "cursor": {"type": ["integer", "null"], "minimum": 0}, "items": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/outputReceipt"}, "maxItems": 100}, "nextCursor": {"type": ["integer", "null"], "minimum": 0}, "hasMore": {"type": "boolean"}}
+}

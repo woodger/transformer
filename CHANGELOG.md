@@ -9,9 +9,19 @@
 
 ### Added
 
-- Опубликован staged Model Catalog Query v1: owner-scoped list и single detail,
+- Реализован Model Catalog Query v1: owner-scoped list и single detail,
   live high-water pagination, bounded checkpoint verification, independently
-  versioned capabilities, structured errors и cross-project golden fixtures.
+  versioned capabilities, structured errors и принятые cross-project golden
+  fixtures.
+- Migration `0025` добавляет монотонную publication boundary и owner/order
+  индекс model registry для bounded catalog traversal.
+
+### Changed
+
+- Public Flight contract повышен clean cut до v12 и публикует catalog v1
+  actions/capabilities. Flight v11 actions и прежний `model.describe` удалены
+  без aliases или compatibility layer; fit, predict, `indexedFeatureBlocks`,
+  Worker v12, checkpoint/recovery v6 и metrics v5 сохраняют семантику.
 
 ### Fixed
 

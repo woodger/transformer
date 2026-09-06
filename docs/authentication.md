@@ -4,7 +4,7 @@
 > boundary Transformer Arrow Flight service.
 
 Нормативное требование к заголовку каждого RPC находится в
-[`app/contracts/flight/v11`](../app/contracts/flight/v11/README.md), а команды
+[`app/contracts/flight/v12`](../app/contracts/flight/v12/README.md), а команды
 выпуска, ротации и отзыва — в
 [`руководстве по управлению API access tokens`](./operations/api-access-tokens.md).
 Rationale выбранного класса credential system сохранён в

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     PrimaryKeyConstraint,
@@ -467,6 +468,7 @@ class PublishedModel(Base):
     __table_args__ = (
         UniqueConstraint("owner_subject", "label", "generation", name="models_generation_uq"),
         UniqueConstraint("checkpoint_path", name="models_checkpoint_path_uq"),
+        UniqueConstraint("catalog_ordinal", name="models_catalog_ordinal_uq"),
         CheckConstraint("generation > 0", name="models_generation_ck"),
         CheckConstraint("checkpoint_bytes > 0", name="models_checkpoint_bytes_ck"),
         CheckConstraint(
@@ -482,10 +484,28 @@ class PublishedModel(Base):
             "model_ref",
             postgresql_where=text("lifecycle_state = 'DELETING'"),
         ),
+        Index(
+            "models_catalog_owner_order_idx",
+            "owner_subject",
+            text("created_at DESC"),
+            "model_ref",
+            postgresql_where=text("lifecycle_state = 'AVAILABLE'"),
+        ),
+        Index(
+            "models_catalog_owner_high_water_idx",
+            "owner_subject",
+            text("catalog_ordinal DESC"),
+            postgresql_where=text("lifecycle_state = 'AVAILABLE'"),
+        ),
         {"schema": SCHEMA},
     )
 
     model_ref: Mapped[str] = mapped_column(String(128), primary_key=True)
+    catalog_ordinal: Mapped[int] = mapped_column(
+        BigInteger,
+        Identity(),
+        nullable=False,
+    )
     owner_subject: Mapped[str] = mapped_column(String(256), nullable=False)
     label: Mapped[str] = mapped_column(String(256), nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)

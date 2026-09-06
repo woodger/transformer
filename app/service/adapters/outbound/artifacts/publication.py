@@ -14,7 +14,7 @@ from app.contracts.checkpoint.v6 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v11.arrow import validate_prediction_file
+from app.contracts.flight.v12.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v1 import ModelContract
 from app.contracts.worker.v12 import PREDICTION_OUTPUT_SCHEMA_ID

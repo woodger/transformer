@@ -1,19 +1,19 @@
-# Интеграция Consumer-ов с Transformer Arrow Flight v11
+# Интеграция Consumer-ов с Transformer Arrow Flight v12
 
 > Тип: интеграционное руководство. Durable workflow Consumer-а поверх
 > текущего consumer-neutral протокола.
 
 Нормативный wire-контракт находится в
-[`app/contracts/flight/v11`](../app/contracts/flight/v11/README.md), а
+[`app/contracts/flight/v12`](../app/contracts/flight/v12/README.md), а
 математический язык — в
 [`app/contracts/semantic/v1`](../app/contracts/semantic/v1/README.md). Их JSON
 Schemas и golden fixtures имеют приоритет над этим руководством. Эксплуатация
 сервиса описана в [Flight runbook](operations/flight-service.md), credentials —
 в [операционном руководстве](operations/api-access-tokens.md).
 
-Flight v11 — единственный remote API. Actions v10, dense fallback, aliases и
-compatibility layer отсутствуют. Старые checkpoints и model generations не
-пригодны для v11 predict, warm start или recovery.
+Flight v12 — единственный remote API. Actions v11, dense fallback и
+compatibility layer отсутствуют. Model aliases сохраняются только как selector
+predict; catalog detail принимает exact `modelRef`.
 
 ## Транспорт и аутентификация
 
@@ -26,8 +26,10 @@ authorization: Bearer a.<base64url>
 
 Credential представляет owner subject; job и model resources изолированы по
 этому owner-у. Не записывайте bearer credential или непрозрачный output ticket
-в логи. Каждый JSON envelope содержит `contract=transformer-flight`,
-`version=11` и canonical UUID `requestId`.
+в логи. Job workflow JSON envelope содержит `contract=transformer-flight`,
+`version=12` и canonical UUID `requestId`. Model Catalog actions используют
+независимые `contract=transformer-model-catalog`, `revision=1` и тот же формат
+`requestId`.
 
 Для мутации заранее сохраните стабильный `idempotencyKey` и неизменный request.
 При потере ответа повторяйте то же действие с тем же содержимым; ключ нельзя
@@ -35,14 +37,15 @@ Credential представляет owner subject; job и model resources изо
 
 ## Capabilities и device
 
-До create вызовите `transformer.v11.capabilities` и проверьте как минимум:
+До create вызовите `transformer.v12.capabilities` и проверьте как минимум:
 
-- `protocolVersions == [11]` и `workerProtocolVersion == 12`;
+- `protocolVersions == [12]` и `workerProtocolVersion == 12`;
 - checkpoint/recovery v6 и оба metrics format v5;
 - `sourceEncodings == ["indexedFeatureBlocks"]`;
 - objective language revision, advertised primitives, architecture и capacity
   limits внутри `semantic`;
 - `fitInitializations == ["publishedModel", "random"]`;
+- capability document `modelCatalog` с revision, actions и limits;
 - effective upload/job limits и доступные devices.
 
 Consumer не должен копировать capacity defaults из repository. Create принимает
@@ -121,7 +124,7 @@ fencingToken    = "1"
 ```
 
 Сохраните create result вместе с resolved contracts, D1 digests, initialization,
-ownership и limits. При takeover вызовите `transformer.v11.job.acquire` с
+ownership и limits. При takeover вызовите `transformer.v12.job.acquire` с
 предыдущими execution identity/token и новым `clientExecutionId`. Token —
 положительная десятичная строка. Старый claim получает `STALE_FENCE`.
 
@@ -143,8 +146,8 @@ RecordBatch, chunk и payload boundaries не меняют logical order, shuffl
 optimizer batches или values. `maxJobBytes` применяется к durable compact IPC
 bytes, а не к восстановленному dense tensor. Точные Arrow schemas и формула
 reconstruction находятся в
-[Flight contract](../app/contracts/flight/v11/README.md#arrow-и-indexedfeatureblocks),
-а provider-neutral fixtures — в `app/contracts/flight/v11/fixtures/`.
+[Flight contract](../app/contracts/flight/v12/README.md#arrow-и-indexedfeatureblocks),
+а provider-neutral fixtures — в `app/contracts/flight/v12/fixtures/`.
 
 PutResult появляется только после durable artifact и PostgreSQL receipt.
 Завершение DoPut не по ordinal разрешено. `nextInputOrdinal` показывает первый
@@ -153,12 +156,12 @@ PutResult появляется только после durable artifact и Postg
 ## Сверка и закрытие input
 
 После потерянного PutResult перечислите receipts через
-`transformer.v11.job.inputs.list`. Первая страница фиксирует
+`transformer.v12.job.inputs.list`. Первая страница фиксирует
 `snapshotRevision`; продолжайте с тем же snapshot и cursor. Повторный exact
 payload возвращает существующий receipt, а другое содержимое для занятой
 identity/ordinal является конфликтом.
 
-`transformer.v11.job.input.close` обозначает EOF, а не команду запуска. Close
+`transformer.v12.job.input.close` обозначает EOF, а не команду запуска. Close
 передаёт canonical digest всех server receipts в ordinal order. До перехода в
 `CLOSED` сервер проверяет непрерывность payload/range/example sequence, counts,
 digest, единую schema и data identity. Пустой fit возвращает `EMPTY_INPUT`;
@@ -167,6 +170,28 @@ digest, единую schema и data identity. Пустой fit возвраща�
 Fit может уже быть `RUNNING` при `input.state=OPEN`: первый непустой contiguous
 prefix ставит execution в очередь, а epoch 0 ожидает последующие committed
 payloads до EOF.
+
+## Каталог опубликованных моделей
+
+Catalog truth определяется PostgreSQL registry, а не OpenSearch telemetry или
+filesystem scan. Вызов `transformer.model-catalog.v1.list` возвращает только
+`AVAILABLE` generations аутентифицированного owner в порядке
+`createdAt DESC, modelRef ASC`. Первая страница передаёт `cursor=null`; для
+продолжения повторите выданный `nextCursor` и тот же `pageSize`. Cursor действует
+900 секунд от первой страницы и не продлевается.
+
+List summary содержит exact `modelRef`, label/generation, D1 digests, resolved
+model configuration, ordered opaque target identities, initialization,
+producing run и checkpoint summary. List не читает checkpoint bytes.
+
+`transformer.model-catalog.v1.detail` принимает только exact `modelRef` и
+возвращает canonical data/model contracts, training/diagnostics configuration,
+selection, terminal progress, lineage и `jobConfigSha256`. Перед успешным
+ответом Transformer проверяет metadata и полный SHA-256 checkpoint. Unknown,
+foreign, deleted model и удаление между list/detail возвращают одинаковый
+`MODEL_NOT_FOUND`; начните новый traversal после обновления UI. Полные schemas,
+limits и structured outcomes задаёт
+[Model Catalog Query v1](../app/contracts/model_catalog/v1/README.md).
 
 ## Polling, recovery и results
 
@@ -178,23 +203,19 @@ Recovery checkpoints создаются на границах завершённ
 
 После успешного predict:
 
-1. Получите страницы `transformer.v11.job.outputs.list`.
+1. Получите страницы `transformer.v12.job.outputs.list`.
 2. Для каждого ordinal вызовите `GetFlightInfo` с нормативным descriptor.
 3. Используйте новый opaque ticket в `DoGet` до его expiration.
 
 Prediction имеет finite Float32 width, равную ordered target slots checkpoint-а.
 Координаты уже прошли declared public transformations. Consumer сопоставляет их
-по позиции и opaque identity из `model.describe`; private resources наружу не
-выходят.
-
-`model.describe` является источником checkpoint-owned data/model contracts,
-D1 digests, configuration, initialization lineage и immutable checkpoint
-identity. `predictionColumn` принадлежит predict job, а не модели.
+по позиции и ordered opaque identities из catalog detail; private resources
+наружу не выходят. `predictionColumn` принадлежит predict job, а не модели.
 
 ## Ошибки и retries
 
 Human-readable Flight message начинается с application error code, а
-`FlightError.extra_info` содержит structured v11 error detail. Consumer должен
+`FlightError.extra_info` содержит structured v12 error detail. Consumer должен
 ветвиться по `code`, `reason` и typed fields, а не по тексту message. Invalid
 contract, unavailable primitive, target value violation, compatibility
 mismatch, stored corruption и recovery fencing имеют разные reasons.
@@ -203,7 +224,7 @@ mismatch, stored corruption и recovery fencing имеют разные reasons.
 | --- | --- |
 | Ответ create/acquire/close/cancel | Повторить ту же мутацию с тем же idempotency key |
 | Ответ DoPut | Сверить receipts и повторить exact payload, если он отсутствует |
-| Status/list/model describe | Повторить read-only request |
+| Status/job list/catalog list или detail | Повторить read-only request с учётом cursor expiration |
 | Истечение ticket | Получить новый ticket после terminal success |
 | Прерывание DoGet | Получить новый ticket и начать данный output заново |
 | `STALE_FENCE` | Прекратить мутации старого claim |
@@ -213,7 +234,7 @@ ownership и idempotency identities меняться не должны.
 
 ## Проверка интеграции
 
-1. Проверьте exact v11 capabilities и отказ для v10 actions.
+1. Проверьте exact v12 capabilities и отказ для v11 actions.
 2. Пересчитайте JCS/D1 golden fixtures независимо от Transformer runtime.
 3. Проверьте generic regression, probability, shared-resource objective,
    target reorder и новый opaque target без изменения Transformer.
@@ -226,3 +247,5 @@ ownership и idempotency identities меняться не должны.
 7. Проверьте random fit, strict publishedModel warm start, recovery и новый
    immutable modelRef.
 8. Проверьте positional decoding prediction по checkpoint-owned target layout.
+9. Проверьте owner isolation, high-water traversal, cursor expiration и
+   физическую detail verification по Model Catalog fixtures.
