@@ -40,6 +40,13 @@ _CHECKPOINT_METADATA_FIELDS = (
 )
 
 
+class CatalogModelMetadataVerifier:
+    """Validate the complete catalog projection before artifact I/O."""
+
+    def verify(self, model: PublishedModelRecord) -> None:
+        model_detail(model)
+
+
 def model_summary(model: PublishedModelRecord) -> JsonObject:
     try:
         verify_model_integrity(model)
@@ -264,6 +271,7 @@ def _timestamp(value: float) -> str:
 
 
 __all__ = [
+    "CatalogModelMetadataVerifier",
     "artifact_error",
     "catalog_error",
     "expired_catalog_cursor",

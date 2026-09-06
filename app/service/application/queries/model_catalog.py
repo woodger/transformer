@@ -13,6 +13,7 @@ from app.service.application.messages.model_catalog import (
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
     CatalogArtifactVerifier,
+    CatalogMetadataVerifier,
     CatalogModelNotFound,
     ModelCatalogStore,
 )
@@ -97,9 +98,11 @@ class GetCatalogModel:
         self,
         store: ModelCatalogStore,
         *,
+        metadata_verifier: CatalogMetadataVerifier,
         artifact_verifier: CatalogArtifactVerifier,
     ) -> None:
         self._store = store
+        self._metadata_verifier = metadata_verifier
         self._artifact_verifier = artifact_verifier
 
     def execute(self, query: GetCatalogModelQuery) -> CatalogModelDetail:
@@ -109,6 +112,7 @@ class GetCatalogModel:
         )
         if entry is None:
             raise CatalogModelNotFound(query.model_ref)
+        self._metadata_verifier.verify(entry.model)
         try:
             self._artifact_verifier.verify(entry.model)
         except CatalogArtifactVerificationError:

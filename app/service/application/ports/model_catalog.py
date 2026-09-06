@@ -58,9 +58,14 @@ class CatalogArtifactVerifier(Protocol):
     def verify(self, model: PublishedModelRecord) -> None: ...
 
 
+class CatalogMetadataVerifier(Protocol):
+    def verify(self, model: PublishedModelRecord) -> None: ...
+
+
 __all__ = [
     "CatalogArtifactVerificationError",
     "CatalogArtifactVerifier",
+    "CatalogMetadataVerifier",
     "CatalogModelNotFound",
     "ModelCatalogStore",
     "ModelCatalogStoreUnavailable",

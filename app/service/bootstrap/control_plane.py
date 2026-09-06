@@ -15,6 +15,9 @@ from app.service.adapters.inbound.flight.constants import (
     MAX_PAGE_ITEMS,
 )
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
+from app.service.adapters.inbound.flight.model_catalog import (
+    CatalogModelMetadataVerifier,
+)
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifacts.job_artifacts import (
     CandidateArtifactCleaner,
@@ -149,6 +152,7 @@ def build_job_coordinator(
         ),
         get_catalog_model=GetCatalogModel(
             model_catalog_store,
+            metadata_verifier=CatalogModelMetadataVerifier(),
             artifact_verifier=CatalogModelArtifactVerifier(
                 spool,
                 max_verification_bytes=MAX_CHECKPOINT_VERIFICATION_BYTES,

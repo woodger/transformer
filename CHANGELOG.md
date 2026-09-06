@@ -25,6 +25,8 @@
 
 ### Fixed
 
+- Model Catalog detail проверяет canonical metadata и D1 digests до чтения
+  checkpoint, сохраняя нормативный приоритет ошибки metadata и bounded I/O.
 - Streaming fit публикует checkpoint по финальному закрытому snapshot job,
   поэтому manifest digest, полученный после `input.closed`, не сравнивается с
   устаревшим состоянием начала Worker attempt.

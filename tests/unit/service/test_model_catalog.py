@@ -16,7 +16,10 @@ from app.service.adapters.inbound.flight.constants import (
     MODEL_CATALOG_LIST_ACTION,
 )
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
-from app.service.adapters.inbound.flight.model_catalog import model_detail
+from app.service.adapters.inbound.flight.model_catalog import (
+    CatalogModelMetadataVerifier,
+    model_detail,
+)
 from app.service.adapters.inbound.flight.presentation import (
     present_catalog_models_page,
 )
@@ -200,7 +203,11 @@ def test_detail_is_full_valid_projection_and_verifies_artifact() -> None:
     model = _model_record("detail.result.random.json")
     store = _Store((model,))
     verifier = _Verifier()
-    result = GetCatalogModel(store, artifact_verifier=verifier).execute(
+    result = GetCatalogModel(
+        store,
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        artifact_verifier=verifier,
+    ).execute(
         GetCatalogModelQuery(
             owner_subject="consumer",
             request_id=REQUEST_ID,
@@ -225,7 +232,11 @@ def test_flight_catalog_actions_use_the_accepted_documents() -> None:
     model = _model_record("detail.result.random.json")
     store = _Store((model,))
     list_query = ListCatalogModels(store, cursor_ttl_seconds=900, clock=lambda: NOW)
-    detail_query = GetCatalogModel(store, artifact_verifier=_Verifier())
+    detail_query = GetCatalogModel(
+        store,
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        artifact_verifier=_Verifier(),
+    )
     unused = cast(Any, None)
     coordinator = JobCoordinator(
         create_job=unused,
@@ -300,7 +311,11 @@ def test_catalog_revision_uses_json_integer_equivalence() -> None:
 def test_detail_hides_unknown_and_foreign_models_behind_same_outcome() -> None:
     store = _Store(())
     with pytest.raises(CatalogModelNotFound):
-        GetCatalogModel(store, artifact_verifier=_Verifier()).execute(
+        GetCatalogModel(
+            store,
+            metadata_verifier=CatalogModelMetadataVerifier(),
+            artifact_verifier=_Verifier(),
+        ).execute(
             GetCatalogModelQuery(
                 owner_subject="consumer",
                 request_id=REQUEST_ID,
@@ -337,6 +352,7 @@ def test_detail_maps_concurrent_deletion_to_model_not_found() -> None:
     with pytest.raises(CatalogModelNotFound):
         GetCatalogModel(
             _DeletingStore(),
+            metadata_verifier=CatalogModelMetadataVerifier(),
             artifact_verifier=_UnavailableArtifact(),
         ).execute(GetCatalogModelQuery(
             owner_subject="consumer",
@@ -352,6 +368,41 @@ def test_invalid_registry_metadata_is_not_returned_as_partial_detail() -> None:
         model_detail(model)
     assert error.value.detail is not None
     assert error.value.detail["reason"] == "STORED_MODEL_METADATA_INVALID"
+
+
+def test_detail_rejects_metadata_before_reading_a_corrupt_artifact() -> None:
+    model = _model_record("detail.result.random.json")
+    model.metadata["jobId"] = "not-a-uuid"
+
+    class _CorruptArtifact:
+        called = False
+
+        def verify(self, candidate: PublishedModelRecord) -> None:
+            self.called = True
+            raise CatalogArtifactVerificationError(
+                "MODEL_CHECKPOINT_DIGEST_MISMATCH",
+                modelRef=candidate.model_ref,
+                expectedSha256="a" * 64,
+                actualSha256="b" * 64,
+            )
+
+    artifact = _CorruptArtifact()
+    query = GetCatalogModel(
+        _Store((model,)),
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        artifact_verifier=artifact,
+    )
+
+    with pytest.raises(ServiceError) as error:
+        query.execute(GetCatalogModelQuery(
+            owner_subject="consumer",
+            request_id=REQUEST_ID,
+            model_ref=model.model_ref,
+        ))
+
+    assert error.value.detail is not None
+    assert error.value.detail["reason"] == "STORED_MODEL_METADATA_INVALID"
+    assert artifact.called is False
 
 
 def test_catalog_artifact_verifier_reports_size_and_digest_separately(
