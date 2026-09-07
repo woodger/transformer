@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-09-07
+
 ### Added
 
 - Реализован Training Telemetry Query v1: owner-scoped полный report,
@@ -833,7 +835,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.18...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.19...HEAD
+[0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16
