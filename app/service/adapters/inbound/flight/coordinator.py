@@ -9,6 +9,7 @@ from app.contracts.model_catalog.v1 import (
     validate_catalog_document,
 )
 from app.contracts.semantic.v1 import semantic_capabilities
+from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
 from app.contracts.worker.v12.constants import (
     CHECKPOINT_FORMAT,
     CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
@@ -30,6 +31,8 @@ from app.service.adapters.inbound.flight.constants import (
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
+    TRAINING_TELEMETRY_GRADIENT_ACTION,
+    TRAINING_TELEMETRY_REPORT_ACTION,
 )
 from app.service.adapters.inbound.flight.devices import device_from_api
 from app.service.adapters.inbound.flight.documents import (
@@ -57,6 +60,17 @@ from app.service.adapters.inbound.flight.presentation import (
     present_job_outputs,
     present_job_status,
 )
+from app.service.adapters.inbound.flight.training_telemetry import (
+    expired_telemetry_cursor,
+    invalid_telemetry_cursor,
+    present_gradient_interactions,
+    present_training_telemetry_report,
+    telemetry_backend_unavailable,
+    telemetry_integrity_failed,
+    telemetry_model_not_found,
+    telemetry_stored_metadata_invalid,
+    training_telemetry_response,
+)
 from app.service.adapters.inbound.flight.validation import (
     AcquireRequestFields,
     CancelRequestFields,
@@ -68,6 +82,8 @@ from app.service.adapters.inbound.flight.validation import (
     OutputsListRequestFields,
     RequestIdFields,
     StatusRequestFields,
+    TrainingTelemetryGradientRequestFields,
+    TrainingTelemetryReportRequestFields,
     ValidatedActionRequest,
 )
 from app.service.application.commands.jobs import (
@@ -89,10 +105,19 @@ from app.service.application.messages.model_catalog import (
     GetCatalogModelQuery,
     ListCatalogModelsQuery,
 )
+from app.service.application.messages.training_telemetry import (
+    GetGradientInteractionsQuery,
+    GetTrainingTelemetryReportQuery,
+)
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
     CatalogModelNotFound,
     ModelCatalogStoreUnavailable,
+)
+from app.service.application.ports.training_telemetry import (
+    TrainingTelemetryBackendUnavailable,
+    TrainingTelemetryIntegrityError,
+    TrainingTelemetryStoredMetadataError,
 )
 from app.service.application.queries.model_catalog import (
     GetCatalogModel,
@@ -107,9 +132,17 @@ from app.service.application.queries.status import (
     ListJobInputs,
     ListJobOutputs,
 )
+from app.service.application.queries.training_telemetry import (
+    GetGradientInteractions,
+    GetTrainingTelemetryReport,
+)
 from app.service.application.services.model_catalog_cursor import (
     ExpiredCatalogCursor,
     InvalidCatalogCursor,
+)
+from app.service.application.services.training_telemetry_cursor import (
+    ExpiredTrainingTelemetryCursor,
+    InvalidTrainingTelemetryCursor,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
@@ -131,6 +164,8 @@ class JobCoordinator:
         get_catalog_model: GetCatalogModel,
         service_status: ServiceStatusQuery,
         availability: ServiceAvailability,
+        get_training_telemetry_report: GetTrainingTelemetryReport | None = None,
+        get_gradient_interactions: GetGradientInteractions | None = None,
     ) -> None:
         self._create_job = create_job
         self._acquire_job = acquire_job
@@ -143,6 +178,8 @@ class JobCoordinator:
         self._get_catalog_model = get_catalog_model
         self._service_status = service_status
         self._availability = availability
+        self._get_training_telemetry_report = get_training_telemetry_report
+        self._get_gradient_interactions = get_gradient_interactions
 
     def dispatch(
         self,
@@ -263,6 +300,76 @@ class JobCoordinator:
             except ModelCatalogStoreUnavailable as exc:
                 raise registry_unavailable() from exc
             return _catalog_response(result, "detail-result")
+        elif action == TRAINING_TELEMETRY_REPORT_ACTION:
+            fields = cast(TrainingTelemetryReportRequestFields, request)
+            if self._get_training_telemetry_report is None:
+                raise RuntimeError("training telemetry report query is unavailable")
+            try:
+                result = present_training_telemetry_report(
+                    self._get_training_telemetry_report.execute(
+                        GetTrainingTelemetryReportQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                            page_size=fields["page_size"],
+                            cursor=fields["cursor"],
+                        )
+                    )
+                )
+            except CatalogModelNotFound as exc:
+                raise telemetry_model_not_found(exc.model_ref) from exc
+            except InvalidTrainingTelemetryCursor as exc:
+                raise invalid_telemetry_cursor() from exc
+            except ExpiredTrainingTelemetryCursor as exc:
+                raise expired_telemetry_cursor() from exc
+            except TrainingTelemetryStoredMetadataError as exc:
+                raise telemetry_stored_metadata_invalid(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except TrainingTelemetryIntegrityError as exc:
+                raise telemetry_integrity_failed(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except (TrainingTelemetryBackendUnavailable, ModelCatalogStoreUnavailable) as exc:
+                raise telemetry_backend_unavailable(fields["model_ref"]) from exc
+            return training_telemetry_response(result, "report-result")
+        elif action == TRAINING_TELEMETRY_GRADIENT_ACTION:
+            fields = cast(TrainingTelemetryGradientRequestFields, request)
+            if self._get_gradient_interactions is None:
+                raise RuntimeError("gradient interaction query is unavailable")
+            try:
+                result = present_gradient_interactions(
+                    self._get_gradient_interactions.execute(
+                        GetGradientInteractionsQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                            epoch=fields["epoch"],
+                            page_size=fields["page_size"],
+                            cursor=fields["cursor"],
+                        )
+                    )
+                )
+            except CatalogModelNotFound as exc:
+                raise telemetry_model_not_found(exc.model_ref) from exc
+            except InvalidTrainingTelemetryCursor as exc:
+                raise invalid_telemetry_cursor() from exc
+            except ExpiredTrainingTelemetryCursor as exc:
+                raise expired_telemetry_cursor() from exc
+            except TrainingTelemetryStoredMetadataError as exc:
+                raise telemetry_stored_metadata_invalid(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except TrainingTelemetryIntegrityError as exc:
+                raise telemetry_integrity_failed(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except (TrainingTelemetryBackendUnavailable, ModelCatalogStoreUnavailable) as exc:
+                raise telemetry_backend_unavailable(fields["model_ref"]) from exc
+            return training_telemetry_response(
+                result,
+                "gradient-interactions-result",
+            )
         else:
             raise ServiceError(
                 ErrorCode.INVALID_ARGUMENT,
@@ -297,6 +404,7 @@ class JobCoordinator:
             ],
             semantic=semantic_capabilities(),
             modelCatalog=catalog_capabilities(),
+            trainingTelemetry=training_telemetry_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},

@@ -108,6 +108,7 @@ class MetricsDocumentSink(Protocol):
         documents: Sequence[JsonObject],
         *,
         id_field: str,
+        refresh: bool = False,
     ) -> None: ...
 
 

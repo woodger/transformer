@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import http.client
 import json
 import ssl
@@ -8,7 +9,9 @@ from collections.abc import Sequence
 from typing import cast
 from urllib.parse import urlsplit
 
-from app.contracts.json_types import JsonObject
+import rfc8785
+
+from app.contracts.json_types import JsonObject, JsonValue
 from app.service.adapters.outbound.opensearch.config import (
     OpenSearchMetricsConfig,
 )
@@ -21,7 +24,7 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 
 
 class OpenSearchMetricsClient:
-    """Use only bounded Bulk create and conflict-verification reads."""
+    """Use bounded metrics writes and owner-gated telemetry projection reads."""
 
     def __init__(self, config: OpenSearchMetricsConfig) -> None:
         self.config = config
@@ -46,30 +49,40 @@ class OpenSearchMetricsClient:
         documents: Sequence[JsonObject],
         *,
         id_field: str,
+        refresh: bool = False,
     ) -> None:
         if not documents:
             return
         if len(documents) > self.config.max_bulk_documents:
             raise ValueError("OpenSearch Bulk document limit exceeded")
         encoded = bytearray()
-        identities: list[tuple[str, str]] = []
+        identities: list[tuple[str, str, bool]] = []
         for document in documents:
             document_id = _required_string(document, id_field)
-            document_sha256 = _required_string(document, "documentSha256")
-            identities.append((document_id, document_sha256))
+            document_sha256 = document.get("documentSha256")
+            embedded_digest = isinstance(document_sha256, str)
+            digest = (
+                document_sha256
+                if embedded_digest
+                else hashlib.sha256(
+                    rfc8785.dumps(cast(JsonValue, document))
+                ).hexdigest()
+            )
+            identities.append((document_id, digest, embedded_digest))
             encoded.extend(_json_line({
                 "create": {"_index": index, "_id": document_id}
             }))
             encoded.extend(_json_line(document))
         if len(encoded) > self.config.max_bulk_bytes:
             raise ValueError("OpenSearch Bulk byte limit exceeded")
-        response = self._request("POST", "/_bulk", bytes(encoded), ndjson=True)
+        path = "/_bulk?refresh=wait_for" if refresh else "/_bulk"
+        response = self._request("POST", path, bytes(encoded), ndjson=True)
         items = response.get("items")
         if not isinstance(items, list) or len(items) != len(documents):
             raise RetryableMetricsDeliveryError(
                 "OpenSearch Bulk response has no complete item list"
             )
-        conflicts: list[tuple[str, str]] = []
+        conflicts: list[tuple[str, str, bool]] = []
         retryable: list[int] = []
         blocked: list[int] = []
         for item, identity in zip(items, identities, strict=True):
@@ -106,19 +119,84 @@ class OpenSearchMetricsClient:
                 f"{retryable[0]}"
             )
 
+    def document_source(
+        self,
+        index: str,
+        document_id: str,
+    ) -> JsonObject | None:
+        body = json.dumps(
+            {"docs": [{"_id": document_id}]},
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        response = self._request("POST", f"/{index}/_mget", body)
+        documents = response.get("docs")
+        if not isinstance(documents, list) or len(documents) != 1:
+            raise RetryableMetricsDeliveryError(
+                "OpenSearch document response is incomplete"
+            )
+        document = documents[0]
+        if not isinstance(document, dict):
+            raise RetryableMetricsDeliveryError(
+                "OpenSearch document response is malformed"
+            )
+        if document.get("found") is not True:
+            return None
+        source = document.get("_source")
+        if not isinstance(source, dict):
+            raise RetryableMetricsDeliveryError(
+                "OpenSearch document source is malformed"
+            )
+        return cast(JsonObject, source)
+
+    def search_page(
+        self,
+        index: str,
+        query: JsonObject,
+    ) -> tuple[tuple[JsonObject, tuple[object, ...]], ...]:
+        body = json.dumps(
+            query,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        response = self._request("POST", f"/{index}/_search", body)
+        hits_container = response.get("hits")
+        if not isinstance(hits_container, dict):
+            raise RetryableMetricsDeliveryError(
+                "OpenSearch search response is incomplete"
+            )
+        hits = hits_container.get("hits")
+        if not isinstance(hits, list):
+            raise RetryableMetricsDeliveryError(
+                "OpenSearch search response is incomplete"
+            )
+        result: list[tuple[JsonObject, tuple[object, ...]]] = []
+        for hit in hits:
+            if not isinstance(hit, dict):
+                raise RetryableMetricsDeliveryError(
+                    "OpenSearch search hit is malformed"
+                )
+            source = hit.get("_source")
+            sort = hit.get("sort")
+            if not isinstance(source, dict) or not isinstance(sort, list):
+                raise RetryableMetricsDeliveryError(
+                    "OpenSearch search hit is malformed"
+                )
+            result.append((cast(JsonObject, source), tuple(sort)))
+        return tuple(result)
+
     def _verify_conflicts(
         self,
         index: str,
-        conflicts: Sequence[tuple[str, str]],
+        conflicts: Sequence[tuple[str, str, bool]],
     ) -> None:
         body = json.dumps(
             {
                 "docs": [
-                    {
-                        "_id": document_id,
-                        "_source": ["documentSha256"],
-                    }
-                    for document_id, _ in conflicts
+                    {"_id": document_id}
+                    for document_id, _digest, _embedded in conflicts
                 ],
             },
             ensure_ascii=True,
@@ -131,7 +209,10 @@ class OpenSearchMetricsClient:
             raise RetryableMetricsDeliveryError(
                 "OpenSearch conflict verification response is incomplete"
             )
-        expected = dict(conflicts)
+        expected = {
+            document_id: (digest, embedded)
+            for document_id, digest, embedded in conflicts
+        }
         for document in documents:
             if not isinstance(document, dict):
                 raise RetryableMetricsDeliveryError(
@@ -144,8 +225,19 @@ class OpenSearchMetricsClient:
                 or not isinstance(document_id, str)
                 or document_id not in expected
                 or not isinstance(source, dict)
-                or source.get("documentSha256") != expected[document_id]
             ):
+                raise BlockedMetricsDeliveryError(
+                    "OpenSearch document identity conflict failed integrity check"
+                )
+            digest, embedded = expected[document_id]
+            actual = (
+                source.get("documentSha256")
+                if embedded
+                else hashlib.sha256(
+                    rfc8785.dumps(cast(JsonValue, source))
+                ).hexdigest()
+            )
+            if actual != digest:
                 raise BlockedMetricsDeliveryError(
                     "OpenSearch document identity conflict failed integrity check"
                 )

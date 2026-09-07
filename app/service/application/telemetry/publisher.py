@@ -116,6 +116,7 @@ class MetricsPublisher:
                     POINT_INDEX,
                     chunk,
                     id_field="eventId",
+                    refresh=cursor + len(chunk) == len(points),
                 )
                 if self.outbox.advance(
                     entry.training_metrics.job_id,
@@ -132,6 +133,7 @@ class MetricsPublisher:
                 RUN_INDEX,
                 (run_summary,),
                 id_field="summaryId",
+                refresh=True,
             )
             if self.outbox.complete(
                 entry.training_metrics.job_id,

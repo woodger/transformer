@@ -1,16 +1,16 @@
 # Контракт consumer-neutral semantic model v1
 
 > CONTRACT DOCUMENT. Этот каталог задаёт нормативный общий язык target slots,
-> objective, model identity, capabilities и D1 digests для Flight v12, worker
+> objective, model identity, capabilities и D1 digests для Flight v13, worker
 > v12, checkpoint/recovery v6 и metrics v5.
 
 JSON Schemas Draft 2020-12 и golden fixtures являются источником истины для
 формы документов. Семантические правила, которые JSON Schema выразить не
-может, заданы ниже. Текущие Flight v12 и worker v12 используют этот пакет
+может, заданы ниже. Текущие Flight v13 и worker v12 используют этот пакет
 на обеих process boundaries.
 
 Пакет состоит из этого общего semantic language, публичного
-[`Flight v12`](../../flight/v12/README.md), process-контракта
+[`Flight v13`](../../flight/v13/README.md), process-контракта
 [`worker v12`](../../worker/v12/README.md),
 [`checkpoint/recovery v6`](../../checkpoint/v6/README.md) и двух metrics v5
 контрактов: [epoch points](../../metrics/v5/README.md) и

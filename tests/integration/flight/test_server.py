@@ -10,6 +10,7 @@ from app.service.adapters.inbound.flight.constants import (
     CONTRACT_NAME,
     CONTRACT_VERSION,
     MODEL_CATALOG_LIST_ACTION,
+    TRAINING_TELEMETRY_REPORT_ACTION,
 )
 from app.service.adapters.inbound.flight.documents import (
     encode_document,
@@ -73,7 +74,7 @@ def control_server(tmp_path):
         server.shutdown()
 
 
-def test_list_actions_advertises_exact_v12_contract(control_server):
+def test_list_actions_advertises_exact_v13_contract(control_server):
     _, _, client = control_server
 
     actions = list(client.list_actions(options=call_options()))
@@ -136,10 +137,66 @@ def test_unknown_model_catalog_revision_has_structured_outcome(control_server):
     assert coordinator.calls == []
 
 
+def test_training_telemetry_uses_its_independent_request_envelope(
+    control_server,
+):
+    _, coordinator, client = control_server
+    request_id = str(uuid.uuid4())
+    model_ref = "mdl_" + "1" * 32
+    request = json.dumps({
+        "contract": "transformer-training-telemetry",
+        "revision": 1,
+        "requestId": request_id,
+        "modelRef": model_ref,
+        "pageSize": 25,
+        "cursor": None,
+    }).encode()
+
+    list(client.do_action(
+        flight.Action(TRAINING_TELEMETRY_REPORT_ACTION, request),
+        options=call_options(),
+    ))
+
+    assert coordinator.calls == [(
+        TRAINING_TELEMETRY_REPORT_ACTION,
+        "inventory",
+        {
+            "request_id": request_id,
+            "model_ref": model_ref,
+            "page_size": 25,
+            "cursor": None,
+        },
+        json.loads(request),
+    )]
+
+
+def test_unknown_training_telemetry_revision_has_structured_outcome(
+    control_server,
+):
+    _, coordinator, client = control_server
+
+    with pytest.raises(flight.FlightServerError) as raised:
+        list(client.do_action(
+            flight.Action(
+                "transformer.training-telemetry.v2.report",
+                b"{}",
+            ),
+            options=call_options(),
+        ))
+
+    assert json.loads(raised.value.extra_info) == {
+        "code": "FAILED_PRECONDITION",
+        "message": "training telemetry query revision is unavailable",
+        "reason": "TELEMETRY_QUERY_REVISION_UNAVAILABLE",
+        "requestedRevision": 2,
+    }
+    assert coordinator.calls == []
+
+
 def test_invalid_version_and_action_are_transport_errors(control_server):
     _, coordinator, client = control_server
 
-    with pytest.raises(Exception, match="12 was expected"):
+    with pytest.raises(Exception, match="13 was expected"):
         list(client.do_action(
             flight.Action(CAPABILITIES_ACTION, action_body(version=1)),
             options=call_options(),

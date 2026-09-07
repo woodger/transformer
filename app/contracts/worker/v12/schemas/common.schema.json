@@ -19,7 +19,7 @@
         "checkpointSha256": {"$ref": "#/$defs/sha256"}
       }
     },
-    "sourceEncoding": {"$ref": "https://transformer.local/contracts/flight/v12/common.schema.json#/$defs/sourceEncoding"},
+    "sourceEncoding": {"$ref": "https://transformer.local/contracts/flight/v13/common.schema.json#/$defs/sourceEncoding"},
     "dataContract": {"$ref": "https://transformer.local/contracts/semantic/v1/common.schema.json#/$defs/dataContract"},
     "modelContract": {"$ref": "https://transformer.local/contracts/semantic/model-contract-envelope.schema.json"},
     "semanticDigests": {"$ref": "https://transformer.local/contracts/semantic/v1/semantic-digests.schema.json"},

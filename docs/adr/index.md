@@ -114,6 +114,7 @@ references. Он не воспроизводит их значения, кома
 | [0027](0027-compact-indexed-feature-block-input.md) | Accepted | Передавать Flight input как compact indexed feature blocks |
 | [0028](0028-consumer-neutral-xy-contract-boundary.md) | Accepted | Использовать consumer-neutral target и objective contract |
 | [0029](0029-owner-scoped-model-catalog-query.md) | Accepted | Публиковать owner-scoped каталог immutable model generations |
+| [0030](0030-owner-scoped-training-telemetry-query.md) | Accepted | Публиковать owner-scoped training telemetry опубликованной generation |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

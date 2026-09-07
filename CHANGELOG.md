@@ -9,9 +9,9 @@
 
 ### Added
 
-- Опубликован staged canonical package Training Telemetry Query v1: owner-scoped
-  report, epoch и gradient-pair pagination, availability outcomes, structured
-  errors и cross-project golden fixtures. Действующий runtime не изменён.
+- Реализован Training Telemetry Query v1: owner-scoped полный report,
+  epoch и sparse gradient-pair pagination, availability outcomes, structured
+  errors и принятые cross-project golden fixtures.
 - Реализован Model Catalog Query v1: owner-scoped list и single detail,
   live high-water pagination, bounded checkpoint verification, independently
   versioned capabilities, structured errors и принятые cross-project golden
@@ -21,10 +21,14 @@
 
 ### Changed
 
-- Public Flight contract повышен clean cut до v12 и публикует catalog v1
-  actions/capabilities. Flight v11 actions и прежний `model.describe` удалены
-  без aliases или compatibility layer; fit, predict, `indexedFeatureBlocks`,
-  Worker v12, checkpoint/recovery v6 и metrics v5 сохраняют семантику.
+- Public Flight contract повышен clean cut до v13 и публикует Model
+  Catalog v1 и Training Telemetry Query v1 actions/capabilities. Flight v12
+  actions удалены без aliases или compatibility layer; fit, predict,
+  `indexedFeatureBlocks`, Worker v12, checkpoint/recovery v6 и metrics v5
+  сохраняют семантику.
+- Terminal metrics marker публикуется после refresh последней партии
+  points; OpenSearch adapter также выполняет bounded `_mget` и `_search`
+  через application telemetry port.
 
 ### Fixed
 

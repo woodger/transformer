@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v12
+# Сервис Transformer Arrow Flight: операционное руководство v13
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v12`](../../app/contracts/flight/v12/README.md). Текущие
+[`app/contracts/flight/v13`](../../app/contracts/flight/v13/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -26,6 +26,8 @@ Rationale durable recovery и streaming lifecycle сохранён в
 - PyTorch, NumPy и PyArrow для обучения и Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic и python-dotenv для доступа к PostgreSQL.
 - PostgreSQL, доступный в частной сети.
+- OpenSearch для Training Telemetry Query; его недоступность не блокирует
+  fit, predict, Model Catalog и model lifecycle.
 - Постоянный каталог project `models/` для успешно опубликованных моделей.
 - Постоянный каталог project `recovery/` для fit inputs и внутренних
   checkpoints global epochs.
@@ -121,8 +123,15 @@ Recovery checkpoint становится видимым только после 
 отдельный OpenSearch outbox. Ошибка telemetry не меняет model generation или
 terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
+Owner-scoped Training Telemetry Query читает OpenSearch только после
+успешного registry lookup модели. Он не возвращает частичные numerical
+данные: до полной доставки результат `pending`, а после окончательной
+потери — `unavailable`. Повреждённая complete projection даёт ошибку
+`TELEMETRY_CORRUPT`, но не инвалидирует model generation. Точная настройка и
+проверка приведены в [OpenSearch guide](../deployment/opensearch.md).
+
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. Flight v12 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v13 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -215,7 +224,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v12 определяет
+certificate options команды `flight serve`. Flight v13 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -355,7 +364,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v12 нет сетевого action для её удаления. Owner-scoped catalog
+во Flight v13 нет сетевого action для её удаления. Owner-scoped catalog
 предоставляет только list/detail. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
@@ -370,7 +379,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v12.health`.
+аутентифицированный Flight action `transformer.v13.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check

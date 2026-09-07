@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v12 import job_config_sha256
+from app.contracts.flight.v13 import job_config_sha256
 from app.contracts.model_catalog.v1 import (
     CURSOR_TTL_SECONDS,
     MAX_CHECKPOINT_VERIFICATION_BYTES,
+)
+from app.contracts.training_telemetry.v1 import (
+    CURSOR_TTL_SECONDS as TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
@@ -45,6 +48,9 @@ from app.service.application.commands.jobs import (
 )
 from app.service.application.messages.jobs import ServiceLimits
 from app.service.application.ports.devices import WorkerCapabilities
+from app.service.application.ports.training_telemetry import (
+    TrainingTelemetrySource,
+)
 from app.service.application.queries.model_catalog import (
     GetCatalogModel,
     ListCatalogModels,
@@ -58,6 +64,10 @@ from app.service.application.queries.status import (
     ListJobInputs,
     ListJobOutputs,
 )
+from app.service.application.queries.training_telemetry import (
+    GetGradientInteractions,
+    GetTrainingTelemetryReport,
+)
 from app.service.bootstrap.config import FlightServiceConfig
 
 
@@ -70,6 +80,7 @@ def build_job_coordinator(
     device_inventory: WorkerCapabilities,
     metrics: OperationalMetrics,
     logger: JsonLogger,
+    training_telemetry_source: TrainingTelemetrySource,
     cancel_notifier: Callable[[str], None] | None = None,
     queue_notifier: Callable[[str], None] | None = None,
 ) -> JobCoordinator:
@@ -87,6 +98,7 @@ def build_job_coordinator(
     queries = PostgresJobQueryStore(ledger)
     model_verifier = ModelArtifactVerifier(spool)
     model_catalog_store = PostgresModelCatalogStore(ledger.database)
+    metadata_verifier = CatalogModelMetadataVerifier()
     artifact_cleaner = CandidateArtifactCleaner(
         spool,
         recovery_store,
@@ -152,11 +164,23 @@ def build_job_coordinator(
         ),
         get_catalog_model=GetCatalogModel(
             model_catalog_store,
-            metadata_verifier=CatalogModelMetadataVerifier(),
+            metadata_verifier=metadata_verifier,
             artifact_verifier=CatalogModelArtifactVerifier(
                 spool,
                 max_verification_bytes=MAX_CHECKPOINT_VERIFICATION_BYTES,
             ),
+        ),
+        get_training_telemetry_report=GetTrainingTelemetryReport(
+            model_catalog_store,
+            training_telemetry_source,
+            metadata_verifier=metadata_verifier,
+            cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
+        ),
+        get_gradient_interactions=GetGradientInteractions(
+            model_catalog_store,
+            training_telemetry_source,
+            metadata_verifier=metadata_verifier,
+            cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
         ),
         service_status=service_status,
         availability=availability,

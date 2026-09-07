@@ -2,7 +2,7 @@
 
 > CONTRACT DOCUMENT. Этот package задаёт нормативные JSON documents,
 > pagination semantics, capabilities и structured errors текущего read-only
-> каталога опубликованных моделей, активированного Flight v12.
+> каталога опубликованных моделей, впервые активированного Flight v12.
 
 JSON Schemas Draft 2020-12 и перечисленные manifest-ом golden fixtures являются
 источником истины для формы документов. Этот README задаёт семантические

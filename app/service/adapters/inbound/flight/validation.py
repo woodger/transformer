@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v12.codec import (
+from app.contracts.flight.v13.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
@@ -19,6 +19,12 @@ from app.contracts.model_catalog.v1 import (
     validate_catalog_document,
 )
 from app.contracts.semantic.v1 import ModelContract, SemanticContractError
+from app.contracts.training_telemetry.v1 import (
+    GRADIENT_INTERACTIONS_ACTION as TRAINING_TELEMETRY_GRADIENT_ACTION,
+    REPORT_ACTION as TRAINING_TELEMETRY_REPORT_ACTION,
+    TrainingTelemetryContractError,
+    validate_training_telemetry_document,
+)
 from app.contracts.worker.v12.config import (
     ModelConfig,
     TrainConfig,
@@ -42,6 +48,11 @@ from app.service.adapters.inbound.flight.model_catalog import (
     invalid_catalog_cursor,
     invalid_catalog_query,
     unavailable_catalog_revision,
+)
+from app.service.adapters.inbound.flight.training_telemetry import (
+    invalid_telemetry_cursor,
+    invalid_telemetry_query,
+    unavailable_telemetry_revision,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
@@ -147,6 +158,19 @@ class ModelCatalogDetailRequestFields(RequestIdFields):
     model_ref: str
 
 
+class TrainingTelemetryReportRequestFields(RequestIdFields):
+    model_ref: str
+    page_size: int
+    cursor: str | None
+
+
+class TrainingTelemetryGradientRequestFields(RequestIdFields):
+    model_ref: str
+    epoch: int
+    page_size: int
+    cursor: str | None
+
+
 class UploadMetadataFields(TypedDict):
     job_id: str
     client_execution_id: str
@@ -172,6 +196,8 @@ ValidatedActionRequest = (
     | CancelRequestFields
     | ModelCatalogListRequestFields
     | ModelCatalogDetailRequestFields
+    | TrainingTelemetryReportRequestFields
+    | TrainingTelemetryGradientRequestFields
 )
 
 
@@ -183,6 +209,10 @@ def validate_action_request(
         return _validate_model_catalog_list(document)
     if action_name == MODEL_CATALOG_DETAIL_ACTION:
         return _validate_model_catalog_detail(document)
+    if action_name == TRAINING_TELEMETRY_REPORT_ACTION:
+        return _validate_training_telemetry_report(document)
+    if action_name == TRAINING_TELEMETRY_GRADIENT_ACTION:
+        return _validate_training_telemetry_gradient(document)
     schema_name = _ACTION_SCHEMAS.get(action_name)
     if schema_name is None:
         raise invalid(f"unsupported action: {action_name}")
@@ -453,6 +483,34 @@ def _validate_model_catalog_detail(
     }
 
 
+def _validate_training_telemetry_report(
+    document: JsonObject,
+) -> TrainingTelemetryReportRequestFields:
+    _validate_training_telemetry_schema(document, "report-request")
+    return {
+        "request_id": _uuid(document, "requestId"),
+        "model_ref": _string(document, "modelRef"),
+        "page_size": _integer(document, "pageSize"),
+        "cursor": cast(str | None, document["cursor"]),
+    }
+
+
+def _validate_training_telemetry_gradient(
+    document: JsonObject,
+) -> TrainingTelemetryGradientRequestFields:
+    _validate_training_telemetry_schema(
+        document,
+        "gradient-interactions-request",
+    )
+    return {
+        "request_id": _uuid(document, "requestId"),
+        "model_ref": _string(document, "modelRef"),
+        "epoch": _integer(document, "epoch"),
+        "page_size": _integer(document, "pageSize"),
+        "cursor": cast(str | None, document["cursor"]),
+    }
+
+
 def _validate_catalog_schema(document: JsonObject, schema_name: str) -> None:
     try:
         validate_catalog_document(document, schema_name)
@@ -477,6 +535,31 @@ def _validate_catalog_schema(document: JsonObject, schema_name: str) -> None:
             if revision is not None and revision > 0:
                 raise unavailable_catalog_revision(revision) from exc
         raise invalid_catalog_query(str(exc), path) from exc
+
+
+def _validate_training_telemetry_schema(
+    document: JsonObject,
+    schema_name: str,
+) -> None:
+    try:
+        validate_training_telemetry_document(document, schema_name)
+    except TrainingTelemetryContractError as exc:
+        validation_error = exc.validation_error
+        path = ""
+        if validation_error is not None:
+            path = "/" + "/".join(
+                str(part).replace("~", "~0").replace("/", "~1")
+                for part in validation_error.absolute_path
+            )
+            if path == "/":
+                path = ""
+        if path == "/cursor" and document.get("cursor") is not None:
+            raise invalid_telemetry_cursor() from exc
+        if path == "/revision":
+            revision = _safe_json_integer(document.get("revision"))
+            if revision is not None and revision > 0:
+                raise unavailable_telemetry_revision(revision) from exc
+        raise invalid_telemetry_query(str(exc), path) from exc
 
 
 def _data_contract(document: Mapping[str, object]) -> DataContractFields:

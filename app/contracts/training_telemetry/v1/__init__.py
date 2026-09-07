@@ -1,4 +1,4 @@
-"""Staged owner-scoped Training Telemetry Query revision 1 contract."""
+"""Owner-scoped Training Telemetry Query revision 1 contract."""
 
 from app.contracts.training_telemetry.v1.capabilities import (
     training_telemetry_capabilities,

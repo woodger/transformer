@@ -78,7 +78,7 @@ recovery fencing, но не в target, objective или model identity. Пере
 ## Текущая документация
 
 - [Нормативный semantic contract v1](../../app/contracts/semantic/v1/README.md)
-- [Контракт Arrow Flight v12](../../app/contracts/flight/v12/README.md)
+- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
 - [Worker process contract v12](../../app/contracts/worker/v12/README.md)
 - [Checkpoint/recovery contract v6](../../app/contracts/checkpoint/v6/README.md)
 - [Training metrics contract v5](../../app/contracts/metrics/v5/README.md)

@@ -1,13 +1,13 @@
 # Локальный Arrow и stream contract
 
 > Тип: справочник. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v12 contract.
+> переопределяет public Arrow Flight v13 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v12`](../app/contracts/flight/v12/README.md); local CLI
+[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md); local CLI
 сохраняет отдельный dense `src`/`tgt` contract и не принимает compact
-`indexedFeatureBlocks` Flight v12.
+`indexedFeatureBlocks` Flight v13.
 
 ## Arrow IPC input
 

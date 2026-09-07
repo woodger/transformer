@@ -1,8 +1,9 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.flight.v12 import validate_request_document
+from app.contracts.flight.v13 import validate_request_document
 from app.contracts.model_catalog.v1 import catalog_capabilities
+from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
 from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
@@ -14,7 +15,7 @@ from app.service.domain.job import ExecutionState, InputState
 from tests.support.consumer_neutral import model_contract
 
 
-def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v12():
+def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -111,7 +112,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v12():
     }
     document = {
         "contract": "transformer-flight",
-        "version": 12,
+        "version": 13,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -131,7 +132,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v12():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 12
+    assert result["version"] == 13
     assert result["jobId"] == job_id
     assert result["device"] == {"requested": "gpu", "selected": None}
     assert result["ownership"] == {
@@ -141,7 +142,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v12():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v12",
+            "v13",
             "jobs",
             job_id,
             "inputs",
@@ -208,13 +209,14 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     health = coordinator.health("request-health")
 
     validate_request_document(capabilities, "capabilities-result")
-    assert capabilities["protocolVersions"] == [12]
+    assert capabilities["protocolVersions"] == [13]
     assert capabilities["sourceEncodings"] == ["indexedFeatureBlocks"]
     assert capabilities["fitInitializations"] == [
         "publishedModel",
         "random",
     ]
     assert capabilities["modelCatalog"] == catalog_capabilities()
+    assert capabilities["trainingTelemetry"] == training_telemetry_capabilities()
     assert capabilities["semantic"]["objectiveLanguage"][
         "directOperators"
     ] == [

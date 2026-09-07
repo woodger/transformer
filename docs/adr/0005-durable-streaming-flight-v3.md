@@ -59,7 +59,7 @@ lifecycle boundary.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v12](../../app/contracts/flight/v12/README.md)
+- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
 - [Операционное руководство Flight](../operations/flight-service.md)
 - [Training runtime](../training-runtime.md)

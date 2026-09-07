@@ -250,7 +250,7 @@ def test_application_internal_import_graph_is_acyclic():
 
 def test_canonical_contracts_and_composition_roots_exist():
     assert (APP_ROOT / "config.py").is_file()
-    assert (APP_ROOT / "contracts" / "flight" / "v12").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v13").is_dir()
     assert (APP_ROOT / "contracts" / "model_catalog" / "v1").is_dir()
     assert (APP_ROOT / "contracts" / "worker" / "v12").is_dir()
     assert (APP_ROOT / "contracts" / "checkpoint" / "v6").is_dir()
@@ -364,7 +364,7 @@ def test_service_application_job_api_is_transport_neutral():
         for value in sorted(strings & forbidden_wire_values):
             violations.append(f"{relative}: {value}")
         for value in sorted(
-            item for item in strings if item.startswith("transformer.v12.")
+            item for item in strings if item.startswith("transformer.v13.")
         ):
             violations.append(f"{relative}: {value}")
     assert violations == [], "Flight presentation leaked into application:\n" + (

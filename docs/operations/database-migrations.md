@@ -104,7 +104,7 @@ instructions сохранены в tag `0.1.15`, Git history и release notes.
 ```
 
 Downgrade `0025 → 0024` удаляет только catalog ordinal и индекс; jobs, models и
-artifacts сохраняются, но Flight v12 service после downgrade запускать нельзя.
+artifacts сохраняются, но Flight v13 service после downgrade запускать нельзя.
 Downgrade `0024 → 0023` является таким же clean cut: он удаляет все созданные
 Flight v11 jobs, models и runtime metadata и не восстанавливает данные v10.
 Используйте заранее подготовленный backup, если требуется вернуть прежнее

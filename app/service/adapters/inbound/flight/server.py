@@ -25,6 +25,8 @@ from app.service.adapters.inbound.flight.constants import (
     MODEL_CATALOG_LIST_ACTION,
     OUTPUTS_LIST_ACTION,
     STATUS_ACTION,
+    TRAINING_TELEMETRY_GRADIENT_ACTION,
+    TRAINING_TELEMETRY_REPORT_ACTION,
 )
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.documents import parse_action_body
@@ -37,6 +39,9 @@ from app.service.adapters.inbound.flight.model_catalog import (
     unavailable_catalog_revision,
 )
 from app.service.adapters.inbound.flight.output import OutputHandler
+from app.service.adapters.inbound.flight.training_telemetry import (
+    unavailable_telemetry_revision,
+)
 from app.service.adapters.inbound.flight.upload import PutMetadataWriter, UploadHandler
 from app.service.adapters.inbound.flight.upload_session import FlightStreamReader
 from app.service.adapters.inbound.flight.validation import (
@@ -47,7 +52,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v12 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v13 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     CREATE_ACTION: "Create a durable streaming job.",
     ACQUIRE_ACTION: "Transfer externally fenced job ownership.",
@@ -58,6 +63,8 @@ ACTION_DESCRIPTIONS = {
     CANCEL_ACTION: "Cancel a job.",
     MODEL_CATALOG_LIST_ACTION: "List owner-visible model generations.",
     MODEL_CATALOG_DETAIL_ACTION: "Describe one owner-visible model generation.",
+    TRAINING_TELEMETRY_REPORT_ACTION: "Read training telemetry for one model generation.",
+    TRAINING_TELEMETRY_GRADIENT_ACTION: "Read gradient interactions for one model epoch.",
 }
 
 
@@ -83,6 +90,10 @@ class _ExceptionFactory(Protocol):
 _FLIGHT_ERROR = cast(type[Exception], vars(flight)["FlightError"])
 _CATALOG_ACTION = re.compile(
     r"^transformer\.model-catalog\.v([1-9][0-9]*)\.(?:detail|list)$"
+)
+_TELEMETRY_ACTION = re.compile(
+    r"^transformer\.training-telemetry\.v([1-9][0-9]*)\."
+    r"(?:gradient-interactions|report)$"
 )
 
 
@@ -143,6 +154,11 @@ class TransformerFlightServer(
                 if catalog_action is not None:
                     raise unavailable_catalog_revision(
                         int(catalog_action.group(1))
+                    )
+                telemetry_action = _TELEMETRY_ACTION.fullmatch(action.type)
+                if telemetry_action is not None:
+                    raise unavailable_telemetry_revision(
+                        int(telemetry_action.group(1))
                     )
                 raise invalid(f"unsupported action: {action.type}")
             document = parse_action_body(action.body)

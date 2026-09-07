@@ -14,6 +14,4 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-- [Owner-scoped Training Telemetry Query](./owner-scoped-training-telemetry-query.md) —
-  согласованная read-only граница training telemetry; canonical package v1
-  опубликован для точного Consumer review.
+Активных Design Notes нет.

@@ -1,15 +1,14 @@
 # Контракт owner-scoped Training Telemetry Query v1
 
-> CONTRACT DOCUMENT. Этот staged package задаёт нормативные JSON documents,
-> pagination semantics, capabilities и structured errors будущего read-only
-> доступа к telemetry успешного fit. Действующий Flight v12 этот query не
-> реализует.
+> CONTRACT DOCUMENT. Этот package задаёт нормативные JSON documents,
+> pagination semantics, capabilities и structured errors read-only доступа к
+> telemetry успешного fit, активированного Flight v13.
 
 JSON Schemas Draft 2020-12 и перечисленные manifest-ом golden fixtures являются
 источником истины для формы документов. Этот README задаёт семантические
-инварианты, которые JSON Schema выразить не может. Runtime, PostgreSQL schema,
-OpenSearch projection, deployment и действующие Flight actions данным package
-не изменяются.
+инварианты, которые JSON Schema выразить не может. Активация package добавляет
+два Flight actions; PostgreSQL schema, metrics v5 и OpenSearch projection не
+изменяются.
 
 ## Назначение и версия
 
@@ -27,17 +26,15 @@ Query не возвращает model-test observations, out-of-sample quality, 
 незавершённых jobs, произвольный analytics query или каталог моделей. Он не
 проверяет физический checkpoint и не доказывает его целостность.
 
-Revision 1 резервирует две `DoAction` identity:
+Revision 1 использует две `DoAction` identity:
 
 ```text
 transformer.training-telemetry.v1.report
 transformer.training-telemetry.v1.gradient-interactions
 ```
 
-Они не добавляются в закрытый Flight v12 action surface. Первичная активация
-требует следующего согласованного Flight contract либо отдельно принятого
-extension lifecycle. После активации query revision не обязана меняться вместе
-с job workflow, metrics projection, Worker или checkpoint format.
+Первичная активация выполнена Flight v13. Query revision не обязана меняться
+вместе с job workflow, metrics projection, Worker или checkpoint format.
 
 Batch query отсутствует. Inventory ограничивает сравнение четырьмя моделями и
 выполняет bounded single-model запросы самостоятельно.

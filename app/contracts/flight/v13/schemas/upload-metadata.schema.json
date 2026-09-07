@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v13/upload-metadata.schema.json",
+  "title": "Transformer Flight v13 DoPut application metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "jobId", "clientExecutionId", "fencingToken", "payloadId", "ordinal", "schemaId", "dataContractSha256", "chunks", "logicalRows", "nativeRows"],
+  "properties": {"contract": {"const": "transformer-flight"}, "version": {"const": 13}, "jobId": {"$ref": "common.schema.json#/$defs/uuid"}, "clientExecutionId": {"$ref": "common.schema.json#/$defs/uuid"}, "fencingToken": {"$ref": "common.schema.json#/$defs/fencingToken"}, "payloadId": {"$ref": "common.schema.json#/$defs/uuid"}, "ordinal": {"type": "integer", "minimum": 0, "maximum": 99999}, "schemaId": {"enum": ["transformer.indexed-feature-blocks.fit.v1", "transformer.indexed-feature-blocks.predict.v1"]}, "dataContractSha256": {"$ref": "common.schema.json#/$defs/sha256"}, "chunks": {"type": "integer", "minimum": 0}, "logicalRows": {"type": "integer", "minimum": 0}, "nativeRows": {"$ref": "common.schema.json#/$defs/nativeRows"}}
+}

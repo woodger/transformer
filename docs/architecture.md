@@ -19,8 +19,9 @@ app/main.py                         ленивый CLI dispatcher
 └── app/admin/bootstrap            auth, database и model commands
 
 app/contracts/semantic/v1               consumer-neutral ML language
-app/contracts/flight/v12                 публичный Flight contract
+app/contracts/flight/v13                 публичный Flight contract
 app/contracts/model_catalog/v1           owner-scoped model query contract
+app/contracts/training_telemetry/v1      owner-scoped telemetry query contract
 app/contracts/worker/v12                внутренний process contract
 app/contracts/checkpoint/v6             checkpoint/recovery metadata
 app/contracts/indexed_feature_blocks.py  общие compact-input invariants
@@ -67,7 +68,7 @@ Application использует capability-oriented ports, включая
 `JobLifecycleStore`, `JobQueryStore`, `InputUploadStore`, `OutputAccessStore`,
 `ArtifactPublisher`, `ExecutionPlanBuilder`, `AttemptProcess`,
 `WorkerCapabilities`, `DeviceLeaseManager`, `ModelCatalogStore` и
-`AccessTokenAuthenticator`.
+`TrainingTelemetrySource`, и `AccessTokenAuthenticator`.
 
 ## Worker
 
@@ -121,9 +122,11 @@ Alembic-команды имеют отдельный короткоживущи�
 
 - `app/contracts/semantic/v1/` — закрытый mathematical language, canonical
   TargetContract/Objective/ModelContract и D1 digests;
-- `app/contracts/flight/v12/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/flight/v13/` — нормативные schemas и fixtures публичного API;
 - `app/contracts/model_catalog/v1/` — independently versioned list/detail
   contract owner-scoped model registry;
+- `app/contracts/training_telemetry/v1/` — independently versioned complete
+  report и lazy gradient-interaction query для published generation;
 - `app/contracts/indexed_feature_blocks.py` — общая pure-валидация ordered
   block geometry между service и worker без зависимости от Flight adapter;
 - `app/contracts/worker/v12/` — command/result manifests, capability document,
@@ -178,6 +181,12 @@ List использует bounded keyset pagination с publication high-water bo
 detail проверяет canonical metadata и полный SHA-256 checkpoint в пределах
 contract budget. Unknown, foreign и deleted references неразличимы для
 Consumer-а. Catalog membership не зависит от OpenSearch telemetry.
+
+Owner-scoped Training Telemetry Query сначала разрешает exact
+`modelRef` через registry, затем читает metrics v5 проекцию через
+application port. Он возвращает только полный проверенный report;
+отсутствие или повреждение telemetry не меняет model registry и не
+влияет на fit, predict, warm start и model lifecycle.
 
 Filesystem artifacts проходят staged lifecycle до появления ссылки на них в
 PostgreSQL. Prediction artifacts и attempt workspaces являются runtime-данными;

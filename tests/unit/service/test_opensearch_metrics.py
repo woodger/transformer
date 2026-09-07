@@ -256,7 +256,6 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
         "docs": [
             {
                 "_id": identifier,
-                "_source": ["documentSha256"],
             }
         ]
     }
@@ -283,6 +282,103 @@ def test_conflicting_document_with_different_digest_blocks_delivery():
             (_document(identifier, "b" * 64),),
             id_field="eventId",
         )
+
+
+def test_conflicting_run_summary_compares_the_complete_document() -> None:
+    identifier = "a" * 64
+    document = {
+        "summaryId": identifier,
+        "schema": "transformer.metrics-fit-run.v5",
+        "runId": "11111111-1111-4111-8111-111111111111",
+    }
+    client, _ = _client([
+        {"items": [{"create": {"status": 409}}]},
+        {
+            "docs": [
+                {"_id": identifier, "found": True, "_source": document}
+            ]
+        },
+    ])
+
+    client.create_documents(
+        "metrics-runs-v5",
+        (document,),
+        id_field="summaryId",
+    )
+
+
+def test_conflicting_run_summary_with_changed_content_blocks_delivery() -> None:
+    identifier = "a" * 64
+    document = {
+        "summaryId": identifier,
+        "schema": "transformer.metrics-fit-run.v5",
+        "runId": "11111111-1111-4111-8111-111111111111",
+    }
+    client, _ = _client([
+        {"items": [{"create": {"status": 409}}]},
+        {
+            "docs": [
+                {
+                    "_id": identifier,
+                    "found": True,
+                    "_source": {**document, "runId": "changed"},
+                }
+            ]
+        },
+    ])
+
+    with pytest.raises(BlockedMetricsDeliveryError, match="integrity"):
+        client.create_documents(
+            "metrics-runs-v5",
+            (document,),
+            id_field="summaryId",
+        )
+
+
+def test_refresh_waits_for_visibility_of_completion_boundaries() -> None:
+    client, requests = _client([
+        {"items": [{"create": {"status": 201}}]},
+    ])
+
+    client.create_documents(
+        "metrics-points-v5",
+        (_document("a" * 64, "b" * 64),),
+        id_field="eventId",
+        refresh=True,
+    )
+
+    assert requests[0][1] == "/_bulk?refresh=wait_for"
+
+
+def test_bounded_document_and_search_reads_return_sources_and_sort_keys() -> None:
+    client, requests = _client([
+        {
+            "docs": [
+                {
+                    "_id": "a" * 64,
+                    "found": True,
+                    "_source": {"value": 1},
+                }
+            ]
+        },
+        {
+            "hits": {
+                "hits": [
+                    {"_source": {"value": 2}, "sort": [1, "event"]},
+                ]
+            }
+        },
+    ])
+
+    assert client.document_source("metrics-runs-v5", "a" * 64) == {
+        "value": 1
+    }
+    assert client.search_page(
+        "metrics-points-v5",
+        {"size": 1},
+    ) == (({"value": 2}, (1, "event")),)
+    assert requests[0][1] == "/metrics-runs-v5/_mget"
+    assert requests[1][1] == "/metrics-points-v5/_search"
 
 
 def test_retryable_bulk_item_does_not_report_the_chunk_as_delivered():

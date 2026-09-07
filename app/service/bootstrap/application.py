@@ -24,6 +24,10 @@ from app.service.adapters.outbound.opensearch.client import (
 from app.service.adapters.outbound.opensearch.config import (
     load_opensearch_metrics_config,
 )
+from app.service.adapters.outbound.opensearch.training_telemetry import (
+    OpenSearchTrainingTelemetrySource,
+    UnavailableTrainingTelemetrySource,
+)
 from app.service.adapters.outbound.postgres.config import (
     DatabaseConfig,
     load_database_config,
@@ -246,6 +250,15 @@ class FlightApplication:
                     logger=logger,
                     metrics=metrics,
                 )
+            training_telemetry_source = (
+                UnavailableTrainingTelemetrySource()
+                if metrics_client is None or metrics_config is None
+                else OpenSearchTrainingTelemetrySource(
+                    metrics_client,
+                    metrics_outbox,
+                    deployment_id=metrics_config.deployment_id,
+                )
+            )
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
@@ -331,6 +344,7 @@ class FlightApplication:
                 recovery_store,
                 metrics=metrics,
                 logger=logger,
+                training_telemetry_source=training_telemetry_source,
                 cancel_notifier=worker.notify_cancel,
                 queue_notifier=worker.notify_queued,
                 device_inventory=device_inventory,

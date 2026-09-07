@@ -17,7 +17,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v12.arrow import canonical_input_schema
+from app.contracts.flight.v13.arrow import canonical_input_schema
 from app.contracts.worker.v12 import (
     WorkerContractError,
     encode_event,

@@ -10,19 +10,23 @@ training telemetry — [training reference](../training-runtime.md), норма�
 documents и projections —
 [`app/contracts/metrics/`](../../app/contracts/metrics/), а настройку доставки
 — [инструкция OpenSearch](../deployment/opensearch.md).
+Read-only public projection полного report задаёт
+[`Training Telemetry Query v1`](../../app/contracts/training_telemetry/v1/README.md).
 
 Rationale best-effort artifact/outbox boundary сохранён в
 [ADR 0009](../adr/0009-centralized-training-metrics.md).
 
 ## Прикладная граница
 
-- Метрики не влияют на business logic, flow control, результат операции,
-  checkpoint selection, model lifecycle или поведение API.
+- Метрики не влияют на fit/predict flow control, результат операции,
+  checkpoint selection, model lifecycle или model compatibility.
 - Ошибка сбора, материализации, конфигурации или доставки telemetry не
   превращает основную операцию в ошибку и не блокирует startup или shutdown.
 - Checkpoint, model generation и terminal state фиксируются независимо от
   telemetry.
 - Удаление прикладной сущности не зависит от состояния её observability-данных.
+- Public telemetry query всегда owner-gated через model registry; telemetry
+  не определяет существование или доступность model generation.
 - Новая метрика добавляется только при явной эксплуатационной ценности или как
   необходимая часть текущей задачи; предпочтителен небольшой стабильный набор.
 
@@ -42,7 +46,8 @@ Rationale best-effort artifact/outbox boundary сохранён в
 ## Границы инструментации
 
 - OpenSearch-зависимый код остаётся в infrastructure/telemetry slice.
-- Domain и основная application-логика не зависят от OpenSearch.
+- Domain и application use cases не зависят от OpenSearch API;
+  provider projection читается через capability-oriented port.
 - Инструментируются существующие execution boundaries; прикладной код не
   перестраивается только ради observability.
 - Сбор не распространяется на несвязанные компоненты без согласования scope.
@@ -56,6 +61,8 @@ Rationale best-effort artifact/outbox boundary сохранён в
   создаёт неограниченную задержку основной операции.
 - Повреждённое или отброшенное observation допустимо и не изменяет результат
   fit, публикацию модели или lifecycle job.
+- Неполная, отсутствующая или повреждённая projection меняет только
+  outcome Training Telemetry Query и не инвалидирует модель.
 - Некорректная конфигурация publisher-а отключает только доставку и отражается
   в operational logs/counters.
 - Централизованная projection ограничена определёнными metrics contracts epoch

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v13/put-result.schema.json",
+  "title": "Transformer Flight v13 DoPut result metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "jobId", "payloadId", "ordinal", "status", "chunks", "logicalRows", "nativeRows", "firstRangeOrdinal", "firstExampleOffset", "lastRangeOrdinal", "nextExampleOffset", "batches", "bytes", "sha256", "schemaFingerprint", "inputRevision", "nextInputOrdinal", "queued"],
+  "properties": {"contract": {"const": "transformer-flight"}, "version": {"const": 13}, "jobId": {"$ref": "common.schema.json#/$defs/uuid"}, "payloadId": {"$ref": "common.schema.json#/$defs/uuid"}, "ordinal": {"type": "integer", "minimum": 0}, "status": {"const": "committed"}, "chunks": {"type": "integer", "minimum": 0}, "logicalRows": {"type": "integer", "minimum": 0}, "nativeRows": {"$ref": "common.schema.json#/$defs/nativeRows"}, "firstRangeOrdinal": {"type": ["integer", "null"], "minimum": 0}, "firstExampleOffset": {"type": ["integer", "null"], "minimum": 0}, "lastRangeOrdinal": {"type": ["integer", "null"], "minimum": 0}, "nextExampleOffset": {"type": ["integer", "null"], "minimum": 0}, "batches": {"type": "integer", "minimum": 0}, "bytes": {"type": "integer", "minimum": 0}, "sha256": {"$ref": "common.schema.json#/$defs/sha256"}, "schemaFingerprint": {"$ref": "common.schema.json#/$defs/sha256"}, "inputRevision": {"type": "integer", "minimum": 1}, "nextInputOrdinal": {"type": "integer", "minimum": 0, "maximum": 100000}, "queued": {"type": "boolean"}}
+}

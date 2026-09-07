@@ -1,6 +1,6 @@
-"""Flight v12 wire constants combined with service lifecycle values."""
+"""Flight v13 wire constants combined with service lifecycle values."""
 
-from app.contracts.flight.v12.constants import (
+from app.contracts.flight.v13.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
@@ -21,6 +21,8 @@ from app.contracts.flight.v12.constants import (
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
+    TRAINING_TELEMETRY_GRADIENT_ACTION,
+    TRAINING_TELEMETRY_REPORT_ACTION,
 )
 from app.service.domain.job import (
     SUPPORTED_OPERATIONS,
@@ -53,6 +55,8 @@ __all__ = [
     "STATUS_ACTION",
     "SUPPORTED_OPERATIONS",
     "TERMINAL_EXECUTION_STATES",
+    "TRAINING_TELEMETRY_GRADIENT_ACTION",
+    "TRAINING_TELEMETRY_REPORT_ACTION",
     "ErrorCode",
     "ExecutionState",
     "InputState",
