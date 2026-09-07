@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
+from app.contracts.model_catalog.v1 import MAX_CHECKPOINT_VERIFICATION_BYTES
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -135,6 +136,22 @@ class ArtifactLedgerSlice:
         validate_relative_path(checkpoint_path)
         if isinstance(byte_count, bool) or byte_count <= 0:
             raise ValueError("byte_count must be a positive integer")
+        if byte_count > MAX_CHECKPOINT_VERIFICATION_BYTES:
+            raise ServiceError(
+                ErrorCode.RESOURCE_EXHAUSTED,
+                "model checkpoint exceeds the catalog verification budget",
+                detail={
+                    "code": ErrorCode.RESOURCE_EXHAUSTED.value,
+                    "reason": "CHECKPOINT_VERIFICATION_BUDGET_EXCEEDED",
+                    "modelRef": model_ref,
+                    "checkpointBytes": byte_count,
+                    "maxBytes": MAX_CHECKPOINT_VERIFICATION_BYTES,
+                    "message": (
+                        "model checkpoint exceeds the catalog verification "
+                        "budget"
+                    ),
+                },
+            )
         digest(sha256, "sha256")
         published_at = timestamp_now(now)
         try:
@@ -177,6 +194,11 @@ class ArtifactLedgerSlice:
                     "model-generation",
                     job.owner_subject,
                     label,
+                )
+                advisory_lock(
+                    session,
+                    "model-catalog-publication",
+                    job.owner_subject,
                 )
                 if session.get(DeletedModel, model_ref) is not None:
                     raise conflict(

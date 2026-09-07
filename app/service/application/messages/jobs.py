@@ -8,7 +8,6 @@ from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
     InputRecord,
     OutputRecord,
-    PublishedModelRecord,
     StatusSnapshot,
 )
 
@@ -116,14 +115,6 @@ class ListJobOutputsQuery:
     job_id: str
     cursor: int | None
     limit: int
-
-
-@dataclass(frozen=True, slots=True)
-class DescribeModelQuery:
-    owner_subject: str
-    request_id: str
-    model_selector: str
-    model_ref: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,19 +230,11 @@ class JobOutputsPage:
     has_more: bool
 
 
-@dataclass(frozen=True, slots=True)
-class ModelDescription:
-    request_id: str
-    model: PublishedModelRecord
-    model_config: ModelConfig
-
-
 __all__ = [
     "AcquireJobCommand",
     "CancelJobCommand",
     "CloseInputCommand",
     "CreateJobCommand",
-    "DescribeModelQuery",
     "GetJobStatusQuery",
     "InputClosed",
     "JobAcquired",
@@ -263,7 +246,6 @@ __all__ = [
     "JobStatusResult",
     "ListJobInputsQuery",
     "ListJobOutputsQuery",
-    "ModelDescription",
     "ServiceLimits",
     "StoredInputPage",
     "StoredOutputPage",

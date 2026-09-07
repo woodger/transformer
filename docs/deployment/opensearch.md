@@ -1,13 +1,15 @@
-# Доставка training metrics в OpenSearch
+# Доставка и чтение training metrics в OpenSearch
 
 > Тип: руководство по развёртыванию. Настройка OpenSearch projection
-> Transformer.
+> Transformer для publisher-а и Training Telemetry Query.
 
 Best-effort boundary и ownership telemetry описаны в
 [`политике metrics`](../policy/metrics-policy.md). Текущие schemas и templates
 находятся в
 [`app/contracts/metrics/v5`](../../app/contracts/metrics/v5/README.md) и
 [`app/contracts/metrics/fit_run/v5`](../../app/contracts/metrics/fit_run/v5/README.md).
+Публичную read-only проекцию задаёт
+[`Training Telemetry Query v1`](../../app/contracts/training_telemetry/v1/README.md).
 
 Текущее развёртывание использует доверенную локальную сеть:
 
@@ -80,7 +82,9 @@ unset OPENSEARCH_PASSWORD
 Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Не
 преобразуйте индексы в data streams и не назначайте им rollover alias или ISM
 rollover policy: проверка повторного `create` и `_mget` требует одного concrete
-index на каждую versioned projection.
+index на каждую versioned projection. Service account Transformer
+должен иметь доступ на bulk create, `_mget` и bounded `_search` в этих двух
+индексах; administrative template/delete privileges runtime не требуются.
 
 Transformer публикует только projection `transformer.metrics.v5` в текущие
 versioned indices `metrics-points-v5` и `metrics-runs-v5`. Поддержки прежних
@@ -114,7 +118,9 @@ TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
 Если ни одной `OPENSEARCH_*` переменной нет, publisher выключен, но model
 publication продолжает создавать durable artifact и outbox backlog. Частичная
 или смешанная конфигурация считается ошибкой deployment и оставляет publisher
-выключенным; service продолжает работать.
+выключенным; service продолжает работать. Без полной конфигурации
+Training Telemetry Query возвращает structured backend-unavailable error; fit,
+predict и Model Catalog от OpenSearch не зависят.
 
 Migrations применяются отдельно по
 [`операционному руководству PostgreSQL`](../operations/database-migrations.md).
@@ -134,6 +140,12 @@ Migrations применяются отдельно по
 - поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points и
   один terminal fit run summary;
 - повторная доставка не создаёт второй документ с тем же `_id`.
+- `transformer.training-telemetry.v1.report` для owner-visible published
+  model возвращает `available` только после проверки complete projection.
+
+Перед terminal run marker publisher ожидает refresh последней партии
+points, а затем refresh самого marker. Поэтому видимый marker
+означает, что все ранее доставленные points уже видимы query-пути.
 
 `metrics.delivery.retry_scheduled` означает временную ошибку.
 `metrics.delivery.blocked` означает schema/mapping/integrity error: такая entry

@@ -7,7 +7,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 
 - local CLI для обучения и prediction из Arrow IPC files;
 - stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v11 service с durable streaming jobs,
+- single-instance Arrow Flight v13 service с durable streaming jobs,
   PostgreSQL state, cross-system fencing, recovery, API tokens и GPU
   scheduling;
 - versioned public Flight и internal worker contracts;
@@ -20,7 +20,7 @@ Arrow. Он поддерживает локальный CLI и durable remote jo
 | --- | --- | --- | --- |
 | File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
 | Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v11 | authenticated Flight RPC | durable streaming job, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v11/README.md) |
+| Arrow Flight v13 | authenticated Flight RPC | durable jobs, model catalog, training telemetry, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v13/README.md) |
 
 ## Быстрый старт
 
@@ -77,7 +77,9 @@ user-site. Полный локальный сценарий находится �
 - [Training runtime и checkpoint](./docs/training-runtime.md)
 - [Функция потерь](./docs/losses.md)
 - [Consumer-neutral semantic contract v1](./app/contracts/semantic/v1/README.md)
-- [Arrow Flight v11 contract](./app/contracts/flight/v11/README.md)
+- [Arrow Flight v13 contract](./app/contracts/flight/v13/README.md)
+- [Model Catalog Query v1](./app/contracts/model_catalog/v1/README.md)
+- [Training Telemetry Query v1](./app/contracts/training_telemetry/v1/README.md)
 - [Worker process contract v12](./app/contracts/worker/v12/README.md)
 - [Checkpoint/recovery contract v6](./app/contracts/checkpoint/v6/README.md)
 - [Training metrics contract v5](./app/contracts/metrics/v5/README.md)
@@ -98,7 +100,7 @@ app/main.py          # тонкий CLI entrypoint
 app/config.py        # единый источник встроенных operational defaults
 app/cli/             # parser, help formatting и command-group parsers
 app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # semantic v1, Flight v11, worker v12, checkpoint v6, metrics v5
+app/contracts/       # semantic v1, Flight v13, model catalog/telemetry queries, worker/checkpoint/metrics
 app/service/         # domain/application, Flight/outbound adapters, bootstrap
 app/worker/          # Arrow/Torch model, training, checkpoints и process root
 app/admin/           # auth/database CLI и composition roots

@@ -3,7 +3,13 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
+from app.contracts.model_catalog.v1 import (
+    MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
+    catalog_capabilities,
+    validate_catalog_document,
+)
 from app.contracts.semantic.v1 import semantic_capabilities
+from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
 from app.contracts.worker.v12.constants import (
     CHECKPOINT_FORMAT,
     CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
@@ -19,11 +25,14 @@ from app.service.adapters.inbound.flight.constants import (
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
-    MODEL_DESCRIBE_ACTION,
+    MODEL_CATALOG_DETAIL_ACTION,
+    MODEL_CATALOG_LIST_ACTION,
     OUTPUTS_LIST_ACTION,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
+    TRAINING_TELEMETRY_GRADIENT_ACTION,
+    TRAINING_TELEMETRY_REPORT_ACTION,
 )
 from app.service.adapters.inbound.flight.devices import device_from_api
 from app.service.adapters.inbound.flight.documents import (
@@ -31,8 +40,18 @@ from app.service.adapters.inbound.flight.documents import (
     encode_document,
     response_document,
 )
+from app.service.adapters.inbound.flight.model_catalog import (
+    artifact_error,
+    catalog_error,
+    expired_catalog_cursor,
+    invalid_catalog_cursor,
+    model_not_found,
+    registry_unavailable,
+)
 from app.service.adapters.inbound.flight.presentation import (
     limits_to_api,
+    present_catalog_model_detail,
+    present_catalog_models_page,
     present_input_closed,
     present_job_acquired,
     present_job_cancelled,
@@ -40,7 +59,19 @@ from app.service.adapters.inbound.flight.presentation import (
     present_job_inputs,
     present_job_outputs,
     present_job_status,
-    present_model_description,
+)
+from app.service.adapters.inbound.flight.training_telemetry import (
+    expired_telemetry_cursor,
+    invalid_telemetry_cursor,
+    invalidated_telemetry_cursor,
+    present_gradient_interactions,
+    present_training_telemetry_report,
+    telemetry_backend_unavailable,
+    telemetry_integrity_failed,
+    telemetry_model_not_found,
+    telemetry_snapshot_capacity_exhausted,
+    telemetry_stored_metadata_invalid,
+    training_telemetry_response,
 )
 from app.service.adapters.inbound.flight.validation import (
     AcquireRequestFields,
@@ -48,10 +79,13 @@ from app.service.adapters.inbound.flight.validation import (
     CreateRequestFields,
     InputCloseRequestFields,
     InputsListRequestFields,
-    ModelDescribeRequestFields,
+    ModelCatalogDetailRequestFields,
+    ModelCatalogListRequestFields,
     OutputsListRequestFields,
     RequestIdFields,
     StatusRequestFields,
+    TrainingTelemetryGradientRequestFields,
+    TrainingTelemetryReportRequestFields,
     ValidatedActionRequest,
 )
 from app.service.application.commands.jobs import (
@@ -65,20 +99,56 @@ from app.service.application.messages.jobs import (
     CancelJobCommand,
     CloseInputCommand,
     CreateJobCommand,
-    DescribeModelQuery,
     GetJobStatusQuery,
     ListJobInputsQuery,
     ListJobOutputsQuery,
+)
+from app.service.application.messages.model_catalog import (
+    GetCatalogModelQuery,
+    ListCatalogModelsQuery,
+)
+from app.service.application.messages.training_telemetry import (
+    GetGradientInteractionsQuery,
+    GetTrainingTelemetryReportQuery,
+)
+from app.service.application.ports.model_catalog import (
+    CatalogArtifactVerificationError,
+    CatalogModelNotFound,
+    ModelCatalogStoreUnavailable,
+)
+from app.service.application.ports.training_telemetry import (
+    TrainingTelemetryBackendUnavailable,
+    TrainingTelemetryIntegrityError,
+    TrainingTelemetryStoredMetadataError,
+)
+from app.service.application.queries.model_catalog import (
+    GetCatalogModel,
+    ListCatalogModels,
 )
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
 )
 from app.service.application.queries.status import (
-    DescribeModel,
     GetJobStatus,
     ListJobInputs,
     ListJobOutputs,
+)
+from app.service.application.queries.training_telemetry import (
+    GetGradientInteractions,
+    GetTrainingTelemetryReport,
+)
+from app.service.application.services.model_catalog_cursor import (
+    ExpiredCatalogCursor,
+    InvalidCatalogCursor,
+)
+from app.service.application.services.training_telemetry_cursor import (
+    ExpiredTrainingTelemetryCursor,
+    InvalidatedTrainingTelemetryCursor,
+    InvalidTrainingTelemetryCursor,
+)
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotCapacityExhausted,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
@@ -96,9 +166,12 @@ class JobCoordinator:
         get_status: GetJobStatus,
         list_inputs: ListJobInputs,
         list_outputs: ListJobOutputs,
-        describe_model: DescribeModel,
+        list_catalog_models: ListCatalogModels,
+        get_catalog_model: GetCatalogModel,
         service_status: ServiceStatusQuery,
         availability: ServiceAvailability,
+        get_training_telemetry_report: GetTrainingTelemetryReport | None = None,
+        get_gradient_interactions: GetGradientInteractions | None = None,
     ) -> None:
         self._create_job = create_job
         self._acquire_job = acquire_job
@@ -107,9 +180,12 @@ class JobCoordinator:
         self._get_status = get_status
         self._list_inputs = list_inputs
         self._list_outputs = list_outputs
-        self._describe_model = describe_model
+        self._list_catalog_models = list_catalog_models
+        self._get_catalog_model = get_catalog_model
         self._service_status = service_status
         self._availability = availability
+        self._get_training_telemetry_report = get_training_telemetry_report
+        self._get_gradient_interactions = get_gradient_interactions
 
     def dispatch(
         self,
@@ -191,21 +267,126 @@ class JobCoordinator:
                     _cancel_command(owner, fields, document)
                 )
             )
-        elif action == MODEL_DESCRIBE_ACTION:
-            fields = cast(ModelDescribeRequestFields, request)
-            result = present_model_description(
-                self._describe_model.execute(
-                    DescribeModelQuery(
-                        owner_subject=owner,
-                        request_id=fields["request_id"],
-                        model_selector=(
-                            "alias"
-                            if fields["model_selector"] == "modelAlias"
-                            else "reference"
-                        ),
-                        model_ref=fields["model_ref"],
+        elif action == MODEL_CATALOG_LIST_ACTION:
+            fields = cast(ModelCatalogListRequestFields, request)
+            try:
+                result = present_catalog_models_page(
+                    self._list_catalog_models.execute(
+                        ListCatalogModelsQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            page_size=fields["page_size"],
+                            cursor=fields["cursor"],
+                        )
                     )
                 )
+            except ExpiredCatalogCursor as exc:
+                raise expired_catalog_cursor() from exc
+            except InvalidCatalogCursor as exc:
+                raise invalid_catalog_cursor() from exc
+            except ModelCatalogStoreUnavailable as exc:
+                raise registry_unavailable() from exc
+            return _catalog_response(result, "list-result")
+        elif action == MODEL_CATALOG_DETAIL_ACTION:
+            fields = cast(ModelCatalogDetailRequestFields, request)
+            try:
+                result = present_catalog_model_detail(
+                    self._get_catalog_model.execute(
+                        GetCatalogModelQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                        )
+                    )
+                )
+            except CatalogModelNotFound as exc:
+                raise model_not_found(exc.model_ref) from exc
+            except CatalogArtifactVerificationError as exc:
+                raise artifact_error(exc) from exc
+            except ModelCatalogStoreUnavailable as exc:
+                raise registry_unavailable() from exc
+            return _catalog_response(result, "detail-result")
+        elif action == TRAINING_TELEMETRY_REPORT_ACTION:
+            fields = cast(TrainingTelemetryReportRequestFields, request)
+            if self._get_training_telemetry_report is None:
+                raise RuntimeError("training telemetry report query is unavailable")
+            try:
+                result = present_training_telemetry_report(
+                    self._get_training_telemetry_report.execute(
+                        GetTrainingTelemetryReportQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                            page_size=fields["page_size"],
+                            cursor=fields["cursor"],
+                        )
+                    )
+                )
+            except CatalogModelNotFound as exc:
+                raise telemetry_model_not_found(exc.model_ref) from exc
+            except InvalidTrainingTelemetryCursor as exc:
+                raise invalid_telemetry_cursor() from exc
+            except ExpiredTrainingTelemetryCursor as exc:
+                raise expired_telemetry_cursor() from exc
+            except InvalidatedTrainingTelemetryCursor as exc:
+                raise invalidated_telemetry_cursor() from exc
+            except TrainingTelemetrySnapshotCapacityExhausted as exc:
+                raise telemetry_snapshot_capacity_exhausted(
+                    exc.operation
+                ) from exc
+            except TrainingTelemetryStoredMetadataError as exc:
+                raise telemetry_stored_metadata_invalid(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except TrainingTelemetryIntegrityError as exc:
+                raise telemetry_integrity_failed(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except (TrainingTelemetryBackendUnavailable, ModelCatalogStoreUnavailable) as exc:
+                raise telemetry_backend_unavailable(fields["model_ref"]) from exc
+            return training_telemetry_response(result, "report-result")
+        elif action == TRAINING_TELEMETRY_GRADIENT_ACTION:
+            fields = cast(TrainingTelemetryGradientRequestFields, request)
+            if self._get_gradient_interactions is None:
+                raise RuntimeError("gradient interaction query is unavailable")
+            try:
+                result = present_gradient_interactions(
+                    self._get_gradient_interactions.execute(
+                        GetGradientInteractionsQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                            epoch=fields["epoch"],
+                            page_size=fields["page_size"],
+                            cursor=fields["cursor"],
+                        )
+                    )
+                )
+            except CatalogModelNotFound as exc:
+                raise telemetry_model_not_found(exc.model_ref) from exc
+            except InvalidTrainingTelemetryCursor as exc:
+                raise invalid_telemetry_cursor() from exc
+            except ExpiredTrainingTelemetryCursor as exc:
+                raise expired_telemetry_cursor() from exc
+            except InvalidatedTrainingTelemetryCursor as exc:
+                raise invalidated_telemetry_cursor() from exc
+            except TrainingTelemetrySnapshotCapacityExhausted as exc:
+                raise telemetry_snapshot_capacity_exhausted(
+                    exc.operation
+                ) from exc
+            except TrainingTelemetryStoredMetadataError as exc:
+                raise telemetry_stored_metadata_invalid(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except TrainingTelemetryIntegrityError as exc:
+                raise telemetry_integrity_failed(
+                    fields["model_ref"], exc.path
+                ) from exc
+            except (TrainingTelemetryBackendUnavailable, ModelCatalogStoreUnavailable) as exc:
+                raise telemetry_backend_unavailable(fields["model_ref"]) from exc
+            return training_telemetry_response(
+                result,
+                "gradient-interactions-result",
             )
         else:
             raise ServiceError(
@@ -240,6 +421,8 @@ class JobCoordinator:
                 "transformer.training-metrics.v5",
             ],
             semantic=semantic_capabilities(),
+            modelCatalog=catalog_capabilities(),
+            trainingTelemetry=training_telemetry_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
@@ -296,6 +479,19 @@ class JobCoordinator:
 
     def set_draining(self, value: bool = True) -> None:
         self._availability.set_draining(value)
+
+
+def _catalog_response(document: JsonObject, schema_name: str) -> bytes:
+    validate_catalog_document(document, schema_name)
+    encoded = encode_document(document)
+    if len(encoded) > MODEL_CATALOG_MAX_RESPONSE_BYTES:
+        raise catalog_error(
+            ErrorCode.RESOURCE_EXHAUSTED,
+            "CATALOG_RESPONSE_BUDGET_EXCEEDED",
+            "model catalog response exceeds the configured budget",
+            maxBytes=MODEL_CATALOG_MAX_RESPONSE_BYTES,
+        )
+    return encoded
 
 
 def _create_command(

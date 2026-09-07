@@ -24,6 +24,10 @@ from app.service.adapters.outbound.opensearch.client import (
 from app.service.adapters.outbound.opensearch.config import (
     load_opensearch_metrics_config,
 )
+from app.service.adapters.outbound.opensearch.training_telemetry import (
+    OpenSearchTrainingTelemetrySource,
+    UnavailableTrainingTelemetrySource,
+)
 from app.service.adapters.outbound.postgres.config import (
     DatabaseConfig,
     load_database_config,
@@ -246,11 +250,39 @@ class FlightApplication:
                     logger=logger,
                     metrics=metrics,
                 )
+            if metrics_client is None or metrics_config is None:
+                training_telemetry_source = (
+                    UnavailableTrainingTelemetrySource()
+                )
+            else:
+                if metrics_publisher is None:
+                    raise AssertionError(
+                        "configured metrics publisher is unavailable"
+                    )
+                training_telemetry_source = OpenSearchTrainingTelemetrySource(
+                    metrics_client,
+                    metrics_outbox,
+                    deployment_id=metrics_config.deployment_id,
+                    delivery_expected=metrics_publisher.is_running,
+                )
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
                 logger=logger,
             )
+            (
+                removed_recovery_staging,
+                removed_recovery_staging_bytes,
+            ) = spool.cleanup_recovery_checkpoint_staging()
+            if removed_recovery_staging:
+                metrics.add(
+                    "recoveryCheckpointStagingRemoved",
+                    len(removed_recovery_staging),
+                )
+                metrics.add(
+                    "recoveryCheckpointStagingBytesRemoved",
+                    removed_recovery_staging_bytes,
+                )
             precleaned = spool.cleanup_temporary_files()
             recovery_precleaned = (
                 recovery_store.cleanup_temporary_files()
@@ -318,6 +350,7 @@ class FlightApplication:
                 recovery_store,
                 metrics=metrics,
                 logger=logger,
+                training_telemetry_source=training_telemetry_source,
                 cancel_notifier=worker.notify_cancel,
                 queue_notifier=worker.notify_queued,
                 device_inventory=device_inventory,
@@ -443,6 +476,12 @@ class FlightApplication:
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
                     recovery_precleaned
+                ),
+                removedRecoveryStagingCheckpoints=len(
+                    removed_recovery_staging
+                ),
+                removedRecoveryStagingBytes=(
+                    removed_recovery_staging_bytes
                 ),
                 removedRecoveryOrphans=len(
                     recovery_reconciliation

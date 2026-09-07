@@ -9,6 +9,11 @@
 maintenance boundaries описаны в
 [`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
 
+Consumer-facing discovery и detail выполняются owner-scoped actions из
+[Model Catalog Query v1](../../app/contracts/model_catalog/v1/README.md).
+Каталог является read-only и не заменяет описанные здесь административные
+команды удаления.
+
 Команды требуют актуальной PostgreSQL schema. Порядок её проверки находится в
 [`руководстве по migrations`](database-migrations.md).
 
@@ -21,6 +26,11 @@ maintenance boundaries описаны в
 Команда показывает только доступные generations в состоянии `AVAILABLE`:
 точный `MODEL REF`, owner, label, generation, state и время создания.
 `MODEL REF` является management identity конкретной immutable generation.
+
+Та же working registry определяет membership публичного Model Catalog. List
+catalog не читает checkpoint; detail дополнительно проверяет canonical metadata
+и полный SHA-256 artifact в пределах contract budget. OpenSearch telemetry и
+filesystem scan не добавляют generation в каталог.
 
 Перед удалением зафиксируйте точный `MODEL REF`. Alias или label команда
 `models delete` не принимает, чтобы ротация alias не могла изменить target

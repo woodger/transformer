@@ -6,6 +6,7 @@ import json
 import queue
 import subprocess
 import sys
+import threading
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -16,7 +17,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v11.arrow import canonical_input_schema
+from app.contracts.flight.v13.arrow import canonical_input_schema
 from app.contracts.worker.v12 import (
     WorkerContractError,
     encode_event,
@@ -714,6 +715,100 @@ def test_service_rejects_progress_after_attempt_ownership_changes():
     failure = errors.get_nowait()
     assert failure.code == ErrorCode.EXECUTION_INTERRUPTED
     assert failure.message == "worker attempt no longer owns job progress"
+
+
+def test_worker_terminal_error_is_not_masked_by_log_persistence_failure(
+    tmp_path,
+):
+    job_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    worker_code = f"""
+import sys
+from app.contracts.worker.v12 import encode_event
+
+sys.stdout.buffer.write(encode_event(
+    job_id={job_id!r},
+    attempt=1,
+    attempt_id={attempt_id!r},
+    sequence=1,
+    event_type="ready",
+    payload={{"pid": 1234, "nextOrdinal": 0, "inputRevision": 1}},
+))
+sys.stdout.buffer.write(encode_event(
+    job_id={job_id!r},
+    attempt=1,
+    attempt_id={attempt_id!r},
+    sequence=2,
+    event_type="error",
+    payload={{
+        "code": "MALFORMED_OUTPUT",
+        "message": "primary worker failure",
+        "detail": None,
+    }},
+))
+sys.stdout.buffer.flush()
+sys.stderr.write("primary diagnostic\\n")
+sys.stderr.flush()
+raise SystemExit(1)
+"""
+    job = SimpleNamespace(
+        job_id=job_id,
+        attempt=1,
+        attempt_id=attempt_id,
+        selected_device="cpu",
+        assigned_device_id=None,
+        input_state=InputState.CLOSED,
+        input_revision=1,
+    )
+    plan = SimpleNamespace(
+        protocol_version=12,
+        argv=(sys.executable, "-c", worker_code),
+        inputs=(),
+    )
+
+    class Ledger:
+        def set_attempt_process(self, *_args, **_kwargs):
+            return None
+
+        def mark_attempt_worker_ready(self, *_args, **_kwargs):
+            return None
+
+    class Spool:
+        def attempt_stdout_path(self, *_args):
+            return str(tmp_path / "stdout.log")
+
+        def attempt_stderr_path(self, *_args):
+            return "/dev/full"
+
+        def ensure_parent(self, path):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+    class Logger:
+        def event(self, *_args, **_kwargs):
+            return None
+
+    runner = WorkerSubprocessRunner(
+        SimpleNamespace(
+            subprocess_timeout_seconds=5.0,
+            cancel_grace_seconds=1.0,
+        ),
+        Ledger(),
+        Spool(),
+        logger=Logger(),
+        python_executable=sys.executable,
+        stream_inputs=lambda *_args: (),
+    )
+
+    with pytest.raises(WorkerSubprocessError) as raised:
+        runner.run(
+            job,
+            plan,
+            cancel=threading.Event(),
+            force_stop=threading.Event(),
+        )
+
+    assert raised.value.code is ErrorCode.MALFORMED_OUTPUT
+    assert raised.value.message == "primary worker failure"
 
 
 @pytest.mark.parametrize("changed_field", ["jobConfigSha256", "semanticDigests"])

@@ -182,16 +182,22 @@ class WorkerAttemptExecutor:
                         result.result_manifest,
                     )
                 else:
+                    closed = self.ledger.get_execution_job(job_id)
+                    if closed is None or not self._same_attempt(closed, job):
+                        raise WorkerAttemptError(
+                            ErrorCode.EXECUTION_INTERRUPTED,
+                            "worker attempt lost ownership before publication",
+                        )
                     published_model = (
                         self.artifact_publisher.publish_model_from_manifest(
-                            job,
+                            closed,
                             result.result_manifest,
                         )
                     )
                     if self.fit_telemetry_publisher is not None:
                         try:
                             self.fit_telemetry_publisher.publish(
-                                job,
+                                closed,
                                 result.result_manifest,
                                 published_model,
                             )

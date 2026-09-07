@@ -1,20 +1,14 @@
 from __future__ import annotations
 
 from app.service.application.messages.jobs import (
-    DescribeModelQuery,
     GetJobStatusQuery,
     JobInputsPage,
     JobOutputsPage,
     JobStatusResult,
     ListJobInputsQuery,
     ListJobOutputsQuery,
-    ModelDescription,
 )
-from app.service.application.ports.job_lifecycle import ModelArtifactVerifier
 from app.service.application.ports.job_queries import JobQueryStore
-from app.service.application.services.model_contract import (
-    verify_model_integrity,
-)
 from app.service.domain.errors import ServiceError, not_found
 from app.service.domain.job import ErrorCode
 
@@ -90,35 +84,7 @@ class ListJobOutputs:
         )
 
 
-class DescribeModel:
-    def __init__(
-        self,
-        store: JobQueryStore,
-        *,
-        model_verifier: ModelArtifactVerifier,
-    ) -> None:
-        self.store = store
-        self._model_verifier = model_verifier
-
-    def execute(self, query: DescribeModelQuery) -> ModelDescription:
-        if query.model_selector == "alias":
-            model = self.store.resolve_published_model_alias(
-                query.owner_subject,
-                query.model_ref,
-            )
-        else:
-            model = self.store.get_published_model(
-                query.model_ref,
-                owner_subject=query.owner_subject,
-            )
-        if model is None:
-            raise not_found("model generation not found")
-        model_config = verify_model_integrity(model)
-        self._model_verifier.verify(model)
-        return ModelDescription(query.request_id, model, model_config)
-
 __all__ = [
-    "DescribeModel",
     "GetJobStatus",
     "ListJobInputs",
     "ListJobOutputs",

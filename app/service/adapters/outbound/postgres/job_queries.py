@@ -16,7 +16,6 @@ from app.service.application.messages.jobs import StoredInputPage, StoredOutputP
 from app.service.domain.records import (
     InputRecord,
     OutputRecord,
-    PublishedModelRecord,
     StatusSnapshot,
 )
 
@@ -96,27 +95,6 @@ class PostgresJobQueryStore:
             ),
             next_cursor=row_optional_integer(page, "next_cursor"),
             has_more=row_boolean(page, "has_more"),
-        )
-
-    def get_published_model(
-        self,
-        model_ref: str,
-        *,
-        owner_subject: str | None = None,
-    ) -> PublishedModelRecord | None:
-        return self.ledger.get_published_model(
-            model_ref,
-            owner_subject=owner_subject,
-        )
-
-    def resolve_published_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-    ) -> PublishedModelRecord | None:
-        return self.ledger.resolve_published_model_alias(
-            owner_subject,
-            label,
         )
 
 

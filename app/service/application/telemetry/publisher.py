@@ -80,6 +80,14 @@ class MetricsPublisher:
                 self.metrics.add("metricsPublisherDrainExceeded")
                 self.logger.event("metrics.publisher.drain_exceeded")
 
+    def is_running(self) -> bool:
+        thread = self._thread
+        return (
+            thread is not None
+            and thread.is_alive()
+            and not self._stop.is_set()
+        )
+
     def _run(self) -> None:
         next_maintenance = 0.0
         while not self._stop.is_set():
@@ -116,6 +124,7 @@ class MetricsPublisher:
                     POINT_INDEX,
                     chunk,
                     id_field="eventId",
+                    refresh=cursor + len(chunk) == len(points),
                 )
                 if self.outbox.advance(
                     entry.training_metrics.job_id,
@@ -132,6 +141,7 @@ class MetricsPublisher:
                 RUN_INDEX,
                 (run_summary,),
                 id_field="summaryId",
+                refresh=True,
             )
             if self.outbox.complete(
                 entry.training_metrics.job_id,

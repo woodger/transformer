@@ -159,10 +159,10 @@ class _Outbox:
 
 class _Sink:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int, str]] = []
+        self.calls: list[tuple[str, int, str, bool]] = []
 
-    def create_documents(self, index, documents, *, id_field):
-        self.calls.append((index, len(documents), id_field))
+    def create_documents(self, index, documents, *, id_field, refresh=False):
+        self.calls.append((index, len(documents), id_field, refresh))
 
 
 class _Storage:
@@ -186,14 +186,16 @@ def test_publisher_delivers_bounded_point_chunks_before_run_summary():
         metrics=OperationalMetrics(),
     ).start()
     try:
+        assert publisher.is_running()
         assert outbox.delivered.wait(2.0)
     finally:
         publisher.shutdown(2.0)
 
+    assert not publisher.is_running()
     assert sink.calls == [
-        (POINT_INDEX, 500, "eventId"),
-        (POINT_INDEX, 1, "eventId"),
-        (RUN_INDEX, 1, "summaryId"),
+        (POINT_INDEX, 500, "eventId", False),
+        (POINT_INDEX, 1, "eventId", True),
+        (RUN_INDEX, 1, "summaryId", True),
     ]
     assert outbox.maintenance_runs >= 1
 
@@ -245,7 +247,15 @@ def test_terminal_retention_removes_only_the_run_artifacts():
 
 def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
     class RetrySink:
-        def create_documents(self, _index, _documents, *, id_field):
+        def create_documents(
+            self,
+            _index,
+            _documents,
+            *,
+            id_field,
+            refresh=False,
+        ):
+            del refresh
             assert id_field == "eventId"
             raise RetryableMetricsDeliveryError("temporarily unavailable")
 
@@ -272,7 +282,15 @@ def test_retryable_delivery_keeps_the_outbox_pending_for_later_replay():
 
 def test_retryable_delivery_is_discarded_after_the_retry_budget():
     class RetrySink:
-        def create_documents(self, _index, _documents, *, id_field):
+        def create_documents(
+            self,
+            _index,
+            _documents,
+            *,
+            id_field,
+            refresh=False,
+        ):
+            del refresh
             assert id_field == "eventId"
             raise RetryableMetricsDeliveryError("still unavailable")
 
@@ -343,7 +361,15 @@ def test_shutdown_timeout_does_not_fail_the_service():
             self.entered = threading.Event()
             self.release = threading.Event()
 
-        def create_documents(self, _index, _documents, *, id_field):
+        def create_documents(
+            self,
+            _index,
+            _documents,
+            *,
+            id_field,
+            refresh=False,
+        ):
+            del refresh
             assert id_field == "eventId"
             self.entered.set()
             self.release.wait(2.0)

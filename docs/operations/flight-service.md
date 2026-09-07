@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v11
+# Сервис Transformer Arrow Flight: операционное руководство v13
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v11`](../../app/contracts/flight/v11/README.md). Текущие
+[`app/contracts/flight/v13`](../../app/contracts/flight/v13/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -26,6 +26,8 @@ Rationale durable recovery и streaming lifecycle сохранён в
 - PyTorch, NumPy и PyArrow для обучения и Flight.
 - SQLAlchemy 2, Psycopg 3, Alembic и python-dotenv для доступа к PostgreSQL.
 - PostgreSQL, доступный в частной сети.
+- OpenSearch для Training Telemetry Query; его недоступность не блокирует
+  fit, predict, Model Catalog и model lifecycle.
 - Постоянный каталог project `models/` для успешно опубликованных моделей.
 - Постоянный каталог project `recovery/` для fit inputs и внутренних
   checkpoints global epochs.
@@ -63,7 +65,7 @@ PostgreSQL является единственным долговечным ис
 - committed epoch metrics, metadata run-owned metrics artifacts и состояние
   OpenSearch outbox;
 - API access tokens;
-- текущей storage epoch runtime.
+- текущей storage epoch runtime и signing key catalog cursor.
 
 Filesystem runtime намеренно является временным:
 
@@ -78,6 +80,7 @@ Filesystem runtime намеренно является временным:
       attempts/{attempt}/
         stdout.log
         stderr.log
+        checkpoints/{completedEpoch}.pth  # staging до durable publication
         outputs/{ordinal}.arrow
         checkpoint.pth
 ```
@@ -120,8 +123,20 @@ Recovery checkpoint становится видимым только после 
 отдельный OpenSearch outbox. Ошибка telemetry не меняет model generation или
 terminal state. Неуспешные и прерванные attempts не создают generation модели.
 
+Owner-scoped Training Telemetry Query читает OpenSearch только после
+успешного registry lookup модели. Он не возвращает частичные numerical
+данные: до полной доставки результат `pending`, а после окончательной
+потери — `unavailable`. Повреждённая complete projection даёт ошибку
+`TELEMETRY_CORRUPT`, но не инвалидирует model generation. Точная настройка и
+проверка приведены в [OpenSearch guide](../deployment/opensearch.md).
+Нетерминальные report и gradient pages удерживаются до 900 секунд в общем
+bounded pool: 64 snapshots, не более 16 MiB каждый и 64 MiB суммарно. Живые
+snapshots не вытесняются; исчерпание capacity возвращает retryable
+`TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED`. После рестарта ещё не истёкший cursor
+возвращает `TELEMETRY_CURSOR_INVALIDATED` и traversal следует начать заново.
+
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. Flight v11 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v13 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -214,7 +229,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v11 определяет
+certificate options команды `flight serve`. Flight v13 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -354,7 +369,8 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v11 нет сетевого action для её удаления. Команды оператора,
+во Flight v13 нет сетевого action для её удаления. Owner-scoped catalog
+предоставляет только list/detail. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
 Запрос удаления блокируется не только незавершённым prediction, но и любым
@@ -368,7 +384,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v11.health`.
+аутентифицированный Flight action `transformer.v13.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -379,8 +395,8 @@ Published model generation имеет независимый двухфазны�
 Логи сервиса — по одному JSON object на строку в stderr. Они охватывают
 lifecycle сервиса, завершение RPC/actions, переходы jobs, commits inputs,
 выполнение worker, publication, runtime resets, recovery и maintenance. Bearer
-credentials, authorization headers, output tickets, paths filesystem и argv
-worker не логируются.
+credentials, authorization headers, output tickets, catalog cursors, paths
+filesystem и argv worker не логируются.
 
 Health response также содержит ограниченные агрегированные in-process metrics.
 Metrics сбрасываются при перезапуске сервиса и не являются долговечным

@@ -5,7 +5,7 @@
 
 Нормативную модель задают
 [`semantic/v1`](../app/contracts/semantic/v1/README.md) и
-[`Flight v11`](../app/contracts/flight/v11/README.md). Consumer materializer
+[`Flight v13`](../app/contracts/flight/v13/README.md). Consumer materializer
 передаёт self-contained ordered target contract и Objective. Transformer
 считает target identities непрозрачными: ни transformation, ни operator, ни
 private resource не выбираются по имени target.

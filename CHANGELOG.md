@@ -7,6 +7,46 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-09-07
+
+### Added
+
+- Реализован Training Telemetry Query v1: owner-scoped полный report,
+  epoch и sparse gradient-pair pagination, availability outcomes, structured
+  errors и принятые cross-project golden fixtures.
+- Реализован Model Catalog Query v1: owner-scoped list и single detail,
+  live high-water pagination, bounded checkpoint verification, independently
+  versioned capabilities, structured errors и принятые cross-project golden
+  fixtures.
+- Migration `0025` добавляет монотонную publication boundary и owner/order
+  индекс model registry для bounded catalog traversal.
+
+### Changed
+
+- Public Flight contract повышен clean cut до v13 и публикует Model
+  Catalog v1 и Training Telemetry Query v1 actions/capabilities. Flight v12
+  actions удалены без aliases или compatibility layer; fit, predict,
+  `indexedFeatureBlocks`, Worker v12, checkpoint/recovery v6 и metrics v5
+  сохраняют семантику.
+- Terminal metrics marker публикуется после refresh последней партии
+  points; OpenSearch adapter также выполняет bounded `_mget` и `_search`
+  через application telemetry port.
+
+### Fixed
+
+- Flight v13 принимает Training Telemetry Query results общей action schema;
+  report и gradient cursors используют общий bounded snapshot pool с atomic
+  admission и restart invalidation, а остановленный metrics publisher больше
+  не оставляет report в вечном `pending`.
+- Epoch recovery checkpoints больше не накапливают staging-копии в runtime:
+  они удаляются после durable-регистрации и очищаются при старте после аварии.
+  Ошибка сохранения worker log не скрывает terminal error самого Worker.
+- Model Catalog detail проверяет canonical metadata и D1 digests до чтения
+  checkpoint, сохраняя нормативный приоритет ошибки metadata и bounded I/O.
+- Streaming fit публикует checkpoint по финальному закрытому snapshot job,
+  поэтому manifest digest, полученный после `input.closed`, не сравнивается с
+  устаревшим состоянием начала Worker attempt.
+
 ## [0.1.18] - 2026-09-05
 
 ### Added
@@ -795,7 +835,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.18...HEAD
+[Unreleased]: https://github.com/woodger/transformer/compare/0.1.19...HEAD
+[0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/woodger/transformer/compare/0.1.15...0.1.16

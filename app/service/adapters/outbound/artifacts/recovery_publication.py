@@ -81,6 +81,8 @@ class _AttemptSpool(Protocol):
         generation: int,
     ) -> str: ...
 
+    def remove(self, path: str) -> bool: ...
+
 
 class WorkerRecoveryError(AttemptExecutionError):
     pass
@@ -111,7 +113,12 @@ class RecoveryCheckpointPublisher:
     def publish(self, job: ExecutionJobRecord, event: JsonObject) -> None:
         metric_payload = self._validated_metrics(job, event)
         started = self._monotonic()
-        source_path, byte_count, digest = self._publish_artifact(job, event)
+        (
+            staging_path,
+            published_path,
+            byte_count,
+            digest,
+        ) = self._publish_artifact(job, event)
         generation = _positive_integer(event["generation"], "generation")
         progress = _object(event["progress"], "checkpoint progress")
         completed_epochs = _positive_integer(
@@ -150,12 +157,18 @@ class RecoveryCheckpointPublisher:
             generation=generation,
             input_revision=current.input_revision,
             format=RECOVERY_FORMAT,
-            relative_path=self.recovery_store.relative_path(source_path),
+            relative_path=self.recovery_store.relative_path(published_path),
             byte_count=byte_count,
             sha256=digest,
             completed_epochs=completed_epochs,
             global_step=global_step,
             training_complete=training_complete,
+        )
+        self._cleanup_staging_checkpoint(
+            job,
+            generation=generation,
+            path=staging_path,
+            byte_count=byte_count,
         )
         self._record_metrics(
             job,
@@ -182,7 +195,7 @@ class RecoveryCheckpointPublisher:
         self,
         job: ExecutionJobRecord,
         event: JsonObject,
-    ) -> tuple[str, int, str]:
+    ) -> tuple[str, str, int, str]:
         if self.spool is None:
             raise WorkerRecoveryError(
                 ErrorCode.INTERNAL,
@@ -239,7 +252,36 @@ class RecoveryCheckpointPublisher:
                 ErrorCode.RECOVERY_CHECKPOINT_UNAVAILABLE,
                 "worker checkpoint could not be published",
             ) from exc
-        return destination, byte_count, digest
+        return source, destination, byte_count, digest
+
+    def _cleanup_staging_checkpoint(
+        self,
+        job: ExecutionJobRecord,
+        *,
+        generation: int,
+        path: str,
+        byte_count: int,
+    ) -> None:
+        if self.spool is None:
+            return
+        try:
+            removed = self.spool.remove(path)
+        except Exception as exc:
+            self.metrics.add("recoveryCheckpointStagingCleanupErrors")
+            self.logger.event(
+                "flight.recovery.staging_cleanup_failed",
+                jobId=job.job_id,
+                attempt=job.attempt,
+                generation=generation,
+                errorType=type(exc).__name__,
+            )
+            return
+        if removed:
+            self.metrics.add("recoveryCheckpointStagingRemoved")
+            self.metrics.add(
+                "recoveryCheckpointStagingBytesRemoved",
+                byte_count,
+            )
 
     def _record_metrics(
         self,

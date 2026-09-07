@@ -8,13 +8,13 @@ import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v11.arrow import (
+from app.contracts.flight.v13.arrow import (
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,
     validate_target_values,
 )
-from app.contracts.flight.v11.target_value_error import TargetValueError
+from app.contracts.flight.v13.target_value_error import TargetValueError
 from app.contracts.indexed_feature_blocks import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.service.adapters.outbound.postgres.models import (
     FitRunSummaryArtifact,
@@ -263,6 +264,17 @@ class PostgresMetricsOutbox:
     def retained_run_ids(self) -> set[str]:
         with self.database.session() as session:
             return set(session.scalars(select(TrainingMetricsArtifact.job_id)))
+
+    def delivery_status(self, job_id: str) -> str | None:
+        try:
+            with self.database.session() as session:
+                return session.scalar(
+                    select(MetricsOutboxEntry.status).where(
+                        MetricsOutboxEntry.job_id == job_id
+                    )
+                )
+        except SQLAlchemyError as exc:
+            raise RuntimeError("metrics delivery status is unavailable") from exc
 
 
 def _owns(row: MetricsOutboxEntry, expected_cursor: int) -> bool:

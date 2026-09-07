@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v11 import job_config_sha256
+from app.contracts.flight.v13 import job_config_sha256
+from app.contracts.model_catalog.v1 import (
+    CURSOR_TTL_SECONDS,
+    MAX_CHECKPOINT_VERIFICATION_BYTES,
+)
+from app.contracts.training_telemetry.v1 import (
+    CURSOR_TTL_SECONDS as TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
+    MAX_RETAINED_SNAPSHOT_BYTES,
+    MAX_RETAINED_SNAPSHOT_COUNT,
+    MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -11,9 +21,13 @@ from app.service.adapters.inbound.flight.constants import (
     MAX_PAGE_ITEMS,
 )
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
+from app.service.adapters.inbound.flight.model_catalog import (
+    CatalogModelMetadataVerifier,
+)
 from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.adapters.outbound.artifacts.job_artifacts import (
     CandidateArtifactCleaner,
+    CatalogModelArtifactVerifier,
     ModelArtifactVerifier,
 )
 from app.service.adapters.outbound.artifacts.recovery_store import RecoveryStore
@@ -26,6 +40,9 @@ from app.service.adapters.outbound.postgres.job_queries import (
     PostgresJobQueryStore,
 )
 from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.model_catalog import (
+    PostgresModelCatalogStore,
+)
 from app.service.application.commands.jobs import (
     AcquireJobAction,
     CancelJobAction,
@@ -34,15 +51,28 @@ from app.service.application.commands.jobs import (
 )
 from app.service.application.messages.jobs import ServiceLimits
 from app.service.application.ports.devices import WorkerCapabilities
+from app.service.application.ports.training_telemetry import (
+    TrainingTelemetrySource,
+)
+from app.service.application.queries.model_catalog import (
+    GetCatalogModel,
+    ListCatalogModels,
+)
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
 )
 from app.service.application.queries.status import (
-    DescribeModel,
     GetJobStatus,
     ListJobInputs,
     ListJobOutputs,
+)
+from app.service.application.queries.training_telemetry import (
+    GetGradientInteractions,
+    GetTrainingTelemetryReport,
+)
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotStore,
 )
 from app.service.bootstrap.config import FlightServiceConfig
 
@@ -56,6 +86,7 @@ def build_job_coordinator(
     device_inventory: WorkerCapabilities,
     metrics: OperationalMetrics,
     logger: JsonLogger,
+    training_telemetry_source: TrainingTelemetrySource,
     cancel_notifier: Callable[[str], None] | None = None,
     queue_notifier: Callable[[str], None] | None = None,
 ) -> JobCoordinator:
@@ -72,10 +103,17 @@ def build_job_coordinator(
     )
     queries = PostgresJobQueryStore(ledger)
     model_verifier = ModelArtifactVerifier(spool)
+    model_catalog_store = PostgresModelCatalogStore(ledger.database)
+    metadata_verifier = CatalogModelMetadataVerifier()
     artifact_cleaner = CandidateArtifactCleaner(
         spool,
         recovery_store,
         logger=logger,
+    )
+    training_telemetry_snapshots = TrainingTelemetrySnapshotStore(
+        max_count=MAX_RETAINED_SNAPSHOT_COUNT,
+        max_total_bytes=MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
+        max_snapshot_bytes=MAX_RETAINED_SNAPSHOT_BYTES,
     )
 
     def cuda_available() -> bool:
@@ -131,9 +169,31 @@ def build_job_coordinator(
         get_status=GetJobStatus(queries),
         list_inputs=ListJobInputs(queries),
         list_outputs=ListJobOutputs(queries),
-        describe_model=DescribeModel(
-            queries,
-            model_verifier=model_verifier,
+        list_catalog_models=ListCatalogModels(
+            model_catalog_store,
+            cursor_ttl_seconds=CURSOR_TTL_SECONDS,
+        ),
+        get_catalog_model=GetCatalogModel(
+            model_catalog_store,
+            metadata_verifier=metadata_verifier,
+            artifact_verifier=CatalogModelArtifactVerifier(
+                spool,
+                max_verification_bytes=MAX_CHECKPOINT_VERIFICATION_BYTES,
+            ),
+        ),
+        get_training_telemetry_report=GetTrainingTelemetryReport(
+            model_catalog_store,
+            training_telemetry_source,
+            training_telemetry_snapshots,
+            metadata_verifier=metadata_verifier,
+            cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
+        ),
+        get_gradient_interactions=GetGradientInteractions(
+            model_catalog_store,
+            training_telemetry_source,
+            training_telemetry_snapshots,
+            metadata_verifier=metadata_verifier,
+            cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
         ),
         service_status=service_status,
         availability=availability,

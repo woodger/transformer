@@ -1,0 +1,6 @@
+{
+  "code": "UNAVAILABLE",
+  "reason": "TRAINING_TELEMETRY_BACKEND_UNAVAILABLE",
+  "modelRef": "mdl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "message": "training telemetry backend is temporarily unavailable"
+}

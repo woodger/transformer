@@ -1,0 +1,37 @@
+{
+  "contract": "transformer-model-catalog",
+  "revision": 1,
+  "operations": ["detail", "list"],
+  "transport": {
+    "kind": "ArrowFlightDoAction",
+    "actions": {
+      "detail": "transformer.model-catalog.v1.detail",
+      "list": "transformer.model-catalog.v1.list"
+    }
+  },
+  "consistency": {
+    "kind": "LiveHighWater",
+    "ordering": [
+      {"field": "createdAt", "direction": "DESC"},
+      {"field": "modelRef", "direction": "ASC"}
+    ],
+    "concurrentPublication": "ExcludedAfterHighWater",
+    "concurrentDeletion": "MayOmit",
+    "cursorExpiration": "RestartTraversal"
+  },
+  "limits": {
+    "maxPageSize": 100,
+    "cursorTtlSeconds": 900,
+    "maxResponseBytes": 8388608,
+    "maxCheckpointVerificationsPerDetail": 1,
+    "maxCheckpointVerificationBytes": 1073741824
+  },
+  "features": {
+    "ownerScope": "AuthenticatedSubject",
+    "filters": false,
+    "batchDetail": false,
+    "serverSideComparison": false,
+    "checkpointVerification": "FullSha256",
+    "structuredErrors": true
+  }
+}

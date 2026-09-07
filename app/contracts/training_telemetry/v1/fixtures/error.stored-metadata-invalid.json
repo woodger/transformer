@@ -1,0 +1,7 @@
+{
+  "code": "MODEL_CORRUPT",
+  "reason": "STORED_MODEL_METADATA_INVALID",
+  "modelRef": "mdl_44444444444444444444444444444444",
+  "path": "/semanticDigests/modelContractSha256",
+  "message": "stored model metadata is invalid"
+}

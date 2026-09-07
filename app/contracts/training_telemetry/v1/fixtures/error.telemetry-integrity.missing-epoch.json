@@ -1,0 +1,7 @@
+{
+  "code": "TELEMETRY_CORRUPT",
+  "reason": "TRAINING_TELEMETRY_INTEGRITY_FAILED",
+  "modelRef": "mdl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "path": "/epochs/2",
+  "message": "completed training telemetry has a missing epoch"
+}

@@ -1,0 +1,6 @@
+{
+  "code": "NOT_FOUND",
+  "reason": "MODEL_NOT_FOUND",
+  "modelRef": "mdl_99999999999999999999999999999999",
+  "message": "model generation was not found"
+}

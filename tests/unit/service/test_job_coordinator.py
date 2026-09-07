@@ -1,6 +1,9 @@
 import json
 from types import SimpleNamespace
 
+from app.contracts.flight.v13 import validate_request_document
+from app.contracts.model_catalog.v1 import catalog_capabilities
+from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
 from app.contracts.worker.v12.config import ModelConfig, TrainConfig
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
@@ -12,7 +15,7 @@ from app.service.domain.job import ExecutionState, InputState
 from tests.support.consumer_neutral import model_contract
 
 
-def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v11():
+def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -60,7 +63,8 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v11():
         get_status=None,
         list_inputs=None,
         list_outputs=None,
-        describe_model=None,
+        list_catalog_models=None,
+        get_catalog_model=None,
         service_status=None,
         availability=None,
     )
@@ -108,7 +112,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v11():
     }
     document = {
         "contract": "transformer-flight",
-        "version": 11,
+        "version": 13,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -128,7 +132,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v11():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 11
+    assert result["version"] == 13
     assert result["jobId"] == job_id
     assert result["device"] == {"requested": "gpu", "selected": None}
     assert result["ownership"] == {
@@ -138,7 +142,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v11():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v11",
+            "v13",
             "jobs",
             job_id,
             "inputs",
@@ -193,20 +197,26 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
         get_status=None,
         list_inputs=None,
         list_outputs=None,
-        describe_model=None,
+        list_catalog_models=None,
+        get_catalog_model=None,
         service_status=service_status,
         availability=None,
     )
 
-    capabilities = coordinator.capabilities("request-capabilities")
+    capabilities = coordinator.capabilities(
+        "00000000-0000-4000-8000-000000000010"
+    )
     health = coordinator.health("request-health")
 
-    assert capabilities["protocolVersions"] == [11]
+    validate_request_document(capabilities, "capabilities-result")
+    assert capabilities["protocolVersions"] == [13]
     assert capabilities["sourceEncodings"] == ["indexedFeatureBlocks"]
     assert capabilities["fitInitializations"] == [
         "publishedModel",
         "random",
     ]
+    assert capabilities["modelCatalog"] == catalog_capabilities()
+    assert capabilities["trainingTelemetry"] == training_telemetry_capabilities()
     assert capabilities["semantic"]["objectiveLanguage"][
         "directOperators"
     ] == [

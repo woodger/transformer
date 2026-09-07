@@ -7,7 +7,7 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v11`](../app/contracts/flight/v11/README.md).
+[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
@@ -45,7 +45,7 @@ objective и model digest layers; другой временной период �
 progress и checkpoint selection не наследуются. Результатом остаётся новая
 immutable generation, а не изменение parent или продолжение его training run.
 Точную wire-форму `initialization` задаёт
-[Flight contract](../app/contracts/flight/v11/README.md#compatibility-и-artifacts).
+[Flight contract](../app/contracts/flight/v13/README.md#compatibility-и-artifacts).
 Recovery относится к состоянию уже созданного нового job.
 
 ## Target contract и objective
@@ -106,7 +106,7 @@ Flight fit использует durable input stream. Epoch 0 начинает �
 ordinal при открытом input. `input.close` задаёт EOF. Последующие epochs
 перечитывают закрытый immutable dataset.
 
-Flight v11 хранит Consumer-computed features как indexed native blocks и
+Flight v13 хранит Consumer-computed features как indexed native blocks и
 локальные observation offsets. Worker восстанавливает прежний dense logical
 tensor срезами ограниченного размера. RecordBatch, range chunk и payload
 boundaries не являются optimizer batch, shuffle window или epoch boundaries.
@@ -134,6 +134,12 @@ replay с проверкой schema и physical/logical counters.
 Сбой в открытой epoch 0 повторяет её с начала; committed inputs не теряются.
 Recovery другого data, target, objective, model contract, job configuration
 или immutable input manifest отклоняется.
+
+Worker создаёт epoch checkpoint во временном attempt workspace. Service
+копирует его в durable recovery store, регистрирует generation в PostgreSQL и
+сразу удаляет staging-копию. После аварийного завершения оставшиеся staging
+checkpoints удаляются при следующем старте сервиса после остановки прежних
+Worker process groups; зарегистрированные recovery generations не затрагиваются.
 
 ## Контекстные пропуски
 
