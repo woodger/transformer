@@ -250,15 +250,21 @@ class FlightApplication:
                     logger=logger,
                     metrics=metrics,
                 )
-            training_telemetry_source = (
-                UnavailableTrainingTelemetrySource()
-                if metrics_client is None or metrics_config is None
-                else OpenSearchTrainingTelemetrySource(
+            if metrics_client is None or metrics_config is None:
+                training_telemetry_source = (
+                    UnavailableTrainingTelemetrySource()
+                )
+            else:
+                if metrics_publisher is None:
+                    raise AssertionError(
+                        "configured metrics publisher is unavailable"
+                    )
+                training_telemetry_source = OpenSearchTrainingTelemetrySource(
                     metrics_client,
                     metrics_outbox,
                     deployment_id=metrics_config.deployment_id,
+                    delivery_expected=metrics_publisher.is_running,
                 )
-            )
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,

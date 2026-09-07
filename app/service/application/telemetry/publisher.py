@@ -80,6 +80,14 @@ class MetricsPublisher:
                 self.metrics.add("metricsPublisherDrainExceeded")
                 self.logger.event("metrics.publisher.drain_exceeded")
 
+    def is_running(self) -> bool:
+        thread = self._thread
+        return (
+            thread is not None
+            and thread.is_alive()
+            and not self._stop.is_set()
+        )
+
     def _run(self) -> None:
         next_maintenance = 0.0
         while not self._stop.is_set():

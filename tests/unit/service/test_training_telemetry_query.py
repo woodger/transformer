@@ -108,6 +108,7 @@ class _Source:
         self.projection = projection
         self.gradient_points = gradient_points
         self.report_calls = 0
+        self.gradient_calls = 0
 
     def load_report(
         self,
@@ -127,6 +128,7 @@ class _Source:
         epoch: int,
     ) -> tuple[JsonObject, ...]:
         del model_ref, producing_run_id, epoch
+        self.gradient_calls += 1
         return self.gradient_points
 
 
@@ -218,6 +220,10 @@ def test_report_validates_complete_projection_and_pages_dense_epochs() -> None:
     assert first.next_cursor is not None
     assert first.cursor_expires_at == "2026-09-07T12:15:00.000000Z"
 
+    source.projection = ProjectedTrainingTelemetry(
+        state="unavailable",
+        unavailable_reason="NO_COMPLETE_REPORT",
+    )
     second = query.execute(GetTrainingTelemetryReportQuery(
         owner_subject="consumer",
         request_id=REQUEST_ID,
@@ -228,6 +234,7 @@ def test_report_validates_complete_projection_and_pages_dense_epochs() -> None:
     assert [item["epoch"] for item in second.epoch_items] == [3]
     assert second.next_cursor is None
     assert second.cursor_expires_at is None
+    assert source.report_calls == 1
 
     with pytest.raises(CatalogModelNotFound):
         query.execute(GetTrainingTelemetryReportQuery(
@@ -444,6 +451,11 @@ def test_gradient_query_returns_objective_order_and_sparse_pair_pages() -> None:
     assert len(first.pair_items) == 1
     assert first.next_cursor is not None
 
+    source.projection = ProjectedTrainingTelemetry(
+        state="unavailable",
+        unavailable_reason="NO_COMPLETE_REPORT",
+    )
+    source.gradient_points = ()
     second = query.execute(GetGradientInteractionsQuery(
         owner_subject="consumer",
         request_id=REQUEST_ID,
@@ -464,6 +476,8 @@ def test_gradient_query_returns_objective_order_and_sparse_pair_pages() -> None:
     ]
     assert identities == sorted(identities)
     assert len(identities) == 2
+    assert source.report_calls == 2
+    assert source.gradient_calls == 1
 
 
 def test_opensearch_source_reads_completion_marker_and_verified_points() -> None:
@@ -478,6 +492,7 @@ def test_opensearch_source_reads_completion_marker_and_verified_points() -> None
         client,
         _DeliveryStatus("DELIVERED"),
         deployment_id=DEPLOYMENT_ID,
+        delivery_expected=lambda: True,
     ).load_report(
         model_ref=model.model_ref,
         producing_run_id=cast(str, model.metadata["jobId"]),
@@ -493,11 +508,16 @@ def test_opensearch_source_reads_completion_marker_and_verified_points() -> None
 
 
 @pytest.mark.parametrize(
-    ("delivery_status", "expected_state"),
-    (("PENDING", "pending"), (None, "unavailable")),
+    ("delivery_status", "delivery_expected", "expected_state"),
+    (
+        ("PENDING", True, "pending"),
+        ("PENDING", False, "unavailable"),
+        (None, True, "unavailable"),
+    ),
 )
 def test_opensearch_source_classifies_missing_completion_marker(
     delivery_status: str | None,
+    delivery_expected: bool,
     expected_state: str,
 ) -> None:
     model = _single_target_model(completed_epochs=1)
@@ -505,6 +525,7 @@ def test_opensearch_source_classifies_missing_completion_marker(
         _OpenSearchClient(None),
         _DeliveryStatus(delivery_status),
         deployment_id=DEPLOYMENT_ID,
+        delivery_expected=lambda: delivery_expected,
     ).load_report(
         model_ref=model.model_ref,
         producing_run_id=cast(str, model.metadata["jobId"]),
@@ -528,6 +549,7 @@ def test_opensearch_source_rejects_point_with_changed_content() -> None:
         ),
         _DeliveryStatus("DELIVERED"),
         deployment_id=DEPLOYMENT_ID,
+        delivery_expected=lambda: True,
     )
 
     with pytest.raises(TrainingTelemetryIntegrityError, match="digest"):

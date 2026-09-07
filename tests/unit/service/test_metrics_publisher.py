@@ -186,10 +186,12 @@ def test_publisher_delivers_bounded_point_chunks_before_run_summary():
         metrics=OperationalMetrics(),
     ).start()
     try:
+        assert publisher.is_running()
         assert outbox.delivered.wait(2.0)
     finally:
         publisher.shutdown(2.0)
 
+    assert not publisher.is_running()
     assert sink.calls == [
         (POINT_INDEX, 500, "eventId", False),
         (POINT_INDEX, 1, "eventId", True),

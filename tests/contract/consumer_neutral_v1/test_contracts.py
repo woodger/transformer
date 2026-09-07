@@ -670,6 +670,26 @@ def test_flight_capabilities_and_structured_errors_are_normative(
                 schema_registry,
             )
 
+    telemetry_results = (
+        *sorted(
+            (TRAINING_TELEMETRY_ROOT / "fixtures").glob(
+                "report.result.*.json"
+            )
+        ),
+        *sorted(
+            (TRAINING_TELEMETRY_ROOT / "fixtures").glob(
+                "gradient-interactions.result.*.json"
+            )
+        ),
+    )
+    assert telemetry_results
+    for path in telemetry_results:
+        _validate(
+            _read(path),
+            FLIGHT_ROOT / "schemas" / "action-result.schema.json",
+            schema_registry,
+        )
+
     worker_capability = {
         "contract": "transformer-worker",
         "protocolVersion": 12,

@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import NoReturn, cast
+from typing import Generic, NoReturn, TypeVar, cast
 
 from app.service.application.messages.training_telemetry import (
     GetGradientInteractionsQuery,
@@ -70,6 +70,63 @@ class _ValidatedReport:
     diagnostics_configured: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _ValidatedGradientInteractions:
+    producing_run_id: str
+    identity: str
+    components: tuple[JsonObject, ...]
+    pairs: tuple[JsonObject, ...]
+
+
+_Snapshot = TypeVar("_Snapshot")
+
+
+@dataclass(frozen=True, slots=True)
+class _SnapshotEntry(Generic[_Snapshot]):
+    expires_at: datetime
+    value: _Snapshot
+
+
+class _SnapshotCache(Generic[_Snapshot]):
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, ...], _SnapshotEntry[_Snapshot]] = {}
+        self._lock = threading.Lock()
+
+    def get(
+        self,
+        key: tuple[str, ...],
+        *,
+        now: datetime,
+    ) -> _Snapshot | None:
+        with self._lock:
+            self._evict_expired(now)
+            entry = self._entries.get(key)
+            return None if entry is None else entry.value
+
+    def put(
+        self,
+        key: tuple[str, ...],
+        value: _Snapshot,
+        *,
+        expires_at: datetime,
+        now: datetime,
+    ) -> None:
+        with self._lock:
+            self._evict_expired(now)
+            current = self._entries.get(key)
+            if current is None or current.expires_at < expires_at:
+                self._entries[key] = _SnapshotEntry(expires_at, value)
+
+    def _evict_expired(self, now: datetime) -> None:
+        expired = [
+            key
+            for key, entry in self._entries.items()
+            if now >= entry.expires_at
+        ]
+        for key in expired:
+            del self._entries[key]
+
+
 class GetTrainingTelemetryReport:
     def __init__(
         self,
@@ -87,6 +144,7 @@ class GetTrainingTelemetryReport:
         self._clock = clock
         self._codec: TrainingTelemetryCursorCodec | None = None
         self._codec_lock = threading.Lock()
+        self._snapshots = _SnapshotCache[_ValidatedReport]()
 
     def execute(
         self,
@@ -110,29 +168,45 @@ class GetTrainingTelemetryReport:
                 epoch=None,
                 now=now,
             )
-        projected = self._source.load_report(
-            model_ref=model.model_ref,
-            producing_run_id=_producing_run_id(model),
-        )
-        if projected.state == "pending":
-            return TrainingTelemetryReportResult(
-                query.request_id,
-                model.model_ref,
-                "pending",
-            )
-        if projected.state == "unavailable":
-            return TrainingTelemetryReportResult(
-                query.request_id,
-                model.model_ref,
-                "unavailable",
-                unavailable_reason=projected.unavailable_reason,
-            )
-        report = _validate_report(model, projected)
-        if cursor is not None and (
-            cursor.producing_run_id != report.producing_run_id
-            or cursor.report_identity != report.report_identity
-        ):
+        producing_run_id = _producing_run_id(model)
+        if cursor is not None and cursor.producing_run_id != producing_run_id:
             raise InvalidTrainingTelemetryCursor
+        report = (
+            None
+            if cursor is None
+            else self._snapshots.get(
+                (
+                    query.owner_subject,
+                    model.model_ref,
+                    producing_run_id,
+                    cursor.report_identity,
+                ),
+                now=now,
+            )
+        )
+        if report is None:
+            projected = self._source.load_report(
+                model_ref=model.model_ref,
+                producing_run_id=producing_run_id,
+            )
+            if projected.state == "pending":
+                return TrainingTelemetryReportResult(
+                    query.request_id,
+                    model.model_ref,
+                    "pending",
+                )
+            if projected.state == "unavailable":
+                return TrainingTelemetryReportResult(
+                    query.request_id,
+                    model.model_ref,
+                    "unavailable",
+                    unavailable_reason=projected.unavailable_reason,
+                )
+            report = _validate_report(model, projected)
+            if cursor is not None and (
+                cursor.report_identity != report.report_identity
+            ):
+                raise InvalidTrainingTelemetryCursor
         after_epoch = 0 if cursor is None else cast(int, cursor.after_epoch)
         if after_epoch >= len(report.epochs):
             raise InvalidTrainingTelemetryCursor
@@ -146,6 +220,17 @@ class GetTrainingTelemetryReport:
         next_cursor = None
         cursor_expires_at = None
         if not terminal:
+            self._snapshots.put(
+                (
+                    query.owner_subject,
+                    model.model_ref,
+                    report.producing_run_id,
+                    report.report_identity,
+                ),
+                report,
+                expires_at=expires_at,
+                now=now,
+            )
             last_epoch = _integer(page[-1], "epoch")
             next_cursor = self._cursor_codec().encode(
                 query.owner_subject,
@@ -208,6 +293,7 @@ class GetGradientInteractions:
         self._clock = clock
         self._codec: TrainingTelemetryCursorCodec | None = None
         self._codec_lock = threading.Lock()
+        self._snapshots = _SnapshotCache[_ValidatedGradientInteractions]()
 
     def execute(
         self,
@@ -231,33 +317,60 @@ class GetGradientInteractions:
                 epoch=query.epoch,
                 now=now,
             )
-        projected = self._source.load_report(
-            model_ref=model.model_ref,
-            producing_run_id=_producing_run_id(model),
-        )
-        if projected.state != "available":
-            return _not_collected(query, model, _diagnostics_configured(model))
-        report = _validate_report(model, projected)
-        if not report.diagnostics_configured:
-            return _not_collected(query, model, False)
-        if query.epoch not in report.collected_epochs:
-            return _not_collected(query, model, True)
-        points = self._source.load_gradient_points(
-            model_ref=model.model_ref,
-            producing_run_id=report.producing_run_id,
-            epoch=query.epoch,
-        )
-        components, pairs, gradient_identity = _validate_gradient_points(
-            model,
-            report,
-            query.epoch,
-            points,
-        )
-        if cursor is not None and (
-            cursor.producing_run_id != report.producing_run_id
-            or cursor.report_identity != gradient_identity
-        ):
+        producing_run_id = _producing_run_id(model)
+        if cursor is not None and cursor.producing_run_id != producing_run_id:
             raise InvalidTrainingTelemetryCursor
+        snapshot = (
+            None
+            if cursor is None
+            else self._snapshots.get(
+                (
+                    query.owner_subject,
+                    model.model_ref,
+                    producing_run_id,
+                    str(query.epoch),
+                    cursor.report_identity,
+                ),
+                now=now,
+            )
+        )
+        if snapshot is None:
+            projected = self._source.load_report(
+                model_ref=model.model_ref,
+                producing_run_id=producing_run_id,
+            )
+            if projected.state != "available":
+                return _not_collected(
+                    query,
+                    model,
+                    _diagnostics_configured(model),
+                )
+            report = _validate_report(model, projected)
+            if not report.diagnostics_configured:
+                return _not_collected(query, model, False)
+            if query.epoch not in report.collected_epochs:
+                return _not_collected(query, model, True)
+            points = self._source.load_gradient_points(
+                model_ref=model.model_ref,
+                producing_run_id=report.producing_run_id,
+                epoch=query.epoch,
+            )
+            components, pairs, gradient_identity = _validate_gradient_points(
+                model,
+                report,
+                query.epoch,
+                points,
+            )
+            snapshot = _ValidatedGradientInteractions(
+                producing_run_id=report.producing_run_id,
+                identity=gradient_identity,
+                components=components,
+                pairs=pairs,
+            )
+            if cursor is not None and (
+                cursor.report_identity != snapshot.identity
+            ):
+                raise InvalidTrainingTelemetryCursor
         start = 0
         if cursor is not None:
             after_pair = cast(tuple[str, str], cursor.after_pair)
@@ -266,14 +379,14 @@ class GetGradientInteractions:
                     cast(str, item["leftComponentIdentity"]),
                     cast(str, item["rightComponentIdentity"]),
                 )
-                for item in pairs
+                for item in snapshot.pairs
             )
             try:
                 start = identities.index(after_pair) + 1
             except ValueError as exc:
                 raise InvalidTrainingTelemetryCursor from exc
-        page = pairs[start : start + query.page_size]
-        terminal = start + len(page) == len(pairs)
+        page = snapshot.pairs[start : start + query.page_size]
+        terminal = start + len(page) == len(snapshot.pairs)
         expires_at = (
             now + timedelta(seconds=self._cursor_ttl_seconds)
             if cursor is None
@@ -282,6 +395,18 @@ class GetGradientInteractions:
         next_cursor = None
         cursor_expires_at = None
         if not terminal:
+            self._snapshots.put(
+                (
+                    query.owner_subject,
+                    model.model_ref,
+                    snapshot.producing_run_id,
+                    str(query.epoch),
+                    snapshot.identity,
+                ),
+                snapshot,
+                expires_at=expires_at,
+                now=now,
+            )
             last = page[-1]
             pair_identity = (
                 cast(str, last["leftComponentIdentity"]),
@@ -292,8 +417,8 @@ class GetGradientInteractions:
                 TrainingTelemetryCursor(
                     operation="gradientInteractions",
                     model_ref=model.model_ref,
-                    producing_run_id=report.producing_run_id,
-                    report_identity=gradient_identity,
+                    producing_run_id=snapshot.producing_run_id,
+                    report_identity=snapshot.identity,
                     page_size=query.page_size,
                     after_epoch=None,
                     epoch=query.epoch,
@@ -307,8 +432,8 @@ class GetGradientInteractions:
             model_ref=model.model_ref,
             epoch=query.epoch,
             state="available",
-            producing_run_id=report.producing_run_id,
-            components=components,
+            producing_run_id=snapshot.producing_run_id,
+            components=snapshot.components,
             pair_items=tuple(dict(item) for item in page),
             next_cursor=next_cursor,
             cursor_expires_at=cursor_expires_at,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Protocol, cast
 
 import rfc8785
@@ -74,10 +74,12 @@ class OpenSearchTrainingTelemetrySource:
         delivery_status: _DeliveryStatus,
         *,
         deployment_id: str,
+        delivery_expected: Callable[[], bool],
     ) -> None:
         self._client = client
         self._delivery_status = delivery_status
         self._deployment_id = deployment_id
+        self._delivery_expected = delivery_expected
 
     def load_report(
         self,
@@ -101,7 +103,7 @@ class OpenSearchTrainingTelemetrySource:
                     )
                 except RuntimeError as exc:
                     raise TrainingTelemetryBackendUnavailable from exc
-                if status == "PENDING":
+                if status == "PENDING" and self._delivery_expected():
                     return ProjectedTrainingTelemetry(state="pending")
                 return ProjectedTrainingTelemetry(
                     state="unavailable",
