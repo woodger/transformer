@@ -1,0 +1,23 @@
+CONTRACT_NAME = "transformer-training-telemetry"
+CONTRACT_REVISION = 1
+
+REPORT_ACTION = "transformer.training-telemetry.v1.report"
+GRADIENT_INTERACTIONS_ACTION = (
+    "transformer.training-telemetry.v1.gradient-interactions"
+)
+
+MAX_EPOCH_PAGE_SIZE = 100
+MAX_GRADIENT_PAIR_PAGE_SIZE = 1_000
+CURSOR_TTL_SECONDS = 900
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+__all__ = [
+    "CONTRACT_NAME",
+    "CONTRACT_REVISION",
+    "CURSOR_TTL_SECONDS",
+    "GRADIENT_INTERACTIONS_ACTION",
+    "MAX_EPOCH_PAGE_SIZE",
+    "MAX_GRADIENT_PAIR_PAGE_SIZE",
+    "MAX_RESPONSE_BYTES",
+    "REPORT_ACTION",
+]

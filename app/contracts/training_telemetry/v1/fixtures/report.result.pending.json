@@ -1,0 +1,9 @@
+{
+  "contract": "transformer-training-telemetry",
+  "revision": 1,
+  "requestId": "33333333-3333-4333-8333-333333333333",
+  "state": "pending",
+  "modelRef": "mdl_99999999999999999999999999999999",
+  "reason": "MATERIALIZATION_PENDING",
+  "retryAfterSeconds": 5
+}

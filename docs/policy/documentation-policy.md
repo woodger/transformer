@@ -46,6 +46,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | Нормативный Model Catalog Query v1 | `app/contracts/model_catalog/v1/` |
+| Staged Training Telemetry Query v1 для cross-project review | `app/contracts/training_telemetry/v1/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -120,6 +121,10 @@ v12, worker v12, checkpoint/recovery v6, metrics v5 и Model Catalog Query v1
 `app/contracts/model_catalog/v1/` имеет независимую revision и активирован
 двумя Flight v12 actions. Изменение его query language не обязано синхронно
 менять job workflow Flight.
+
+`app/contracts/training_telemetry/v1/` является нормативным staged proposal
+для точного cross-project review. Он не расширяет действующий Flight v12 и не
+считается реализованным runtime contract до отдельного принятия и подключения.
 
 Изменение Flight contract требует синхронно проверить:
 

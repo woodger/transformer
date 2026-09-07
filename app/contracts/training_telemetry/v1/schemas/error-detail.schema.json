@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v1/error-detail.schema.json",
+  "title": "Transformer Training Telemetry Query v1 structured error detail",
+  "oneOf": [
+    {"$ref": "#/$defs/invalidQuery"},
+    {"$ref": "#/$defs/invalidCursor"},
+    {"$ref": "#/$defs/expiredCursor"},
+    {"$ref": "#/$defs/unavailableRevision"},
+    {"$ref": "#/$defs/modelNotFound"},
+    {"$ref": "#/$defs/storedMetadataInvalid"},
+    {"$ref": "#/$defs/telemetryIntegrityFailed"},
+    {"$ref": "#/$defs/backendUnavailable"},
+    {"$ref": "#/$defs/responseBudgetExceeded"}
+  ],
+  "$defs": {
+    "message": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "pointer": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"
+    },
+    "operation": {"enum": ["report", "gradientInteractions"]},
+    "invalidQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "path", "message"],
+      "properties": {
+        "code": {"const": "INVALID_ARGUMENT"},
+        "reason": {"const": "INVALID_TELEMETRY_QUERY"},
+        "path": {"$ref": "#/$defs/pointer"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "invalidCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "path", "message"],
+      "properties": {
+        "code": {"const": "INVALID_ARGUMENT"},
+        "reason": {"const": "INVALID_TELEMETRY_CURSOR"},
+        "path": {"const": "/cursor"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "expiredCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code", "reason", "path", "restartRequired", "message"
+      ],
+      "properties": {
+        "code": {"const": "FAILED_PRECONDITION"},
+        "reason": {"const": "TELEMETRY_CURSOR_EXPIRED"},
+        "path": {"const": "/cursor"},
+        "restartRequired": {"const": true},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "unavailableRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "requestedRevision", "message"],
+      "properties": {
+        "code": {"const": "FAILED_PRECONDITION"},
+        "reason": {"const": "TELEMETRY_QUERY_REVISION_UNAVAILABLE"},
+        "requestedRevision": {
+          "$ref": "common.schema.json#/$defs/positiveInteger"
+        },
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "modelNotFound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "modelRef", "message"],
+      "properties": {
+        "code": {"const": "NOT_FOUND"},
+        "reason": {"const": "MODEL_NOT_FOUND"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "storedMetadataInvalid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "modelRef", "path", "message"],
+      "properties": {
+        "code": {"const": "MODEL_CORRUPT"},
+        "reason": {"const": "STORED_MODEL_METADATA_INVALID"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "path": {"$ref": "#/$defs/pointer"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "telemetryIntegrityFailed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "modelRef", "path", "message"],
+      "properties": {
+        "code": {"const": "TELEMETRY_CORRUPT"},
+        "reason": {"const": "TRAINING_TELEMETRY_INTEGRITY_FAILED"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "path": {"$ref": "#/$defs/pointer"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "backendUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "modelRef", "message"],
+      "properties": {
+        "code": {"const": "UNAVAILABLE"},
+        "reason": {"const": "TRAINING_TELEMETRY_BACKEND_UNAVAILABLE"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "message": {"$ref": "#/$defs/message"}
+      }
+    },
+    "responseBudgetExceeded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code", "reason", "operation", "maxResponseBytes",
+        "actualResponseBytes", "message"
+      ],
+      "properties": {
+        "code": {"const": "RESOURCE_EXHAUSTED"},
+        "reason": {"const": "TELEMETRY_RESPONSE_BUDGET_EXCEEDED"},
+        "operation": {"$ref": "#/$defs/operation"},
+        "maxResponseBytes": {"const": 8388608},
+        "actualResponseBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 8388608,
+          "maximum": 9007199254740991
+        },
+        "message": {"$ref": "#/$defs/message"}
+      }
+    }
+  }
+}

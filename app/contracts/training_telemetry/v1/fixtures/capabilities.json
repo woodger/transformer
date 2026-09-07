@@ -1,0 +1,49 @@
+{
+  "contract": "transformer-training-telemetry",
+  "revision": 1,
+  "operations": ["report", "gradientInteractions"],
+  "transport": {
+    "kind": "ArrowFlightDoAction",
+    "actions": {
+      "report": "transformer.training-telemetry.v1.report",
+      "gradientInteractions": "transformer.training-telemetry.v1.gradient-interactions"
+    }
+  },
+  "metricFamilies": [
+    "epochLosses",
+    "targetErrors",
+    "optimizerHealth",
+    "gradientInteractions"
+  ],
+  "availabilityStates": ["pending", "unavailable", "available"],
+  "gradientAvailabilityStates": [
+    "notConfigured",
+    "configuredWithoutObservations",
+    "available"
+  ],
+  "epochObservation": {
+    "kind": "PreOptimizerUpdateEpochPass",
+    "checkpointReevaluation": false
+  },
+  "outcomePrecedence": [
+    "ModelLookup",
+    "Pending",
+    "Unavailable",
+    "IntegrityFailure",
+    "Available"
+  ],
+  "limits": {
+    "maxEpochPageSize": 100,
+    "maxGradientPairPageSize": 1000,
+    "cursorTtlSeconds": 900,
+    "maxResponseBytes": 8388608
+  },
+  "features": {
+    "ownerScope": "AuthenticatedSubject",
+    "selector": "ExactModelRef",
+    "batchQuery": false,
+    "partialReports": false,
+    "checkpointVerification": false,
+    "structuredErrors": true
+  }
+}

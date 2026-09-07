@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v1/capabilities.schema.json",
+  "title": "Transformer Training Telemetry Query v1 capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract", "revision", "operations", "transport", "metricFamilies",
+    "availabilityStates", "gradientAvailabilityStates", "epochObservation",
+    "outcomePrecedence", "limits", "features"
+  ],
+  "properties": {
+    "contract": {"const": "transformer-training-telemetry"},
+    "revision": {"const": 1},
+    "operations": {"const": ["report", "gradientInteractions"]},
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actions"],
+      "properties": {
+        "kind": {"const": "ArrowFlightDoAction"},
+        "actions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["report", "gradientInteractions"],
+          "properties": {
+            "report": {
+              "const": "transformer.training-telemetry.v1.report"
+            },
+            "gradientInteractions": {
+              "const": "transformer.training-telemetry.v1.gradient-interactions"
+            }
+          }
+        }
+      }
+    },
+    "metricFamilies": {
+      "const": [
+        "epochLosses", "targetErrors", "optimizerHealth",
+        "gradientInteractions"
+      ]
+    },
+    "availabilityStates": {
+      "const": ["pending", "unavailable", "available"]
+    },
+    "gradientAvailabilityStates": {
+      "const": [
+        "notConfigured", "configuredWithoutObservations", "available"
+      ]
+    },
+    "epochObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "checkpointReevaluation"],
+      "properties": {
+        "kind": {"const": "PreOptimizerUpdateEpochPass"},
+        "checkpointReevaluation": {"const": false}
+      }
+    },
+    "outcomePrecedence": {
+      "const": [
+        "ModelLookup", "Pending", "Unavailable", "IntegrityFailure",
+        "Available"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxEpochPageSize", "maxGradientPairPageSize", "cursorTtlSeconds",
+        "maxResponseBytes"
+      ],
+      "properties": {
+        "maxEpochPageSize": {"const": 100},
+        "maxGradientPairPageSize": {"const": 1000},
+        "cursorTtlSeconds": {"const": 900},
+        "maxResponseBytes": {"const": 8388608}
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownerScope", "selector", "batchQuery", "partialReports",
+        "checkpointVerification", "structuredErrors"
+      ],
+      "properties": {
+        "ownerScope": {"const": "AuthenticatedSubject"},
+        "selector": {"const": "ExactModelRef"},
+        "batchQuery": {"const": false},
+        "partialReports": {"const": false},
+        "checkpointVerification": {"const": false},
+        "structuredErrors": {"const": true}
+      }
+    }
+  }
+}

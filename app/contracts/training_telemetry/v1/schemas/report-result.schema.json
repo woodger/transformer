@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v1/report-result.schema.json",
+  "title": "transformer.training-telemetry.v1.report result",
+  "oneOf": [
+    {"$ref": "#/$defs/pending"},
+    {"$ref": "#/$defs/unavailable"},
+    {"$ref": "#/$defs/available"}
+  ],
+  "$defs": {
+    "pending": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract", "revision", "requestId", "state", "modelRef", "reason",
+        "retryAfterSeconds"
+      ],
+      "properties": {
+        "contract": {"const": "transformer-training-telemetry"},
+        "revision": {"const": 1},
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "pending"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "reason": {"const": "MATERIALIZATION_PENDING"},
+        "retryAfterSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      }
+    },
+    "unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract", "revision", "requestId", "state", "modelRef", "reason"
+      ],
+      "properties": {
+        "contract": {"const": "transformer-training-telemetry"},
+        "revision": {"const": 1},
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "unavailable"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "reason": {
+          "enum": [
+            "NO_COMPLETE_REPORT", "RETENTION_EXPIRED", "FORMAT_UNSUPPORTED"
+          ]
+        }
+      }
+    },
+    "available": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract", "revision", "requestId", "state", "modelRef",
+        "producingRunId", "semanticDigests", "coverage", "selection",
+        "anchors", "healthTotals", "gradientInteractions", "epochPage"
+      ],
+      "properties": {
+        "contract": {"const": "transformer-training-telemetry"},
+        "revision": {"const": 1},
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "available"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "producingRunId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "semanticDigests": {
+          "$ref": "common.schema.json#/$defs/semanticDigests"
+        },
+        "coverage": {"$ref": "common.schema.json#/$defs/coverage"},
+        "selection": {"$ref": "common.schema.json#/$defs/selection"},
+        "anchors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {"$ref": "common.schema.json#/$defs/epochAnchor"}
+        },
+        "healthTotals": {"$ref": "common.schema.json#/$defs/health"},
+        "gradientInteractions": {
+          "$ref": "common.schema.json#/$defs/gradientInteractionsSummary"
+        },
+        "epochPage": {"$ref": "common.schema.json#/$defs/epochPage"}
+      }
+    }
+  }
+}

@@ -9,6 +9,9 @@
 
 ### Added
 
+- Опубликован staged canonical package Training Telemetry Query v1: owner-scoped
+  report, epoch и gradient-pair pagination, availability outcomes, structured
+  errors и cross-project golden fixtures. Действующий runtime не изменён.
 - Реализован Model Catalog Query v1: owner-scoped list и single detail,
   live high-water pagination, bounded checkpoint verification, independently
   versioned capabilities, structured errors и принятые cross-project golden

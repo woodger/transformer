@@ -1,0 +1,68 @@
+{
+  "contract": "transformer-training-telemetry",
+  "revision": 1,
+  "requestId": "55555555-5555-4555-8555-555555555555",
+  "state": "available",
+  "modelRef": "mdl_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "producingRunId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "semanticDigests": {
+    "dataContractSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "targetContractSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "objectiveSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "modelContractSha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "coverage": {"completedEpochs": 3, "firstEpoch": 1, "lastEpoch": 3},
+  "selection": {"enabled": true, "bestEpoch": 2, "publishedEpoch": 2, "publishedSource": "best_direct_selection_score"},
+  "anchors": [
+    {
+      "epoch": 1, "globalStep": 8, "attempt": 1, "totalLoss": 0.3, "selectionScore": 0.3,
+      "directLosses": [{"componentIdentity": "direct.value", "operator": "SmoothL1", "targetIdentity": "Value", "targetIndex": 0, "value": 0.3}],
+      "auxiliaryLosses": [],
+      "targetMetrics": [{"targetIdentity": "Value", "targetIndex": 0, "mae": 0.2, "rmse": 0.3}],
+      "health": {"trainingBatchesCompleted": 8, "optimizerUpdatesApplied": 8, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 8, "nonFiniteGradientBatches": 0},
+      "gradientInteractionsCollected": true,
+      "roles": ["first"]
+    },
+    {
+      "epoch": 2, "globalStep": 16, "attempt": 1, "totalLoss": 0.2, "selectionScore": 0.2,
+      "directLosses": [{"componentIdentity": "direct.value", "operator": "SmoothL1", "targetIdentity": "Value", "targetIndex": 0, "value": 0.2}],
+      "auxiliaryLosses": [],
+      "targetMetrics": [{"targetIdentity": "Value", "targetIndex": 0, "mae": 0.15, "rmse": 0.2}],
+      "health": {"trainingBatchesCompleted": 8, "optimizerUpdatesApplied": 8, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 8, "nonFiniteGradientBatches": 0},
+      "gradientInteractionsCollected": false,
+      "roles": ["best", "published"]
+    }
+  ],
+  "healthTotals": {"trainingBatchesCompleted": 24, "optimizerUpdatesApplied": 24, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 24, "nonFiniteGradientBatches": 0},
+  "gradientInteractions": {"state": "available", "collectedEpochCount": 2, "defaultEpoch": 1, "publishedEpochCollected": false},
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1, "globalStep": 8, "attempt": 1, "totalLoss": 0.3, "selectionScore": 0.3,
+        "directLosses": [{"componentIdentity": "direct.value", "operator": "SmoothL1", "targetIdentity": "Value", "targetIndex": 0, "value": 0.3}],
+        "auxiliaryLosses": [],
+        "targetMetrics": [{"targetIdentity": "Value", "targetIndex": 0, "mae": 0.2, "rmse": 0.3}],
+        "health": {"trainingBatchesCompleted": 8, "optimizerUpdatesApplied": 8, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 8, "nonFiniteGradientBatches": 0},
+        "gradientInteractionsCollected": true
+      },
+      {
+        "epoch": 2, "globalStep": 16, "attempt": 1, "totalLoss": 0.2, "selectionScore": 0.2,
+        "directLosses": [{"componentIdentity": "direct.value", "operator": "SmoothL1", "targetIdentity": "Value", "targetIndex": 0, "value": 0.2}],
+        "auxiliaryLosses": [],
+        "targetMetrics": [{"targetIdentity": "Value", "targetIndex": 0, "mae": 0.15, "rmse": 0.2}],
+        "health": {"trainingBatchesCompleted": 8, "optimizerUpdatesApplied": 8, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 8, "nonFiniteGradientBatches": 0},
+        "gradientInteractionsCollected": false
+      },
+      {
+        "epoch": 3, "globalStep": 24, "attempt": 1, "totalLoss": 0.22, "selectionScore": 0.22,
+        "directLosses": [{"componentIdentity": "direct.value", "operator": "SmoothL1", "targetIdentity": "Value", "targetIndex": 0, "value": 0.22}],
+        "auxiliaryLosses": [],
+        "targetMetrics": [{"targetIdentity": "Value", "targetIndex": 0, "mae": 0.16, "rmse": 0.22}],
+        "health": {"trainingBatchesCompleted": 8, "optimizerUpdatesApplied": 8, "optimizerUpdatesSkipped": 0, "ampOverflowBatches": 0, "finiteGradientBatches": 8, "nonFiniteGradientBatches": 0},
+        "gradientInteractionsCollected": true
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}
