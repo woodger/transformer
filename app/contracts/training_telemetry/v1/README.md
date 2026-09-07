@@ -169,8 +169,8 @@ paginated sequence — anchor не удаляет и не заменяет page 
 Каждый epoch item содержит:
 
 - `epoch`, job-wide `globalStep` и фактический `attempt`;
-- weighted `totalLoss`;
-- optional `selectionScore`;
+- authoritative observation weighted `totalLoss`;
+- optional authoritative observation `selectionScore`;
 - unweighted `GlobalRowMean` каждого direct и auxiliary component;
 - MAE/RMSE каждого target;
 - optimizer/AMP/gradient health counters;
@@ -186,10 +186,20 @@ paginated sequence — anchor не удаляет и не заменяет page 
   ModelContract;
 - direct, auxiliary, total, selection, MAE и RMSE finite; auxiliary loss может
   быть отрицательным;
-- `selectionScore` равен weighted sum только direct losses при включённой
-  selection и равен `null` при выключенной;
-- `totalLoss` равен weighted total Objective;
+- `selectionScore` семантически является weighted sum только direct losses при
+  включённой selection и равен `null` при выключенной;
+- `totalLoss` семантически является weighted total Objective;
 - все direct и auxiliary component values являются unweighted means.
+
+`totalLoss`, `selectionScore` и component values являются отдельными
+authoritative observations, агрегированными Worker-ом для одной epoch. Query
+проверяет их наличие и finite representation, но не восстанавливает один
+aggregate из других и не применяет к ним cross-field equality predicate.
+Причина — total и component means накапливаются независимо, а порядок и
+округление floating-point операций являются implementation detail. Их
+различие на последнем binary64 разряде само по себе не означает telemetry
+corruption. Revision 1 поэтому не задаёт `atol`, `rtol`, dtype внутреннего
+accumulator-а или межъязыковой порядок сложения.
 
 Health каждой epoch и `healthTotals` удовлетворяют:
 
@@ -233,7 +243,20 @@ Objective execution order: direct components в slot order, затем auxiliary
 canonical Objective order. Direct component содержит target identity/index;
 auxiliary component их не выдумывает.
 
-Pairs сортируются по ASCII tuple
+Для каждой unordered пары objective components ориентация определяется один
+раз: `left` — component, расположенный раньше в Objective execution order,
+`right` — расположенный позже. Self-pairs и reversed duplicates запрещены;
+обе identities обязаны разрешаться в возвращённом ordered `components`.
+
+Gradient pair result является разреженным. Пара публикуется, только если в
+epoch для неё существует хотя бы одна finite cosine observation. `meanCosine`
+и `negativeCosineFraction` агрегируются только по этим finite observations.
+Если norm одного из gradients равен нулю, cosine этой observation не определён
+и не подменяется нулём. Отсутствующая пара означает отсутствие finite cosine
+observations и не является ни нулевым cosine, ни telemetry corruption.
+
+Каждая присутствующая oriented пара уникальна. После определения orientation
+пары сортируются по ASCII tuple
 `(leftComponentIdentity, rightComponentIdentity)` и выдаются страницами до
 1000 элементов. Pair cursor дополнительно связан с exact epoch и последней
 pair identity. Components повторяются на каждой pair page и не меняются.
@@ -251,7 +274,8 @@ RPC error. Reasons revision 1: `DIAGNOSTICS_NOT_CONFIGURED` и
 2. доказать наличие всех epochs `1..completedEpochs`;
 3. исключить duplicate epoch и metric observations;
 4. проверить ordered target/component references по ModelContract;
-5. проверить finite values, formulas total/selection и health invariants;
+5. проверить finite authoritative observations и health invariants, не
+   выполняя обратный arithmetic proof между aggregates;
 6. проверить anchors, health totals и gradient descriptor по полной
    последовательности;
 7. построить bounded public projection.
@@ -304,10 +328,11 @@ Fixtures покрывают:
 
 - selection enabled/disabled и объединённые milestone roles;
 - pre-update epoch-pass semantics без checkpoint reevaluation;
+- independently accumulated authoritative aggregates без cross-field equality;
 - opaque multi-target layout, negative auxiliary loss и recovery attempts;
 - AMP overflow/skipped/non-finite counters;
-- все gradient availability states, lazy pair pagination и три ветви
-  `defaultEpoch`;
+- все gradient availability states, lazy pair pagination, zero-norm с
+  отсутствующими sparse pairs и три ветви `defaultEpoch`;
 - pending и доказанное final unavailable;
 - completion marker с missing epoch и invalid D1/run/component references;
 - security-equivalent unknown/foreign model и deletion during traversal;

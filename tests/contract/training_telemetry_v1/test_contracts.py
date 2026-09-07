@@ -322,10 +322,6 @@ def test_multi_target_report_resolves_to_consumer_neutral_model_contract() -> No
         (item["identity"], item["operator"])
         for item in model_contract.auxiliary_components
     ]
-    weights = {
-        item["identity"]: item["weight"]
-        for item in (*model_contract.direct_components, *model_contract.auxiliary_components)
-    }
     for epoch in report["epochPage"]["items"]:
         assert [
             (item["targetIndex"], item["targetIdentity"])
@@ -339,16 +335,25 @@ def test_multi_target_report_resolves_to_consumer_neutral_model_contract() -> No
             (item["componentIdentity"], item["operator"])
             for item in epoch["auxiliaryLosses"]
         ] == auxiliary
-        direct_score = math.fsum(
-            weights[item["componentIdentity"]] * item["value"]
-            for item in epoch["directLosses"]
-        )
-        total = direct_score + math.fsum(
-            weights[item["componentIdentity"]] * item["value"]
-            for item in epoch["auxiliaryLosses"]
-        )
-        assert epoch["selectionScore"] == pytest.approx(direct_score)
-        assert epoch["totalLoss"] == pytest.approx(total)
+
+
+def test_authoritative_aggregates_do_not_require_cross_field_equality() -> None:
+    report = _fixture("report.result.available.selection-enabled.json")
+    semantic_fixture = _read(
+        SEMANTIC_ROOT / "fixtures" / "multi-target-shared-resource.json"
+    )
+    model_contract = ModelContract.from_document(semantic_fixture["modelContract"])
+    weights = {
+        item["identity"]: item["weight"]
+        for item in (*model_contract.direct_components, *model_contract.auxiliary_components)
+    }
+    first_epoch = report["epochPage"]["items"][0]
+    reconstructed_total = math.fsum(
+        weights[item["componentIdentity"]] * item["value"]
+        for family in (first_epoch["directLosses"], first_epoch["auxiliaryLosses"])
+        for item in family
+    )
+    assert first_epoch["totalLoss"] != reconstructed_total
 
 
 def test_default_epoch_covers_published_previous_and_following_branches() -> None:
@@ -365,7 +370,7 @@ def test_default_epoch_covers_published_previous_and_following_branches() -> Non
     assert following["gradientInteractions"]["defaultEpoch"] == 2
 
 
-def test_gradient_pairs_are_complete_ordered_and_bounded() -> None:
+def test_gradient_pairs_are_oriented_unique_ordered_and_bounded() -> None:
     initial = _fixture("gradient-interactions.request.initial.json")
     continuation = _fixture("gradient-interactions.request.continuation.json")
     first = _fixture("gradient-interactions.result.available.first.json")
@@ -384,10 +389,39 @@ def test_gradient_pairs_are_complete_ordered_and_bounded() -> None:
         (item["leftComponentIdentity"], item["rightComponentIdentity"])
         for item in pairs
     ]
+    execution_position = {identity: index for index, identity in enumerate(components)}
     assert pair_identities == sorted(pair_identities)
-    assert pair_identities == sorted(combinations(components, 2))
+    assert len(pair_identities) == len(set(pair_identities))
+    assert set(pair_identities) <= set(combinations(components, 2))
+    assert all(
+        execution_position[left] < execution_position[right]
+        for left, right in pair_identities
+    )
     _assert_finite_numbers(first)
     _assert_finite_numbers(terminal)
+
+
+def test_zero_norm_produces_a_sparse_gradient_pair_result() -> None:
+    result = _fixture("gradient-interactions.result.zero-norm-sparse.json")
+    components = [item["componentIdentity"] for item in result["components"]]
+    pair_identities = [
+        (item["leftComponentIdentity"], item["rightComponentIdentity"])
+        for item in result["pairPage"]["items"]
+    ]
+    pairs = set(pair_identities)
+    zero_component = result["components"][-1]
+
+    assert pair_identities == sorted(pair_identities)
+    assert len(pair_identities) == len(pairs)
+    assert zero_component == {
+        "componentIdentity": "aux.risk-adjusted",
+        "meanNorm": 0.0,
+    }
+    assert pairs == {
+        pair
+        for pair in combinations(components, 2)
+        if zero_component["componentIdentity"] not in pair
+    }
 
 
 def test_absent_gradient_observations_are_normal_results() -> None:

@@ -21,7 +21,7 @@
   "anchors": [
     {
       "epoch": 1, "globalStep": 10, "attempt": 1,
-      "totalLoss": 1.12, "selectionScore": 0.85,
+      "totalLoss": 1.1200000000000003, "selectionScore": 0.85,
       "directLosses": [
         {"componentIdentity": "direct.location", "operator": "SmoothL1", "targetIdentity": "Location", "targetIndex": 0, "value": 0.2},
         {"componentIdentity": "direct.positive", "operator": "BinaryCrossEntropyWithLogits", "targetIdentity": "PositiveOutcome", "targetIndex": 1, "value": 0.3},
@@ -43,7 +43,7 @@
     },
     {
       "epoch": 2, "globalStep": 20, "attempt": 2,
-      "totalLoss": 0.62, "selectionScore": 0.6,
+      "totalLoss": 0.6200000000000001, "selectionScore": 0.6,
       "directLosses": [
         {"componentIdentity": "direct.location", "operator": "SmoothL1", "targetIdentity": "Location", "targetIndex": 0, "value": 0.15},
         {"componentIdentity": "direct.positive", "operator": "BinaryCrossEntropyWithLogits", "targetIdentity": "PositiveOutcome", "targetIndex": 1, "value": 0.2},
@@ -70,7 +70,7 @@
     "items": [
       {
         "epoch": 1, "globalStep": 10, "attempt": 1,
-        "totalLoss": 1.12, "selectionScore": 0.85,
+        "totalLoss": 1.1200000000000003, "selectionScore": 0.85,
         "directLosses": [
           {"componentIdentity": "direct.location", "operator": "SmoothL1", "targetIdentity": "Location", "targetIndex": 0, "value": 0.2},
           {"componentIdentity": "direct.positive", "operator": "BinaryCrossEntropyWithLogits", "targetIdentity": "PositiveOutcome", "targetIndex": 1, "value": 0.3},
@@ -91,7 +91,7 @@
       },
       {
         "epoch": 2, "globalStep": 20, "attempt": 2,
-        "totalLoss": 0.62, "selectionScore": 0.6,
+        "totalLoss": 0.6200000000000001, "selectionScore": 0.6,
         "directLosses": [
           {"componentIdentity": "direct.location", "operator": "SmoothL1", "targetIdentity": "Location", "targetIndex": 0, "value": 0.15},
           {"componentIdentity": "direct.positive", "operator": "BinaryCrossEntropyWithLogits", "targetIdentity": "PositiveOutcome", "targetIndex": 1, "value": 0.2},
@@ -112,7 +112,7 @@
       },
       {
         "epoch": 3, "globalStep": 30, "attempt": 2,
-        "totalLoss": 0.63, "selectionScore": 0.63,
+        "totalLoss": 0.6300000000000001, "selectionScore": 0.63,
         "directLosses": [
           {"componentIdentity": "direct.location", "operator": "SmoothL1", "targetIdentity": "Location", "targetIndex": 0, "value": 0.16},
           {"componentIdentity": "direct.positive", "operator": "BinaryCrossEntropyWithLogits", "targetIdentity": "PositiveOutcome", "targetIndex": 1, "value": 0.21},

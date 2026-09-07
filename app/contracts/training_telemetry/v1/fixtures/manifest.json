@@ -23,6 +23,7 @@
     {"path": "gradient-interactions.result.available.terminal.json", "sha256": "3b12bf837daab81c4db8651a00a4ce8c31a7f14e402fc7234ee4e820a31b558f"},
     {"path": "gradient-interactions.result.not-collected.json", "sha256": "6144f6b93e48f5b8ddc1397bb159f9124a9e26673b9fde31502924d4f6173d13"},
     {"path": "gradient-interactions.result.not-configured.json", "sha256": "0e37a40e61c27974f61172a0e3fb1820080f205c8053fdfc566041b0c31d20d0"},
+    {"path": "gradient-interactions.result.zero-norm-sparse.json", "sha256": "649b0360e5f7c5de171b6c236df8aa310c32aaee7960b85ebca553f734736b67"},
     {"path": "report.request.continuation.json", "sha256": "fd944e5fd08eebd26cc7f9373d96a859bd828854728ba58ff26f38241a0414db"},
     {"path": "report.request.initial.json", "sha256": "88d6256beb2df85d0f92fef0db0d792afa025b125dca098d61e51b8b5cf29773"},
     {"path": "report.result.available.configured-without-observations.json", "sha256": "d63e7873ba6928722d6741f2adbb742d562136ab7a2c812bb481823bd0104689"},
@@ -30,7 +31,7 @@
     {"path": "report.result.available.default-previous.json", "sha256": "45731189cba39fce4effdf40dc19362d1f5c46cefddb774f58365422b1171d63"},
     {"path": "report.result.available.selection-disabled.first.json", "sha256": "d78bb51add83208eb61d129859e6d513c5b6cb62159eed45e668ac1e3c441ed0"},
     {"path": "report.result.available.selection-disabled.terminal.json", "sha256": "3cbbdeb36afaaf02550dfd33801b9d4733ead6d2d86753c72efe88a0b43d5a1c"},
-    {"path": "report.result.available.selection-enabled.json", "sha256": "06d3e045f4af6f131552dbfa8faf8cf4471b300a2839938615a866fd24381565"},
+    {"path": "report.result.available.selection-enabled.json", "sha256": "59ac191541ae104013809862f38bf497b616a45f981c19599295b8da727c1a9e"},
     {"path": "report.result.available.single-epoch.json", "sha256": "38aaf8c1879d34f922e324097e32a64eefd316bb08d18c2af0322c5f0406cb14"},
     {"path": "report.result.pending.json", "sha256": "0e650156866a50c609eeb5d37a86e222c4bb0ba2219e7e4650c0dfc602ce6738"},
     {"path": "report.result.unavailable.format-unsupported.json", "sha256": "11057f8057fcb6dea4806268feb6884cc80190a98921ab84dc99718ec684faf1"},
@@ -93,6 +94,10 @@
     {
       "identity": "gradient-interaction-pagination",
       "documents": ["gradient-interactions.request.continuation.json", "gradient-interactions.request.initial.json", "gradient-interactions.result.available.first.json", "gradient-interactions.result.available.terminal.json"]
+    },
+    {
+      "identity": "gradient-zero-norm-sparse-pairs",
+      "documents": ["gradient-interactions.result.zero-norm-sparse.json"]
     },
     {
       "identity": "invalid-cursor",
