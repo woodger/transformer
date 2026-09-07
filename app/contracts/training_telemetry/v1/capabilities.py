@@ -7,6 +7,9 @@ from app.contracts.training_telemetry.v1.constants import (
     MAX_EPOCH_PAGE_SIZE,
     MAX_GRADIENT_PAIR_PAGE_SIZE,
     MAX_RESPONSE_BYTES,
+    MAX_RETAINED_SNAPSHOT_BYTES,
+    MAX_RETAINED_SNAPSHOT_COUNT,
+    MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
     REPORT_ACTION,
 )
 
@@ -51,6 +54,9 @@ def training_telemetry_capabilities() -> JsonObject:
             "maxGradientPairPageSize": MAX_GRADIENT_PAIR_PAGE_SIZE,
             "cursorTtlSeconds": CURSOR_TTL_SECONDS,
             "maxResponseBytes": MAX_RESPONSE_BYTES,
+            "maxRetainedSnapshotCount": MAX_RETAINED_SNAPSHOT_COUNT,
+            "maxRetainedSnapshotBytes": MAX_RETAINED_SNAPSHOT_BYTES,
+            "maxRetainedSnapshotTotalBytes": (MAX_RETAINED_SNAPSHOT_TOTAL_BYTES),
         },
         "features": {
             "ownerScope": "AuthenticatedSubject",
@@ -59,6 +65,8 @@ def training_telemetry_capabilities() -> JsonObject:
             "partialReports": False,
             "checkpointVerification": False,
             "structuredErrors": True,
+            "cursorRestartOutcome": "TELEMETRY_CURSOR_INVALIDATED",
+            "snapshotAdmission": "AtomicNoLiveEviction",
         },
     }
 

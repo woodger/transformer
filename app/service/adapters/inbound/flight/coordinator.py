@@ -63,11 +63,13 @@ from app.service.adapters.inbound.flight.presentation import (
 from app.service.adapters.inbound.flight.training_telemetry import (
     expired_telemetry_cursor,
     invalid_telemetry_cursor,
+    invalidated_telemetry_cursor,
     present_gradient_interactions,
     present_training_telemetry_report,
     telemetry_backend_unavailable,
     telemetry_integrity_failed,
     telemetry_model_not_found,
+    telemetry_snapshot_capacity_exhausted,
     telemetry_stored_metadata_invalid,
     training_telemetry_response,
 )
@@ -142,7 +144,11 @@ from app.service.application.services.model_catalog_cursor import (
 )
 from app.service.application.services.training_telemetry_cursor import (
     ExpiredTrainingTelemetryCursor,
+    InvalidatedTrainingTelemetryCursor,
     InvalidTrainingTelemetryCursor,
+)
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotCapacityExhausted,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
@@ -322,6 +328,12 @@ class JobCoordinator:
                 raise invalid_telemetry_cursor() from exc
             except ExpiredTrainingTelemetryCursor as exc:
                 raise expired_telemetry_cursor() from exc
+            except InvalidatedTrainingTelemetryCursor as exc:
+                raise invalidated_telemetry_cursor() from exc
+            except TrainingTelemetrySnapshotCapacityExhausted as exc:
+                raise telemetry_snapshot_capacity_exhausted(
+                    exc.operation
+                ) from exc
             except TrainingTelemetryStoredMetadataError as exc:
                 raise telemetry_stored_metadata_invalid(
                     fields["model_ref"], exc.path
@@ -356,6 +368,12 @@ class JobCoordinator:
                 raise invalid_telemetry_cursor() from exc
             except ExpiredTrainingTelemetryCursor as exc:
                 raise expired_telemetry_cursor() from exc
+            except InvalidatedTrainingTelemetryCursor as exc:
+                raise invalidated_telemetry_cursor() from exc
+            except TrainingTelemetrySnapshotCapacityExhausted as exc:
+                raise telemetry_snapshot_capacity_exhausted(
+                    exc.operation
+                ) from exc
             except TrainingTelemetryStoredMetadataError as exc:
                 raise telemetry_stored_metadata_invalid(
                     fields["model_ref"], exc.path

@@ -118,12 +118,34 @@ Epoch cursor integrity-protected и связан как минимум с:
 - query revision и immutable report identity;
 - page size и последней возвращённой epoch;
 - абсолютным expiration timestamp.
+- случайной boot identity текущего успешного запуска сервиса.
 
 TTL равен 900 секундам от первой страницы и не продлевается. Нетерминальная
 страница возвращает `nextCursor` и `cursorExpiresAt`; terminal page возвращает
-для обоих полей `null`. Provider удерживает underlying immutable report до
-expiration выданного cursor. Исключение — model deletion: continuation
-возвращает `MODEL_NOT_FOUND`.
+для обоих полей `null`.
+
+Report и gradient snapshots удерживаются в одном общем bounded pool: не более
+64 snapshots, 64 MiB суммарно и 16 MiB на один snapshot. Размер snapshot
+равен длине в bytes его retained projection после RFC 8785/JCS serialization
+в UTF-8. Admission проверяет все три ограничения и добавляет snapshot атомарно
+до выдачи cursor. Живые snapshots не вытесняются. Повторный admission exact
+того же snapshot identity и JCS content не занимает capacity повторно.
+Terminal response без cursor не требует admission и остаётся доступен при
+заполненном pool.
+
+Provider удерживает принятый immutable snapshot до expiration выданного
+cursor. Если admission невозможен, cursor не выдаётся и операция возвращает
+`TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED`. Boot identity создаётся случайно для
+каждого успешного запуска, не совпадает с deployment или commit identity и
+находится только внутри подписанного cursor. Поэтому ещё действующий cursor
+предыдущего процесса возвращает `TELEMETRY_CURSOR_INVALIDATED`, а не читает
+report заново. Исключение — model deletion: continuation возвращает
+`MODEL_NOT_FOUND`.
+
+Порядок проверки continuation: owner-scoped model lookup и metadata
+validation; подпись и binding cursor с request/model/run; expiration; boot
+identity; получение retained snapshot. Поэтому истёкший cursor прежнего
+процесса остаётся `TELEMETRY_CURSOR_EXPIRED`.
 
 Report page содержит не более 100 epochs. Полный serialized response не
 превышает 8 MiB. Превышение возвращает
@@ -293,12 +315,14 @@ Application `code` и `reason` передаются как exact JSON `extra_inf
 | Invalid request | `INVALID_ARGUMENT` | `INVALID_TELEMETRY_QUERY` |
 | Invalid/foreign cursor | `INVALID_ARGUMENT` | `INVALID_TELEMETRY_CURSOR` |
 | Expired cursor | `FAILED_PRECONDITION` | `TELEMETRY_CURSOR_EXPIRED` |
+| Unexpired cursor from previous service instance | `FAILED_PRECONDITION` | `TELEMETRY_CURSOR_INVALIDATED` |
 | Unsupported revision | `FAILED_PRECONDITION` | `TELEMETRY_QUERY_REVISION_UNAVAILABLE` |
 | Unknown/foreign/deleted model | `NOT_FOUND` | `MODEL_NOT_FOUND` |
 | Invalid stored model metadata | `MODEL_CORRUPT` | `STORED_MODEL_METADATA_INVALID` |
 | Contradictory complete telemetry | `TELEMETRY_CORRUPT` | `TRAINING_TELEMETRY_INTEGRITY_FAILED` |
 | Backend unavailable | `UNAVAILABLE` | `TRAINING_TELEMETRY_BACKEND_UNAVAILABLE` |
 | Response exceeds 8 MiB | `RESOURCE_EXHAUSTED` | `TELEMETRY_RESPONSE_BUDGET_EXCEEDED` |
+| Snapshot cannot be retained within limits | `RESOURCE_EXHAUSTED` | `TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED` |
 
 Pending, final absence of telemetry and absence of gradient observations are
 normal result documents.
@@ -307,7 +331,8 @@ normal result documents.
 
 `capabilities.schema.json` задаёт закрытый block с query identity/revision,
 action identities, metric families, availability states, epoch observation
-semantics, outcome precedence, limits и supported features. Hosting Flight
+semantics, outcome precedence, response/pagination/snapshot limits и supported
+features. Hosting Flight
 capabilities включает этот block только после фактической runtime activation.
 
 Отсутствующий block означает, что query не поддержан. Consumer не угадывает
@@ -333,7 +358,10 @@ Fixtures покрывают:
 - pending и доказанное final unavailable;
 - completion marker с missing epoch и invalid D1/run/component references;
 - security-equivalent unknown/foreign model и deletion during traversal;
-- cursor expiration и response budget.
+- cursor expiration, restart invalidation и model lookup precedence;
+- shared count/byte/single-snapshot admission, no-live-eviction, TTL release,
+  identical reuse, concurrent admission и terminal response без admission;
+- response budget.
 
 Inventory хранит byte-identical offline copy и независимо проверяет schemas,
 semantic invariants и manifest digests до runtime implementation.

@@ -2,9 +2,10 @@
   "contract": "transformer-training-telemetry-fixtures",
   "revision": 1,
   "files": [
-    {"path": "capabilities.json", "sha256": "bf94c91c20bc453e8b4f59414cf821f5b6f3b877361f5c7fa267554fef59c6b8"},
+    {"path": "capabilities.json", "sha256": "1de4ecee215825e497cd5732e730d1a7b14acf08c0a93791df83cc7389392598"},
     {"path": "error.backend-unavailable.json", "sha256": "df18a9a900227a2ff799e9a8e3d39236bb50362a16d378a8535963a6ea85496a"},
     {"path": "error.cursor-expired.json", "sha256": "514286395470fd6b586c18d0e1a2e9e217f57f750840168380cd8189345436a2"},
+    {"path": "error.cursor-invalidated.json", "sha256": "86af96389879dd305c6949f3bb59907e970240c2278dc8aff6a986aabecb5dfa"},
     {"path": "error.invalid-cursor.json", "sha256": "04331a8556fe10e78860cf7596c25f76fa79808948911c55733da2e263e48203"},
     {"path": "error.invalid-query.json", "sha256": "9ca37f6d90ffb196aa4da81ef7ea120db72bb409ddfef919b801c075a599979b"},
     {"path": "error.model-not-found.deleted-during-cursor.json", "sha256": "3280e2618832b4e1e48c017eabd9a8ff1f48c23ed5b419fa68e0a17670e866bc"},
@@ -12,6 +13,7 @@
     {"path": "error.model-not-found.unknown.json", "sha256": "7b30d14f19b9af8111828d251b2f735e856bd09c7c74bb114d6ec9a86a4d18c2"},
     {"path": "error.response-budget.json", "sha256": "68bd43129ef206fa2bb954c955afc062c09464997e1b3a0d1dc56444119bed09"},
     {"path": "error.revision-unavailable.json", "sha256": "cadac263432ce30be451914d7625715d67931f30779c3418a5d22f70833575ee"},
+    {"path": "error.snapshot-capacity.json", "sha256": "d90c0e3f7fd8ef6e455574a742403957c08112ba860eafec0eef222e6e59029c"},
     {"path": "error.stored-metadata-invalid.json", "sha256": "1e07a32a84477613f1db444917ad0bda21f54ad64c8bf84481ec08c86a55721d"},
     {"path": "error.telemetry-integrity.missing-epoch.json", "sha256": "7727861b82968cabbf7b92b1da00cb3b544397a694ccbbe5b33e5e96256d1f4d"},
     {"path": "error.telemetry-integrity.wrong-component.json", "sha256": "2bbf6fd23c226f49e7098e810ff6e743c3a107f3a8a78e4bc8a1886a92f9b6bc"},
@@ -52,8 +54,16 @@
       "documents": ["error.backend-unavailable.json"]
     },
     {
+      "identity": "bounded-snapshot-admission",
+      "documents": ["capabilities.json", "error.snapshot-capacity.json"]
+    },
+    {
       "identity": "cursor-expiration",
       "documents": ["error.cursor-expired.json"]
+    },
+    {
+      "identity": "cursor-restart-invalidation",
+      "documents": ["error.cursor-invalidated.json", "report.request.continuation.json"]
     },
     {
       "identity": "default-epoch-following",
@@ -158,6 +168,10 @@
     {
       "identity": "stored-telemetry-wrong-run",
       "documents": ["error.telemetry-integrity.wrong-run.json"]
+    },
+    {
+      "identity": "terminal-response-without-snapshot-admission",
+      "documents": ["capabilities.json", "report.result.available.single-epoch.json"]
     },
     {
       "identity": "unknown-foreign-security-equivalence",

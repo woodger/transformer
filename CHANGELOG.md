@@ -33,9 +33,9 @@
 ### Fixed
 
 - Flight v13 принимает Training Telemetry Query results общей action schema;
-  report и gradient cursors удерживают exact validated snapshot до expiration,
-  а остановленный metrics publisher больше не оставляет report в вечном
-  `pending`.
+  report и gradient cursors используют общий bounded snapshot pool с atomic
+  admission и restart invalidation, а остановленный metrics publisher больше
+  не оставляет report в вечном `pending`.
 - Epoch recovery checkpoints больше не накапливают staging-копии в runtime:
   они удаляются после durable-регистрации и очищаются при старте после аварии.
   Ошибка сохранения worker log не скрывает terminal error самого Worker.

@@ -15,7 +15,11 @@ from app.contracts.training_telemetry.v1.constants import (
     MAX_EPOCH_PAGE_SIZE,
     MAX_GRADIENT_PAIR_PAGE_SIZE,
     MAX_RESPONSE_BYTES,
+    MAX_RETAINED_SNAPSHOT_BYTES,
+    MAX_RETAINED_SNAPSHOT_COUNT,
+    MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
     REPORT_ACTION,
+    SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS,
 )
 
 __all__ = [
@@ -26,7 +30,11 @@ __all__ = [
     "MAX_EPOCH_PAGE_SIZE",
     "MAX_GRADIENT_PAIR_PAGE_SIZE",
     "MAX_RESPONSE_BYTES",
+    "MAX_RETAINED_SNAPSHOT_BYTES",
+    "MAX_RETAINED_SNAPSHOT_COUNT",
+    "MAX_RETAINED_SNAPSHOT_TOTAL_BYTES",
     "REPORT_ACTION",
+    "SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS",
     "TrainingTelemetryContractError",
     "training_telemetry_capabilities",
     "validate_training_telemetry_document",

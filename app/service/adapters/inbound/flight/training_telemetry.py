@@ -7,6 +7,7 @@ from app.contracts.training_telemetry.v1 import (
     CONTRACT_NAME,
     CONTRACT_REVISION,
     MAX_RESPONSE_BYTES,
+    SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS,
     validate_training_telemetry_document,
 )
 from app.service.adapters.inbound.flight.documents import encode_document
@@ -160,6 +161,16 @@ def expired_telemetry_cursor() -> ServiceError:
     )
 
 
+def invalidated_telemetry_cursor() -> ServiceError:
+    return telemetry_error(
+        ErrorCode.FAILED_PRECONDITION,
+        "TELEMETRY_CURSOR_INVALIDATED",
+        "training telemetry cursor belongs to a previous service instance",
+        path="/cursor",
+        restartRequired=True,
+    )
+
+
 def unavailable_telemetry_revision(revision: int) -> ServiceError:
     return telemetry_error(
         ErrorCode.FAILED_PRECONDITION,
@@ -207,15 +218,28 @@ def telemetry_backend_unavailable(model_ref: str) -> ServiceError:
     )
 
 
+def telemetry_snapshot_capacity_exhausted(operation: str) -> ServiceError:
+    return telemetry_error(
+        ErrorCode.RESOURCE_EXHAUSTED,
+        "TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED",
+        "training telemetry snapshot capacity is exhausted",
+        operation=operation,
+        retryable=True,
+        retryAfterSeconds=SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS,
+    )
+
+
 __all__ = [
     "expired_telemetry_cursor",
     "invalid_telemetry_cursor",
     "invalid_telemetry_query",
+    "invalidated_telemetry_cursor",
     "present_gradient_interactions",
     "present_training_telemetry_report",
     "telemetry_backend_unavailable",
     "telemetry_integrity_failed",
     "telemetry_model_not_found",
+    "telemetry_snapshot_capacity_exhausted",
     "telemetry_stored_metadata_invalid",
     "training_telemetry_response",
     "unavailable_telemetry_revision",

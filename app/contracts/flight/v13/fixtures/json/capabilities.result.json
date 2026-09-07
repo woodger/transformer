@@ -125,7 +125,10 @@
       "maxEpochPageSize": 100,
       "maxGradientPairPageSize": 1000,
       "cursorTtlSeconds": 900,
-      "maxResponseBytes": 8388608
+      "maxResponseBytes": 8388608,
+      "maxRetainedSnapshotCount": 64,
+      "maxRetainedSnapshotBytes": 16777216,
+      "maxRetainedSnapshotTotalBytes": 67108864
     },
     "features": {
       "ownerScope": "AuthenticatedSubject",
@@ -133,7 +136,9 @@
       "batchQuery": false,
       "partialReports": false,
       "checkpointVerification": false,
-      "structuredErrors": true
+      "structuredErrors": true,
+      "cursorRestartOutcome": "TELEMETRY_CURSOR_INVALIDATED",
+      "snapshotAdmission": "AtomicNoLiveEviction"
     }
   },
   "limits": {

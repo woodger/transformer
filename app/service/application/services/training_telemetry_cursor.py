@@ -16,6 +16,10 @@ class ExpiredTrainingTelemetryCursor(ValueError):
     pass
 
 
+class InvalidatedTrainingTelemetryCursor(ValueError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class TrainingTelemetryCursor:
     operation: Literal["report", "gradientInteractions"]
@@ -30,10 +34,15 @@ class TrainingTelemetryCursor:
 
 
 class TrainingTelemetryCursorCodec:
-    def __init__(self, key: bytes) -> None:
+    def __init__(self, key: bytes, *, boot_identity: str) -> None:
         if len(key) < 32:
             raise ValueError("telemetry cursor signing key must contain 32 bytes")
+        if not _boot_identity(boot_identity):
+            raise ValueError(
+                "telemetry cursor boot identity must be 128-bit lowercase hex"
+            )
         self._key = key
+        self._boot_identity = boot_identity
 
     def encode(
         self,
@@ -54,6 +63,7 @@ class TrainingTelemetryCursorCodec:
                 cursor.epoch,
                 None if cursor.after_pair is None else list(cursor.after_pair),
                 _micros(cursor.expires_at),
+                self._boot_identity,
             ],
             ensure_ascii=True,
             allow_nan=False,
@@ -78,6 +88,7 @@ class TrainingTelemetryCursorCodec:
         *,
         operation: Literal["report", "gradientInteractions"],
         model_ref: str,
+        producing_run_id: str,
         page_size: int,
         epoch: int | None,
         now: datetime,
@@ -110,14 +121,14 @@ class TrainingTelemetryCursorCodec:
             if not isinstance(raw, list):
                 raise InvalidTrainingTelemetryCursor
             values = cast(list[object], raw)
-            if len(values) != 10:
+            if len(values) != 11:
                 raise InvalidTrainingTelemetryCursor
             pair = _pair(values[8])
             if (
                 values[0] != 1
                 or values[1] != operation
                 or values[2] != model_ref
-                or not isinstance(values[3], str)
+                or values[3] != producing_run_id
                 or not isinstance(values[4], str)
                 or len(values[4]) != 64
                 or not _integer(values[5])
@@ -125,6 +136,7 @@ class TrainingTelemetryCursorCodec:
                 or not _optional_integer(values[6])
                 or not _optional_integer(values[7])
                 or not _integer(values[9])
+                or not _boot_identity(values[10])
             ):
                 raise InvalidTrainingTelemetryCursor
             after_epoch = cast(int | None, values[6])
@@ -142,7 +154,7 @@ class TrainingTelemetryCursorCodec:
             cursor = TrainingTelemetryCursor(
                 operation=operation,
                 model_ref=model_ref,
-                producing_run_id=values[3],
+                producing_run_id=cast(str, values[3]),
                 report_identity=values[4],
                 page_size=cast(int, values[5]),
                 after_epoch=after_epoch,
@@ -163,6 +175,8 @@ class TrainingTelemetryCursorCodec:
             raise InvalidTrainingTelemetryCursor from exc
         if now.astimezone(UTC) >= cursor.expires_at:
             raise ExpiredTrainingTelemetryCursor
+        if values[10] != self._boot_identity:
+            raise InvalidatedTrainingTelemetryCursor
         return cursor
 
 
@@ -172,6 +186,15 @@ def _integer(value: object) -> bool:
 
 def _optional_integer(value: object) -> bool:
     return value is None or _integer(value)
+
+
+def _boot_identity(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and value == value.lower()
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _pair(value: object) -> tuple[str, str] | None:
@@ -200,6 +223,7 @@ def _from_micros(value: int) -> datetime:
 __all__ = [
     "ExpiredTrainingTelemetryCursor",
     "InvalidTrainingTelemetryCursor",
+    "InvalidatedTrainingTelemetryCursor",
     "TrainingTelemetryCursor",
     "TrainingTelemetryCursorCodec",
 ]

@@ -206,6 +206,10 @@ Report возвращает `pending`, окончательный `unavailable` 
 полностью проверенный `available`. Epochs идут по возрастанию и
 выдаются signed cursor-ом с TTL 900 секунд. Метрики описывают
 training-проход эпохи, а не повторную оценку published checkpoint.
+Нетерминальный cursor гарантирует immutable snapshot только в пределах
+выдавшего его запуска сервиса. При
+`TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED` повторите initial request позднее, а
+при `TELEMETRY_CURSOR_INVALIDATED` после рестарта начните traversal заново.
 
 `transformer.training-telemetry.v1.gradient-interactions` лениво возвращает
 components и sparse oriented pairs одной exact epoch. Отсутствующие

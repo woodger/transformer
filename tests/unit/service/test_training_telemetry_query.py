@@ -24,8 +24,10 @@ from app.service.adapters.inbound.flight.model_catalog import (
     CatalogModelMetadataVerifier,
 )
 from app.service.adapters.inbound.flight.training_telemetry import (
+    invalidated_telemetry_cursor,
     present_gradient_interactions,
     present_training_telemetry_report,
+    telemetry_snapshot_capacity_exhausted,
 )
 from app.service.adapters.outbound.opensearch.training_telemetry import (
     OpenSearchTrainingTelemetrySource,
@@ -46,7 +48,12 @@ from app.service.application.queries.training_telemetry import (
 )
 from app.service.application.services.training_telemetry_cursor import (
     ExpiredTrainingTelemetryCursor,
+    InvalidatedTrainingTelemetryCursor,
     InvalidTrainingTelemetryCursor,
+)
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotCapacityExhausted,
+    TrainingTelemetrySnapshotStore,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.records import PublishedModelRecord
@@ -76,6 +83,21 @@ MODEL_CATALOG_FIXTURES = (
 SEMANTIC_FIXTURES = (
     PROJECT_ROOT / "app" / "contracts" / "semantic" / "v1" / "fixtures"
 )
+
+
+def _snapshot_store(
+    *,
+    boot_identity: str = "a" * 32,
+    max_count: int = 64,
+    max_total_bytes: int = 64 * 1024 * 1024,
+    max_snapshot_bytes: int = 16 * 1024 * 1024,
+) -> TrainingTelemetrySnapshotStore:
+    return TrainingTelemetrySnapshotStore(
+        max_count=max_count,
+        max_total_bytes=max_total_bytes,
+        max_snapshot_bytes=max_snapshot_bytes,
+        boot_identity=boot_identity,
+    )
 
 
 class _Store:
@@ -182,6 +204,7 @@ def test_report_validates_complete_projection_and_pages_dense_epochs() -> None:
     query = GetTrainingTelemetryReport(
         _Store(model),
         source,
+        _snapshot_store(),
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW,
@@ -255,6 +278,7 @@ def test_report_validates_complete_projection_and_pages_dense_epochs() -> None:
     expired = GetTrainingTelemetryReport(
         _Store(model),
         source,
+        _snapshot_store(boot_identity="b" * 32),
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW + timedelta(seconds=900),
@@ -292,6 +316,7 @@ def test_report_preserves_non_error_availability_outcomes(
     result = GetTrainingTelemetryReport(
         _Store(model),
         _Source(projection),
+        _snapshot_store(),
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW,
@@ -327,6 +352,7 @@ def test_report_rejects_complete_projection_with_missing_epoch() -> None:
         GetTrainingTelemetryReport(
             _Store(model),
             source,
+            _snapshot_store(),
             metadata_verifier=CatalogModelMetadataVerifier(),
             cursor_ttl_seconds=900,
             clock=lambda: NOW,
@@ -348,6 +374,7 @@ def test_model_metadata_is_validated_before_telemetry_backend_access() -> None:
         GetTrainingTelemetryReport(
             _Store(model),
             source,
+            _snapshot_store(),
             metadata_verifier=CatalogModelMetadataVerifier(),
             cursor_ttl_seconds=900,
             clock=lambda: NOW,
@@ -370,6 +397,7 @@ def test_model_deletion_wins_over_report_cursor_continuation() -> None:
     query = GetTrainingTelemetryReport(
         store,
         _source_for_model(model),
+        _snapshot_store(),
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW,
@@ -383,9 +411,17 @@ def test_model_deletion_wins_over_report_cursor_continuation() -> None:
     ))
     assert first.next_cursor is not None
     store.model = None
+    restarted = GetTrainingTelemetryReport(
+        store,
+        _source_for_model(model),
+        _snapshot_store(boot_identity="b" * 32),
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        cursor_ttl_seconds=900,
+        clock=lambda: NOW,
+    )
 
     with pytest.raises(CatalogModelNotFound):
-        query.execute(GetTrainingTelemetryReportQuery(
+        restarted.execute(GetTrainingTelemetryReportQuery(
             owner_subject="consumer",
             request_id=REQUEST_ID,
             model_ref=model.model_ref,
@@ -394,12 +430,139 @@ def test_model_deletion_wins_over_report_cursor_continuation() -> None:
         ))
 
 
+def test_unexpired_cursor_is_invalidated_after_service_restart() -> None:
+    model = _single_target_model(completed_epochs=2)
+    source = _source_for_model(model)
+    first = GetTrainingTelemetryReport(
+        _Store(model),
+        source,
+        _snapshot_store(boot_identity="a" * 32),
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        cursor_ttl_seconds=900,
+        clock=lambda: NOW,
+    ).execute(GetTrainingTelemetryReportQuery(
+        owner_subject="consumer",
+        request_id=REQUEST_ID,
+        model_ref=model.model_ref,
+        page_size=1,
+        cursor=None,
+    ))
+    assert first.next_cursor is not None
+
+    restarted = GetTrainingTelemetryReport(
+        _Store(model),
+        source,
+        _snapshot_store(boot_identity="b" * 32),
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        cursor_ttl_seconds=900,
+        clock=lambda: NOW,
+    )
+    with pytest.raises(InvalidatedTrainingTelemetryCursor):
+        restarted.execute(GetTrainingTelemetryReportQuery(
+            owner_subject="consumer",
+            request_id=REQUEST_ID,
+            model_ref=model.model_ref,
+            page_size=1,
+            cursor=first.next_cursor,
+        ))
+
+    assert source.report_calls == 1
+
+
+def test_report_requires_capacity_before_issuing_cursor() -> None:
+    model = _single_target_model(completed_epochs=2)
+    snapshots = _snapshot_store(max_count=1)
+    snapshots.admit(
+        ("occupied",),
+        object(),
+        {"occupied": True},
+        operation="gradientInteractions",
+        expires_at=NOW + timedelta(seconds=900),
+        now=NOW,
+    )
+
+    with pytest.raises(TrainingTelemetrySnapshotCapacityExhausted) as error:
+        GetTrainingTelemetryReport(
+            _Store(model),
+            _source_for_model(model),
+            snapshots,
+            metadata_verifier=CatalogModelMetadataVerifier(),
+            cursor_ttl_seconds=900,
+            clock=lambda: NOW,
+        ).execute(GetTrainingTelemetryReportQuery(
+            owner_subject="consumer",
+            request_id=REQUEST_ID,
+            model_ref=model.model_ref,
+            page_size=1,
+            cursor=None,
+        ))
+
+    assert error.value.operation == "report"
+
+
+def test_terminal_report_does_not_require_snapshot_capacity() -> None:
+    model = _single_target_model(completed_epochs=1)
+    snapshots = _snapshot_store(max_count=1)
+    snapshots.admit(
+        ("occupied",),
+        object(),
+        {"occupied": True},
+        operation="gradientInteractions",
+        expires_at=NOW + timedelta(seconds=900),
+        now=NOW,
+    )
+
+    result = GetTrainingTelemetryReport(
+        _Store(model),
+        _source_for_model(model),
+        snapshots,
+        metadata_verifier=CatalogModelMetadataVerifier(),
+        cursor_ttl_seconds=900,
+        clock=lambda: NOW,
+    ).execute(GetTrainingTelemetryReportQuery(
+        owner_subject="consumer",
+        request_id=REQUEST_ID,
+        model_ref=model.model_ref,
+        page_size=1,
+        cursor=None,
+    ))
+
+    assert result.state == "available"
+    assert result.next_cursor is None
+    assert snapshots.usage(now=NOW).count == 1
+
+
+def test_snapshot_and_restart_errors_match_structured_contract() -> None:
+    invalidated = invalidated_telemetry_cursor()
+    capacity = telemetry_snapshot_capacity_exhausted("report")
+
+    assert invalidated.detail == {
+        "code": "FAILED_PRECONDITION",
+        "reason": "TELEMETRY_CURSOR_INVALIDATED",
+        "path": "/cursor",
+        "restartRequired": True,
+        "message": (
+            "training telemetry cursor belongs to a previous service instance"
+        ),
+    }
+    assert capacity.detail == {
+        "code": "RESOURCE_EXHAUSTED",
+        "reason": "TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED",
+        "operation": "report",
+        "retryable": True,
+        "retryAfterSeconds": 30,
+        "message": "training telemetry snapshot capacity is exhausted",
+    }
+
+
 def test_gradient_query_returns_objective_order_and_sparse_pair_pages() -> None:
     model = _multi_target_model()
     source = _source_for_model(model, gradient_epochs=frozenset({2}))
+    snapshots = _snapshot_store()
     report = GetTrainingTelemetryReport(
         _Store(model),
         source,
+        snapshots,
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW,
@@ -420,6 +583,7 @@ def test_gradient_query_returns_objective_order_and_sparse_pair_pages() -> None:
     query = GetGradientInteractions(
         _Store(model),
         source,
+        snapshots,
         metadata_verifier=CatalogModelMetadataVerifier(),
         cursor_ttl_seconds=900,
         clock=lambda: NOW,

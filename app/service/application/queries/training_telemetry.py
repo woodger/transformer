@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Generic, NoReturn, TypeVar, cast
+from typing import NoReturn, cast
 
 from app.service.application.messages.training_telemetry import (
     GetGradientInteractionsQuery,
@@ -29,6 +29,9 @@ from app.service.application.services.training_telemetry_cursor import (
     InvalidTrainingTelemetryCursor,
     TrainingTelemetryCursor,
     TrainingTelemetryCursorCodec,
+)
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotStore,
 )
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
@@ -71,60 +74,26 @@ class _ValidatedReport:
 
 
 @dataclass(frozen=True, slots=True)
-class _ValidatedGradientInteractions:
+class _RetainedReport:
+    model_ref: str
     producing_run_id: str
-    identity: str
-    components: tuple[JsonObject, ...]
-    pairs: tuple[JsonObject, ...]
-
-
-_Snapshot = TypeVar("_Snapshot")
+    report_identity: str
+    semantic_digests: JsonObject
+    epochs: tuple[JsonObject, ...]
+    selection: JsonObject
+    anchors: tuple[JsonObject, ...]
+    health_totals: JsonObject
+    gradient_summary: JsonObject
 
 
 @dataclass(frozen=True, slots=True)
-class _SnapshotEntry(Generic[_Snapshot]):
-    expires_at: datetime
-    value: _Snapshot
-
-
-class _SnapshotCache(Generic[_Snapshot]):
-    def __init__(self) -> None:
-        self._entries: dict[tuple[str, ...], _SnapshotEntry[_Snapshot]] = {}
-        self._lock = threading.Lock()
-
-    def get(
-        self,
-        key: tuple[str, ...],
-        *,
-        now: datetime,
-    ) -> _Snapshot | None:
-        with self._lock:
-            self._evict_expired(now)
-            entry = self._entries.get(key)
-            return None if entry is None else entry.value
-
-    def put(
-        self,
-        key: tuple[str, ...],
-        value: _Snapshot,
-        *,
-        expires_at: datetime,
-        now: datetime,
-    ) -> None:
-        with self._lock:
-            self._evict_expired(now)
-            current = self._entries.get(key)
-            if current is None or current.expires_at < expires_at:
-                self._entries[key] = _SnapshotEntry(expires_at, value)
-
-    def _evict_expired(self, now: datetime) -> None:
-        expired = [
-            key
-            for key, entry in self._entries.items()
-            if now >= entry.expires_at
-        ]
-        for key in expired:
-            del self._entries[key]
+class _RetainedGradientInteractions:
+    model_ref: str
+    producing_run_id: str
+    epoch: int
+    identity: str
+    components: tuple[JsonObject, ...]
+    pairs: tuple[JsonObject, ...]
 
 
 class GetTrainingTelemetryReport:
@@ -132,6 +101,7 @@ class GetTrainingTelemetryReport:
         self,
         store: ModelCatalogStore,
         source: TrainingTelemetrySource,
+        snapshots: TrainingTelemetrySnapshotStore,
         *,
         metadata_verifier: CatalogMetadataVerifier,
         cursor_ttl_seconds: int,
@@ -139,12 +109,12 @@ class GetTrainingTelemetryReport:
     ) -> None:
         self._store = store
         self._source = source
+        self._snapshots = snapshots
         self._metadata_verifier = metadata_verifier
         self._cursor_ttl_seconds = cursor_ttl_seconds
         self._clock = clock
         self._codec: TrainingTelemetryCursorCodec | None = None
         self._codec_lock = threading.Lock()
-        self._snapshots = _SnapshotCache[_ValidatedReport]()
 
     def execute(
         self,
@@ -157,6 +127,7 @@ class GetTrainingTelemetryReport:
             query.owner_subject,
             query.model_ref,
         )
+        producing_run_id = _producing_run_id(model)
         cursor = None
         if query.cursor is not None:
             cursor = self._cursor_codec().decode(
@@ -164,18 +135,16 @@ class GetTrainingTelemetryReport:
                 query.cursor,
                 operation="report",
                 model_ref=query.model_ref,
+                producing_run_id=producing_run_id,
                 page_size=query.page_size,
                 epoch=None,
                 now=now,
             )
-        producing_run_id = _producing_run_id(model)
-        if cursor is not None and cursor.producing_run_id != producing_run_id:
-            raise InvalidTrainingTelemetryCursor
-        report = (
+        cached = (
             None
             if cursor is None
             else self._snapshots.get(
-                (
+                _report_snapshot_key(
                     query.owner_subject,
                     model.model_ref,
                     producing_run_id,
@@ -184,6 +153,11 @@ class GetTrainingTelemetryReport:
                 now=now,
             )
         )
+        if cached is not None and not isinstance(cached, _RetainedReport):
+            raise RuntimeError("retained report snapshot has invalid type")
+        report = cached
+        if cursor is not None and report is None:
+            raise InvalidTrainingTelemetryCursor
         if report is None:
             projected = self._source.load_report(
                 model_ref=model.model_ref,
@@ -202,11 +176,8 @@ class GetTrainingTelemetryReport:
                     "unavailable",
                     unavailable_reason=projected.unavailable_reason,
                 )
-            report = _validate_report(model, projected)
-            if cursor is not None and (
-                cursor.report_identity != report.report_identity
-            ):
-                raise InvalidTrainingTelemetryCursor
+            validated = _validate_report(model, projected)
+            report = _retained_report(validated)
         after_epoch = 0 if cursor is None else cast(int, cursor.after_epoch)
         if after_epoch >= len(report.epochs):
             raise InvalidTrainingTelemetryCursor
@@ -220,17 +191,22 @@ class GetTrainingTelemetryReport:
         next_cursor = None
         cursor_expires_at = None
         if not terminal:
-            self._snapshots.put(
-                (
+            retained = self._snapshots.admit(
+                _report_snapshot_key(
                     query.owner_subject,
                     model.model_ref,
                     report.producing_run_id,
                     report.report_identity,
                 ),
                 report,
+                _report_snapshot_projection(report),
+                operation="report",
                 expires_at=expires_at,
                 now=now,
             )
+            if not isinstance(retained, _RetainedReport):
+                raise RuntimeError("retained report snapshot has invalid type")
+            report = retained
             last_epoch = _integer(page[-1], "epoch")
             next_cursor = self._cursor_codec().encode(
                 query.owner_subject,
@@ -271,7 +247,8 @@ class GetTrainingTelemetryReport:
         with self._codec_lock:
             if self._codec is None:
                 self._codec = TrainingTelemetryCursorCodec(
-                    self._store.cursor_signing_key()
+                    self._store.cursor_signing_key(),
+                    boot_identity=self._snapshots.boot_identity,
                 )
             return self._codec
 
@@ -281,6 +258,7 @@ class GetGradientInteractions:
         self,
         store: ModelCatalogStore,
         source: TrainingTelemetrySource,
+        snapshots: TrainingTelemetrySnapshotStore,
         *,
         metadata_verifier: CatalogMetadataVerifier,
         cursor_ttl_seconds: int,
@@ -288,12 +266,12 @@ class GetGradientInteractions:
     ) -> None:
         self._store = store
         self._source = source
+        self._snapshots = snapshots
         self._metadata_verifier = metadata_verifier
         self._cursor_ttl_seconds = cursor_ttl_seconds
         self._clock = clock
         self._codec: TrainingTelemetryCursorCodec | None = None
         self._codec_lock = threading.Lock()
-        self._snapshots = _SnapshotCache[_ValidatedGradientInteractions]()
 
     def execute(
         self,
@@ -306,6 +284,7 @@ class GetGradientInteractions:
             query.owner_subject,
             query.model_ref,
         )
+        producing_run_id = _producing_run_id(model)
         cursor = None
         if query.cursor is not None:
             cursor = self._cursor_codec().decode(
@@ -313,27 +292,33 @@ class GetGradientInteractions:
                 query.cursor,
                 operation="gradientInteractions",
                 model_ref=query.model_ref,
+                producing_run_id=producing_run_id,
                 page_size=query.page_size,
                 epoch=query.epoch,
                 now=now,
             )
-        producing_run_id = _producing_run_id(model)
-        if cursor is not None and cursor.producing_run_id != producing_run_id:
-            raise InvalidTrainingTelemetryCursor
-        snapshot = (
+        cached = (
             None
             if cursor is None
             else self._snapshots.get(
-                (
+                _gradient_snapshot_key(
                     query.owner_subject,
                     model.model_ref,
                     producing_run_id,
-                    str(query.epoch),
+                    query.epoch,
                     cursor.report_identity,
                 ),
                 now=now,
             )
         )
+        if cached is not None and not isinstance(
+            cached,
+            _RetainedGradientInteractions,
+        ):
+            raise RuntimeError("retained gradient snapshot has invalid type")
+        snapshot = cached
+        if cursor is not None and snapshot is None:
+            raise InvalidTrainingTelemetryCursor
         if snapshot is None:
             projected = self._source.load_report(
                 model_ref=model.model_ref,
@@ -361,16 +346,14 @@ class GetGradientInteractions:
                 query.epoch,
                 points,
             )
-            snapshot = _ValidatedGradientInteractions(
+            snapshot = _RetainedGradientInteractions(
+                model_ref=model.model_ref,
                 producing_run_id=report.producing_run_id,
+                epoch=query.epoch,
                 identity=gradient_identity,
                 components=components,
                 pairs=pairs,
             )
-            if cursor is not None and (
-                cursor.report_identity != snapshot.identity
-            ):
-                raise InvalidTrainingTelemetryCursor
         start = 0
         if cursor is not None:
             after_pair = cast(tuple[str, str], cursor.after_pair)
@@ -395,18 +378,23 @@ class GetGradientInteractions:
         next_cursor = None
         cursor_expires_at = None
         if not terminal:
-            self._snapshots.put(
-                (
+            retained = self._snapshots.admit(
+                _gradient_snapshot_key(
                     query.owner_subject,
                     model.model_ref,
                     snapshot.producing_run_id,
-                    str(query.epoch),
+                    query.epoch,
                     snapshot.identity,
                 ),
                 snapshot,
+                _gradient_snapshot_projection(snapshot),
+                operation="gradientInteractions",
                 expires_at=expires_at,
                 now=now,
             )
+            if not isinstance(retained, _RetainedGradientInteractions):
+                raise RuntimeError("retained gradient snapshot has invalid type")
+            snapshot = retained
             last = page[-1]
             pair_identity = (
                 cast(str, last["leftComponentIdentity"]),
@@ -443,9 +431,85 @@ class GetGradientInteractions:
         with self._codec_lock:
             if self._codec is None:
                 self._codec = TrainingTelemetryCursorCodec(
-                    self._store.cursor_signing_key()
+                    self._store.cursor_signing_key(),
+                    boot_identity=self._snapshots.boot_identity,
                 )
             return self._codec
+
+
+def _report_snapshot_key(
+    owner_subject: str,
+    model_ref: str,
+    producing_run_id: str,
+    report_identity: str,
+) -> tuple[str, ...]:
+    return (
+        "report",
+        owner_subject,
+        model_ref,
+        producing_run_id,
+        report_identity,
+    )
+
+
+def _gradient_snapshot_key(
+    owner_subject: str,
+    model_ref: str,
+    producing_run_id: str,
+    epoch: int,
+    report_identity: str,
+) -> tuple[str, ...]:
+    return (
+        "gradientInteractions",
+        owner_subject,
+        model_ref,
+        producing_run_id,
+        str(epoch),
+        report_identity,
+    )
+
+
+def _retained_report(report: _ValidatedReport) -> _RetainedReport:
+    return _RetainedReport(
+        model_ref=report.model_ref,
+        producing_run_id=report.producing_run_id,
+        report_identity=report.report_identity,
+        semantic_digests=report.semantic_digests,
+        epochs=report.epochs,
+        selection=report.selection,
+        anchors=report.anchors,
+        health_totals=report.health_totals,
+        gradient_summary=report.gradient_summary,
+    )
+
+
+def _report_snapshot_projection(report: _RetainedReport) -> JsonValue:
+    return {
+        "kind": "report",
+        "modelRef": report.model_ref,
+        "producingRunId": report.producing_run_id,
+        "reportIdentity": report.report_identity,
+        "semanticDigests": report.semantic_digests,
+        "epochs": list(report.epochs),
+        "selection": report.selection,
+        "anchors": list(report.anchors),
+        "healthTotals": report.health_totals,
+        "gradientInteractions": report.gradient_summary,
+    }
+
+
+def _gradient_snapshot_projection(
+    snapshot: _RetainedGradientInteractions,
+) -> JsonValue:
+    return {
+        "kind": "gradientInteractions",
+        "modelRef": snapshot.model_ref,
+        "producingRunId": snapshot.producing_run_id,
+        "epoch": snapshot.epoch,
+        "reportIdentity": snapshot.identity,
+        "components": list(snapshot.components),
+        "pairs": list(snapshot.pairs),
+    }
 
 
 def _visible_model(

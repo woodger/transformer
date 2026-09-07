@@ -68,13 +68,17 @@
       "additionalProperties": false,
       "required": [
         "maxEpochPageSize", "maxGradientPairPageSize", "cursorTtlSeconds",
-        "maxResponseBytes"
+        "maxResponseBytes", "maxRetainedSnapshotCount",
+        "maxRetainedSnapshotBytes", "maxRetainedSnapshotTotalBytes"
       ],
       "properties": {
         "maxEpochPageSize": {"const": 100},
         "maxGradientPairPageSize": {"const": 1000},
         "cursorTtlSeconds": {"const": 900},
-        "maxResponseBytes": {"const": 8388608}
+        "maxResponseBytes": {"const": 8388608},
+        "maxRetainedSnapshotCount": {"const": 64},
+        "maxRetainedSnapshotBytes": {"const": 16777216},
+        "maxRetainedSnapshotTotalBytes": {"const": 67108864}
       }
     },
     "features": {
@@ -82,7 +86,8 @@
       "additionalProperties": false,
       "required": [
         "ownerScope", "selector", "batchQuery", "partialReports",
-        "checkpointVerification", "structuredErrors"
+        "checkpointVerification", "structuredErrors",
+        "cursorRestartOutcome", "snapshotAdmission"
       ],
       "properties": {
         "ownerScope": {"const": "AuthenticatedSubject"},
@@ -90,7 +95,9 @@
         "batchQuery": {"const": false},
         "partialReports": {"const": false},
         "checkpointVerification": {"const": false},
-        "structuredErrors": {"const": true}
+        "structuredErrors": {"const": true},
+        "cursorRestartOutcome": {"const": "TELEMETRY_CURSOR_INVALIDATED"},
+        "snapshotAdmission": {"const": "AtomicNoLiveEviction"}
       }
     }
   }

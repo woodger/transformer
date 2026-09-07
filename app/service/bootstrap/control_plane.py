@@ -9,6 +9,9 @@ from app.contracts.model_catalog.v1 import (
 )
 from app.contracts.training_telemetry.v1 import (
     CURSOR_TTL_SECONDS as TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
+    MAX_RETAINED_SNAPSHOT_BYTES,
+    MAX_RETAINED_SNAPSHOT_COUNT,
+    MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
@@ -68,6 +71,9 @@ from app.service.application.queries.training_telemetry import (
     GetGradientInteractions,
     GetTrainingTelemetryReport,
 )
+from app.service.application.services.training_telemetry_snapshot import (
+    TrainingTelemetrySnapshotStore,
+)
 from app.service.bootstrap.config import FlightServiceConfig
 
 
@@ -103,6 +109,11 @@ def build_job_coordinator(
         spool,
         recovery_store,
         logger=logger,
+    )
+    training_telemetry_snapshots = TrainingTelemetrySnapshotStore(
+        max_count=MAX_RETAINED_SNAPSHOT_COUNT,
+        max_total_bytes=MAX_RETAINED_SNAPSHOT_TOTAL_BYTES,
+        max_snapshot_bytes=MAX_RETAINED_SNAPSHOT_BYTES,
     )
 
     def cuda_available() -> bool:
@@ -173,12 +184,14 @@ def build_job_coordinator(
         get_training_telemetry_report=GetTrainingTelemetryReport(
             model_catalog_store,
             training_telemetry_source,
+            training_telemetry_snapshots,
             metadata_verifier=metadata_verifier,
             cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
         ),
         get_gradient_interactions=GetGradientInteractions(
             model_catalog_store,
             training_telemetry_source,
+            training_telemetry_snapshots,
             metadata_verifier=metadata_verifier,
             cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
         ),

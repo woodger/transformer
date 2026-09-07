@@ -129,6 +129,11 @@ Owner-scoped Training Telemetry Query читает OpenSearch только по�
 потери — `unavailable`. Повреждённая complete projection даёт ошибку
 `TELEMETRY_CORRUPT`, но не инвалидирует model generation. Точная настройка и
 проверка приведены в [OpenSearch guide](../deployment/opensearch.md).
+Нетерминальные report и gradient pages удерживаются до 900 секунд в общем
+bounded pool: 64 snapshots, не более 16 MiB каждый и 64 MiB суммарно. Живые
+snapshots не вытесняются; исчерпание capacity возвращает retryable
+`TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED`. После рестарта ещё не истёкший cursor
+возвращает `TELEMETRY_CURSOR_INVALIDATED` и traversal следует начать заново.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
 `service.lock`. Flight v13 остаётся single-instance: PostgreSQL не превращает
