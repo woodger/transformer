@@ -36,7 +36,8 @@ backend и measurement point. Это ухудшает читаемость и о
   неявных defaults сохраняются;
 - изменение выполняется clean cut без v1 readers, aliases или digest
   equivalence;
-- математика, tensor runtime и Arrow data plane не меняются.
+- proposal не задаёт изменения математики, tensor runtime или Arrow data
+  plane.
 
 Цена изменения существенна: новая JSON representation меняет canonical bytes,
 D1 и все зависимые immutable artifacts. Польза оправдывает эту цену только как
@@ -68,6 +69,8 @@ rename-ов.
 - local CLI и local Arrow framed protocol;
 - Consumer-owned ML Profile, target catalog и Inventory domain types;
 - ML formulas, operators, training defaults, architecture и tensor layout;
+- physical Arrow IPC serialization и byte-level equality payloads между
+  workflow revisions;
 - naming cleanup других generic unions только ради единообразия;
 - PostgreSQL schema и конкретная destructive migration до принятия canonical
   packages.
@@ -429,15 +432,16 @@ modelContractSha256 = SHA256(JCS({
 - `modelContractSha256`;
 - `jobConfigSha256`;
 - physical `checkpointSha256` из-за новой embedded metadata;
-- package и fixture manifest digests.
+- fixture manifest digests.
 
 `dataContractSha256` остаётся Consumer-owned и не меняется по требованию
 Transformer. Inventory может отдельно изменить свой canonical data document,
 но это не является частью данного proposal.
 
-Input `manifestSha256` не обязан меняться, если Arrow schemas, payload bytes,
-receipts и Consumer data digest совпадают. Prediction artifact digest также не
-меняется только из-за vocabulary.
+Vocabulary revision сам по себе не задаёт новое значение input
+`manifestSha256`: он по-прежнему зависит от действующего input contract и
+фактически переданных данных. Prediction artifact digest также не меняется
+только из-за vocabulary.
 
 ### Representation-independent hashing не вводится
 
@@ -446,10 +450,9 @@ digest. Математически эквивалентные v1 и v2 documents
 bytes и разные D1. Не вводятся translation tables, digest aliases или
 compatibility exceptions для warm start/predict.
 
-Manifest SHA-256 доказывает целостность versioned package и перечисленных
-fixtures. Он не является дополнительным model compatibility layer и не
-участвует в runtime dispatch, если это прямо не определено отдельным
-операционным contract.
+Fixture manifest SHA-256 доказывает целостность только перечисленного fixture
+bundle. Он не является package-level integrity statement, дополнительным model
+compatibility layer или частью runtime dispatch.
 
 ## Clean-cut transition
 
@@ -483,23 +486,21 @@ OpenSearch index names определяются только после прин
 
 ## Arrow data plane и `indexedFeatureBlocks`
 
-JSON envelope меняется с `kind` на `encoding`, но physical Arrow contract
-остаётся прежним:
+Этот proposal меняет только JSON vocabulary source envelope: вместо `kind`
+используется `encoding`. Он не вводит новую Arrow IPC schema, serialization,
+payload format или reconstruction algorithm.
 
-- schema identities fit/predict v1 сохраняются;
-- названия, порядок и types Arrow fields не меняются;
-- feature block order, positions, widths, offsets, halo и continuity rules не
-  меняются;
-- payload chunking и reconstruction создают тот же logical Float32 tensor;
-- prediction schema target-aligned v3 и ordered coordinate decoding не
-  меняются.
+Staged Flight v14 fixtures сохраняют существующие provider-neutral logical
+сценарии `indexedFeatureBlocks`: один и heterogeneous blocks, local offsets,
+halo, split range и native-prefix rejection. Они показывают, что новая JSON
+форма source envelope выражает ту же геометрию. Они не являются golden Arrow
+IPC bytes и не заявляют byte-for-byte equivalence payloads между Flight v13 и
+v14.
 
-При одинаковых native values physical Arrow schemas и сериализованные payload
-bytes должны побайтово совпасть с Flight v13. Сами JSON fixtures различаются,
-поскольку v14 использует новое поле `encoding`; их chunk data и ожидаемый
-logical tensor остаются теми же. Отдельный test сравнивает reconstruction для
-v13 и v14 envelope вне production runtime. Такой test доказывает неизменность
-data plane, но не является compatibility layer.
+Свойства физического Arrow data plane определяются его отдельным действующим
+contract. Если будущая реализация будет менять Arrow schema, serialization или
+reconstruction, это потребует самостоятельного versioned design и проверки;
+данный vocabulary package такого обещания не делает.
 
 ## Capabilities
 
@@ -537,12 +538,13 @@ Packages готовятся и проверяются в порядке зави
 5. `model_catalog/v2` и `training_telemetry/v2`: query schemas, capabilities,
    `CatalogInitializationSummary`, pagination/error fixtures и manifests.
 6. `flight/v14`: closed action surface, job documents, aggregate capabilities,
-   `RequestedInitialization`, unchanged Arrow fixtures и cross-contract
-   manifest.
+   `RequestedInitialization`, existing logical `indexedFeatureBlocks` fixtures
+   и cross-contract fixture manifest.
 
-Каждый package содержит собственный manifest с SHA-256 каждого нормативного
-файла. Inventory хранит byte-identical offline copy и независимо проверяет
-schemas, references, JCS и D1 до реализации.
+Каждый package содержит fixture manifest с SHA-256 перечисленных fixture files.
+Inventory хранит byte-identical offline copy этого fixture bundle и независимо
+проверяет schemas, references, JCS и D1 до реализации. Package-level manifest
+нормативных документов не входит в этот proposal.
 
 Минимальный cross-language conformance set:
 
@@ -561,7 +563,8 @@ schemas, references, JCS и D1 до реализации.
 - digest change при перестановке slots/components или resource binding;
 - Model Catalog v2 detail с точным ModelContract v2;
 - kind-free Flight/query/Worker capabilities;
-- byte-identical Arrow payloads и одинаковый reconstructed logical tensor;
+- выражение существующей logical `indexedFeatureBlocks` geometry через v14
+  source envelope;
 - отсутствие `inventory.*`, известных target literals и фиксированной target
   width в provider schemas.
 
@@ -583,7 +586,7 @@ Staged packages опубликованы в согласованном поря�
 Каждый package содержит closed schemas, cross-project fixtures и собственный
 fixture manifest. Fixture bundle даёт Consumer-у материал для независимой
 проверки `$ref`, literal JCS/D1, initialization boundaries, query
-projections и неизменности Arrow geometry.
+projections и source-envelope geometry.
 Пакеты не подключены к runtime и не меняют migrations либо действующий Flight
 v13 surface.
 
@@ -599,4 +602,4 @@ Design Note готов перейти в staged contracts, когда обе с�
 - вся version matrix принимается одним clean cut;
 - старые generations удаляются, а не мигрируют под прежними identities;
 - v1 и v2 не объявляются digest-equivalent;
-- Arrow data plane и numerical runtime сохраняют прежнюю семантику.
+- vocabulary revision не задаёт новый Arrow data plane или numerical runtime.
