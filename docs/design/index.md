@@ -14,4 +14,6 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-Активных Design Notes нет.
+- [Предметный словарь shared Transformer contracts без `kind`](./subject-specific-contract-vocabulary.md) —
+  clean-cut предложение Semantic v2 и зависимых contract revisions без
+  универсального discriminator-а в shared canonical documents.
