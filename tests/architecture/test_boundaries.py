@@ -364,10 +364,6 @@ def test_service_application_job_api_is_transport_neutral():
         }
         for value in sorted(strings & forbidden_wire_values):
             violations.append(f"{relative}: {value}")
-        for value in sorted(
-            item for item in strings if item.startswith("transformer.v13.")
-        ):
-            violations.append(f"{relative}: {value}")
     assert violations == [], "Flight presentation leaked into application:\n" + (
         "\n".join(violations)
     )

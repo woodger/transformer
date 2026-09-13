@@ -190,48 +190,6 @@ def test_run_telemetry_reconcile_uses_run_identity(spool):
     assert removed == (orphan_job_id,)
 
 
-def test_retired_model_artifact_cleanup_keeps_checkpoint(spool):
-    model_ref = "mdl_" + uuid.uuid4().hex
-    metadata_path = os.path.join(
-        spool.model_directory(model_ref),
-        "metadata.json",
-    )
-    metrics_path = os.path.join(
-        spool.model_directory(model_ref),
-        "metrics.jsonl",
-    )
-    summary_path = os.path.join(
-        spool.model_directory(model_ref),
-        "run-summary.json",
-    )
-    legacy_run_path = os.path.join(
-        spool.models_dir,
-        "_telemetry",
-        str(uuid.uuid4()),
-        "metrics.jsonl",
-    )
-    checkpoint_path = spool.model_checkpoint_path(model_ref)
-    spool.atomic_write_json(metadata_path, {"format": "retired"})
-    spool.atomic_write_bytes(metrics_path, b"legacy metrics")
-    spool.atomic_write_bytes(summary_path, b"legacy summary")
-    spool.atomic_write_bytes(legacy_run_path, b"legacy run")
-    spool.atomic_write_bytes(checkpoint_path, b"checkpoint")
-
-    removed = spool.cleanup_retired_model_artifacts()
-
-    assert removed == (
-        "_telemetry",
-        f"{model_ref}/metadata.json",
-        f"{model_ref}/metrics.jsonl",
-        f"{model_ref}/run-summary.json",
-    )
-    assert not os.path.exists(metadata_path)
-    assert not os.path.exists(metrics_path)
-    assert not os.path.exists(summary_path)
-    assert not os.path.exists(legacy_run_path)
-    assert os.path.isfile(checkpoint_path)
-
-
 def test_preledger_cleanup_removes_only_temporary_artifacts(spool):
     job_id = str(uuid.uuid4())
     committed = spool.input_path(job_id, 0)

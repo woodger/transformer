@@ -219,7 +219,7 @@ def test_invalid_version_and_action_are_transport_errors(control_server):
         ))
     with pytest.raises(Exception, match="unsupported action"):
         list(client.do_action(
-            flight.Action("transformer.v13.capabilities", action_body()),
+            flight.Action("transformer.unknown.action", action_body()),
             options=call_options(),
         ))
 

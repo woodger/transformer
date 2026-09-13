@@ -312,9 +312,6 @@ class FlightApplication:
                 known_job_ids=ledger.active_recovery_job_ids(),
                 temporary_paths=recovery_temporary_paths,
             )
-            removed_retired_model_artifacts = (
-                spool.cleanup_retired_model_artifacts()
-            )
             removed_models = spool.reconcile_model_directories(
                 published_models.retained_model_refs()
             )
@@ -469,9 +466,6 @@ class FlightApplication:
                 ),
                 removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
-                removedRetiredModelArtifacts=len(
-                    removed_retired_model_artifacts
-                ),
                 removedTelemetryRuns=len(removed_telemetry_runs),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(

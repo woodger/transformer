@@ -591,29 +591,6 @@ class Spool:
                 removed.append(name)
         return tuple(sorted(removed))
 
-    def cleanup_retired_model_artifacts(self) -> tuple[str, ...]:
-        """Remove sidecars no longer owned by published model directories."""
-
-        removed: list[str] = []
-        for name in os.listdir(self.models_dir):
-            if not name.startswith("mdl_"):
-                continue
-            directory = os.path.join(self.models_dir, name)
-            if not os.path.isdir(directory) or os.path.islink(directory):
-                continue
-            for artifact_name in (
-                "metadata.json",
-                "metrics.jsonl",
-                "run-summary.json",
-            ):
-                candidate = os.path.join(directory, artifact_name)
-                if self.remove(candidate):
-                    removed.append(self.model_relative_path(candidate))
-        legacy_run_directory = os.path.join(self.models_dir, "_telemetry")
-        if self.remove(legacy_run_directory):
-            removed.append(self.model_relative_path(legacy_run_directory))
-        return tuple(sorted(removed))
-
     def reconcile_telemetry_directories(
         self,
         job_ids: Sequence[str] | set[str],
