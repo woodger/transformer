@@ -6,10 +6,10 @@
 Best-effort boundary и ownership telemetry описаны в
 [`политике metrics`](../policy/metrics-policy.md). Текущие schemas и templates
 находятся в
-[`app/contracts/metrics/v5`](../../app/contracts/metrics/v5/README.md) и
-[`app/contracts/metrics/fit_run/v5`](../../app/contracts/metrics/fit_run/v5/README.md).
+[`app/contracts/metrics/v6`](../../app/contracts/metrics/v6/README.md) и
+[`app/contracts/metrics/fit_run/v6`](../../app/contracts/metrics/fit_run/v6/README.md).
 Публичную read-only проекцию задаёт
-[`Training Telemetry Query v1`](../../app/contracts/training_telemetry/v1/README.md).
+[`Training Telemetry Query v2`](../../app/contracts/training_telemetry/v2/README.md).
 
 Текущее развёртывание использует доверенную локальную сеть:
 
@@ -31,50 +31,50 @@ printf '\n'
 
 Обычный index и data stream не могут одновременно использовать одно имя.
 Перед clean-cut переходом остановите publisher. Текущий runtime не читает и
-не дописывает прежние `metrics-points-v4` и `metrics-runs-v4`; согласованное
+не дописывает прежние `metrics-points-v5` и `metrics-runs-v5`; согласованное
 удаление historical metrics выполняется отдельно после проверки точных имён:
 
 ```bash
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
-  "$search_endpoint/_cat/indices/metrics-*-v4?v"
+  "$search_endpoint/_cat/indices/metrics-*-v5?v"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request DELETE \
-  "$search_endpoint/metrics-points-v4,metrics-runs-v4"
+  "$search_endpoint/metrics-points-v5,metrics-runs-v5"
 ```
 
 Эти команды безвозвратно удаляют только два явно названных legacy index.
-Прежние templates можно удалить после переключения, но они не совпадают с
-именами v5 и не влияют на новый runtime.
+Прежние templates v5 можно удалить после переключения; они не влияют на новый
+runtime.
 
 ```bash
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-points-v5" \
+  "$search_endpoint/_index_template/metrics-points-v6" \
   --data-binary \
-  @app/contracts/metrics/v5/opensearch/metrics-points-v5.template.json
+  @app/contracts/metrics/v6/opensearch/metrics-points-v6.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-runs-v5" \
+  "$search_endpoint/_index_template/metrics-runs-v6" \
   --data-binary \
-  @app/contracts/metrics/fit_run/v5/opensearch/metrics-runs-v5.template.json
+  @app/contracts/metrics/fit_run/v6/opensearch/metrics-runs-v6.template.json
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-points-v5"
+  "$search_endpoint/metrics-points-v6"
 
 curl --fail --silent --show-error \
   --user "admin:$OPENSEARCH_PASSWORD" \
   --request PUT \
-  "$search_endpoint/metrics-runs-v5"
+  "$search_endpoint/metrics-runs-v6"
 
 unset OPENSEARCH_PASSWORD
 ```
@@ -86,8 +86,8 @@ index на каждую versioned projection. Service account Transformer
 должен иметь доступ на bulk create, `_mget` и bounded `_search` в этих двух
 индексах; administrative template/delete privileges runtime не требуются.
 
-Transformer публикует только projection `transformer.metrics.v5` в текущие
-versioned indices `metrics-points-v5` и `metrics-runs-v5`. Поддержки прежних
+Transformer публикует только projection `transformer.metrics.v6` в текущие
+versioned indices `metrics-points-v6` и `metrics-runs-v6`. Поддержки прежних
 экспериментальных артефактов, записей outbox и индексов нет.
 
 ## Настроить Transformer
@@ -140,7 +140,7 @@ Migrations применяются отдельно по
 - поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points и
   один terminal fit run summary;
 - повторная доставка не создаёт второй документ с тем же `_id`.
-- `transformer.training-telemetry.v1.report` для owner-visible published
+- `transformer.training-telemetry.v2.report` для owner-visible published
   model возвращает `available` только после проверки complete projection.
 
 Перед terminal run marker publisher ожидает refresh последней партии

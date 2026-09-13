@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v2 import ModelContract
 
 SEMANTIC_FIXTURES = (
     Path(__file__).parents[2]
     / "app"
     / "contracts"
     / "semantic"
-    / "v1"
+    / "v2"
     / "fixtures"
 )
 DATA_CONTRACT_SHA256 = "d" * 64

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v13 import job_config_sha256
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.flight.v14 import job_config_sha256
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -49,7 +49,7 @@ def test_published_model_fit_resolves_immutable_parent_lineage():
     result = action.create(command)
 
     assert result.initialization == {
-        "kind": "publishedModel",
+        "source": "publishedModel",
         "parentModelRef": parent.model_ref,
         "parentCheckpointSha256": parent.sha256,
         "parentDataContractSha256": "a" * 64,
@@ -168,7 +168,7 @@ def test_predict_still_rejects_a_new_data_contract_digest():
             "dataContractSha256": "d" * 64,
         },
         model_label=None,
-        initialization_kind=None,
+        initialization_source=None,
     )
     action, _, _ = _action_for_parent(parent)
 
@@ -252,7 +252,7 @@ def _published_model_command(
     model_contract_document = semantic_contract.to_document()
     semantic_digests = semantic_contract.digests("a" * 64)
     parent = PublishedModelRecord(
-        model_ref="mdl_parent",
+        model_ref="mdl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         owner_subject="inventory",
         label="returns.daily",
         generation=1,
@@ -260,11 +260,11 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
             "semanticDigests": semantic_digests,
-            "initialization": {"kind": "random"},
+            "initialization": {"source": "random"},
         },
         data_contract=data_contract,
         model_contract=model_contract_document,
@@ -283,7 +283,7 @@ def _published_model_command(
         requested_device="cpu",
         prediction_column="out",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],
@@ -296,7 +296,7 @@ def _published_model_command(
         model_ref=parent.model_ref,
         model_config=model_config,
         training_config=train_config,
-        initialization_kind="publishedModel",
+        initialization_source="publishedModel",
     )
     return command, parent
 

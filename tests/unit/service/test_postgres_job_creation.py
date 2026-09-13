@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
@@ -54,7 +54,7 @@ def _create_job(
         prediction_column="prediction",
         config_hash="b" * 64,
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
             ],
@@ -126,12 +126,12 @@ def test_fit_job_keeps_initialization_document():
             Ledger(database),
             session,
             operation="fit",
-            initialization={"kind": "random"},
+            initialization={"source": "random"},
         )
     finally:
         database.close()
 
-    assert stored["initialization"] == {"kind": "random"}
+    assert stored["initialization"] == {"source": "random"}
 
 
 def test_published_model_fit_keeps_resolved_parent_and_complete_lineage():
@@ -141,7 +141,7 @@ def test_published_model_fit_keeps_resolved_parent_and_complete_lineage():
         SimpleNamespace(add=records.append, flush=lambda: None),
     )
     initialization = {
-        "kind": "publishedModel",
+        "source": "publishedModel",
         "parentModelRef": _MODEL_REF,
         "parentCheckpointSha256": "c" * 64,
         "parentDataContractSha256": "d" * 64,

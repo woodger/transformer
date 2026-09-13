@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v13_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,9 +27,9 @@ def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
-        "checkpointFormat": "transformer-checkpoint-v6",
-        "recoveryFormat": "transformer-recovery-v6",
+        "protocolVersion": 13,
+        "checkpointFormat": "transformer-checkpoint-v7",
+        "recoveryFormat": "transformer-recovery-v7",
         "schemaIds": {
             "fitInput": "transformer.indexed-feature-blocks.fit.v1",
             "predictInput": "transformer.indexed-feature-blocks.predict.v1",
@@ -37,10 +37,10 @@ def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
         },
         "semantic": {
             "objectiveLanguage": {
-                "revision": 1,
+                "revision": 2,
                 "constraints": ["ClosedInterval", "Finite"],
                 "transformations": ["Identity", "Sigmoid", "Tanh"],
-                "resourceKinds": ["PositiveScalarPerObservation"],
+                "resourceClasses": ["PositiveScalarPerObservation"],
                 "directOperators": [
                     "BinaryCrossEntropyWithLogits",
                     "LogMSE",
@@ -67,7 +67,7 @@ def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
         "devices": [{
-            "kind": "cpu",
+            "backend": "cpu",
             "opaqueId": "cpu",
             "name": "CPU",
         }],

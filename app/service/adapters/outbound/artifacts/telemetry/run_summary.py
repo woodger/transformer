@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v5 import (
+from app.contracts.metrics.fit_run.v6 import (
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_summary,

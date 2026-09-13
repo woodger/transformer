@@ -10,16 +10,16 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v6 import (
+from app.contracts.checkpoint.v7 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v13.arrow import validate_prediction_file
+from app.contracts.flight.v14.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v12.config import TrainConfig
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v13.config import TrainConfig
+from app.contracts.worker.v13.diagnostics import DiagnosticsConfig
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -417,7 +417,7 @@ class WorkerArtifactPublisher:
                 modelRef=model_ref,
                 bytes=byte_count,
                 sha256=digest,
-                initialization=initialization["kind"],
+                initialization=initialization["source"],
                 parentModelRef=initialization.get("parentModelRef"),
             )
             return PublishedModelArtifacts(

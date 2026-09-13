@@ -5,7 +5,7 @@ import pytest
 import torch
 
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v12.config import TrainConfig
+from app.contracts.worker.v13.config import TrainConfig
 from app.local.semantic import checkpoint_model_contract, load_model_contract
 from app.worker.checkpoints.model import (
     CHECKPOINT_FORMAT,
@@ -51,7 +51,7 @@ def _checkpoint_metadata():
             "bestEpoch": None,
             "source": "last_epoch",
         },
-        "initialization": {"kind": "random"},
+        "initialization": {"source": "random"},
         "jobConfigSha256": "b" * 64,
         "manifestSha256": "c" * 64,
         "progress": {

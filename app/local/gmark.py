@@ -11,8 +11,8 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import (
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13.config import (
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DROPOUT,
     DEFAULT_LR,
@@ -194,9 +194,9 @@ def _synthetic_model_contract(args: Any) -> ModelContract:
     slots = [
         {
             "identity": identity,
-            "observedConstraint": {"kind": "Finite"},
-            "lossInputTransformation": {"kind": "Identity"},
-            "publicPredictionTransformation": {"kind": "Identity"},
+            "observedConstraint": {"constraint": "Finite"},
+            "lossInputTransformation": "Identity",
+            "publicPredictionTransformation": "Identity",
         }
         for identity in identities
     ]
@@ -207,13 +207,11 @@ def _synthetic_model_contract(args: Any) -> ModelContract:
             "weight": 1,
             "roles": {
                 "estimate": {
-                    "kind": "target",
-                    "identity": identity,
+                    "targetIdentity": identity,
                     "view": "lossEstimate",
                 },
                 "observed": {
-                    "kind": "target",
-                    "identity": identity,
+                    "targetIdentity": identity,
                     "view": "observed",
                 },
             },
@@ -222,11 +220,11 @@ def _synthetic_model_contract(args: Any) -> ModelContract:
         for index, identity in enumerate(identities)
     ]
     return ModelContract.from_document({
-        "objectiveLanguageRevision": 1,
+        "objectiveLanguageRevision": 2,
         "targetContract": {"slots": slots},
         "objective": {
-            "aggregation": {"kind": "WeightedSum"},
-            "reduction": {"kind": "GlobalRowMean"},
+            "aggregation": "WeightedSum",
+            "reduction": "GlobalRowMean",
             "resources": [],
             "directComponents": direct_components,
             "auxiliaryComponents": [],

@@ -10,7 +10,7 @@ import torch
 
 import app.main as main_module
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.worker.v12.config import TrainConfig, train_config_to_manifest
+from app.contracts.worker.v13.config import TrainConfig, train_config_to_manifest
 from app.worker.data.arrow import iter_framed_arrow
 from tests.support.consumer_neutral import data_contract, model_contract
 
@@ -85,7 +85,7 @@ def checkpoint_metadata():
     digests = contract.digests(data["dataContractSha256"])
     training = TrainConfig()
     return {
-        "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
         "serviceVersion": "test",
         "generation": 1,
         "jobId": str(uuid.uuid4()),
@@ -101,7 +101,7 @@ def checkpoint_metadata():
             "bestEpoch": None,
             "source": "last_epoch",
         },
-        "initialization": {"kind": "random"},
+        "initialization": {"source": "random"},
         "jobConfigSha256": "a" * 64,
         "manifestSha256": "b" * 64,
         "progress": {

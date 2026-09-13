@@ -1,8 +1,7 @@
 # Контракт процесса Transformer worker v13
 
-> CONTRACT DOCUMENT. Этот каталог задаёт staged process contract предметного
-> словаря без `kind`. Он не является действующим runtime contract до отдельного
-> clean-cut решения.
+> CONTRACT DOCUMENT. Этот каталог задаёт process contract предметного словаря
+> без `kind`.
 
 Worker v13 переносит validated Semantic v2 documents без изменения математической
 семантики. Target identities остаются opaque, physical indices выводятся из
@@ -40,7 +39,7 @@ v6 recovery state не является совместимым с v7.
 ## Неизменный data plane
 
 `indexedFeatureBlocks` использует поле `encoding`, но physical Arrow schema IDs,
-columns, buffers, offsets и reconstruction semantics остаются прежними. Worker
+columns, offsets и reconstruction semantics остаются прежними. Worker
 создаёт тот же logical Float32 tensor и тот же target-aligned prediction v3.
 Training observations сохраняют прежнюю numerical semantics и typed references.
 

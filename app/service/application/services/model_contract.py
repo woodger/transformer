@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.contracts.semantic.v1 import ModelContract, SemanticContractError
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v2 import ModelContract, SemanticContractError
+from app.contracts.worker.v13.config import ModelConfig
+from app.contracts.worker.v13.constants import CHECKPOINT_FORMAT
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
@@ -31,7 +32,7 @@ def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
 
         metadata = model.metadata
         if (
-            metadata.get("format") != "transformer-checkpoint-v6"
+            metadata.get("format") != CHECKPOINT_FORMAT
             or metadata.get("dataContract") != model.data_contract
             or metadata.get("modelContract") != model.model_contract
             or metadata.get("semanticDigests") != model.semantic_digests

@@ -146,6 +146,7 @@ def test_service_domain_and_application_dependencies_point_inward():
         "app.service.application",
         "app.service.domain",
         "app.contracts.indexed_feature_blocks",
+        "app.contracts.flight.v14.source_encoding",
         "app.contracts.metrics",
         "app.contracts.semantic",
         "app.contracts.worker",

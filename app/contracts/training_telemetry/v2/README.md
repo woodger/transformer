@@ -2,14 +2,12 @@
 
 > CONTRACT DOCUMENT. Этот package задаёт нормативные JSON documents,
 > pagination semantics, capabilities и structured errors read-only доступа к
-> telemetry успешного fit. Package staged и ещё не активирован Flight v14;
-> действующий Training Telemetry v1 не меняется.
+> telemetry успешного fit.
 
 JSON Schemas Draft 2020-12 и перечисленные manifest-ом golden fixtures являются
 источником истины для формы документов. Этот README задаёт семантические
-инварианты, которые JSON Schema выразить не может. Будущая активация добавит
-два Flight actions и metrics v6 format fence. Runtime, PostgreSQL schema и
-действующая metrics v5 projection этим staged package не меняются.
+инварианты, которые JSON Schema выразить не может. Query использует два Flight
+actions и metrics v6 format fence.
 
 ## Назначение и версия
 
@@ -34,9 +32,8 @@ transformer.training-telemetry.v2.report
 transformer.training-telemetry.v2.gradient-interactions
 ```
 
-Первичная активация запланирована вместе с Flight v14. Query revision не
-обязана меняться
-вместе с job workflow, metrics projection, Worker или checkpoint format.
+Query revision не обязана меняться вместе с job workflow, metrics projection,
+Worker или checkpoint format.
 
 Batch query отсутствует. Inventory ограничивает сравнение четырьмя моделями и
 выполняет bounded single-model запросы самостоятельно.

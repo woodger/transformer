@@ -6,11 +6,11 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v13.arrow import (
+from app.contracts.flight.v14.arrow import (
     canonical_input_schema,
     validate_target_values,
 )
-from app.contracts.flight.v13.target_value_error import TargetValueError
+from app.contracts.flight.v14.target_value_error import TargetValueError
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -27,7 +27,7 @@ MODEL_CONTRACT = model_contract(
 )
 TARGET_CONTRACT = MODEL_CONTRACT.target_contract
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
+    "encoding": "indexedFeatureBlocks",
     "featureBlocks": [
         {"position": 0, "windowRows": 2, "nativeRowWidth": 1},
         {"position": 2, "windowRows": 1, "nativeRowWidth": 2},

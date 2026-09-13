@@ -26,12 +26,12 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/semantic/v1/`, `app/contracts/flight/v13/`,
-  `app/contracts/model_catalog/v1/` и `app/contracts/training_telemetry/v1/`, используемые
+- `app/contracts/semantic/v2/`, `app/contracts/flight/v14/`,
+  `app/contracts/model_catalog/v2/` и `app/contracts/training_telemetry/v2/`, используемые
   внешними consumers, runtime и contract tests;
-- `app/contracts/worker/v12/` и `app/contracts/checkpoint/v6/`, используемые
+- `app/contracts/worker/v13/` и `app/contracts/checkpoint/v7/`, используемые
   service и worker processes;
-- `app/contracts/metrics/v5/` и `app/contracts/metrics/fit_run/v5/`,
+- `app/contracts/metrics/v6/` и `app/contracts/metrics/fit_run/v6/`,
   используемые telemetry publisher-ом и OpenSearch;
 - `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;

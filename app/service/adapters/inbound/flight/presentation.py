@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.model_catalog.v1 import CONTRACT_NAME, CONTRACT_REVISION
+from app.contracts.model_catalog.v2 import CONTRACT_NAME, CONTRACT_REVISION
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
     FIT_SCHEMA_ID,

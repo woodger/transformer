@@ -10,7 +10,7 @@ class OutputHead(nn.Module):
         self,
         hidden_dim: int,
         target_width: int,
-        resource_kinds: tuple[str, ...],
+        resource_classes: tuple[str, ...],
     ) -> None:
         super().__init__()
         if hidden_dim <= 0:
@@ -18,14 +18,14 @@ class OutputHead(nn.Module):
         if target_width <= 0:
             raise ValueError("target_width must be a positive integer")
         if any(
-            kind != "PositiveScalarPerObservation"
-            for kind in resource_kinds
+            resource_class != "PositiveScalarPerObservation"
+            for resource_class in resource_classes
         ):
-            raise ValueError("private resource kind is unavailable")
+            raise ValueError("private resource class is unavailable")
 
         self.hidden_dim = hidden_dim
         self.target_width = target_width
-        self.resource_kinds = resource_kinds
+        self.resource_classes = resource_classes
         self.shared = nn.Sequential(
             nn.Linear(hidden_dim, 128),
             nn.GELU(),
@@ -33,7 +33,7 @@ class OutputHead(nn.Module):
         )
         self.target_head = nn.Linear(128, target_width)
         self.resource_heads = nn.ModuleList(
-            nn.Linear(128, 1) for _kind in resource_kinds
+            nn.Linear(128, 1) for _resource_class in resource_classes
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:

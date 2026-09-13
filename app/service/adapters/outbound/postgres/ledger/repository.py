@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.indexed_feature_blocks import feature_block_dimensions
+from app.contracts.flight.v14.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -231,10 +231,10 @@ class Ledger:
             initialization = validate_initialization(initialization)
             parent_model_ref = initialization.get("parentModelRef")
             if (
-                initialization["kind"] == "random"
+                initialization["source"] == "random"
                 and resolved_model_ref is not None
             ) or (
-                initialization["kind"] == "publishedModel"
+                initialization["source"] == "publishedModel"
                 and resolved_model_ref != parent_model_ref
             ):
                 raise ValueError(

@@ -1,4 +1,4 @@
-# Сервис Transformer Arrow Flight: операционное руководство v13
+# Сервис Transformer Arrow Flight: операционное руководство v14
 
 > Тип: операционное руководство. Запуск, recovery, shutdown и диагностика
 > текущего Flight service.
@@ -7,7 +7,7 @@
 Детали wire-контракта для Consumer находятся в
 [`руководстве по интеграции Consumer-ов`](../consumer-flight-integration.md), а
 нормативные schemas и fixtures — в
-[`app/contracts/flight/v13`](../../app/contracts/flight/v13/README.md). Текущие
+[`app/contracts/flight/v14`](../../app/contracts/flight/v14/README.md). Текущие
 process и data ownership boundaries описывает
 [`архитектурный справочник`](../architecture.md), training и recovery —
 [`training reference`](../training-runtime.md), а credential model, cache
@@ -136,7 +136,7 @@ snapshots не вытесняются; исчерпание capacity возвр�
 возвращает `TELEMETRY_CURSOR_INVALIDATED` и traversal следует начать заново.
 
 Один процесс владеет каталогами runtime и recovery через неблокирующие файлы
-`service.lock`. Flight v13 остаётся single-instance: PostgreSQL не превращает
+`service.lock`. Flight v14 остаётся single-instance: PostgreSQL не превращает
 in-memory worker queue или локальные хранилища в scheduler нескольких replicas.
 
 ### Потеря `/tmp`
@@ -229,7 +229,7 @@ systemd это `/tmp/transformer`.
 
 Соответствующие переменные окружения `TRANSFORMER_*` не читаются. У TLS и mTLS
 нет постоянных значений по умолчанию: они включаются только явно переданными
-certificate options команды `flight serve`. Flight v13 определяет
+certificate options команды `flight serve`. Flight v14 определяет
 `gpuCapacity` по работоспособным физическим GPU, обнаруженным при запуске; это
 не параметр приложения.
 
@@ -369,7 +369,7 @@ identity tombstone сохраняется, поэтому `jobId` нельзя �
 а точный lost-create replay остаётся разрешимым.
 
 Published model generation имеет независимый двухфазный hard-delete lifecycle;
-во Flight v13 нет сетевого action для её удаления. Owner-scoped catalog
+во Flight v14 нет сетевого action для её удаления. Owner-scoped catalog
 предоставляет только list/detail. Команды оператора,
 наблюдение `DELETING`/`DELETED`, filesystem retry и archive boundary описывает
 [`руководство по управлению опубликованными моделями`](published-models.md).
@@ -384,7 +384,7 @@ Published model generation имеет независимый двухфазны�
 ## Работоспособность и наблюдаемость
 
 Отдельного неаутентифицированного HTTP health endpoint нет. Используйте
-аутентифицированный Flight action `transformer.v13.health`.
+аутентифицированный Flight action `transformer.v14.health`.
 
 - `live=true` означает, что процесс отвечает на action.
 - `ready=true` требует, чтобы сервис не находился в draining и health check
@@ -433,7 +433,7 @@ stderr subprocess не должны попадать клиентам.
 Подробности записаны в
 [`flight-dependency-note.md`](../flight-dependency-note.md).
 
-## Известные ограничения v11
+## Известные ограничения Flight v14
 
 - Один экземпляр сервиса Transformer с одним локальным runtime storage и одним
   постоянным recovery storage.

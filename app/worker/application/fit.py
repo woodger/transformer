@@ -9,14 +9,14 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import (
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
+from app.contracts.worker.v13.diagnostics import DiagnosticsConfig
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,
@@ -74,7 +74,9 @@ def execute_fit(
     )
     train_config = replace(train_config, diagnostics=diagnostics)
     configure_reproducibility(train_config.seed, train_config.deterministic)
-    device = get_device(string_field(object_field(manifest, "device"), "kind"))
+    device = get_device(
+        string_field(object_field(manifest, "device"), "backend")
+    )
     data_contract = object_field(manifest, "dataContract")
     source_encoding = object_field(manifest, "sourceEncoding")
     committed_inputs = CommittedInputArtifacts()
@@ -255,11 +257,11 @@ def _load_initialization(
     model_contract: ModelContract,
 ) -> tuple[JsonObject, dict[str, object] | None]:
     initialization = object_field(manifest, "initialization")
-    kind = string_field(initialization, "kind")
-    if kind == "random":
-        return {"kind": "random"}, None
-    if kind != "publishedModel":
-        raise ValueError("fit initialization kind is invalid")
+    source = string_field(initialization, "source")
+    if source == "random":
+        return {"source": "random"}, None
+    if source != "publishedModel":
+        raise ValueError("fit initialization source is invalid")
 
     artifact = object_field(object_field(manifest, "model"), "parentCheckpoint")
     if string_field(initialization, "parentCheckpointSha256") != string_field(

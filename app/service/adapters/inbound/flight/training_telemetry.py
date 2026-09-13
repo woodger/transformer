@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.training_telemetry.v1 import (
+from app.contracts.training_telemetry.v2 import (
     CONTRACT_NAME,
     CONTRACT_REVISION,
     MAX_RESPONSE_BYTES,

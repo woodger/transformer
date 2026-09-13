@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v5 import RUN_INDEX
-from app.contracts.metrics.v5 import POINT_INDEX
+from app.contracts.metrics.fit_run.v6 import RUN_INDEX
+from app.contracts.metrics.v6 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
@@ -32,7 +32,7 @@ from tests.support.telemetry import (
 def _entry() -> MetricsOutboxRecord:
     artifact = TrainingMetricsArtifactRecord(
         model_ref="mdl_" + "1" * 32,
-        format="transformer.training-metrics.v5",
+        format="transformer.training-metrics.v6",
         media_type="application/x-ndjson",
         relative_path=(
             "11111111-1111-4111-8111-111111111111/metrics.jsonl"
@@ -49,7 +49,7 @@ def _entry() -> MetricsOutboxRecord:
     )
     return MetricsOutboxRecord(
         training_metrics=artifact,
-        projection_version="transformer.metrics.v5",
+        projection_version="transformer.metrics.v6",
         status="PENDING",
         cursor=0,
         attempts=0,
@@ -421,7 +421,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         entry,
         training_metrics=replace(
             entry.training_metrics,
-            format="transformer.training-metrics.v5",
+            format="transformer.training-metrics.v6",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
             sha256=artifact.sha256,
@@ -430,7 +430,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=FitRunSummaryArtifactRecord(
             model_ref=entry.training_metrics.model_ref,
-            format="transformer.fit-run-summary.v5",
+            format="transformer.fit-run-summary.v6",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -442,7 +442,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="transformer.metrics.v5",
+        projection_version="transformer.metrics.v6",
     )
 
     projection = TrainingMetricsProjection(spool)

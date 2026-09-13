@@ -3,14 +3,14 @@ from typing import cast
 import pyarrow
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import (
+from app.contracts.model_catalog.v2 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
     catalog_capabilities,
     validate_catalog_document,
 )
-from app.contracts.semantic.v1 import semantic_capabilities
-from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
-from app.contracts.worker.v12.constants import (
+from app.contracts.semantic.v2 import semantic_capabilities
+from app.contracts.training_telemetry.v2 import training_telemetry_capabilities
+from app.contracts.worker.v13.constants import (
     CHECKPOINT_FORMAT,
     CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
     RECOVERY_FORMAT,
@@ -417,8 +417,8 @@ class JobCoordinator:
             checkpointFormat=CHECKPOINT_FORMAT,
             recoveryFormat=RECOVERY_FORMAT,
             metricsFormats=[
-                "transformer.fit-run-summary.v5",
-                "transformer.training-metrics.v5",
+                "transformer.fit-run-summary.v6",
+                "transformer.training-metrics.v6",
             ],
             semantic=semantic_capabilities(),
             modelCatalog=catalog_capabilities(),
@@ -527,7 +527,7 @@ def _create_command(
         model_ref=request.get("model_ref"),
         model_config=request.get("model_config"),
         training_config=request.get("train_config"),
-        initialization_kind=request.get("initialization_kind"),
+        initialization_source=request.get("initialization_source"),
     )
 
 

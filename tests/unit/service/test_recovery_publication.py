@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,
@@ -110,7 +110,7 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],
@@ -218,7 +218,7 @@ def test_registration_failure_preserves_worker_checkpoint_staging(
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],

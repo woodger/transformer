@@ -4,8 +4,8 @@
 > декларативного Objective.
 
 Нормативную модель задают
-[`semantic/v1`](../app/contracts/semantic/v1/README.md) и
-[`Flight v13`](../app/contracts/flight/v13/README.md). Consumer materializer
+[`semantic/v2`](../app/contracts/semantic/v2/README.md) и
+[`Flight v14`](../app/contracts/flight/v14/README.md). Consumer materializer
 передаёт self-contained ordered target contract и Objective. Transformer
 считает target identities непрозрачными: ни transformation, ни operator, ни
 private resource не выбираются по имени target.
@@ -30,7 +30,7 @@ Model head выдаёт по одной raw coordinate на ordered target slot.
 representation: например, `SmoothL1` может работать как с `Tanh`, так и с
 `Sigmoid` estimate.
 
-## Objective language v1
+## Objective language v2
 
 Objective задаёт:
 
@@ -63,12 +63,12 @@ LogMSE:
 
 `BinaryCrossEntropyWithLogits` требует `Identity` loss-input transformation и
 observed interval внутри `[0, 1]`. `LogMSE` требует положительный estimate,
-который в language v1 выражается `Sigmoid`, и неотрицательный observed target.
+который в language v2 выражается `Sigmoid`, и неотрицательный observed target.
 Итоговая direct часть — сумма `weight × component mean`.
 
 ## Private resources и auxiliary operators
 
-Language v1 поддерживает resource kind `PositiveScalarPerObservation`. Это
+Language v2 поддерживает resource class `PositiveScalarPerObservation`. Это
 private differentiable model output, принадлежащий checkpoint. Его identity
 локальна Objective и позволяет нескольким operators использовать один и тот же
 resource; способ PyTorch parameterization, tensor layout и хранения остаётся

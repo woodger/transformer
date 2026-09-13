@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.semantic.v1.digests import jcs_sha256
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.semantic.v2.digests import jcs_sha256
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.training.trainer import Trainer
 
@@ -79,12 +79,12 @@ def local_checkpoint_metadata(
     }
     semantic_digests = model_contract.digests(manifest_sha256)
     job_config_sha256 = jcs_sha256({
-        "kind": "transformer.local-fit",
+        "operation": "transformer.local-fit",
         "source": source_identity,
         "modelContractSha256": semantic_digests["modelContractSha256"],
         "training": trainer.train_config.to_manifest(),
     })
-    trainer.initialization = {"kind": "random"}
+    trainer.initialization = {"source": "random"}
     manifest: JsonObject = {
         "jobId": str(uuid.uuid4()),
         "dataContract": data_contract,
@@ -103,7 +103,7 @@ def stream_manifest_sha256(
     trained_frames: int,
 ) -> str:
     return jcs_sha256({
-        "kind": "transformer.local-arrow-stream",
+        "operation": "transformer.local-arrow-stream",
         "modelContract": model_contract.to_document(),
         "receivedFrames": received_frames,
         "trainedFrames": trained_frames,

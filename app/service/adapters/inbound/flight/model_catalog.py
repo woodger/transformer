@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v6 import validate_checkpoint_document
+from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT, validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import (
+from app.contracts.model_catalog.v2 import (
     CONTRACT_NAME,
     CONTRACT_REVISION,
     validate_catalog_document,
 )
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v2 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )
@@ -65,14 +65,16 @@ def model_summary(model: PublishedModelRecord) -> JsonObject:
             )
             or checkpoint
             != {
-                "format": "transformer-checkpoint-v6",
+                "format": CHECKPOINT_FORMAT,
                 "sha256": model.sha256,
                 "bytes": model.byte_count,
             }
         ):
             raise ValueError("published model projection is inconsistent")
-        initialization_summary: JsonObject = {"kind": initialization["kind"]}
-        if initialization["kind"] == "publishedModel":
+        initialization_summary: JsonObject = {
+            "source": initialization["source"]
+        }
+        if initialization["source"] == "publishedModel":
             initialization_summary["parentModelRef"] = initialization[
                 "parentModelRef"
             ]

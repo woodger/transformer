@@ -1,4 +1,4 @@
-from app.contracts.flight.v13.constants import (
+from app.contracts.flight.v14.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CREATE_ACTION,
@@ -54,7 +54,7 @@ def test_persisted_create_result_replays_without_new_mutation():
         selected_device=None,
         resolved_model_ref=None,
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
             ],
@@ -71,7 +71,7 @@ def test_persisted_create_result_replays_without_new_mutation():
         semantic_digests=SEMANTIC_DIGESTS,
         job_config_sha256="b" * 64,
         limits=limits,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
     wire_result = present_job_created(created)
     stored_result = {
@@ -144,7 +144,7 @@ def test_persisted_create_result_replays_without_new_mutation():
         data_contract=created.data_contract,
         model_contract=MODEL_CONTRACT_DOCUMENT,
         semantic_digests=SEMANTIC_DIGESTS,
-        initialization_kind="random",
+        initialization_source="random",
     )
 
     def fail_prepare(_model):

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v12 import WorkerContractError
+from app.contracts.worker.v13 import WorkerContractError
 
 
 def object_document(value: object, label: str) -> JsonObject:

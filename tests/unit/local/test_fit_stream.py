@@ -151,7 +151,7 @@ def test_fit_stream_skips_empty_frames(monkeypatch, capsys):
     assert trainer.calls == [(torch.Size([1, 2, 2]), torch.Size([1, 1]))]
     assert trainer.saved_as == "stream.pth"
     assert trainer_arguments["model_contract"] is contract
-    assert trainer_arguments["initialization"] == {"kind": "random"}
+    assert trainer_arguments["initialization"] == {"source": "random"}
 
     output = capsys.readouterr().out
     assert "frame 1, skipped empty payload" in output

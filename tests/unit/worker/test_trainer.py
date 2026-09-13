@@ -11,13 +11,13 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT
-from app.contracts.worker.v12.config import (
+from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT
+from app.contracts.worker.v13.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v13.diagnostics import DiagnosticsConfig
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.tensors import TrainingBatch
@@ -147,7 +147,7 @@ def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
         model_config(),
         data_contract=data_contract(),
         model_contract=DEFAULT_MODEL_CONTRACT,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
 
     path = tmp_path / "model.pth"

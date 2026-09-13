@@ -7,14 +7,14 @@
 heads, declarative objective и формулы loss operators принадлежат
 [описанию функции потерь](./losses.md), а checkpoint selection, recovery и
 runtime telemetry — этому документу. Нормативный remote ML-контракт находится в
-[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md).
+[`app/contracts/flight/v14`](../app/contracts/flight/v14/README.md).
 Rationale target-aligned public semantics сохранён в
 [ADR 0007](./adr/0007-target-aligned-flight-v4.md); текущие форматы и значения
 определяют contract и этот reference.
 
 ## Checkpoint contract
 
-Текущий формат — `transformer-checkpoint-v6`. Binary container содержит ровно
+Текущий формат — `transformer-checkpoint-v7`. Binary container содержит ровно
 `metadata` и `state_dict`. Закрытая metadata фиксирует:
 
 - полный Consumer-owned `dataContract`;
@@ -29,7 +29,7 @@ Model config фиксирует architecture identity/revision, `seqLen`, `featu
 ordered target slots. Private resources создаются по Objective declarations и
 не меняют public width.
 
-Loader принимает только точный формат v6. Предыдущие wrapped и raw legacy
+Loader принимает только точный формат v7. Предыдущие wrapped и raw legacy
 checkpoint не интерпретируются автоматически. Для Flight prediction другой
 корректный format даёт `MODEL_SCHEMA_MISMATCH`; текущий format с неполной или
 противоречивой semantic metadata даёт `MODEL_CORRUPT`.
@@ -45,7 +45,7 @@ objective и model digest layers; другой временной период �
 progress и checkpoint selection не наследуются. Результатом остаётся новая
 immutable generation, а не изменение parent или продолжение его training run.
 Точную wire-форму `initialization` задаёт
-[Flight contract](../app/contracts/flight/v13/README.md#compatibility-и-artifacts).
+[Flight contract](../app/contracts/flight/v14/README.md#compatibility-и-artifacts).
 Recovery относится к состоянию уже созданного нового job.
 
 ## Target contract и objective
@@ -57,7 +57,7 @@ raw coordinate для direct loss и transformation public prediction. Transform
 
 Objective явно связывает каждый slot ровно с одним direct component и может
 объявлять auxiliary components и private resources. Transformer исполняет
-закрытый набор operators/resource kinds и проверяет typed role bindings. Все
+закрытый набор operators/resource classes и проверяет typed role bindings. Все
 components с положительными weights активны с первого optimizer step. Полные
 target, objective и model documents покрываются отдельными D1 digests.
 
@@ -106,7 +106,7 @@ Flight fit использует durable input stream. Epoch 0 начинает �
 ordinal при открытом input. `input.close` задаёт EOF. Последующие epochs
 перечитывают закрытый immutable dataset.
 
-Flight v13 хранит Consumer-computed features как indexed native blocks и
+Flight v14 хранит Consumer-computed features как indexed native blocks и
 локальные observation offsets. Worker восстанавливает прежний dense logical
 tensor срезами ограниченного размера. RecordBatch, range chunk и payload
 boundaries не являются optimizer batch, shuffle window или epoch boundaries.
@@ -120,7 +120,7 @@ replay с проверкой schema и physical/logical counters.
 
 ## Recovery
 
-Текущий формат — `transformer-recovery-v6`. Checkpoint создаётся
+Текущий формат — `transformer-recovery-v7`. Checkpoint создаётся
 только на границе завершённой global epoch после EOF и содержит:
 
 - model, optimizer и AMP scaler state;

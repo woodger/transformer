@@ -7,16 +7,16 @@ from typing import cast
 import pytest
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v5 import (
+from app.contracts.metrics.fit_run.v6 import (
     build_run_document,
     build_run_summary,
 )
-from app.contracts.metrics.v5 import (
+from app.contracts.metrics.v6 import (
     build_training_record,
     project_training_points,
 )
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.training_telemetry.v1 import (
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.training_telemetry.v2 import (
     validate_training_telemetry_document,
 )
 from app.project import PROJECT_ROOT
@@ -78,10 +78,10 @@ REPORT_METRICS = {
     "training.target.rmse",
 }
 MODEL_CATALOG_FIXTURES = (
-    PROJECT_ROOT / "app" / "contracts" / "model_catalog" / "v1" / "fixtures"
+    PROJECT_ROOT / "app" / "contracts" / "model_catalog" / "v2" / "fixtures"
 )
 SEMANTIC_FIXTURES = (
-    PROJECT_ROOT / "app" / "contracts" / "semantic" / "v1" / "fixtures"
+    PROJECT_ROOT / "app" / "contracts" / "semantic" / "v2" / "fixtures"
 )
 
 
@@ -165,7 +165,7 @@ class _OpenSearchClient:
         self.queries: list[JsonObject] = []
 
     def document_source(self, index: str, document_id: str) -> JsonObject | None:
-        assert index == "metrics-runs-v5"
+        assert index == "metrics-runs-v6"
         assert len(document_id) == 64
         return self.summary
 
@@ -174,7 +174,7 @@ class _OpenSearchClient:
         index: str,
         query: JsonObject,
     ) -> tuple[tuple[JsonObject, tuple[object, ...]], ...]:
-        assert index == "metrics-points-v5"
+        assert index == "metrics-points-v6"
         self.queries.append(query)
         result = (
             (
@@ -761,10 +761,10 @@ def _multi_target_model() -> PublishedModelRecord:
             "semanticDigests": digests,
             "modelConfig": contract.model_config,
             "targetIdentities": list(contract.target_identities),
-            "initialization": {"kind": "random"},
+            "initialization": {"source": "random"},
             "producingRunId": "33333333-3333-4333-8333-333333333333",
             "checkpoint": {
-                "format": "transformer-checkpoint-v6",
+                "format": "transformer-checkpoint-v7",
                 "sha256": "d" * 64,
                 "bytes": 1024,
             },
@@ -797,7 +797,7 @@ def _multi_target_model() -> PublishedModelRecord:
             "globalStep": 20,
             "trainingComplete": True,
         },
-        "initialization": {"kind": "random"},
+        "initialization": {"source": "random"},
         "jobConfigSha256": "7" * 64,
     }
     return _published_model(detail)
@@ -807,7 +807,7 @@ def _published_model(detail: JsonObject) -> PublishedModelRecord:
     summary = cast(JsonObject, detail["summary"])
     checkpoint = cast(JsonObject, summary["checkpoint"])
     metadata: JsonObject = {
-        "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
         "serviceVersion": "0.2.0",
         "generation": cast(JsonObject, detail["progress"])["completedEpochs"],
         "jobId": summary["producingRunId"],
@@ -1005,7 +1005,7 @@ def _training_record(
         attempt=1,
         model_ref=model.model_ref,
         semantic_digests=model.semantic_digests,
-        checkpoint_format="transformer-checkpoint-v6",
+        checkpoint_format="transformer-checkpoint-v7",
         application_version="0.2.0",
         git_commit="0" * 40,
         targets=contract.target_identities,
@@ -1023,7 +1023,7 @@ def _run_document(model: PublishedModelRecord) -> JsonObject:
         model_ref=model.model_ref,
         semantic_digests=model.semantic_digests,
         job_config_sha256=cast(str, model.metadata["jobConfigSha256"]),
-        checkpoint_format="transformer-checkpoint-v6",
+        checkpoint_format="transformer-checkpoint-v7",
         application_version="0.2.0",
         git_commit="0" * 40,
         targets=contract.target_identities,

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -50,7 +50,7 @@ def _job(**overrides):
         resolved_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],
@@ -82,7 +82,7 @@ def _job(**overrides):
         started_at=4.0,
         cancel_requested_at=None,
         finished_at=8.0,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
     return replace(value, **overrides)
 
@@ -191,7 +191,7 @@ def test_status_keeps_initialization_separate_from_checkpoint_identity():
 
     result = _execute(_query(snapshot), "request-existing-checkpoint")
 
-    assert result["initialization"] == {"kind": "random"}
+    assert result["initialization"] == {"source": "random"}
     assert result["results"]["checkpoint"] == {
         "format": CHECKPOINT_FORMAT,
         "sha256": "c" * 64,

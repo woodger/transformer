@@ -1,10 +1,10 @@
 import json
 from types import SimpleNamespace
 
-from app.contracts.flight.v13 import validate_request_document
-from app.contracts.model_catalog.v1 import catalog_capabilities
-from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.flight.v14 import validate_request_document
+from app.contracts.model_catalog.v2 import catalog_capabilities
+from app.contracts.training_telemetry.v2 import training_telemetry_capabilities
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
 from app.service.adapters.inbound.flight.constants import CREATE_ACTION
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.application.messages.jobs import (
@@ -15,7 +15,7 @@ from app.service.domain.job import ExecutionState, InputState
 from tests.support.consumer_neutral import model_contract
 
 
-def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
+def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v14():
     captured = []
     limits = ServiceLimits(
         max_message_bytes=1024,
@@ -52,7 +52,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
             semantic_digests=command.semantic_digests,
             job_config_sha256="b" * 64,
             limits=limits,
-            initialization={"kind": "random"},
+            initialization={"source": "random"},
         )
 
     coordinator = JobCoordinator(
@@ -95,7 +95,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
         "device": "gpu",
         "prediction_column": "out",
         "source_encoding": {
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
             ],
@@ -108,11 +108,11 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
         "model_ref": None,
         "model_config": ModelConfig.from_manifest(contract.model_config),
         "train_config": train_config,
-        "initialization_kind": "random",
+        "initialization_source": "random",
     }
     document = {
         "contract": "transformer-flight",
-        "version": 13,
+        "version": 14,
         "requestId": request_id,
         "idempotencyKey": "create:1",
         "jobId": job_id,
@@ -132,7 +132,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
         feature_dim=1,
     )
     assert result["contract"] == "transformer-flight"
-    assert result["version"] == 13
+    assert result["version"] == 14
     assert result["jobId"] == job_id
     assert result["device"] == {"requested": "gpu", "selected": None}
     assert result["ownership"] == {
@@ -142,7 +142,7 @@ def test_create_dispatch_maps_public_gpu_to_internal_cuda_for_flight_v13():
     assert result["upload"] == {
         "descriptorPath": [
             "transformer",
-            "v13",
+            "v14",
             "jobs",
             job_id,
             "inputs",
@@ -209,7 +209,7 @@ def test_capabilities_and_health_expose_gpu_without_cuda_backend_fields():
     health = coordinator.health("request-health")
 
     validate_request_document(capabilities, "capabilities-result")
-    assert capabilities["protocolVersions"] == [13]
+    assert capabilities["protocolVersions"] == [14]
     assert capabilities["sourceEncodings"] == ["indexedFeatureBlocks"]
     assert capabilities["fitInitializations"] == [
         "publishedModel",

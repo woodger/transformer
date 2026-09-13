@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import validate_catalog_document
+from app.contracts.model_catalog.v2 import validate_catalog_document
 from app.project import PROJECT_ROOT
 from app.service.adapters.inbound.flight.constants import (
     MODEL_CATALOG_DETAIL_ACTION,
@@ -49,7 +49,7 @@ from app.service.domain.errors import ServiceError
 from app.service.domain.records import PublishedModelRecord
 
 FIXTURES = (
-    PROJECT_ROOT / "app" / "contracts" / "model_catalog" / "v1" / "fixtures"
+    PROJECT_ROOT / "app" / "contracts" / "model_catalog" / "v2" / "fixtures"
 )
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 REQUEST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -217,7 +217,7 @@ def test_detail_is_full_valid_projection_and_verifies_artifact() -> None:
     detail = model_detail(result.model)
     document = {
         "contract": "transformer-model-catalog",
-        "revision": 1,
+        "revision": 2,
         "requestId": result.request_id,
         "model": detail,
     }
@@ -253,7 +253,7 @@ def test_flight_catalog_actions_use_the_accepted_documents() -> None:
     )
     list_document = {
         "contract": "transformer-model-catalog",
-        "revision": 1,
+        "revision": 2,
         "requestId": REQUEST_ID,
         "pageSize": 1,
         "cursor": None,
@@ -273,7 +273,7 @@ def test_flight_catalog_actions_use_the_accepted_documents() -> None:
 
     detail_document = {
         "contract": "transformer-model-catalog",
-        "revision": 1,
+        "revision": 2,
         "requestId": REQUEST_ID,
         "modelRef": model.model_ref,
     }
@@ -294,7 +294,7 @@ def test_flight_catalog_actions_use_the_accepted_documents() -> None:
 def test_catalog_revision_uses_json_integer_equivalence() -> None:
     document = {
         "contract": "transformer-model-catalog",
-        "revision": 2.0,
+        "revision": 3.0,
         "requestId": REQUEST_ID,
         "pageSize": 1,
         "cursor": None,
@@ -305,7 +305,7 @@ def test_catalog_revision_uses_json_integer_equivalence() -> None:
 
     assert error.value.detail is not None
     assert error.value.detail["reason"] == "CATALOG_QUERY_REVISION_UNAVAILABLE"
-    assert error.value.detail["requestedRevision"] == 2
+    assert error.value.detail["requestedRevision"] == 3
 
 
 def test_detail_hides_unknown_and_foreign_models_behind_same_outcome() -> None:
@@ -430,7 +430,7 @@ def _model_record(fixture_name: str) -> PublishedModelRecord:
     detail = result["model"]
     summary = detail["summary"]
     metadata = {
-        "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
         "serviceVersion": "0.2.0",
         "generation": detail["progress"]["completedEpochs"],
         "jobId": summary["producingRunId"],

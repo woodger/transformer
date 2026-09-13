@@ -5,31 +5,31 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v13.codec import (
+from app.contracts.flight.v14.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
-from app.contracts.indexed_feature_blocks import canonical_source_encoding
+from app.contracts.flight.v14.source_encoding import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import (
+from app.contracts.model_catalog.v2 import (
     DETAIL_ACTION as MODEL_CATALOG_DETAIL_ACTION,
     LIST_ACTION as MODEL_CATALOG_LIST_ACTION,
     ModelCatalogContractError,
     validate_catalog_document,
 )
-from app.contracts.semantic.v1 import ModelContract, SemanticContractError
-from app.contracts.training_telemetry.v1 import (
+from app.contracts.semantic.v2 import ModelContract, SemanticContractError
+from app.contracts.training_telemetry.v2 import (
     GRADIENT_INTERACTIONS_ACTION as TRAINING_TELEMETRY_GRADIENT_ACTION,
     REPORT_ACTION as TRAINING_TELEMETRY_REPORT_ACTION,
     TrainingTelemetryContractError,
     validate_training_telemetry_document,
 )
-from app.contracts.worker.v12.config import (
+from app.contracts.worker.v13.config import (
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v13.diagnostics import DiagnosticsConfig
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -55,6 +55,7 @@ from app.service.adapters.inbound.flight.training_telemetry import (
     unavailable_telemetry_revision,
 )
 from app.service.domain.errors import ServiceError
+from app.service.domain.initialization import validate_requested_initialization
 from app.service.domain.job import ErrorCode
 
 _ACTION_SCHEMAS: dict[str, FlightRequestSchema] = {
@@ -103,7 +104,7 @@ class CreateRequestFields(RequestIdFields):
     model_selector: NotRequired[str]
     model_config: NotRequired[ModelConfig]
     train_config: NotRequired[TrainConfig]
-    initialization_kind: NotRequired[str]
+    initialization_source: NotRequired[str]
 
 
 class AcquireRequestFields(RequestIdFields):
@@ -358,10 +359,12 @@ def _validate_create(
         common["model_label"] = _string(document, "modelLabel")
         common["model_config"] = model_config
         common["train_config"] = train_config
-        initialization = _object(document, "initialization")
-        initialization_kind = _string(initialization, "kind")
-        common["initialization_kind"] = initialization_kind
-        if initialization_kind == "publishedModel":
+        initialization = validate_requested_initialization(
+            _object(document, "initialization")
+        )
+        initialization_source = _string(initialization, "source")
+        common["initialization_source"] = initialization_source
+        if initialization_source == "publishedModel":
             common["model_ref"] = _string(initialization, "modelRef")
             common["model_selector"] = "modelRef"
     else:

@@ -1,17 +1,17 @@
-# Интеграция Consumer-ов с Transformer Arrow Flight v13
+# Интеграция Consumer-ов с Transformer Arrow Flight v14
 
 > Тип: интеграционное руководство. Durable workflow Consumer-а поверх
 > текущего consumer-neutral протокола.
 
 Нормативный wire-контракт находится в
-[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md), а
+[`app/contracts/flight/v14`](../app/contracts/flight/v14/README.md), а
 математический язык — в
-[`app/contracts/semantic/v1`](../app/contracts/semantic/v1/README.md). Их JSON
+[`app/contracts/semantic/v2`](../app/contracts/semantic/v2/README.md). Их JSON
 Schemas и golden fixtures имеют приоритет над этим руководством. Эксплуатация
 сервиса описана в [Flight runbook](operations/flight-service.md), credentials —
 в [операционном руководстве](operations/api-access-tokens.md).
 
-Flight v13 — единственный remote API. Actions v11, dense fallback и
+Flight v14 — единственный remote API. Actions v13, dense fallback и
 compatibility layer отсутствуют. Model aliases сохраняются только как selector
 predict; catalog detail принимает exact `modelRef`.
 
@@ -27,10 +27,10 @@ authorization: Bearer a.<base64url>
 Credential представляет owner subject; job и model resources изолированы по
 этому owner-у. Не записывайте bearer credential или непрозрачный output ticket
 в логи. Job workflow JSON envelope содержит `contract=transformer-flight`,
-`version=13` и canonical UUID `requestId`. Model Catalog actions используют
-независимые `contract=transformer-model-catalog`, `revision=1` и тот же формат
+`version=14` и canonical UUID `requestId`. Model Catalog actions используют
+независимые `contract=transformer-model-catalog`, `revision=2` и тот же формат
 `requestId`. Training Telemetry actions аналогично используют независимые
-`contract=transformer-training-telemetry` и `revision=1`.
+`contract=transformer-training-telemetry` и `revision=2`.
 
 Для мутации заранее сохраните стабильный `idempotencyKey` и неизменный request.
 При потере ответа повторяйте то же действие с тем же содержимым; ключ нельзя
@@ -38,10 +38,10 @@ Credential представляет owner subject; job и model resources изо
 
 ## Capabilities и device
 
-До create вызовите `transformer.v13.capabilities` и проверьте как минимум:
+До create вызовите `transformer.v14.capabilities` и проверьте как минимум:
 
-- `protocolVersions == [13]` и `workerProtocolVersion == 12`;
-- checkpoint/recovery v6 и оба metrics format v5;
+- `protocolVersions == [14]` и `workerProtocolVersion == 13`;
+- checkpoint/recovery v7 и оба metrics format v6;
 - `sourceEncodings == ["indexedFeatureBlocks"]`;
 - objective language revision, advertised primitives, architecture и capacity
   limits внутри `semantic`;
@@ -91,13 +91,13 @@ Training policy и diagnostics передаются отдельно от Object
 Независимое обучение использует:
 
 ```json
-{"kind":"random"}
+{"source":"random"}
 ```
 
 Weights-only warm start использует owner-scoped immutable reference:
 
 ```json
-{"kind":"publishedModel","modelRef":"mdl_..."}
+{"source":"publishedModel","modelRef":"mdl_..."}
 ```
 
 `publishedModel` требует точного совпадения data, target, objective и model D1
@@ -126,7 +126,7 @@ fencingToken    = "1"
 ```
 
 Сохраните create result вместе с resolved contracts, D1 digests, initialization,
-ownership и limits. При takeover вызовите `transformer.v13.job.acquire` с
+ownership и limits. При takeover вызовите `transformer.v14.job.acquire` с
 предыдущими execution identity/token и новым `clientExecutionId`. Token —
 положительная десятичная строка. Старый claim получает `STALE_FENCE`.
 
@@ -148,8 +148,8 @@ RecordBatch, chunk и payload boundaries не меняют logical order, shuffl
 optimizer batches или values. `maxJobBytes` применяется к durable compact IPC
 bytes, а не к восстановленному dense tensor. Точные Arrow schemas и формула
 reconstruction находятся в
-[Flight contract](../app/contracts/flight/v13/README.md#arrow-и-indexedfeatureblocks),
-а provider-neutral fixtures — в `app/contracts/flight/v13/fixtures/`.
+[Flight contract](../app/contracts/flight/v14/README.md#arrow-и-indexedfeatureblocks),
+а provider-neutral fixtures — в `app/contracts/flight/v14/fixtures/`.
 
 PutResult появляется только после durable artifact и PostgreSQL receipt.
 Завершение DoPut не по ordinal разрешено. `nextInputOrdinal` показывает первый
@@ -158,12 +158,12 @@ PutResult появляется только после durable artifact и Postg
 ## Сверка и закрытие input
 
 После потерянного PutResult перечислите receipts через
-`transformer.v13.job.inputs.list`. Первая страница фиксирует
+`transformer.v14.job.inputs.list`. Первая страница фиксирует
 `snapshotRevision`; продолжайте с тем же snapshot и cursor. Повторный exact
 payload возвращает существующий receipt, а другое содержимое для занятой
 identity/ordinal является конфликтом.
 
-`transformer.v13.job.input.close` обозначает EOF, а не команду запуска. Close
+`transformer.v14.job.input.close` обозначает EOF, а не команду запуска. Close
 передаёт canonical digest всех server receipts в ordinal order. До перехода в
 `CLOSED` сервер проверяет непрерывность payload/range/example sequence, counts,
 digest, единую schema и data identity. Пустой fit возвращает `EMPTY_INPUT`;
@@ -176,7 +176,7 @@ payloads до EOF.
 ## Каталог опубликованных моделей
 
 Catalog truth определяется PostgreSQL registry, а не OpenSearch telemetry или
-filesystem scan. Вызов `transformer.model-catalog.v1.list` возвращает только
+filesystem scan. Вызов `transformer.model-catalog.v2.list` возвращает только
 `AVAILABLE` generations аутентифицированного owner в порядке
 `createdAt DESC, modelRef ASC`. Первая страница передаёт `cursor=null`; для
 продолжения повторите выданный `nextCursor` и тот же `pageSize`. Cursor действует
@@ -186,18 +186,18 @@ List summary содержит exact `modelRef`, label/generation, D1 digests, re
 model configuration, ordered opaque target identities, initialization,
 producing run и checkpoint summary. List не читает checkpoint bytes.
 
-`transformer.model-catalog.v1.detail` принимает только exact `modelRef` и
+`transformer.model-catalog.v2.detail` принимает только exact `modelRef` и
 возвращает canonical data/model contracts, training/diagnostics configuration,
 selection, terminal progress, lineage и `jobConfigSha256`. Перед успешным
 ответом Transformer проверяет metadata и полный SHA-256 checkpoint. Unknown,
 foreign, deleted model и удаление между list/detail возвращают одинаковый
 `MODEL_NOT_FOUND`; начните новый traversal после обновления UI. Полные schemas,
 limits и structured outcomes задаёт
-[Model Catalog Query v1](../app/contracts/model_catalog/v1/README.md).
+[Model Catalog Query v2](../app/contracts/model_catalog/v2/README.md).
 
 ## Training telemetry опубликованной модели
 
-`transformer.training-telemetry.v1.report` принимает exact `modelRef` и
+`transformer.training-telemetry.v2.report` принимает exact `modelRef` и
 возвращает owner-scoped training report. Transformer сам разрешает
 authoritative producing run из registry; owner и run identity в request не
 передаются. Unknown, foreign и deleted model неразличимы.
@@ -211,11 +211,11 @@ training-проход эпохи, а не повторную оценку publis
 `TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED` повторите initial request позднее, а
 при `TELEMETRY_CURSOR_INVALIDATED` после рестарта начните traversal заново.
 
-`transformer.training-telemetry.v1.gradient-interactions` лениво возвращает
+`transformer.training-telemetry.v2.gradient-interactions` лениво возвращает
 components и sparse oriented pairs одной exact epoch. Отсутствующие
 observations являются обычным result. Точные schemas, outcome precedence,
 pagination и structured errors задаёт
-[`Training Telemetry Query v1`](../app/contracts/training_telemetry/v1/README.md).
+[`Training Telemetry Query v2`](../app/contracts/training_telemetry/v2/README.md).
 
 ## Polling, recovery и results
 
@@ -227,7 +227,7 @@ Recovery checkpoints создаются на границах завершённ
 
 После успешного predict:
 
-1. Получите страницы `transformer.v13.job.outputs.list`.
+1. Получите страницы `transformer.v14.job.outputs.list`.
 2. Для каждого ordinal вызовите `GetFlightInfo` с нормативным descriptor.
 3. Используйте новый opaque ticket в `DoGet` до его expiration.
 
@@ -239,7 +239,7 @@ Prediction имеет finite Float32 width, равную ordered target slots ch
 ## Ошибки и retries
 
 Human-readable Flight message начинается с application error code, а
-`FlightError.extra_info` содержит structured v13 error detail. Consumer должен
+`FlightError.extra_info` содержит structured v14 error detail. Consumer должен
 ветвиться по `code`, `reason` и typed fields, а не по тексту message. Invalid
 contract, unavailable primitive, target value violation, compatibility
 mismatch, stored corruption и recovery fencing имеют разные reasons.
@@ -258,7 +258,7 @@ ownership и idempotency identities меняться не должны.
 
 ## Проверка интеграции
 
-1. Проверьте exact v13 capabilities и отказ для v12 actions.
+1. Проверьте exact v14 capabilities и отказ для v13 actions.
 2. Пересчитайте JCS/D1 golden fixtures независимо от Transformer runtime.
 3. Проверьте generic regression, probability, shared-resource objective,
    target reorder и новый opaque target без изменения Transformer.

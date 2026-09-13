@@ -11,13 +11,13 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app import config as defaults
-from app.contracts.flight.v13.arrow import (
+from app.contracts.flight.v14.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,
     validate_target_values,
 )
-from app.contracts.indexed_feature_blocks import feature_block_dimensions
+from app.contracts.flight.v14.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch

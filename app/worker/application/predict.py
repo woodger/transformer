@@ -7,13 +7,13 @@ from itertools import chain
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import (
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v13.config import ModelConfig, TrainConfig
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -54,7 +54,9 @@ def execute_predict(
     checkpoint_path = validate_checkpoint_artifact(
         object_field(model_document, "checkpoint")
     )
-    device = get_device(string_field(object_field(manifest, "device"), "kind"))
+    device = get_device(
+        string_field(object_field(manifest, "device"), "backend")
+    )
     checkpoint = _load_checkpoint(checkpoint_path, device)
     metadata = object_document(checkpoint["metadata"], "checkpoint metadata")
     data_contract = object_field(manifest, "dataContract")

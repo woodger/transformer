@@ -7,8 +7,8 @@ import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13.config import ModelConfig
 from app.local.semantic import checkpoint_model_contract
 from app.worker.checkpoints.model import load_checkpoint
 from app.worker.data.arrow import (

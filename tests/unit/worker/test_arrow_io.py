@@ -5,7 +5,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v13.arrow import canonical_input_schema
+from app.contracts.flight.v14.arrow import canonical_input_schema
 from app.worker.data.arrow import (
     iter_committed_fit_arrow,
     iter_committed_source_arrow,
@@ -19,7 +19,7 @@ from app.worker.data.arrow import (
 from tests.support.consumer_neutral import model_contract
 
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
+    "encoding": "indexedFeatureBlocks",
     "featureBlocks": [
         {"position": 0, "windowRows": 2, "nativeRowWidth": 2},
     ],
@@ -222,7 +222,7 @@ def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):
             expected_chunks=1,
             expected_native_rows=(1,),
             source_encoding={
-                "kind": "indexedFeatureBlocks",
+                "encoding": "indexedFeatureBlocks",
                 "featureBlocks": [
                     {"position": 0, "windowRows": 1, "nativeRowWidth": 5},
                 ],

@@ -5,7 +5,7 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v12 import (
+from app.contracts.worker.v13 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -14,7 +14,7 @@ from app.contracts.worker.v12 import (
     RECOVERY_FORMAT,
     validate_document,
 )
-from app.contracts.worker.v12.config import train_config_to_manifest
+from app.contracts.worker.v13.config import train_config_to_manifest
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
@@ -182,9 +182,9 @@ class WorkerPlanBuilder:
             "attemptId": job.attempt_id,
             "operation": job.operation,
             "device": (
-                {"kind": "cpu"}
+                {"backend": "cpu"}
                 if device == "cpu"
-                else {"kind": "cuda", "opaqueId": job.assigned_device_id}
+                else {"backend": "cuda", "opaqueId": job.assigned_device_id}
             ),
             "inputs": [
                 {
@@ -238,7 +238,7 @@ class WorkerPlanBuilder:
             model_manifest["label"] = job.model_label
             initialization = validate_initialization(job.initialization)
             initialization_document = dict(initialization)
-            if initialization["kind"] == "publishedModel":
+            if initialization["source"] == "publishedModel":
                 model = self._validated_model(job)
                 if model.sha256 != initialization["parentCheckpointSha256"]:
                     raise WorkerPlanError(

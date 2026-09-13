@@ -3,7 +3,7 @@ from typing import cast
 
 import torch
 
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v2 import ModelContract
 from app.worker.model.transformer import TransformerModel
 from app.worker.telemetry.paths import resolve_metrics_path
 from app.worker.training.run_config import (

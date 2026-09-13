@@ -4,7 +4,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.contracts.indexed_feature_blocks import feature_block_dimensions
+from app.contracts.flight.v14.source_encoding import feature_block_dimensions
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,

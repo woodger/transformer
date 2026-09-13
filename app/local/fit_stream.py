@@ -5,8 +5,8 @@ from typing import Protocol, cast
 import torch
 
 from app.config import DEFAULT_MAX_FRAME_BYTES
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13.config import ModelConfig
 from app.local.semantic import (
     load_model_contract,
     local_checkpoint_metadata,
@@ -81,7 +81,7 @@ def run(
                 device,
                 model_config,
                 model_contract=contract,
-                initialization={"kind": "random"},
+                initialization={"source": "random"},
             )
             print(trainer.config_line())
             print("features:", batch.features.shape, "targets:", batch.targets.shape)

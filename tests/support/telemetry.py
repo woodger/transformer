@@ -4,12 +4,12 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.contracts.metrics.fit_run.v5 import build_run_summary
-from app.contracts.metrics.v5 import (
+from app.contracts.metrics.fit_run.v6 import build_run_summary
+from app.contracts.metrics.v6 import (
     build_training_record,
 )
-from app.contracts.worker.v12 import CHECKPOINT_FORMAT
-from app.contracts.worker.v12.config import TrainConfig
+from app.contracts.worker.v13 import CHECKPOINT_FORMAT
+from app.contracts.worker.v13.config import TrainConfig
 from tests.support.consumer_neutral import model_contract
 
 DATA_CONTRACT_SHA256 = "d" * 64
@@ -157,7 +157,7 @@ def create_test_run_summary_artifact(
         application_version="0.1.10",
         git_commit="0" * 40,
         targets=MODEL_CONTRACT.target_identities,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
         milestones={
             "createdAt": "1970-01-01T00:00:01.000Z",
             "firstInputCommittedAt": "1970-01-01T00:00:02.000Z",

@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Shared contracts переведены clean cut на предметный vocabulary без общего
+  `kind`: Semantic v2, Flight v14, Worker v13, checkpoint/recovery v7,
+  metrics v6, Model Catalog Query v2 и Training Telemetry Query v2.
+- `TargetContract`, Objective, private resources, physical source encoding,
+  initialization и public capabilities используют предметные поля и scalar
+  primitives. Requested, resolved и catalog initialization остаются разными
+  documents.
+- D1 сохраняет representation-specific preimages: Semantic v1 и v2 не
+  совместимы. Математика objective, target-slot alignment, physical Arrow
+  schema IDs и logical reconstruction `indexedFeatureBlocks` не меняются.
+- Migration `0026` удаляет durable state прежнего vocabulary после terminal
+  fencing jobs. Старые models требуют нового обучения; external OpenSearch
+  telemetry очищается отдельной deployment procedure.
+
+### Removed
+
+- Flight v13 action surface, legacy semantic/checkpoint/worker/query readers и
+  compatibility aliases не принимаются active runtime.
+
 ## [0.1.19] - 2026-09-07
 
 ### Added

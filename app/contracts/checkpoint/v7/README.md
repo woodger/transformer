@@ -1,8 +1,7 @@
-# Staged contract checkpoint и recovery v7
+# Контракт checkpoint и recovery v7
 
-> CONTRACT DOCUMENT. Этот каталог задаёт нормативные metadata будущего
-> checkpoint/recovery format предметного contract vocabulary. Он не является
-> действующим runtime format до clean-cut активации Flight v14 и Worker v13.
+> CONTRACT DOCUMENT. Этот каталог задаёт нормативные metadata checkpoint/recovery
+> format предметного contract vocabulary для Flight v14 и Worker v13.
 
 `checkpoint-metadata.schema.json` описывает metadata, встроенную в binary
 checkpoint `transformer-checkpoint-v7`. Она содержит Semantic v2 ModelContract,

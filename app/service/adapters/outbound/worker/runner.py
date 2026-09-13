@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v12 import (
+from app.contracts.worker.v13 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,

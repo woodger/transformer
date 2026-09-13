@@ -17,8 +17,8 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v13.arrow import canonical_input_schema
-from app.contracts.worker.v12 import (
+from app.contracts.flight.v14.arrow import canonical_input_schema
+from app.contracts.worker.v13 import (
     WorkerContractError,
     encode_event,
     load_document,
@@ -26,7 +26,7 @@ from app.contracts.worker.v12 import (
     parse_event,
     validate_document,
 )
-from app.contracts.worker.v12.config import (
+from app.contracts.worker.v13.config import (
     ModelConfig,
     TrainConfig,
     train_config_to_manifest,
@@ -50,7 +50,7 @@ from tests.support.consumer_neutral import model_contract
 DATA_CONTRACT_SHA256 = "c" * 64
 MANIFEST_SHA256 = "d" * 64
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
+    "encoding": "indexedFeatureBlocks",
     "featureBlocks": [
         {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
     ],
@@ -117,7 +117,7 @@ def _checkpoint_metadata(
     initialization: dict | None = None,
 ) -> dict:
     return {
-        "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
         "serviceVersion": "test",
         "generation": 1,
         "jobId": job_id,
@@ -138,7 +138,7 @@ def _checkpoint_metadata(
             "bestEpoch": None,
             "source": "last_epoch",
         },
-        "initialization": initialization or {"kind": "random"},
+        "initialization": initialization or {"source": "random"},
         "jobConfigSha256": "a" * 64,
         "manifestSha256": MANIFEST_SHA256,
         "progress": {
@@ -255,7 +255,7 @@ def test_worker_error_event_does_not_expose_manifest_diagnostics(tmp_path):
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=12",
+            "--contract-version=13",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -317,13 +317,13 @@ def test_closed_predict_worker_uses_data_digest_and_publishes_one_result(
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
+        "protocolVersion": 13,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "predict",
         "predictionColumn": "predictions",
-        "device": {"kind": "cpu"},
+        "device": {"backend": "cpu"},
         "sourceEncoding": SOURCE_ENCODING,
         "inputs": [_input_manifest(input_path, 0, 1, fit=False)],
         "inputRevision": 1,
@@ -384,12 +384,12 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
 
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
+        "protocolVersion": 13,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "fit",
-        "device": {"kind": "cpu"},
+        "device": {"backend": "cpu"},
         "sourceEncoding": SOURCE_ENCODING,
         "inputs": inputs,
         "inputRevision": 2,
@@ -399,7 +399,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
         "model": {
             "label": "returns.daily",
         },
-        "initialization": {"kind": "random"},
+        "initialization": {"source": "random"},
         "training": train_config_to_manifest(train_config),
         "diagnostics": {
             "schemaVersion": 1,
@@ -452,7 +452,7 @@ def test_closed_fit_worker_commits_global_epoch_checkpoint_and_result(tmp_path):
     assert result_manifest["artifacts"] == []
     assert result_manifest["checkpointMetadata"]["dataContract"] == _data_contract()
     assert result_manifest["checkpointMetadata"]["initialization"] == {
-        "kind": "random"
+        "source": "random"
     }
     assert Path(result_manifest["checkpoint"]["path"]).is_file()
     assert result_manifest["checkpointSerializationMs"] >= 0
@@ -535,19 +535,19 @@ def test_published_model_initialization_requires_exact_data_contract_digest(
         deterministic=True,
     )
     initialization = published_model_initialization(
-        "mdl_parent",
+        "mdl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         parent_artifact["sha256"],
         _semantic_digests(parent_data_digest),
         _semantic_digests(current_data_digest),
     )
     manifest = {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
+        "protocolVersion": 13,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
         "operation": "fit",
-        "device": {"kind": "cpu"},
+        "device": {"backend": "cpu"},
         "sourceEncoding": SOURCE_ENCODING,
         "inputs": [
             _input_manifest(
@@ -724,7 +724,7 @@ def test_worker_terminal_error_is_not_masked_by_log_persistence_failure(
     attempt_id = str(uuid.uuid4())
     worker_code = f"""
 import sys
-from app.contracts.worker.v12 import encode_event
+from app.contracts.worker.v13 import encode_event
 
 sys.stdout.buffer.write(encode_event(
     job_id={job_id!r},
@@ -761,7 +761,7 @@ raise SystemExit(1)
         input_revision=1,
     )
     plan = SimpleNamespace(
-        protocol_version=12,
+        protocol_version=13,
         argv=(sys.executable, "-c", worker_code),
         inputs=(),
     )
@@ -830,7 +830,7 @@ def test_service_rejects_result_manifest_with_changed_semantic_fence(
     )
     result = {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
+        "protocolVersion": 13,
         "jobId": job_id,
         "attempt": 1,
         "attemptId": attempt_id,
@@ -1107,7 +1107,7 @@ def _run_worker(
             "-m",
             "app.worker.bootstrap",
             "run",
-            "--contract-version=12",
+            "--contract-version=13",
             f"--job-id={job_id}",
             "--attempt=1",
             f"--attempt-id={attempt_id}",
@@ -1133,7 +1133,7 @@ def _checkpoint_artifact(path: Path) -> dict:
     artifact = _artifact(path)
     return {
         "path": artifact["path"],
-        "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v7",
         "byteCount": artifact["byteCount"],
         "checkpointSha256": artifact["sha256"],
     }

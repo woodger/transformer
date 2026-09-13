@@ -1,13 +1,13 @@
 # Локальный Arrow и stream contract
 
 > Тип: справочник. Формат данных local file/stream CLI. Этот документ не
-> переопределяет public Arrow Flight v13 contract.
+> переопределяет public Arrow Flight v14 contract.
 
 `fit`, `predict`, `fit-stream` и `predict-stream` используют самостоятельные
 Arrow IPC files. Для remote API нормативны schemas и fixtures в
-[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md); local CLI
+[`app/contracts/flight/v14`](../app/contracts/flight/v14/README.md); local CLI
 сохраняет отдельный dense `src`/`tgt` contract и не принимает compact
-`indexedFeatureBlocks` Flight v13.
+`indexedFeatureBlocks` Flight v14.
 
 ## Arrow IPC input
 
@@ -40,7 +40,7 @@ finite `float64`, который выходит за диапазон `float32`,
 ```
 
 Ширина `src` должна делиться на `--seq-len`. В stream `feature_dim` не может
-меняться между frames; при prediction с checkpoint v6 она также должна совпасть
+меняться между frames; при prediction с checkpoint v7 она также должна совпасть
 с сохранённым значением. Missing-data semantics для `NaN` определяет
 [training reference](./training-runtime.md).
 

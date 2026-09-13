@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v13 import job_config_sha256
-from app.contracts.model_catalog.v1 import (
+from app.contracts.flight.v14 import job_config_sha256
+from app.contracts.model_catalog.v2 import (
     CURSOR_TTL_SECONDS,
     MAX_CHECKPOINT_VERIFICATION_BYTES,
 )
-from app.contracts.training_telemetry.v1 import (
+from app.contracts.training_telemetry.v2 import (
     CURSOR_TTL_SECONDS as TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
     MAX_RETAINED_SNAPSHOT_BYTES,
     MAX_RETAINED_SNAPSHOT_COUNT,

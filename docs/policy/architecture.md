@@ -20,9 +20,9 @@ resources.
 Внутри Flight service:
 
 - domain не зависит от application, adapters или bootstrap;
-- application зависит только от domain и внутренних process/metrics contracts;
-- application не зависит от adapters, bootstrap или публичного Flight
-  contract;
+- application зависит от domain, внутренних process/metrics contracts и pure
+  physical-input validation активного Flight contract;
+- application не зависит от adapters, bootstrap или Flight transport adapter;
 - adapters зависят от application/domain, но inbound и outbound adapters не
   импортируют друг друга;
 - service domain и общий PostgreSQL ledger не содержат telemetry records или
@@ -35,7 +35,7 @@ resources.
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
 - service/worker обмениваются данными только через
-  `app/contracts/worker/v12`;
+  `app/contracts/worker/v13`;
 - local CLI может напрямую использовать worker-код, потому что это один
   локальный execution path, а не Flight service boundary.
 

@@ -44,7 +44,7 @@ published models — в
 schema — в [руководстве по migrations](../operations/database-migrations.md).
 Service operations находятся в [Flight runbook](../operations/flight-service.md).
 Public remote API не является обёрткой над local CLI: его нормативный contract
-находится в [`app/contracts/flight/v13`](../../app/contracts/flight/v13/README.md).
+находится в [`app/contracts/flight/v14`](../../app/contracts/flight/v14/README.md).
 
 ## File commands
 
@@ -69,7 +69,7 @@ Prediction из checkpoint:
   --pred-col=out
 ```
 
-Checkpoint v6 содержит полный ModelContract, включая model config, target
+Checkpoint v7 содержит полный ModelContract, включая model config, target
 layout и Objective. Поэтому prediction не принимает отдельные model options и
 восстанавливает точную конфигурацию из checkpoint.
 

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.worker.v13.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -17,7 +17,7 @@ from app.service.domain.job import ErrorCode, InputState
 from tests.support.consumer_neutral import model_contract
 
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
+    "encoding": "indexedFeatureBlocks",
     "featureBlocks": [
         {"position": 0, "windowRows": 1, "nativeRowWidth": 3},
     ],

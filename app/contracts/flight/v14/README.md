@@ -1,12 +1,10 @@
 # Контракт Arrow Flight v14
 
-> CONTRACT DOCUMENT. Этот каталог задаёт нормативный staged-кандидат следующего
-> публичного consumer-neutral wire contract Transformer. Он не является
-> действующим runtime contract до отдельного clean cut.
+> CONTRACT DOCUMENT. Этот каталог задаёт нормативный публичный
+> consumer-neutral wire contract Transformer.
 
-Flight v14 проектируется как clean-cut action boundary: v13 actions и
-compatibility aliases в будущем runtime не принимаются. Действующий Flight v13
-этим package не меняется. Durable job lifecycle, `indexedFeatureBlocks` и ML
+Flight v14 является clean-cut action boundary: v13 actions и compatibility
+aliases не принимаются. Durable job lifecycle, `indexedFeatureBlocks` и ML
 граница с полным `ModelContract` из
 [`semantic/v2`](../../semantic/v2/README.md) сохраняются. Transformer не интерпретирует
 Consumer target identities, profile или data identity.
@@ -144,8 +142,9 @@ fixtures находятся в `fixtures/indexed-feature-blocks/`. Они фик
 heterogeneous blocks, независимые offsets, repeated halo при split range,
 одинаковый logical order при разных payload boundaries и rejection
 отсутствующего native prefix. Specific Consumer profiles в этот package не
-входят. `fixtures/manifest.json` и `manifest.sha256` фиксируют byte-identical
-Flight bundle для offline copy Consumer-а.
+входят. `fixtures/manifest.json` и `manifest.sha256` относятся только к
+golden fixture bundle для offline conformance; они не являются runtime input,
+capability или compatibility fence.
 
 ## Compatibility и artifacts
 
@@ -153,18 +152,18 @@ Predict и `publishedModel` требуют exact data, target, objective и mode
 layers. Published model загружает полный state dictionary и создаёт новое
 training state. Recovery дополнительно проверяет job config и input manifest.
 
-Flight v14, Worker v13, checkpoint/recovery v7, queries v2 и metrics v6 должны
-активироваться одним clean cut. Generations, checkpoints, recovery state и
+Flight v14, Worker v13, checkpoint/recovery v7, queries v2 и metrics v6
+активируются одним clean cut. Generations, checkpoints, recovery state и
 telemetry прежних revisions под новые identities не мигрируют и не получают
-compatibility reader; их удаляют, после чего модели обучаются заново. Точная
-destructive migration, очистка artifacts и OpenSearch indices не входят в этот
-staged package и будут спроектированы после cross-project acceptance.
+compatibility reader; migration 0026 удаляет registry и lifecycle records,
+после чего модели обучаются заново. Filesystem artifacts удаляет startup
+reconciliation; lifecycle OpenSearch indices относится к deployment procedure.
 
-## Предметный словарь staged revision
+## Предметный словарь revision
 
-JSON envelope использует `encoding` для physical source, `source` для requested
-initialization и Semantic v2 vocabulary. `RequestedInitialization` содержит
-только `source` и optional exact `modelRef`; resolved parent lineage приходит
+JSON envelope использует `encoding` для physical source, `source` для
+requested initialization и Semantic v2 vocabulary. `RequestedInitialization`
+содержит только `source` и optional exact `modelRef`; resolved parent lineage приходит
 из checkpoint v7 и не принимается как create intent. Model Catalog и Training
 Telemetry публикуются как query revision 2. Свойство `kind` и универсальная
 замена `type` в accepted public documents отсутствуют.

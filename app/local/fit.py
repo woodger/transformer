@@ -3,8 +3,8 @@ from typing import Protocol
 
 import torch
 
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v2 import ModelContract
+from app.contracts.worker.v13.config import ModelConfig
 from app.local.semantic import (
     file_sha256,
     load_model_contract,
@@ -64,7 +64,7 @@ def run(
         device,
         model_config,
         model_contract=contract,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
     digest = file_sha256(data_path)
     trainer.fit(

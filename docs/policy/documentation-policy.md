@@ -40,14 +40,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный semantic language v1 | `app/contracts/semantic/v1/` |
-| Нормативный Flight v13 contract | `app/contracts/flight/v13/` |
-| Нормативный worker v12 contract | `app/contracts/worker/v12/` |
-| Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
+| Нормативный semantic language v2 | `app/contracts/semantic/v2/` |
+| Нормативный Flight v14 contract | `app/contracts/flight/v14/` |
+| Нормативный worker v13 contract | `app/contracts/worker/v13/` |
+| Нормативный checkpoint/recovery v7 contract | `app/contracts/checkpoint/v7/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
-| Нормативный Model Catalog Query v1 | `app/contracts/model_catalog/v1/` |
-| Нормативный Training Telemetry Query v1 | `app/contracts/training_telemetry/v1/` |
-| Нормативный staged package предметного словаря без `kind` | `app/contracts/semantic/v2/`, `app/contracts/checkpoint/v7/`, `app/contracts/worker/v13/`, `app/contracts/metrics/v6/`, `app/contracts/metrics/fit_run/v6/`, `app/contracts/model_catalog/v2/`, `app/contracts/training_telemetry/v2/`, `app/contracts/flight/v14/` |
+| Нормативный Model Catalog Query v2 | `app/contracts/model_catalog/v2/` |
+| Нормативный Training Telemetry Query v2 | `app/contracts/training_telemetry/v2/` |
+| Нормативный package предметного словаря без `kind` | `app/contracts/semantic/v2/`, `app/contracts/checkpoint/v7/`, `app/contracts/worker/v13/`, `app/contracts/metrics/v6/`, `app/contracts/metrics/fit_run/v6/`, `app/contracts/model_catalog/v2/`, `app/contracts/training_telemetry/v2/`, `app/contracts/flight/v14/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -100,7 +100,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Встроенные operational defaults находятся в
 `app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
-`app/service/bootstrap/config.py`, `app/contracts/worker/v12/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v13/config.py`,
 PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
@@ -113,23 +113,21 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
-v13, worker v12, checkpoint/recovery v6, metrics v5, Model Catalog Query v1 и
-Training Telemetry Query v1 нормативны для текущего runtime. README или
-operations guide не могут переопределять их. Flight v13 — единственный
+JSON Schemas и golden fixtures consumer-neutral package `semantic/v2`, Flight
+v14, worker v13, checkpoint/recovery v7, metrics v6, Model Catalog Query v2 и
+Training Telemetry Query v2 нормативны для текущего runtime. README или
+operations guide не могут переопределять их. Flight v14 — единственный
 текущий remote API contract; legacy aliases отсутствуют.
 
 Semantic v2, Flight v14, worker v13, checkpoint/recovery v7, metrics v6 и query
-revision 2 являются нормативным staged package для cross-project review. Они
-не описывают current behavior и не активируют runtime, migrations, OpenSearch
-templates либо новый Flight action surface.
+revision 2 составляют единый active package текущего runtime.
 
-`app/contracts/model_catalog/v1/` имеет независимую revision и активирован
-двумя Flight v13 actions. Изменение его query language не обязано синхронно
+`app/contracts/model_catalog/v2/` имеет независимую revision и активирован
+двумя Flight v14 actions. Изменение его query language не обязано синхронно
 менять job workflow Flight.
 
-`app/contracts/training_telemetry/v1/` имеет независимую revision и активирован
-двумя Flight v13 actions. Изменение query language не обязано
+`app/contracts/training_telemetry/v2/` имеет независимую revision и активирован
+двумя Flight v14 actions. Изменение query language не обязано
 синхронно менять job workflow Flight.
 
 Изменение Flight contract требует синхронно проверить:
@@ -142,7 +140,7 @@ templates либо новый Flight action surface.
 
 Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
 основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v13 schemas и fixtures остаются
+`docs/local-arrow-protocol.md`. Flight v14 schemas и fixtures остаются
 нормативными для remote API. Эти contracts проверяются тестами.
 
 ## Документация текущего состояния

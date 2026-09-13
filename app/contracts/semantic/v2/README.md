@@ -1,9 +1,8 @@
-# Staged contract consumer-neutral semantic model v2
+# Consumer-neutral semantic model v2
 
-> CONTRACT DOCUMENT. Этот каталог задаёт нормативный staged-язык target slots,
-> objective, model identity, capabilities и D1 digests для будущих Flight v14,
-> Worker v13, checkpoint/recovery v7 и metrics v6. Пакет не является
-> действующим runtime contract до согласованного clean cut.
+> CONTRACT DOCUMENT. Этот каталог задаёт нормативный язык target slots,
+> objective, model identity, capabilities и D1 digests для Flight v14,
+> Worker v13, checkpoint/recovery v7 и metrics v6.
 
 JSON Schemas Draft 2020-12 и перечисленные manifest-ом golden fixtures являются
 источником истины для формы документов. Этот README задаёт межполевые и

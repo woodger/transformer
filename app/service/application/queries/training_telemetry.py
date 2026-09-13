@@ -485,7 +485,7 @@ def _retained_report(report: _ValidatedReport) -> _RetainedReport:
 
 def _report_snapshot_projection(report: _RetainedReport) -> JsonValue:
     return {
-        "kind": "report",
+        "snapshotType": "report",
         "modelRef": report.model_ref,
         "producingRunId": report.producing_run_id,
         "reportIdentity": report.report_identity,
@@ -502,7 +502,7 @@ def _gradient_snapshot_projection(
     snapshot: _RetainedGradientInteractions,
 ) -> JsonValue:
     return {
-        "kind": "gradientInteractions",
+        "snapshotType": "gradientInteractions",
         "modelRef": snapshot.model_ref,
         "producingRunId": snapshot.producing_run_id,
         "epoch": snapshot.epoch,

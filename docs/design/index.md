@@ -14,6 +14,4 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-- [Предметный словарь shared Transformer contracts без `kind`](./subject-specific-contract-vocabulary.md) —
-  архитектурно согласованное clean-cut предложение; normative staged packages
-  подготовлены для точного cross-project review.
+Сейчас активных предложений нет.

@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 import torch
 
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v2 import ModelContract
 from app.worker.training.losses import combined_loss
 from tests.support.consumer_neutral import model_contract
 

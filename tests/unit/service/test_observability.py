@@ -136,7 +136,7 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],

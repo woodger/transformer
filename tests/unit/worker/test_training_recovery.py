@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v12.config import CheckpointSelectionConfig
+from app.contracts.worker.v13.config import CheckpointSelectionConfig
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -81,7 +81,7 @@ def _trainer(initial_state: dict) -> Trainer:
         model_contract=MODEL_CONTRACT,
         model_config=model_config,
         data_contract=data_contract(MODEL_CONTRACT),
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
 
 

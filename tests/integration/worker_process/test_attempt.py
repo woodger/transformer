@@ -144,7 +144,7 @@ def _job() -> ExecutionJobRecord:
         input_model_ref=None,
         prediction_column="out",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
+            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
                 {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
             ],

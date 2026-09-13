@@ -98,9 +98,9 @@ class CreateJobAction:
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
-            elif command.initialization_kind == "random":
+            elif command.initialization_source == "random":
                 initialization = random_initialization()
-            elif command.initialization_kind == "publishedModel":
+            elif command.initialization_source == "publishedModel":
                 if model is None:
                     raise ServiceError(
                         ErrorCode.NOT_FOUND,

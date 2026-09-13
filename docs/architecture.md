@@ -18,15 +18,14 @@ app/main.py                         ленивый CLI dispatcher
 ├── app/worker/bootstrap           один ML execution attempt
 └── app/admin/bootstrap            auth, database и model commands
 
-app/contracts/semantic/v1               consumer-neutral ML language
-app/contracts/flight/v13                 публичный Flight contract
-app/contracts/model_catalog/v1           owner-scoped model query contract
-app/contracts/training_telemetry/v1      owner-scoped telemetry query contract
-app/contracts/worker/v12                внутренний process contract
-app/contracts/checkpoint/v6             checkpoint/recovery metadata
-app/contracts/indexed_feature_blocks.py  общие compact-input invariants
-app/contracts/metrics/v5                epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v5        terminal fit summary и lineage
+app/contracts/semantic/v2               consumer-neutral ML language
+app/contracts/flight/v14                 публичный Flight contract
+app/contracts/model_catalog/v2           owner-scoped model query contract
+app/contracts/training_telemetry/v2      owner-scoped telemetry query contract
+app/contracts/worker/v13                внутренний process contract
+app/contracts/checkpoint/v7             checkpoint/recovery metadata
+app/contracts/metrics/v6                epoch artifact и OpenSearch points
+app/contracts/metrics/fit_run/v6        terminal fit summary и lineage
 ```
 
 Каждый исполняемый процесс имеет собственный composition root. Service
@@ -105,7 +104,7 @@ state, artifact publication, recovery generation или model generation. Его
 Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
 operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
 configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v12/config.py`.
+остаются в `app/contracts/worker/v13/config.py`.
 
 `app/config.py` не является adapter или provider boundary. Его immutable
 defaults могут использовать разные процессы, а понятия Transformer остаются в
@@ -120,29 +119,29 @@ Alembic-команды имеют отдельный короткоживущи�
 
 ## Contracts
 
-- `app/contracts/semantic/v1/` — закрытый mathematical language, canonical
+- `app/contracts/semantic/v2/` — закрытый mathematical language, canonical
   TargetContract/Objective/ModelContract и D1 digests;
-- `app/contracts/flight/v13/` — нормативные schemas и fixtures публичного API;
-- `app/contracts/model_catalog/v1/` — independently versioned list/detail
+- `app/contracts/flight/v14/` — нормативные schemas и fixtures публичного API;
+- `app/contracts/model_catalog/v2/` — independently versioned list/detail
   contract owner-scoped model registry;
-- `app/contracts/training_telemetry/v1/` — independently versioned complete
+- `app/contracts/training_telemetry/v2/` — independently versioned complete
   report и lazy gradient-interaction query для published generation;
-- `app/contracts/indexed_feature_blocks.py` — общая pure-валидация ordered
-  block geometry между service и worker без зависимости от Flight adapter;
-- `app/contracts/worker/v12/` — command/result manifests, capability document,
+- `app/contracts/flight/v14/source_encoding.py` — pure-валидация ordered
+  compact block geometry, общая для service и worker;
+- `app/contracts/worker/v13/` — command/result manifests, capability document,
   Arrow artifact manifests, events и exit semantics;
-- `app/contracts/checkpoint/v6/` — embedded checkpoint metadata и recovery
+- `app/contracts/checkpoint/v7/` — embedded checkpoint metadata и recovery
   fences;
-- `app/contracts/metrics/v5/` — immutable epoch artifact, OpenSearch
+- `app/contracts/metrics/v6/` — immutable epoch artifact, OpenSearch
   projection, golden identity и index templates;
-- `app/contracts/metrics/fit_run/v5/` — terminal fit summary, initialization
+- `app/contracts/metrics/fit_run/v6/` — terminal fit summary, initialization
   lineage, lifecycle durations и counters.
 
 Consumer materializer передаёт self-contained ModelContract с ordered opaque
 target slots, numerical constraints, loss/public transformations, Objective и
 model configuration. Transformer не интерпретирует target identities, profile
 или data identity. Он валидирует generic geometry и typed bindings, вычисляет
-D1 digests и владеет tensor-семантикой operators, private resource kinds,
+D1 digests и владеет tensor-семантикой operators, private resource classes,
 model heads и autograd. Ordered slots физически задают ширину `tgt`, public
 heads и prediction output. Objective, training policy и diagnostics остаются
 разными contract sections; checkpoint навсегда связан с data, target,
@@ -183,7 +182,7 @@ contract budget. Unknown, foreign и deleted references неразличимы �
 Consumer-а. Catalog membership не зависит от OpenSearch telemetry.
 
 Owner-scoped Training Telemetry Query сначала разрешает exact
-`modelRef` через registry, затем читает metrics v5 проекцию через
+`modelRef` через registry, затем читает metrics v6 проекцию через
 application port. Он возвращает только полный проверенный report;
 отсутствие или повреждение telemetry не меняет model registry и не
 влияет на fit, predict, warm start и model lifecycle.

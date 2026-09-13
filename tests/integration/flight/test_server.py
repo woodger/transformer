@@ -74,7 +74,7 @@ def control_server(tmp_path):
         server.shutdown()
 
 
-def test_list_actions_advertises_exact_v13_contract(control_server):
+def test_list_actions_advertises_exact_v14_contract(control_server):
     _, _, client = control_server
 
     actions = list(client.list_actions(options=call_options()))
@@ -100,7 +100,7 @@ def test_model_catalog_uses_its_independent_request_envelope(control_server):
     request_id = str(uuid.uuid4())
     request = json.dumps({
         "contract": "transformer-model-catalog",
-        "revision": 1,
+        "revision": 2,
         "requestId": request_id,
         "pageSize": 25,
         "cursor": None,
@@ -124,7 +124,16 @@ def test_unknown_model_catalog_revision_has_structured_outcome(control_server):
 
     with pytest.raises(flight.FlightServerError) as raised:
         list(client.do_action(
-            flight.Action("transformer.model-catalog.v2.list", b"{}"),
+            flight.Action(
+                "transformer.model-catalog.v2.list",
+                json.dumps({
+                    "contract": "transformer-model-catalog",
+                    "revision": 3,
+                    "requestId": str(uuid.uuid4()),
+                    "pageSize": 25,
+                    "cursor": None,
+                }).encode(),
+            ),
             options=call_options(),
         ))
 
@@ -132,7 +141,7 @@ def test_unknown_model_catalog_revision_has_structured_outcome(control_server):
         "code": "FAILED_PRECONDITION",
         "message": "model catalog query revision is unavailable",
         "reason": "CATALOG_QUERY_REVISION_UNAVAILABLE",
-        "requestedRevision": 2,
+        "requestedRevision": 3,
     }
     assert coordinator.calls == []
 
@@ -145,7 +154,7 @@ def test_training_telemetry_uses_its_independent_request_envelope(
     model_ref = "mdl_" + "1" * 32
     request = json.dumps({
         "contract": "transformer-training-telemetry",
-        "revision": 1,
+        "revision": 2,
         "requestId": request_id,
         "modelRef": model_ref,
         "pageSize": 25,
@@ -179,7 +188,14 @@ def test_unknown_training_telemetry_revision_has_structured_outcome(
         list(client.do_action(
             flight.Action(
                 "transformer.training-telemetry.v2.report",
-                b"{}",
+                json.dumps({
+                    "contract": "transformer-training-telemetry",
+                    "revision": 3,
+                    "requestId": str(uuid.uuid4()),
+                    "modelRef": "mdl_" + "1" * 32,
+                    "pageSize": 25,
+                    "cursor": None,
+                }).encode(),
             ),
             options=call_options(),
         ))
@@ -188,7 +204,7 @@ def test_unknown_training_telemetry_revision_has_structured_outcome(
         "code": "FAILED_PRECONDITION",
         "message": "training telemetry query revision is unavailable",
         "reason": "TELEMETRY_QUERY_REVISION_UNAVAILABLE",
-        "requestedRevision": 2,
+        "requestedRevision": 3,
     }
     assert coordinator.calls == []
 
@@ -196,14 +212,14 @@ def test_unknown_training_telemetry_revision_has_structured_outcome(
 def test_invalid_version_and_action_are_transport_errors(control_server):
     _, coordinator, client = control_server
 
-    with pytest.raises(Exception, match="13 was expected"):
+    with pytest.raises(Exception, match="14 was expected"):
         list(client.do_action(
             flight.Action(CAPABILITIES_ACTION, action_body(version=1)),
             options=call_options(),
         ))
     with pytest.raises(Exception, match="unsupported action"):
         list(client.do_action(
-            flight.Action("transformer.v11.capabilities", action_body()),
+            flight.Action("transformer.v13.capabilities", action_body()),
             options=call_options(),
         ))
 
