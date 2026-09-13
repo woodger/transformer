@@ -1,0 +1,22 @@
+{
+  "contract": "transformer-worker-fixtures",
+  "version": 13,
+  "files": [
+    {
+      "path": "capabilities.json",
+      "sha256": "9fe2e15cab076ec36b70354f2ecb9000a530f5905ebbdd259a1137c09a9627ab"
+    },
+    {
+      "path": "command-manifest.published-model.json",
+      "sha256": "4ff68b63b22a6babb4ff554c6006953b1cde20bc071397519416258267cf9b96"
+    },
+    {
+      "path": "command-manifest.random.json",
+      "sha256": "7fb4ce9ec318fda99a3a0e208ca2a19868487319c58aa7bfd5a80835d108aae0"
+    },
+    {
+      "path": "result-manifest.fit.json",
+      "sha256": "e9ca9cda12b235bec4833eaf4c18c3c751c51ef9807187de351c763188fbd819"
+    }
+  ]
+}

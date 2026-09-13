@@ -1,0 +1,55 @@
+{
+  "fixtureId": "consumer-neutral.indexed.non-contiguous-native-offsets.v2",
+  "sourceEncoding": {
+    "featureBlocks": [
+      {
+        "position": 0,
+        "windowRows": 1,
+        "nativeRowWidth": 1
+      }
+    ],
+    "encoding": "indexedFeatureBlocks"
+  },
+  "seqLen": 2,
+  "featureDim": 1,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [
+            [
+              1
+            ],
+            [
+              99
+            ],
+            [
+              3
+            ]
+          ],
+          "observationOffsets": [
+            [
+              0,
+              2
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "logicalFeatures": [
+      [
+        [
+          1
+        ],
+        [
+          3
+        ]
+      ]
+    ]
+  }
+}

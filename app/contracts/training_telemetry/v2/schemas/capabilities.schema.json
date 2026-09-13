@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v2/capabilities.schema.json",
+  "title": "Transformer Training Telemetry Query v2 capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "revision",
+    "operations",
+    "transport",
+    "metricFamilies",
+    "availabilityStates",
+    "gradientAvailabilityStates",
+    "epochObservation",
+    "outcomePrecedence",
+    "limits",
+    "features"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-training-telemetry"
+    },
+    "revision": {
+      "const": 2
+    },
+    "operations": {
+      "const": [
+        "report",
+        "gradientInteractions"
+      ]
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "actions"
+      ],
+      "properties": {
+        "actions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "report",
+            "gradientInteractions"
+          ],
+          "properties": {
+            "report": {
+              "const": "transformer.training-telemetry.v2.report"
+            },
+            "gradientInteractions": {
+              "const": "transformer.training-telemetry.v2.gradient-interactions"
+            }
+          }
+        },
+        "protocol": {
+          "const": "ArrowFlightDoAction"
+        }
+      }
+    },
+    "metricFamilies": {
+      "const": [
+        "epochLosses",
+        "targetErrors",
+        "optimizerHealth",
+        "gradientInteractions"
+      ]
+    },
+    "availabilityStates": {
+      "const": [
+        "pending",
+        "unavailable",
+        "available"
+      ]
+    },
+    "gradientAvailabilityStates": {
+      "const": [
+        "notConfigured",
+        "configuredWithoutObservations",
+        "available"
+      ]
+    },
+    "epochObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measurementPoint",
+        "checkpointReevaluation"
+      ],
+      "properties": {
+        "checkpointReevaluation": {
+          "const": false
+        },
+        "measurementPoint": {
+          "const": "PreOptimizerUpdateEpochPass"
+        }
+      }
+    },
+    "outcomePrecedence": {
+      "const": [
+        "ModelLookup",
+        "Pending",
+        "Unavailable",
+        "IntegrityFailure",
+        "Available"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxEpochPageSize",
+        "maxGradientPairPageSize",
+        "cursorTtlSeconds",
+        "maxResponseBytes",
+        "maxRetainedSnapshotCount",
+        "maxRetainedSnapshotBytes",
+        "maxRetainedSnapshotTotalBytes"
+      ],
+      "properties": {
+        "maxEpochPageSize": {
+          "const": 100
+        },
+        "maxGradientPairPageSize": {
+          "const": 1000
+        },
+        "cursorTtlSeconds": {
+          "const": 900
+        },
+        "maxResponseBytes": {
+          "const": 8388608
+        },
+        "maxRetainedSnapshotCount": {
+          "const": 64
+        },
+        "maxRetainedSnapshotBytes": {
+          "const": 16777216
+        },
+        "maxRetainedSnapshotTotalBytes": {
+          "const": 67108864
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownerScope",
+        "selector",
+        "batchQuery",
+        "partialReports",
+        "checkpointVerification",
+        "structuredErrors",
+        "cursorRestartOutcome",
+        "snapshotAdmission"
+      ],
+      "properties": {
+        "ownerScope": {
+          "const": "AuthenticatedSubject"
+        },
+        "selector": {
+          "const": "ExactModelRef"
+        },
+        "batchQuery": {
+          "const": false
+        },
+        "partialReports": {
+          "const": false
+        },
+        "checkpointVerification": {
+          "const": false
+        },
+        "structuredErrors": {
+          "const": true
+        },
+        "cursorRestartOutcome": {
+          "const": "TELEMETRY_CURSOR_INVALIDATED"
+        },
+        "snapshotAdmission": {
+          "const": "AtomicNoLiveEviction"
+        }
+      }
+    }
+  }
+}

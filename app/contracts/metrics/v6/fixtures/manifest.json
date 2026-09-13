@@ -1,0 +1,14 @@
+{
+  "contract": "transformer-metrics-fixtures",
+  "version": 6,
+  "files": [
+    {
+      "path": "metric-point.json",
+      "sha256": "06053604d622d1c371a0641dc53bc1e9ea9d6fb9a353a7e2a4d2f00dc6673b43"
+    },
+    {
+      "path": "training-record.json",
+      "sha256": "a5513a3e18f05db570ae325be2d0b770d57934c87376c085c62956d82d707491"
+    }
+  ]
+}

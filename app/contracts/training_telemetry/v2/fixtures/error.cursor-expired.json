@@ -1,0 +1,7 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "TELEMETRY_CURSOR_EXPIRED",
+  "path": "/cursor",
+  "restartRequired": true,
+  "message": "training telemetry cursor has expired"
+}

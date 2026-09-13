@@ -1,0 +1,13 @@
+{
+  "source": "publishedModel",
+  "parentModelRef": "mdl_0123456789abcdef0123456789abcdef",
+  "parentCheckpointSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "parentDataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parentTargetContractSha256": "69ee6f9d2a7f5b7cc21d9bf42717e99a048b722e93d5783a64ef86d3ab20ddc3",
+  "targetContractSha256": "69ee6f9d2a7f5b7cc21d9bf42717e99a048b722e93d5783a64ef86d3ab20ddc3",
+  "parentObjectiveSha256": "fb2a0e52e2dcd98d1744c56fd7366ae34d00920064041108ff526c014fff8d9f",
+  "objectiveSha256": "fb2a0e52e2dcd98d1744c56fd7366ae34d00920064041108ff526c014fff8d9f",
+  "parentModelContractSha256": "6eb19a9d234671cd8ee9799cd657a8ac3a10456ef1586d07ba193e0403ff727f",
+  "modelContractSha256": "6eb19a9d234671cd8ee9799cd657a8ac3a10456ef1586d07ba193e0403ff727f"
+}

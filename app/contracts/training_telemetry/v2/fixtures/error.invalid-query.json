@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_TELEMETRY_QUERY",
+  "path": "/pageSize",
+  "message": "telemetry page size exceeds the advertised limit"
+}

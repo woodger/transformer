@@ -1,0 +1,44 @@
+{
+  "objectiveLanguage": {
+    "revision": 2,
+    "constraints": [
+      "ClosedInterval",
+      "Finite"
+    ],
+    "transformations": [
+      "Identity",
+      "Sigmoid",
+      "Tanh"
+    ],
+    "resourceClasses": [
+      "PositiveScalarPerObservation"
+    ],
+    "directOperators": [
+      "BinaryCrossEntropyWithLogits",
+      "LogMSE",
+      "SmoothL1"
+    ],
+    "auxiliaryOperators": [
+      "ExpectedValue",
+      "GaussianNLL",
+      "RiskAdjustedExpectedValue"
+    ],
+    "aggregations": [
+      "WeightedSum"
+    ],
+    "reductions": [
+      "GlobalRowMean"
+    ]
+  },
+  "semanticLimits": {
+    "maxTargetSlots": 128,
+    "maxObjectiveComponents": 256,
+    "maxPrivateResources": 64
+  },
+  "modelArchitectures": [
+    {
+      "identity": "transformer.sequence-model",
+      "revision": 1
+    }
+  ]
+}

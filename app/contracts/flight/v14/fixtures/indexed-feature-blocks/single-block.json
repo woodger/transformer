@@ -1,0 +1,64 @@
+{
+  "fixtureId": "consumer-neutral.indexed.single-block.v2",
+  "sourceEncoding": {
+    "featureBlocks": [
+      {
+        "position": 0,
+        "windowRows": 2,
+        "nativeRowWidth": 2
+      }
+    ],
+    "encoding": "indexedFeatureBlocks"
+  },
+  "seqLen": 2,
+  "featureDim": 4,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              5,
+              6
+            ]
+          ],
+          "observationOffsets": [
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "logicalFeatures": [
+      [
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5,
+          6
+        ]
+      ]
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v2/jcs-golden.schema.json",
+  "title": "Semantic v2 literal JCS and D1 golden vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "entries"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-consumer-neutral-jcs-golden"
+    },
+    "version": {
+      "const": 2
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixturePath",
+          "canonicalJson",
+          "digests"
+        ],
+        "properties": {
+          "fixturePath": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}\\.json$"
+          },
+          "canonicalJson": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "targetContract",
+              "objective",
+              "modelContract"
+            ],
+            "properties": {
+              "targetContract": {
+                "type": "string",
+                "minLength": 2
+              },
+              "objective": {
+                "type": "string",
+                "minLength": 2
+              },
+              "modelContract": {
+                "type": "string",
+                "minLength": 2
+              }
+            }
+          },
+          "digests": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "targetContractSha256",
+              "objectiveSha256",
+              "modelContractSha256"
+            ],
+            "properties": {
+              "targetContractSha256": {
+                "$ref": "common.schema.json#/$defs/sha256"
+              },
+              "objectiveSha256": {
+                "$ref": "common.schema.json#/$defs/sha256"
+              },
+              "modelContractSha256": {
+                "$ref": "common.schema.json#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

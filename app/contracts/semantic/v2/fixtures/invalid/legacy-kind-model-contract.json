@@ -1,0 +1,64 @@
+{
+  "objectiveLanguageRevision": 2,
+  "targetContract": {
+    "slots": [
+      {
+        "identity": "EventProbability",
+        "observedConstraint": {
+          "kind": "ClosedInterval",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lossInputTransformation": {
+          "kind": "Identity"
+        },
+        "publicPredictionTransformation": {
+          "kind": "Sigmoid"
+        }
+      }
+    ]
+  },
+  "objective": {
+    "aggregation": {
+      "kind": "WeightedSum"
+    },
+    "reduction": {
+      "kind": "GlobalRowMean"
+    },
+    "resources": [],
+    "directComponents": [
+      {
+        "identity": "direct.event-probability",
+        "operator": "BinaryCrossEntropyWithLogits",
+        "weight": 1,
+        "roles": {
+          "logit": {
+            "kind": "target",
+            "identity": "EventProbability",
+            "view": "lossEstimate"
+          },
+          "probability": {
+            "kind": "target",
+            "identity": "EventProbability",
+            "view": "observed"
+          }
+        },
+        "parameters": {}
+      }
+    ],
+    "auxiliaryComponents": []
+  },
+  "modelConfig": {
+    "architecture": {
+      "identity": "transformer.sequence-model",
+      "revision": 1
+    },
+    "seqLen": 2,
+    "featureDim": 8,
+    "hidden": 16,
+    "layers": 1,
+    "dropout": 0,
+    "nhead": 4,
+    "mode": "strict"
+  }
+}

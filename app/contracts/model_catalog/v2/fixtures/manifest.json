@@ -1,0 +1,94 @@
+{
+  "contract": "transformer-model-catalog-fixtures",
+  "revision": 2,
+  "files": [
+    {
+      "path": "capabilities.json",
+      "sha256": "ab5e0c10378d81a516c86e392494b28de39678b8e1016e560271997e45a395d8"
+    },
+    {
+      "path": "detail.request.json",
+      "sha256": "7c8144af71d7a8899347b1db28887bba2f8dd79420f860945053ac8744414d57"
+    },
+    {
+      "path": "detail.request.published-model.json",
+      "sha256": "7d6f1c8020c5b750fbc82da457b5dded3d824bc87bf8c56fab8e9a11a63ea9f6"
+    },
+    {
+      "path": "detail.result.published-model.json",
+      "sha256": "a9e1178a4c2dbd895133a8afba7391643c46bc6c7ba48b5744b58a37068def4c"
+    },
+    {
+      "path": "detail.result.random.json",
+      "sha256": "d6d2e3e7f408a674d27e09aeb2749e25948bdb3db1987d4df634e31aa1bfee0b"
+    },
+    {
+      "path": "error.checkpoint-size-mismatch.json",
+      "sha256": "b00dac5eeea3467a483835aea9948c85fc00537829910b6c487431fe3521011b"
+    },
+    {
+      "path": "error.checkpoint-unavailable.json",
+      "sha256": "bdb5415b46b1fd30ce08fc0cb8254dbf386298ef2d9f604378f3ad9bcd0ddee0"
+    },
+    {
+      "path": "error.cursor-expired.json",
+      "sha256": "b943e68e2c9ebc3109d4d699f00c1c8260cbb38d8dba7ffc4c7fd5d8320adfad"
+    },
+    {
+      "path": "error.invalid-cursor.json",
+      "sha256": "53dcb45ca746befd5df44c954252a917965638758864080843dda5ab5542c928"
+    },
+    {
+      "path": "error.invalid-query.json",
+      "sha256": "27c8d56d33f72786a93b75bc39d547d2068a238b5288d2c248b49f8bf4253444"
+    },
+    {
+      "path": "error.model-corrupt.json",
+      "sha256": "73d566649752aa66350b128b94f48779ef59c31ec2c12fa238835959fe1106b2"
+    },
+    {
+      "path": "error.model-not-found.json",
+      "sha256": "e59cecafcab3c0e9458f7ffe5d8c235194fd1a27d102443dc13bf643ef9d1556"
+    },
+    {
+      "path": "error.registry-unavailable.json",
+      "sha256": "3c7061ad2910e9257a3564002f3f3a7c566279d25aaafdc746d244c717967952"
+    },
+    {
+      "path": "error.response-budget.json",
+      "sha256": "8d16805b138dbee1862908a49836b24a5a571a43b6a4652af6f09574ca9e7226"
+    },
+    {
+      "path": "error.revision-unavailable.json",
+      "sha256": "2f59a746f9450325bcca4fe4ead3e3289997a6467d9ff5fda8ddd54a351b2688"
+    },
+    {
+      "path": "error.stored-metadata-invalid.json",
+      "sha256": "eb955cda12fd088e458bda3b1df573cd4937702b170b9374ecaadeefe3a3c77e"
+    },
+    {
+      "path": "error.verification-budget.json",
+      "sha256": "6c9b8b179b27d8b380584916f6dc2d269cc1df8551576f6587ab212dede6ecbd"
+    },
+    {
+      "path": "list.request.continuation.json",
+      "sha256": "f03707ac64d6b3893cf6480d201f39b1e14a82b6da52d34a43002c36dc670b77"
+    },
+    {
+      "path": "list.request.initial.json",
+      "sha256": "6e8183558823f73a2b61932fd6656c2de32443369f24496fca24ce4570c7af34"
+    },
+    {
+      "path": "list.result.empty.json",
+      "sha256": "ae32896fdbf47df374df71076e8a32bf67acdd44fb8f605a5b504ab69cf7330e"
+    },
+    {
+      "path": "list.result.first.json",
+      "sha256": "f97d76eb0ce90ea012d6665b69fb3e4e085a1d2fd214b187d4127bfcc4b03caa"
+    },
+    {
+      "path": "list.result.terminal.json",
+      "sha256": "1df59111efa74aae78000a155d8b540b39adc84a87b3efb0f980ee15ec7d1d7d"
+    }
+  ]
+}

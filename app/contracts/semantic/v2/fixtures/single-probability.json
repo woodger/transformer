@@ -1,0 +1,78 @@
+{
+  "fixtureId": "consumer-neutral.single-probability.v2",
+  "modelContract": {
+    "objectiveLanguageRevision": 2,
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "aggregation": "WeightedSum",
+      "reduction": "GlobalRowMean",
+      "resources": [],
+      "directComponents": [
+        {
+          "identity": "direct.event-probability",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "roles": {
+            "logit": {
+              "targetIdentity": "EventProbability",
+              "view": "lossEstimate"
+            },
+            "probability": {
+              "targetIdentity": "EventProbability",
+              "view": "observed"
+            }
+          },
+          "parameters": {}
+        }
+      ],
+      "auxiliaryComponents": []
+    },
+    "modelConfig": {
+      "architecture": {
+        "identity": "transformer.sequence-model",
+        "revision": 1
+      },
+      "seqLen": 2,
+      "featureDim": 8,
+      "hidden": 16,
+      "layers": 1,
+      "dropout": 0,
+      "nhead": 4,
+      "mode": "strict"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "zero-logit",
+      "inputs": {
+        "rawCoordinate": 0,
+        "observed": 1
+      },
+      "outputs": {
+        "lossEstimate": 0,
+        "publicPrediction": 0.5,
+        "componentLoss": 0.6931471805599453
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "9265ee4cdaeb9971bf0d76dddf0f9a654464cff168d1b70aea4ec2690ba5879c",
+    "objectiveSha256": "c4c03a8c0f3449f373b207bd95427e69ecb559a553a618907b5cb54ff3e8177a",
+    "modelContractSha256": "4132c1ad066f0f906866155f9a8d320a4a805d08f2cc377edb8afa6c02a2744c"
+  }
+}

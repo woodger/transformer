@@ -1,0 +1,375 @@
+{
+  "contract": "transformer-training-telemetry-fixtures",
+  "revision": 2,
+  "files": [
+    {
+      "path": "capabilities.json",
+      "sha256": "3caa0fa9677ebbae0321920f53006fad33f0c99fabec882272522ee374fbca60"
+    },
+    {
+      "path": "error.backend-unavailable.json",
+      "sha256": "df18a9a900227a2ff799e9a8e3d39236bb50362a16d378a8535963a6ea85496a"
+    },
+    {
+      "path": "error.cursor-expired.json",
+      "sha256": "514286395470fd6b586c18d0e1a2e9e217f57f750840168380cd8189345436a2"
+    },
+    {
+      "path": "error.cursor-invalidated.json",
+      "sha256": "86af96389879dd305c6949f3bb59907e970240c2278dc8aff6a986aabecb5dfa"
+    },
+    {
+      "path": "error.invalid-cursor.json",
+      "sha256": "04331a8556fe10e78860cf7596c25f76fa79808948911c55733da2e263e48203"
+    },
+    {
+      "path": "error.invalid-query.json",
+      "sha256": "9ca37f6d90ffb196aa4da81ef7ea120db72bb409ddfef919b801c075a599979b"
+    },
+    {
+      "path": "error.model-not-found.deleted-during-cursor.json",
+      "sha256": "3280e2618832b4e1e48c017eabd9a8ff1f48c23ed5b419fa68e0a17670e866bc"
+    },
+    {
+      "path": "error.model-not-found.foreign.json",
+      "sha256": "7b30d14f19b9af8111828d251b2f735e856bd09c7c74bb114d6ec9a86a4d18c2"
+    },
+    {
+      "path": "error.model-not-found.unknown.json",
+      "sha256": "7b30d14f19b9af8111828d251b2f735e856bd09c7c74bb114d6ec9a86a4d18c2"
+    },
+    {
+      "path": "error.response-budget.json",
+      "sha256": "68bd43129ef206fa2bb954c955afc062c09464997e1b3a0d1dc56444119bed09"
+    },
+    {
+      "path": "error.revision-unavailable.json",
+      "sha256": "42c7a4263fe1fa97644ec1470168e705dcbd5d3cb1c5961062d595099ed12320"
+    },
+    {
+      "path": "error.snapshot-capacity.json",
+      "sha256": "d90c0e3f7fd8ef6e455574a742403957c08112ba860eafec0eef222e6e59029c"
+    },
+    {
+      "path": "error.stored-metadata-invalid.json",
+      "sha256": "1e07a32a84477613f1db444917ad0bda21f54ad64c8bf84481ec08c86a55721d"
+    },
+    {
+      "path": "error.telemetry-integrity.missing-epoch.json",
+      "sha256": "7727861b82968cabbf7b92b1da00cb3b544397a694ccbbe5b33e5e96256d1f4d"
+    },
+    {
+      "path": "error.telemetry-integrity.wrong-component.json",
+      "sha256": "2bbf6fd23c226f49e7098e810ff6e743c3a107f3a8a78e4bc8a1886a92f9b6bc"
+    },
+    {
+      "path": "error.telemetry-integrity.wrong-digest.json",
+      "sha256": "7e6f6f445252568270bd9032f98094a20a6727a98073d93aa099f418c9771305"
+    },
+    {
+      "path": "error.telemetry-integrity.wrong-run.json",
+      "sha256": "61cfb63ae0a48e4038823a7625f58e953709a8df8a4a50ef6913c63233d72b2c"
+    },
+    {
+      "path": "gradient-interactions.request.continuation.json",
+      "sha256": "51e46d2c2dffb15e94fe2a7c32355e5ced5c736677ada6b8b7212068dbdd3876"
+    },
+    {
+      "path": "gradient-interactions.request.initial.json",
+      "sha256": "8ac1fa37249791a9611e48bae28d0d93b0bc8a78001ef8cacc9704e7369e4372"
+    },
+    {
+      "path": "gradient-interactions.result.available.first.json",
+      "sha256": "3ddb047bf5dc871cb361690239af693a5475d2fa7290983a7a511294711280c1"
+    },
+    {
+      "path": "gradient-interactions.result.available.terminal.json",
+      "sha256": "ab2c220ab8dc3ac8e21837cabf59ed5a1b92af2553280afcae9ed81e005d5abb"
+    },
+    {
+      "path": "gradient-interactions.result.not-collected.json",
+      "sha256": "7e48c67f99b92ff77a6a8a4de0ee44b8bddd1a675e2a4108c6ff471288ccefec"
+    },
+    {
+      "path": "gradient-interactions.result.not-configured.json",
+      "sha256": "524a1735037f1a33ccd007831777842a9f93a5b004981ca13b6f65f7b5e1d45d"
+    },
+    {
+      "path": "gradient-interactions.result.zero-norm-sparse.json",
+      "sha256": "6f6e893acb7555229175195dbefd7600213bd1ac18bd0d77428cbe026b9cf0a3"
+    },
+    {
+      "path": "report.request.continuation.json",
+      "sha256": "7a0a4d201f5be75a9849ba3b71f2360cfc8523c0c3f48b6b0e2be80d391907c3"
+    },
+    {
+      "path": "report.request.initial.json",
+      "sha256": "a12839753f2cc9e7ebc1b5d83c14450f7cc63359495fa6cc1efce5d4eeaea838"
+    },
+    {
+      "path": "report.result.available.configured-without-observations.json",
+      "sha256": "1865bb12e160a3a48274e30bb6537ae8baf26b1c25f08f5cbd7d4298c648a92b"
+    },
+    {
+      "path": "report.result.available.default-following.json",
+      "sha256": "8d78e2a5db6f327c2bbd974cdfdb91029940f69f4414e22e26f0655553d9d630"
+    },
+    {
+      "path": "report.result.available.default-previous.json",
+      "sha256": "c33921e2a0682371d75643c2cbfbf83373be25fbf00fd7a03851687f1e7f32b1"
+    },
+    {
+      "path": "report.result.available.selection-disabled.first.json",
+      "sha256": "b78e2f80f8fed78531e0c4c20358ea174d2fee31a038896f5eccd78a50b6c9b9"
+    },
+    {
+      "path": "report.result.available.selection-disabled.terminal.json",
+      "sha256": "7b0440dfe4f6fc500aa7350a0ac57e885814986836c37b4d5e9b2b5a5b19c260"
+    },
+    {
+      "path": "report.result.available.selection-enabled.json",
+      "sha256": "0bfe31deb056d509310431434b6705fa71a2f367374049c48557996bb26b003f"
+    },
+    {
+      "path": "report.result.available.single-epoch.json",
+      "sha256": "81633e78509e6a4159fa3d7c1db93db0ab517516941a4a2e640b22b949535f8b"
+    },
+    {
+      "path": "report.result.pending.json",
+      "sha256": "77bcc44df54fe77bfd20ce80ec689425ee481ee682b39885095dac134a936097"
+    },
+    {
+      "path": "report.result.unavailable.format-unsupported.json",
+      "sha256": "75035af0d1f9c692d5fcaadf80b1de2a9ff5483a6766f8211f57d4747f74ca4a"
+    },
+    {
+      "path": "report.result.unavailable.no-complete-report.json",
+      "sha256": "811f839da95bbba3f48aa569aac4d8c365987e777fe29cae648e43811929dd9d"
+    },
+    {
+      "path": "report.result.unavailable.retention-expired.json",
+      "sha256": "1e82b1b458fc94ca55d8dcc7600c3d0cae8a6c1545a4b3d35ae78a3742e39fed"
+    }
+  ],
+  "cases": [
+    {
+      "identity": "amp-disabled-zero-counters",
+      "documents": [
+        "report.result.available.selection-disabled.first.json",
+        "report.result.available.selection-disabled.terminal.json"
+      ]
+    },
+    {
+      "identity": "amp-overflow-skipped-non-finite",
+      "documents": [
+        "report.result.available.selection-enabled.json"
+      ]
+    },
+    {
+      "identity": "backend-unavailable",
+      "documents": [
+        "error.backend-unavailable.json"
+      ]
+    },
+    {
+      "identity": "bounded-snapshot-admission",
+      "documents": [
+        "capabilities.json",
+        "error.snapshot-capacity.json"
+      ]
+    },
+    {
+      "identity": "cursor-expiration",
+      "documents": [
+        "error.cursor-expired.json"
+      ]
+    },
+    {
+      "identity": "cursor-restart-invalidation",
+      "documents": [
+        "error.cursor-invalidated.json",
+        "report.request.continuation.json"
+      ]
+    },
+    {
+      "identity": "default-epoch-following",
+      "documents": [
+        "report.result.available.default-following.json"
+      ]
+    },
+    {
+      "identity": "default-epoch-previous",
+      "documents": [
+        "report.result.available.default-previous.json"
+      ]
+    },
+    {
+      "identity": "default-epoch-published",
+      "documents": [
+        "report.result.available.selection-enabled.json"
+      ]
+    },
+    {
+      "identity": "deleted-model-during-cursor",
+      "documents": [
+        "error.model-not-found.deleted-during-cursor.json",
+        "report.request.continuation.json"
+      ]
+    },
+    {
+      "identity": "diagnostics-configured-without-observations",
+      "documents": [
+        "gradient-interactions.result.not-collected.json",
+        "report.result.available.configured-without-observations.json"
+      ]
+    },
+    {
+      "identity": "diagnostics-not-configured",
+      "documents": [
+        "gradient-interactions.result.not-configured.json",
+        "report.result.available.selection-disabled.first.json"
+      ]
+    },
+    {
+      "identity": "epoch-pass-not-checkpoint-reevaluation",
+      "documents": [
+        "capabilities.json",
+        "report.result.available.selection-enabled.json"
+      ]
+    },
+    {
+      "identity": "final-telemetry-failure",
+      "documents": [
+        "report.result.unavailable.no-complete-report.json"
+      ]
+    },
+    {
+      "identity": "format-unsupported",
+      "documents": [
+        "report.result.unavailable.format-unsupported.json"
+      ]
+    },
+    {
+      "identity": "gradient-interaction-pagination",
+      "documents": [
+        "gradient-interactions.request.continuation.json",
+        "gradient-interactions.request.initial.json",
+        "gradient-interactions.result.available.first.json",
+        "gradient-interactions.result.available.terminal.json"
+      ]
+    },
+    {
+      "identity": "gradient-zero-norm-sparse-pairs",
+      "documents": [
+        "gradient-interactions.result.zero-norm-sparse.json"
+      ]
+    },
+    {
+      "identity": "invalid-cursor",
+      "documents": [
+        "error.invalid-cursor.json"
+      ]
+    },
+    {
+      "identity": "invalid-query",
+      "documents": [
+        "error.invalid-query.json"
+      ]
+    },
+    {
+      "identity": "metadata-invalid-before-telemetry",
+      "documents": [
+        "error.stored-metadata-invalid.json"
+      ]
+    },
+    {
+      "identity": "multiple-opaque-targets-negative-auxiliary",
+      "documents": [
+        "report.result.available.selection-enabled.json"
+      ]
+    },
+    {
+      "identity": "partial-completion-missing-epoch",
+      "documents": [
+        "error.telemetry-integrity.missing-epoch.json"
+      ]
+    },
+    {
+      "identity": "pending-materialization",
+      "documents": [
+        "report.result.pending.json"
+      ]
+    },
+    {
+      "identity": "response-budget",
+      "documents": [
+        "error.response-budget.json"
+      ]
+    },
+    {
+      "identity": "retention-expired",
+      "documents": [
+        "report.result.unavailable.retention-expired.json"
+      ]
+    },
+    {
+      "identity": "revision-unavailable",
+      "documents": [
+        "error.revision-unavailable.json"
+      ]
+    },
+    {
+      "identity": "selection-disabled-pagination",
+      "documents": [
+        "report.request.continuation.json",
+        "report.request.initial.json",
+        "report.result.available.selection-disabled.first.json",
+        "report.result.available.selection-disabled.terminal.json"
+      ]
+    },
+    {
+      "identity": "selection-enabled-recovery",
+      "documents": [
+        "report.result.available.selection-enabled.json"
+      ]
+    },
+    {
+      "identity": "single-epoch-merged-milestones",
+      "documents": [
+        "report.result.available.single-epoch.json"
+      ]
+    },
+    {
+      "identity": "stored-telemetry-wrong-component",
+      "documents": [
+        "error.telemetry-integrity.wrong-component.json"
+      ]
+    },
+    {
+      "identity": "stored-telemetry-wrong-digest",
+      "documents": [
+        "error.telemetry-integrity.wrong-digest.json"
+      ]
+    },
+    {
+      "identity": "stored-telemetry-wrong-run",
+      "documents": [
+        "error.telemetry-integrity.wrong-run.json"
+      ]
+    },
+    {
+      "identity": "terminal-response-without-snapshot-admission",
+      "documents": [
+        "capabilities.json",
+        "report.result.available.single-epoch.json"
+      ]
+    },
+    {
+      "identity": "unknown-foreign-security-equivalence",
+      "documents": [
+        "error.model-not-found.foreign.json",
+        "error.model-not-found.unknown.json"
+      ]
+    }
+  ]
+}

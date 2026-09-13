@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v2/model-contract-envelope.schema.json",
+  "title": "Objective-language-neutral ModelContract envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectiveLanguageRevision",
+    "targetContract",
+    "objective",
+    "modelConfig"
+  ],
+  "properties": {
+    "objectiveLanguageRevision": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/common.schema.json#/$defs/positiveInteger"
+    },
+    "targetContract": {
+      "type": "object"
+    },
+    "objective": {
+      "type": "object"
+    },
+    "modelConfig": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/common.schema.json#/$defs/modelConfig"
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "contract": "transformer-training-telemetry",
+  "revision": 2,
+  "requestId": "33333333-3333-4333-8333-333333333333",
+  "state": "available",
+  "modelRef": "mdl_cccccccccccccccccccccccccccccccc",
+  "producingRunId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "semanticDigests": {
+    "dataContractSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "targetContractSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "objectiveSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "modelContractSha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "coverage": {
+    "completedEpochs": 1,
+    "firstEpoch": 1,
+    "lastEpoch": 1
+  },
+  "selection": {
+    "enabled": true,
+    "bestEpoch": 1,
+    "publishedEpoch": 1,
+    "publishedSource": "best_direct_selection_score"
+  },
+  "anchors": [
+    {
+      "epoch": 1,
+      "globalStep": 8,
+      "attempt": 1,
+      "totalLoss": 0.2,
+      "selectionScore": 0.2,
+      "directLosses": [
+        {
+          "componentIdentity": "direct.event",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "targetIdentity": "EventProbability",
+          "targetIndex": 0,
+          "value": 0.2
+        }
+      ],
+      "auxiliaryLosses": [],
+      "targetMetrics": [
+        {
+          "targetIdentity": "EventProbability",
+          "targetIndex": 0,
+          "mae": 0.1,
+          "rmse": 0.14
+        }
+      ],
+      "health": {
+        "trainingBatchesCompleted": 8,
+        "optimizerUpdatesApplied": 8,
+        "optimizerUpdatesSkipped": 0,
+        "ampOverflowBatches": 0,
+        "finiteGradientBatches": 8,
+        "nonFiniteGradientBatches": 0
+      },
+      "gradientInteractionsCollected": true,
+      "roles": [
+        "first",
+        "best",
+        "published"
+      ]
+    }
+  ],
+  "healthTotals": {
+    "trainingBatchesCompleted": 8,
+    "optimizerUpdatesApplied": 8,
+    "optimizerUpdatesSkipped": 0,
+    "ampOverflowBatches": 0,
+    "finiteGradientBatches": 8,
+    "nonFiniteGradientBatches": 0
+  },
+  "gradientInteractions": {
+    "state": "available",
+    "collectedEpochCount": 1,
+    "defaultEpoch": 1,
+    "publishedEpochCollected": true
+  },
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 8,
+        "attempt": 1,
+        "totalLoss": 0.2,
+        "selectionScore": 0.2,
+        "directLosses": [
+          {
+            "componentIdentity": "direct.event",
+            "operator": "BinaryCrossEntropyWithLogits",
+            "targetIdentity": "EventProbability",
+            "targetIndex": 0,
+            "value": 0.2
+          }
+        ],
+        "auxiliaryLosses": [],
+        "targetMetrics": [
+          {
+            "targetIdentity": "EventProbability",
+            "targetIndex": 0,
+            "mae": 0.1,
+            "rmse": 0.14
+          }
+        ],
+        "health": {
+          "trainingBatchesCompleted": 8,
+          "optimizerUpdatesApplied": 8,
+          "optimizerUpdatesSkipped": 0,
+          "ampOverflowBatches": 0,
+          "finiteGradientBatches": 8,
+          "nonFiniteGradientBatches": 0
+        },
+        "gradientInteractionsCollected": true
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

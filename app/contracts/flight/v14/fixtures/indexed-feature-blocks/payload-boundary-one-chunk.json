@@ -1,0 +1,74 @@
+{
+  "fixtureId": "consumer-neutral.indexed.payload-boundary-one-chunk.v2",
+  "sourceEncoding": {
+    "featureBlocks": [
+      {
+        "position": 0,
+        "windowRows": 2,
+        "nativeRowWidth": 1
+      }
+    ],
+    "encoding": "indexedFeatureBlocks"
+  },
+  "seqLen": 2,
+  "featureDim": 2,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ],
+          "observationOffsets": [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              2
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "logicalFeatures": [
+      [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ]
+  }
+}

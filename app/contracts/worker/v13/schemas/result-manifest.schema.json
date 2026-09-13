@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v13/result-manifest.schema.json",
+  "title": "Transformer worker v13 completed result manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "protocolVersion",
+    "jobId",
+    "attempt",
+    "attemptId",
+    "operation",
+    "inputRevision",
+    "manifestSha256",
+    "jobConfigSha256",
+    "semanticDigests",
+    "artifacts"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-worker"
+    },
+    "protocolVersion": {
+      "const": 13
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "attemptId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "operation": {
+      "enum": [
+        "fit",
+        "predict"
+      ]
+    },
+    "inputRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "manifestSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "jobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "semanticDigests": {
+      "$ref": "common.schema.json#/$defs/semanticDigests"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "prediction-manifest.schema.json"
+      },
+      "maxItems": 100000
+    },
+    "checkpoint": {
+      "$ref": "common.schema.json#/$defs/checkpointArtifact"
+    },
+    "checkpointMetadata": {
+      "$ref": "https://transformer.local/contracts/checkpoint/v7/checkpoint-metadata.schema.json"
+    },
+    "checkpointSerializationMs": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fit"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "checkpoint",
+          "checkpointMetadata",
+          "checkpointSerializationMs"
+        ],
+        "properties": {
+          "artifacts": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "checkpoint"
+              ]
+            },
+            {
+              "required": [
+                "checkpointMetadata"
+              ]
+            },
+            {
+              "required": [
+                "checkpointSerializationMs"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

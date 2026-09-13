@@ -1,0 +1,14 @@
+{
+  "contract": "transformer-fit-run-fixtures",
+  "version": 6,
+  "files": [
+    {
+      "path": "run-document.json",
+      "sha256": "e143cc8af5d1e2e210b5aeeef5b5822e0efb7a43c1d4b2ddca088929a91f742e"
+    },
+    {
+      "path": "run-summary.json",
+      "sha256": "bc59d9a4b01bc07b6a3aa932ad278109234f5fc792b8ccac0a39523c5c8b1ba2"
+    }
+  ]
+}

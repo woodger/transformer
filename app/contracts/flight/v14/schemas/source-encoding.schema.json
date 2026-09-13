@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v14/source-encoding.schema.json",
+  "title": "Transformer Flight v14 indexed feature block source encoding",
+  "$ref": "common.schema.json#/$defs/sourceEncoding"
+}

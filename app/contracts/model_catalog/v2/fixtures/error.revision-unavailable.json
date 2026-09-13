@@ -1,0 +1,6 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "CATALOG_QUERY_REVISION_UNAVAILABLE",
+  "requestedRevision": 3,
+  "message": "model catalog query revision is unavailable"
+}

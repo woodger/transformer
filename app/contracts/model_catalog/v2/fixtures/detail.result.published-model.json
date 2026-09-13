@@ -1,0 +1,153 @@
+{
+  "contract": "transformer-model-catalog",
+  "revision": 2,
+  "requestId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "model": {
+    "summary": {
+      "modelRef": "mdl_22222222222222222222222222222222",
+      "label": "consumer-model",
+      "generation": 1,
+      "createdAt": "2026-09-05T12:00:00.000000Z",
+      "semanticDigests": {
+        "dataContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "targetContractSha256": "5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959",
+        "objectiveSha256": "68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8",
+        "modelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0"
+      },
+      "modelConfig": {
+        "architecture": {
+          "identity": "transformer.sequence-model",
+          "revision": 1
+        },
+        "seqLen": 2,
+        "featureDim": 8,
+        "hidden": 16,
+        "layers": 1,
+        "dropout": 0,
+        "nhead": 4,
+        "mode": "strict"
+      },
+      "targetIdentities": [
+        "ConsumerDefined.EventProbability"
+      ],
+      "initialization": {
+        "parentModelRef": "mdl_44444444444444444444444444444444",
+        "source": "publishedModel"
+      },
+      "producingRunId": "22222222-2222-4222-8222-222222222222",
+      "checkpoint": {
+        "format": "transformer-checkpoint-v7",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "bytes": 150000000
+      }
+    },
+    "dataContract": {
+      "identity": "consumer.learning-dataset",
+      "revision": 1,
+      "profile": "consumer.profile.alpha",
+      "dataContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "seqLen": 2,
+      "featureDim": 8
+    },
+    "modelContract": {
+      "objectiveLanguageRevision": 2,
+      "targetContract": {
+        "slots": [
+          {
+            "identity": "ConsumerDefined.EventProbability",
+            "observedConstraint": {
+              "constraint": "ClosedInterval",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "lossInputTransformation": "Identity",
+            "publicPredictionTransformation": "Sigmoid"
+          }
+        ]
+      },
+      "objective": {
+        "aggregation": "WeightedSum",
+        "reduction": "GlobalRowMean",
+        "resources": [],
+        "directComponents": [
+          {
+            "identity": "direct.consumer-event",
+            "operator": "BinaryCrossEntropyWithLogits",
+            "weight": 1,
+            "roles": {
+              "logit": {
+                "targetIdentity": "ConsumerDefined.EventProbability",
+                "view": "lossEstimate"
+              },
+              "probability": {
+                "targetIdentity": "ConsumerDefined.EventProbability",
+                "view": "observed"
+              }
+            },
+            "parameters": {}
+          }
+        ],
+        "auxiliaryComponents": []
+      },
+      "modelConfig": {
+        "architecture": {
+          "identity": "transformer.sequence-model",
+          "revision": 1
+        },
+        "seqLen": 2,
+        "featureDim": 8,
+        "hidden": 16,
+        "layers": 1,
+        "dropout": 0,
+        "nhead": 4,
+        "mode": "strict"
+      }
+    },
+    "trainingConfig": {
+      "lr": 0.0005,
+      "batchSize": 256,
+      "epochs": 25,
+      "useAmp": false,
+      "weightDecay": 1e-05,
+      "selection": {
+        "minDelta": 0.0001,
+        "patience": 5
+      },
+      "seed": 42,
+      "deterministic": true
+    },
+    "diagnostics": {
+      "schemaVersion": 1,
+      "gradientInteractions": {
+        "everySteps": 100,
+        "maxBatches": 1
+      }
+    },
+    "selection": {
+      "enabled": true,
+      "modelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0",
+      "bestSelectionScore": 0.125,
+      "bestEpoch": 17,
+      "source": "best_direct_selection_score"
+    },
+    "progress": {
+      "completedEpochs": 25,
+      "globalStep": 112050,
+      "trainingComplete": true
+    },
+    "initialization": {
+      "parentModelRef": "mdl_44444444444444444444444444444444",
+      "parentCheckpointSha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "parentDataContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "dataContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parentTargetContractSha256": "5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959",
+      "targetContractSha256": "5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959",
+      "parentObjectiveSha256": "68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8",
+      "objectiveSha256": "68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8",
+      "parentModelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0",
+      "modelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0",
+      "source": "publishedModel"
+    },
+    "jobConfigSha256": "8888888888888888888888888888888888888888888888888888888888888888"
+  }
+}

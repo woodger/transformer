@@ -1,0 +1,63 @@
+{
+  "fixtureId": "consumer-neutral.new-opaque-target.v2",
+  "modelContract": {
+    "objectiveLanguageRevision": 2,
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "ConsumerDefined.EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "aggregation": "WeightedSum",
+      "reduction": "GlobalRowMean",
+      "resources": [],
+      "directComponents": [
+        {
+          "identity": "direct.consumer-event",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "roles": {
+            "logit": {
+              "targetIdentity": "ConsumerDefined.EventProbability",
+              "view": "lossEstimate"
+            },
+            "probability": {
+              "targetIdentity": "ConsumerDefined.EventProbability",
+              "view": "observed"
+            }
+          },
+          "parameters": {}
+        }
+      ],
+      "auxiliaryComponents": []
+    },
+    "modelConfig": {
+      "architecture": {
+        "identity": "transformer.sequence-model",
+        "revision": 1
+      },
+      "seqLen": 2,
+      "featureDim": 8,
+      "hidden": 16,
+      "layers": 1,
+      "dropout": 0,
+      "nhead": 4,
+      "mode": "strict"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959",
+    "objectiveSha256": "68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8",
+    "modelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0"
+  }
+}

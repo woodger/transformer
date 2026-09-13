@@ -47,6 +47,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | Нормативный Model Catalog Query v1 | `app/contracts/model_catalog/v1/` |
 | Нормативный Training Telemetry Query v1 | `app/contracts/training_telemetry/v1/` |
+| Нормативный staged package предметного словаря без `kind` | `app/contracts/semantic/v2/`, `app/contracts/checkpoint/v7/`, `app/contracts/worker/v13/`, `app/contracts/metrics/v6/`, `app/contracts/metrics/fit_run/v6/`, `app/contracts/model_catalog/v2/`, `app/contracts/training_telemetry/v2/`, `app/contracts/flight/v14/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -117,6 +118,11 @@ v13, worker v12, checkpoint/recovery v6, metrics v5, Model Catalog Query v1 и
 Training Telemetry Query v1 нормативны для текущего runtime. README или
 operations guide не могут переопределять их. Flight v13 — единственный
 текущий remote API contract; legacy aliases отсутствуют.
+
+Semantic v2, Flight v14, worker v13, checkpoint/recovery v7, metrics v6 и query
+revision 2 являются нормативным staged package для cross-project review. Они
+не описывают current behavior и не активируют runtime, migrations, OpenSearch
+templates либо новый Flight action surface.
 
 `app/contracts/model_catalog/v1/` имеет независимую revision и активирован
 двумя Flight v13 actions. Изменение его query language не обязано синхронно

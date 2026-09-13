@@ -1,0 +1,8 @@
+{
+  "code": "MODEL_SCHEMA_MISMATCH",
+  "reason": "DIGEST_MISMATCH",
+  "layer": "target",
+  "expectedSha256": "112f7ecf5fbeb7e70ad4b4657dcd753a1694bbc3cb6ae2d78dfdb91facad03ce",
+  "actualSha256": "194487713474826db9e120dede269cfd9665fdd28b50803b89995a55d3f392f0",
+  "message": "target contract does not match the selected model"
+}

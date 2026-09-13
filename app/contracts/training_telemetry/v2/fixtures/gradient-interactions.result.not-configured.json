@@ -1,0 +1,9 @@
+{
+  "contract": "transformer-training-telemetry",
+  "revision": 2,
+  "requestId": "88888888-8888-4888-8888-888888888888",
+  "state": "notCollected",
+  "modelRef": "mdl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "epoch": 1,
+  "reason": "DIAGNOSTICS_NOT_CONFIGURED"
+}

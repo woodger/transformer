@@ -1,0 +1,38 @@
+{
+  "fixtureId": "consumer-neutral.job-config.fit.v2",
+  "jobConfig": {
+    "operation": "fit",
+    "requestedDevice": "auto",
+    "modelLabel": "consumer-model",
+    "sourceEncoding": {
+      "featureBlocks": [
+        {
+          "position": 0,
+          "windowRows": 2,
+          "nativeRowWidth": 2
+        }
+      ],
+      "encoding": "indexedFeatureBlocks"
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelContractSha256": "6eb19a9d234671cd8ee9799cd657a8ac3a10456ef1586d07ba193e0403ff727f",
+    "trainingConfig": {
+      "lr": 0.001,
+      "batchSize": 64,
+      "epochs": 2,
+      "useAmp": true,
+      "weightDecay": 0,
+      "selection": null,
+      "seed": 42,
+      "deterministic": true
+    },
+    "diagnostics": {
+      "schemaVersion": 1,
+      "gradientInteractions": null
+    },
+    "initialization": {
+      "source": "random"
+    }
+  },
+  "expectedJobConfigSha256": "e3619a12ba3e6b7500cefd9bc29cae15a2c8a65b5dbf6d16bf7c5026e2c65bbf"
+}

@@ -1,0 +1,97 @@
+{
+  "contract": "transformer-consumer-neutral-jcs-golden",
+  "version": 2,
+  "entries": [
+    {
+      "fixturePath": "multi-target-shared-resource.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"Location\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"Finite\"},\"publicPredictionTransformation\":\"Identity\"},{\"identity\":\"PositiveOutcome\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":0},\"publicPredictionTransformation\":\"Sigmoid\"},{\"identity\":\"NegativeOutcome\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":0},\"publicPredictionTransformation\":\"Sigmoid\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[{\"identity\":\"aux.expected-value\",\"operator\":\"ExpectedValue\",\"parameters\":{},\"roles\":{\"negativeOutcomeProbability\":{\"targetIdentity\":\"NegativeOutcome\",\"view\":\"publicPrediction\"},\"positiveOutcomeProbability\":{\"targetIdentity\":\"PositiveOutcome\",\"view\":\"publicPrediction\"}},\"weight\":0.5},{\"identity\":\"aux.gaussian-nll\",\"operator\":\"GaussianNLL\",\"parameters\":{},\"roles\":{\"locationEstimate\":{\"targetIdentity\":\"Location\",\"view\":\"lossEstimate\"},\"observedLocation\":{\"targetIdentity\":\"Location\",\"view\":\"observed\"},\"scale\":{\"resourceIdentity\":\"sharedScale\"}},\"weight\":1},{\"identity\":\"aux.risk-adjusted\",\"operator\":\"RiskAdjustedExpectedValue\",\"parameters\":{\"riskPenalty\":0.1},\"roles\":{\"negativeOutcomeProbability\":{\"targetIdentity\":\"NegativeOutcome\",\"view\":\"publicPrediction\"},\"positiveOutcomeProbability\":{\"targetIdentity\":\"PositiveOutcome\",\"view\":\"publicPrediction\"},\"uncertaintyScale\":{\"resourceIdentity\":\"sharedScale\"}},\"weight\":1}],\"directComponents\":[{\"identity\":\"direct.location\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"Location\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"Location\",\"view\":\"observed\"}},\"weight\":1},{\"identity\":\"direct.positive\",\"operator\":\"BinaryCrossEntropyWithLogits\",\"parameters\":{},\"roles\":{\"logit\":{\"targetIdentity\":\"PositiveOutcome\",\"view\":\"lossEstimate\"},\"probability\":{\"targetIdentity\":\"PositiveOutcome\",\"view\":\"observed\"}},\"weight\":1},{\"identity\":\"direct.negative\",\"operator\":\"BinaryCrossEntropyWithLogits\",\"parameters\":{},\"roles\":{\"logit\":{\"targetIdentity\":\"NegativeOutcome\",\"view\":\"lossEstimate\"},\"probability\":{\"targetIdentity\":\"NegativeOutcome\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[{\"identity\":\"sharedScale\",\"resourceClass\":\"PositiveScalarPerObservation\"}]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0.1,\"featureDim\":12,\"hidden\":24,\"layers\":2,\"mode\":\"relaxed\",\"nhead\":4,\"seqLen\":3},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"9b8293686d769ef8742a59d40c9e318e8606687419bf9af059badd76a44a00e3\",\"targetContractSha256\":\"0a0515d71490504755fcab10be967d0c9ffa8dcc673e4426fe8b061a2d9a58ed\"}"
+      },
+      "digests": {
+        "targetContractSha256": "0a0515d71490504755fcab10be967d0c9ffa8dcc673e4426fe8b061a2d9a58ed",
+        "objectiveSha256": "9b8293686d769ef8742a59d40c9e318e8606687419bf9af059badd76a44a00e3",
+        "modelContractSha256": "0c6da86546969ef96206b9fb1e88023fcf8fabe7ed439da99df15cc2f2c26a39"
+      }
+    },
+    {
+      "fixturePath": "new-opaque-target.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"ConsumerDefined.EventProbability\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":0},\"publicPredictionTransformation\":\"Sigmoid\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.consumer-event\",\"operator\":\"BinaryCrossEntropyWithLogits\",\"parameters\":{},\"roles\":{\"logit\":{\"targetIdentity\":\"ConsumerDefined.EventProbability\",\"view\":\"lossEstimate\"},\"probability\":{\"targetIdentity\":\"ConsumerDefined.EventProbability\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0,\"featureDim\":8,\"hidden\":16,\"layers\":1,\"mode\":\"strict\",\"nhead\":4,\"seqLen\":2},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8\",\"targetContractSha256\":\"5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959\"}"
+      },
+      "digests": {
+        "targetContractSha256": "5792fab0aaa13d963a0506e6e5acbe043846f056789b7611840446ee31d01959",
+        "objectiveSha256": "68be4ac59e18558226914e918a5159828250b8c8b1bfb764a73bebc3a11bcbb8",
+        "modelContractSha256": "e876eaf00da29bcd978d9af25f4ebe7ee3039c861f65c056602ed24b35b481d0"
+      }
+    },
+    {
+      "fixturePath": "single-positive-regression.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"PositiveMagnitude\",\"lossInputTransformation\":\"Sigmoid\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":0},\"publicPredictionTransformation\":\"Sigmoid\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.positive-magnitude\",\"operator\":\"LogMSE\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"PositiveMagnitude\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"PositiveMagnitude\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0.1,\"featureDim\":64848,\"hidden\":256,\"layers\":5,\"mode\":\"relaxed\",\"nhead\":8,\"seqLen\":10},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"63512c4c8de0be7bcf73ffd70035c89a54c38a1556c914b85f6567e711aedd9e\",\"targetContractSha256\":\"4fd4df37f3bc44bcffc1378d6d9fe6292747264844d5a3ad8b5c0a36d66e7d54\"}"
+      },
+      "digests": {
+        "targetContractSha256": "4fd4df37f3bc44bcffc1378d6d9fe6292747264844d5a3ad8b5c0a36d66e7d54",
+        "objectiveSha256": "63512c4c8de0be7bcf73ffd70035c89a54c38a1556c914b85f6567e711aedd9e",
+        "modelContractSha256": "924b613a0cdde7ec62fa777bda7f0390da4dc1c03ad2a2aeef45b74909844a8f"
+      }
+    },
+    {
+      "fixturePath": "single-probability.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"EventProbability\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":0},\"publicPredictionTransformation\":\"Sigmoid\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.event-probability\",\"operator\":\"BinaryCrossEntropyWithLogits\",\"parameters\":{},\"roles\":{\"logit\":{\"targetIdentity\":\"EventProbability\",\"view\":\"lossEstimate\"},\"probability\":{\"targetIdentity\":\"EventProbability\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0,\"featureDim\":8,\"hidden\":16,\"layers\":1,\"mode\":\"strict\",\"nhead\":4,\"seqLen\":2},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"c4c03a8c0f3449f373b207bd95427e69ecb559a553a618907b5cb54ff3e8177a\",\"targetContractSha256\":\"9265ee4cdaeb9971bf0d76dddf0f9a654464cff168d1b70aea4ec2690ba5879c\"}"
+      },
+      "digests": {
+        "targetContractSha256": "9265ee4cdaeb9971bf0d76dddf0f9a654464cff168d1b70aea4ec2690ba5879c",
+        "objectiveSha256": "c4c03a8c0f3449f373b207bd95427e69ecb559a553a618907b5cb54ff3e8177a",
+        "modelContractSha256": "4132c1ad066f0f906866155f9a8d320a4a805d08f2cc377edb8afa6c02a2744c"
+      }
+    },
+    {
+      "fixturePath": "single-regression.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"MeanReturn\",\"lossInputTransformation\":\"Tanh\",\"observedConstraint\":{\"constraint\":\"ClosedInterval\",\"maximum\":1,\"minimum\":-1},\"publicPredictionTransformation\":\"Tanh\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.mean-return\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"MeanReturn\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"MeanReturn\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0.1,\"featureDim\":64848,\"hidden\":256,\"layers\":5,\"mode\":\"relaxed\",\"nhead\":8,\"seqLen\":10},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"fb2a0e52e2dcd98d1744c56fd7366ae34d00920064041108ff526c014fff8d9f\",\"targetContractSha256\":\"69ee6f9d2a7f5b7cc21d9bf42717e99a048b722e93d5783a64ef86d3ab20ddc3\"}"
+      },
+      "digests": {
+        "targetContractSha256": "69ee6f9d2a7f5b7cc21d9bf42717e99a048b722e93d5783a64ef86d3ab20ddc3",
+        "objectiveSha256": "fb2a0e52e2dcd98d1744c56fd7366ae34d00920064041108ff526c014fff8d9f",
+        "modelContractSha256": "6eb19a9d234671cd8ee9799cd657a8ac3a10456ef1586d07ba193e0403ff727f"
+      }
+    },
+    {
+      "fixturePath": "target-reorder-a-b.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"A\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"Finite\"},\"publicPredictionTransformation\":\"Identity\"},{\"identity\":\"B\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"Finite\"},\"publicPredictionTransformation\":\"Identity\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.a\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"A\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"A\",\"view\":\"observed\"}},\"weight\":1},{\"identity\":\"direct.b\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"B\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"B\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0,\"featureDim\":4,\"hidden\":8,\"layers\":1,\"mode\":\"strict\",\"nhead\":2,\"seqLen\":2},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"1c154a3155949a497cafbcf3cd6be3d88af76f6823db01182915a5029c0658a2\",\"targetContractSha256\":\"4c901071a0d6e4d740c5a3df520f14fc5201ca407f3f9ca1721cab4812dbb916\"}"
+      },
+      "digests": {
+        "targetContractSha256": "4c901071a0d6e4d740c5a3df520f14fc5201ca407f3f9ca1721cab4812dbb916",
+        "objectiveSha256": "1c154a3155949a497cafbcf3cd6be3d88af76f6823db01182915a5029c0658a2",
+        "modelContractSha256": "adbf3d74cbad46c3c018fd7941422442022da0d9ca3418305b62efbadd3bf002"
+      }
+    },
+    {
+      "fixturePath": "target-reorder-b-a.json",
+      "canonicalJson": {
+        "targetContract": "{\"objectiveLanguageRevision\":2,\"targetContract\":{\"slots\":[{\"identity\":\"B\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"Finite\"},\"publicPredictionTransformation\":\"Identity\"},{\"identity\":\"A\",\"lossInputTransformation\":\"Identity\",\"observedConstraint\":{\"constraint\":\"Finite\"},\"publicPredictionTransformation\":\"Identity\"}]}}",
+        "objective": "{\"objective\":{\"aggregation\":\"WeightedSum\",\"auxiliaryComponents\":[],\"directComponents\":[{\"identity\":\"direct.b\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"B\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"B\",\"view\":\"observed\"}},\"weight\":1},{\"identity\":\"direct.a\",\"operator\":\"SmoothL1\",\"parameters\":{},\"roles\":{\"estimate\":{\"targetIdentity\":\"A\",\"view\":\"lossEstimate\"},\"observed\":{\"targetIdentity\":\"A\",\"view\":\"observed\"}},\"weight\":1}],\"reduction\":\"GlobalRowMean\",\"resources\":[]},\"objectiveLanguageRevision\":2}",
+        "modelContract": "{\"modelConfig\":{\"architecture\":{\"identity\":\"transformer.sequence-model\",\"revision\":1},\"dropout\":0,\"featureDim\":4,\"hidden\":8,\"layers\":1,\"mode\":\"strict\",\"nhead\":2,\"seqLen\":2},\"objectiveLanguageRevision\":2,\"objectiveSha256\":\"e4dbe377567a0aa654ef96c4da8c756a62ebee1db0ecd472fb60faad698d0028\",\"targetContractSha256\":\"3e12fcf203ffc1373739d9e19afd28c7ff32882a4cbacddff416c83c1b0a6fed\"}"
+      },
+      "digests": {
+        "targetContractSha256": "3e12fcf203ffc1373739d9e19afd28c7ff32882a4cbacddff416c83c1b0a6fed",
+        "objectiveSha256": "e4dbe377567a0aa654ef96c4da8c756a62ebee1db0ecd472fb60faad698d0028",
+        "modelContractSha256": "97b274d1a303472fd1a7d4ae2cda30f7ec784d873f15a5d72ee715fcaa94e4e5"
+      }
+    }
+  ]
+}

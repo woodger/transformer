@@ -1,0 +1,77 @@
+{
+  "contract": "transformer-consumer-neutral-negative-fixtures",
+  "version": 2,
+  "cases": [
+    {
+      "identity": "bounded-public-identity",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_TARGET_CONTRACT"
+    },
+    {
+      "identity": "changed-resource-binding",
+      "expectedCode": "MODEL_SCHEMA_MISMATCH",
+      "expectedReason": "DIGEST_MISMATCH",
+      "expectedLayer": "objective"
+    },
+    {
+      "identity": "changed-transformation",
+      "expectedCode": "MODEL_SCHEMA_MISMATCH",
+      "expectedReason": "DIGEST_MISMATCH",
+      "expectedLayer": "target"
+    },
+    {
+      "identity": "duplicate-json-key",
+      "fixturePath": "invalid/duplicate-object-key.json",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_MODEL_CONTRACT"
+    },
+    {
+      "identity": "expected-and-risk-adjusted-coexist",
+      "expectedCode": "ACCEPTED",
+      "expectedReason": "INDEPENDENT_COMPONENTS"
+    },
+    {
+      "identity": "known-but-unavailable-primitive",
+      "expectedCode": "FAILED_PRECONDITION",
+      "expectedReason": "PRIMITIVE_UNAVAILABLE"
+    },
+    {
+      "identity": "legacy-kind-form",
+      "fixturePath": "invalid/legacy-kind-model-contract.json",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_MODEL_CONTRACT"
+    },
+    {
+      "identity": "mixed-target-resource-reference",
+      "fixturePath": "invalid/mixed-reference-model-contract.json",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_MODEL_CONTRACT"
+    },
+    {
+      "identity": "resource-stop-gradient-only",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_RESOURCE_GRAPH"
+    },
+    {
+      "identity": "same-class-distinct-resource-identities",
+      "expectedCode": "ACCEPTED",
+      "expectedReason": "DISTINCT_RESOURCES"
+    },
+    {
+      "identity": "unknown-primitive",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "UNKNOWN_PRIMITIVE"
+    },
+    {
+      "identity": "unknown-subject-discriminator",
+      "fixturePath": "invalid/unknown-discriminator-model-contract.json",
+      "expectedCode": "INVALID_ARGUMENT",
+      "expectedReason": "INVALID_MODEL_CONTRACT"
+    },
+    {
+      "identity": "unknown-target-name-existing-primitives",
+      "expectedCode": "ACCEPTED",
+      "expectedReason": "OPAQUE_TARGET_IDENTITY"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "contract": "transformer-model-catalog",
+  "revision": 2,
+  "operations": [
+    "detail",
+    "list"
+  ],
+  "transport": {
+    "actions": {
+      "detail": "transformer.model-catalog.v2.detail",
+      "list": "transformer.model-catalog.v2.list"
+    },
+    "protocol": "ArrowFlightDoAction"
+  },
+  "consistency": {
+    "ordering": [
+      {
+        "field": "createdAt",
+        "direction": "DESC"
+      },
+      {
+        "field": "modelRef",
+        "direction": "ASC"
+      }
+    ],
+    "concurrentPublication": "ExcludedAfterHighWater",
+    "concurrentDeletion": "MayOmit",
+    "cursorExpiration": "RestartTraversal",
+    "consistencyModel": "LiveHighWater"
+  },
+  "limits": {
+    "maxPageSize": 100,
+    "cursorTtlSeconds": 900,
+    "maxResponseBytes": 8388608,
+    "maxCheckpointVerificationsPerDetail": 1,
+    "maxCheckpointVerificationBytes": 1073741824
+  },
+  "features": {
+    "ownerScope": "AuthenticatedSubject",
+    "filters": false,
+    "batchDetail": false,
+    "serverSideComparison": false,
+    "checkpointVerification": "FullSha256",
+    "structuredErrors": true
+  }
+}

@@ -5,7 +5,8 @@
 > не ADR, не нормативная JSON Schema, не назначение production migration и не
 > описание уже реализованного поведения.
 
-- Статус: к cross-project review перед подготовкой canonical packages
+- Статус: архитектурно согласовано; normative staged packages подготовлены к
+  точному cross-project review
 - Срез: 2026-09-13, техническая исходная точка Flight v13, Objective Language
   v1, Worker v12, checkpoint/recovery v6, Model Catalog Query v1, Training
   Telemetry Query v1 и metrics v5
@@ -567,6 +568,24 @@ schemas, references, JCS и D1 до реализации.
 После точного Consumer review package архитектурное решение фиксируется ADR.
 Только затем Transformer и Inventory реализуют согласованный clean cut и
 готовят destructive operational procedure.
+
+## Статус canonical package
+
+Staged packages опубликованы в согласованном порядке зависимостей:
+
+- `app/contracts/semantic/v2`;
+- `app/contracts/checkpoint/v7` и recovery v7;
+- `app/contracts/worker/v13`;
+- `app/contracts/metrics/v6` и `app/contracts/metrics/fit_run/v6`;
+- `app/contracts/model_catalog/v2` и `app/contracts/training_telemetry/v2`;
+- `app/contracts/flight/v14`.
+
+Каждый package содержит closed schemas, cross-project fixtures и собственный
+fixture manifest. Fixture bundle даёт Consumer-у материал для независимой
+проверки `$ref`, literal JCS/D1, initialization boundaries, query
+projections и неизменности Arrow geometry.
+Пакеты не подключены к runtime и не меняют migrations либо действующий Flight
+v13 surface.
 
 ## Критерии готовности к canonical package
 

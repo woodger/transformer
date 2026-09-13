@@ -1,0 +1,8 @@
+{
+  "code": "MODEL_CORRUPT",
+  "reason": "MODEL_CHECKPOINT_SIZE_MISMATCH",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "expectedBytes": 150725827,
+  "actualBytes": 150725826,
+  "message": "model checkpoint size does not match registry metadata"
+}

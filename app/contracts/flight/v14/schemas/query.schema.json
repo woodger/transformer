@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v14/query.schema.json",
+  "title": "Transformer Flight v14 capabilities or health request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "requestId"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-flight"
+    },
+    "version": {
+      "const": 14
+    },
+    "requestId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    }
+  }
+}

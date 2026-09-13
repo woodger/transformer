@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v13/common.schema.json",
+  "title": "Transformer worker v13 common definitions",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "identity": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/common.schema.json#/$defs/identity"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "byteCount",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "checkpointArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format",
+        "byteCount",
+        "checkpointSha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "format": {
+          "const": "transformer-checkpoint-v7"
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkpointSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sourceEncoding": {
+      "$ref": "https://transformer.local/contracts/flight/v14/common.schema.json#/$defs/sourceEncoding"
+    },
+    "dataContract": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/common.schema.json#/$defs/dataContract"
+    },
+    "modelContract": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/model-contract-envelope.schema.json"
+    },
+    "semanticDigests": {
+      "$ref": "https://transformer.local/contracts/semantic/v2/semantic-digests.schema.json"
+    },
+    "trainingConfig": {
+      "$ref": "https://transformer.local/contracts/checkpoint/v7/common.schema.json#/$defs/trainingConfig"
+    },
+    "diagnosticsConfig": {
+      "$ref": "https://transformer.local/contracts/checkpoint/v7/common.schema.json#/$defs/diagnosticsConfig"
+    },
+    "resolvedInitialization": {
+      "$ref": "https://transformer.local/contracts/checkpoint/v7/common.schema.json#/$defs/resolvedInitialization"
+    },
+    "progress": {
+      "$ref": "https://transformer.local/contracts/checkpoint/v7/common.schema.json#/$defs/progress"
+    },
+    "progressEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "epoch",
+            "step",
+            "loss"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "step": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "loss": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ordinal",
+            "rows"
+          ],
+          "properties": {
+            "ordinal": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "nativeRows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "targetObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetIdentity",
+        "targetIndex"
+      ],
+      "properties": {
+        "targetIdentity": {
+          "$ref": "#/$defs/identity"
+        },
+        "targetIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "componentObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "componentIdentity",
+        "operator",
+        "value"
+      ],
+      "properties": {
+        "componentIdentity": {
+          "$ref": "#/$defs/identity"
+        },
+        "operator": {
+          "$ref": "#/$defs/identity"
+        },
+        "value": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

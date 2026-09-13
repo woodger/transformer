@@ -15,5 +15,5 @@ contract и не заменяет ADR.
 ## Активные предложения
 
 - [Предметный словарь shared Transformer contracts без `kind`](./subject-specific-contract-vocabulary.md) —
-  clean-cut предложение Semantic v2 и зависимых contract revisions без
-  универсального discriminator-а в shared canonical documents.
+  архитектурно согласованное clean-cut предложение; normative staged packages
+  подготовлены для точного cross-project review.

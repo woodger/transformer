@@ -1,0 +1,5 @@
+{
+  "code": "WORKER_PROTOCOL_VIOLATION",
+  "reason": "NON_FINITE_RUNTIME_VALUE",
+  "message": "worker produced a non-finite private resource value"
+}

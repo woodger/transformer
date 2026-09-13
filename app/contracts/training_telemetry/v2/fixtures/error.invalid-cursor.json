@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_TELEMETRY_CURSOR",
+  "path": "/cursor",
+  "message": "training telemetry cursor is invalid"
+}

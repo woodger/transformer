@@ -1,0 +1,44 @@
+{
+  "fixtureId": "consumer-neutral.indexed.missing-native-prefix.v2",
+  "sourceEncoding": {
+    "featureBlocks": [
+      {
+        "position": 0,
+        "windowRows": 2,
+        "nativeRowWidth": 1
+      }
+    ],
+    "encoding": "indexedFeatureBlocks"
+  },
+  "seqLen": 2,
+  "featureDim": 2,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [
+            [
+              1
+            ],
+            [
+              2
+            ]
+          ],
+          "observationOffsets": [
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "rejected",
+    "code": "INVALID_ARGUMENT",
+    "reason": "INVALID_SOURCE_ENCODING_OFFSET"
+  }
+}
