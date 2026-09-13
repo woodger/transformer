@@ -27,6 +27,10 @@
 
 - Flight v13 action surface, legacy semantic/checkpoint/worker/query readers и
   compatibility aliases не принимаются active runtime.
+- Исполняемая legacy contract chain Flight v13 / Semantic v1 / Worker v12 /
+  checkpoint v6 / metrics v5 / query v1, её conformance-тесты и
+  неверсионированный `indexedFeatureBlocks` canonicalizer удалены. Historical
+  schemas, fixtures и ADR остаются только архивной документацией.
 
 ## [0.1.19] - 2026-09-07
 
