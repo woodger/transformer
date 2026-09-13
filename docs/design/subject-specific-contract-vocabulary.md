@@ -144,7 +144,9 @@ Consumer-owned target, component или resource identity.
 | Target reference | `{"targetIdentity":"probability","view":"observed"}` |
 | Resource reference | `{"resourceIdentity":"scale"}` |
 | Resource declaration | `{"identity":"scale","resourceClass":"PositiveScalarPerObservation"}` |
-| Initialization | `{"source":"publishedModel","modelRef":"mdl_..."}` |
+| Requested initialization | `{"source":"publishedModel","modelRef":"mdl_..."}` |
+| Resolved initialization | `{"source":"publishedModel","parentModelRef":"mdl_...","parentCheckpointSha256":"...",...}` |
+| Catalog initialization summary | `{"source":"publishedModel","parentModelRef":"mdl_..."}` |
 | Physical input encoding | `{"encoding":"indexedFeatureBlocks",...}` |
 | Transport capability | `{"protocol":"ArrowFlightDoAction",...}` |
 | Catalog consistency | `{"consistencyModel":"LiveHighWater",...}` |
@@ -161,6 +163,111 @@ storage и batching implementation.
 `resourceClasses`. Остальные primitive catalogs сохраняют предметные имена:
 `constraints`, `transformations`, `directOperators`, `auxiliaryOperators`,
 `aggregations` и `reductions`.
+
+## Три initialization documents
+
+Requested intent, resolved lineage и catalog projection являются разными
+документами. Они не используют один общий union только потому, что имеют поле
+`source`. Каждая форма получает отдельную schema identity, closed-object
+validation и собственное место применения.
+
+### `RequestedInitialization`
+
+Consumer передаёт только способ создания fit model:
+
+```json
+{
+  "source": "random"
+}
+```
+
+либо exact parent selector:
+
+```json
+{
+  "source": "publishedModel",
+  "modelRef": "mdl_0123456789abcdef0123456789abcdef"
+}
+```
+
+Документ принадлежит Flight v14 create request. `modelRef` ещё является
+запрошенной ссылкой: Consumer не передаёт checkpoint digest, parent/current D1
+или результат provider lookup. Service разрешает reference внутри
+authenticated owner scope и не сохраняет requested form как authoritative
+lineage.
+
+### `ResolvedInitialization`
+
+После owner-scoped lookup, проверки parent metadata и compatibility Transformer
+materialize-ит immutable lineage:
+
+```json
+{
+  "source": "publishedModel",
+  "parentModelRef": "mdl_0123456789abcdef0123456789abcdef",
+  "parentCheckpointSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "parentDataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parentTargetContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "targetContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "parentObjectiveSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "objectiveSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "parentModelContractSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "modelContractSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}
+```
+
+Random initialization имеет отдельный closed variant:
+
+```json
+{
+  "source": "random"
+}
+```
+
+Resolved document входит в resolved `jobConfigSha256`, Worker command,
+checkpoint metadata, fit-run record, Flight status/result и Model Catalog
+detail. Он является источником exact initialization lineage. Для strict
+published-model warm start parent/current digests обязаны удовлетворять
+действующей compatibility policy; наличие обеих сторон делает эту проверку и
+диагностику явной.
+
+Общее определение `ResolvedInitialization` публикуется в shared definitions
+checkpoint/model-generation v7 и повторно используется Flight, Worker,
+fit-run metrics и Model Catalog detail. Оно описывает checkpoint-owned lineage,
+а не Objective Language, поэтому не входит в `TargetContract`, `Objective`,
+`ModelContract` или D1 preimages и не принадлежит Semantic v2.
+
+### `CatalogInitializationSummary`
+
+Bounded list projection содержит только сведения, необходимые для отображения
+lineage без дублирования checkpoint metadata:
+
+```json
+{
+  "source": "publishedModel",
+  "parentModelRef": "mdl_0123456789abcdef0123456789abcdef"
+}
+```
+
+Для random generation:
+
+```json
+{
+  "source": "random"
+}
+```
+
+Summary принадлежит Model Catalog Query v2. Оно не принимается как input, не
+участвует в D1, job/recovery fencing или warm-start validation и не заменяет
+resolved lineage в detail. Model Catalog detail возвращает одновременно
+summary как часть model summary и полный `ResolvedInitialization`; Transformer
+проверяет, что summary является точной проекцией resolved document.
+
+Несмотря на одинаковые bytes random variants, `RequestedInitialization`,
+`ResolvedInitialization` и `CatalogInitializationSummary` остаются тремя
+разными contract types. Их schemas не ссылаются друг на друга и могут
+эволюционировать только в версии владеющего package.
 
 ## Пример semantic documents
 
@@ -420,16 +527,17 @@ Packages готовятся и проверяются в порядке зави
 
 1. `semantic/v2`: README semantics, closed schemas, language capabilities,
    positive/negative fixtures, literal JCS bytes, D1 golden vectors и manifest.
-2. `checkpoint/v7` и recovery v7: metadata schemas, integrity/fencing fixtures
-   и manifest.
+2. `checkpoint/v7` и recovery v7: shared `ResolvedInitialization`, metadata
+   schemas, integrity/fencing fixtures и manifest.
 3. `worker/v13`: command/result/capability schemas, recovery references и
    process fixtures.
 4. `metrics/v6` и `metrics/fit_run/v6`: records, OpenSearch templates и
    projection fixtures.
 5. `model_catalog/v2` и `training_telemetry/v2`: query schemas, capabilities,
-   pagination/error fixtures и manifests.
+   `CatalogInitializationSummary`, pagination/error fixtures и manifests.
 6. `flight/v14`: closed action surface, job documents, aggregate capabilities,
-   unchanged Arrow fixtures и cross-contract manifest.
+   `RequestedInitialization`, unchanged Arrow fixtures и cross-contract
+   manifest.
 
 Каждый package содержит собственный manifest с SHA-256 каждого нормативного
 файла. Inventory хранит byte-identical offline copy и независимо проверяет
@@ -442,6 +550,11 @@ schemas, references, JCS и D1 до реализации.
 - однозначные target/resource references, mixed-reference rejection и
   обязательный target `view`;
 - `resourceClass` lifecycle и sharing по resource identity;
+- отдельные requested, resolved и catalog-summary initialization schemas;
+- запрет `modelRef` в resolved/summary lineage, запрет parent/checkpoint/D1
+  fields в requested form и запрет полного lineage в catalog summary;
+- точная проекция `ResolvedInitialization` в
+  `CatalogInitializationSummary`;
 - byte-identical Python/TypeScript JCS и D1;
 - одинаковая математика v1/v2 при разных canonical bytes и digests;
 - digest change при перестановке slots/components или resource binding;
