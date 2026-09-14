@@ -11,4 +11,5 @@ venv/
 metrics_plots
 models
 recovery
+telemetry
 MR.md
