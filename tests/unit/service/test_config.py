@@ -6,6 +6,8 @@ import pytest
 
 from app.config import (
     CPU_WORKERS,
+    CUDA_TORCH_INTEROP_THREADS_DEFAULT,
+    CUDA_TORCH_INTRAOP_THREADS_DEFAULT,
     HOST_DEFAULT,
     PORT_DEFAULT,
     RETENTION_SECONDS,
@@ -30,6 +32,14 @@ def test_service_defaults_come_from_application_config(tmp_path):
     assert config.tls_ca_file is None
     assert config.tls_require_client_cert is False
     assert config.cpu_capacity == CPU_WORKERS
+    assert (
+        config.cuda_torch_intraop_threads
+        == CUDA_TORCH_INTRAOP_THREADS_DEFAULT
+    )
+    assert (
+        config.cuda_torch_interop_threads
+        == CUDA_TORCH_INTEROP_THREADS_DEFAULT
+    )
     assert config.retention_seconds == RETENTION_SECONDS
 
 def test_absent_tls_files_select_plaintext_transport(tmp_path):
@@ -63,11 +73,15 @@ def test_remaining_environment_and_cli_precedence():
     config = load_config(
         environ={
             "TRANSFORMER_MAX_ACTIVE_JOBS_PER_SUBJECT": "4",
+            "TRANSFORMER_CUDA_TORCH_INTRAOP_THREADS": "6",
+            "TRANSFORMER_CUDA_TORCH_INTEROP_THREADS": "2",
         },
         overrides={"host": "127.0.0.4", "port": 0},
     )
 
     assert config.max_active_jobs_per_subject == 4
+    assert config.cuda_torch_intraop_threads == 6
+    assert config.cuda_torch_interop_threads == 2
     assert config.host == "127.0.0.4"
     assert config.port == 0
     assert config.runtime_dir == os.path.join(
@@ -102,6 +116,8 @@ def test_config_rejects_legacy_bind_host_environment_variable():
         ("max_payload_bytes", math.nan),
         ("max_rows_per_payload", 1.5),
         ("ticket_ttl_seconds", True),
+        ("cuda_torch_intraop_threads", 0),
+        ("cuda_torch_interop_threads", -1),
         ("cancel_grace_seconds", math.inf),
     ],
 )

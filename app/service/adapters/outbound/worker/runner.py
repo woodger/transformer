@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
+from app.config import (
+    CUDA_TORCH_INTEROP_THREADS_ENV,
+    CUDA_TORCH_INTRAOP_THREADS_ENV,
+)
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.worker.v13 import (
     CONTRACT_VERSION,
@@ -77,6 +81,12 @@ class _RunnerConfig(Protocol):
 
     @property
     def cancel_grace_seconds(self) -> float: ...
+
+    @property
+    def cuda_torch_intraop_threads(self) -> int: ...
+
+    @property
+    def cuda_torch_interop_threads(self) -> int: ...
 
 
 class _RunnerLedger(JobRepository, Protocol):
@@ -218,6 +228,8 @@ class WorkerSubprocessRunner:
 
         environment = os.environ.copy()
         environment["PYTHONUNBUFFERED"] = "1"
+        environment.pop(CUDA_TORCH_INTRAOP_THREADS_ENV, None)
+        environment.pop(CUDA_TORCH_INTEROP_THREADS_ENV, None)
         if job.selected_device == "cuda":
             if not job.assigned_device_id:
                 raise WorkerSubprocessError(
@@ -225,6 +237,12 @@ class WorkerSubprocessRunner:
                     "GPU attempt has no assigned physical device",
                 )
             environment["CUDA_VISIBLE_DEVICES"] = job.assigned_device_id
+            environment[CUDA_TORCH_INTRAOP_THREADS_ENV] = str(
+                self.config.cuda_torch_intraop_threads
+            )
+            environment[CUDA_TORCH_INTEROP_THREADS_ENV] = str(
+                self.config.cuda_torch_interop_threads
+            )
         supervised_argv = [
             self._python,
             os.path.join(

@@ -238,6 +238,19 @@ Certificate и key должны задаваться вместе. Их полн
 требует CA file. Bearer authentication остаётся обязательной во всех transport
 modes.
 
+### CPU budget CUDA Worker-а
+
+| Переменная окружения | По умолчанию | Назначение |
+| --- | --- | --- |
+| `TRANSFORMER_CUDA_TORCH_INTRAOP_THREADS` | `8` | Число PyTorch intra-op threads одного CUDA Worker-а |
+| `TRANSFORMER_CUDA_TORCH_INTEROP_THREADS` | `1` | Число PyTorch inter-op threads одного CUDA Worker-а |
+
+Defaults принадлежат `app/config.py`. Service передаёт проверенные значения
+только CUDA Worker-процессу, а Worker применяет их один раз до загрузки model и
+training runtime. CPU attempts сохраняют собственные PyTorch defaults. Thread
+budget является operational configuration и не входит во Flight, Worker,
+checkpoint или model compatibility contracts.
+
 ### Квоты и целевые параметры interoperability
 
 | Переменная окружения | По умолчанию | Назначение |
