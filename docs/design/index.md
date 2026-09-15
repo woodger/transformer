@@ -14,4 +14,6 @@ contract и не заменяет ADR.
 
 ## Активные предложения
 
-Сейчас активных предложений нет.
+- [Упрощение публичной границы Inventory — Transformer](public-contract-simplification.md) —
+  пересмотр ownership, derived metadata и формы fit/predict, Catalog и
+  Training Telemetry contracts.
