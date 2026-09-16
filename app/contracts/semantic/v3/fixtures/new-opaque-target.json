@@ -1,0 +1,42 @@
+{
+  "fixtureId": "consumer-neutral.new-opaque-target.v3",
+  "tensorGeometry": {"seqLen": 2, "featureDim": 8},
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "ConsumerDefined.EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.consumer-event",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "ConsumerDefined.EventProbability"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "537ea6c1f23f9ab8a800e923712c3b9efafecda56bdaffd09b774314b80a4d94",
+    "objectiveSha256": "60b2cab84444ed81370605772405590afd21686010a92f445404a93f65afa1f6"
+  }
+}

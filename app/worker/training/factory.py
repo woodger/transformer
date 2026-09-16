@@ -1,11 +1,9 @@
 from collections.abc import Mapping
-from typing import cast
 
 import torch
 
-from app.contracts.semantic.v2 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.transformer import TransformerModel
-from app.worker.telemetry.paths import resolve_metrics_path
 from app.worker.training.run_config import (
     ModelConfig,
     TrainConfig,
@@ -24,8 +22,8 @@ def build_model(
 ) -> TransformerModel:
     model_config = _coerce_model_config(args_or_config)
     feat_dim = features_cpu.shape[2]
-    if model_config.to_manifest() != model_contract.model_config:
-        raise ValueError("model configuration differs from model contract")
+    if model_config.to_tuning() != model_contract.model_tuning:
+        raise ValueError("model configuration differs from model tuning")
     if (
         targets_cpu is not None
         and targets_cpu.shape[1] != model_contract.target_width
@@ -49,43 +47,22 @@ def build_trainer(
     model: torch.nn.Module,
     device: torch.device,
     model_config: ModelConfig | None = None,
-    data_contract: Mapping[str, object] | None = None,
     *,
-    metrics_path: str | None = None,
     model_contract: ModelContract,
+    model_definition_sha256: str,
     initialization: Mapping[str, object] | None = None,
 ) -> Trainer:
     train_config = _coerce_train_config(args_or_config)
     if model_config is None:
         model_config = _coerce_model_config(args_or_config)
-    if metrics_path is None:
-        metrics_name_value = cast(
-            object,
-            getattr(args_or_config, "metrics_name", None),
-        )
-        if metrics_name_value is not None and not isinstance(
-            metrics_name_value,
-            str,
-        ):
-            raise ValueError("metrics_name must be a string")
-        metrics_path = resolve_metrics_path(metrics_name_value)
-
     return Trainer(
         model=model,
         device=device,
         train_config=train_config,
         model_contract=model_contract,
-        metrics_path=metrics_path,
         context_mode=model_config.context_mode,
-        metrics_context={
-            "hidden": model_config.hidden,
-            "layers": model_config.layers,
-            "seq_len": model_config.seq_len,
-        },
         model_config=model_config,
-        data_contract=(
-            None if data_contract is None else dict(data_contract)
-        ),
+        model_definition_sha256=model_definition_sha256,
         initialization=initialization,
     )
 

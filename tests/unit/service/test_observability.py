@@ -9,8 +9,6 @@ import pytest
 
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
-    CONTRACT_NAME,
-    CONTRACT_VERSION,
 )
 from app.service.adapters.inbound.flight.documents import (
     encode_document,
@@ -23,7 +21,7 @@ from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
 from tests.support.authentication import StaticAccessTokenAuthenticator
-from tests.support.consumer_neutral import model_contract
+from tests.support.consumer_neutral import model_contract, semantic_digests
 
 
 class RecordingLogger:
@@ -50,8 +48,6 @@ def _call_options(token="secret"):
 
 def _action_body(request_id):
     return json.dumps({
-        "contract": CONTRACT_NAME,
-        "version": CONTRACT_VERSION,
         "requestId": request_id,
     }).encode("utf-8")
 
@@ -136,16 +132,15 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         model_config=None,
         training_config=None,
         data_contract=data_contract,
         model_contract=contract.to_document(),
-        semantic_digests=contract.digests("d" * 64),
+        semantic_digests=semantic_digests(contract, "d" * 64),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

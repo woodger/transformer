@@ -1,8 +1,0 @@
-{
-  "code": "RECOVERY_CHECKPOINT_INCOMPATIBLE",
-  "reason": "RECOVERY_FENCE_MISMATCH",
-  "layer": "inputManifest",
-  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "actualSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "message": "checkpoint input manifest does not match the durable job input"
-}

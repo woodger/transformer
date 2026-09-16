@@ -7,7 +7,6 @@ select = ["ANN", "B", "E4", "E7", "E9", "F", "I", "RUF022", "RUF043", "UP"]
 [tool.ruff.lint.per-file-ignores]
 "app/cli/options.py" = ["ANN401"]
 "app/cli/parsers/__init__.py" = ["ANN401"]
-"app/local/gmark.py" = ["ANN401"]
 "tests/**/*.py" = ["ANN"]
 
 [tool.ruff.lint.isort]
@@ -21,7 +20,6 @@ include = [
   "app/admin",
   "app/cli",
   "app/config.py",
-  "app/local",
   "app/project.py",
   "app/contracts",
   "app/main.py",
@@ -42,7 +40,6 @@ strict = [
   "app/admin",
   "app/cli",
   "app/config.py",
-  "app/local",
   "app/project.py",
   "app/contracts",
   "app/main.py",

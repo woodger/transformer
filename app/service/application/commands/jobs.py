@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
+from app.contracts.worker.v14.config import TrainConfig
 from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
@@ -83,6 +84,8 @@ class CreateJobAction:
             model: PublishedModelRecord | None,
         ) -> JobCreationPreparation:
             model_config = command.model_config
+            model_contract = command.model_contract
+            semantic_digests = command.semantic_digests
             resolved_model_ref = None
             initialization = None
             if command.operation == "predict":
@@ -93,11 +96,12 @@ class CreateJobAction:
                     )
                 model_config = verify_model_for_predict(
                     model,
-                    model_contract=command.model_contract,
-                    semantic_digests=command.semantic_digests,
+                    data_contract=command.data_contract,
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
+                model_contract = dict(model.model_contract)
+                semantic_digests = dict(model.semantic_digests)
             elif command.initialization_source == "random":
                 initialization = random_initialization()
             elif command.initialization_source == "publishedModel":
@@ -109,8 +113,14 @@ class CreateJobAction:
                 model_config = verify_parent_model_for_fit(
                     model,
                     model_config=model_config,
-                    model_contract=command.model_contract,
-                    semantic_digests=command.semantic_digests,
+                    model_contract=_required_document(
+                        command.model_contract,
+                        "fit model contract",
+                    ),
+                    semantic_digests=_required_document(
+                        command.semantic_digests,
+                        "fit semantic digests",
+                    ),
                 )
                 self._model_verifier.verify(model)
                 resolved_model_ref = model.model_ref
@@ -118,7 +128,10 @@ class CreateJobAction:
                     model.model_ref,
                     model.sha256,
                     model.semantic_digests,
-                    command.semantic_digests,
+                    _required_document(
+                        command.semantic_digests,
+                        "fit semantic digests",
+                    ),
                 )
             else:
                 raise ServiceError(
@@ -131,8 +144,16 @@ class CreateJobAction:
                     "job model configuration is unavailable",
                 )
 
+            if model_contract is None or semantic_digests is None:
+                raise ServiceError(
+                    ErrorCode.INTERNAL,
+                    "resolved model definition is unavailable",
+                )
+
             config_document = _job_config_document(
                 command,
+                model_contract=model_contract,
+                semantic_digests=semantic_digests,
                 initialization=initialization,
                 resolved_model_ref=resolved_model_ref,
             )
@@ -154,8 +175,8 @@ class CreateJobAction:
                 resolved_model_ref=resolved_model_ref,
                 source_encoding=dict(command.source_encoding),
                 data_contract=dict(command.data_contract),
-                model_contract=dict(command.model_contract),
-                semantic_digests=dict(command.semantic_digests),
+                model_contract=dict(model_contract),
+                semantic_digests=dict(semantic_digests),
                 job_config_sha256=config_digest,
                 limits=self.limits,
                 initialization=initialization,
@@ -165,6 +186,10 @@ class CreateJobAction:
                 model_config=model_config,
                 training_config=command.training_config,
                 resolved_model_ref=resolved_model_ref,
+                source_encoding=dict(command.source_encoding),
+                data_contract=dict(command.data_contract),
+                model_contract=dict(model_contract),
+                semantic_digests=dict(semantic_digests),
             )
 
         outcome = self.store.create(
@@ -194,6 +219,8 @@ class CreateJobAction:
 def _job_config_document(
     command: CreateJobCommand,
     *,
+    model_contract: JsonObject,
+    semantic_digests: JsonObject,
     initialization: JsonObject | None,
     resolved_model_ref: str | None,
 ) -> JsonObject:
@@ -202,14 +229,14 @@ def _job_config_document(
         "requestedDevice": (
             "gpu" if command.requested_device == "cuda" else command.requested_device
         ),
-        "sourceEncoding": dict(command.source_encoding),
+        "inputLayout": dict(command.source_encoding),
         "dataContractSha256": cast(
             str,
-            command.semantic_digests["dataContractSha256"],
+            semantic_digests["dataContractSha256"],
         ),
-        "modelContractSha256": cast(
+        "modelDefinitionSha256": cast(
             str,
-            command.semantic_digests["modelContractSha256"],
+            semantic_digests["modelDefinitionSha256"],
         ),
     }
     if command.operation == "predict":
@@ -217,7 +244,6 @@ def _job_config_document(
             raise AssertionError("predict model reference is unresolved")
         common.update({
             "resolvedModelRef": resolved_model_ref,
-            "predictionColumn": command.prediction_column,
         })
         return common
 
@@ -229,11 +255,37 @@ def _job_config_document(
         raise AssertionError("fit job configuration is unresolved")
     common.update({
         "modelLabel": command.model_label,
-        "trainingConfig": command.training_config.to_manifest(),
-        "diagnostics": command.training_config.diagnostics.to_document(),
+        "trainingConfig": _job_training_config(command.training_config),
+        "diagnostics": _job_diagnostics(command.training_config),
         "initialization": initialization,
     })
     return common
+
+
+def _job_training_config(training: TrainConfig | None) -> JsonObject:
+    if training is None:
+        raise AssertionError("fit training configuration is unresolved")
+    return {
+        "learningRate": training.lr,
+        "batchSize": training.batch_size,
+        "epochs": training.epochs,
+        "mixedPrecision": training.use_amp,
+        "weightDecay": training.weight_decay,
+        "selection": (
+            None if training.selection is None else training.selection.to_manifest()
+        ),
+        "seed": training.seed,
+        "deterministic": training.deterministic,
+    }
+
+
+def _job_diagnostics(training: TrainConfig | None) -> JsonObject:
+    if training is None:
+        raise AssertionError("fit diagnostics are unresolved")
+    document = training.diagnostics.to_document()
+    return {
+        "gradientInteractions": document["gradientInteractions"],
+    }
 
 
 class AcquireJobAction:
@@ -370,6 +422,12 @@ def _select_device(requested: str, cuda_available: bool) -> str:
     if decision.selected is None:
         raise ServiceError(ErrorCode.INTERNAL, "device selection failed")
     return decision.selected
+
+
+def _required_document(value: JsonObject | None, label: str) -> JsonObject:
+    if value is None:
+        raise ServiceError(ErrorCode.INVALID_ARGUMENT, f"{label} is unavailable")
+    return value
 
 
 __all__ = [

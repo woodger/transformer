@@ -50,10 +50,10 @@ class TrainingTelemetryCursorCodec:
         cursor: TrainingTelemetryCursor,
     ) -> str:
         gradient = cursor.operation == "gradientInteractions"
-        prefix = "ttg2." if gradient else "tte2."
+        prefix = "ttg3." if gradient else "tte3."
         payload = json.dumps(
             [
-                2,
+                3,
                 cursor.operation,
                 cursor.model_ref,
                 cursor.producing_run_id,
@@ -71,7 +71,7 @@ class TrainingTelemetryCursorCodec:
         ).encode("utf-8")
         signature = hmac.digest(
             self._key,
-            b"training-telemetry-v2\0"
+            b"training-telemetry-v3\0"
             + owner_subject.encode("utf-8")
             + b"\0"
             + payload,
@@ -93,7 +93,7 @@ class TrainingTelemetryCursorCodec:
         epoch: int | None,
         now: datetime,
     ) -> TrainingTelemetryCursor:
-        prefix = "ttg2." if operation == "gradientInteractions" else "tte2."
+        prefix = "ttg3." if operation == "gradientInteractions" else "tte3."
         try:
             if not token.startswith(prefix):
                 raise InvalidTrainingTelemetryCursor
@@ -109,7 +109,7 @@ class TrainingTelemetryCursorCodec:
             payload, signature = envelope[:-32], envelope[-32:]
             expected = hmac.digest(
                 self._key,
-                b"training-telemetry-v2\0"
+                b"training-telemetry-v3\0"
                 + owner_subject.encode("utf-8")
                 + b"\0"
                 + payload,
@@ -125,7 +125,7 @@ class TrainingTelemetryCursorCodec:
                 raise InvalidTrainingTelemetryCursor
             pair = _pair(values[8])
             if (
-                values[0] != 2
+                values[0] != 3
                 or values[1] != operation
                 or values[2] != model_ref
                 or values[3] != producing_run_id

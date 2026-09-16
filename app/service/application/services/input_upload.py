@@ -4,7 +4,11 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.contracts.flight.v14.source_encoding import feature_block_dimensions
+from app.contracts.flight.v15.source_encoding import feature_block_dimensions
+from app.contracts.worker.v14.constants import (
+    FIT_INPUT_SCHEMA_ID,
+    PREDICT_INPUT_SCHEMA_ID,
+)
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputPayloadReceipt,
@@ -72,6 +76,17 @@ class InputUploadLifecycle:
             raise not_found("job not found")
         if job.input_state != InputState.OPEN:
             raise failed_precondition("job no longer accepts inputs")
+
+        metadata = replace(
+            metadata,
+            schema_id=(
+                FIT_INPUT_SCHEMA_ID
+                if job.operation == "fit"
+                else PREDICT_INPUT_SCHEMA_ID
+            ),
+            input_kind=job.operation,
+            data_contract_sha256=job.data_contract_sha256,
+        )
         _match_upload(job, metadata)
         _verify_fence(job, metadata)
         decision = resolve_device(

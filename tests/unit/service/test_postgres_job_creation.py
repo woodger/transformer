@@ -6,13 +6,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v13.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
-from tests.support.consumer_neutral import model_contract
+from tests.support.consumer_neutral import model_contract, semantic_digests
 
 _JOB_ID = "00000000-0000-4000-8000-000000000001"
 _EXECUTION_ID = "00000000-0000-4000-8000-000000000002"
@@ -22,7 +22,7 @@ _MODEL_CONTRACT = model_contract(
     seq_len=2,
     feature_dim=1,
 )
-_SEMANTIC_DIGESTS = _MODEL_CONTRACT.digests("a" * 64)
+_SEMANTIC_DIGESTS = semantic_digests(_MODEL_CONTRACT, "a" * 64)
 
 
 def _database():
@@ -54,15 +54,11 @@ def _create_job(
         prediction_column="prediction",
         config_hash="b" * 64,
         source_encoding={
-            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 1},
+                {"windowRows": 1, "nativeRowWidth": 1},
             ],
         },
         data_contract={
-            "identity": "test.dataset",
-            "revision": 1,
-            "profile": "test.profile",
             "dataContractSha256": "a" * 64,
             "seqLen": 2,
             "featureDim": 1,
@@ -76,7 +72,11 @@ def _create_job(
             if operation == "fit"
             else _MODEL_REF
         ),
-        model_config=ModelConfig.from_manifest(_MODEL_CONTRACT.model_config),
+        model_config=ModelConfig.from_tuning(
+            _MODEL_CONTRACT.model_tuning,
+            seq_len=2,
+            feature_dim=1,
+        ),
         training_config=TrainConfig() if operation == "fit" else None,
         initialization=initialization,
         now=1.0,
@@ -154,11 +154,11 @@ def test_published_model_fit_keeps_resolved_parent_and_complete_lineage():
         ],
         "parentObjectiveSha256": _SEMANTIC_DIGESTS["objectiveSha256"],
         "objectiveSha256": _SEMANTIC_DIGESTS["objectiveSha256"],
-        "parentModelContractSha256": _SEMANTIC_DIGESTS[
-            "modelContractSha256"
+        "parentModelDefinitionSha256": _SEMANTIC_DIGESTS[
+            "modelDefinitionSha256"
         ],
-        "modelContractSha256": _SEMANTIC_DIGESTS[
-            "modelContractSha256"
+        "modelDefinitionSha256": _SEMANTIC_DIGESTS[
+            "modelDefinitionSha256"
         ],
     }
     database = _database()

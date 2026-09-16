@@ -30,4 +30,4 @@ deployment guides могут содержать краткий пример ил
   подготовку projection, настройку publisher-а и проверку доставки metrics.
 
 Quick start находится отдельно в [`getting-started.md`](../getting-started.md),
-а точный command tree и options — в [`cli/index.md`](../cli/index.md).
+а точный command tree и options показывает `transformer <command> --help`.

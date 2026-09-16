@@ -33,10 +33,10 @@ def published_model_initialization(
         "targetContractSha256": current_digests["targetContractSha256"],
         "parentObjectiveSha256": parent_digests["objectiveSha256"],
         "objectiveSha256": current_digests["objectiveSha256"],
-        "parentModelContractSha256": parent_digests[
-            "modelContractSha256"
+        "parentModelDefinitionSha256": parent_digests[
+            "modelDefinitionSha256"
         ],
-        "modelContractSha256": current_digests["modelContractSha256"],
+        "modelDefinitionSha256": current_digests["modelDefinitionSha256"],
     }
     return validate_initialization(initialization)
 
@@ -67,8 +67,8 @@ def validate_initialization(
         "targetContractSha256",
         "parentObjectiveSha256",
         "objectiveSha256",
-        "parentModelContractSha256",
-        "modelContractSha256",
+        "parentModelDefinitionSha256",
+        "modelDefinitionSha256",
     }
     if source != "publishedModel" or set(document) != published_model_fields:
         raise ValueError("model initialization is invalid")
@@ -108,13 +108,13 @@ def validate_initialization(
             document.get("objectiveSha256"),
             "objective digest",
         ),
-        "parentModelContractSha256": _digest(
-            document.get("parentModelContractSha256"),
-            "parent model contract digest",
+        "parentModelDefinitionSha256": _digest(
+            document.get("parentModelDefinitionSha256"),
+            "parent model definition digest",
         ),
-        "modelContractSha256": _digest(
-            document.get("modelContractSha256"),
-            "model contract digest",
+        "modelDefinitionSha256": _digest(
+            document.get("modelDefinitionSha256"),
+            "model definition digest",
         ),
     }
     return result

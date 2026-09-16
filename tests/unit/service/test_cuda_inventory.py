@@ -157,7 +157,7 @@ def test_inventory_probe_failure_keeps_cpu_service_startable():
     assert inventory.snapshot().cuda_capacity == 0
 
 
-def test_default_probe_selects_cuda_from_worker_v12_devices(
+def test_default_probe_selects_cuda_from_worker_devices(
     monkeypatch,
 ):
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)

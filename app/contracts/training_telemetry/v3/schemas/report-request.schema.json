@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v3/report-request.schema.json",
+  "title": "transformer.training-telemetry.v3.report request",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "modelRef", "pageSize", "cursor"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+    "pageSize": {"type": "integer", "minimum": 1, "maximum": 100},
+    "cursor": {"oneOf": [{"type": "null"}, {"$ref": "common.schema.json#/$defs/epochCursor"}]}
+  }
+}

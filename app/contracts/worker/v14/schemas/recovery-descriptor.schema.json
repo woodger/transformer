@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v14/recovery-descriptor.schema.json",
+  "title": "Transformer worker v14 recovery descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "jobId",
+    "generation",
+    "inputRevision",
+    "jobConfigSha256",
+    "semanticDigests",
+    "manifestSha256",
+    "checkpoint",
+    "progress"
+  ],
+  "properties": {
+    "format": {
+      "const": "transformer-recovery-v8"
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "inputRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "jobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "semanticDigests": {
+      "$ref": "common.schema.json#/$defs/semanticDigests"
+    },
+    "manifestSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "checkpoint": {
+      "$ref": "common.schema.json#/$defs/checkpointArtifact"
+    },
+    "progress": {
+      "$ref": "common.schema.json#/$defs/progress"
+    }
+  }
+}

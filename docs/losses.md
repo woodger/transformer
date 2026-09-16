@@ -1,53 +1,26 @@
-# Функция потерь
+# Objective and loss semantics
 
-> Тип: справочник. Текущая семантика model outputs и consumer-neutral
-> декларативного Objective.
+> Type: Reference. Numerical semantics of the Semantic v3 objective language.
 
-Нормативную модель задают
-[`semantic/v2`](../app/contracts/semantic/v2/README.md) и
-[`Flight v14`](../app/contracts/flight/v14/README.md). Consumer materializer
-передаёт self-contained ordered target contract и Objective. Transformer
-считает target identities непрозрачными: ни transformation, ни operator, ни
-private resource не выбираются по имени target.
+The normative document is [Semantic v3](../app/contracts/semantic/v3/README.md).
+This reference explains the formulas implemented by Transformer; it does not
+introduce target-specific behavior.
 
-## Target slots и model output
+## Target coordinates
 
-Каждый target slot независимо объявляет:
+Every ordered opaque target slot declares a loss-input transformation and a
+public-prediction transformation over one raw model coordinate. Supported
+transformations are `Identity`, `Tanh`, and `Sigmoid`. `y` and public
+predictions are finite Float32 at the Arrow boundary; intermediate tensor dtype
+is Transformer-owned.
 
-- opaque `identity`;
-- `observedConstraint` для входного `y`;
-- `lossInputTransformation` raw model coordinate;
-- `publicPredictionTransformation` той же raw coordinate.
-
-Runtime поддерживает constraints `Finite` и `ClosedInterval`, а также
-transformations `Identity`, `Tanh` и `Sigmoid`. На Arrow boundary `y` и public
-prediction имеют finite Float32. Внутренний tensor dtype остаётся деталью
-Transformer и может меняться при AMP.
-
-Model head выдаёт по одной raw coordinate на ordered target slot. Direct loss
-получает результат `lossInputTransformation`; prediction — результат
-`publicPredictionTransformation`. Поэтому direct operator не определяет public
-representation: например, `SmoothL1` может работать как с `Tanh`, так и с
-`Sigmoid` estimate.
-
-## Objective language v2
-
-Objective задаёт:
-
-- `WeightedSum` aggregation и `GlobalRowMean` reduction;
-- ровно один direct component для каждого target slot в том же порядке;
-- ноль или более auxiliary components;
-- положительный weight и стабильную identity каждого component;
-- typed role references на target identities и private resource identities;
-- отсортированные по ASCII abstract resource declarations.
-
-Все components активны с первого optimizer step. Training policy, device/AMP,
-checkpoint selection и diagnostics в Objective не входят. TargetContract,
-Objective и полный ModelContract имеют отдельные D1 digests.
+`observedConstraint` is omitted for finite values and explicit for a closed
+interval. The direct operator is stated by the matching direct component and
+is never inferred from target identity.
 
 ## Direct operators
 
-Для slot `T` используются явно связанные `LossEstimate<T>` и `Observed<T>`:
+For one target coordinate `T`:
 
 ```text
 SmoothL1:
@@ -61,61 +34,38 @@ LogMSE:
         - log(nonNegativeObserved[T] + 1e-6))²)
 ```
 
-`BinaryCrossEntropyWithLogits` требует `Identity` loss-input transformation и
-observed interval внутри `[0, 1]`. `LogMSE` требует положительный estimate,
-который в language v2 выражается `Sigmoid`, и неотрицательный observed target.
-Итоговая direct часть — сумма `weight × component mean`.
+`BinaryCrossEntropyWithLogits` requires identity loss input and observed values
+inside `[0, 1]`. `LogMSE` requires a sigmoid loss estimate and a non-negative
+closed observation interval. Every slot has exactly one direct component.
 
-## Private resources и auxiliary operators
+## Resources and auxiliary operators
 
-Language v2 поддерживает resource class `PositiveScalarPerObservation`. Это
-private differentiable model output, принадлежащий checkpoint. Его identity
-локальна Objective и позволяет нескольким operators использовать один и тот же
-resource; способ PyTorch parameterization, tensor layout и хранения остаётся
-внутренним устройством Transformer. Private values не входят в prediction.
-
-Каждый объявленный resource должен быть использован и иметь структурный путь к
-total loss через component с положительным weight и gradient-producing role.
-Нулевой gradient на отдельном batch не является нарушением. В текущем языке
-`GaussianNLL` обучает scale, а использование scale в
-`RiskAdjustedExpectedValue` намеренно выполняется через stop-gradient.
-
-`GaussianNLL` связывает location estimate, observed location одного slot и
-positive scale resource:
+`PositiveScalarPerObservation` is a private positive differentiable output.
+It is checkpoint-owned, may be shared through its opaque resource identity,
+and is not included in public prediction output. `GaussianNLL` supplies its
+gradient-producing path. `RiskAdjustedExpectedValue` deliberately consumes the
+scale through stop-gradient.
 
 ```text
-variance = scale² + 1e-6
-gaussianNll = mean(0.5 × (
-  (observedLocation - locationEstimate)² / variance + log(variance)
-))
+GaussianNLL:
+  variance = scale² + 1e-6
+  mean(0.5 * ((observed - location)² / variance + log(variance)))
+
+ExpectedValue:
+  -mean(positiveProbability - negativeProbability)
+
+RiskAdjustedExpectedValue:
+  delta = positiveProbability - negativeProbability
+  -mean(delta - riskPenalty * stopGradient(scale) * abs(delta))
 ```
 
-`ExpectedValue` связывает две разные public probability coordinates:
+`ExpectedValue` and `RiskAdjustedExpectedValue` may coexist. Component weights
+are positive. The language fixes global-row mean reduction and weighted-sum
+aggregation; they are not repeated in each objective document.
 
-```text
-delta = positiveOutcomeProbability - negativeOutcomeProbability
-expectedValueLoss = -mean(delta)
-```
+## Diagnostics
 
-`RiskAdjustedExpectedValue` дополнительно связывает uncertainty scale:
-
-```text
-delta = positiveOutcomeProbability - negativeOutcomeProbability
-risk = detach(uncertaintyScale) × abs(delta)
-riskAdjustedExpectedValueLoss = -mean(delta - riskPenalty × risk)
-```
-
-`ExpectedValue` и `RiskAdjustedExpectedValue` могут присутствовать одновременно
-как независимые weighted components. Role bindings, weights, parameters,
-resource declarations и sharing входят в Objective/model compatibility.
-
-## Selection и diagnostics
-
-Checkpoint selection является Transformer-owned training policy. Если она
-включена, score равен weighted sum global-row-mean direct losses; auxiliary
-components в score не входят.
-
-Gradient-interaction diagnostics являются отдельным best-effort наблюдением.
-Они используют стабильные component identities, а для direct components также
-opaque target identity и производный physical index. Diagnostics не выполняет
-optimizer step, не балансирует gradients и не меняет model compatibility.
+Selection is a Transformer-owned policy based on weighted direct losses.
+Gradient interactions are optional observations and do not alter gradients,
+weights, objective compatibility, or output layout. Their public projection is
+defined by Training Telemetry Query v3.

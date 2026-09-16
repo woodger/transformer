@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import cast
 
@@ -438,14 +439,9 @@ class InputLedgerSlice:
         *,
         client_execution_id: str,
         fencing_token: int,
-        payload_count: int,
-        total_chunks: int,
-        total_rows: int,
-        total_native_rows: tuple[int, ...],
-        range_count: int,
-        total_bytes: int,
+        expected_logical_rows: int | None,
         expected_manifest_sha256: str,
-        selected_device: str,
+        select_device: Callable[[str, str | None, str, int], str],
         now: float | None = None,
         connection: Session | None = None,
     ) -> tuple[RowMapping, bool]:
@@ -454,18 +450,9 @@ class InputLedgerSlice:
             "client_execution_id",
         )
         _positive_fence(fencing_token)
-        for value, name in (
-            (payload_count, "payload_count"),
-            (total_chunks, "total_chunks"),
-            (total_rows, "total_rows"),
-            (range_count, "range_count"),
-            (total_bytes, "total_bytes"),
-        ):
-            nonnegative(value, name)
-        for value in total_native_rows:
-            nonnegative(value, "total_native_rows")
+        if expected_logical_rows is not None:
+            nonnegative(expected_logical_rows, "expected_logical_rows")
         digest(expected_manifest_sha256, "manifest_sha256")
-        _validate_selected_device(selected_device)
         timestamp = timestamp_now(now)
         with self.sessions.write(connection) as session:
             job = session.scalar(
@@ -478,13 +465,11 @@ class InputLedgerSlice:
             _verify_fence(job, client_execution_id, fencing_token)
             if job.input_state == InputState.CLOSED.value:
                 exact = (
-                    job.payload_count == payload_count
-                    and job.total_chunks == total_chunks
-                    and job.total_rows == total_rows
-                    and tuple(job.total_native_rows) == total_native_rows
-                    and job.range_count == range_count
-                    and job.total_bytes == total_bytes
-                    and job.manifest_sha256 == expected_manifest_sha256
+                    job.manifest_sha256 == expected_manifest_sha256
+                    and (
+                        expected_logical_rows is None
+                        or job.total_rows == expected_logical_rows
+                    )
                 )
                 if not exact:
                     raise conflict("input was closed with a different manifest")
@@ -503,7 +488,7 @@ class InputLedgerSlice:
                 .where(JobInput.job_id == job_id)
                 .order_by(JobInput.ordinal)
             ))
-            if [row.ordinal for row in rows] != list(range(payload_count)):
+            if [row.ordinal for row in rows] != list(range(len(rows))):
                 raise failed_precondition(
                     "input ordinals must be contiguous from zero"
                 )
@@ -515,36 +500,42 @@ class InputLedgerSlice:
                 width=len(job.total_native_rows),
             )
             if (
-                len(rows) != payload_count
-                or actual_chunks != total_chunks
-                or actual_rows != total_rows
-                or actual_native_rows != total_native_rows
-                or actual_bytes != total_bytes
+                expected_logical_rows is not None
+                and actual_rows != expected_logical_rows
             ):
                 raise failed_precondition(
-                    "input close totals do not match committed inputs"
+                    "expectedLogicalRows does not match committed inputs"
                 )
+            range_count = _range_count(rows)
             _validate_complete_boundaries(rows, range_count)
             actual_manifest_sha256 = manifest_sha256(rows)
             if actual_manifest_sha256 != expected_manifest_sha256:
                 raise failed_precondition(
                     "manifestSha256 does not match committed inputs"
                 )
-            if job.operation == "fit" and total_rows == 0:
+            if job.operation == "fit" and actual_rows == 0:
                 raise ServiceError(
                     ErrorCode.EMPTY_INPUT,
                     "fit requires at least one input row",
                 )
 
+            selected_device = select_device(
+                job.requested_device,
+                job.selected_device,
+                job.operation,
+                actual_rows,
+            )
+            _validate_selected_device(selected_device)
+
             job.input_state = InputState.CLOSED.value
             job.input_closed_at = timestamp
             job.manifest_sha256 = actual_manifest_sha256
-            job.payload_count = payload_count
-            job.total_chunks = total_chunks
-            job.total_rows = total_rows
-            job.total_native_rows = list(total_native_rows)
+            job.payload_count = len(rows)
+            job.total_chunks = actual_chunks
+            job.total_rows = actual_rows
+            job.total_native_rows = list(actual_native_rows)
             job.range_count = range_count
-            job.total_bytes = total_bytes
+            job.total_bytes = actual_bytes
             _clear_input_wait(job)
             if job.execution_state == ExecutionState.WAITING_INPUT.value:
                 _queue_job(job, selected_device, session, timestamp)
@@ -637,6 +628,16 @@ def _validate_complete_boundaries(
         raise failed_precondition(
             "rangeCount does not match the dense transmitted range ordinals"
         )
+
+
+def _range_count(rows: list[JobInput]) -> int:
+    nonempty = [row for row in rows if row.chunks > 0]
+    if not nonempty:
+        return 0
+    last = nonempty[-1].last_range_ordinal
+    if last is None:
+        raise failed_precondition("input range boundary metadata is incomplete")
+    return last + 1
 
 
 def _validate_adjacent_boundaries(

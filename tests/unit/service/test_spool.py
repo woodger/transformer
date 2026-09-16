@@ -205,35 +205,6 @@ def test_preledger_cleanup_removes_only_temporary_artifacts(spool):
     assert spool.relative_path(temporary_path) in removed
 
 
-def test_startup_cleanup_removes_only_attempt_recovery_checkpoint_staging(spool):
-    first_job_id = str(uuid.uuid4())
-    second_job_id = str(uuid.uuid4())
-    first = spool.attempt_recovery_checkpoint_path(first_job_id, 1, 1)
-    second = spool.attempt_recovery_checkpoint_path(second_job_id, 2, 3)
-    final = spool.attempt_checkpoint_path(first_job_id, 1)
-    unrelated = os.path.join(
-        spool.attempt_directory(first_job_id, 1),
-        "checkpoints",
-        "notes.txt",
-    )
-    spool.atomic_write_bytes(first, b"first")
-    spool.atomic_write_bytes(second, b"second checkpoint")
-    spool.atomic_write_bytes(final, b"final")
-    spool.atomic_write_bytes(unrelated, b"notes")
-
-    removed, removed_bytes = spool.cleanup_recovery_checkpoint_staging()
-
-    assert removed == tuple(sorted((
-        spool.relative_path(first),
-        spool.relative_path(second),
-    )))
-    assert removed_bytes == len(b"first") + len(b"second checkpoint")
-    assert not os.path.exists(first)
-    assert not os.path.exists(second)
-    assert os.path.isfile(final)
-    assert os.path.isfile(unrelated)
-
-
 def test_paths_cannot_escape_runtime_directory_or_follow_external_symlink(spool, tmp_path):
     with pytest.raises(ValueError, match="traversal"):
         spool.absolute_path("../outside.arrow")

@@ -1,1 +1,0 @@
-"""Versioned contract tests."""

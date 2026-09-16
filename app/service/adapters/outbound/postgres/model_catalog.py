@@ -25,7 +25,7 @@ from app.service.application.ports.model_catalog import (
 )
 from app.service.domain.model import ModelLifecycleState
 
-_CURSOR_KEY_STATE = "model_catalog_cursor_hmac_v1"
+_CURSOR_KEY_STATE = "model_catalog_cursor_hmac_v3"
 
 
 class PostgresModelCatalogStore:

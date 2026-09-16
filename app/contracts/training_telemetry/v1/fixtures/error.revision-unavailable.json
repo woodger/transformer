@@ -1,6 +1,0 @@
-{
-  "code": "FAILED_PRECONDITION",
-  "reason": "TELEMETRY_QUERY_REVISION_UNAVAILABLE",
-  "requestedRevision": 2,
-  "message": "training telemetry query revision is unavailable"
-}

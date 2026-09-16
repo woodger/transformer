@@ -62,9 +62,8 @@ CUDA/AMP и serialization.
 Тесты группируются по проверяемой границе и владельцу:
 
 ```text
-tests/unit/{admin,cli,local,service,worker}
-tests/contract/consumer_neutral_v1
-tests/integration/{flight,worker_process}
+tests/unit/{admin,cli,service,worker}
+tests/integration/worker_process
 tests/architecture
 tests/support
 ```

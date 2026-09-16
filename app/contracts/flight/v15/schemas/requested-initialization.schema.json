@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v15/requested-initialization.schema.json",
+  "title": "Transformer Flight v15 requested initialization",
+  "$ref": "common.schema.json#/$defs/requestedInitialization"
+}

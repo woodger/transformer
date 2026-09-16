@@ -23,23 +23,6 @@ COMMAND_GROUPS = (
         ),
     ),
     (
-        "Training and inference",
-        (
-            ("fit", "Train from an Arrow file."),
-            ("predict", "Predict from an Arrow file."),
-            ("fit-stream", "Train from framed stdin."),
-            ("predict-stream", "Predict from framed stdin."),
-        ),
-    ),
-    (
-        "Diagnostics",
-        (("gmark", "Stress one CUDA GPU with synthetic training."),),
-    ),
-    (
-        "Metrics",
-        (("plot-metrics", "Render SVG charts from metrics JSONL."),),
-    ),
-    (
         "Database",
         (
             ("db migrations status", "Read-only schema migration state"),
@@ -53,17 +36,7 @@ COMMAND_HELP = {
     for _, commands in COMMAND_GROUPS
     for name, description in commands
 }
-COMMAND_EXAMPLES = {
-    "fit": """Examples:
-  transformer fit ./data/train.arrow --model-contract=./model-contract.json
-""",
-    "predict": """Examples:
-  transformer predict ./data/test.arrow --checkpoint=model.pth --output=/tmp/preds.arrow
-""",
-    "gmark": """Examples:
-  transformer gmark --duration=300 --use-amp
-""",
-}
+COMMAND_EXAMPLES: dict[str, str] = {}
 
 
 def format_root_help() -> str:

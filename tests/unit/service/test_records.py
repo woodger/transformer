@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v13.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -20,7 +20,7 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     RecoverableAttemptRecord,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.support.consumer_neutral import model_contract, semantic_digests
 
 MODEL_CONTRACT = model_contract(
     "single-regression",
@@ -28,7 +28,7 @@ MODEL_CONTRACT = model_contract(
     feature_dim=2,
 )
 MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
-SEMANTIC_DIGESTS = MODEL_CONTRACT.digests("a" * 64)
+SEMANTIC_DIGESTS = semantic_digests(MODEL_CONTRACT, "a" * 64)
 DATA_CONTRACT = {
     "identity": "test.dataset",
     "revision": 1,
@@ -61,9 +61,8 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         "initialization": {"source": "random"},
         "prediction_column": "out",
         "source_encoding": {
-            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         "model_config": ModelConfig(
@@ -130,9 +129,8 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             prediction_column="out",
             config_hash="b" * 64,
             source_encoding={
-                "encoding": "indexedFeatureBlocks",
                 "featureBlocks": [
-                    {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                    {"windowRows": 1, "nativeRowWidth": 2},
                 ],
             },
             data_contract=DATA_CONTRACT,

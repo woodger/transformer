@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v13.config import CheckpointSelectionConfig
+from app.contracts.worker.v14.config import CheckpointSelectionConfig
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -17,7 +17,11 @@ from app.worker.checkpoints.recovery import (
 from app.worker.data.tensors import TrainingBatch
 from app.worker.training.run_config import ModelConfig, TrainConfig
 from app.worker.training.trainer import Trainer
-from tests.support.consumer_neutral import data_contract, model_contract
+from tests.support.consumer_neutral import (
+    data_contract,
+    model_contract,
+    semantic_digests,
+)
 
 CONFIG_HASH = "a" * 64
 MANIFEST_HASH = "b" * 64
@@ -80,7 +84,10 @@ def _trainer(initial_state: dict) -> Trainer:
         train_config=train_config,
         model_contract=MODEL_CONTRACT,
         model_config=model_config,
-        data_contract=data_contract(MODEL_CONTRACT),
+        model_definition_sha256=semantic_digests(
+            MODEL_CONTRACT,
+            "d" * 64,
+        )["modelDefinitionSha256"],
         initialization={"source": "random"},
     )
 
@@ -90,7 +97,7 @@ def _manifest() -> dict:
         "jobId": "11111111-1111-4111-8111-111111111111",
         "dataContract": data_contract(MODEL_CONTRACT),
         "modelContract": MODEL_CONTRACT.to_document(),
-        "semanticDigests": MODEL_CONTRACT.digests("d" * 64),
+        "semanticDigests": semantic_digests(MODEL_CONTRACT, "d" * 64),
         "jobConfigSha256": CONFIG_HASH,
         "manifestSha256": MANIFEST_HASH,
     }

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v15/upload-metadata.schema.json",
+  "title": "Transformer Flight v15 DoPut application metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "mutationLease", "payloadId", "ordinal", "chunks", "logicalRows", "nativeRows"],
+  "properties": {
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "mutationLease": {"$ref": "common.schema.json#/$defs/mutationLease"},
+    "payloadId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "ordinal": {"type": "integer", "minimum": 0, "maximum": 99999},
+    "chunks": {"type": "integer", "minimum": 0},
+    "logicalRows": {"type": "integer", "minimum": 0},
+    "nativeRows": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0}}
+  }
+}

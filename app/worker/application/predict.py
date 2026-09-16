@@ -7,13 +7,14 @@ from itertools import chain
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v2 import ModelContract
-from app.contracts.worker.v13 import (
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v13.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -48,8 +49,10 @@ def execute_predict(
     input_stream: DurableInputStream,
     emitter: WorkerEventEmitter,
 ) -> JsonObject:
-    model_contract = _validated_model_contract(manifest)
-    model_config = ModelConfig.from_manifest(model_contract.model_config)
+    model_config = ModelConfig.from_manifest(
+        object_field(manifest, "modelConfig")
+    )
+    model_contract = _validated_model_contract(manifest, model_config)
     model_document = object_field(manifest, "model")
     checkpoint_path = validate_checkpoint_artifact(
         object_field(model_document, "checkpoint")
@@ -59,7 +62,6 @@ def execute_predict(
     )
     checkpoint = _load_checkpoint(checkpoint_path, device)
     metadata = object_document(checkpoint["metadata"], "checkpoint metadata")
-    data_contract = object_field(manifest, "dataContract")
     semantic_digests = object_field(manifest, "semanticDigests")
     if (
         metadata.get("modelContract") != model_contract.to_document()
@@ -115,8 +117,11 @@ def execute_predict(
                     model,
                     device,
                     model_config,
-                    data_contract=data_contract,
                     model_contract=model_contract,
+                    model_definition_sha256=string_field(
+                        semantic_digests,
+                        "modelDefinitionSha256",
+                    ),
                     initialization=object_field(metadata, "initialization"),
                 )
                 trainer.load_payload(checkpoint)
@@ -138,9 +143,9 @@ def execute_predict(
             "ordinal": integer_field(item, "ordinal"),
             "commitRevision": integer_field(item, "commitRevision"),
             "dataContractSha256": string_field(item, "dataContractSha256"),
-            "modelContractSha256": string_field(
+            "modelDefinitionSha256": string_field(
                 semantic_digests,
-                "modelContractSha256",
+                "modelDefinitionSha256",
             ),
             "rows": integer_field(item, "logicalRows"),
             "artifact": artifact_document(output_path),
@@ -157,15 +162,18 @@ def execute_predict(
     return result
 
 
-def _validated_model_contract(manifest: JsonObject) -> ModelContract:
+def _validated_model_contract(
+    manifest: JsonObject,
+    model_config: ModelConfig,
+) -> ModelContract:
     model_contract = ModelContract.from_document(
         object_field(manifest, "modelContract")
     )
-    expected = model_contract.digests(
-        string_field(
-            object_field(manifest, "dataContract"),
-            "dataContractSha256",
-        )
+    data_contract = object_field(manifest, "dataContract")
+    expected = resolved_semantic_digests(
+        model_contract,
+        string_field(data_contract, "dataContractSha256"),
+        model_config,
     )
     if expected != object_field(manifest, "semanticDigests"):
         raise ValueError("worker semantic digests do not match modelContract")

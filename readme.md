@@ -1,123 +1,60 @@
 # Transformer Arrow Flight service
 
-Python-сервис для обучения и инференса PyTorch Transformer на датасетах Apache
-Arrow. Он поддерживает локальный CLI и durable remote jobs по Arrow Flight.
+Transformer is a Python service for durable PyTorch training and prediction
+over authenticated Apache Arrow Flight jobs. Inventory is the browser-facing
+Consumer; Transformer owns model execution, storage, checkpoints, recovery,
+and telemetry projection.
 
-## Что есть в проекте
+## Current boundary
 
-- local CLI для обучения и prediction из Arrow IPC files;
-- stream CLI для framed Arrow payloads через standard streams;
-- single-instance Arrow Flight v14 service с durable streaming jobs,
-  PostgreSQL state, cross-system fencing, recovery, API tokens и GPU
-  scheduling;
-- versioned public Flight и internal worker contracts;
-- документацию текущего состояния, исторические decision records и политики
-  изменения в `docs/`.
+- Flight v15 is the only public job workflow.
+- Semantic v3 carries ordered opaque targets, explicit objective bindings, and
+  model tuning without Consumer-owned architecture literals.
+- Model Catalog Query v3 and Training Telemetry Query v3 are owner-scoped
+  read-only surfaces activated by Flight v15.
+- Worker v14, checkpoint/recovery v8, and metrics v7 are provider-internal.
+- `indexedFeatureBlocks` remains the compact Arrow input representation; its
+  logical reconstruction semantics are unchanged.
 
-## Режимы работы
+There is no local fit/predict CLI and no compatibility reader for earlier
+Flight, semantic, checkpoint, model-catalog, or telemetry revisions.
 
-| Режим | Вход | Результат | Основной справочник |
-| --- | --- | --- | --- |
-| File CLI | Arrow IPC file | checkpoint или Arrow prediction file | [CLI](./docs/cli/index.md) |
-| Stream CLI | framed Arrow stdin | checkpoint или framed Arrow stdout | [local Arrow protocol](./docs/local-arrow-protocol.md) |
-| Arrow Flight v14 | authenticated Flight RPC | durable jobs, model catalog, training telemetry, `modelRef` или output ticket | [Flight contract](./app/contracts/flight/v14/README.md) |
+## Install and inspect
 
-## Быстрый старт
-
-Из корня проекта создайте чистое virtual environment и установите
-зафиксированные зависимости:
+From the repository root:
 
 ```sh
 /usr/bin/python3 -m venv --clear .venv
 ./.venv/bin/python -m pip install -r requirements.txt
-./.venv/bin/python ./app/main.py --help
+./.venv/bin/python app/main.py --help
 ```
 
-Project `.venv` — единственное окружение приложения. Подходящую версию
-системного `/usr/bin/python3` обеспечивает владелец development или production
-среды; не устанавливайте application dependencies в system Python или
-user-site. Полный локальный сценарий находится в
-[начале работы](./docs/getting-started.md).
+The project interpreter is `.venv/bin/python`. Do not install application
+dependencies into the system Python or user site.
 
-## CLI команды
-
-Справка:
-
-```sh
-./.venv/bin/python ./app/main.py --help
-./.venv/bin/python ./app/main.py --version
-./.venv/bin/python ./app/main.py <command> --help
-```
-
-- [`fit INPUT` и `predict INPUT`](./docs/cli/index.md) — обучение и prediction
-  из Arrow files;
-- [`fit-stream` и `predict-stream`](./docs/local-arrow-protocol.md) —
-  обучение и prediction через framed standard streams;
-- [`gmark`](./docs/cli/index.md#gpu-stress-test) — CUDA training, AMP и
-  integrity stress test;
-- [`plot-metrics METRICS_FILE`](./docs/training-runtime.md) — SVG-графики по
-  training metrics JSONL;
-- [`flight serve`](./docs/operations/flight-service.md) — durable Arrow Flight job
-  service;
-- [`auth tokens issue|list|revoke`](./docs/operations/api-access-tokens.md) —
-  lifecycle API access tokens;
-- [`models list|delete`](./docs/operations/published-models.md) — lifecycle
-  опубликованных model generations;
-- [`db migrations`](./docs/operations/database-migrations.md) — schema
-  PostgreSQL.
-
-Точные options, defaults, aliases и side effects описывает help leaf-команды;
-поведение local commands и paths — [справочник CLI](./docs/cli/index.md).
-
-## Документация
-
-- [Начало работы](./docs/getting-started.md)
-- [Справочник CLI](./docs/cli/index.md)
-- [Локальный Arrow и stream contract](./docs/local-arrow-protocol.md)
-- [Training runtime и checkpoint](./docs/training-runtime.md)
-- [Функция потерь](./docs/losses.md)
-- [Consumer-neutral semantic contract v2](./app/contracts/semantic/v2/README.md)
-- [Arrow Flight v14 contract](./app/contracts/flight/v14/README.md)
-- [Model Catalog Query v2](./app/contracts/model_catalog/v2/README.md)
-- [Training Telemetry Query v2](./app/contracts/training_telemetry/v2/README.md)
-- [Worker process contract v13](./app/contracts/worker/v13/README.md)
-- [Checkpoint/recovery contract v7](./app/contracts/checkpoint/v7/README.md)
-- [Training metrics contract v6](./app/contracts/metrics/v6/README.md)
-- [Аутентификация Flight](./docs/authentication.md)
-- [Операционные руководства](./docs/operations/index.md)
-- [Flight runbook](./docs/operations/flight-service.md)
-- [Развёртывание через systemd](./docs/deployment/systemd.md)
-- [Доставка training metrics в OpenSearch](./docs/deployment/opensearch.md)
-- [Архитектура Transformer](./docs/architecture.md)
-- [Активные проектные предложения](./docs/design/index.md)
-- [Журнал архитектурных решений](./docs/adr/index.md)
-- [Политики проекта](./docs/policy/index.md)
-
-## Структура проекта
+## Commands
 
 ```text
-app/main.py          # тонкий CLI entrypoint
-app/config.py        # единый источник встроенных operational defaults
-app/cli/             # parser, help formatting и command-group parsers
-app/local/           # локальные file/stream commands и GPU diagnostics
-app/contracts/       # semantic v2, Flight v14, model catalog/telemetry queries, worker/checkpoint/metrics
-app/service/         # domain/application, Flight/outbound adapters, bootstrap
-app/worker/          # Arrow/Torch model, training, checkpoints и process root
-app/admin/           # auth/database CLI и composition roots
-app/project.py       # identity и путь корня проекта
-docs/                # пользовательская документация, ADR и политики
-recovery/            # runtime-created persistent fit inputs/checkpoints
-tests/               # unit, contract, integration и architecture tests
+flight serve
+auth tokens issue|list|revoke
+models list|delete
+db migrations status|apply|rollback
 ```
 
-## Развертывание
+`flight serve` runs the remote service. The other commands are local
+operational commands for database-backed access tokens, published generations,
+and Alembic state. Exact options come from `transformer <command> --help`.
 
-Production-запуск на Fedora через systemd описан в
-[docs/deployment/systemd.md](./docs/deployment/systemd.md). Schema PostgreSQL,
-tokens и published models управляются по
-[операционным руководствам](./docs/operations/index.md), а recovery, storage
-lifecycle и TLS/mTLS описаны в [Flight runbook](./docs/operations/flight-service.md).
+## Documentation
 
-Bearer authentication обязательна при любом transport. Полная пара
-`--tls-cert-file`/`--tls-key-file` включает TLS; без неё endpoint использует
-plaintext, поэтому не открывайте его в недоверенную сеть.
+- [Flight v15](./app/contracts/flight/v15/README.md)
+- [Semantic v3](./app/contracts/semantic/v3/README.md)
+- [Model Catalog Query v3](./app/contracts/model_catalog/v3/README.md)
+- [Training Telemetry Query v3](./app/contracts/training_telemetry/v3/README.md)
+- [Worker v14](./app/contracts/worker/v14/README.md)
+- [Checkpoint/recovery v8](./app/contracts/checkpoint/v8/README.md)
+- [Architecture](./docs/architecture.md)
+- [Consumer integration](./docs/consumer-flight-integration.md)
+- [Flight operations](./docs/operations/flight-service.md)
+- [Deployment](./docs/deployment/systemd.md)
+- [Architecture decisions](./docs/adr/index.md)

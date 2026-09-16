@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v15/status.schema.json",
+  "title": "transformer.v15.job.status request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "jobId"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"}
+  }
+}

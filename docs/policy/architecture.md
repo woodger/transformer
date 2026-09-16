@@ -35,9 +35,7 @@ resources.
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
 - service/worker обмениваются данными только через
-  `app/contracts/worker/v13`;
-- local CLI может напрямую использовать worker-код, потому что это один
-  локальный execution path, а не Flight service boundary.
+  `app/contracts/worker/v14`.
 
 Import graph не содержит циклов. Environment, connections, CUDA
 initialization и filesystem mutation не выполняются при import. Эти правила
@@ -78,8 +76,8 @@ validation и wiring остаются у соответствующих runtime-
 зависят от типов внешнего provider SDK или runtime library; преобразование в
 provider-owned representation выполняет infrastructure adapter на границе.
 
-Generic `app/commands` не вводится как второй владелец рядом с local CLI и
-application use cases.
+Generic `app/commands` не вводится как второй владелец рядом с application use
+cases.
 
 ## Размещение нового кода
 
@@ -104,7 +102,6 @@ application use cases.
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в
   `app/worker/`;
 - worker runtime observations, JSONL и plots — `app/worker/telemetry/`;
-- local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;
 - runtime wiring — composition root конкретного процесса.
 

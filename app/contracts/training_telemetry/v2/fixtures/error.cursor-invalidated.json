@@ -1,7 +1,0 @@
-{
-  "code": "FAILED_PRECONDITION",
-  "reason": "TELEMETRY_CURSOR_INVALIDATED",
-  "path": "/cursor",
-  "restartRequired": true,
-  "message": "training telemetry cursor belongs to a previous service instance"
-}

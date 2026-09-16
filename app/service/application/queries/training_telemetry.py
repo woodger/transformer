@@ -84,6 +84,7 @@ class _RetainedReport:
     anchors: tuple[JsonObject, ...]
     health_totals: JsonObject
     gradient_summary: JsonObject
+    components: tuple[_Component, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,16 +230,21 @@ class GetTrainingTelemetryReport:
             state="available",
             producing_run_id=report.producing_run_id,
             semantic_digests=dict(report.semantic_digests),
+            layout=_report_layout(report.components),
             coverage={
                 "completedEpochs": len(report.epochs),
-                "firstEpoch": 1,
-                "lastEpoch": len(report.epochs),
             },
             selection=dict(report.selection),
-            anchors=tuple(dict(item) for item in report.anchors),
+            anchors=tuple(
+                _compact_anchor(item, report.components)
+                for item in report.anchors
+            ),
             health_totals=dict(report.health_totals),
             gradient_interactions=dict(report.gradient_summary),
-            epoch_items=tuple(dict(item) for item in page),
+            epoch_items=tuple(
+                _compact_epoch(item, report.components)
+                for item in page
+            ),
             next_cursor=next_cursor,
             cursor_expires_at=cursor_expires_at,
         )
@@ -480,6 +486,7 @@ def _retained_report(report: _ValidatedReport) -> _RetainedReport:
         anchors=report.anchors,
         health_totals=report.health_totals,
         gradient_summary=report.gradient_summary,
+        components=report.components,
     )
 
 
@@ -495,6 +502,7 @@ def _report_snapshot_projection(report: _RetainedReport) -> JsonValue:
         "anchors": list(report.anchors),
         "healthTotals": report.health_totals,
         "gradientInteractions": report.gradient_summary,
+        "layout": _report_layout(report.components),
     }
 
 
@@ -510,6 +518,85 @@ def _gradient_snapshot_projection(
         "components": list(snapshot.components),
         "pairs": list(snapshot.pairs),
     }
+
+
+def _report_layout(components: Sequence[_Component]) -> JsonObject:
+    direct = [component for component in components if component.target_index is not None]
+    auxiliary = [component for component in components if component.target_index is None]
+    return {
+        "targetIdentities": [
+            cast(str, component.target_identity)
+            for component in direct
+        ],
+        "directComponents": [
+            {
+                "identity": component.identity,
+                "operator": component.operator,
+            }
+            for component in direct
+        ],
+        "auxiliaryComponents": [
+            {
+                "identity": component.identity,
+                "operator": component.operator,
+            }
+            for component in auxiliary
+        ],
+    }
+
+
+def _compact_epoch(
+    epoch: Mapping[str, object],
+    components: Sequence[_Component],
+) -> JsonObject:
+    direct_count = sum(component.target_index is not None for component in components)
+    direct_losses = _sequence(epoch, "directLosses")
+    auxiliary_losses = _sequence(epoch, "auxiliaryLosses")
+    target_metrics = _sequence(epoch, "targetMetrics")
+    if (
+        len(direct_losses) != direct_count
+        or len(auxiliary_losses) != len(components) - direct_count
+        or len(target_metrics) != direct_count
+    ):
+        _integrity("/epochs", "epoch layout differs from report layout")
+    return {
+        "epoch": _integer(epoch, "epoch"),
+        "globalStep": _integer(epoch, "globalStep"),
+        "attempt": _integer(epoch, "attempt"),
+        "totalLoss": _number(epoch, "totalLoss"),
+        "selectionScore": _optional_number(epoch, "selectionScore"),
+        "directLosses": [
+            _number(cast(Mapping[str, object], item), "value")
+            for item in direct_losses
+        ],
+        "auxiliaryLosses": [
+            _number(cast(Mapping[str, object], item), "value")
+            for item in auxiliary_losses
+        ],
+        "targetMetrics": [
+            {
+                "mae": _number(cast(Mapping[str, object], item), "mae"),
+                "rmse": _number(cast(Mapping[str, object], item), "rmse"),
+            }
+            for item in target_metrics
+        ],
+        "health": dict(cast(JsonObject, epoch["health"])),
+        "gradientInteractionsCollected": bool(
+            epoch["gradientInteractionsCollected"]
+        ),
+    }
+
+
+def _compact_anchor(
+    anchor: Mapping[str, object],
+    components: Sequence[_Component],
+) -> JsonObject:
+    compact = _compact_epoch(anchor, components)
+    roles = _sequence(anchor, "roles")
+    if not all(isinstance(role, str) for role in roles):
+        _integrity("/roles", "anchor roles are invalid")
+    compact["roles"] = cast(list[JsonValue], list(roles))
+    return compact
 
 
 def _visible_model(
@@ -887,7 +974,13 @@ def _model_layout(
     targets = tuple(_string(cast(Mapping[str, object], slot), "identity") for slot in slot_values)
     objective = _mapping(contract, "objective")
     direct_values = _sequence(objective, "directComponents")
-    auxiliary_values = _sequence(objective, "auxiliaryComponents")
+    raw_auxiliary = objective.get("auxiliaryComponents", ())
+    if not isinstance(raw_auxiliary, Sequence) or isinstance(
+        raw_auxiliary,
+        (str, bytes),
+    ):
+        _integrity("/objective/auxiliaryComponents", "objective array is invalid")
+    auxiliary_values = cast(Sequence[object], raw_auxiliary)
     direct = tuple(
         _Component(
             identity=_string(cast(Mapping[str, object], item), "identity"),
@@ -1161,6 +1254,13 @@ def _number(document: Mapping[str, object], field: str) -> float:
     if not math.isfinite(result):
         _integrity(f"/{field}", "telemetry number is not finite")
     return result
+
+
+def _optional_number(document: Mapping[str, object], field: str) -> float | None:
+    value = document.get(field)
+    if value is None:
+        return None
+    return _number(document, field)
 
 
 def _timestamp(value: datetime) -> str:

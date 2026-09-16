@@ -1,8 +1,0 @@
-{
-  "contract": "transformer-training-telemetry",
-  "revision": 2,
-  "requestId": "55555555-5555-4555-8555-555555555555",
-  "state": "unavailable",
-  "modelRef": "mdl_77777777777777777777777777777777",
-  "reason": "RETENTION_EXPIRED"
-}

@@ -474,40 +474,6 @@ class Spool:
                     removed.append(self.relative_path(candidate))
         return tuple(sorted(set(removed)))
 
-    def cleanup_recovery_checkpoint_staging(
-        self,
-    ) -> tuple[tuple[str, ...], int]:
-        """Remove crash-left Worker recovery candidates at startup.
-
-        The caller must hold the runtime-directory process lock and terminate
-        recovered Worker process groups before this pass.  Registered recovery
-        generations live in the independent recovery store, so files matching
-        this attempt-local layout are publication staging only.
-        """
-        removed: list[str] = []
-        removed_bytes = 0
-        if not os.path.isdir(self.jobs_dir):
-            return (), 0
-        for root, _, files in os.walk(self.jobs_dir):
-            for name in files:
-                candidate = os.path.join(root, name)
-                if (
-                    os.path.islink(candidate)
-                    or not _is_attempt_recovery_checkpoint(
-                        candidate,
-                        self.jobs_dir,
-                    )
-                ):
-                    continue
-                try:
-                    byte_count = os.path.getsize(candidate)
-                except FileNotFoundError:
-                    continue
-                if self.remove(candidate):
-                    removed.append(self.relative_path(candidate))
-                    removed_bytes += byte_count
-        return tuple(sorted(set(removed))), removed_bytes
-
     def reconcile(
         self,
         referenced_paths: Sequence[str] | set[str],
@@ -698,28 +664,6 @@ def _is_attempt_checkpoint(path: str, jobs_dir: str) -> bool:
         and parts[2].isdigit()
         and int(parts[2]) > 0
         and parts[3] == "checkpoint.pth"
-    )
-
-
-def _is_attempt_recovery_checkpoint(path: str, jobs_dir: str) -> bool:
-    relative = os.path.relpath(path, jobs_dir).replace(os.sep, "/")
-    parts = relative.split("/")
-    if len(parts) != 5 or parts[1] != "attempts" or parts[3] != "checkpoints":
-        return False
-    try:
-        _uuid_component(parts[0], "job_id")
-    except ValueError:
-        return False
-    attempt = parts[2]
-    filename = parts[4]
-    generation = filename[:-4] if filename.endswith(".pth") else ""
-    return (
-        attempt.isdigit()
-        and int(attempt) > 0
-        and str(int(attempt)) == attempt
-        and generation.isdigit()
-        and int(generation) > 0
-        and str(int(generation)) == generation
     )
 
 

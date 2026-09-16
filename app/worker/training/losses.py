@@ -7,7 +7,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v2 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -312,13 +312,15 @@ def _auxiliary_loss(
 
 
 def _target_index(value: object, indices: Mapping[str, int]) -> int:
-    reference = cast(Mapping[str, object], value)
-    return indices[str(reference["targetIdentity"])]
+    if not isinstance(value, str):
+        raise ValueError("target role must be an opaque target identity")
+    return indices[value]
 
 
 def _resource_index(value: object, indices: Mapping[str, int]) -> int:
-    reference = cast(Mapping[str, object], value)
-    return indices[str(reference["resourceIdentity"])]
+    if not isinstance(value, str):
+        raise ValueError("resource role must be an opaque resource identity")
+    return indices[value]
 
 
 def _number(value: object, label: str) -> float:

@@ -1,35 +1,22 @@
 from typing import cast
 
-import pyarrow
-
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v2 import (
+from app.contracts.model_catalog.v3 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
-    catalog_capabilities,
     validate_catalog_document,
-)
-from app.contracts.semantic.v2 import semantic_capabilities
-from app.contracts.training_telemetry.v2 import training_telemetry_capabilities
-from app.contracts.worker.v13.constants import (
-    CHECKPOINT_FORMAT,
-    CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
-    RECOVERY_FORMAT,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    CONTRACT_VERSION,
-    CREATE_ACTION,
-    FIT_SCHEMA_ID,
+    FIT_CREATE_ACTION,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
     OUTPUTS_LIST_ACTION,
-    PREDICT_SCHEMA_ID,
-    PREDICTION_SCHEMA_ID,
+    PREDICT_CREATE_ACTION,
     STATUS_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
@@ -152,7 +139,6 @@ from app.service.application.services.training_telemetry_snapshot import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
-from app.version import __version__
 
 
 class JobCoordinator:
@@ -200,7 +186,7 @@ class JobCoordinator:
         elif action == HEALTH_ACTION:
             fields = cast(RequestIdFields, request)
             result = self.health(fields["request_id"])
-        elif action == CREATE_ACTION:
+        elif action in (FIT_CREATE_ACTION, PREDICT_CREATE_ACTION):
             fields = cast(CreateRequestFields, request)
             result = present_job_created(
                 self._create_job.create(
@@ -400,59 +386,18 @@ class JobCoordinator:
         inventory = capabilities.device_inventory
         return response_document(
             request_id,
-            protocolVersions=[CONTRACT_VERSION],
-            service={
-                "name": "transformer-flight",
-                "version": __version__,
-                "pyarrowVersion": str(vars(pyarrow)["__version__"]),
-                "torchVersion": inventory.torch_version,
-            },
-            schemaIds={
-                "fitInput": FIT_SCHEMA_ID,
-                "predictInput": PREDICT_SCHEMA_ID,
-                "predictionOutput": PREDICTION_SCHEMA_ID,
-            },
-            sourceEncodings=["indexedFeatureBlocks"],
-            workerProtocolVersion=WORKER_CONTRACT_VERSION,
-            checkpointFormat=CHECKPOINT_FORMAT,
-            recoveryFormat=RECOVERY_FORMAT,
-            metricsFormats=[
-                "transformer.fit-run-summary.v6",
-                "transformer.training-metrics.v6",
-            ],
-            semantic=semantic_capabilities(),
-            modelCatalog=catalog_capabilities(),
-            trainingTelemetry=training_telemetry_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
                 "gpu": {
                     "available": inventory.cuda_capacity > 0,
-                    "deviceCount": inventory.device_count,
-                    "quarantinedCount": inventory.quarantined_count,
                 },
             },
-            queue={
-                "cpuCapacity": capabilities.cpu_capacity,
-                "gpuCapacity": inventory.cuda_capacity,
-                "singleInstance": True,
-            },
-            supportedOperations=["fit", "predict"],
-            fitInitializations=[
-                "publishedModel",
-                "random",
-            ],
-            features={
-                "doExchange": False,
-                "pollFlightInfo": False,
-                "durableStreamingInput": True,
-                "clientGeneratedJobId": True,
-                "crossSystemFencing": True,
-                "revisionPagination": True,
-                "resumableFit": True,
-                "recoveryBoundary": "globalEpoch",
-                "deviceAwareGpu": True,
-                "structuredErrorDetails": True,
+            queries={
+                "modelCatalog": True,
+                "trainingTelemetry": (
+                    self._get_training_telemetry_report is not None
+                ),
             },
         )
 
@@ -474,7 +419,6 @@ class JobCoordinator:
                 "runtime": {"freeBytes": health.runtime_storage.free},
                 "recovery": {"freeBytes": health.recovery_storage.free},
             },
-            metrics=health.metrics,
         )
 
     def set_draining(self, value: bool = True) -> None:
@@ -499,7 +443,6 @@ def _create_command(
     request: CreateRequestFields,
     document: JsonObject,
 ) -> CreateJobCommand:
-    wire_model_selector = request.get("model_selector")
     return CreateJobCommand(
         owner_subject=owner,
         request_id=request["request_id"],
@@ -509,21 +452,20 @@ def _create_command(
         client_execution_id=request["client_execution_id"],
         operation=request["operation"],
         requested_device=device_from_api(request["device"]),
-        prediction_column=request["prediction_column"],
+        prediction_column="prediction",
         source_encoding=dict(request["source_encoding"]),
-        data_contract=cast(JsonObject, dict(request["data_contract"])),
-        model_contract=dict(request["model_contract"]),
-        semantic_digests=dict(request["semantic_digests"]),
-        model_label=request.get("model_label"),
-        model_selector=(
+        data_contract=dict(request["data_contract"]),
+        model_contract=(
             None
-            if wire_model_selector is None
-            else (
-                "alias"
-                if wire_model_selector == "modelAlias"
-                else "reference"
-            )
+            if request["model_contract"] is None
+            else dict(request["model_contract"])
         ),
+        semantic_digests=(
+            None
+            if request["semantic_digests"] is None
+            else dict(request["semantic_digests"])
+        ),
+        model_label=request.get("model_label"),
         model_ref=request.get("model_ref"),
         model_config=request.get("model_config"),
         training_config=request.get("train_config"),
@@ -561,12 +503,7 @@ def _close_command(
         job_id=request["job_id"],
         client_execution_id=request["client_execution_id"],
         fencing_token=request["fencing_token"],
-        payload_count=request["payload_count"],
-        total_chunks=request["total_chunks"],
-        total_rows=request["total_rows"],
-        total_native_rows=tuple(request["total_native_rows"]),
-        range_count=request["range_count"],
-        total_bytes=request["total_bytes"],
+        expected_logical_rows=request["expected_logical_rows"],
         manifest_sha256=request["manifest_sha256"],
     )
 

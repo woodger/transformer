@@ -141,7 +141,7 @@ def _add_model_parsers(subparsers: SubparserTarget) -> None:
     delete.add_argument(
         "model_ref",
         metavar="MODEL_REF",
-        help="Exact published model reference; aliases are not accepted.",
+        help="Exact published model reference.",
     )
     delete.set_defaults(data=None, metrics_name=None, deleted=False)
 

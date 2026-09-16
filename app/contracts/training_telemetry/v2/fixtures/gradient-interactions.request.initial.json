@@ -1,9 +1,0 @@
-{
-  "contract": "transformer-training-telemetry",
-  "revision": 2,
-  "requestId": "22222222-2222-4222-8222-222222222222",
-  "modelRef": "mdl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "epoch": 2,
-  "pageSize": 8,
-  "cursor": null
-}

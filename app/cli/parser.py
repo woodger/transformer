@@ -4,8 +4,6 @@ from typing import TypeVar, overload
 
 from app.cli.formatting import HelpFormatter, format_root_help
 from app.cli.parsers.admin import add_admin_parsers
-from app.cli.parsers.diagnostics import add_diagnostic_parsers
-from app.cli.parsers.local import add_local_parsers
 from app.cli.parsers.service import add_service_parsers
 from app.version import __version__
 
@@ -74,8 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
         title="commands",
         metavar="COMMAND",
     )
-    add_local_parsers(subparsers)
-    add_diagnostic_parsers(subparsers)
     add_service_parsers(subparsers)
     add_admin_parsers(subparsers)
     return parser

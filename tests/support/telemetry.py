@@ -4,17 +4,17 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.contracts.metrics.fit_run.v6 import build_run_summary
-from app.contracts.metrics.v6 import (
+from app.contracts.metrics.fit_run.v7 import build_run_summary
+from app.contracts.metrics.v7 import (
     build_training_record,
 )
-from app.contracts.worker.v13 import CHECKPOINT_FORMAT
-from app.contracts.worker.v13.config import TrainConfig
-from tests.support.consumer_neutral import model_contract
+from app.contracts.worker.v14 import CHECKPOINT_FORMAT
+from app.contracts.worker.v14.config import TrainConfig
+from tests.support.consumer_neutral import model_contract, semantic_digests
 
 DATA_CONTRACT_SHA256 = "d" * 64
 MODEL_CONTRACT = model_contract("single-regression")
-SEMANTIC_DIGESTS = MODEL_CONTRACT.digests(DATA_CONTRACT_SHA256)
+SEMANTIC_DIGESTS = semantic_digests(MODEL_CONTRACT, DATA_CONTRACT_SHA256)
 TARGET = MODEL_CONTRACT.target_identities[0]
 DIRECT_COMPONENT = MODEL_CONTRACT.direct_components[0]
 

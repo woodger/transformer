@@ -1,0 +1,16 @@
+{
+  "contract": "transformer-consumer-neutral-fixtures",
+  "version": 3,
+  "files": [
+    {"path": "d1_sha256.mjs", "sha256": "675008c1e541d666a9420ee958a58368a4b58fa947d251a76b83d5bdaa0f504d"},
+    {"path": "jcs.mjs", "sha256": "2207a454ceeeec9130e7aaf7dca17752da48897c3ee18f29e1037dbb0c1d6012"},
+    {"path": "language-capabilities.json", "sha256": "6de7a902d39fb2022ba75d3398340753ca8431305d8a88623d96e5e58f7df317"},
+    {"path": "multi-target-shared-resource.json", "sha256": "39830a5b0709c60ae32dc164fa4c30137d1258f87b301a16004e788fd72e32fb"},
+    {"path": "new-opaque-target.json", "sha256": "7df8a36132d4eb72e63836f770d88606c07a1047d644b1a7bd5b2dfc25f6572c"},
+    {"path": "single-positive-regression.json", "sha256": "55f24837c4fcb53dc57d2b775483794e6ffb8aee01d761c354c84d5864f876c9"},
+    {"path": "single-probability.json", "sha256": "af377f41a6ed17a2bae1b477c6e4ed0ad4937f87a09070cd03940d914ac46d96"},
+    {"path": "single-regression.json", "sha256": "a5322813b21664449edf48fad7a8e6e0f6c786d764a35c8f7efb8c3fe98447a3"},
+    {"path": "target-reorder-a-b.json", "sha256": "acd9cc495cb0028521cfc4628275f19697c4a03588f3494ff42073e8acacc512"},
+    {"path": "target-reorder-b-a.json", "sha256": "af6fd57868dee33978a7c1a3da85946a4a7a318a88a9d6b547ca0db1d8849d94"}
+  ]
+}

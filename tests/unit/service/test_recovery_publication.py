@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v8 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,
@@ -20,7 +20,7 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     TrainingRecoveryCheckpointRecord,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.support.consumer_neutral import model_contract, semantic_digests
 
 
 class _Logger:
@@ -110,16 +110,15 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         model_config=None,
         training_config=None,
         data_contract=data_contract,
         model_contract=contract.to_document(),
-        semantic_digests=contract.digests("d" * 64),
+        semantic_digests=semantic_digests(contract, "d" * 64),
         config_hash="a" * 64,
         manifest_sha256="b" * 64,
         feature_dim=2,
@@ -218,9 +217,8 @@ def test_registration_failure_preserves_worker_checkpoint_staging(
         input_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "encoding": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         model_config=None,
@@ -234,7 +232,7 @@ def test_registration_failure_preserves_worker_checkpoint_staging(
             "featureDim": 2,
         },
         model_contract=contract.to_document(),
-        semantic_digests=contract.digests("d" * 64),
+        semantic_digests=semantic_digests(contract, "d" * 64),
         config_hash="a" * 64,
         manifest_sha256="b" * 64,
         feature_dim=2,

@@ -1,5 +1,5 @@
 class CheckpointCorrupt(ValueError):
-    """Checkpoint claims v6 but its contents violate the frozen contract."""
+    """Checkpoint violates the active provider checkpoint contract."""
 
 
 __all__ = ["CheckpointCorrupt"]

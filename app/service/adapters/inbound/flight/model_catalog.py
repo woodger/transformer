@@ -3,14 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v7 import CHECKPOINT_FORMAT, validate_checkpoint_document
+from app.contracts.checkpoint.v8 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v2 import (
-    CONTRACT_NAME,
-    CONTRACT_REVISION,
-    validate_catalog_document,
-)
-from app.contracts.semantic.v2 import ModelContract
+from app.contracts.model_catalog.v3 import validate_catalog_document
+from app.contracts.semantic.v3 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )
@@ -29,6 +25,7 @@ _CHECKPOINT_METADATA_FIELDS = (
     "jobId",
     "dataContract",
     "modelContract",
+    "modelConfig",
     "semanticDigests",
     "trainingConfig",
     "diagnostics",
@@ -54,7 +51,6 @@ def model_summary(model: PublishedModelRecord) -> JsonObject:
         initialization = model_initialization(model)
         metadata = model.metadata
         producing_run_id = metadata["jobId"]
-        checkpoint = metadata["checkpoint"]
         if (
             metadata.get("modelRef") != model.model_ref
             or metadata.get("label") != model.label
@@ -63,12 +59,6 @@ def model_summary(model: PublishedModelRecord) -> JsonObject:
                 model.producing_job_id is not None
                 and producing_run_id != model.producing_job_id
             )
-            or checkpoint
-            != {
-                "format": CHECKPOINT_FORMAT,
-                "sha256": model.sha256,
-                "bytes": model.byte_count,
-            }
         ):
             raise ValueError("published model projection is inconsistent")
         initialization_summary: JsonObject = {
@@ -83,17 +73,19 @@ def model_summary(model: PublishedModelRecord) -> JsonObject:
             "label": model.label,
             "generation": model.generation,
             "createdAt": _timestamp(model.created_at),
-            "semanticDigests": dict(model.semantic_digests),
-            "modelConfig": dict(contract.model_config),
+            "dataContractSha256": model.semantic_digests[
+                "dataContractSha256"
+            ],
+            "modelDefinitionSha256": model.semantic_digests[
+                "modelDefinitionSha256"
+            ],
+            "modelTuning": contract.model_tuning,
             "targetIdentities": list(contract.target_identities),
             "initialization": initialization_summary,
             "producingRunId": producing_run_id,
-            "checkpoint": dict(cast(JsonObject, checkpoint)),
         }
         validate_catalog_document(
             {
-                "contract": CONTRACT_NAME,
-                "revision": CONTRACT_REVISION,
                 "requestId": "00000000-0000-4000-8000-000000000000",
                 "models": [summary],
                 "nextCursor": None,
@@ -124,29 +116,38 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
             raise ValueError("published checkpoint is not terminal")
         selection = cast(JsonObject, checkpoint_metadata["selection"])
         if (
-            selection.get("modelContractSha256")
-            != model.semantic_digests.get("modelContractSha256")
+            selection.get("modelDefinitionSha256")
+            != model.semantic_digests.get("modelDefinitionSha256")
         ):
             raise ValueError("selection model contract differs")
+        selection_public = {
+            key: value
+            for key, value in selection.items()
+            if key != "modelDefinitionSha256"
+        }
         detail: JsonObject = {
             "summary": summary,
-            "dataContract": dict(model.data_contract),
+            "dataDefinition": {
+                "dataContractSha256": model.semantic_digests[
+                    "dataContractSha256"
+                ],
+                "tensorGeometry": {
+                    "seqLen": model.data_contract["seqLen"],
+                    "featureDim": model.data_contract["featureDim"],
+                },
+            },
             "modelContract": dict(model.model_contract),
+            "semanticDigests": dict(model.semantic_digests),
             "trainingConfig": dict(
                 cast(JsonObject, metadata["trainingConfig"])
             ),
             "diagnostics": dict(cast(JsonObject, metadata["diagnostics"])),
-            "selection": dict(selection),
+            "selection": selection_public,
             "progress": dict(progress),
-            "initialization": dict(
-                cast(JsonObject, checkpoint_metadata["initialization"])
-            ),
-            "jobConfigSha256": cast(str, metadata["jobConfigSha256"]),
+            "initialization": dict(cast(JsonObject, summary["initialization"])),
         }
         validate_catalog_document(
             {
-                "contract": CONTRACT_NAME,
-                "revision": CONTRACT_REVISION,
                 "requestId": "00000000-0000-4000-8000-000000000000",
                 "model": detail,
             },
@@ -203,15 +204,6 @@ def expired_catalog_cursor() -> ServiceError:
     )
 
 
-def unavailable_catalog_revision(revision: int) -> ServiceError:
-    return catalog_error(
-        ErrorCode.FAILED_PRECONDITION,
-        "CATALOG_QUERY_REVISION_UNAVAILABLE",
-        "model catalog query revision is unavailable",
-        requestedRevision=revision,
-    )
-
-
 def stored_metadata_invalid(model_ref: str, path: str) -> ServiceError:
     return catalog_error(
         ErrorCode.MODEL_CORRUPT,
@@ -240,28 +232,24 @@ def registry_unavailable() -> ServiceError:
 
 
 def artifact_error(error: CatalogArtifactVerificationError) -> ServiceError:
-    code = (
-        ErrorCode.RESOURCE_EXHAUSTED
-        if error.reason == "CHECKPOINT_VERIFICATION_BUDGET_EXCEEDED"
-        else ErrorCode.MODEL_CORRUPT
-    )
-    messages = {
-        "CHECKPOINT_VERIFICATION_BUDGET_EXCEEDED": (
-            "model checkpoint exceeds the verification budget"
-        ),
-        "STORED_MODEL_METADATA_INVALID": "stored model metadata is invalid",
-        "MODEL_CHECKPOINT_UNAVAILABLE": "model checkpoint is unavailable",
-        "MODEL_CHECKPOINT_SIZE_MISMATCH": (
-            "model checkpoint size does not match the registry"
-        ),
-        "MODEL_CHECKPOINT_DIGEST_MISMATCH": (
-            "model checkpoint digest does not match the registry"
-        ),
-    }
-    message = messages.get(error.reason)
-    if message is None:
+    if error.reason == "CHECKPOINT_VERIFICATION_BUDGET_EXCEEDED":
+        return catalog_error(
+            ErrorCode.RESOURCE_EXHAUSTED,
+            "MODEL_VERIFICATION_UNAVAILABLE",
+            "model verification is temporarily unavailable",
+        )
+    if error.reason not in {
+        "STORED_MODEL_METADATA_INVALID",
+        "MODEL_CHECKPOINT_UNAVAILABLE",
+        "MODEL_CHECKPOINT_SIZE_MISMATCH",
+        "MODEL_CHECKPOINT_DIGEST_MISMATCH",
+    }:
         raise RuntimeError("unknown catalog artifact failure") from error
-    return catalog_error(code, error.reason, message, **error.fields)
+    return catalog_error(
+        ErrorCode.MODEL_CORRUPT,
+        "MODEL_CHECKPOINT_INVALID",
+        "model checkpoint is invalid",
+    )
 
 
 def _timestamp(value: float) -> str:
@@ -284,5 +272,4 @@ __all__ = [
     "model_summary",
     "registry_unavailable",
     "stored_metadata_invalid",
-    "unavailable_catalog_revision",
 ]

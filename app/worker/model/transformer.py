@@ -5,8 +5,8 @@ from typing import cast
 import torch
 import torch.nn as nn
 
-from app.contracts.semantic.v2 import ModelContract
-from app.contracts.worker.v13.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,

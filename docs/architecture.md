@@ -1,37 +1,35 @@
 # Архитектура Transformer
 
-> Тип: справочник. Текущие процессы, компоненты, contracts и ownership данных
-> Transformer.
+> Тип: справочник. Текущие процессы, contracts и ownership данных.
 
-Этот документ описывает, как система устроена сейчас. Обязательные правила
-направления зависимостей и размещения нового кода задаёт
-[архитектурная политика](./policy/architecture.md). Историческое обоснование
-границ хранится в [ADR](./adr/index.md), а wire- и process-форматы — в
-соответствующих каталогах `app/contracts/`.
+Transformer is a provider-side training system. Inventory owns Consumer data
+semantics and browser-facing behavior; Transformer owns generic tensor
+execution, durable jobs, model generations, checkpoints, recovery, and
+telemetry projection.
 
-## Процессы и composition roots
+## Processes
 
 ```text
-app/main.py                         ленивый CLI dispatcher
-├── app/local                      локальные file/stream commands и gmark
-├── app/service/bootstrap          Arrow Flight service
-├── app/worker/bootstrap           один ML execution attempt
-└── app/admin/bootstrap            auth, database и model commands
-
-app/contracts/semantic/v2               consumer-neutral ML language
-app/contracts/flight/v14                 публичный Flight contract
-app/contracts/model_catalog/v2           owner-scoped model query contract
-app/contracts/training_telemetry/v2      owner-scoped telemetry query contract
-app/contracts/worker/v13                внутренний process contract
-app/contracts/checkpoint/v7             checkpoint/recovery metadata
-app/contracts/metrics/v6                epoch artifact и OpenSearch points
-app/contracts/metrics/fit_run/v6        terminal fit summary и lineage
+app/main.py
+├── app/service/bootstrap       Arrow Flight service
+├── app/worker/bootstrap        one training or prediction attempt
+└── app/admin/bootstrap         token, model, and migration commands
 ```
 
-Каждый исполняемый процесс имеет собственный composition root. Service
-запускает worker как установленный executable по версионированному process
-contract. Admin-команды создают только необходимые им короткоживущие
-resources. Ленивый CLI dispatcher не загружает runtime остальных процессов.
+The command dispatcher is lazy: an admin command does not initialize the
+service, Worker, Torch, CUDA, or Flight runtime. There is no local
+fit/predict/stream execution path.
+
+```text
+app/contracts/semantic/v3          consumer-neutral target/objective language
+app/contracts/flight/v15           public Flight workflow
+app/contracts/model_catalog/v3     owner-scoped model discovery/detail
+app/contracts/training_telemetry/v3 owner-scoped telemetry report
+app/contracts/worker/v14           internal service-to-worker protocol
+app/contracts/checkpoint/v8        internal checkpoint/recovery metadata
+app/contracts/metrics/v7           internal epoch metrics/OpenSearch points
+app/contracts/metrics/fit_run/v7   internal terminal run summary
+```
 
 ## Flight service
 
@@ -44,160 +42,59 @@ service/application/{commands,queries,services,ports,telemetry}
               ▼
 service/domain
 
-service/bootstrap ── собирает inbound и outbound adapters
+service/bootstrap ── assembles adapters and resources
 service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
-- `service/domain` содержит job states, error codes, immutable records и pure
-  lifecycle policies.
-- `service/application` содержит commands, queries, нейтральные results,
-  scheduler orchestration и capability-oriented ports.
-- `service/application/telemetry` содержит best-effort records и доставку
-  наблюдений отдельно от job ledger.
-- inbound Flight adapter валидирует wire DTO, выполняет semantic mapping и
-  преобразует application results и errors в Flight documents и Arrow status.
-- Public Flight и local fit/predict CLI используют device class `gpu`;
-  inbound/local adapters преобразуют его во внутренний CUDA runtime, а наружу
-  не публикуют backend-specific device identity.
-- outbound adapters реализуют PostgreSQL, artifact storage, worker process,
-  CUDA inventory и OpenSearch boundaries.
-- `service/bootstrap` собирает конкретные service adapters.
+The domain owns job states, errors, and lifecycle rules. Application owns use
+cases and capability-oriented ports. Inbound Flight validates public wire
+documents and presents results/errors. Outbound adapters own PostgreSQL,
+artifact storage, worker process supervision, CUDA inventory, and OpenSearch.
 
-Application использует capability-oriented ports, включая
-`JobLifecycleStore`, `JobQueryStore`, `InputUploadStore`, `OutputAccessStore`,
-`ArtifactPublisher`, `ExecutionPlanBuilder`, `AttemptProcess`,
-`WorkerCapabilities`, `DeviceLeaseManager`, `ModelCatalogStore` и
-`TrainingTelemetrySource`, и `AccessTokenAuthenticator`.
+Flight v15 accepts Consumer-owned data binding, semantic model intent,
+training intent, and requested initialization. It issues job identity and an
+opaque mutation lease. Provider resolved values—model implementation,
+operational fences, schema fingerprints, worker/checkpoint versions, and
+artifact details—do not cross the public boundary.
 
-## Worker
+## Worker and tensor data plane
 
-`app/worker/` владеет Arrow-to-tensor data path, model, training, telemetry,
-device/reproducibility runtime и checkpoint staging. Один процесс обслуживает
-один execution attempt. Он читает service-owned immutable command manifest,
-пишет в attempt workspace и передаёт bounded NDJSON events через stdout, а
-diagnostics — через stderr.
+One Worker process executes one service-owned attempt. It receives an immutable
+Worker v14 manifest, writes only attempt workspace artifacts, and returns
+bounded events. It has no PostgreSQL, Flight, or public identity dependency.
 
-Flight input хранится как compact indexed feature blocks. Worker memory-map-ит
-immutable artifacts и восстанавливает dense `[rows, seqLen, featureDim]`
-ограниченными срезами непосредственно перед batching. Полный развёрнутый
-dataset не материализуется; physical chunk/payload boundaries не меняют
-логический порядок, bounded shuffle или optimizer batches.
+Flight input uses compact `indexedFeatureBlocks`. Consumer supplies ordered
+block dimensions and local offsets. Worker derives block positions, maps
+native rows, and reconstructs logical `[rows, seqLen, featureDim]` Float32
+tensors in bounded slices before batching. Physical payload/chunk boundaries
+do not change logical order, training rows, or target coordinates.
 
-Worker не подключается к PostgreSQL и не управляет Flight identity, public job
-state, artifact publication, recovery generation или model generation. Его
-внутренний executor напрямую использует PyArrow, Torch и filesystem как части
-одного runtime.
+Semantic v3 target identities are opaque. Ordered slots determine target and
+prediction width. Transformer interprets generic transformations, operators,
+typed roles, and private resource classes, but never Consumer target names,
+profiles, FIGIs, or feature formulas.
 
-Канонический ML-код находится в `app/worker/`. Checkpoints принадлежат
-`app/worker/checkpoints/`, подготовка batch —
-`app/worker/training/batching.py`, core результат global epoch —
-`app/worker/training/epoch.py`, а необязательные наблюдения —
-`app/worker/telemetry/`. Подробную training semantics описывает
-[training reference](./training-runtime.md).
+## Storage and lifecycle
 
-## Local CLI и admin
+PostgreSQL is the control-plane source of truth for jobs, idempotency, owners,
+attempts, and published-model metadata. Managed filesystem storage holds inputs,
+attempt artifacts, recovery artifacts, model checkpoints, and temporary
+telemetry artifacts. OpenSearch is a best-effort telemetry projection, not a
+registry or job state source.
 
-`app/local/` владеет локальными file/stream командами, `plot-metrics` и
-`gmark`. Этот путь выполняется в локальном процессе и может напрямую
-использовать worker-код.
+Model Catalog Query v3 reads owner-scoped registry state. Training Telemetry
+Query v3 validates a complete projection against checkpoint-owned model
+metadata before exposing it. Neither query lets Consumer access filesystem
+paths, checkpoint bytes, or OpenSearch topology.
 
-Общие identity и путь корня проекта находятся в `app/project.py`, встроенные
-operational defaults — в `app/config.py`. Runtime-владельцы сохраняют
-configuration types, загрузку и валидацию. Версионируемые worker defaults
-остаются в `app/contracts/worker/v13/config.py`.
+Migration 0027 is deliberately destructive: it refuses active jobs and removes
+prior public-boundary state. Startup reconciliation removes managed artifacts
+left unreferenced by the clean cut. The OpenSearch v6-to-v7 index replacement
+is an explicit release operation.
 
-`app/config.py` не является adapter или provider boundary. Его immutable
-defaults могут использовать разные процессы, а понятия Transformer остаются в
-domain либо внутренних contracts; adapters преобразуют их в типы конкретной
-runtime library. Сейчас `RUNTIME_DIR_DEFAULT` является отдельным
-platform-derived значением: оно вычисляется через `tempfile.gettempdir()` и
-потребляется bootstrap, а не service domain/application.
+## Dependency rules
 
-`app/admin/cli` отвечает за presentation. `app/admin/bootstrap` создаёт
-короткоживущие PostgreSQL resources для access-token и model use cases.
-Alembic-команды имеют отдельный короткоживущий SQLAlchemy lifecycle.
-
-## Contracts
-
-- `app/contracts/semantic/v2/` — закрытый mathematical language, canonical
-  TargetContract/Objective/ModelContract и D1 digests;
-- `app/contracts/flight/v14/` — нормативные schemas и fixtures публичного API;
-- `app/contracts/model_catalog/v2/` — independently versioned list/detail
-  contract owner-scoped model registry;
-- `app/contracts/training_telemetry/v2/` — independently versioned complete
-  report и lazy gradient-interaction query для published generation;
-- `app/contracts/flight/v14/source_encoding.py` — pure-валидация ordered
-  compact block geometry, общая для service и worker;
-- `app/contracts/worker/v13/` — command/result manifests, capability document,
-  Arrow artifact manifests, events и exit semantics;
-- `app/contracts/checkpoint/v7/` — embedded checkpoint metadata и recovery
-  fences;
-- `app/contracts/metrics/v6/` — immutable epoch artifact, OpenSearch
-  projection, golden identity и index templates;
-- `app/contracts/metrics/fit_run/v6/` — terminal fit summary, initialization
-  lineage, lifecycle durations и counters.
-
-Consumer materializer передаёт self-contained ModelContract с ordered opaque
-target slots, numerical constraints, loss/public transformations, Objective и
-model configuration. Transformer не интерпретирует target identities, profile
-или data identity. Он валидирует generic geometry и typed bindings, вычисляет
-D1 digests и владеет tensor-семантикой operators, private resource classes,
-model heads и autograd. Ordered slots физически задают ширину `tgt`, public
-heads и prediction output. Objective, training policy и diagnostics остаются
-разными contract sections; checkpoint навсегда связан с data, target,
-objective и model digest layers.
-
-`sourceEncoding` описывает только физическое compact-представление
-Consumer-owned features. Оно входит в immutable job configuration и recovery
-fencing, но не в data-contract, objective, checkpoint или model identity при
-численно эквивалентном logical tensor.
-
-Fit initialization также является отдельной частью job identity.
-`publishedModel` требует точного совпадения data, target, objective и model
-digests. Service разрешает owner-scoped immutable parent
-`modelRef` и передаёт worker-у проверенный checkpoint artifact. Worker повторно
-проверяет digest, загружает полный parent `state_dict` и создаёт новое training
-state. Lineage с parent reference, checkpoint digest и совпадающими
-parent/current data-contract digests сохраняется в job, checkpoint, model
-metadata и terminal fit telemetry.
-
-Эти contracts версионируются независимо. Worker `attemptId` является UUID
-execution identity и equality fence; публичный `attempt` — положительный
-job-local ordinal. Retry создаёт новый ordinal и новый `attemptId`. Любая
-worker mutation проверяет `jobId`, текущий `attemptId` и допустимое
-non-terminal state; ownership не передаётся при неизменном `attemptId`.
-
-## Данные и хранение
-
-PostgreSQL является источником истины для job lifecycle, revision,
-idempotency, active attempt, API access tokens, owner-scoped state и published
-model metadata. Отдельный telemetry slice владеет epoch intervals, run artifact
-metadata и metrics outbox. OpenSearch — best-effort аналитическая проекция.
-
-Owner-scoped Model Catalog читает только `AVAILABLE` generations из registry.
-List использует bounded keyset pagination с publication high-water boundary и
-подписанным owner-bound cursor; checkpoint bytes при этом не читаются. Single
-detail проверяет canonical metadata и полный SHA-256 checkpoint в пределах
-contract budget. Unknown, foreign и deleted references неразличимы для
-Consumer-а. Catalog membership не зависит от OpenSearch telemetry.
-
-Owner-scoped Training Telemetry Query сначала разрешает exact
-`modelRef` через registry, затем читает metrics v6 проекцию через
-application port. Он возвращает только полный проверенный report;
-отсутствие или повреждение telemetry не меняет model registry и не
-влияет на fit, predict, warm start и model lifecycle.
-
-Filesystem artifacts проходят staged lifecycle до появления ссылки на них в
-PostgreSQL. Prediction artifacts и attempt workspaces являются runtime-данными;
-compact fit inputs и completed-epoch checkpoints обеспечивают recovery;
-опубликованные model directories содержат только неизменяемый binary
-checkpoint, а отдельная control-plane metadata хранится только в PostgreSQL.
-Checkpoint сохраняет собственную process-contract metadata для проверки
-worker-ом. Незавершённый warm-start fit удерживает parent generation от явного
-удаления. Точные каталоги, failure semantics и процедуры reconciliation задаёт
-[операционное руководство Flight](./operations/flight-service.md).
-
-Process-local memory хранит bounded queues, token verification cache и handles
-активных процессов. Authentication model и границы согласованности описывает
-[справочник аутентификации](./authentication.md), а observability boundary —
-[политика metrics](./policy/metrics-policy.md).
+Detailed direction and placement rules live in
+[architecture policy](./policy/architecture.md). Historical rationale lives in
+[ADRs](./adr/index.md). Public schemas are defined only in the active contract
+packages; this document does not override them.

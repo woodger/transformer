@@ -1,8 +1,0 @@
-{
-  "code": "INVALID_ARGUMENT",
-  "reason": "TARGET_VALUE_INVALID",
-  "targetIdentity": "ConsumerDefined.EventProbability",
-  "targetIndex": 0,
-  "logicalRow": 42,
-  "message": "observed target is outside its declared interval"
-}

@@ -10,7 +10,7 @@ maintenance boundaries описаны в
 [`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
 
 Consumer-facing discovery и detail выполняются owner-scoped actions из
-[Model Catalog Query v2](../../app/contracts/model_catalog/v2/README.md).
+[Model Catalog Query v3](../../app/contracts/model_catalog/v3/README.md).
 Каталог является read-only и не заменяет описанные здесь административные
 команды удаления.
 
@@ -54,12 +54,10 @@ Request transaction:
 - блокирует новые prediction jobs и `publishedModel` fit для этой generation;
 - отклоняется, если на модель ссылается любой незавершённый prediction или
   `publishedModel` fit job;
-- снимает alias, только если он всё ещё указывает на удаляемую generation;
 - переводит модель в `DELETING`.
 
-Alias не откатывается на предыдущую generation. Поддерживаемой команды undo
-нет, поэтому перед `models delete` убедитесь, что выбрана точная generation и
-Consumer больше не должен использовать её.
+Поддерживаемой команды undo нет, поэтому перед `models delete` убедитесь, что
+выбрана точная generation и Consumer больше не должен использовать её.
 
 ## Дождаться физического удаления
 

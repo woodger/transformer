@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.flight.v14.source_encoding import feature_block_dimensions
+from app.contracts.flight.v15.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v13.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -210,7 +210,7 @@ class Ledger:
             "dataContractSha256",
             "targetContractSha256",
             "objectiveSha256",
-            "modelContractSha256",
+            "modelDefinitionSha256",
         ):
             _digest(typed_semantic_digests.get(key), key)
         seq_len = _positive(
@@ -914,14 +914,9 @@ class Ledger:
         *,
         client_execution_id: str,
         fencing_token: int,
-        payload_count: int,
-        total_chunks: int,
-        total_rows: int,
-        total_native_rows: tuple[int, ...],
-        range_count: int,
-        total_bytes: int,
+        expected_logical_rows: int | None,
         manifest_sha256: str,
-        selected_device: str,
+        select_device: Callable[[str, str | None, str, int], str],
         now: float | None = None,
         connection: Session | None = None,
     ) -> tuple[RowMapping, bool]:
@@ -929,14 +924,9 @@ class Ledger:
             job_id,
             client_execution_id=client_execution_id,
             fencing_token=fencing_token,
-            payload_count=payload_count,
-            total_chunks=total_chunks,
-            total_rows=total_rows,
-            total_native_rows=total_native_rows,
-            range_count=range_count,
-            total_bytes=total_bytes,
+            expected_logical_rows=expected_logical_rows,
             expected_manifest_sha256=manifest_sha256,
-            selected_device=selected_device,
+            select_device=select_device,
             now=now,
             connection=connection,
         )
@@ -1266,19 +1256,6 @@ class Ledger:
             connection=connection,
         )
 
-    def resolve_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-    ) -> RowMapping | None:
-        return self._artifacts.resolve_model_alias(
-            owner_subject,
-            label,
-            connection=connection,
-        )
-
     def get_published_model(
         self,
         model_ref: str,
@@ -1290,21 +1267,6 @@ class Ledger:
         return self._artifacts.get_published_model(
             model_ref,
             owner_subject=owner_subject,
-            connection=connection,
-            for_update=for_update,
-        )
-
-    def resolve_published_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-        for_update: bool = False,
-    ) -> PublishedModelRecord | None:
-        return self._artifacts.resolve_published_model_alias(
-            owner_subject,
-            label,
             connection=connection,
             for_update=for_update,
         )

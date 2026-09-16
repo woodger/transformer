@@ -708,23 +708,6 @@ class MetricsOutboxEntry(Base):
     )
 
 
-class ModelAlias(Base):
-    __tablename__ = "model_aliases"
-    __table_args__ = (
-        PrimaryKeyConstraint("owner_subject", "label", name="model_aliases_pk"),
-        {"schema": SCHEMA},
-    )
-
-    owner_subject: Mapped[str] = mapped_column(String(256))
-    label: Mapped[str] = mapped_column(String(256))
-    model_ref: Mapped[str] = mapped_column(
-        String(128),
-        ForeignKey(f"{SCHEMA}.models.model_ref", ondelete="CASCADE"),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
     __table_args__ = (

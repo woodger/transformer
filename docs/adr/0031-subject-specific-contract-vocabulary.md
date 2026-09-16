@@ -1,6 +1,6 @@
 # ADR 0031: предметный vocabulary shared contracts
 
-- Status: Accepted
+- Status: Superseded by [ADR 0032](0032-public-contract-simplification-clean-cut.md)
 - Decision date: 2026-09-13
 
 > Historical decision record; not a current system reference. See

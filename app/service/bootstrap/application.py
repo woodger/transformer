@@ -270,19 +270,6 @@ class FlightApplication:
                 grace_seconds=config.cancel_grace_seconds,
                 logger=logger,
             )
-            (
-                removed_recovery_staging,
-                removed_recovery_staging_bytes,
-            ) = spool.cleanup_recovery_checkpoint_staging()
-            if removed_recovery_staging:
-                metrics.add(
-                    "recoveryCheckpointStagingRemoved",
-                    len(removed_recovery_staging),
-                )
-                metrics.add(
-                    "recoveryCheckpointStagingBytesRemoved",
-                    removed_recovery_staging_bytes,
-                )
             precleaned = spool.cleanup_temporary_files()
             recovery_precleaned = (
                 recovery_store.cleanup_temporary_files()
@@ -470,12 +457,6 @@ class FlightApplication:
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
                     recovery_precleaned
-                ),
-                removedRecoveryStagingCheckpoints=len(
-                    removed_recovery_staging
-                ),
-                removedRecoveryStagingBytes=(
-                    removed_recovery_staging_bytes
                 ),
                 removedRecoveryOrphans=len(
                     recovery_reconciliation

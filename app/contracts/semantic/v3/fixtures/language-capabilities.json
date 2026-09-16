@@ -1,0 +1,11 @@
+{
+  "objectiveLanguage": {
+    "revision": 3,
+    "closed": true
+  },
+  "semanticLimits": {
+    "maxTargetSlots": 128,
+    "maxObjectiveComponents": 256,
+    "maxPrivateResources": 64
+  }
+}

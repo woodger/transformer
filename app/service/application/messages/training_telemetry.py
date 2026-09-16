@@ -42,6 +42,7 @@ class TrainingTelemetryReportResult:
     unavailable_reason: str | None = None
     producing_run_id: str | None = None
     semantic_digests: JsonObject | None = None
+    layout: JsonObject | None = None
     coverage: JsonObject | None = None
     selection: JsonObject | None = None
     anchors: tuple[JsonObject, ...] = ()
