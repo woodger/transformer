@@ -9,9 +9,6 @@
 
 ### Changed
 
-- CUDA Worker получает единый CPU thread budget из application config:
-  восемь PyTorch intra-op threads и один inter-op thread по умолчанию. CPU
-  attempts и публичные runtime contracts не изменены.
 - Shared contracts переведены clean cut на предметный vocabulary без общего
   `kind`: Semantic v2, Flight v14, Worker v13, checkpoint/recovery v7,
   metrics v6, Model Catalog Query v2 и Training Telemetry Query v2.

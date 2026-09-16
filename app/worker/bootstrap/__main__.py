@@ -54,11 +54,6 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stdout.buffer,
     )
     try:
-        from app.worker.runtime.thread_budget import (
-            configure_cuda_torch_thread_budget,
-        )
-
-        configure_cuda_torch_thread_budget()
         manifest = load_document(args.manifest, "command-manifest")
         from app.worker.application.executor import WorkerApplication
 
