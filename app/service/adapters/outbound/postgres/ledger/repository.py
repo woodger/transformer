@@ -1344,12 +1344,12 @@ class Ledger:
             now=now,
         )
 
-    def reconcile_interrupted_jobs(
+    def reconcile_startup_jobs(
         self,
         *,
         now: float | None = None,
     ) -> JsonObject:
-        return self._maintenance.reconcile_interrupted_jobs(now=now)
+        return self._maintenance.reconcile_startup_jobs(now=now)
 
     def referenced_paths(self) -> set[str]:
         return self._maintenance.referenced_paths()

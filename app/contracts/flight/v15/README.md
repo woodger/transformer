@@ -80,6 +80,14 @@ tensor-а, но не обещает неизменность сериализо�
 recovery descriptors, worker logs или внутренние fences. `job.outputs.list`
 предоставляет ограниченный обход outputs predict.
 
+При любом restart service незавершённые jobs не возобновляются. До запуска
+WorkerPool Transformer завершает `WAITING_INPUT`, `QUEUED`, `RUNNING` и
+`RETRYING` как `FAILED / EXECUTION_INTERRUPTED`; `CANCELLING` — как
+`CANCELLED`. Для новой попытки вызывающая система создаёт новый job. Это не
+меняет schema actions, model compatibility или формат recovery checkpoint-а;
+recovery остаётся внутренним механизмом retryable сбоя Worker внутри одного
+работающего service.
+
 Transformer валидирует semantic v3 document и вычисляет его identities D1 во
 время create. Совместимость fit и warm start точна на уровнях data и model
 definition. Stored corruption, недопустимые request values и несовместимые

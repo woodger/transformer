@@ -14,7 +14,6 @@ from app.service.adapters.outbound.postgres.ledger.support import (
     now as timestamp_now,
 )
 from app.service.adapters.outbound.postgres.models import (
-    QUEUE_SEQUENCE,
     IdempotencyRecord,
     InputUpload,
     Job,
@@ -26,7 +25,7 @@ from app.service.adapters.outbound.postgres.models import (
     RuntimeState,
 )
 from app.service.domain.job import ErrorCode, ExecutionState, InputState
-from app.service.domain.policies import decide_interrupted_attempt
+from app.service.domain.policies import decide_startup_interruption
 
 _TERMINAL_STATES = (
     ExecutionState.SUCCEEDED.value,
@@ -121,7 +120,7 @@ class MaintenanceLedgerSlice:
                 expired.append(job.job_id)
         return expired
 
-    def reconcile_interrupted_jobs(
+    def reconcile_startup_jobs(
         self,
         *,
         now: float | None = None,
@@ -134,84 +133,31 @@ class MaintenanceLedgerSlice:
                     InputUpload.storage_class,
                 )
             ).all()
-            interrupted: list[str] = []
-            retried: list[str] = []
-            cancelling = list(session.scalars(
-                select(Job.job_id)
-                .where(
-                    Job.execution_state
-                    == ExecutionState.CANCELLING.value
-                )
-                .order_by(Job.job_id)
-            ))
+            failed_waiting_input: list[str] = []
+            failed_queued: list[str] = []
+            failed_running: list[str] = []
+            failed_retrying: list[str] = []
+            cancelled: list[str] = []
             jobs = session.scalars(
                 select(Job)
                 .where(Job.execution_state.in_((
+                    ExecutionState.WAITING_INPUT.value,
+                    ExecutionState.QUEUED.value,
                     ExecutionState.RUNNING.value,
+                    ExecutionState.RETRYING.value,
                     ExecutionState.CANCELLING.value,
                 )))
                 .order_by(Job.job_id)
                 .with_for_update()
             )
             for job in jobs:
+                current_state = ExecutionState(job.execution_state)
                 attempt = session.get(
                     JobAttempt,
                     (job.job_id, job.attempt),
                     with_for_update=True,
                 )
-                decision = decide_interrupted_attempt(
-                    job.execution_state
-                )
-                resumable = False
-                if (
-                    job.execution_state == ExecutionState.RUNNING.value
-                    and job.operation == "fit"
-                ):
-                    runtime_input = session.scalar(
-                        select(JobInput.job_id)
-                        .where(
-                            JobInput.job_id == job.job_id,
-                            JobInput.storage_class == "runtime",
-                        )
-                        .limit(1)
-                    )
-                    resumable = runtime_input is None
-                if resumable:
-                    if (
-                        attempt is not None
-                        and attempt.status == ExecutionState.RUNNING.value
-                    ):
-                        attempt.status = ExecutionState.FAILED.value
-                        attempt.error_code = (
-                            ErrorCode.EXECUTION_INTERRUPTED.value
-                        )
-                        attempt.error_message = (
-                            "worker execution was interrupted by service restart"
-                        )
-                        attempt.finished_at = reconciled_at
-                    job.execution_state = ExecutionState.RETRYING.value
-                    queue_sequence = session.scalar(
-                        select(QUEUE_SEQUENCE.next_value())
-                    )
-                    if queue_sequence is None:
-                        raise RuntimeError(
-                            "queue sequence did not return a value"
-                        )
-                    job.queue_sequence = queue_sequence
-                    job.queued_at = reconciled_at
-                    job.error_code = None
-                    job.error_message = None
-                    job.finished_at = None
-                    job.waiting_for_input = False
-                    job.waiting_input_ordinal = None
-                    job.input_waiting_since = None
-                    job.acquire_grace_until = None
-                    job.revision += 1
-                    job.updated_at = reconciled_at
-                    retried.append(job.job_id)
-                    continue
-                if job.execution_state == ExecutionState.RUNNING.value:
-                    interrupted.append(job.job_id)
+                decision = decide_startup_interruption(current_state)
                 job.execution_state = decision.target.value
                 if (
                     decision.target
@@ -240,11 +186,27 @@ class MaintenanceLedgerSlice:
                 job.revision += 1
                 job.finished_at = reconciled_at
                 job.updated_at = reconciled_at
+                if decision.target == ExecutionState.CANCELLED:
+                    cancelled.append(job.job_id)
+                elif current_state == ExecutionState.WAITING_INPUT:
+                    failed_waiting_input.append(job.job_id)
+                elif current_state == ExecutionState.QUEUED:
+                    failed_queued.append(job.job_id)
+                elif current_state == ExecutionState.RUNNING:
+                    failed_running.append(job.job_id)
+                elif current_state == ExecutionState.RETRYING:
+                    failed_retrying.append(job.job_id)
+                else:
+                    raise AssertionError(
+                        "unexpected startup reconciliation state"
+                    )
             session.execute(delete(InputUpload))
         return json_value({
-            "interrupted_jobs": interrupted,
-            "retried_jobs": retried,
-            "cancelled_jobs": cancelling,
+            "failed_waiting_input_jobs": failed_waiting_input,
+            "failed_queued_jobs": failed_queued,
+            "failed_running_jobs": failed_running,
+            "failed_retrying_jobs": failed_retrying,
+            "cancelled_jobs": cancelled,
             "temporary_paths": [
                 path
                 for path, storage_class in uploads

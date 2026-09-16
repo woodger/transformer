@@ -43,6 +43,12 @@ manifest. Recovery проверяет их до загрузки state. Друг
 или manifest отклоняются; remapping target-ов и частичная загрузка state не
 выполняются.
 
+Recovery используется только для retryable сбоя Worker, пока service продолжает
+работать. При любом restart service все незавершённые jobs завершаются до
+запуска WorkerPool: `WAITING_INPUT`, `QUEUED`, `RUNNING` и `RETRYING` получают
+`FAILED / EXECUTION_INTERRUPTED`, а `CANCELLING` — `CANCELLED`. Checkpoint не
+возобновляет такой job после старта нового process service.
+
 Временные artifacts attempt принадлежат service. Startup reconciliation удаляет
 только не имеющие ссылок managed artifacts в собственном locked runtime
 directory service-а; он не проверяет и не удаляет artifacts другого instance

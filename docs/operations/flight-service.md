@@ -38,10 +38,13 @@ Process получает exclusive locks для настроенных directori
 instance никогда не должен очищать runtime artifacts другого.
 
 При старте service проверяет revision database, завершает только надёжно
-идентифицированные orphan process groups Worker, выполняет reconciliation
-прерванных jobs и удаляет файлы без references только внутри собственных locked
-managed roots. Он не сканирует произвольные filesystem paths или OpenSearch как
-authority.
+идентифицированные orphan process groups Worker и завершает все незавершённые
+jobs до запуска WorkerPool. `WAITING_INPUT`, `QUEUED`, `RUNNING` и `RETRYING`
+становятся `FAILED / EXECUTION_INTERRUPTED`; `CANCELLING` становится
+`CANCELLED`. Поэтому job не может автоматически продолжить выполнение после
+любого restart service. Затем service удаляет файлы без references только внутри
+собственных locked managed roots. Он не сканирует произвольные filesystem paths
+или OpenSearch как authority.
 
 ## Владение storage
 
@@ -57,10 +60,12 @@ scan, ни telemetry не могут создать видимую generation м
 
 ## Recovery и cleanup
 
-Recovery возобновляется только из зарегистрированного checkpoint-а, у которого
-точно совпадают configuration job, input manifest, semantic identities и fences
-progress. Corrupt или incompatible artifact завершается ошибкой; он никогда не
-переназначается молча.
+Recovery применяется только для retryable сбоя Worker внутри работающего
+service и только из зарегистрированного checkpoint-а, у которого точно
+совпадают configuration job, input manifest, semantic identities и fences
+progress. После restart service recovery не запускается: job уже terminal и
+для новой попытки вызывающая система создаёт новый job. Corrupt или incompatible
+artifact завершается ошибкой; он никогда не переназначается молча.
 
 Maintenance удаляет terminal artifacts job согласно настроенному retention и
 выполняет запрошенное удаление model. Startup reconciliation удаляет только

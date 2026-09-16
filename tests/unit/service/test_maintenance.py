@@ -3,10 +3,15 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 from app.service.adapters.observability import OperationalMetrics
+from app.service.adapters.outbound.postgres.ledger.maintenance import (
+    MaintenanceLedgerSlice,
+)
 from app.service.bootstrap.maintenance import MaintenanceService
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
 
 
 class RecordingLogger:
@@ -15,6 +20,99 @@ class RecordingLogger:
 
     def event(self, event, **fields):
         self.events.append((event, fields))
+
+
+def test_startup_reconciliation_terminalizes_every_unfinished_job():
+    waiting = _job(
+        "waiting",
+        ExecutionState.WAITING_INPUT,
+        InputState.OPEN,
+    )
+    queued = _job("queued", ExecutionState.QUEUED, InputState.CLOSED)
+    running = _job("running", ExecutionState.RUNNING, InputState.OPEN)
+    retrying = _job("retrying", ExecutionState.RETRYING, InputState.CLOSED)
+    cancelling = _job(
+        "cancelling",
+        ExecutionState.CANCELLING,
+        InputState.OPEN,
+    )
+    running_attempt = _attempt(ExecutionState.RUNNING)
+    cancelling_attempt = _attempt(ExecutionState.RUNNING)
+    attempts = {
+        (running.job_id, running.attempt): running_attempt,
+        (cancelling.job_id, cancelling.attempt): cancelling_attempt,
+    }
+    session = SimpleNamespace(
+        execute=lambda _statement: SimpleNamespace(all=lambda: []),
+        scalars=lambda _statement: (
+            waiting,
+            queued,
+            running,
+            retrying,
+            cancelling,
+        ),
+        get=lambda _model, identity, **_kwargs: attempts.get(identity),
+    )
+    ledger = MaintenanceLedgerSlice(
+        SimpleNamespace(
+            database=SimpleNamespace(
+                transaction=lambda: _transaction(session),
+            )
+        )
+    )
+
+    result = ledger.reconcile_startup_jobs(now=100.0)
+
+    assert waiting.execution_state == ExecutionState.FAILED.value
+    assert queued.execution_state == ExecutionState.FAILED.value
+    assert running.execution_state == ExecutionState.FAILED.value
+    assert retrying.execution_state == ExecutionState.FAILED.value
+    assert cancelling.execution_state == ExecutionState.CANCELLED.value
+    assert waiting.input_state == InputState.ABORTED.value
+    assert running.input_state == InputState.ABORTED.value
+    assert cancelling.input_state == InputState.ABORTED.value
+    assert queued.input_state == InputState.CLOSED.value
+    assert retrying.input_state == InputState.CLOSED.value
+    assert running_attempt.status == ExecutionState.FAILED.value
+    assert running_attempt.error_code == ErrorCode.EXECUTION_INTERRUPTED.value
+    assert cancelling_attempt.status == ExecutionState.CANCELLED.value
+    assert result["failed_waiting_input_jobs"] == [waiting.job_id]
+    assert result["failed_queued_jobs"] == [queued.job_id]
+    assert result["failed_running_jobs"] == [running.job_id]
+    assert result["failed_retrying_jobs"] == [retrying.job_id]
+    assert result["cancelled_jobs"] == [cancelling.job_id]
+
+
+@contextmanager
+def _transaction(session):
+    yield session
+
+
+def _job(job_id, execution_state, input_state):
+    return SimpleNamespace(
+        job_id=job_id,
+        attempt=1,
+        execution_state=execution_state.value,
+        input_state=input_state.value,
+        waiting_for_input=False,
+        waiting_input_ordinal=None,
+        input_waiting_since=None,
+        acquire_grace_until=None,
+        error_code=None,
+        error_message=None,
+        revision=1,
+        finished_at=None,
+        updated_at=None,
+    )
+
+
+def _attempt(status):
+    return SimpleNamespace(
+        status=status.value,
+        error_code=None,
+        error_message=None,
+        finished_at=None,
+    )
 
 
 def test_ledger_row_is_deleted_before_job_directory_is_touched():

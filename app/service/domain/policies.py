@@ -10,10 +10,6 @@ from app.service.domain.job import (
     InputState,
 )
 
-_EXECUTION_INTERRUPTED_MESSAGE = (
-    "worker execution was interrupted by service restart"
-)
-
 
 @dataclass(frozen=True, slots=True)
 class CancelDecision:
@@ -23,7 +19,7 @@ class CancelDecision:
 
 
 @dataclass(frozen=True, slots=True)
-class RecoveryDecision:
+class StartupDecision:
     target: ExecutionState
     error_code: ErrorCode | None
     error_message: str | None
@@ -91,24 +87,29 @@ def decide_cancel(state: str | ExecutionState) -> CancelDecision:
     )
 
 
-def decide_interrupted_attempt(
+def decide_startup_interruption(
     state: str | ExecutionState,
-) -> RecoveryDecision:
+) -> StartupDecision:
     current = ExecutionState(state)
-    if current == ExecutionState.RUNNING:
-        return RecoveryDecision(
+    if current in (
+        ExecutionState.WAITING_INPUT,
+        ExecutionState.QUEUED,
+        ExecutionState.RUNNING,
+        ExecutionState.RETRYING,
+    ):
+        return StartupDecision(
             target=ExecutionState.FAILED,
             error_code=ErrorCode.EXECUTION_INTERRUPTED,
-            error_message=_EXECUTION_INTERRUPTED_MESSAGE,
+            error_message="job was interrupted by service restart",
         )
     if current == ExecutionState.CANCELLING:
-        return RecoveryDecision(
+        return StartupDecision(
             target=ExecutionState.CANCELLED,
             error_code=None,
             error_message=None,
         )
     raise ValueError(
-        f"job state cannot be reconciled as interrupted: {current.value}"
+        f"job state cannot be reconciled at startup: {current.value}"
     )
 
 
