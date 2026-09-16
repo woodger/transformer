@@ -54,12 +54,15 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stdout.buffer,
     )
     try:
+        manifest = load_document(args.manifest, "command-manifest")
+        from app.worker.application.documents import object_field, string_field
         from app.worker.runtime.thread_budget import (
             configure_cuda_torch_thread_budget,
         )
 
-        configure_cuda_torch_thread_budget()
-        manifest = load_document(args.manifest, "command-manifest")
+        backend = string_field(object_field(manifest, "device"), "backend")
+        if backend == "cuda":
+            configure_cuda_torch_thread_budget()
         from app.worker.application.executor import WorkerApplication
 
         with redirect_stdout(sys.stderr):

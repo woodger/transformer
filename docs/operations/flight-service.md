@@ -23,15 +23,11 @@ unavailable-after-terminal в соответствии с его query contract.
 
 ## CPU budget CUDA Worker-а
 
-| Переменная окружения | По умолчанию | Назначение |
-| --- | --- | --- |
-| `TRANSFORMER_CUDA_TORCH_INTRAOP_THREADS` | `8` | Число PyTorch intra-op threads одного CUDA Worker-а |
-| `TRANSFORMER_CUDA_TORCH_INTEROP_THREADS` | `1` | Число PyTorch inter-op threads одного CUDA Worker-а |
-
-Defaults принадлежат `app/config.py`. Service передаёт проверенные значения
-только CUDA Worker-процессу, а Worker применяет их один раз до загрузки model и
-training runtime. CPU attempts сохраняют собственные PyTorch defaults. Thread
-budget является operational configuration и не входит во Flight, Worker,
+`app/config.py` фиксирует число PyTorch intra-op threads одного CUDA Worker-а
+равным восьми, inter-op threads — одному. После validation command manifest
+Worker применяет эти значения только при `device.backend = cuda`, до загрузки
+model и training runtime. CPU attempts сохраняют собственные PyTorch defaults.
+Thread budget является operational configuration и не входит во Flight, Worker,
 checkpoint или model compatibility contracts.
 
 ## Запуск и остановка

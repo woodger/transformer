@@ -4,10 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.config import (
-    CUDA_TORCH_INTEROP_THREADS_ENV,
-    CUDA_TORCH_INTRAOP_THREADS_ENV,
-)
+from app import config as settings
 from app.worker.runtime.thread_budget import (
     configure_cuda_torch_thread_budget,
 )
@@ -28,48 +25,32 @@ class _TorchRuntime:
 def test_cuda_worker_applies_complete_torch_thread_budget() -> None:
     runtime = _TorchRuntime()
 
-    applied = configure_cuda_torch_thread_budget(
-        {
-            CUDA_TORCH_INTRAOP_THREADS_ENV: "8",
-            CUDA_TORCH_INTEROP_THREADS_ENV: "1",
-        },
-        runtime=runtime,
-    )
+    applied = configure_cuda_torch_thread_budget(runtime=runtime)
 
-    assert applied == (8, 1)
+    assert applied == (
+        settings.CUDA_TORCH_INTRAOP_THREADS,
+        settings.CUDA_TORCH_INTEROP_THREADS,
+    )
     assert runtime == _TorchRuntime(
         intraop_threads=8,
         interop_threads=1,
     )
 
 
-def test_worker_without_cuda_thread_budget_keeps_runtime_defaults() -> None:
-    runtime = _TorchRuntime()
-
-    assert configure_cuda_torch_thread_budget({}, runtime=runtime) is None
-    assert runtime == _TorchRuntime()
-
-
 @pytest.mark.parametrize(
-    "environment",
+    ("name", "value"),
     [
-        {CUDA_TORCH_INTRAOP_THREADS_ENV: "8"},
-        {CUDA_TORCH_INTEROP_THREADS_ENV: "1"},
-        {
-            CUDA_TORCH_INTRAOP_THREADS_ENV: "0",
-            CUDA_TORCH_INTEROP_THREADS_ENV: "1",
-        },
-        {
-            CUDA_TORCH_INTRAOP_THREADS_ENV: "eight",
-            CUDA_TORCH_INTEROP_THREADS_ENV: "1",
-        },
+        ("CUDA_TORCH_INTRAOP_THREADS", 0),
+        ("CUDA_TORCH_INTEROP_THREADS", -1),
+        ("CUDA_TORCH_INTRAOP_THREADS", "eight"),
     ],
 )
-def test_worker_rejects_invalid_cuda_thread_budget(
-    environment: dict[str, str],
+def test_worker_rejects_invalid_code_configured_thread_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: object,
 ) -> None:
+    monkeypatch.setattr(settings, name, value)
+
     with pytest.raises(ValueError):
-        configure_cuda_torch_thread_budget(
-            environment,
-            runtime=_TorchRuntime(),
-        )
+        configure_cuda_torch_thread_budget(runtime=_TorchRuntime())

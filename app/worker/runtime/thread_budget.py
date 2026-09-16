@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import os
-from collections.abc import Mapping
 from typing import Protocol, cast
 
-from app.config import (
-    CUDA_TORCH_INTEROP_THREADS_ENV,
-    CUDA_TORCH_INTRAOP_THREADS_ENV,
-)
+from app import config as settings
 
 
 class _TorchThreadRuntime(Protocol):
@@ -17,27 +12,18 @@ class _TorchThreadRuntime(Protocol):
 
 
 def configure_cuda_torch_thread_budget(
-    environ: Mapping[str, str] | None = None,
     *,
     runtime: _TorchThreadRuntime | None = None,
-) -> tuple[int, int] | None:
-    """Apply the service-owned thread budget in a fresh CUDA worker."""
-
-    values = os.environ if environ is None else environ
-    intraop_value = values.get(CUDA_TORCH_INTRAOP_THREADS_ENV)
-    interop_value = values.get(CUDA_TORCH_INTEROP_THREADS_ENV)
-    if intraop_value is None and interop_value is None:
-        return None
-    if intraop_value is None or interop_value is None:
-        raise ValueError("CUDA Torch thread budget is incomplete")
+) -> tuple[int, int]:
+    """Apply the code-configured thread budget in a fresh CUDA worker."""
 
     intraop_threads = _positive_integer(
-        intraop_value,
-        CUDA_TORCH_INTRAOP_THREADS_ENV,
+        settings.CUDA_TORCH_INTRAOP_THREADS,
+        "CUDA_TORCH_INTRAOP_THREADS",
     )
     interop_threads = _positive_integer(
-        interop_value,
-        CUDA_TORCH_INTEROP_THREADS_ENV,
+        settings.CUDA_TORCH_INTEROP_THREADS,
+        "CUDA_TORCH_INTEROP_THREADS",
     )
     if runtime is None:
         import torch
@@ -48,14 +34,12 @@ def configure_cuda_torch_thread_budget(
     return intraop_threads, interop_threads
 
 
-def _positive_integer(value: str, name: str) -> int:
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be an integer") from exc
-    if parsed <= 0:
+def _positive_integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    if value <= 0:
         raise ValueError(f"{name} must be greater than zero")
-    return parsed
+    return value
 
 
 __all__ = ["configure_cuda_torch_thread_budget"]
