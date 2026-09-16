@@ -1,10 +1,10 @@
 # ADR 0032: упрощение публичной границы clean cut
 
-- Status: Accepted
-- Decision date: 2026-09-16
+- Статус: Принято
+- Дата решения: 2026-09-16
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -55,10 +55,10 @@ representation не является digest-equivalent прежней; model def
 
 ## Текущая документация
 
-- [Semantic contract v3](../../app/contracts/semantic/v3/README.md)
+- [Семантический контракт v3](../../app/contracts/semantic/v3/README.md)
 - [Контракт Arrow Flight v15](../../app/contracts/flight/v15/README.md)
-- [Worker process contract v14](../../app/contracts/worker/v14/README.md)
-- [Checkpoint/recovery contract v8](../../app/contracts/checkpoint/v8/README.md)
-- [Model Catalog Query v3](../../app/contracts/model_catalog/v3/README.md)
-- [Training Telemetry Query v3](../../app/contracts/training_telemetry/v3/README.md)
+- [Процессный контракт Worker v14](../../app/contracts/worker/v14/README.md)
+- [Контракт checkpoint/recovery v8](../../app/contracts/checkpoint/v8/README.md)
+- [Запрос каталога моделей v3](../../app/contracts/model_catalog/v3/README.md)
+- [Запрос телеметрии обучения v3](../../app/contracts/training_telemetry/v3/README.md)
 - [Миграции PostgreSQL](../operations/database-migrations.md)

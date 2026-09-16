@@ -3,8 +3,8 @@
 > Тип: руководство. Подготовка working copy и запуск Transformer Arrow Flight
 > service.
 
-Transformer не предоставляет local fit/predict CLI. Обучение и prediction
-начинаются только через authenticated Flight v15 Consumer boundary.
+Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
+начинаются только через аутентифицированную границу Consumer Flight v15.
 
 ## Подготовить окружение
 
@@ -15,13 +15,13 @@ Transformer не предоставляет local fit/predict CLI. Обучен�
 ./.venv/bin/python app/main.py --help
 ```
 
-Используйте только project `.venv`. Версию системного Python и системные
-зависимости выбирает владелец environment; application dependencies не
-устанавливаются в system Python или user-site.
+Используйте только `.venv` проекта. Версию системного Python и системные
+зависимости выбирает владелец окружения; зависимости приложения не
+устанавливаются в системный Python или пользовательский site.
 
 ## Подготовить control plane
 
-Настройте PostgreSQL и environment согласно
+Настройте PostgreSQL и окружение согласно
 [операционному руководству](./operations/flight-service.md), затем проверьте и
 примените migrations:
 
@@ -45,19 +45,19 @@ command history, или логах.
 ./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Для production используйте systemd procedure. Перед первым Flight v15 release
-изучите destructive clean-cut instructions для migration 0027: старые jobs,
-models, recovery records, и telemetry не сохраняются.
+Для production используйте процедуру systemd. Перед первым релизом Flight v15
+изучите инструкции destructive clean cut для migration 0027: старые jobs,
+models, recovery records и telemetry не сохраняются.
 
-Consumer materializes a Semantic v3 `ModelContract`, creates a v15 fit or
-predict job, uploads compact `indexedFeatureBlocks`, closes input, and polls
-the issued job. Contract shape is documented in
-[Flight v15](../app/contracts/flight/v15/README.md); this guide deliberately
-does not duplicate wire examples.
+Consumer материализует `ModelContract` Semantic v3, создаёт job fit или
+predict v15, загружает compact `indexedFeatureBlocks`, закрывает input и
+опрашивает выпущенное job. Форма contract описана в
+[Flight v15](../app/contracts/flight/v15/README.md); это руководство намеренно
+не дублирует wire examples.
 
 ## Проверка изменений
 
-Точные validation commands находятся в
+Точные команды validation находятся в
 [политике тестирования](./policy/testing-policy.md#запуск). GPU-specific
-verification выполняют на GPU deployment host, когда задача затрагивает CUDA
-runtime.
+verification выполняют на deployment host с GPU, когда задача затрагивает
+runtime CUDA.

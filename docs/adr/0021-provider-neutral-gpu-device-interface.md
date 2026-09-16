@@ -1,10 +1,10 @@
-# ADR 0021: provider-neutral public GPU device interface
+# ADR 0021: provider-neutral публичный interface GPU device
 
-- Status: Accepted
-- Decision date: 2026-08-28
+- Статус: Принято
+- Дата решения: 2026-08-28
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -62,5 +62,5 @@ parallel runtime, aliases или compatibility layer.
 
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
-- [Local CLI](../cli/index.md)
+- [Локальный CLI](../cli/index.md)
 - [Архитектура](../architecture.md)

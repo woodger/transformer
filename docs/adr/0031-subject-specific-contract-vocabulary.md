@@ -1,10 +1,10 @@
 # ADR 0031: предметный vocabulary shared contracts
 
-- Status: Superseded by [ADR 0032](0032-public-contract-simplification-clean-cut.md)
-- Decision date: 2026-09-13
+- Статус: Заменено [ADR 0032](0032-public-contract-simplification-clean-cut.md)
+- Дата решения: 2026-09-13
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -59,10 +59,10 @@ IDs и logical reconstruction `indexedFeatureBlocks` сохраняются.
 
 ## Текущая документация
 
-- [Semantic contract v2](../../app/contracts/semantic/v2/README.md)
+- [Семантический контракт v2](../../app/contracts/semantic/v2/README.md)
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Worker process contract v13](../../app/contracts/worker/v13/README.md)
-- [Checkpoint/recovery contract v7](../../app/contracts/checkpoint/v7/README.md)
-- [Model Catalog Query v2](../../app/contracts/model_catalog/v2/README.md)
-- [Training Telemetry Query v2](../../app/contracts/training_telemetry/v2/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Контракт checkpoint/recovery v7](../../app/contracts/checkpoint/v7/README.md)
+- [Запрос каталога моделей v2](../../app/contracts/model_catalog/v2/README.md)
+- [Запрос телеметрии обучения v2](../../app/contracts/training_telemetry/v2/README.md)
 - [Архитектура Transformer](../architecture.md)

@@ -1,10 +1,10 @@
-# ADR 0020: local opaque API access tokens
+# ADR 0020: локальные непрозрачные API access tokens
 
-- Status: Accepted
-- Decision date: 2026-08-24
+- Статус: Принято
+- Дата решения: 2026-08-24
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 

@@ -1,6 +1,6 @@
 # Политика скриптов и точек запуска
 
-> Type: Policy. Этот документ защищает CLI entrypoint, runtime wiring,
+> Тип: политика. Этот документ защищает CLI entrypoint, runtime wiring,
 > subprocess protocol и операторские команды.
 
 Проект не имеет отдельного build step. Основная точка запуска:

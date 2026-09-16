@@ -1,10 +1,10 @@
-# ADR 0003: durable recovery и device-aware execution
+# ADR 0003: надёжное recovery и execution с учётом устройства
 
-- Status: Accepted
-- Decision date: 2026-07-24
+- Статус: Принято
+- Дата решения: 2026-07-24
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -58,6 +58,6 @@ recovery error, а не скрытый restart с нуля.
 
 ## Текущая документация
 
-- [Training runtime и recovery](../training-runtime.md)
+- [Runtime обучения и recovery](../training-runtime.md)
 - [Операционное руководство Flight](../operations/flight-service.md)
 - [Архитектура Transformer](../architecture.md)

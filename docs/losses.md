@@ -1,26 +1,26 @@
-# Objective and loss semantics
+# Семантика objective и loss
 
-> Type: Reference. Numerical semantics of the Semantic v3 objective language.
+> Тип: справочник. Числовая семантика языка objective Semantic v3.
 
-The normative document is [Semantic v3](../app/contracts/semantic/v3/README.md).
-This reference explains the formulas implemented by Transformer; it does not
-introduce target-specific behavior.
+Нормативный документ — [семантическая модель v3](../app/contracts/semantic/v3/README.md).
+Этот справочник поясняет formulas, реализованные Transformer; он не вводит
+поведение, специфичное для target-а.
 
-## Target coordinates
+## Coordinates target-ов
 
-Every ordered opaque target slot declares a loss-input transformation and a
-public-prediction transformation over one raw model coordinate. Supported
-transformations are `Identity`, `Tanh`, and `Sigmoid`. `y` and public
-predictions are finite Float32 at the Arrow boundary; intermediate tensor dtype
-is Transformer-owned.
+Каждый упорядоченный непрозрачный target slot объявляет loss-input
+transformation и public-prediction transformation над одной raw coordinate
+модели. Поддерживаемые transformations: `Identity`, `Tanh` и `Sigmoid`. `y` и
+public predictions являются конечными Float32 на границе Arrow; промежуточный
+dtype tensor-а принадлежит Transformer.
 
-`observedConstraint` is omitted for finite values and explicit for a closed
-interval. The direct operator is stated by the matching direct component and
-is never inferred from target identity.
+`observedConstraint` опускается для конечных values и задаётся явно для
+закрытого interval. Direct operator указывается matching direct component и
+никогда не выводится из target identity.
 
 ## Direct operators
 
-For one target coordinate `T`:
+Для одной target coordinate `T`:
 
 ```text
 SmoothL1:
@@ -34,17 +34,17 @@ LogMSE:
         - log(nonNegativeObserved[T] + 1e-6))²)
 ```
 
-`BinaryCrossEntropyWithLogits` requires identity loss input and observed values
-inside `[0, 1]`. `LogMSE` requires a sigmoid loss estimate and a non-negative
-closed observation interval. Every slot has exactly one direct component.
+`BinaryCrossEntropyWithLogits` требует identity loss input и observed values в
+`[0, 1]`. `LogMSE` требует sigmoid loss estimate и non-negative closed
+observation interval. У каждого slot ровно один direct component.
 
-## Resources and auxiliary operators
+## Resources и auxiliary operators
 
-`PositiveScalarPerObservation` is a private positive differentiable output.
-It is checkpoint-owned, may be shared through its opaque resource identity,
-and is not included in public prediction output. `GaussianNLL` supplies its
-gradient-producing path. `RiskAdjustedExpectedValue` deliberately consumes the
-scale through stop-gradient.
+`PositiveScalarPerObservation` — private positive differentiable output. Он
+принадлежит checkpoint-у, может совместно использоваться через непрозрачную
+resource identity и не включается в public prediction output. `GaussianNLL`
+предоставляет его gradient-producing path. `RiskAdjustedExpectedValue`
+намеренно потребляет scale через stop-gradient.
 
 ```text
 GaussianNLL:
@@ -59,13 +59,13 @@ RiskAdjustedExpectedValue:
   -mean(delta - riskPenalty * stopGradient(scale) * abs(delta))
 ```
 
-`ExpectedValue` and `RiskAdjustedExpectedValue` may coexist. Component weights
-are positive. The language fixes global-row mean reduction and weighted-sum
-aggregation; they are not repeated in each objective document.
+`ExpectedValue` и `RiskAdjustedExpectedValue` могут сосуществовать. Weights
+components положительны. Язык фиксирует global-row mean reduction и
+weighted-sum aggregation; они не повторяются в каждом документе objective.
 
 ## Diagnostics
 
-Selection is a Transformer-owned policy based on weighted direct losses.
-Gradient interactions are optional observations and do not alter gradients,
-weights, objective compatibility, or output layout. Their public projection is
-defined by Training Telemetry Query v3.
+Selection — принадлежащая Transformer policy на основе weighted direct losses.
+Gradient interactions — optional observations и не изменяют gradients, weights,
+compatibility objective или output layout. Их публичная projection определена
+Training Telemetry Query v3.

@@ -1,27 +1,29 @@
-# Transformer Arrow Flight service
+# Сервис Transformer Arrow Flight
 
-Transformer is a Python service for durable PyTorch training and prediction
-over authenticated Apache Arrow Flight jobs. Inventory is the browser-facing
-Consumer; Transformer owns model execution, storage, checkpoints, recovery,
-and telemetry projection.
+Transformer — Python-сервис для надёжного обучения и предсказания с помощью
+PyTorch через аутентифицированные задания Apache Arrow Flight. Inventory —
+ориентированный на браузер Consumer; Transformer владеет исполнением модели,
+хранением, checkpoint-ами, восстановлением и проекцией телеметрии.
 
-## Current boundary
+## Актуальная граница
 
-- Flight v15 is the only public job workflow.
-- Semantic v3 carries ordered opaque targets, explicit objective bindings, and
-  model tuning without Consumer-owned architecture literals.
-- Model Catalog Query v3 and Training Telemetry Query v3 are owner-scoped
-  read-only surfaces activated by Flight v15.
-- Worker v14, checkpoint/recovery v8, and metrics v7 are provider-internal.
-- `indexedFeatureBlocks` remains the compact Arrow input representation; its
-  logical reconstruction semantics are unchanged.
+- Flight v15 — единственный публичный workflow заданий.
+- Semantic v3 содержит упорядоченные непрозрачные targets, явные bindings
+  objective и настройку модели без принадлежащих Consumer литералов
+  архитектуры.
+- Model Catalog Query v3 и Training Telemetry Query v3 — owner-scoped
+  поверхности только для чтения, активируемые Flight v15.
+- Worker v14, checkpoint/recovery v8 и metrics v7 являются внутренними для
+  provider-а.
+- `indexedFeatureBlocks` остаётся компактным Arrow-представлением входных
+  данных; его семантика логического восстановления не изменилась.
 
-There is no local fit/predict CLI and no compatibility reader for earlier
-Flight, semantic, checkpoint, model-catalog, or telemetry revisions.
+Локальный CLI для fit/predict и compatibility reader для прежних ревизий
+Flight, semantic, checkpoint, model catalog или telemetry отсутствуют.
 
-## Install and inspect
+## Установка и проверка
 
-From the repository root:
+Из корня репозитория:
 
 ```sh
 /usr/bin/python3 -m venv --clear .venv
@@ -29,10 +31,10 @@ From the repository root:
 ./.venv/bin/python app/main.py --help
 ```
 
-The project interpreter is `.venv/bin/python`. Do not install application
-dependencies into the system Python or user site.
+Интерпретатор проекта — `.venv/bin/python`. Не устанавливайте зависимости
+приложения в системный Python или пользовательский site.
 
-## Commands
+## Команды
 
 ```text
 flight serve
@@ -41,20 +43,21 @@ models list|delete
 db migrations status|apply|rollback
 ```
 
-`flight serve` runs the remote service. The other commands are local
-operational commands for database-backed access tokens, published generations,
-and Alembic state. Exact options come from `transformer <command> --help`.
+`flight serve` запускает удалённый сервис. Остальные команды — локальные
+операционные команды для access tokens в базе данных, опубликованных
+generations и состояния Alembic. Точные параметры показывает
+`transformer <command> --help`.
 
-## Documentation
+## Документация
 
 - [Flight v15](./app/contracts/flight/v15/README.md)
-- [Semantic v3](./app/contracts/semantic/v3/README.md)
-- [Model Catalog Query v3](./app/contracts/model_catalog/v3/README.md)
-- [Training Telemetry Query v3](./app/contracts/training_telemetry/v3/README.md)
+- [Семантическая модель v3](./app/contracts/semantic/v3/README.md)
+- [Запрос каталога моделей v3](./app/contracts/model_catalog/v3/README.md)
+- [Запрос телеметрии обучения v3](./app/contracts/training_telemetry/v3/README.md)
 - [Worker v14](./app/contracts/worker/v14/README.md)
 - [Checkpoint/recovery v8](./app/contracts/checkpoint/v8/README.md)
-- [Architecture](./docs/architecture.md)
-- [Consumer integration](./docs/consumer-flight-integration.md)
-- [Flight operations](./docs/operations/flight-service.md)
-- [Deployment](./docs/deployment/systemd.md)
-- [Architecture decisions](./docs/adr/index.md)
+- [Архитектура](./docs/architecture.md)
+- [Интеграция Consumer](./docs/consumer-flight-integration.md)
+- [Эксплуатация Flight](./docs/operations/flight-service.md)
+- [Развёртывание](./docs/deployment/systemd.md)
+- [Архитектурные решения](./docs/adr/index.md)

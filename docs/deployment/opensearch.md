@@ -1,23 +1,23 @@
-# OpenSearch training telemetry deployment
+# Развёртывание training telemetry OpenSearch
 
-> Тип: руководство по развёртыванию. Provider-owned metrics v7 projection for
-> Training Telemetry Query v3.
+> Тип: руководство по развёртыванию. Принадлежащая provider-у projection
+> metrics v7 для Training Telemetry Query v3.
 
-OpenSearch is not a model registry and is never called directly by Inventory
-or Terminal. Transformer writes v7 point/run projections and validates them
-before serving normalized telemetry reports.
+OpenSearch не является registry моделей и никогда не вызывается напрямую
+Inventory или Terminal. Transformer записывает projections point/run v7 и
+валидирует их до выдачи нормализованных reports telemetry.
 
-The examples use `OPENSEARCH_ENDPOINT` and a mode-0600
-`OPENSEARCH_NETRC` credential file. Keep it outside the repository and remove
-or rotate it according to deployment secret policy.
+В примерах используются `OPENSEARCH_ENDPOINT` и credential file
+`OPENSEARCH_NETRC` с mode 0600. Храните его вне repository и удаляйте либо
+ротируйте согласно policy secret deployment.
 
-## Flight v15 clean cut
+## Чистый переход Flight v15
 
-Metrics v6 indices are incompatible with the v15 runtime. Do this only after
-all Transformer services using the same deployment have stopped and after the
-operator has decided that historical telemetry may be deleted.
+Индексы metrics v6 несовместимы с runtime v15. Выполняйте это только после
+остановки всех сервисов Transformer, использующих один deployment, и после
+решения оператора, что historical telemetry можно удалить.
 
-First inspect exact targets:
+Сначала проверьте точные targets:
 
 ```bash
 curl --fail --silent --show-error \
@@ -25,8 +25,8 @@ curl --fail --silent --show-error \
   "$OPENSEARCH_ENDPOINT/_cat/indices/metrics-*-v6?v"
 ```
 
-If the output confirms only the expected old indices, delete those explicit
-names and no wildcard:
+Если output подтверждает только ожидаемые старые индексы, удалите эти явные
+имена и не используйте wildcard:
 
 ```bash
 curl --fail --silent --show-error \
@@ -35,10 +35,10 @@ curl --fail --silent --show-error \
   "$OPENSEARCH_ENDPOINT/metrics-points-v6,metrics-runs-v6"
 ```
 
-This deletion is irreversible. It is not performed by PostgreSQL migration
-0027 or by the service at startup.
+Это удаление необратимо. Оно не выполняется migration PostgreSQL 0027 или
+сервисом при запуске.
 
-## Install v7 templates before index creation
+## Установить templates v7 до создания индексов
 
 ```bash
 curl --fail --silent --show-error \
@@ -66,19 +66,20 @@ curl --fail --silent --show-error \
   --request PUT "$OPENSEARCH_ENDPOINT/metrics-runs-v7"
 ```
 
-Templates must exist before either index is created. Installing a template does
-not repair an already dynamically mapped index. The Transformer service account
-needs only bulk-create, `_mget`, and bounded `_search` access to these indices;
-template and index deletion permissions are administrative.
+Templates должны существовать до создания любого из индексов. Установка template
+не исправляет уже динамически отображённый index. Учётной записи сервиса
+Transformer нужны только доступы bulk-create, `_mget` и bounded `_search` к
+этим индексам; permissions на удаление template и index являются
+административными.
 
-## Configure and verify
+## Настроить и проверить
 
-Configure the endpoint and service credential through deployment secret
-configuration. Do not print, commit, or pass the password in a command line
-that may be retained in shell history. Start the service only after templates
-and indices are ready.
+Настройте endpoint и credential service через secret configuration deployment.
+Не печатайте, не коммитьте и не передавайте password в command line, который
+может сохраниться в shell history. Запускайте service только после подготовки
+templates и indices.
 
-After a completed new v15 fit, verify that `metrics-runs-v7` contains its
-terminal completion marker and that `metrics-points-v7` contains all expected
-epoch observations. Query the public Training Telemetry v3 action for Consumer
-behavior; do not make index names or mappings part of Consumer code.
+После завершённого нового fit v15 проверьте, что `metrics-runs-v7` содержит
+terminal completion marker, а `metrics-points-v7` — все ожидаемые observations
+epoch. Для поведения Consumer запрашивайте публичный action Training Telemetry
+v3; не делайте имена index или mappings частью кода Consumer.

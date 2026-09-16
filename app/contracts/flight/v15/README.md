@@ -1,13 +1,14 @@
 # Transformer Arrow Flight v15
 
-> CONTRACT DOCUMENT. This directory defines the public, consumer-neutral Arrow
-> Flight boundary. It is the only supported Flight workflow revision.
+> ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет публичную, consumer-neutral
+> границу Arrow Flight. Это единственная поддерживаемая revision workflow
+> Flight.
 
-Flight v15 is a destructive clean cut. It has no v14 actions, aliases, or
-reader. The public boundary is intentionally smaller: Consumer provides model
-intent and data geometry; Transformer issues job identity, owns execution and
-artifact details, and exposes only the information needed to upload, wait, and
-consume results.
+Flight v15 — разрушительный чистый переход. В нём нет actions, aliases и
+reader v14. Публичная граница намеренно сокращена: Consumer передаёт намерение
+модели и геометрию данных; Transformer выпускает identity задания, владеет
+исполнением и деталями artifacts и раскрывает лишь сведения, нужные для
+загрузки, ожидания и получения результатов.
 
 ## Actions
 
@@ -28,87 +29,90 @@ transformer.training-telemetry.v3.report
 transformer.training-telemetry.v3.gradient-interactions
 ```
 
-All Flight job requests carry a UUID `requestId`; create and mutation requests
-also carry a Consumer-issued `idempotencyKey`. Fit and predict have separate
-closed create schemas. A successful create returns a Transformer-issued
-`jobId` and one opaque `mutationLease`, which are required for later mutation
-actions and DoPut metadata. No client execution ID, fence counter, schema ID,
-or runtime worker identity is supplied by Consumer.
+Все запросы Flight jobs содержат UUID `requestId`; create и mutation requests
+также содержат выпущенный Consumer `idempotencyKey`. У fit и predict отдельные
+закрытые create schemas. Успешный create возвращает выпущенные Transformer
+`jobId` и один непрозрачный `mutationLease`, требуемые последующим mutation
+actions и metadata DoPut. Consumer не передаёт client execution ID, fence
+counter, schema ID или runtime identity Worker-а.
 
-`fit.create` receives a model label, requested device, `dataBinding`, semantic
-v3 `modelContract`, training configuration, diagnostics, and requested
-initialization (`source: random` or `source: publishedModel` with `modelRef`).
-`predict.create` receives only an exact `modelRef`, requested device, and
-`dataBinding`; it does not resend a model contract. Its result contains the
-checkpoint-owned prediction definition: sequence length, target output width,
-and ordered opaque target identities with their public transformations.
+`fit.create` получает label модели, запрошенное устройство, `dataBinding`,
+semantic v3 `modelContract`, training configuration, diagnostics и запрошенную
+initialization (`source: random` либо `source: publishedModel` с `modelRef`).
+`predict.create` получает только точный `modelRef`, запрошенное устройство и
+`dataBinding`; он не передаёт model contract повторно. Его результат содержит
+принадлежащее checkpoint-у prediction definition: sequence length, target
+output width и упорядоченные непрозрачные target identities с их публичными
+transformations.
 
-`dataBinding` contains opaque `dataContractSha256`, `tensorGeometry`, and
-`inputLayout`. It contains no readable profile, data revision, feature
-catalogue, or Consumer semantic metadata.
+`dataBinding` содержит непрозрачные `dataContractSha256`, `tensorGeometry` и
+`inputLayout`. В нём нет читаемого profile, revision данных, feature catalogue
+или семантических metadata Consumer.
 
-## Input lifecycle
+## Жизненный цикл входных данных
 
-`inputLayout.featureBlocks` declares each block by `windowRows` and
-`nativeRowWidth`. Positions are derived by Transformer and all block widths
-must sum to `featureDim`. `indexedFeatureBlocks` is the only v15 input layout;
-there is no source-encoding discriminator.
+`inputLayout.featureBlocks` объявляет каждый block через `windowRows` и
+`nativeRowWidth`. Positions выводятся Transformer, а ширины всех blocks должны
+давать в сумме `featureDim`. `indexedFeatureBlocks` — единственный input layout
+v15; discriminator source encoding отсутствует.
 
-Each DoPut is one physical payload. Upload metadata names only the issued job,
-opaque lease, payload identity, ordinal, logical-row count, chunks, and native
-row counts. Transformer derives and durably records physical schema identity,
-schema fingerprint, receipts, and actual totals. `job.input.close` receives the
-receipt-derived `manifestSha256` and may carry `expectedLogicalRows` solely for
-early EOF detection; it does not repeat client-calculated totals.
+Каждый DoPut — один физический payload. Metadata загрузки содержит только
+выпущенное job, непрозрачный lease, identity payload, ordinal, число logical
+rows, chunks и native row counts. Transformer выводит и надёжно сохраняет
+physical schema identity, schema fingerprint, receipts и фактические totals.
+`job.input.close` получает выведенный из receipts `manifestSha256` и может
+содержать `expectedLogicalRows` только для раннего выявления EOF; он не
+повторяет рассчитанные client-ом totals.
 
-The logical reconstruction is unchanged. For each block, Transformer resolves
-local observation offsets over native rows, flattens the configured window,
-and concatenates blocks into `[rows, seqLen, featureDim]`. Fit additionally
-accepts finite target vectors whose width is derived from the ordered slots.
-Predict output is a target-aligned finite Float32 vector with that same width.
-This contract preserves logical tensor reconstruction, not a promise about
-serialized Arrow IPC bytes.
+Логическое восстановление не изменилось. Для каждого block Transformer
+разрешает локальные offsets observations по native rows, разворачивает
+настроенное окно и конкатенирует blocks в `[rows, seqLen, featureDim]`. Fit
+дополнительно принимает конечные target vectors, ширина которых выводится из
+упорядоченных slots. Output predict — выровненный с target-ами конечный vector
+Float32 той же ширины. Этот контракт сохраняет логическое восстановление
+tensor-а, но не обещает неизменность сериализованных байтов Arrow IPC.
 
-## Execution and artifacts
+## Исполнение и artifacts
 
-`job.status` provides lifecycle state, input progress, selected device,
-terminal error/result projection, and polling hint. It does not expose Worker
-protocol versions, checkpoint byte counts or hashes, filesystem paths,
-recovery descriptors, worker logs, or internal fencing. `job.outputs.list`
-provides bounded output traversal for predict.
+`job.status` сообщает lifecycle state, input progress, выбранное устройство,
+проекцию terminal error/result и подсказку polling. Он не раскрывает версии
+протокола Worker, byte counts или hashes checkpoint-а, filesystem paths,
+recovery descriptors, worker logs или внутренние fences. `job.outputs.list`
+предоставляет ограниченный обход outputs predict.
 
-Transformer validates the semantic v3 document and computes its D1 identities
-at create time. Fit and warm-start compatibility are exact at the data and
-model-definition layers. Stored corruption, invalid request values, and
-incompatible definitions use distinct structured error reasons. Physical
-checkpoint validation remains a provider responsibility.
+Transformer валидирует semantic v3 document и вычисляет его identities D1 во
+время create. Совместимость fit и warm start точна на уровнях data и model
+definition. Stored corruption, недопустимые request values и несовместимые
+definitions используют разные structured error reasons. Physical validation
+checkpoint-а остаётся ответственностью provider-а.
 
-`capabilities` advertises available devices, upload limits, and availability
-of the catalog and telemetry query surfaces. It does not publish architecture
-literals, Worker/checkpoint versions, primitive catalogues, or storage
-topology.
+`capabilities` объявляет доступные устройства, limits загрузки и доступность
+поверхностей catalog и telemetry query. Он не публикует literals архитектуры,
+версии Worker/checkpoint, catalogues primitives или topology хранения.
 
-## Related query contracts
+## Связанные query contracts
 
-Model discovery/detail is defined by
-[`model_catalog/v3`](../../model_catalog/v3/README.md). Training telemetry is
-defined by [`training_telemetry/v3`](../../training_telemetry/v3/README.md).
-Both are activated by the actions above but retain their own revision and
-cursor semantics.
+Model discovery/detail определён в
+[`model_catalog/v3`](../../model_catalog/v3/README.md). Training telemetry
+определена в
+[`training_telemetry/v3`](../../training_telemetry/v3/README.md).
+Оба активируются actions выше, но сохраняют собственные revision и семантику
+cursor.
 
-## Clean cut
+## Чистый переход
 
-Migration `0027_public_contract_simplification` refuses to run while a job is
-non-terminal, then removes jobs, models, recovery records, and database-backed
-telemetry that cannot be read by v15. Startup reconciliation removes their
-unreferenced managed filesystem artifacts. OpenSearch v6 metric indices must
-be removed through the release procedure and recreated from the v7 templates.
-Existing generations are not available for predict, warm start, recovery, or
-catalog queries; train new generations after deployment.
+Migration `0027_public_contract_simplification` отказывается запускаться при
+наличии non-terminal job, затем удаляет jobs, models, recovery records и
+привязанную к базе telemetry, которые v15 не может прочитать. Startup
+reconciliation удаляет их не имеющие ссылок managed filesystem artifacts.
+Индексы метрик OpenSearch v6 должны быть удалены release procedure и созданы
+заново из templates v7. Существующие generations недоступны для predict, warm
+start, recovery или catalog queries; после deployment обучите новые
+generations.
 
 ## Fixtures
 
-`fixtures/` covers the active layout, initialization, and resolved job-config
-forms. Its manifest hashes only the fixture bundle for offline cross-project
-review. It is not part of runtime dispatch, request validation, or model
-compatibility.
+`fixtures/` покрывает активные формы layout, initialization и разрешённого
+job-config. Его manifest хеширует только bundle fixtures для офлайн
+межпроектной проверки. Он не участвует в runtime dispatch, request validation
+или compatibility модели.

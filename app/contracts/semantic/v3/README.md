@@ -1,16 +1,17 @@
-# Consumer-neutral semantic model v3
+# Семантическая модель, нейтральная к Consumer v3
 
-> CONTRACT DOCUMENT. This directory defines the closed language for target
-> slots, objectives, model tuning, and D1 semantic identities used by Flight
-> v15 and the provider-owned Worker v14/checkpoint v8 runtime.
+> ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет закрытый язык target slots,
+> objectives, model tuning и семантических идентичностей D1, используемый
+> Flight v15 и принадлежащим provider-у runtime Worker v14/checkpoint v8.
 
-Schemas are the authoritative document shape. This file defines the semantic
-rules that cannot be expressed by JSON Schema. Revision 3 is a clean cut: no
-v1 or v2 document, digest, or compatibility reader is accepted.
+Схемы являются авторитетной формой документов. Этот файл определяет
+семантические правила, которые нельзя выразить JSON Schema. Ревизия 3 —
+чистый переход: документы, digests и compatibility readers v1 и v2 не
+принимаются.
 
-## Boundary
+## Граница
 
-`ModelContract` contains only Consumer-owned training intent:
+`ModelContract` содержит только принадлежащее Consumer намерение обучения:
 
 ```json
 {
@@ -20,23 +21,24 @@ v1 or v2 document, digest, or compatibility reader is accepted.
 }
 ```
 
-The Consumer supplies an opaque data digest and tensor geometry in Flight
-`dataBinding`. Transformer resolves its model definition from that geometry,
-the closed language revision, target layout, objective, and tuning. It issues
-the resulting model-definition digest. Architecture implementation, private
-heads, parameterization, tensor layout, checkpoint bytes, and device policy
-remain Transformer-owned.
+Consumer передаёт непрозрачный digest данных и геометрию tensor-а в Flight
+`dataBinding`. Transformer разрешает своё model definition из этой геометрии,
+ревизии закрытого языка, target layout, objective и tuning. Он выпускает
+получившийся model-definition digest. Реализация архитектуры, private heads,
+parameterization, tensor layout, байты checkpoint-а и политика устройства
+остаются собственностью Transformer.
 
-Target identities are opaque. Transformer must not branch on a target name,
-profile, FIGI, or other Consumer-owned semantic value.
+Target identities непрозрачны. Transformer не должен ветвиться по имени
+target-а, profile, FIGI или другому принадлежащему Consumer семантическому
+значению.
 
-## Targets and objective
+## Targets и objective
 
-`TargetContract.slots` is a non-empty ordered array of unique identities.
-Its order is the physical target-vector order and determines output width.
-Each slot has a loss-input transformation and a public-prediction
-transformation. `observedConstraint` is optional: omission means finite
-observations; an explicit closed interval has this form:
+`TargetContract.slots` — непустой упорядоченный массив уникальных identities.
+Его порядок является физическим порядком target vector и определяет output
+width. У каждого slot есть transformation входа loss и transformation
+публичного prediction. `observedConstraint` необязателен: отсутствие означает
+конечные observations; явный закрытый интервал имеет вид:
 
 ```json
 {
@@ -51,45 +53,48 @@ observations; an explicit closed interval has this form:
 }
 ```
 
-The supported transformations are `Identity`, `Tanh`, and `Sigmoid`.
-`ClosedInterval` is the only explicit constraint primitive. All JSON numbers
-are finite IEEE-754 binary64 values. Arrow `y` values and public predictions
-are finite Float32; Transformer-owned internal tensor dtype is not prescribed.
+Поддерживаемые transformations: `Identity`, `Tanh` и `Sigmoid`.
+`ClosedInterval` — единственный явный primitive constraint-а. Все JSON numbers
+являются конечными значениями IEEE-754 binary64. Arrow-значения `y` и
+публичные predictions — конечные Float32; внутренний dtype tensor-а,
+принадлежащий Transformer, не предписан.
 
-Each target slot has exactly one direct component in the same order as slots.
-Direct components state `identity`, `operator`, `weight`, and
-`targetIdentity`. Auxiliary components state their operator-specific named
-roles. Target roles and resource roles are therefore structurally distinct
-without a generic reference discriminator. Resources declare an opaque
-identity and `resourceClass`:
+У каждого target slot ровно один direct component в том же порядке, что и
+slots. Direct components задают `identity`, `operator`, `weight` и
+`targetIdentity`. Auxiliary components задают именованные roles, специфичные
+для их operator-а. Поэтому target roles и resource roles структурно различимы
+без универсального discriminator-а references. Resources объявляют
+непрозрачную identity и `resourceClass`:
 
 ```json
 {"identity":"sharedScale","resourceClass":"PositiveScalarPerObservation"}
 ```
 
-`PositiveScalarPerObservation` is a private, positive, differentiable scalar
-per observation. It is checkpoint-owned, can be shared by repeated resource
-identity, and is never a public prediction coordinate. Transformer owns its
-implementation. A declared resource must be used and must have a structural
-gradient-producing path to total loss; a stop-gradient-only use is invalid.
+`PositiveScalarPerObservation` — private, положительный, дифференцируемый
+scalar на observation. Он принадлежит checkpoint-у, может совместно
+использоваться повторением resource identity и никогда не является
+координатой публичного prediction. Его реализацией владеет Transformer.
+Объявленный resource должен использоваться и иметь структурный путь,
+порождающий gradient к total loss; использование только через stop-gradient
+недопустимо.
 
-Direct operators are `SmoothL1`, `BinaryCrossEntropyWithLogits`, and `LogMSE`.
-Auxiliary operators are `GaussianNLL`, `ExpectedValue`, and
-`RiskAdjustedExpectedValue`. Their formulas, role constraints, constants, and
-gradient semantics are implemented and validated by Transformer. Direct
-operator selection is explicit in the document; it is never inferred by
-Transformer from a target identity. `ExpectedValue` and
-`RiskAdjustedExpectedValue` may coexist.
+Direct operators: `SmoothL1`, `BinaryCrossEntropyWithLogits` и `LogMSE`.
+Auxiliary operators: `GaussianNLL`, `ExpectedValue` и
+`RiskAdjustedExpectedValue`. Их formulas, role constraints, constants и
+gradient semantics реализуются и валидируются Transformer. Выбор direct
+operator-а явно указан в документе; Transformer никогда не выводит его из
+target identity. `ExpectedValue` и `RiskAdjustedExpectedValue` могут
+сосуществовать.
 
-Components have strictly positive weights. Direct components are in target-slot
-order; resources and auxiliary components are in ASCII identity order. The
-language fixes `GlobalRowMean` reduction and `WeightedSum` aggregation, so
-those redundant fields are not carried in each document.
+Components имеют строго положительные weights. Direct components идут в
+порядке target slots; resources и auxiliary components — в порядке ASCII
+identity. Язык фиксирует reduction `GlobalRowMean` и aggregation
+`WeightedSum`, поэтому эти избыточные поля не передаются в каждом документе.
 
-## D1 identities
+## Идентичности D1
 
-After structural and semantic validation, Transformer calculates SHA-256 over
-RFC 8785/JCS UTF-8 preimages:
+После структурной и семантической validation Transformer вычисляет SHA-256
+для UTF-8 preimages RFC 8785/JCS:
 
 ```text
 targetContractSha256 = SHA256(JCS({
@@ -104,32 +109,34 @@ objectiveSha256 = SHA256(JCS({
 
 ```
 
-`dataContractSha256` remains Consumer-issued and opaque to Transformer. The
-full documents are the source of meaning; digests are derived identities.
-`modelDefinitionSha256` is instead provider-issued after Transformer resolves
-its internal model implementation and `ModelConfig`. It binds the target and
-objective digests, but its preimage is not a Consumer contract and is not
-recomputed across the boundary. There is no representation-independent hashing
-and no conversion of older semantic revisions to v3. Input manifests, job
-configuration hashes, and physical checkpoint hashes are separate operational
-fences rather than D1 layers.
+`dataContractSha256` остаётся выпущенным Consumer непрозрачным значением для
+Transformer. Полные документы — источник смысла; digests — производные
+identities. Напротив, `modelDefinitionSha256` выпускается provider-ом после
+разрешения Transformer своей внутренней реализации модели и `ModelConfig`.
+Он связывает digests target и objective, но его preimage не является
+контрактом Consumer и не вычисляется повторно через границу. Хеширование,
+независимое от представления, и конвертация старых semantic revisions в v3
+отсутствуют. Input manifests, job configuration hashes и physical checkpoint
+hashes — отдельные операционные fences, а не слои D1.
 
-## Validation and capabilities
+## Validation и capabilities
 
-Validation order is: closed schema; finite JSON numbers; target layout and
-constraints; component/resource ordering and uniqueness; direct coverage;
-operator roles/domains; resource reachability; model-tuning validity; then D1
-calculation. Incompatible stored or requested definitions are not remapped.
+Порядок validation: закрытая schema; конечные JSON numbers; target layout и
+constraints; порядок и уникальность components/resources; direct coverage;
+operator roles/domains; resource reachability; допустимость model tuning;
+затем вычисление D1. Несовместимые сохранённые или запрошенные definitions не
+переназначаются.
 
-`language-capabilities.schema.json` declares revision 3, the closed language,
-and semantic limits. A Consumer may introduce a new opaque target identity
-using advertised primitives without causing target-name branching in
-Transformer. Changing a primitive formula, type system, role model, or
-resource lifecycle requires a new revision.
+`language-capabilities.schema.json` объявляет ревизию 3, закрытый язык и
+семантические limits. Consumer может ввести новую непрозрачную target identity
+с advertised primitives, не вызывая ветвления Transformer по имени target-а.
+Изменение formula primitive-а, type system, role model или resource lifecycle
+требует новой revision.
 
 ## Fixtures
 
-`fixtures/` contains a small cross-project behavioral bundle: single-target,
-multi-target shared-resource, new opaque target, and reordered-layout cases.
-The fixture manifest hashes only files in that bundle; it is an offline review
-aid, not a runtime input, capability, or compatibility fence.
+`fixtures/` содержит небольшой межпроектный behavioral bundle: случаи одного
+target-а, нескольких targets с общим resource, нового непрозрачного target-а
+и изменённого порядка layout. Manifest fixtures хеширует только файлы этого
+bundle; он служит для офлайн-проверки, но не является входом runtime,
+capability или compatibility fence.

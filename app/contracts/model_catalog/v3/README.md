@@ -1,69 +1,73 @@
-# Owner-scoped Model Catalog Query v3
+# Запрос каталога моделей в области владельца v3
 
-> CONTRACT DOCUMENT. This package defines read-only discovery and detail of
-> published Transformer model generations. It is activated by Flight v15.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет discovery только для чтения и
+> detail опубликованных generations моделей Transformer. Он активируется
+> Flight v15.
 
-The registry is the catalog source of truth. Telemetry is neither a source of
-existence nor a condition for model visibility. Requests never carry an owner:
-Transformer derives scope from the authenticated subject. Unknown, foreign,
-and deleted `modelRef` values are security-equivalent `MODEL_NOT_FOUND`.
+Registry — источник истины catalog. Telemetry не является ни источником
+существования, ни условием видимости модели. Requests никогда не передают
+owner-а: Transformer выводит scope из аутентифицированного subject. Неизвестные,
+чужие и удалённые `modelRef` security-equivalent и возвращают
+`MODEL_NOT_FOUND`.
 
-## Operations
+## Операции
 
 ```text
 transformer.model-catalog.v3.list
 transformer.model-catalog.v3.detail
 ```
 
-List is a bounded owner-scoped traversal ordered by `createdAt DESC,
-modelRef ASC`. It uses a signed, owner-bound keyset cursor with a 900-second
-TTL and a live high-water boundary. A concurrent deletion may make a later
-detail lookup return `MODEL_NOT_FOUND`; Consumer should remove that entry and
-refresh. The cursor does not preserve access to a deleted generation.
+List — ограниченный owner-scoped traversal, упорядоченный по `createdAt DESC,
+modelRef ASC`. Он использует подписанный, связанный с owner-ом keyset cursor с
+TTL 900 секунд и границей live high-water. Параллельное удаление может привести
+к `MODEL_NOT_FOUND` при позднейшем lookup detail; Consumer должен убрать эту
+запись и обновить данные. Cursor не сохраняет доступ к удалённой generation.
 
-Each list summary contains only data required to select and compare a
-generation: immutable `modelRef`, label, generation, creation time, opaque
-data/model-definition identities, resolved model tuning, ordered opaque target
-identities, catalog initialization summary, and producing-run identity. It
-does not expose checkpoint bytes/hashes, filesystem paths, Worker versions,
-or full target/objective documents.
+Каждый summary list содержит только данные, требуемые для выбора и сравнения
+generation: immutable `modelRef`, label, generation, время создания,
+непрозрачные identities data/model definition, разрешённый model tuning,
+упорядоченные непрозрачные target identities, summary initialization catalog и
+identity producing run. Он не раскрывает bytes/hashes checkpoint-а, filesystem
+paths, версии Worker или полные документы target/objective.
 
-Detail takes one exact `modelRef`. It returns the summary plus:
+Detail принимает один точный `modelRef`. Он возвращает summary и:
 
-- data digest and tensor geometry;
-- the full semantic v3 `ModelContract` and all D1 layers;
-- resolved training/diagnostics settings;
-- terminal progress and selection summary; and
-- catalog initialization summary (`random`, or `publishedModel` with its
-  visible parent model reference).
+- digest data и geometry tensor-а;
+- полный semantic v3 `ModelContract` и все слои D1;
+- разрешённые settings training/diagnostics;
+- terminal progress и summary selection; и
+- summary initialization catalog (`random` либо `publishedModel` с видимой
+  reference parent model).
 
-Requested initialization, checkpoint-resolved parent hashes, checkpoint paths,
-and artifact byte counts are provider-internal. The detail response is a
-canonical description of the generation, not an artifact administration API.
+Запрошенная initialization, разрешённые checkpoint-ом hashes parent-а, paths
+checkpoint-а и byte counts artifact остаются внутренними для provider-а.
+Ответ detail — каноническое описание generation, а не API администрирования
+artifacts.
 
-## Verification and errors
+## Проверка и ошибки
 
-List reads registry metadata only. Detail validates stored metadata and D1
-before checking the managed checkpoint artifact. A malformed stored definition
-returns `MODEL_CORRUPT / STORED_MODEL_METADATA_INVALID`; an invalid artifact
-returns `MODEL_CORRUPT / MODEL_CHECKPOINT_INVALID`; a verification work-budget
-limit returns `RESOURCE_EXHAUSTED / MODEL_VERIFICATION_UNAVAILABLE`.
+List читает только metadata registry. Detail валидирует сохранённые metadata и
+D1 до проверки managed artifact checkpoint-а. Некорректная сохранённая
+definition возвращает `MODEL_CORRUPT / STORED_MODEL_METADATA_INVALID`;
+некорректный artifact — `MODEL_CORRUPT / MODEL_CHECKPOINT_INVALID`; limit
+бюджета работы verification возвращает
+`RESOURCE_EXHAUSTED / MODEL_VERIFICATION_UNAVAILABLE`.
 
-Other structured outcomes include invalid/expired cursor, invalid request,
-registry unavailability, and response-budget exhaustion. Error documents are
-defined by `schemas/error-detail.schema.json`; clients branch on `code` and
-`reason`, never on human-readable text.
+Другие structured outcomes включают некорректный/истёкший cursor,
+некорректный request, недоступность registry и исчерпание response budget.
+Документы ошибок определены в `schemas/error-detail.schema.json`; clients
+ветвятся по `code` и `reason`, но никогда по читаемому человеку тексту.
 
-Maximum page size is 100, cursor TTL is 900 seconds, and a serialized result
-is limited to 8 MiB. Detail verifies at most one checkpoint and refuses a
-verification larger than 1 GiB before reading it.
+Максимальный размер страницы — 100, TTL cursor — 900 секунд, а сериализованный
+result ограничен 8 MiB. Detail проверяет не более одного checkpoint-а и
+отказывается от verification более 1 GiB до его чтения.
 
-## Clean cut and fixtures
+## Чистый переход и fixtures
 
-Revision 3 has no reader for catalog v1/v2 entries. Flight v15 migration 0027
-removes previous generations and their registry records, so deployment starts
-the catalog empty and new models are trained under semantic v3.
+Revision 3 не имеет reader для entries catalog v1/v2. Migration 0027 Flight
+v15 удаляет предыдущие generations и их records registry, поэтому deployment
+начинает с пустого catalog, а новые models обучаются в semantic v3.
 
-`fixtures/` contains empty/list/detail examples for offline cross-project
-review. Its manifest hashes only that fixture bundle and has no runtime or
-compatibility meaning.
+`fixtures/` содержит примеры empty/list/detail для офлайн межпроектной
+проверки. Его manifest хеширует только этот bundle fixtures и не имеет
+значения для runtime или compatibility.

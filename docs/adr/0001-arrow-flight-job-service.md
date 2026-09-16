@@ -1,10 +1,10 @@
 # ADR 0001: граница Arrow Flight job service
 
-- Status: Accepted
-- Decision date: 2026-07-18
+- Статус: Принято
+- Дата решения: 2026-07-18
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 

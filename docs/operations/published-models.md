@@ -49,7 +49,7 @@ Model: <MODEL_REF>
 State: DELETING
 ```
 
-Request transaction:
+Транзакция запроса:
 
 - блокирует новые prediction jobs и `publishedModel` fit для этой generation;
 - отклоняется, если на модель ссылается любой незавершённый prediction или

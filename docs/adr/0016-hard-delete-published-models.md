@@ -1,10 +1,10 @@
 # ADR 0016: hard delete моделей с минимальным audit archive
 
-- Status: Accepted
-- Decision date: 2026-08-20
+- Статус: Принято
+- Дата решения: 2026-08-20
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 

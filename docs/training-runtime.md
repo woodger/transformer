@@ -1,66 +1,67 @@
-# Training runtime and checkpoint
+# Runtime обучения и checkpoint
 
-> Type: Reference. Provider-owned Worker v14 training, checkpoint v8, and
-> recovery behavior behind Flight v15.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v14, checkpoint
+> v8 и поведение recovery за Flight v15.
 
-## Model definition and training
+## Model definition и обучение
 
-Flight v15 fit receives a Semantic v3 target/objective document and data
-geometry. Transformer validates the closed language, materializes its internal
-model configuration, and records D1 identities. Ordered opaque target slots
-define output coordinates; no model/loss branch depends on Consumer target
-names.
+Fit Flight v15 получает документ target/objective Semantic v3 и geometry
+данных. Transformer валидирует закрытый язык, материализует внутреннюю
+configuration модели и записывает identities D1. Упорядоченные непрозрачные
+target slots задают output coordinates; ни одна ветвь model/loss не зависит от
+имён target-ов Consumer.
 
-The Worker applies each slot's loss-input and public-prediction
-transformations to the same raw output coordinate. Direct and auxiliary
-operators, private resource classes, and gradient semantics are documented in
-[losses](./losses.md) and Semantic v3. Training policy is separate from model
-definition identity. Selection, when enabled, uses the weighted direct-loss
-score; auxiliary components do not enter that score.
+Worker применяет loss-input и public-prediction transformations каждого slot к
+одной raw output coordinate. Direct и auxiliary operators, private resource
+classes и gradient semantics документированы в [losses](./losses.md) и Semantic
+v3. Training policy отделена от identity model definition. При включённом
+selection используется weighted direct-loss score; auxiliary components не
+входят в этот score.
 
-Feature values may contain NaN according to `missingValuePolicy`:
+Feature values могут содержать NaN согласно `missingValuePolicy`:
 
-- `strict`: a timestep is masked when any feature is missing;
-- `relaxed`: it is masked only when all features are missing, with missingness
-  indicators supplied to the internal model.
+- `strict`: timestep mask-ируется, когда отсутствует любой feature;
+- `relaxed`: он mask-ируется только когда отсутствуют все features, а
+  indicators missingness передаются внутренней модели.
 
-Masking occurs before NaN-to-zero conversion. The model uses the last valid
-timestep; an entirely masked sequence uses a safe zero placeholder.
+Masking выполняется до преобразования NaN в zero. Model использует последний
+valid timestep; полностью masked sequence использует безопасный zero
+placeholder.
 
-## Input, epochs, and recovery
+## Input, epochs и recovery
 
-Worker reconstructs the compact Flight v15 `indexedFeatureBlocks` input into
-bounded `[rows, seqLen, featureDim]` slices. Payload/chunk boundaries are not
-optimizer batches, shuffle boundaries, or epoch boundaries. Durable fit may
-start after input becomes available; close marks EOF and fixes the input
-manifest for subsequent full epochs.
+Worker восстанавливает компактный input Flight v15 `indexedFeatureBlocks` в
+ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
+являются batches optimizer-а, границами shuffle или границами epoch. Durable
+fit может начаться после появления input-а; close отмечает EOF и фиксирует
+input manifest для последующих полных epochs.
 
-Recovery checkpoints are created only on completed global-epoch boundaries
-after EOF. Checkpoint v8 stores model, optimizer, AMP scaler, RNG, shuffle,
-selection, progress, semantic identities, resolved job configuration, and
-input-manifest fences. Recovery verifies these before loading state. A
-different data/model definition or manifest is rejected; no target remapping or
-partial state loading is attempted.
+Checkpoints recovery создаются только на завершённых границах global epoch после
+EOF. Checkpoint v8 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
+progress, semantic identities, resolved configuration job и fences input
+manifest. Recovery проверяет их до загрузки state. Другая definition data/model
+или manifest отклоняются; remapping target-ов и частичная загрузка state не
+выполняются.
 
-Temporary attempt artifacts are service-managed. Startup reconciliation removes
-only unreferenced managed artifacts under the service's own locked runtime
-directory; it does not inspect or delete artifacts belonging to another
-Transformer service instance.
+Временные artifacts attempt принадлежат service. Startup reconciliation удаляет
+только не имеющие ссылок managed artifacts в собственном locked runtime
+directory service-а; он не проверяет и не удаляет artifacts другого instance
+сервиса Transformer.
 
 ## Telemetry
 
-An epoch's telemetry is an observation of its training pass, before each
-optimizer update. It includes objective values, training MAE/RMSE, health
-counters, and optional gradient interactions. Its best-effort persistence does
-not change optimizer execution, selection, fit success, or model publication.
+Telemetry epoch — observation её training pass до каждого optimizer update. Она
+включает values objective, training MAE/RMSE, health counters и optional
+gradient interactions. Её best-effort persistence не меняет исполнение
+optimizer-а, selection, успех fit или публикацию модели.
 
-OpenSearch receives a provider-owned v7 projection. Consumer retrieves a
-validated, normalized report through Training Telemetry Query v3 rather than
-directly from OpenSearch. A missing report does not invalidate a published
-model.
+OpenSearch получает принадлежащую provider-у projection v7. Consumer получает
+валидированный, нормализованный report через Training Telemetry Query v3, а не
+напрямую из OpenSearch. Отсутствие report не делает опубликованную model
+некорректной.
 
-## Clean cut
+## Чистый переход
 
-Checkpoint/recovery v8 has no reader for prior checkpoint state. Migration
-0027 deletes old jobs and generations before Flight v15 activation; train new
-generations after deployment.
+Checkpoint/recovery v8 не имеет reader для прежнего state checkpoint-а.
+Migration 0027 удаляет старые jobs и generations перед активацией Flight v15;
+после deployment обучите новые generations.

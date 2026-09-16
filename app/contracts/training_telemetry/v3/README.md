@@ -1,58 +1,57 @@
-# Owner-scoped Training Telemetry Query v3
+# Запрос телеметрии обучения в области владельца v3
 
-> CONTRACT DOCUMENT. This package defines read-only telemetry for one
-> published model generation. It is activated by Flight v15.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет telemetry только для чтения одной
+> опубликованной generation модели. Он активируется Flight v15.
 
-Telemetry describes the training pass that produced an epoch, not a repeat
-evaluation of final checkpoint weights. For each batch, loss and target errors
-are observed before its optimizer update and then aggregated for that epoch.
-It is not model-test or out-of-sample quality data, and it is not evidence of
-checkpoint integrity.
+Telemetry описывает проход обучения, создавший epoch, а не повторную оценку
+весов финального checkpoint-а. Для каждого batch loss и ошибки target-ов
+наблюдаются до optimizer update, а затем агрегируются для этой epoch. Это не
+данные качества model test или out-of-sample и не доказательство целостности
+checkpoint-а.
 
-## Operations and owner scope
+## Операции и scope owner-а
 
 ```text
 transformer.training-telemetry.v3.report
 transformer.training-telemetry.v3.gradient-interactions
 ```
 
-Requests take an exact `modelRef`, never an owner or run identity. Transformer
-resolves owner scope from authentication and obtains the authoritative
-producing run. Unknown, foreign, and deleted models return the same
-`MODEL_NOT_FOUND` result. A retained telemetry document cannot make a deleted
-model visible.
+Requests принимают точный `modelRef`, но никогда identity owner-а или run-а.
+Transformer выводит scope owner-а из authentication и получает авторитетный
+producing run. Неизвестные, чужие и удалённые models возвращают одинаковый
+`MODEL_NOT_FOUND`. Сохранённый документ telemetry не может сделать удалённую
+model видимой.
 
-Before returning a report, Transformer validates the registry-owned model
-metadata, semantic identities, completion marker, epoch coverage, target and
-component layout, numeric finiteness, and health-counter invariants. A partial
-numeric report is never returned.
+Перед выдачей report Transformer валидирует принадлежащие registry metadata
+model, semantic identities, completion marker, coverage epoch, layout target и
+component, конечность чисел и инварианты health counters. Частичный числовой
+report никогда не возвращается.
 
-The outcome order is: model lookup/metadata validation; `pending` only while
-materialization is demonstrably expected; `unavailable` when a complete report
-will not arrive; telemetry-integrity failure when a completion marker conflicts
-with observations; then `available`. Backend outage is an RPC error, not
+Порядок outcomes: lookup model/validation metadata; `pending` только пока
+materialization доказуемо ожидается; `unavailable`, когда полный report не
+появится; failure целостности telemetry, когда completion marker противоречит
+observations; затем `available`. Недоступность backend-а — RPC error, а не
 `pending`.
 
 ## Report
 
-The report header carries the model and run identities, data/model-definition
-digests, and a single `layout` with target identities and direct/auxiliary
-component identities. Epoch arrays then contain only numerical values in that
-layout order. This avoids repeating semantic labels in every epoch.
+Header report-а содержит identities model и run, digests data/model definition
+и один `layout` с target identities и identities direct/auxiliary components.
+Массивы epoch затем содержат только числовые values в порядке этого layout. Это
+исключает повторение семантических labels в каждой epoch.
 
-An available report includes coverage, selection milestones, first/best/
-published anchors, health totals, and one bounded page of epochs in ascending
-order. `totalLoss`, `selectionScore`, and component means are authoritative
-Worker observations that are accumulated independently. They are checked for
-presence and finite representation but are not recomputed from one another
-across languages.
+Available report включает coverage, milestones selection, anchors first/best/
+published, health totals и одну ограниченную страницу epochs в порядке
+возрастания. `totalLoss`, `selectionScore` и means components — авторитетные
+наблюдения Worker, накапливаемые независимо. Они проверяются на наличие и
+конечное представление, но не пересчитываются друг через друга между языками.
 
-`selectionScore` describes weighted direct losses when selection is enabled;
-otherwise it is null. `bestEpoch` comes from checkpoint-owned selection state,
-not a new argmin calculation over telemetry. With selection enabled, published
-weights belong to the best epoch; otherwise they belong to the last epoch.
+`selectionScore` описывает взвешенные direct losses при включённом selection;
+иначе он равен null. `bestEpoch` берётся из принадлежащего checkpoint-у state
+selection, а не из нового вычисления argmin по telemetry. При включённом
+selection опубликованные weights принадлежат лучшей epoch; иначе — последней.
 
-Each epoch's health counters satisfy:
+Health counters каждой epoch удовлетворяют:
 
 ```text
 trainingBatchesCompleted
@@ -60,53 +59,53 @@ trainingBatchesCompleted
   = finiteGradientBatches + nonFiniteGradientBatches
 ```
 
-`ampOverflowBatches` is no greater than both skipped updates and non-finite
-gradient batches. Health totals are exact component-wise sums over all epochs.
+`ampOverflowBatches` не превышает ни skipped updates, ни batches с non-finite
+gradient. Health totals — точные покомпонентные суммы по всем epochs.
 
 ## Gradient interactions
 
-Gradient interactions are fetched separately for one epoch. Components follow
-objective execution order. A published pair has a unique orientation: its left
-component precedes its right component in objective execution order. Self and
-reversed pairs are absent. Pairs appear only when at least one finite cosine
-observation exists; a zero-norm pair with no finite cosine observation is
-therefore absent rather than represented by a sentinel. Pages sort pairs by
-ASCII `(leftComponentIdentity, rightComponentIdentity)`.
+Gradient interactions загружаются отдельно для одной epoch. Components идут в
+порядке исполнения objective. У опубликованной пары уникальная ориентация:
+левый component предшествует правому в порядке исполнения objective. Self и
+reversed pairs отсутствуют. Pairs появляются только при наличии хотя бы одного
+finite cosine observation; поэтому zero-norm pair без finite cosine observation
+отсутствует, а не представляется sentinel-ом. Страницы сортируют pairs по ASCII
+`(leftComponentIdentity, rightComponentIdentity)`.
 
-The report says whether diagnostics are not configured, configured without
-observations, or available. The default diagnostics epoch is published when
-collected; otherwise the nearest collected epoch before it, then the earliest
-one after it.
+Report сообщает, выключены ли diagnostics, настроены ли без observations или
+доступны. Default epoch diagnostics — опубликованная, если она собрана; иначе
+ближайшая собранная epoch до неё, затем самая ранняя после неё.
 
-## Cursors, limits, and restart
+## Cursors, limits и restart
 
-Epoch pages allow at most 100 items; gradient pages allow at most 1,000 pairs.
-Both use owner-bound, signed cursors with a 900-second TTL. A continuation
-repeats the exact model, page size, and requested epoch where applicable.
+Страницы epoch допускают не более 100 items; страницы gradient — не более 1 000
+pairs. Обе используют подписанные cursors, связанные с owner-ом, с TTL 900
+секунд. Continuation повторяет точные model, page size и, где требуется,
+запрошенную epoch.
 
-Non-terminal pages retain an immutable validated snapshot in a shared bounded
-process-local pool: at most 64 entries, 64 MiB total, and 16 MiB per snapshot.
-Admission is atomic before a cursor is issued; unexpired entries are not
-evicted. A terminal response requires no admission. If capacity cannot retain
-a snapshot, the operation returns
+Non-terminal pages удерживают immutable валидированный snapshot в общем
+ограниченном локальном для process pool: не более 64 entries, 64 MiB всего и
+16 MiB на snapshot. Admission атомарен до выдачи cursor; неистёкшие entries не
+вытесняются. Terminal response не требует admission. Если capacity не может
+удержать snapshot, операция возвращает
 `RESOURCE_EXHAUSTED / TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED`.
 
-Snapshots are intentionally process-local. A valid unexpired cursor from a
-previous successful service start returns
-`FAILED_PRECONDITION / TELEMETRY_CURSOR_INVALIDATED`; an expired cursor returns
-`TELEMETRY_CURSOR_EXPIRED`. Model deletion has priority and returns
-`MODEL_NOT_FOUND` even during traversal.
+Snapshots намеренно локальны для process. Валидный неистёкший cursor от
+предыдущего успешного старта сервиса возвращает
+`FAILED_PRECONDITION / TELEMETRY_CURSOR_INVALIDATED`; истёкший cursor
+возвращает `TELEMETRY_CURSOR_EXPIRED`. Удаление model имеет приоритет и
+возвращает `MODEL_NOT_FOUND` даже во время traversal.
 
-The response budget is 8 MiB. Error documents define structured invalid-query,
-cursor, metadata, backend, integrity, capacity, and budget outcomes. Clients
-branch on `code` and `reason`, not error text.
+Response budget — 8 MiB. Документы ошибок определяют structured outcomes для
+некорректных query, cursor, metadata, backend, integrity, capacity и budget.
+Clients ветвятся по `code` и `reason`, а не по тексту ошибки.
 
-## Clean cut and fixtures
+## Чистый переход и fixtures
 
-Revision 3 does not read v1/v2 telemetry. Flight v15 migration 0027 removes
-old models and telemetry; new reports are produced only by new v15 fits and
-the provider-owned metrics v7 projection.
+Revision 3 не читает telemetry v1/v2. Migration 0027 Flight v15 удаляет старые
+models и telemetry; новые reports создаются только новыми fits v15 и
+принадлежащей provider-у projection metrics v7.
 
-`fixtures/` contains a compact pending/available report and lazy-gradient
-examples. Its manifest hashes only the fixture bundle for offline review; it
-does not enter telemetry, model, or checkpoint compatibility identity.
+`fixtures/` содержит компактные примеры pending/available report и lazy
+gradient. Его manifest хеширует только bundle fixtures для офлайн-проверки; он
+не входит в identity совместимости telemetry, model или checkpoint.

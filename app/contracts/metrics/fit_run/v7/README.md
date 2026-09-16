@@ -1,16 +1,17 @@
-# Transformer terminal fit-run metrics v7
+# Terminal fit-run метрики Transformer v7
 
-> CONTRACT DOCUMENT. This package defines the provider-internal terminal fit
-> summary and its OpenSearch projection for Semantic v3 runs.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет внутреннее для provider-а terminal
+> fit summary и его проекцию OpenSearch для запусков Semantic v3.
 
-The immutable summary links a producing job and published model to its D1
-identities, resolved initialization, training milestones, durations, input
-counts, and physical artifact fences. It is the completion marker used by the
-telemetry materializer; it is not a public model-registry record.
+Immutable summary связывает producing job и опубликованную model с её
+identities D1, разрешённой initialization, milestones обучения,
+продолжительностями, input counts и physical artifact fences. Это completion
+marker, используемый materializer telemetry; он не является публичной записью
+registry моделей.
 
-The v7 projection uses `transformer.metrics-fit-run.v7` in
-`metrics-runs-v7`. `opensearch/metrics-runs-v7.template.json` must be installed
-before index creation. Consumer reaches these observations only through
-Training Telemetry Query v3, never by direct OpenSearch access.
+Projection v7 использует `transformer.metrics-fit-run.v7` в
+`metrics-runs-v7`. `opensearch/metrics-runs-v7.template.json` должен быть
+установлен до создания индекса. Consumer получает эти observations только через
+Training Telemetry Query v3, но никогда прямым доступом к OpenSearch.
 
-Earlier fit-run documents are not read after the Flight v15 clean cut.
+Документы прежних fit-run после чистого перехода Flight v15 не читаются.

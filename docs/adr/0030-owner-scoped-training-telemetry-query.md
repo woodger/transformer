@@ -1,10 +1,10 @@
-# ADR 0030: owner-scoped Training Telemetry Query
+# ADR 0030: owner-scoped запрос telemetry обучения
 
-- Status: Accepted
-- Decision date: 2026-09-07
+- Статус: Принято
+- Дата решения: 2026-09-07
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -55,7 +55,7 @@ v13. PostgreSQL schema, Worker/checkpoint formats и metrics v5 projection не
 
 ## Текущая документация
 
-- [Training Telemetry Query v2](../../app/contracts/training_telemetry/v2/README.md)
+- [Запрос телеметрии обучения v2](../../app/contracts/training_telemetry/v2/README.md)
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
 - [Архитектура Transformer](../architecture.md)

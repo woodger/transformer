@@ -1,13 +1,13 @@
-# Changelog
+# Журнал изменений
 
 Все заметные изменения в этом проекте документируются в этом файле.
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 а проект следует [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Не выпущено]
 
-### Changed
+### Изменено
 
 - Shared contracts переведены clean cut на предметный vocabulary без общего
   `kind`: Semantic v2, Flight v14, Worker v13, checkpoint/recovery v7,
@@ -23,7 +23,7 @@
   fencing jobs. Старые models требуют нового обучения; external OpenSearch
   telemetry очищается отдельной deployment procedure.
 
-### Removed
+### Удалено
 
 - Flight v13 action surface, legacy semantic/checkpoint/worker/query readers и
   compatibility aliases не принимаются active runtime.
@@ -36,7 +36,7 @@
 
 ## [0.1.19] - 2026-09-07
 
-### Added
+### Добавлено
 
 - Реализован Training Telemetry Query v1: owner-scoped полный report,
   epoch и sparse gradient-pair pagination, availability outcomes, structured
@@ -48,7 +48,7 @@
 - Migration `0025` добавляет монотонную publication boundary и owner/order
   индекс model registry для bounded catalog traversal.
 
-### Changed
+### Изменено
 
 - Public Flight contract повышен clean cut до v13 и публикует Model
   Catalog v1 и Training Telemetry Query v1 actions/capabilities. Flight v12
@@ -59,7 +59,7 @@
   points; OpenSearch adapter также выполняет bounded `_mget` и `_search`
   через application telemetry port.
 
-### Fixed
+### Исправлено
 
 - Flight v13 принимает Training Telemetry Query results общей action schema;
   report и gradient cursors используют общий bounded snapshot pool с atomic
@@ -76,7 +76,7 @@
 
 ## [0.1.18] - 2026-09-05
 
-### Added
+### Добавлено
 
 - Consumer-neutral semantic language v1 с ordered opaque target slots,
   явными constraints/transformations, declarative objective bindings,
@@ -84,7 +84,7 @@
 - Structured semantic error details, hybrid language capabilities и
   cross-language golden fixtures для Flight v11.
 
-### Changed
+### Изменено
 
 - Public Flight contract повышен до v11, worker process contract — до v12,
   checkpoint/recovery formats — до v6, training metrics и terminal fit
@@ -104,7 +104,7 @@
 - OpenSearch projection использует отдельные `metrics-points-v5` и
   `metrics-runs-v5` templates и indices.
 
-### Fixed
+### Исправлено
 
 - Local fit вычисляет model identity до появления полного data-contract digest,
   не смешивая независимые D1 model и data layers.
@@ -118,7 +118,7 @@
 - Локальные metrics plots больше не разбирают opaque target/component
   identities по символам `.` и `__`.
 
-### Removed
+### Удалено
 
 - Flight v10, worker v11, checkpoint/recovery v5 и metrics v4 runtime/packages
   удалены без aliases, legacy reader или parallel compatibility layer.
@@ -127,7 +127,7 @@
 
 ## [0.1.17] - 2026-09-01
 
-### Changed
+### Изменено
 
 - Public device identity изменена с `cuda` на `gpu` в local fit/predict CLI и
   новом единственном Arrow Flight v8 contract. CUDA остаётся внутренним
@@ -160,7 +160,7 @@
   доступного GPU и явно пропускает их в остальных средах; отдельный `gpu`
   marker profile удалён.
 
-### Removed
+### Удалено
 
 - Flight v5/v6/v7, worker v8, checkpoint/recovery v4, прежние metrics contracts, loss-stage
   options и публичное значение device `cuda` удалены без aliases или parallel
@@ -168,7 +168,7 @@
 
 ## [0.1.16] - 2026-08-24
 
-### Changed
+### Изменено
 
 - Alembic revisions `0001–0020` объединены в одну baseline migration с
   сохранением head `0020`. Базы, уже находящиеся на `0020`, не изменяются;
@@ -186,14 +186,14 @@
   Consumer guide оставляет workflow и ссылается на нормативный Flight contract
   для wire details. Устаревшие и дублирующие design references удалены.
 
-### Fixed
+### Исправлено
 
 - `auth tokens revoke` выводит ожидаемые `not found` и invalid-ID ошибки
   кратко в stderr с exit code `1`, без Python traceback.
 
 ## [0.1.15] - 2026-08-24
 
-### Added
+### Добавлено
 
 - Восстановлены административные команды
   `auth tokens issue`, `auth tokens list` и
@@ -221,7 +221,7 @@
 - Добавлен gatekeeper `docs/adr/index.md` для admission, immutable lifecycle и
   ненормативной роли исторических architecture decision records.
 
-### Changed
+### Изменено
 
 - Встроенные local, Flight service, PostgreSQL и OpenSearch defaults снова
   собраны в едином `app/config.py`; runtime-specific parsing, validation,
@@ -237,7 +237,7 @@
   прошедшие admission архитектурные решения хранят только historical rationale,
   release history — этот changelog, а database evolution — Alembic migrations.
 
-### Removed
+### Удалено
 
 - Удалены Ory Hydra introspection, `HYDRA_ENDPOINT`, OAuth client
   administration и команды `auth clients create|list|delete`.
@@ -250,12 +250,12 @@
 
 ## [0.1.14] - 2026-08-21
 
-### Added
+### Добавлено
 
 - Добавлена команда `models list --deleted`, которая показывает ожидающие
   очистки модели и минимальный audit archive с точным `deleted_at`.
 
-### Changed
+### Изменено
 
 - Flight transport authentication переведена на introspection opaque OAuth
   access tokens Ory Hydra. Каждый новый RPC требует `active=true`,
@@ -275,7 +275,7 @@
 - Обычный `models list` показывает только `AVAILABLE`; модели в `DELETING`
   доступны через явный фильтр `--deleted`.
 
-### Removed
+### Удалено
 
 - Удалены локальная выдача/отзыв API tokens, PostgreSQL token cache и fallback
   на credentials формата `a.<base64url>`. Необратимая migration `0014` удаляет
@@ -288,7 +288,7 @@
 
 ## [0.1.13] - 2026-08-20
 
-### Changed
+### Изменено
 
 - Flight v5 стал единственным публичным remote contract без v4 compatibility
   surface. Target identity использует только PascalCase-имена `MeanReturn`,
@@ -336,12 +336,12 @@
   очищает несовместимые v4 jobs, recovery, idempotency, aliases и telemetry,
   сохраняя API tokens и tombstones удалённых model generations.
 
-### Removed
+### Удалено
 
 - Удалены Flight v4, worker v6 и metrics v2 contracts; старые actions,
   descriptor paths, semantic aliases и checkpoint fallback отсутствуют.
 
-### Fixed
+### Исправлено
 
 - В `job.status` восстановлен checkpoint-aligned live progress fit:
   `epoch`, `step`, `loss_stage`, `loss`. Он фиксируется атомарно с recovery
@@ -353,7 +353,7 @@
 
 ## [0.1.12] - 2026-08-16
 
-### Added
+### Добавлено
 
 - Успешный fit публикует model-owned `run-summary.json` v2 с lifecycle
   durations, количеством attempts/recoveries, input counters и статистикой
@@ -365,7 +365,7 @@
   используют проекцию `inventory.metrics.v3` и обычные индексы
   `metrics-points-v2`, `metrics-artifacts-v2` и `metrics-runs-v2`.
 
-### Changed
+### Изменено
 
 - OpenSearch publisher поддерживает trusted-LAN HTTP как без authentication,
   так и с полной парой Basic Auth credentials; CA для HTTP запрещён. Оба
@@ -381,7 +381,7 @@
   записей outbox удалены; текущий runtime поддерживает только артефакты v2 и
   проекцию `inventory.metrics.v3`.
 
-### Fixed
+### Исправлено
 
 - Штатное удаление модели теперь очищает metadata model-owned
   `run-summary.json` вместе с checkpoint, epoch metrics и outbox.
@@ -391,7 +391,7 @@
 
 ## [0.1.11] - 2026-08-16
 
-### Added
+### Добавлено
 
 - Добавлены штатные `models list` и `models delete`: удаление опубликованной
   generation проходит через durable `DELETING`/`DELETED` lifecycle, блокируется
@@ -410,7 +410,7 @@
 - Pytest tests размечаются по внешним ресурсам `gpu` и `postgres`; быстрый
   CPU-набор не требует CUDA или PostgreSQL.
 
-### Changed
+### Изменено
 
 - Внутренний worker process contract повышен до v4: checkpoint event атомарно
   связывает recovery generation с полной метрикой завершённой global epoch.
@@ -444,7 +444,7 @@
 - Команды проверки изменений собраны в одной политике тестирования; удалены
   ненормативные ML-заметки с устаревшими конфигурационными рекомендациями.
 
-### Fixed
+### Исправлено
 
 - ORM-модели сохраняют recursive `JsonValue` в runtime namespace, поэтому
   SQLAlchemy корректно разрешает postponed `Mapped[JsonObject]` annotations
@@ -455,7 +455,7 @@
 
 ## [0.1.10] - 2026-08-12
 
-### Added
+### Добавлено
 
 - Добавлен target-aligned ML-контракт Flight v4: шесть public predictions
   совпадают с target Inventory по индексу, имеют прямой supervision и
@@ -464,7 +464,7 @@
   и `objectiveConfigSha256`; checkpoint selection учитывает только глобально
   агрегированные `L0…L5` полной epoch максимального stage.
 
-### Changed
+### Изменено
 
 - Flight v4, worker process v3, `transformer-checkpoint-v3` и
   `transformer-training-recovery-v3` образуют одну breaking-границу. Private
@@ -480,7 +480,7 @@
   отдельно собирают job control и data plane; worker остаётся осознанным
   изолированным runtime-исключением без дополнительного слоения.
 
-### Fixed
+### Исправлено
 
 - `objectiveConfigSha256` теперь вычисляется по RFC 8785/JCS, поэтому Python и
   Node.js одинаково канонизируют JSON numbers, включая пары `1.0`/`1` и
@@ -501,7 +501,7 @@
 - Миграция `0005` приводит длину `models.model_ref` и
   `model_aliases.model_ref` к ORM-контракту `VARCHAR(128)`.
 
-### Removed
+### Удалено
 
 - Удалены Flight v3 actions/descriptors/fixtures и worker v2 contract; runtime
   не содержит v3 compatibility surface или fallback.
@@ -509,7 +509,7 @@
 
 ## [0.1.9] - 2026-08-11
 
-### Added
+### Добавлено
 
 - Добавлен durable streaming Transformer Flight v3: client-generated `jobId`,
   durable identity/tombstone, cross-system fencing через `job.acquire`,
@@ -523,7 +523,7 @@
 - В руководство начала работы добавлены выпуск, просмотр и отзыв API-токенов
   без перезапуска Flight service.
 
-### Changed
+### Изменено
 
 - Breaking migration `0004` удаляет v2 jobs, inputs, attempts, tickets,
   idempotency и recovery state, сохраняя API access tokens и legacy model rows
@@ -545,7 +545,7 @@
   одного следующего CPU batch. CUDA scalar metrics одного training step
   материализуются одной компактной передачей на CPU.
 
-### Fixed
+### Исправлено
 
 - CUDA inventory subprocess запускается из project root и больше не зависит от
   рабочего каталога systemd service.
@@ -555,14 +555,14 @@
 - `gmark --use-amp` выполняет bounded scale backoff при warm-up overflow и не
   публикует статическое значение занятой VRAM как результат stress test.
 
-### Removed
+### Удалено
 
 - Удалены Flight v2 dispatcher/actions/descriptors и worker v1 contract;
   `job.seal` и `job.start` не имеют aliases или runtime fallback.
 
 ## [0.1.8] - 2026-08-09
 
-### Added
+### Добавлено
 
 - Добавлены реальные конкурентные PostgreSQL regression tests для
   exact/conflicting idempotency, `cancel` против result publication и
@@ -576,7 +576,7 @@
 - Добавлена migration `0003`, создающая UUID execution identity для каждой
   PostgreSQL attempt.
 
-### Changed
+### Изменено
 
 - Конфигурация Ruff, pytest и Alembic объединена в `pyproject.toml`; локальные
   tool caches складываются в единую игнорируемую директорию `.cache/`.
@@ -599,7 +599,7 @@
 - README сокращён до quick start и навигации; подробные CLI, Arrow stream,
   training runtime и deployment contracts вынесены в профильные документы.
 
-### Fixed
+### Исправлено
 
 - Инструкция запуска через systemd приведена к проверенной конфигурации Fedora:
   project запускается из `/home/nerv/transformer`, unit напрямую использует
@@ -620,7 +620,7 @@
 
 ## [0.1.7] - 2026-07-25
 
-### Added
+### Добавлено
 
 - Добавлен Ruff с единым минимальным baseline для Python lint checks.
 - Добавлен `jsonschema` для полноценной Draft 2020-12 проверки нормативных
@@ -633,7 +633,7 @@
   `CUDA_VISIBLE_DEVICES` и quarantine потерянного устройства до следующего
   Linux boot.
 
-### Changed
+### Изменено
 
 - Ruff baseline расширен проверками потенциальных ошибок, безопасной
   модернизации Python-кода, порядка `__all__` и регулярных выражений в
@@ -659,13 +659,13 @@
 - Публичное название проекта изменено на `Transformer Arrow Flight service`;
   технические имя CLI и `transformer-flight` не менялись.
 
-### Fixed
+### Исправлено
 
 - Worker scheduler возвращает job в локальную FIFO после временного
   PostgreSQL `SKIP LOCKED`, если durable state остаётся `QUEUED` или
   `RETRYING`; job больше не зависает без повторного claim.
 
-### Removed
+### Удалено
 
 - Удалена runtime-совместимость Flight v1: прежние actions, descriptors,
   jobs, tickets и idempotency responses не переносятся через migration `0002`.
@@ -676,7 +676,7 @@
 
 ## [0.1.6] - 2026-07-23
 
-### Added
+### Добавлено
 
 - Добавлены адаптированные для Python/Transformer политики разработки:
   архитектурные границы, тестирование, документация, зависимости, именование,
@@ -684,7 +684,7 @@
 - Добавлены ADR внутренних границ Flight control plane, AST-проверки import
   graph и immutable records для execution/persistence boundaries.
 
-### Changed
+### Изменено
 
 - Flight control plane разделён на durable upload session, trusted execution
   plan, subprocess runner, artifact publisher, attempt executor и
@@ -695,7 +695,7 @@
 - Руководство по systemd сокращено до последовательного ручного
   production-развёртывания без deployment automation.
 
-### Fixed
+### Исправлено
 
 - Flight fit формирует job-wide shuffle windows и optimizer batches независимо
   от границ transport payload, поэтому изменение размера упаковки больше не
@@ -703,7 +703,7 @@
 
 ## [0.1.5] - 2026-07-23
 
-### Added
+### Добавлено
 
 - Добавлено руководство по ручному production-развёртыванию на Fedora/systemd
   259: готовые unit и tmpfiles configuration, migrations, CUDA validation,
@@ -713,7 +713,7 @@
 
 ## [0.1.4] - 2026-07-23
 
-### Added
+### Добавлено
 
 - Добавлены PostgreSQL control plane на SQLAlchemy 2, Alembic migrations и
   команды `db migrations status|apply|rollback`. Параметры подключения читаются
@@ -723,7 +723,7 @@
   `a.<base64url>` хранятся в PostgreSQL, а Flight middleware проверяет их digest
   по in-memory cache, обновляемому через `LISTEN/NOTIFY`.
 
-### Changed
+### Изменено
 
 - PostgreSQL стал единственным durable source of truth для jobs, attempts,
   idempotency, output tickets, model metadata и access tokens. Worker lanes
@@ -746,7 +746,7 @@
   `TRANSFORMER_FLIGHT_*` до `TRANSFORMER_*`; прежний namespace больше не
   поддерживается.
 
-### Removed
+### Удалено
 
 - `flight serve` больше не принимает `--config` и `--state-dir`; загрузка
   service configuration из JSON-файла удалена.
@@ -758,7 +758,7 @@
 
 ## [0.1.3] - 2026-07-22
 
-### Changed
+### Изменено
 
 - CLI-параметр адреса Flight service переименован из `--bind-host` в `--host`,
   JSON-поле — из `bindHost` в `host`, а environment variable — из
@@ -771,7 +771,7 @@
 - Команда запуска Flight service переименована из `serve-flight` в составную
   `flight serve`; прежнее имя больше не поддерживается.
 
-### Fixed
+### Исправлено
 
 - Flight fit теперь выполняет настроенное число эпох над всем sealed input job:
   внутри каждой эпохи durable payloads читаются по ordinal, а loss schedule,
@@ -780,19 +780,19 @@
 
 ## [0.1.2] - 2026-07-19
 
-### Changed
+### Изменено
 
 - Упрощены инструкции по установке PyTorch, NumPy, PyArrow и pytest на
   хосте; виртуальное окружение больше не представлено как обязательное.
 - Главный README сфокусирован на настройке и запуске Transformer без
   consumer-specific сценариев.
 
-### Removed
+### Удалено
 
 - Удалён временный `requirements.txt`; базовая установка зависимостей
   описана непосредственно в README.
 
-### Fixed
+### Исправлено
 
 - Flight v1 status для `CANCELLED` job теперь возвращает `error: null`, как
   требует нормативная JSON Schema. Старые durable-записи с cancellation error
@@ -800,7 +800,7 @@
 
 ## [0.1.1] - 2026-07-19
 
-### Added
+### Добавлено
 
 - Добавлен single-instance Arrow Flight v1 job service для remote fit и predict:
   durable database ledger, filesystem spool, очереди, subprocess workers,
@@ -816,7 +816,7 @@
 - Добавлен monitor `ret_mae_skill` относительно zero-return baseline, выбор
   best checkpoint и настраиваемый minimum improvement.
 
-### Changed
+### Изменено
 
 - Arrow contract уточняет типы, ширину, null/NaN/Infinity semantics, диапазоны
   target values и typed-empty input/output.
@@ -830,12 +830,12 @@
 - Training console output разделён на одну строку конфигурации и компактную
   epoch summary.
 
-### Removed
+### Удалено
 
 - Удалены legacy aliases `--amp` и `--per-week`; поддерживаемые имена —
   `--use-amp`, `--loss-schedule` и `--stage-size`.
 
-### Fixed
+### Исправлено
 
 - Gaussian NLL переведён на численно устойчивую формулу через
   `var = sigma² + 1e-6`.
@@ -845,14 +845,14 @@
 - Early stopping корректно отслеживает улучшение monitor до прохождения
   baseline threshold.
 
-### Security
+### Безопасность
 
 - Flight RPC защищены bearer authentication, subject ownership, TLS/mTLS policy,
   expiring opaque tickets, quotas и запретом arbitrary paths/CLI arguments.
 
 ## [0.1.0] - 2026-05-20
 
-### Added
+### Добавлено
 
 - Первая версия PyTorch Transformer с file-based `fit` и `predict` для Apache Arrow
   datasets.
@@ -862,7 +862,7 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Unreleased]: https://github.com/woodger/transformer/compare/0.1.19...HEAD
+[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.19...HEAD
 [0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17

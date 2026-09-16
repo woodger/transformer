@@ -2,12 +2,12 @@
 
 > Тип: справочник. Текущие процессы, contracts и ownership данных.
 
-Transformer is a provider-side training system. Inventory owns Consumer data
-semantics and browser-facing behavior; Transformer owns generic tensor
-execution, durable jobs, model generations, checkpoints, recovery, and
-telemetry projection.
+Transformer — training system на стороне provider-а. Inventory владеет
+семантикой данных Consumer и поведением, ориентированным на браузер;
+Transformer владеет generic tensor execution, durable jobs, generations
+моделей, checkpoints, recovery и projection telemetry.
 
-## Processes
+## Процессы
 
 ```text
 app/main.py
@@ -16,9 +16,9 @@ app/main.py
 └── app/admin/bootstrap         token, model, and migration commands
 ```
 
-The command dispatcher is lazy: an admin command does not initialize the
-service, Worker, Torch, CUDA, or Flight runtime. There is no local
-fit/predict/stream execution path.
+Command dispatcher ленивый: admin command не инициализирует service, Worker,
+Torch, CUDA или runtime Flight. Локального пути исполнения fit/predict/stream
+нет.
 
 ```text
 app/contracts/semantic/v3          consumer-neutral target/objective language
@@ -31,7 +31,7 @@ app/contracts/metrics/v7           internal epoch metrics/OpenSearch points
 app/contracts/metrics/fit_run/v7   internal terminal run summary
 ```
 
-## Flight service
+## Сервис Flight
 
 ```text
 service/adapters/inbound/flight
@@ -46,55 +46,58 @@ service/bootstrap ── assembles adapters and resources
 service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
-The domain owns job states, errors, and lifecycle rules. Application owns use
-cases and capability-oriented ports. Inbound Flight validates public wire
-documents and presents results/errors. Outbound adapters own PostgreSQL,
-artifact storage, worker process supervision, CUDA inventory, and OpenSearch.
+Domain владеет состояниями job, errors и правилами lifecycle. Application
+владеет use cases и capability-oriented ports. Inbound Flight валидирует
+публичные wire documents и представляет results/errors. Outbound adapters
+владеют PostgreSQL, storage artifacts, supervision worker process, inventory
+CUDA и OpenSearch.
 
-Flight v15 accepts Consumer-owned data binding, semantic model intent,
-training intent, and requested initialization. It issues job identity and an
-opaque mutation lease. Provider resolved values—model implementation,
-operational fences, schema fingerprints, worker/checkpoint versions, and
-artifact details—do not cross the public boundary.
+Flight v15 принимает принадлежащие Consumer data binding, semantic model
+intent, training intent и запрошенную initialization. Он выпускает identity job
+и непрозрачный mutation lease. Разрешённые provider-ом values — реализация
+модели, operational fences, schema fingerprints, версии worker/checkpoint и
+детали artifacts — не пересекают публичную границу.
 
-## Worker and tensor data plane
+## Worker и tensor data plane
 
-One Worker process executes one service-owned attempt. It receives an immutable
-Worker v14 manifest, writes only attempt workspace artifacts, and returns
-bounded events. It has no PostgreSQL, Flight, or public identity dependency.
+Один process Worker исполняет один принадлежащий service attempt. Он получает
+immutable manifest Worker v14, записывает только artifacts workspace attempt и
+возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
+identity.
 
-Flight input uses compact `indexedFeatureBlocks`. Consumer supplies ordered
-block dimensions and local offsets. Worker derives block positions, maps
-native rows, and reconstructs logical `[rows, seqLen, featureDim]` Float32
-tensors in bounded slices before batching. Physical payload/chunk boundaries
-do not change logical order, training rows, or target coordinates.
+Input Flight использует компактный `indexedFeatureBlocks`. Consumer передаёт
+упорядоченные dimensions blocks и local offsets. Worker выводит positions
+blocks, отображает native rows и восстанавливает логические tensors Float32
+`[rows, seqLen, featureDim]` ограниченными slices до batching. Границы
+физических payload/chunk не меняют логический порядок, training rows или target
+coordinates.
 
-Semantic v3 target identities are opaque. Ordered slots determine target and
-prediction width. Transformer interprets generic transformations, operators,
-typed roles, and private resource classes, but never Consumer target names,
-profiles, FIGIs, or feature formulas.
+Target identities Semantic v3 непрозрачны. Упорядоченные slots определяют
+ширину target и prediction. Transformer интерпретирует generic transformations,
+operators, typed roles и private resource classes, но никогда не имена target
+Consumer, profiles, FIGIs или feature formulas.
 
-## Storage and lifecycle
+## Хранение и lifecycle
 
-PostgreSQL is the control-plane source of truth for jobs, idempotency, owners,
-attempts, and published-model metadata. Managed filesystem storage holds inputs,
-attempt artifacts, recovery artifacts, model checkpoints, and temporary
-telemetry artifacts. OpenSearch is a best-effort telemetry projection, not a
-registry or job state source.
+PostgreSQL — source of truth control plane для jobs, idempotency, owners,
+attempts и metadata опубликованных моделей. Managed filesystem storage хранит
+inputs, attempt artifacts, recovery artifacts, checkpoints моделей и временные
+artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
+registry или состояния job.
 
-Model Catalog Query v3 reads owner-scoped registry state. Training Telemetry
-Query v3 validates a complete projection against checkpoint-owned model
-metadata before exposing it. Neither query lets Consumer access filesystem
-paths, checkpoint bytes, or OpenSearch topology.
+Model Catalog Query v3 читает owner-scoped state registry. Training Telemetry
+Query v3 валидирует полную projection относительно принадлежащих checkpoint-у
+metadata модели до раскрытия. Ни один query не позволяет Consumer получить
+filesystem paths, bytes checkpoint-а или topology OpenSearch.
 
-Migration 0027 is deliberately destructive: it refuses active jobs and removes
-prior public-boundary state. Startup reconciliation removes managed artifacts
-left unreferenced by the clean cut. The OpenSearch v6-to-v7 index replacement
-is an explicit release operation.
+Migration 0027 намеренно разрушительна: она отклоняет active jobs и удаляет
+предыдущее состояние public boundary. Startup reconciliation удаляет managed
+artifacts, оставшиеся без references после clean cut. Замена индексов OpenSearch
+v6 на v7 — явная release operation.
 
-## Dependency rules
+## Правила зависимостей
 
-Detailed direction and placement rules live in
-[architecture policy](./policy/architecture.md). Historical rationale lives in
-[ADRs](./adr/index.md). Public schemas are defined only in the active contract
-packages; this document does not override them.
+Подробные правила направлений и размещения находятся в
+[policy архитектуры](./policy/architecture.md). Историческое обоснование — в
+[ADR](./adr/index.md). Публичные schemas определяются только активными
+contract packages; этот документ не имеет над ними приоритета.

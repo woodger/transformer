@@ -1,31 +1,32 @@
-# Transformer checkpoint and recovery v8
+# Transformer checkpoint и recovery v8
 
-> CONTRACT DOCUMENT. This package defines provider-internal checkpoint and
-> recovery metadata for Semantic v3, Flight v15, and Worker v14.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет внутренние для provider-а metadata
+> checkpoint и recovery для Semantic v3, Flight v15 и Worker v14.
 
-`transformer-checkpoint-v8` embeds validated semantic v3 model intent,
-Transformer-resolved model configuration, D1 identities, training and
-diagnostics configuration, selection state, resolved initialization, job
-configuration fence, input-manifest fence, and progress. Tensor parameters,
-optimizer/scaler state, RNG state, checkpoint path, and physical artifact hash
-remain implementation data.
+`transformer-checkpoint-v8` встраивает валидированное намерение модели semantic
+v3, разрешённую Transformer configuration модели, identities D1,
+configuration training и diagnostics, state selection, разрешённую
+initialization, fence configuration job, fence input manifest и progress.
+Параметры tensor-а, state optimizer/scaler, state RNG, path checkpoint-а и hash
+физического artifact остаются данными реализации.
 
-Requested initialization and resolved initialization are different documents:
+Запрошенная и разрешённая initialization — разные документы:
 
-- Flight accepts `{ "source": "random" }` or
-  `{ "source": "publishedModel", "modelRef": ... }` as requested intent.
-- checkpoint metadata records the resolved source; a published-model source
-  also records parent model/checkpoint and exact parent/current compatibility
-  identities.
-- Model Catalog exposes only the short catalog summary: random, or the visible
-  parent model reference.
+- Flight принимает `{ "source": "random" }` или
+  `{ "source": "publishedModel", "modelRef": ... }` как запрошенное
+  намерение.
+- Metadata checkpoint-а сохраняют разрешённый source; source published model
+  также сохраняет parent model/checkpoint и точные identities совместимости
+  parent/current.
+- Model Catalog раскрывает только краткое summary catalog: random либо видимую
+  reference parent model.
 
-`transformer-recovery-v8` binds a recovery artifact to exact job, input
-revision, semantic identities, resolved job configuration, input manifest, and
-progress. Before loading tensors, Transformer verifies the managed artifact and
-all metadata fences. Incompatibility is not repaired by target remapping or
-partial state loading.
+`transformer-recovery-v8` связывает recovery artifact с точными job, revision
+input-а, semantic identities, разрешённой configuration job, input manifest и
+progress. До загрузки tensors Transformer проверяет managed artifact и все
+metadata fences. Несовместимость не исправляется переназначением targets или
+частичной загрузкой state.
 
-Checkpoint/recovery v8 has no v6/v7 reader. Flight v15 migration 0027 removes
-old jobs and generations before v8 becomes active; new models are trained from
-the new public boundary.
+Checkpoint/recovery v8 не имеет reader v6/v7. Migration 0027 Flight v15
+удаляет старые jobs и generations до активации v8; новые модели обучаются через
+новую публичную границу.

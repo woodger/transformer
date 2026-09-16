@@ -6,7 +6,7 @@
 OpenSearch используется только для наблюдаемости и не является состоянием
 приложения, механизмом синхронизации или источником истины. Текущую структуру
 telemetry slice описывает [архитектурный справочник](../architecture.md),
-training telemetry — [training reference](../training-runtime.md), нормативные
+training telemetry — [справочник обучения](../training-runtime.md), нормативные
 documents и projections —
 [`app/contracts/metrics/`](../../app/contracts/metrics/), а настройку доставки
 — [инструкция OpenSearch](../deployment/opensearch.md).

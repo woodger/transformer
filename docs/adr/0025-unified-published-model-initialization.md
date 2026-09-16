@@ -1,12 +1,12 @@
-# ADR 0025: unified published-model initialization
+# ADR 0025: единая initialization опубликованной модели
 
-- Status: Superseded
-- Superseded by: [ADR 0026](0026-strict-published-model-warm-start.md)
-- Decision date: 2026-09-02
-- Supersedes: [ADR 0024](0024-cross-instrument-transfer-initialization.md)
+- Статус: Заменено
+- Заменено: [ADR 0026](0026-strict-published-model-warm-start.md)
+- Дата решения: 2026-09-02
+- Заменяет: [ADR 0024](0024-cross-instrument-transfer-initialization.md)
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -69,8 +69,8 @@ PostgreSQL revision `0021` сохраняются. Отдельная migration 
 ## Текущая документация
 
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Worker process contract v13](../../app/contracts/worker/v13/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
 - [Terminal fit telemetry v6](../../app/contracts/metrics/fit_run/v6/README.md)
 - [Интеграция Consumer-ов](../consumer-flight-integration.md)
-- [Training runtime](../training-runtime.md)
+- [Runtime обучения](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)
