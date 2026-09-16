@@ -21,6 +21,19 @@ Wire semantics определены [Flight v15](../../app/contracts/flight/v15/
 Catalog или shutdown. Она делает telemetry query unavailable либо
 unavailable-after-terminal в соответствии с его query contract.
 
+## CPU budget CUDA Worker-а
+
+| Переменная окружения | По умолчанию | Назначение |
+| --- | --- | --- |
+| `TRANSFORMER_CUDA_TORCH_INTRAOP_THREADS` | `8` | Число PyTorch intra-op threads одного CUDA Worker-а |
+| `TRANSFORMER_CUDA_TORCH_INTEROP_THREADS` | `1` | Число PyTorch inter-op threads одного CUDA Worker-а |
+
+Defaults принадлежат `app/config.py`. Service передаёт проверенные значения
+только CUDA Worker-процессу, а Worker применяет их один раз до загрузки model и
+training runtime. CPU attempts сохраняют собственные PyTorch defaults. Thread
+budget является operational configuration и не входит во Flight, Worker,
+checkpoint или model compatibility contracts.
+
 ## Запуск и остановка
 
 Примените migrations до старта. В deployment используйте production unit

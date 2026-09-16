@@ -40,6 +40,8 @@ class _FlightServiceOverrides(TypedDict, total=False):
     max_job_bytes: int
     max_active_jobs_per_subject: int
     cpu_capacity: int
+    cuda_torch_intraop_threads: int
+    cuda_torch_interop_threads: int
     ticket_ttl_seconds: int
     cancel_grace_seconds: float
     shutdown_drain_seconds: float
@@ -72,6 +74,12 @@ class FlightServiceConfig:
     )
 
     cpu_capacity: int = defaults.CPU_WORKERS
+    cuda_torch_intraop_threads: int = (
+        defaults.CUDA_TORCH_INTRAOP_THREADS_DEFAULT
+    )
+    cuda_torch_interop_threads: int = (
+        defaults.CUDA_TORCH_INTEROP_THREADS_DEFAULT
+    )
     ticket_ttl_seconds: int = defaults.TICKET_TTL_SECONDS_DEFAULT
     cancel_grace_seconds: float = defaults.CANCEL_GRACE_SECONDS_DEFAULT
     shutdown_drain_seconds: float = defaults.SHUTDOWN_DRAIN_SECONDS_DEFAULT
@@ -162,6 +170,8 @@ class FlightServiceConfig:
             "max_job_bytes",
             "max_active_jobs_per_subject",
             "cpu_capacity",
+            "cuda_torch_intraop_threads",
+            "cuda_torch_interop_threads",
             "ticket_ttl_seconds",
             "retention_seconds",
             "maintenance_interval_seconds",
