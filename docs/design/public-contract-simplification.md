@@ -5,7 +5,8 @@
 > нормативная schema, не назначение следующей версии и не описание уже
 > реализованного поведения.
 
-- Статус: к cross-project архитектурному review
+- Статус: согласовано для подготовки canonical package; clean cut требует
+  отдельного решения по существующим generations
 - Срез: 2026-09-15, техническая исходная точка Flight v14, Semantic v2,
   Model Catalog Query v2 и Training Telemetry Query v2
 - Область: будущая публичная граница Inventory — Transformer
@@ -214,7 +215,7 @@ Transformer resolution
 | `contract` + `version/revision` в каждом body | Version уже находится в exact action identity и schema | Action выбирает parser; body не повторяет dispatch constants |
 | Один `job.create` с `operation=fit/predict` | Две команды имеют разные обязательные поля и результаты | Рассмотреть отдельные fit-create и predict-create commands |
 | Predict повторяет полный ModelContract | Exact `modelRef` уже разрешает checkpoint-owned definition | Predict передаёт `modelRef`, current data digest и input layout; Transformer разрешает model definition |
-| Predict принимает alias | Catalog и persisted selection уже используют exact `modelRef` | Оставить только immutable reference, если Inventory подтвердит отсутствие alias use case |
+| Predict принимает alias | Catalog и persisted selection уже используют exact `modelRef` | Удалить alias; Inventory подтверждает отсутствие такого use case |
 | Consumer выбирает `predictionColumn` | Это transport presentation, а не model semantics | Фиксированное output field; локальное имя выбирает Inventory adapter |
 | Consumer передаёт `jobId` | Idempotency key уже позволяет повторить потерянный create | Рассмотреть server-issued job reference |
 | `clientExecutionId` и `fencingToken` | Вместе представляют один mutation lease | Рассмотреть один opaque provider-issued lease token |
@@ -252,6 +253,12 @@ Fit требует ровно одну declaration, содержащую:
 Readable data identity, revision и profile остаются у Inventory. Они могут
 показываться Terminal-ом по локальному target/data catalog, но Transformer не
 должен возвращать их обратно как источник истины.
+
+В частности, readable `configurationLabel` — включая различие между profile и
+direct configuration — не входит в canonical data preimage. Если итоговые
+Consumer-owned data semantics и geometry одинаковы, способ их локальной
+materialization не должен менять `dataContractSha256`. Inventory хранит label
+для observability и собственного configuration lookup вне provider boundary.
 
 Ordered feature block содержит только:
 
@@ -300,7 +307,10 @@ declaration содержит:
 
 Для текущих direct operators typed role schema однозначно означает один target
 и его observed/loss-estimate views. Повторять два reference objects не нужно.
-Direct operator остаётся явным и никогда не выводится из target identity.
+Direct operator остаётся явным в boundary document и никогда не выводится
+Transformer-ом из target identity. Это не запрещает Inventory локально выбрать
+operator по своей policy при materialization profile: к границе всё равно
+поступает полный explicit component, а не только target identity.
 
 Иллюстрация:
 
@@ -336,7 +346,7 @@ operator role определяет, относится identity к target или
 }
 ```
 
-Abstract resource declaration предварительно сохраняется. Она выражает
+Abstract resource declaration сохраняется. Она выражает
 checkpoint-owned private differentiable output и sharing, а не только shape.
 Удалять declaration можно только если все стороны согласятся, что lifecycle
 полностью и однозначно задаётся typed consumer roles. Одна строковая ссылка на
@@ -365,10 +375,11 @@ configuration.
 parameter, а не раскрывать PyTorch class или внутренний state layout.
 
 Provider implementation, positional encoding, feed-forward multiplier, output
-head construction и private tensor layout не передаются Consumer-ом. Их
-семантика связана с revision model definition. Несовместимое изменение требует
-новой revision и checkpoint fence, а не молчаливой замены реализации под тем же
-contract.
+head construction и private tensor layout не передаются Consumer-ом. В том
+числе Inventory не хранит Transformer-owned architecture literal в direct
+defaults. Их семантика связана с revision model definition. Несовместимое
+изменение требует новой revision и checkpoint fence, а не молчаливой замены
+реализации под тем же contract.
 
 ### Training policy и initialization
 
@@ -382,8 +393,20 @@ Requested initialization остаётся отдельным реальным в
 - random initialization;
 - exact published parent model.
 
+Три documents не взаимозаменяемы, даже если случайные variants имеют
+одинаковые JSON fields:
+
+- requested initialization в fit intent: `source=random` либо
+  `source=publishedModel` с exact `modelRef`;
+- resolved initialization в checkpoint/recovery: `source=random` либо
+  `source=publishedModel` с `parentModelRef` и
+  `parentCheckpointSha256`;
+- catalog initialization summary: `source=random` либо
+  `source=publishedModel` с owner-visible `parentModelRef`.
+
 Resolved lineage, parent checkpoint digest и parent/current semantic layers
-вычисляет Transformer. Consumer не materialize-ит resolved form.
+вычисляет Transformer. Consumer не materialize-ит resolved form, а Catalog не
+раскрывает checkpoint digest.
 
 ## Предпочтительный job workflow
 
@@ -416,7 +439,18 @@ representation разрешаются из registry/checkpoint metadata выбр
 generation. Consumer не пересылает полный ModelContract обратно Transformer-у.
 Mismatch data digest либо input layout отклоняется до upload.
 
-Alias и custom prediction column предварительно предлагается убрать. Inventory
+До первого payload predict-create result возвращает минимальную
+checkpoint-owned prediction definition:
+
+- `seqLen`;
+- ordered target identities и transformation каждой public prediction;
+- `outputWidth`.
+
+Этого достаточно Inventory для построения sequence payload и декодирования
+output. Полный TargetContract, Objective и model configuration в predict
+request/result для этого не нужны.
+
+`modelAlias` и custom prediction column удаляются при clean cut. Inventory
 может разрешить human label/current selection и переименовать локальную column
 до public boundary; persisted execution всегда использует exact `modelRef`.
 
@@ -456,7 +490,9 @@ Close обязан доказать, что Consumer и Transformer соглас
 payload receipts. `manifestSha256` может остаться таким доказательством.
 Physical totals, однозначно вычисляемые из receipts, не обязаны одновременно
 быть обязательными входами close. Какие expected logical totals действительно
-нужны для обнаружения преждевременного EOF, остаётся открытым вопросом.
+нужны для обнаружения преждевременного EOF, решается минимально: manifest
+digest покрывает receipts, а отдельно передаётся только independently computed
+expected logical count, если он нужен для этого detection.
 
 ### Status и results
 
@@ -473,8 +509,8 @@ Physical totals, однозначно вычисляемые из receipts, не
 Full data/model definition, source layout, resolved training configuration и
 semantic digests не повторяются при каждом poll. Они возвращаются resolved
 create result и сохраняются Consumer-ом вместе с исходным idempotent request.
-Если необходим provider-side повторный read, следует проектировать отдельный
-immutable job detail, а не раздувать hot status response.
+Inventory подтверждает, что отдельный provider-side immutable job detail не
+нужен: сохранённого immutable create result достаточно.
 
 ## Model Catalog
 
@@ -485,16 +521,16 @@ List/detail разделение в целом соответствует пуб
 сравнения:
 
 - exact `modelRef`, label, generation и creation time;
-- semantic digests;
+- Consumer data digest и provider-issued model digest;
 - selectable model parameters;
 - ordered target identities;
 - initialization/parent summary;
 - producing run identity.
 
-Нужно отдельно подтвердить необходимость checkpoint format, byte count и
-SHA-256 в list. Consumer не получает checkpoint bytes, поэтому format является
-provider implementation detail, а digest может быть только display/audit
-metadata.
+Checkpoint format, byte count и SHA-256 не входят в Catalog projection:
+Inventory не использует их для решений, а Transformer проверяет их как
+provider-internal integrity metadata. Target/objective digests остаются
+доступны в detail для diagnostics, но не обязательны в list.
 
 Detail возвращает semantic definition, resolved training policy, selection,
 progress и lineage. Provider-internal `jobConfigSha256` не должен быть public,
@@ -522,6 +558,9 @@ model definition, и ordered numerical arrays epochs. Например, report h
 
 Transformer продолжает проверять identities, order и cardinality до public
 projection. Упрощение wire не ослабляет telemetry integrity.
+
+Direct component identity сохраняется один раз в Objective/report layout, но
+не повторяется в каждой epoch observation.
 
 `completedEpochs` достаточно для coverage `1..N`; `firstEpoch=1` и
 `lastEpoch=N` выводятся. Health projection должна содержать только независимые
@@ -558,8 +597,8 @@ Capabilities должны описывать только deployment facts, ко
 
 Предпочтительна закрытая semantic language revision: новый operator или
 resource lifecycle выпускается новым versioned package. Hybrid additive
-capabilities имеют смысл только при доказанном сценарии, где разные корректные
-deployments одной revision поддерживают разные primitives.
+capabilities не используются: все корректные deployments одной revision имеют
+один exact closed language package.
 
 Consumer проверяет наличие обязательных actions, но не требует, чтобы
 `ListActions` был равен закрытому списку. Добавление независимого read-only
@@ -590,12 +629,19 @@ compatibility mismatch, corruption и temporary backend failure в один об
 - Consumer data digest — exact identity Consumer-owned data semantics;
 - target digest — ordered target declarations;
 - objective digest — operators, weights, resources и bindings;
-- model digest — tensor geometry, selectable model parameters, target и
-  objective digests, domain-separated model-definition revision.
+- model digest — opaque identity, выпускаемая Transformer-ом после resolution
+  tensor geometry, selectable model parameters, target/objective declarations
+  и domain-separated Transformer-owned model-definition revision.
 
 Architecture literal и другие provider constants не входят в Consumer
 document. Transformer не может молча изменить model mathematics либо
 implementation semantics под той же model-definition revision.
+
+Inventory вычисляет и передаёт только принадлежащий ему data digest. После
+validation и provider resolution Transformer выпускает model digest; Inventory
+не вычисляет и не подтверждает его preimage самостоятельно. Target/objective
+digests могут оставаться detail-level diagnostic identities, но не являются
+обязательным input либо list-level compatibility assertion.
 
 ### Operational и physical identities
 
@@ -672,8 +718,9 @@ metadata и query projections. Менять их in place нельзя.
 3. временный translation layer.
 
 Предпочтителен clean cut, поскольку translation layer сохранит именно ту
-двойную модель, от которой выполняется упрощение. Но судьбу существующих
-generations нужно подтвердить отдельно перед canonical package.
+двойную модель, от которой выполняется упрощение. Но судьба существующих
+generations определяется отдельным решением после проверки реально
+существующих generations; из исходного кода это решение не выводится.
 
 Arrow input/prediction formats могут сохранить текущие physical identities,
 если canonical package подтвердит неизменность schema и reconstruction. JSON
@@ -700,31 +747,25 @@ Inventory domain:
 13. Provider implementation либо checkpoint format меняется без добавления
     provider literal в Consumer request.
 
-## Открытые вопросы для совместного решения
+## Согласованные позиции Inventory
 
-1. Нужны ли Inventory в provider metadata readable data identity, revision и
-   profile, если exact digest уже есть и descriptions остаются Consumer-owned?
-2. Должен ли Transformer выдавать `jobId`, либо Consumer действительно должен
-   сохранить его до первого RPC?
-3. Достаточен ли один opaque mutation lease вместо
-   `clientExecutionId`/`fencingToken`?
-4. Используется ли `modelAlias` в действующем predict flow?
-5. Нужен ли custom `predictionColumn` за public boundary?
-6. Какие expected totals input close обнаруживают ошибку, которую нельзя
-   обнаружить server receipts и manifest digest?
-7. Нужен ли отдельный provider-side job detail после компактного status?
-8. Нужна ли additive primitive capability, либо все deployments могут иметь
-   exact closed language package?
-9. Должна ли independent identity direct component сохраняться для telemetry,
-   или структурной ссылки на target достаточно?
-10. Остаётся ли explicit resource declaration, либо typed roles полностью
-    определяют resource lifecycle?
-11. Какие checkpoint summary fields Terminal реально показывает и использует?
-12. Принимает ли Inventory layout + numerical arrays для telemetry вместо
-    повторных verbose records?
-13. Нужны ли все четыре semantic digests в Catalog UI, либо часть является
-    только provider diagnostics?
-14. Можно ли удалить existing generations и выполнить clean cut?
+| Область | Решение |
+| --- | --- |
+| Readable data metadata | Profile/revision/configuration label остаются у Inventory и не входят в semantic digest. |
+| Job identity | Transformer выдаёт `jobId`; Inventory хранит независимый idempotency key до create. |
+| Mutation fencing | Один opaque mutation lease заменяет `clientExecutionId` и fencing token. |
+| Predict reference/output | `modelAlias` и custom prediction column удаляются; используется exact `modelRef` и fixed transport output. |
+| Input close | Receipts покрываются manifest digest; отдельно допускается только expected logical count для early-EOF detection. |
+| Job read | Отдельный job detail не нужен: Consumer сохраняет immutable create result. |
+| Semantic language | Каждая revision публикует exact closed package без additive primitive capabilities. |
+| Telemetry layout | Direct component identity сохраняется в Objective/report layout; epoch передаёт compact numerical arrays. |
+| Private resources | Explicit resource declaration сохраняется как описание lifecycle и sharing. |
+| Checkpoint metadata | Checkpoint format, bytes и SHA-256 не нужны Inventory для решений и остаются provider-internal. |
+| Catalog digests | В list достаточно data/model digests; target/objective digests доступны в detail для diagnostics. |
+| Clean cut | Требует отдельного решения после проверки существующих jobs и model generations. |
+
+Эти решения не меняют действующие contracts. Они задают scope будущего
+canonical package и clean-cut implementation.
 
 ## Критерии согласования
 
@@ -751,10 +792,12 @@ Inventory domain:
 
 ## Следующий этап
 
-1. Inventory проверяет proposed ownership и отвечает на открытые вопросы.
-2. Transformer уточняет минимальные fit, predict, status, Catalog и Telemetry
-   documents без JSON Schema.
-3. Обе стороны согласуют digest preimages и transition policy.
+1. Обе стороны подтверждают эту уточнённую Design Note как архитектурную
+   основу S2.
+2. Transformer готовит schema-neutral форму минимальных fit, predict, status,
+   Catalog и Telemetry documents, включая provider-issued model digest.
+3. Обе стороны согласуют digest preimages и отдельно принимают transition
+   policy по существующим generations.
 4. Только затем выпускается staged canonical package со schemas и небольшим
    набором behavioral cross-project fixtures.
 5. Runtime, migrations и deployment меняются после точного review package.
