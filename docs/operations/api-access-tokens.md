@@ -1,7 +1,7 @@
 # Управление API access tokens
 
 > Тип: операционное руководство. Выдача, просмотр, передача, ротация и отзыв
-> Bearer credentials для контролируемых Consumer-ов.
+> Bearer credentials для контролируемых вызывающих систем.
 
 Это руководство задаёт текущую операторскую процедуру. Устройство credential,
 правила persistence, cache consistency и security boundary описаны в
@@ -10,10 +10,11 @@ format — в [`контракте Arrow Flight v15`](../../app/contracts/flight
 
 Transformer поддерживает одну service identity с фиксированным owner subject
 `inventory`. Это технический owner identifier, а не имя единственного
-допустимого Consumer-а. Одновременно выпущенные tokens принадлежат тому же
-owner-у и могут использоваться для ротации или отдельной передачи Consumer-ам,
-но не создают разные identity, permissions или изоляцию состояния. Соответствие
-`Token ID` конкретному Consumer-у оператор учитывает вне Transformer.
+допустимой вызывающей системы. Одновременно выпущенные tokens принадлежат тому
+же owner-у и могут использоваться для ротации или отдельной передачи
+вызывающим системам, но не создают разные identity, permissions или изоляцию
+состояния. Соответствие `Token ID` конкретной вызывающей системе оператор
+учитывает вне Transformer.
 
 ## Предварительные условия
 
@@ -22,7 +23,7 @@ owner-у и могут использоваться для ротации или
   schema должна быть обновлена согласно
   [`руководству по migrations`](database-migrations.md).
 - До выпуска token подготовьте принятые в deployment secret storage и канал
-  передачи credential Consumer-у.
+  передачи credential вызывающей системе.
 
 ## Выпустить credential
 
@@ -44,16 +45,16 @@ Token: a.<base64url>
 token и отзовите потерянный по `Token ID`.
 
 `Token ID` — management handle для `list` и `revoke`, а не credential. Новый
-token доступен Consumer-у на первом cache miss; перезапуск Flight service не
-требуется.
+token доступен вызывающей системе на первом cache miss; перезапуск Flight
+service не требуется.
 
-## Передать credential Consumer-у
+## Передать credential вызывающей системе
 
 Передайте значение `Token`, но не `Token ID`, через принятый secret channel и
-сохраните его в secret storage Consumer-а. Не помещайте credential в
+сохраните его в её secret storage. Не помещайте credential в
 repository, shell history, command arguments, логи или server `.env`.
 
-Consumer предъявляет credential в каждом RPC:
+Вызывающая система предъявляет credential в каждом RPC:
 
 ```text
 authorization: Bearer a.<base64url>
@@ -81,9 +82,9 @@ latency.
 ## Выполнить штатную ротацию
 
 1. Выпустите новый credential командой `auth tokens issue`.
-2. Сохраните и передайте новый `Token` соответствующему Consumer-у.
-3. Переключите этого Consumer-а и подтвердите успешным новым RPC, что credential
-   принят. `auth tokens list` может дополнительно показать обновлённый
+2. Сохраните и передайте новый `Token` соответствующей вызывающей системе.
+3. Переключите эту вызывающую систему и подтвердите успешным новым RPC, что
+   credential принят. `auth tokens list` может дополнительно показать обновлённый
    `Last used`.
 4. Отзовите прежний token по сохранённому `Token ID`.
 

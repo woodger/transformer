@@ -81,5 +81,5 @@ templates и indices.
 
 После завершённого нового fit v15 проверьте, что `metrics-runs-v7` содержит
 terminal completion marker, а `metrics-points-v7` — все ожидаемые observations
-epoch. Для поведения Consumer запрашивайте публичный action Training Telemetry
-v3; не делайте имена index или mappings частью кода Consumer.
+epoch. Для поведения вызывающей системы запрашивайте публичный action Training
+Telemetry v3; не делайте имена index или mappings частью её кода.

@@ -45,9 +45,9 @@ initialization и filesystem mutation не выполняются при import.
 ## Ports и ownership
 
 Application ports называются по возможностям, а не по технологиям. Generic
-`Repository[T]` и technology-specific port names не используются. Каждый port
-имеет текущего runtime consumer и adapter; интерфейсы без действующего
-потребителя не добавляются.
+`Repository[T]` и technology-specific port names не используются. У каждого
+port есть действующий adapter и использующий его runtime-код; интерфейсы без
+действующего использования не добавляются.
 
 PostgreSQL adapter владеет транзакциями, idempotency, row locks и mapping
 database projections. PostgreSQL-транзакция не охватывает filesystem или

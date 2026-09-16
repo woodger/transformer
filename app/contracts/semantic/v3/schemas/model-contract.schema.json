@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/model-contract.schema.json",
-  "title": "Consumer-neutral ModelContract v3",
+  "title": "ModelContract v3",
   "type": "object",
   "additionalProperties": false,
   "required": [

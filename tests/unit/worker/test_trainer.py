@@ -10,12 +10,14 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
+from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
 from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility
@@ -32,16 +34,34 @@ from app.worker.training.factory import build_trainer
 from app.worker.training.losses import MaterializedLossStatistics
 from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
-from tests.support.consumer_neutral import (
-    model_contract,
-    semantic_digests,
-    tensor_geometry,
-)
+from tests.fixture_documents import semantic_fixture_document
 
-DEFAULT_MODEL_CONTRACT = model_contract(
+
+def _contract(
+    fixture: str,
+    *,
+    hidden: int,
+    layers: int,
+    dropout: float,
+    nhead: int,
+    mode: str,
+) -> ModelContract:
+    document = semantic_fixture_document(fixture)["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": hidden,
+        "encoderLayerCount": layers,
+        "dropoutProbability": dropout,
+        "attentionHeadCount": nhead,
+        "missingValuePolicy": mode,
+    })
+    return ModelContract.from_document(document)
+
+
+DEFAULT_MODEL_CONTRACT = _contract(
     "multi-target-shared-resource",
-    seq_len=5,
-    feature_dim=4,
     hidden=32,
     layers=1,
     dropout=0.0,
@@ -90,6 +110,14 @@ def model_config(*, seq_len=5, feature_dim=4):
     )
 
 
+def _model_definition_sha256(contract: ModelContract) -> str:
+    return str(resolved_semantic_digests(
+        contract,
+        "d" * 64,
+        model_config(),
+    )["modelDefinitionSha256"])
+
+
 def new_model(contract=DEFAULT_MODEL_CONTRACT):
     return TransformerModel(
         input_dim=4,
@@ -108,22 +136,13 @@ def new_trainer(
     model: nn.Module | None = None,
     contract=DEFAULT_MODEL_CONTRACT,
 ) -> Trainer:
-    geometry = tensor_geometry(contract)
-    resolved_model_config = ModelConfig.from_tuning(
-        contract.model_tuning,
-        seq_len=int(geometry["seqLen"]),
-        feature_dim=int(geometry["featureDim"]),
-    )
     return Trainer(
         model=new_model(contract) if model is None else model,
         device=torch.device("cpu"),
         train_config=train_config,
         model_contract=contract,
-        model_config=resolved_model_config,
-        model_definition_sha256=semantic_digests(
-            contract,
-            "d" * 64,
-        )["modelDefinitionSha256"],
+        model_config=model_config(),
+        model_definition_sha256=_model_definition_sha256(contract),
     )
 
 
@@ -229,10 +248,8 @@ def test_gradient_interactions_are_sampled_at_completed_step_interval():
 
 
 def test_single_target_objective_trains_and_predicts_one_public_value():
-    contract = model_contract(
+    contract = _contract(
         "single-regression",
-        seq_len=5,
-        feature_dim=4,
         hidden=32,
         layers=1,
         dropout=0.0,
@@ -626,10 +643,9 @@ def test_payload_partitioning_does_not_change_training_state():
         torch.device("cpu"),
         model_config(),
         model_contract=DEFAULT_MODEL_CONTRACT,
-        model_definition_sha256=semantic_digests(
+        model_definition_sha256=_model_definition_sha256(
             DEFAULT_MODEL_CONTRACT,
-            "d" * 64,
-        )["modelDefinitionSha256"],
+        ),
         )
         metrics = trainer.fit_payloads(lambda: iter(payloads))
         return model.state_dict(), [
@@ -674,10 +690,9 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
         torch.device("cpu"),
         model_config(),
         model_contract=DEFAULT_MODEL_CONTRACT,
-        model_definition_sha256=semantic_digests(
+        model_definition_sha256=_model_definition_sha256(
             DEFAULT_MODEL_CONTRACT,
-            "d" * 64,
-        )["modelDefinitionSha256"],
+        ),
         )
         epochs = []
 
@@ -736,10 +751,9 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
             use_amp=True,
         ),
         model_contract=DEFAULT_MODEL_CONTRACT,
-        model_definition_sha256=semantic_digests(
+        model_definition_sha256=_model_definition_sha256(
             DEFAULT_MODEL_CONTRACT,
-            "d" * 64,
-        )["modelDefinitionSha256"],
+        ),
     )
     before = {
         name: value.detach().clone()

@@ -71,6 +71,6 @@ v7 runtime и aliases не поддерживаются.
 
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Runtime обучения](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

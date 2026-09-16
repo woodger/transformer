@@ -31,7 +31,7 @@ identifiers, команды, пути, значения enum и другие э�
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/operations/flight-service.md` |
-| Consumer integration | `docs/consumer-flight-integration.md` |
+| Интеграция с Flight | `docs/flight-integration.md` |
 | Текущие процессы, компоненты, contracts и data ownership | `docs/architecture.md` |
 | Dependency boundaries и размещение кода | `docs/policy/architecture.md` |
 | Активные ненормативные проектные предложения | `docs/design/index.md` |
@@ -134,7 +134,7 @@ revision 3 составляют единый active package текущего run
 - parser/serializer;
 - contract tests;
 - version/compatibility policy;
-- Consumer integration guide.
+- Руководство по интеграции с Flight.
 
 Flight v15 schemas и fixtures остаются нормативными для remote API. Эти
 contracts проверяются тестами.
@@ -196,7 +196,8 @@ reference-инструкцию не добавляются.
 
 Документы в `docs/policy/` должны быть прямыми и применимыми на review.
 Примеры обязаны использовать Python и реальные concepts Transformer, но не
-должны превращать общую policy в описание конкретной модели или consumer.
+должны превращать общую policy в описание конкретной модели или внешней
+системы.
 
 ## Имена и оформление
 
@@ -207,6 +208,14 @@ reference-инструкцию не добавляются.
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.
+
+## Терминология границ
+
+В документации не используется общий ярлык `Consumer` для разных понятий.
+Называйте аутентифицированную сторону Flight вызывающей системой, источник
+предметной семантики — внешней предметной стороной, а зависимый код —
+использующим кодом. Эти роли не становятся префиксами schemas, fixtures,
+sample identities или package names.
 
 ## Добавление документа
 

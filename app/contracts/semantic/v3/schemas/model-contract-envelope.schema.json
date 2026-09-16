@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/model-contract-envelope.schema.json",
-  "title": "Consumer-neutral ModelContract envelope",
+  "title": "ModelContract envelope",
   "type": "object",
   "additionalProperties": false,
   "required": [

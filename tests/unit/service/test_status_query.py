@@ -3,6 +3,9 @@ from dataclasses import replace
 import pytest
 
 from app.contracts.checkpoint.v8 import RECOVERY_FORMAT
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.model_config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -14,16 +17,22 @@ from app.service.domain.records import (
     StatusSnapshot,
     TrainingRecoveryCheckpointRecord,
 )
-from tests.support.consumer_neutral import model_contract, semantic_digests
+from tests.fixture_documents import semantic_fixture_document
 
 JOB_ID = "00000000-0000-4000-8000-000000000001"
-MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=2,
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
 MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
-SEMANTIC_DIGESTS = semantic_digests(MODEL_CONTRACT, "b" * 64)
+SEMANTIC_DIGESTS = resolved_semantic_digests(
+    MODEL_CONTRACT,
+    "b" * 64,
+    ModelConfig.from_tuning(
+        MODEL_CONTRACT.model_tuning,
+        seq_len=2,
+        feature_dim=2,
+    ),
+)
 
 
 def _job(**overrides):

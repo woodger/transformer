@@ -3,7 +3,7 @@
   "models": [
     {
       "modelRef": "mdl_11111111111111111111111111111111",
-      "label": "consumer-model",
+      "label": "model-a",
       "generation": 2,
       "createdAt": "2026-09-16T12:00:00.000000Z",
       "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -21,7 +21,7 @@
     },
     {
       "modelRef": "mdl_22222222222222222222222222222222",
-      "label": "consumer-model",
+      "label": "model-a",
       "generation": 1,
       "createdAt": "2026-09-15T12:00:00.000000Z",
       "dataContractSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

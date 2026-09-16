@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
@@ -13,7 +14,7 @@ from app.service.application.services.input_upload import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, InputState
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 SOURCE_ENCODING = {
     "featureBlocks": [
@@ -40,10 +41,8 @@ class UploadStore:
 
 
 def _job(**overrides):
-    contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=3,
+    contract = ModelContract.from_document(
+        semantic_fixture_document("single-regression")["modelContract"],
     )
     job = InputUploadJob(
         job_id="job-id",

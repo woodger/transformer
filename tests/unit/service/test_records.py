@@ -6,7 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -20,15 +22,21 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     RecoverableAttemptRecord,
 )
-from tests.support.consumer_neutral import model_contract, semantic_digests
+from tests.fixture_documents import semantic_fixture_document
 
-MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=2,
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
 MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
-SEMANTIC_DIGESTS = semantic_digests(MODEL_CONTRACT, "a" * 64)
+SEMANTIC_DIGESTS = resolved_semantic_digests(
+    MODEL_CONTRACT,
+    "a" * 64,
+    ModelConfig.from_tuning(
+        MODEL_CONTRACT.model_tuning,
+        seq_len=2,
+        feature_dim=2,
+    ),
+)
 DATA_CONTRACT = {
     "identity": "test.dataset",
     "revision": 1,

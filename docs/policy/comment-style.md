@@ -59,7 +59,7 @@ Module-level docstring добавляется, только если модул�
 
 ```python
 # Revision pagination keeps input listing below the action-document limit.
-# A fixed page bound also makes consumer traversal memory predictable.
+# A fixed page bound also makes client traversal memory predictable.
 MAX_PAGE_ITEMS = 100
 ```
 
@@ -129,7 +129,7 @@ TODO допустим, только если содержит:
 # TODO: fix later
 ```
 
-Placeholder без runtime consumer лучше хранить в issue или roadmap, а не в
+Placeholder без использующего runtime кода лучше хранить в issue или roadmap, а не в
 пустом Python module.
 
 ## Workarounds

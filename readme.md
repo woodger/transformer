@@ -2,14 +2,14 @@
 
 Transformer — Python-сервис для надёжного обучения и предсказания с помощью
 PyTorch через аутентифицированные задания Apache Arrow Flight. Inventory —
-ориентированный на браузер Consumer; Transformer владеет исполнением модели,
+ориентированное на браузер приложение; Transformer владеет исполнением модели,
 хранением, checkpoint-ами, восстановлением и проекцией телеметрии.
 
 ## Актуальная граница
 
 - Flight v15 — единственный публичный workflow заданий.
 - Semantic v3 содержит упорядоченные непрозрачные targets, явные bindings
-  objective и настройку модели без принадлежащих Consumer литералов
+  objective и настройку модели без внешних предметных литералов
   архитектуры.
 - Model Catalog Query v3 и Training Telemetry Query v3 — owner-scoped
   поверхности только для чтения, активируемые Flight v15.
@@ -57,7 +57,7 @@ generations и состояния Alembic. Точные параметры по�
 - [Worker v14](./app/contracts/worker/v14/README.md)
 - [Checkpoint/recovery v8](./app/contracts/checkpoint/v8/README.md)
 - [Архитектура](./docs/architecture.md)
-- [Интеграция Consumer](./docs/consumer-flight-integration.md)
+- [Интеграция с Flight](./docs/flight-integration.md)
 - [Эксплуатация Flight](./docs/operations/flight-service.md)
 - [Развёртывание](./docs/deployment/systemd.md)
 - [Архитектурные решения](./docs/adr/index.md)

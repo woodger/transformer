@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/language-capabilities.schema.json",
-  "title": "Consumer-neutral objective language capabilities",
+  "title": "Semantic objective language capabilities",
   "type": "object",
   "additionalProperties": false,
   "required": [

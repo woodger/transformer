@@ -9,6 +9,9 @@ import pytest
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
 from app.contracts.checkpoint.v8 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.model_config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,
@@ -20,7 +23,7 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     TrainingRecoveryCheckpointRecord,
 )
-from tests.support.consumer_neutral import model_contract, semantic_digests
+from tests.fixture_documents import semantic_fixture_document
 
 
 class _Logger:
@@ -79,16 +82,26 @@ class _Telemetry:
         raise RuntimeError("injected telemetry persistence failure")
 
 
+def _semantic_digests(contract: ModelContract) -> dict:
+    return resolved_semantic_digests(
+        contract,
+        "d" * 64,
+        ModelConfig.from_tuning(
+            contract.model_tuning,
+            seq_len=2,
+            feature_dim=2,
+        ),
+    )
+
+
 def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
     tmp_path,
     monkeypatch,
 ):
     job_id = str(uuid.uuid4())
     attempt_id = str(uuid.uuid4())
-    contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=2,
+    contract = ModelContract.from_document(
+        semantic_fixture_document("single-regression")["modelContract"],
     )
     data_contract = {
         "identity": "test.dataset",
@@ -118,7 +131,7 @@ def test_metric_persistence_failure_does_not_reject_recovery_checkpoint(
         training_config=None,
         data_contract=data_contract,
         model_contract=contract.to_document(),
-        semantic_digests=semantic_digests(contract, "d" * 64),
+        semantic_digests=_semantic_digests(contract),
         config_hash="a" * 64,
         manifest_sha256="b" * 64,
         feature_dim=2,
@@ -200,10 +213,8 @@ def test_registration_failure_preserves_worker_checkpoint_staging(
 ):
     job_id = str(uuid.uuid4())
     attempt_id = str(uuid.uuid4())
-    contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=2,
+    contract = ModelContract.from_document(
+        semantic_fixture_document("single-regression")["modelContract"],
     )
     job = ExecutionJobRecord(
         job_id=job_id,
@@ -232,7 +243,7 @@ def test_registration_failure_preserves_worker_checkpoint_staging(
             "featureDim": 2,
         },
         model_contract=contract.to_document(),
-        semantic_digests=semantic_digests(contract, "d" * 64),
+        semantic_digests=_semantic_digests(contract),
         config_hash="a" * 64,
         manifest_sha256="b" * 64,
         feature_dim=2,

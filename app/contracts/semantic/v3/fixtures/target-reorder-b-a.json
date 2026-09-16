@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.target-reorder-b-a.v3",
+  "fixtureId": "semantic.target-reorder-b-a.v3",
   "tensorGeometry": {"seqLen": 2, "featureDim": 4},
   "modelContract": {
     "targetContract": {

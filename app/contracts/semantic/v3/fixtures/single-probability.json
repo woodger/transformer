@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.single-probability.v3",
+  "fixtureId": "semantic.single-probability.v3",
   "tensorGeometry": {"seqLen": 2, "featureDim": 8},
   "modelContract": {
     "targetContract": {

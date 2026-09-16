@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/fixture.schema.json",
-  "title": "Consumer-neutral cross-project semantic fixture",
+  "title": "Cross-project semantic fixture",
   "type": "object",
   "additionalProperties": false,
   "required": [

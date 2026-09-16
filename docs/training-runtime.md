@@ -9,7 +9,7 @@ Fit Flight v15 получает документ target/objective Semantic v3 и
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
-имён target-ов Consumer.
+имён target-ов внешней предметной области.
 
 Worker применяет loss-input и public-prediction transformations каждого slot к
 одной raw output coordinate. Direct и auxiliary operators, private resource
@@ -55,8 +55,8 @@ Telemetry epoch — observation её training pass до каждого optimizer
 gradient interactions. Её best-effort persistence не меняет исполнение
 optimizer-а, selection, успех fit или публикацию модели.
 
-OpenSearch получает принадлежащую provider-у projection v7. Consumer получает
-валидированный, нормализованный report через Training Telemetry Query v3, а не
+OpenSearch получает принадлежащую provider-у projection v7. Вызывающая система
+получает валидированный, нормализованный report через Training Telemetry Query v3, а не
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 

@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.input-layout.non-contiguous-native-offsets.v3",
+  "fixtureId": "input-layout.non-contiguous-native-offsets.v3",
   "inputLayout": {
     "featureBlocks": [
       {

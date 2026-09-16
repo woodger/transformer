@@ -3,7 +3,7 @@
   "model": {
     "summary": {
       "modelRef": "mdl_11111111111111111111111111111111",
-      "label": "consumer-model",
+      "label": "model-a",
       "generation": 2,
       "createdAt": "2026-09-16T12:00:00.000000Z",
       "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

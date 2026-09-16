@@ -1,11 +1,11 @@
 {
-  "fixtureId": "consumer-neutral.new-opaque-target.v3",
+  "fixtureId": "semantic.new-opaque-target.v3",
   "tensorGeometry": {"seqLen": 2, "featureDim": 8},
   "modelContract": {
     "targetContract": {
       "slots": [
         {
-          "identity": "ConsumerDefined.EventProbability",
+          "identity": "Opaque.EventProbability",
           "observedConstraint": {
             "constraint": "ClosedInterval",
             "minimum": 0,
@@ -19,10 +19,10 @@
     "objective": {
       "directComponents": [
         {
-          "identity": "direct.consumer-event",
+          "identity": "direct.opaque-event",
           "operator": "BinaryCrossEntropyWithLogits",
           "weight": 1,
-          "targetIdentity": "ConsumerDefined.EventProbability"
+          "targetIdentity": "Opaque.EventProbability"
         }
       ]
     },
@@ -36,7 +36,7 @@
   },
   "expected": {
     "validation": "accepted",
-    "targetContractSha256": "537ea6c1f23f9ab8a800e923712c3b9efafecda56bdaffd09b774314b80a4d94",
-    "objectiveSha256": "60b2cab84444ed81370605772405590afd21686010a92f445404a93f65afa1f6"
+    "targetContractSha256": "4f94c615c2fd54977d287eab06d6c62744aa8cc85458e1e4fb8fffac1cd77cca",
+    "objectiveSha256": "670c11b0f5d535ebffea01ec607bf316da8ef8e890900c32a2465b801432f985"
   }
 }

@@ -3,7 +3,7 @@
   "jobConfig": {
     "operation": "fit",
     "requestedDevice": "gpu",
-    "modelLabel": "consumer-model-next",
+    "modelLabel": "model-a-next",
     "inputLayout": {
       "featureBlocks": [{"windowRows": 2, "nativeRowWidth": 2}]
     },
@@ -34,5 +34,5 @@
       "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782"
     }
   },
-  "expectedJobConfigSha256": "ebab5308df63bf6d5bc81c96973e2b33b5a4e1ea81042386f3e4b5dd2073e8f7"
+  "expectedJobConfigSha256": "4026e922ff938bcafa4f945b14e2cefbc85d0f1885ae0f87333bf9f0180380af"
 }

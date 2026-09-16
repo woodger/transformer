@@ -4,19 +4,22 @@ import pytest
 import torch
 
 from app.contracts.flight.v15.arrow import canonical_input_schema
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.data.arrow import (
     iter_committed_fit_arrow,
     iter_committed_source_arrow,
     write_arrow,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 SOURCE_ENCODING = {
     "featureBlocks": [
         {"windowRows": 2, "nativeRowWidth": 2},
     ],
 }
-TARGET_CONTRACT = model_contract("single-regression").target_contract
+TARGET_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
+).target_contract
 
 
 def test_prediction_artifact_preserves_public_values(tmp_path):

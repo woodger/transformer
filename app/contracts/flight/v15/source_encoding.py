@@ -18,7 +18,7 @@ def canonical_source_encoding(
     """Validate the only v15 input layout and derive all physical positions.
 
     `indexedFeatureBlocks` is revision-bound. Its former single-value
-    discriminator and accumulated positions were redundant Consumer fields.
+    discriminator and accumulated positions were redundant input fields.
     """
 
     if not isinstance(value, Mapping):

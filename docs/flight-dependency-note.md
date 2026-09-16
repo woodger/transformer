@@ -6,7 +6,8 @@
 
 Эта заметка фиксирует два подтверждённых ограничения `pyarrow==24.0.0`,
 влияющих на контракт Transformer Flight v15. Это ограничения Python binding
-сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или Consumer-а.
+сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или вызывающей
+системы.
 
 Окружение, в котором воспроизведено поведение:
 
@@ -77,11 +78,12 @@ failed precondition и exception для resource exhausted.
 ### Ожидаемый результат и влияние на contract
 
 Flight v15 требует завершать ошибочный RPC неуспехом и сохраняет стабильный
-application code в message, а для consumer-neutral semantic errors — также
+application code в message, а для semantic errors, независимых от предметной
+области, — также
 структурный detail в `FlightError.extra_info`. На чистом Python точные
 transport statuses `ALREADY_EXISTS`, `FAILED_PRECONDITION` и
-`RESOURCE_EXHAUSTED` всё равно недоступны; Consumer ветвится по стабильному
-application code и structured detail, а не выводит недоступный status из
+`RESOURCE_EXHAUSTED` всё равно недоступны; вызывающая система ветвится по
+стабильному application code и structured detail, а не выводит недоступный status из
 класса PyArrow exception.
 
 ### Безопасное временное поведение
@@ -152,7 +154,8 @@ physical payload, logical rows, job и queue на уровне приложен�
 
 ### Безопасное временное поведение
 
-- Consumer настраивает `maxSendMessageLength` и `maxReceiveMessageLength` и
+- Вызывающая система настраивает `maxSendMessageLength` и
+  `maxReceiveMessageLength` и
   формирует RecordBatches примерно по 8 MiB.
 - Transformer применяет лимиты batch, physical payload, total job и logical
   rows при чтении каждого chunk.
@@ -183,4 +186,5 @@ flight.FlightServerBase(
 отдельно поддерживаемое native extension или будущее обновление dependency,
 поведение которого проверено с Node client. Private local patch или custom
 Cython shim существенно расширили бы scope Transformer и deployment matrix.
-Изменения Consumer applications или `arrow-flight-client@0.0.8` не предлагаются.
+Изменения вызывающих applications или `arrow-flight-client@0.0.8` не
+предлагаются.

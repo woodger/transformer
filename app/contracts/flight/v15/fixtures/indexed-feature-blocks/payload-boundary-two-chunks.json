@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.input-layout.payload-boundary-two-chunks.v3",
+  "fixtureId": "input-layout.payload-boundary-two-chunks.v3",
   "inputLayout": {
     "featureBlocks": [
       {

@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.input-layout.heterogeneous-multi-block.v3",
+  "fixtureId": "input-layout.heterogeneous-multi-block.v3",
   "inputLayout": {
     "featureBlocks": [
       {

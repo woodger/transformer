@@ -20,8 +20,9 @@ transformer.model-catalog.v3.detail
 List — ограниченный owner-scoped traversal, упорядоченный по `createdAt DESC,
 modelRef ASC`. Он использует подписанный, связанный с owner-ом keyset cursor с
 TTL 900 секунд и границей live high-water. Параллельное удаление может привести
-к `MODEL_NOT_FOUND` при позднейшем lookup detail; Consumer должен убрать эту
-запись и обновить данные. Cursor не сохраняет доступ к удалённой generation.
+к `MODEL_NOT_FOUND` при позднейшем lookup detail; вызывающая система должна
+убрать эту запись и обновить данные. Cursor не сохраняет доступ к удалённой
+generation.
 
 Каждый summary list содержит только данные, требуемые для выбора и сравнения
 generation: immutable `modelRef`, label, generation, время создания,

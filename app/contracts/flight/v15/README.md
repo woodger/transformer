@@ -1,14 +1,14 @@
 # Transformer Arrow Flight v15
 
-> ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет публичную, consumer-neutral
-> границу Arrow Flight. Это единственная поддерживаемая revision workflow
-> Flight.
+> ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет публичную границу Arrow Flight,
+> независимую от внешней предметной семантики. Это единственная
+> поддерживаемая revision workflow Flight.
 
 Flight v15 — разрушительный чистый переход. В нём нет actions, aliases и
-reader v14. Публичная граница намеренно сокращена: Consumer передаёт намерение
-модели и геометрию данных; Transformer выпускает identity задания, владеет
-исполнением и деталями artifacts и раскрывает лишь сведения, нужные для
-загрузки, ожидания и получения результатов.
+reader v14. Публичная граница намеренно сокращена: вызывающая система передаёт
+намерение модели и геометрию данных; Transformer выпускает identity задания,
+владеет исполнением и деталями artifacts и раскрывает лишь сведения, нужные
+для загрузки, ожидания и получения результатов.
 
 ## Actions
 
@@ -30,11 +30,11 @@ transformer.training-telemetry.v3.gradient-interactions
 ```
 
 Все запросы Flight jobs содержат UUID `requestId`; create и mutation requests
-также содержат выпущенный Consumer `idempotencyKey`. У fit и predict отдельные
-закрытые create schemas. Успешный create возвращает выпущенные Transformer
-`jobId` и один непрозрачный `mutationLease`, требуемые последующим mutation
-actions и metadata DoPut. Consumer не передаёт client execution ID, fence
-counter, schema ID или runtime identity Worker-а.
+также содержат предоставленный вызывающей системой `idempotencyKey`. У fit и
+predict отдельные закрытые create schemas. Успешный create возвращает
+выпущенные Transformer `jobId` и один непрозрачный `mutationLease`, требуемые
+последующим mutation actions и metadata DoPut. Вызывающая система не передаёт
+client execution ID, fence counter, schema ID или runtime identity Worker-а.
 
 `fit.create` получает label модели, запрошенное устройство, `dataBinding`,
 semantic v3 `modelContract`, training configuration, diagnostics и запрошенную
@@ -47,7 +47,7 @@ transformations.
 
 `dataBinding` содержит непрозрачные `dataContractSha256`, `tensorGeometry` и
 `inputLayout`. В нём нет читаемого profile, revision данных, feature catalogue
-или семантических metadata Consumer.
+или внешних предметных metadata.
 
 ## Жизненный цикл входных данных
 

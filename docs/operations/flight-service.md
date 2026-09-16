@@ -4,7 +4,8 @@
 > сервиса Flight v15.
 
 Wire semantics определены [Flight v15](../../app/contracts/flight/v15/README.md).
-Этот документ описывает эксплуатацию сервиса, а не JSON details Consumer.
+Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
+системы.
 
 ## Требования runtime
 

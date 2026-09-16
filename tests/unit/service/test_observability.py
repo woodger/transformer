@@ -7,6 +7,9 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.model_config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
 )
@@ -20,8 +23,8 @@ from app.service.application.services.worker_pool import WorkerPool
 from app.service.bootstrap.config import FlightServiceConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.records import ExecutionJobRecord
+from tests.fixture_documents import semantic_fixture_document
 from tests.support.authentication import StaticAccessTokenAuthenticator
-from tests.support.consumer_neutral import model_contract, semantic_digests
 
 
 class RecordingLogger:
@@ -107,10 +110,8 @@ def test_action_and_rpc_logs_have_correlation_status_and_latency_without_secret(
 
 def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
     job_id = str(uuid.uuid4())
-    contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=2,
+    contract = ModelContract.from_document(
+        semantic_fixture_document("single-regression")["modelContract"],
     )
     data_contract = {
         "identity": "test.dataset",
@@ -140,7 +141,15 @@ def test_worker_queue_metrics_are_aggregate_and_transition_log_is_correlated():
         training_config=None,
         data_contract=data_contract,
         model_contract=contract.to_document(),
-        semantic_digests=semantic_digests(contract, "d" * 64),
+        semantic_digests=resolved_semantic_digests(
+            contract,
+            "d" * 64,
+            ModelConfig.from_tuning(
+                contract.model_tuning,
+                seq_len=2,
+                feature_dim=2,
+            ),
+        ),
         config_hash="a" * 64,
         manifest_sha256=None,
         feature_dim=2,

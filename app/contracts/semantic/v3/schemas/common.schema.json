@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/common.schema.json",
-  "title": "Consumer-neutral semantic contract v3 common definitions",
+  "title": "Semantic contract v3 common definitions",
   "$defs": {
     "identity": {
       "type": "string",

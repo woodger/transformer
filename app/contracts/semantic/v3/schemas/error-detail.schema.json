@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://transformer.local/contracts/semantic/v3/error-detail.schema.json",
-  "title": "Consumer-neutral semantic error detail",
+  "title": "Semantic error detail",
   "oneOf": [
     {
       "$ref": "#/$defs/requestContractError"

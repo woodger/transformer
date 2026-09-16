@@ -7,6 +7,7 @@ import pytest
 from app.contracts.flight.v15 import job_config_sha256
 from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -16,7 +17,33 @@ from app.service.application.ports.job_lifecycle import LifecycleMutation
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
 from app.service.domain.records import PublishedModelRecord
-from tests.support.consumer_neutral import model_contract, semantic_digests
+from tests.fixture_documents import semantic_fixture_document
+
+
+def _single_regression_contract() -> ModelContract:
+    document = semantic_fixture_document("single-regression")["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": 8,
+        "encoderLayerCount": 1,
+        "dropoutProbability": 0.0,
+        "attentionHeadCount": 2,
+    })
+    return ModelContract.from_document(document)
+
+
+def _semantic_digests(contract: ModelContract) -> dict:
+    return resolved_semantic_digests(
+        contract,
+        "a" * 64,
+        ModelConfig.from_tuning(
+            contract.model_tuning,
+            seq_len=2,
+            feature_dim=2,
+        ),
+    )
 
 
 def test_published_model_fit_resolves_immutable_parent_lineage():
@@ -167,7 +194,7 @@ def test_published_model_fit_rejects_a_different_objective():
     changed_document = deepcopy(command.model_contract)
     changed_document["objective"]["directComponents"][0]["weight"] = 0.5
     changed_contract = ModelContract.from_document(changed_document)
-    changed_digests = semantic_digests(changed_contract, "a" * 64)
+    changed_digests = _semantic_digests(changed_contract)
     command = replace(
         command,
         model_contract=changed_contract.to_document(),
@@ -211,15 +238,7 @@ def _action_for_parent(parent):
 
 def _published_model_command(
 ) -> tuple[CreateJobCommand, PublishedModelRecord]:
-    semantic_contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=2,
-        hidden=8,
-        layers=1,
-        dropout=0.0,
-        nhead=2,
-    )
+    semantic_contract = _single_regression_contract()
     model_config = ModelConfig.from_tuning(
         semantic_contract.model_tuning,
         seq_len=2,
@@ -232,7 +251,7 @@ def _published_model_command(
         "featureDim": 2,
     }
     model_contract_document = semantic_contract.to_document()
-    resolved_digests = semantic_digests(semantic_contract, "a" * 64)
+    resolved_digests = _semantic_digests(semantic_contract)
     parent = PublishedModelRecord(
         model_ref="mdl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         owner_subject="inventory",

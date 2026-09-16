@@ -4,7 +4,8 @@
 > service.
 
 Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
-начинаются только через аутентифицированную границу Consumer Flight v15.
+начинаются только через аутентифицированную границу вызывающей системы Flight
+v15.
 
 ## Подготовить окружение
 
@@ -30,7 +31,7 @@ Transformer не предоставляет локальный CLI fit/predict. 
 ./.venv/bin/python app/main.py db migrations apply
 ```
 
-Выпустите bearer credential для service identity Consumer-а:
+Выпустите bearer credential для вызывающей service identity:
 
 ```bash
 ./.venv/bin/python app/main.py auth tokens issue
@@ -49,8 +50,8 @@ command history, или логах.
 изучите инструкции destructive clean cut для migration 0027: старые jobs,
 models, recovery records и telemetry не сохраняются.
 
-Consumer материализует `ModelContract` Semantic v3, создаёт job fit или
-predict v15, загружает compact `indexedFeatureBlocks`, закрывает input и
+Вызывающая система материализует `ModelContract` Semantic v3, создаёт job fit
+или predict v15, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
 [Flight v15](../app/contracts/flight/v15/README.md); это руководство намеренно
 не дублирует wire examples.

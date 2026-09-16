@@ -76,6 +76,6 @@ compatibility layer не поддерживаются.
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
 - [Terminal fit telemetry v6](../../app/contracts/metrics/fit_run/v6/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Runtime обучения](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

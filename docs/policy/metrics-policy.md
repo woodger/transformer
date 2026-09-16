@@ -40,7 +40,7 @@ Rationale best-effort artifact/outbox boundary сохранён в
   обоснования.
 - Секреты, tokens, credentials и чувствительные данные в metrics не попадают.
 - Метрики не дублируют данные, уже полноценно представленные в logs.
-- Transformer не вычисляет Consumer-owned target statistics и не создаёт
+- Transformer не вычисляет предметные target statistics внешней стороны и не создаёт
   отдельную OpenSearch projection для metadata локального artifact.
 
 ## Границы инструментации

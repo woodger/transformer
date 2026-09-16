@@ -4,6 +4,7 @@ import pytest
 import torch
 
 import app.worker.checkpoints.model as checkpoint_module
+from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import TrainConfig
 from app.contracts.worker.v14.model_config import ModelConfig
 from app.contracts.worker.v14.model_definition import resolved_semantic_digests
@@ -13,19 +14,21 @@ from app.worker.checkpoints.model import (
     model_path,
     save_checkpoint,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 
 def _checkpoint_metadata():
-    contract = model_contract(
-        "single-regression",
-        seq_len=1,
-        feature_dim=2,
-        hidden=8,
-        layers=1,
-        dropout=0.0,
-        nhead=2,
-    )
+    document = semantic_fixture_document("single-regression")["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": 8,
+        "encoderLayerCount": 1,
+        "dropoutProbability": 0.0,
+        "attentionHeadCount": 2,
+    })
+    contract = ModelContract.from_document(document)
     model_config = ModelConfig.from_tuning(
         contract.model_tuning,
         seq_len=1,

@@ -11,7 +11,8 @@ registry моделей.
 
 Projection v7 использует `transformer.metrics-fit-run.v7` в
 `metrics-runs-v7`. `opensearch/metrics-runs-v7.template.json` должен быть
-установлен до создания индекса. Consumer получает эти observations только через
-Training Telemetry Query v3, но никогда прямым доступом к OpenSearch.
+установлен до создания индекса. Вызывающая система получает эти observations
+только через Training Telemetry Query v3, но никогда прямым доступом к
+OpenSearch.
 
 Документы прежних fit-run после чистого перехода Flight v15 не читаются.

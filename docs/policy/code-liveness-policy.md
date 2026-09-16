@@ -27,8 +27,8 @@
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
 - `app/contracts/semantic/v3/`, `app/contracts/flight/v15/`,
-  `app/contracts/model_catalog/v3/` и `app/contracts/training_telemetry/v3/`, используемые
-  внешними consumers, runtime и contract tests;
+  `app/contracts/model_catalog/v3/` и `app/contracts/training_telemetry/v3/`,
+  используемые внешними вызывающими системами, runtime и contract tests;
 - `app/contracts/worker/v14/` и `app/contracts/checkpoint/v8/`, используемые
   service и worker processes;
 - `app/contracts/metrics/v7/` и `app/contracts/metrics/fit_run/v7/`,
@@ -70,7 +70,8 @@ contract role.
 
 ### Placeholder
 
-Файл содержит только TODO, stub или будущую идею без runtime consumer.
+Файл содержит только TODO, stub или будущую идею без использующего runtime
+кода.
 
 Решение: перенести намерение в issue или профильную документацию либо удалить.
 Пустая архитектурная заготовка не должна жить в `app/`.

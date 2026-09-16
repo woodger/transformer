@@ -6,23 +6,31 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
-from tests.support.consumer_neutral import model_contract, semantic_digests
+from tests.fixture_documents import semantic_fixture_document
 
 _JOB_ID = "00000000-0000-4000-8000-000000000001"
 _EXECUTION_ID = "00000000-0000-4000-8000-000000000002"
 _MODEL_REF = "mdl_00000000000000000000000000000001"
-_MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=1,
+_MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
-_SEMANTIC_DIGESTS = semantic_digests(_MODEL_CONTRACT, "a" * 64)
+_SEMANTIC_DIGESTS = resolved_semantic_digests(
+    _MODEL_CONTRACT,
+    "a" * 64,
+    ModelConfig.from_tuning(
+        _MODEL_CONTRACT.model_tuning,
+        seq_len=2,
+        feature_dim=1,
+    ),
+)
 
 
 def _database():
@@ -47,7 +55,7 @@ def _create_job(
 ):
     return ledger.create_job(
         job_id=_JOB_ID,
-        owner_subject="consumer",
+        owner_subject="test-owner",
         client_execution_id=_EXECUTION_ID,
         operation=operation,
         requested_device="cpu",

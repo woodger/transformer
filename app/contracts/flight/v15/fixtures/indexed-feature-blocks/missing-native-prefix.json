@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.input-layout.missing-native-prefix.v3",
+  "fixtureId": "input-layout.missing-native-prefix.v3",
   "inputLayout": {
     "featureBlocks": [
       {

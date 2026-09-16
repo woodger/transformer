@@ -5,9 +5,11 @@ import torch
 
 from app.contracts.semantic.v3 import ModelContract
 from app.worker.training.losses import combined_loss
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
-MODEL_CONTRACT = model_contract("multi-target-shared-resource")
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("multi-target-shared-resource")["modelContract"],
+)
 
 
 def make_outputs_and_targets():

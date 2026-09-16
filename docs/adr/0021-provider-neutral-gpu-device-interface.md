@@ -61,6 +61,6 @@ parallel runtime, aliases или compatibility layer.
 ## Текущая документация
 
 - [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Локальный CLI](../cli/index.md)
 - [Архитектура](../architecture.md)

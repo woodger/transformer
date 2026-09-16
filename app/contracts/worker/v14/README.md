@@ -1,7 +1,7 @@
 # Процессный контракт Transformer Worker v14
 
 > ДОКУМЕНТ КОНТРАКТА. Это внутренний для provider-а процессный протокол между
-> сервисом и Worker. Он не является wire contract Consumer.
+> сервисом и Worker. Он не является публичным wire contract.
 
 Worker v14 получает контролируемый сервисом command manifest, выдаёт framed
 events и читает/записывает только контролируемые сервисом artifact paths.
@@ -13,7 +13,8 @@ Manifest содержит валидированное намерение semant
 training/diagnostics и fences checkpoint/recovery. Из этой информации Worker
 материализует принадлежащие Transformer архитектуру и private resources.
 Непрозрачные target identities остаются данными для layout и telemetry; ни один
-путь исполнения не может ветвиться по имени target-а Consumer.
+путь исполнения не может ветвиться по имени target-а внешней предметной
+семантики.
 
 Внутренние форматы:
 

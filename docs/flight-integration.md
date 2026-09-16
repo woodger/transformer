@@ -1,15 +1,15 @@
-# Интеграция Consumer с Transformer Flight v15
+# Интеграция с Transformer Flight v15
 
-> Тип: руководство. Практический порядок работы Consumer с действующей
+> Тип: руководство. Практический порядок работы вызывающей системы с действующей
 > provider boundary. JSON Schema в `app/contracts/` имеет приоритет над этим
 > пояснением.
 
 ## Предварительные условия
 
-Consumer вызывает Transformer только со своей аутентифицированной bearer
-credential. Браузер никогда не вызывает Transformer или OpenSearch. Scope
-owner-а выводится из аутентифицированного subject; Consumer не передаёт owner,
-path checkpoint-а или identity storage provider-а.
+Вызывающая система вызывает Transformer только со своей аутентифицированной
+bearer credential. Браузер никогда не вызывает Transformer или OpenSearch.
+Scope owner-а выводится из аутентифицированного subject; вызывающая система не
+передаёт owner, path checkpoint-а или identity storage provider-а.
 
 Перед интеграцией используйте точные актуальные packages:
 
@@ -23,8 +23,8 @@ migration 0027, удалены и не могут использоваться �
 
 ## Fit
 
-1. Materialize self-contained Semantic v3 `ModelContract` из семантики
-   target/catalog/profile Consumer. Не передавайте paths profile, keys lookup
+1. Materialize self-contained Semantic v3 `ModelContract` из локальной
+   семантики target/catalog/profile. Не передавайте paths profile, keys lookup
    target-ов или исполняемый loss code.
 2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, geometry
    tensor-а и `inputLayout.featureBlocks`.
@@ -43,8 +43,9 @@ fencing или close totals в metadata upload. `expectedLogicalRows` необя
 и используется только для раннего обнаружения EOF.
 
 Fit может начаться после durable availability input-а согласно scheduling
-service; input close отмечает EOF и завершает input manifest. Consumer всё
-равно должен дождаться terminal result job до признания модели published.
+service; input close отмечает EOF и завершает input manifest. Вызывающая
+система всё равно должна дождаться terminal result job до признания модели
+published.
 
 ## Predict
 
@@ -63,8 +64,8 @@ prediction всегда следуют принадлежащему checkpoint-�
 
 `job.acquire` заменяет устаревший непрозрачный mutation lease. `job.cancel` и
 `job.input.close` требуют текущего lease. `job.status` намеренно является
-mutable projection; Consumer хранит immutable create response вместо ожидания
-API job-detail provider-а.
+mutable projection; вызывающая система хранит immutable create response вместо
+ожидания API job-detail provider-а.
 
 Ветвитесь по structured error `code` и `reason`, но никогда по тексту message.
 `MODEL_NOT_FOUND` security-equivalent для неизвестных, чужих и удалённых
@@ -76,7 +77,7 @@ validation errors имеют разные structured outcomes.
 Используйте `transformer.model-catalog.v3.list` для owner-scoped discovery и
 `.detail` для точного выбранного `modelRef`. List — bounded high-water/keyset
 traversal; параллельное deletion может заставить detail вернуть
-`MODEL_NOT_FOUND`, тогда Consumer обновляет своё представление.
+`MODEL_NOT_FOUND`, тогда вызывающая система обновляет своё представление.
 
 Используйте `transformer.training-telemetry.v3.report` для observations
 завершённого training pass и запрашивайте gradient interactions только после

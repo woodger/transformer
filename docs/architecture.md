@@ -3,7 +3,7 @@
 > Тип: справочник. Текущие процессы, contracts и ownership данных.
 
 Transformer — training system на стороне provider-а. Inventory владеет
-семантикой данных Consumer и поведением, ориентированным на браузер;
+предметной семантикой данных и поведением, ориентированным на браузер;
 Transformer владеет generic tensor execution, durable jobs, generations
 моделей, checkpoints, recovery и projection telemetry.
 
@@ -21,7 +21,7 @@ Torch, CUDA или runtime Flight. Локального пути исполне�
 нет.
 
 ```text
-app/contracts/semantic/v3          consumer-neutral target/objective language
+app/contracts/semantic/v3          semantic target/objective language
 app/contracts/flight/v15           public Flight workflow
 app/contracts/model_catalog/v3     owner-scoped model discovery/detail
 app/contracts/training_telemetry/v3 owner-scoped telemetry report
@@ -52,11 +52,11 @@ Domain владеет состояниями job, errors и правилами l
 владеют PostgreSQL, storage artifacts, supervision worker process, inventory
 CUDA и OpenSearch.
 
-Flight v15 принимает принадлежащие Consumer data binding, semantic model
-intent, training intent и запрошенную initialization. Он выпускает identity job
-и непрозрачный mutation lease. Разрешённые provider-ом values — реализация
-модели, operational fences, schema fingerprints, версии worker/checkpoint и
-детали artifacts — не пересекают публичную границу.
+Flight v15 принимает предоставленные вызывающей системой data binding, semantic
+model intent, training intent и запрошенную initialization. Он выпускает
+identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
+реализация модели, operational fences, schema fingerprints, версии
+worker/checkpoint и детали artifacts — не пересекают публичную границу.
 
 ## Worker и tensor data plane
 
@@ -65,17 +65,17 @@ immutable manifest Worker v14, записывает только artifacts works
 возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
 identity.
 
-Input Flight использует компактный `indexedFeatureBlocks`. Consumer передаёт
-упорядоченные dimensions blocks и local offsets. Worker выводит positions
-blocks, отображает native rows и восстанавливает логические tensors Float32
-`[rows, seqLen, featureDim]` ограниченными slices до batching. Границы
+Input Flight использует компактный `indexedFeatureBlocks`. Вызывающая система
+передаёт упорядоченные dimensions blocks и local offsets. Worker выводит
+positions blocks, отображает native rows и восстанавливает логические tensors
+Float32 `[rows, seqLen, featureDim]` ограниченными slices до batching. Границы
 физических payload/chunk не меняют логический порядок, training rows или target
 coordinates.
 
 Target identities Semantic v3 непрозрачны. Упорядоченные slots определяют
 ширину target и prediction. Transformer интерпретирует generic transformations,
 operators, typed roles и private resource classes, но никогда не имена target
-Consumer, profiles, FIGIs или feature formulas.
+внешней предметной области, profiles, FIGIs или feature formulas.
 
 ## Хранение и lifecycle
 
@@ -87,8 +87,8 @@ registry или состояния job.
 
 Model Catalog Query v3 читает owner-scoped state registry. Training Telemetry
 Query v3 валидирует полную projection относительно принадлежащих checkpoint-у
-metadata модели до раскрытия. Ни один query не позволяет Consumer получить
-filesystem paths, bytes checkpoint-а или topology OpenSearch.
+metadata модели до раскрытия. Ни один query не позволяет вызывающей системе
+получить filesystem paths, bytes checkpoint-а или topology OpenSearch.
 
 Migration 0027 намеренно разрушительна: она отклоняет active jobs и удаляет
 предыдущее состояние public boundary. Startup reconciliation удаляет managed

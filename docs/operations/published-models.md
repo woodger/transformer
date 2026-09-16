@@ -9,7 +9,7 @@
 maintenance boundaries описаны в
 [`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
 
-Consumer-facing discovery и detail выполняются owner-scoped actions из
+Публичные discovery и detail выполняются owner-scoped actions из
 [Model Catalog Query v3](../../app/contracts/model_catalog/v3/README.md).
 Каталог является read-only и не заменяет описанные здесь административные
 команды удаления.
@@ -57,7 +57,8 @@ State: DELETING
 - переводит модель в `DELETING`.
 
 Поддерживаемой команды undo нет, поэтому перед `models delete` убедитесь, что
-выбрана точная generation и Consumer больше не должен использовать её.
+выбрана точная generation и вызывающая система больше не должна использовать
+её.
 
 ## Дождаться физического удаления
 

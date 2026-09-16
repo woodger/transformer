@@ -1,4 +1,4 @@
-# Семантическая модель, нейтральная к Consumer v3
+# Семантическая модель v3
 
 > ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет закрытый язык target slots,
 > objectives, model tuning и семантических идентичностей D1, используемый
@@ -11,7 +11,8 @@
 
 ## Граница
 
-`ModelContract` содержит только принадлежащее Consumer намерение обучения:
+`ModelContract` содержит только заявленное вызывающей стороной намерение
+обучения:
 
 ```json
 {
@@ -21,16 +22,16 @@
 }
 ```
 
-Consumer передаёт непрозрачный digest данных и геометрию tensor-а в Flight
-`dataBinding`. Transformer разрешает своё model definition из этой геометрии,
+Вызывающая сторона передаёт непрозрачный digest данных и геометрию tensor-а в
+Flight `dataBinding`. Transformer разрешает своё model definition из этой
+геометрии,
 ревизии закрытого языка, target layout, objective и tuning. Он выпускает
 получившийся model-definition digest. Реализация архитектуры, private heads,
 parameterization, tensor layout, байты checkpoint-а и политика устройства
 остаются собственностью Transformer.
 
 Target identities непрозрачны. Transformer не должен ветвиться по имени
-target-а, profile, FIGI или другому принадлежащему Consumer семантическому
-значению.
+target-а, profile, FIGI или другому значению внешней предметной семантики.
 
 ## Targets и objective
 
@@ -42,7 +43,7 @@ width. У каждого slot есть transformation входа loss и transfo
 
 ```json
 {
-  "identity": "ConsumerDefined.Probability",
+  "identity": "Opaque.Probability",
   "observedConstraint": {
     "constraint": "ClosedInterval",
     "minimum": 0,
@@ -109,12 +110,13 @@ objectiveSha256 = SHA256(JCS({
 
 ```
 
-`dataContractSha256` остаётся выпущенным Consumer непрозрачным значением для
-Transformer. Полные документы — источник смысла; digests — производные
-identities. Напротив, `modelDefinitionSha256` выпускается provider-ом после
-разрешения Transformer своей внутренней реализации модели и `ModelConfig`.
-Он связывает digests target и objective, но его preimage не является
-контрактом Consumer и не вычисляется повторно через границу. Хеширование,
+`dataContractSha256` остаётся переданным вызывающей стороной непрозрачным
+значением для Transformer. Полные документы — источник смысла; digests —
+производные identities. Напротив, `modelDefinitionSha256` выпускается
+provider-ом после разрешения Transformer своей внутренней реализации модели и
+`ModelConfig`. Он связывает digests target и objective, но его preimage не
+является контрактом внешней стороны и не вычисляется повторно через границу.
+Хеширование,
 независимое от представления, и конвертация старых semantic revisions в v3
 отсутствуют. Input manifests, job configuration hashes и physical checkpoint
 hashes — отдельные операционные fences, а не слои D1.
@@ -128,15 +130,16 @@ operator roles/domains; resource reachability; допустимость model tu
 переназначаются.
 
 `language-capabilities.schema.json` объявляет ревизию 3, закрытый язык и
-семантические limits. Consumer может ввести новую непрозрачную target identity
-с advertised primitives, не вызывая ветвления Transformer по имени target-а.
+семантические limits. Вызывающая сторона может ввести новую непрозрачную
+target identity с advertised primitives, не вызывая ветвления Transformer по
+имени target-а.
 Изменение formula primitive-а, type system, role model или resource lifecycle
 требует новой revision.
 
 ## Fixtures
 
-`fixtures/` содержит небольшой межпроектный behavioral bundle: случаи одного
-target-а, нескольких targets с общим resource, нового непрозрачного target-а
-и изменённого порядка layout. Manifest fixtures хеширует только файлы этого
-bundle; он служит для офлайн-проверки, но не является входом runtime,
-capability или compatibility fence.
+`fixtures/` содержит небольшой межпроектный набор проверочных примеров:
+случаи одного target-а, нескольких targets с общим resource, нового
+непрозрачного target-а и изменённого порядка layout. Manifest fixtures
+хеширует только файлы этого набора; он служит для офлайн-проверки, но не
+является входом runtime, capability или compatibility fence.

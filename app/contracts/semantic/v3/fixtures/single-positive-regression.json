@@ -1,5 +1,5 @@
 {
-  "fixtureId": "consumer-neutral.single-positive-regression.v3",
+  "fixtureId": "semantic.single-positive-regression.v3",
   "tensorGeometry": {"seqLen": 10, "featureDim": 64848},
   "modelContract": {
     "targetContract": {
