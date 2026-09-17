@@ -395,7 +395,29 @@ class CancelJobAction:
         self.logger = logger
 
     def cancel(self, command: CancelJobCommand) -> JobCancelled:
-        outcome = self.store.cancel(command)
+        worker_stop_started = False
+
+        def stop_active_worker(job_id: str) -> None:
+            nonlocal worker_stop_started
+            self._cancel_notifier(job_id)
+            worker_stop_started = True
+
+        try:
+            outcome = self.store.cancel(
+                command,
+                stop_active_worker=stop_active_worker,
+            )
+        except Exception as exc:
+            if worker_stop_started:
+                self.metrics.add("jobCancellationPersistenceFailures")
+                self.logger.event(
+                    "flight.job.cancel.persistence_failed",
+                    requestId=command.request_id,
+                    jobId=command.job_id,
+                    errorType=type(exc).__name__,
+                )
+            raise
+
         if not outcome.replayed:
             for location in outcome.cleanup:
                 self._artifact_cleaner.cleanup(location)
@@ -407,8 +429,6 @@ class CancelJobAction:
                 inputState=outcome.result.input_state.value,
                 executionState=outcome.result.execution_state.value,
             )
-            if outcome.notify_worker:
-                self._cancel_notifier(outcome.result.job_id)
         return outcome.result
 
 

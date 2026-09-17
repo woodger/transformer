@@ -270,17 +270,19 @@ class PostgresJobLifecycle:
     def cancel(
         self,
         command: CancelJobCommand,
+        *,
+        stop_active_worker: Callable[[str], None],
     ) -> LifecycleMutation[JobCancelled]:
-        notify = False
         cleanup: tuple[tuple[str, str], ...] = ()
 
         def mutation(connection: Session) -> tuple[JsonObject, str | None]:
-            nonlocal notify, cleanup
-            job, notify, cleanup = self.ledger.cancel_job(
+            nonlocal cleanup
+            job, cleanup = self.ledger.cancel_job(
                 command.job_id,
                 owner_subject=command.owner_subject,
                 client_execution_id=command.client_execution_id,
                 fencing_token=command.fencing_token,
+                stop_active_worker=stop_active_worker,
                 connection=connection,
             )
             result = JobCancelled(
@@ -310,7 +312,6 @@ class PostgresJobLifecycle:
             _decode_cancelled(document),
             replayed=replayed,
             cleanup=() if replayed else _locations(cleanup),
-            notify_worker=not replayed and notify,
         )
 
     def _resolve_model(

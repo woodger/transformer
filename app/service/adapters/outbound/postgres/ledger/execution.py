@@ -452,6 +452,12 @@ class ExecutionLedgerSlice:
             job.execution_state = target_state.value
             if job.input_state == InputState.OPEN.value:
                 job.input_state = InputState.ABORTED.value
+                job.manifest_sha256 = None
+                job.input_closed_at = None
+            job.waiting_for_input = False
+            job.waiting_input_ordinal = None
+            job.input_waiting_since = None
+            job.acquire_grace_until = None
             job.revision += 1
             job.error_code = code
             job.error_message = error_message
@@ -504,6 +510,14 @@ class ExecutionLedgerSlice:
                 job.execution_state,
                 ExecutionState.CANCELLING,
             )
+            if job.input_state == InputState.OPEN.value:
+                job.input_state = InputState.ABORTED.value
+                job.manifest_sha256 = None
+                job.input_closed_at = None
+            job.waiting_for_input = False
+            job.waiting_input_ordinal = None
+            job.input_waiting_since = None
+            job.acquire_grace_until = None
             job.execution_state = ExecutionState.CANCELLING.value
             job.revision += 1
             job.cancel_requested_at = requested_at

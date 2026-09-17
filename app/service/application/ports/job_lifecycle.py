@@ -31,7 +31,6 @@ class LifecycleMutation(Generic[ResultT]):
     result: ResultT
     replayed: bool
     cleanup: tuple[ArtifactLocation, ...] = ()
-    notify_worker: bool = False
     queued: bool = False
 
 
@@ -67,6 +66,8 @@ class JobLifecycleStore(Protocol):
     def cancel(
         self,
         command: CancelJobCommand,
+        *,
+        stop_active_worker: Callable[[str], None],
     ) -> LifecycleMutation[JobCancelled]: ...
 
 

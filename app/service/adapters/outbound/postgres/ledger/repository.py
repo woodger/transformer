@@ -457,9 +457,10 @@ class Ledger:
         owner_subject: str,
         client_execution_id: str,
         fencing_token: int,
+        stop_active_worker: Callable[[str], None],
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[RowMapping, bool, tuple[tuple[str, str], ...]]:
+    ) -> tuple[RowMapping, tuple[tuple[str, str], ...]]:
         client_execution_id = _canonical_uuid(
             client_execution_id,
             "client_execution_id",
@@ -482,6 +483,9 @@ class Ledger:
                 fencing_token,
             )
             decision = decide_cancel(job.execution_state)
+            if decision.notify_worker:
+                stop_active_worker(job_id)
+
             changed = False
             if decision.abort_open_input and job.input_state == InputState.OPEN.value:
                 job.input_state = InputState.ABORTED.value
@@ -494,6 +498,13 @@ class Ledger:
                 if decision.target == ExecutionState.CANCELLED:
                     job.finished_at = cancelled_at
                 changed = True
+
+            if changed:
+                job.waiting_for_input = False
+                job.waiting_input_ordinal = None
+                job.input_waiting_since = None
+                job.acquire_grace_until = None
+
             uploads = tuple(session.scalars(
                 select(InputUpload)
                 .where(InputUpload.job_id == job_id)
@@ -508,14 +519,10 @@ class Ledger:
             if uploads:
                 changed = True
             if changed:
-                job.waiting_for_input = False
-                job.waiting_input_ordinal = None
-                job.input_waiting_since = None
-                job.acquire_grace_until = None
                 job.revision += 1
                 job.updated_at = cancelled_at
             session.flush()
-            return _decode(job), decision.notify_worker, cleanup
+            return _decode(job), cleanup
 
     def get_execution_job(
         self,

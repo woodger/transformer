@@ -140,7 +140,7 @@ class WorkerPool:
             self._enqueue(job)
 
     def notify_cancel(self, job_id: str) -> None:
-        """Cancellation callback used after RUNNING -> CANCELLING commits."""
+        """Deliver a validated explicit cancellation to Worker supervision."""
         self._executor().notify_cancel(job_id)
 
     def notify_input(self, job_id: str) -> None:
