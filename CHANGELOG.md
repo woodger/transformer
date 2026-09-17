@@ -7,6 +7,17 @@
 
 ## [Не выпущено]
 
+## [0.1.20] - 2026-09-17
+
+### Добавлено
+
+- Model Topology Query v1: owner-scoped read-only проекция статического
+  публичного графа опубликованной модели. Она связывает inputs, encoder path,
+  target heads, transformations, resources, direct/auxiliary components и
+  total loss с точными `modelRef` и `modelDefinitionSha256`.
+- Flight v16 action `transformer.model-topology.v1.detail`, его capability,
+  closed JSON schemas, structured outcomes и offline fixtures.
+
 ### Изменено
 
 - CUDA Worker получает единый CPU thread budget из application config:
@@ -25,6 +36,19 @@
 - Migration `0026` удаляет durable state прежнего vocabulary после terminal
   fencing jobs. Старые models требуют нового обучения; external OpenSearch
   telemetry очищается отдельной deployment procedure.
+- Текущая public boundary завершена как Semantic v3 / Flight v16 / Worker v14 /
+  checkpoint-recovery v8 / metrics v7 / Model Catalog v3 / Training Telemetry
+  v3. Flight v16 — единственный action surface; новая topology query не меняет
+  Semantic v3, физический Arrow data plane или существующие published
+  generations.
+- После любого restart service незавершённые jobs становятся terminal и не
+  возобновляются автоматически. Валидный `job.cancel` сначала останавливает
+  Worker, а затем фиксирует lifecycle в PostgreSQL.
+
+### Исправлено
+
+- Ошибка persistence lifecycle после валидного cancel больше не позволяет
+  Worker продолжать вычисления и удерживать GPU.
 
 ### Удалено
 
@@ -865,7 +889,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.19...HEAD
+[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.20...HEAD
+[0.1.20]: https://github.com/woodger/transformer/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/woodger/transformer/compare/0.1.16...0.1.17
