@@ -15,7 +15,7 @@ def configure_cuda_torch_thread_budget(
     *,
     runtime: _TorchThreadRuntime | None = None,
 ) -> tuple[int, int]:
-    """Apply the code-configured thread budget in a fresh CUDA worker."""
+    """Apply host-side PyTorch thread limits in a fresh CUDA worker."""
 
     intraop_threads = _positive_integer(
         settings.CUDA_TORCH_INTRAOP_THREADS,
@@ -29,6 +29,8 @@ def configure_cuda_torch_thread_budget(
         import torch
 
         runtime = cast(_TorchThreadRuntime, torch)
+
+    # PyTorch requires this pool to be configured before parallel work begins.
     runtime.set_num_threads(intraop_threads)
     runtime.set_num_interop_threads(interop_threads)
     return intraop_threads, interop_threads

@@ -10,6 +10,7 @@ ACCESS_TOKEN_CACHE_TTL_SECONDS = 60.0
 # Local runtime.
 DEFAULT_DEVICE = "cpu"
 DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024
+# Limit host-side PyTorch parallelism in CUDA workers; these are not CPU quotas.
 CUDA_TORCH_INTRAOP_THREADS = 8
 CUDA_TORCH_INTEROP_THREADS = 1
 
