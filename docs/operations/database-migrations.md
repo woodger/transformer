@@ -20,7 +20,7 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Flight v15 clean cut
+## Исторический Flight v15 clean cut
 
 Revision `0027_public_contract_simplification` разрушительна. Она необходима
 для границы Flight v15 / Semantic v3 и не имеет downgrade.

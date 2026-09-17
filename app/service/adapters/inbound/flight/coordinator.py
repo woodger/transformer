@@ -15,6 +15,7 @@ from app.service.adapters.inbound.flight.constants import (
     INPUTS_LIST_ACTION,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
     PREDICT_CREATE_ACTION,
     STATUS_ACTION,
@@ -34,6 +35,16 @@ from app.service.adapters.inbound.flight.model_catalog import (
     invalid_catalog_cursor,
     model_not_found,
     registry_unavailable,
+)
+from app.service.adapters.inbound.flight.model_topology import (
+    model_topology_response,
+    model_topology_unavailable,
+    present_model_topology,
+    topology_invalid,
+    topology_model_not_found,
+    topology_registry_unavailable,
+    topology_response_budget_exceeded,
+    topology_stored_metadata_invalid,
 )
 from app.service.adapters.inbound.flight.presentation import (
     limits_to_api,
@@ -68,6 +79,7 @@ from app.service.adapters.inbound.flight.validation import (
     InputsListRequestFields,
     ModelCatalogDetailRequestFields,
     ModelCatalogListRequestFields,
+    ModelTopologyDetailRequestFields,
     OutputsListRequestFields,
     RequestIdFields,
     StatusRequestFields,
@@ -94,6 +106,9 @@ from app.service.application.messages.model_catalog import (
     GetCatalogModelQuery,
     ListCatalogModelsQuery,
 )
+from app.service.application.messages.model_topology import (
+    GetModelTopologyQuery,
+)
 from app.service.application.messages.training_telemetry import (
     GetGradientInteractionsQuery,
     GetTrainingTelemetryReportQuery,
@@ -112,6 +127,7 @@ from app.service.application.queries.model_catalog import (
     GetCatalogModel,
     ListCatalogModels,
 )
+from app.service.application.queries.model_topology import GetModelTopology
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
@@ -154,6 +170,7 @@ class JobCoordinator:
         list_outputs: ListJobOutputs,
         list_catalog_models: ListCatalogModels,
         get_catalog_model: GetCatalogModel,
+        get_model_topology: GetModelTopology | None = None,
         service_status: ServiceStatusQuery,
         availability: ServiceAvailability,
         get_training_telemetry_report: GetTrainingTelemetryReport | None = None,
@@ -168,6 +185,7 @@ class JobCoordinator:
         self._list_outputs = list_outputs
         self._list_catalog_models = list_catalog_models
         self._get_catalog_model = get_catalog_model
+        self._get_model_topology = get_model_topology
         self._service_status = service_status
         self._availability = availability
         self._get_training_telemetry_report = get_training_telemetry_report
@@ -292,6 +310,38 @@ class JobCoordinator:
             except ModelCatalogStoreUnavailable as exc:
                 raise registry_unavailable() from exc
             return _catalog_response(result, "detail-result")
+        elif action == MODEL_TOPOLOGY_DETAIL_ACTION:
+            fields = cast(ModelTopologyDetailRequestFields, request)
+            if self._get_model_topology is None:
+                raise model_topology_unavailable()
+            try:
+                result = present_model_topology(
+                    self._get_model_topology.execute(
+                        GetModelTopologyQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                        )
+                    )
+                )
+                return model_topology_response(result)
+            except CatalogModelNotFound as exc:
+                raise topology_model_not_found(exc.model_ref) from exc
+            except ModelCatalogStoreUnavailable as exc:
+                raise topology_registry_unavailable() from exc
+            except ServiceError as exc:
+                if _stored_metadata_error(exc):
+                    raise topology_stored_metadata_invalid(
+                        fields["model_ref"],
+                        _error_path(exc),
+                    ) from exc
+                raise
+            except OverflowError as exc:
+                raise topology_response_budget_exceeded(
+                    fields["model_ref"]
+                ) from exc
+            except ValueError as exc:
+                raise topology_invalid(fields["model_ref"], "") from exc
         elif action == TRAINING_TELEMETRY_REPORT_ACTION:
             fields = cast(TrainingTelemetryReportRequestFields, request)
             if self._get_training_telemetry_report is None:
@@ -395,6 +445,7 @@ class JobCoordinator:
             },
             queries={
                 "modelCatalog": True,
+                "modelTopology": self._get_model_topology is not None,
                 "trainingTelemetry": (
                     self._get_training_telemetry_report is not None
                 ),
@@ -436,6 +487,21 @@ def _catalog_response(document: JsonObject, schema_name: str) -> bytes:
             maxBytes=MODEL_CATALOG_MAX_RESPONSE_BYTES,
         )
     return encoded
+
+
+def _stored_metadata_error(error: ServiceError) -> bool:
+    return (
+        error.code == ErrorCode.MODEL_CORRUPT
+        and error.detail is not None
+        and error.detail.get("reason") == "STORED_MODEL_METADATA_INVALID"
+    )
+
+
+def _error_path(error: ServiceError) -> str:
+    if error.detail is None:
+        return ""
+    path = error.detail.get("path")
+    return path if isinstance(path, str) else ""
 
 
 def _create_command(

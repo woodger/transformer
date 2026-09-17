@@ -67,7 +67,7 @@
       }
     },
     "sourceEncoding": {
-      "$ref": "https://transformer.local/contracts/flight/v15/common.schema.json#/$defs/inputLayout"
+      "$ref": "https://transformer.local/contracts/flight/v16/common.schema.json#/$defs/inputLayout"
     },
     "dataContract": {
       "type": "object",

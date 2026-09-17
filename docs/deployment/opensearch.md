@@ -11,7 +11,7 @@ Inventory или Terminal. Transformer записывает projections point/ru
 `OPENSEARCH_NETRC` с mode 0600. Храните его вне repository и удаляйте либо
 ротируйте согласно policy secret deployment.
 
-## Чистый переход Flight v15
+## Исторический чистый переход Flight v15
 
 Индексы metrics v6 несовместимы с runtime v15. Выполняйте это только после
 остановки всех сервисов Transformer, использующих один deployment, и после

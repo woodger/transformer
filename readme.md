@@ -7,12 +7,12 @@ PyTorch через аутентифицированные задания Apache 
 
 ## Актуальная граница
 
-- Flight v15 — единственный публичный workflow заданий.
+- Flight v16 — единственный публичный workflow заданий.
 - Semantic v3 содержит упорядоченные непрозрачные targets, явные bindings
   objective и настройку модели без внешних предметных литералов
   архитектуры.
-- Model Catalog Query v3 и Training Telemetry Query v3 — owner-scoped
-  поверхности только для чтения, активируемые Flight v15.
+- Model Catalog Query v3, Model Topology Query v1 и Training Telemetry Query
+  v3 — owner-scoped поверхности только для чтения, активируемые Flight v16.
 - Worker v14, checkpoint/recovery v8 и metrics v7 являются внутренними для
   provider-а.
 - `indexedFeatureBlocks` остаётся компактным Arrow-представлением входных
@@ -50,9 +50,10 @@ generations и состояния Alembic. Точные параметры по�
 
 ## Документация
 
-- [Flight v15](./app/contracts/flight/v15/README.md)
+- [Flight v16](./app/contracts/flight/v16/README.md)
 - [Семантическая модель v3](./app/contracts/semantic/v3/README.md)
 - [Запрос каталога моделей v3](./app/contracts/model_catalog/v3/README.md)
+- [Запрос topology модели v1](./app/contracts/model_topology/v1/README.md)
 - [Запрос телеметрии обучения v3](./app/contracts/training_telemetry/v3/README.md)
 - [Worker v14](./app/contracts/worker/v14/README.md)
 - [Checkpoint/recovery v8](./app/contracts/checkpoint/v8/README.md)

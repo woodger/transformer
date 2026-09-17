@@ -3,7 +3,7 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v15.arrow import canonical_input_schema
+from app.contracts.flight.v16.arrow import canonical_input_schema
 from app.contracts.semantic.v3 import ModelContract
 from app.worker.data.arrow import (
     iter_committed_fit_arrow,

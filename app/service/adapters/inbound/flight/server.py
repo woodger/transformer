@@ -22,6 +22,7 @@ from app.service.adapters.inbound.flight.constants import (
     INPUTS_LIST_ACTION,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
     PREDICT_CREATE_ACTION,
     STATUS_ACTION,
@@ -46,7 +47,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v15 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v16 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     FIT_CREATE_ACTION: "Create a durable fit job.",
     PREDICT_CREATE_ACTION: "Create a durable predict job.",
@@ -58,6 +59,7 @@ ACTION_DESCRIPTIONS = {
     CANCEL_ACTION: "Cancel a job.",
     MODEL_CATALOG_LIST_ACTION: "List owner-visible model generations.",
     MODEL_CATALOG_DETAIL_ACTION: "Describe one owner-visible model generation.",
+    MODEL_TOPOLOGY_DETAIL_ACTION: "Return public topology for one model generation.",
     TRAINING_TELEMETRY_REPORT_ACTION: "Read training telemetry for one model generation.",
     TRAINING_TELEMETRY_GRADIENT_ACTION: "Read gradient interactions for one model epoch.",
 }

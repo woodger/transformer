@@ -30,10 +30,11 @@ Recovery проверяет встроенные metadata checkpoint-а, semanti
 между definitions.
 
 Worker потребляет тот же логический input layout indexed feature blocks, что и
-Flight v15. Он выводит positions blocks, восстанавливает ограниченные slices в
+Flight v16. Он выводит positions blocks, восстанавливает ограниченные slices в
 логический tensor Float32 и выдаёт target-aligned prediction vectors.
 Идентификаторы физической Arrow schema остаются процессными деталями
 provider-а.
 
-Worker v14 активируется только чистым переходом Flight v15. Существующие
-artifacts Worker нельзя возобновить или конвертировать.
+Worker v14 остаётся активным с Flight v16. Его исходный чистый переход Flight
+v15 удалил несовместимые artifacts Worker; их нельзя возобновить или
+конвертировать.

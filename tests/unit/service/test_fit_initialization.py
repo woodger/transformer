@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v15 import job_config_sha256
+from app.contracts.flight.v16 import job_config_sha256
 from app.contracts.semantic.v3 import ModelContract
 from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.contracts.worker.v14.model_definition import resolved_semantic_digests

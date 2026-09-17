@@ -6,16 +6,20 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v15.codec import (
+from app.contracts.flight.v16.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
-from app.contracts.flight.v15.source_encoding import canonical_source_encoding
+from app.contracts.flight.v16.source_encoding import canonical_source_encoding
 from app.contracts.json_types import JsonObject
 from app.contracts.model_catalog.v3 import (
     ModelCatalogContractError,
     validate_catalog_document,
+)
+from app.contracts.model_topology.v1 import (
+    ModelTopologyContractError,
+    validate_model_topology_document,
 )
 from app.contracts.semantic.v3 import ModelContract, SemanticContractError
 from app.contracts.training_telemetry.v3 import (
@@ -36,6 +40,7 @@ from app.service.adapters.inbound.flight.constants import (
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MAX_PAGE_ITEMS,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
     PREDICT_CREATE_ACTION,
     STATUS_ACTION,
@@ -44,6 +49,9 @@ from app.service.adapters.inbound.flight.errors import invalid
 from app.service.adapters.inbound.flight.model_catalog import (
     invalid_catalog_cursor,
     invalid_catalog_query,
+)
+from app.service.adapters.inbound.flight.model_topology import (
+    invalid_model_topology_query,
 )
 from app.service.adapters.inbound.flight.mutation_lease import (
     MutationLeaseError,
@@ -151,6 +159,10 @@ class ModelCatalogDetailRequestFields(RequestIdFields):
     model_ref: str
 
 
+class ModelTopologyDetailRequestFields(RequestIdFields):
+    model_ref: str
+
+
 class TrainingTelemetryReportRequestFields(RequestIdFields):
     model_ref: str
     page_size: int
@@ -189,6 +201,7 @@ ValidatedActionRequest = (
     | CancelRequestFields
     | ModelCatalogListRequestFields
     | ModelCatalogDetailRequestFields
+    | ModelTopologyDetailRequestFields
     | TrainingTelemetryReportRequestFields
     | TrainingTelemetryGradientRequestFields
 )
@@ -211,6 +224,8 @@ def validate_action_request(
         return _validate_model_catalog_list(document)
     if action_name == MODEL_CATALOG_DETAIL_ACTION:
         return _validate_model_catalog_detail(document)
+    if action_name == MODEL_TOPOLOGY_DETAIL_ACTION:
+        return _validate_model_topology_detail(document)
     if action_name == TRAINING_TELEMETRY_REPORT_ACTION:
         return _validate_training_telemetry_report(document)
     if action_name == TRAINING_TELEMETRY_GRADIENT_ACTION:
@@ -445,6 +460,16 @@ def _validate_model_catalog_detail(document: JsonObject) -> ModelCatalogDetailRe
     }
 
 
+def _validate_model_topology_detail(
+    document: JsonObject,
+) -> ModelTopologyDetailRequestFields:
+    _validate_model_topology_schema(document, "detail-request")
+    return {
+        "request_id": _uuid(document, "requestId"),
+        "model_ref": _string(document, "modelRef"),
+    }
+
+
 def _validate_training_telemetry_report(document: JsonObject) -> TrainingTelemetryReportRequestFields:
     _validate_training_telemetry_schema(document, "report-request")
     return {
@@ -484,6 +509,16 @@ def _validate_training_telemetry_schema(document: JsonObject, schema_name: str) 
         if path == "/cursor" and document.get("cursor") is not None:
             raise invalid_telemetry_cursor() from exc
         raise invalid_telemetry_query(str(exc), path) from exc
+
+
+def _validate_model_topology_schema(document: JsonObject, schema_name: str) -> None:
+    try:
+        validate_model_topology_document(document, schema_name)
+    except ModelTopologyContractError as exc:
+        raise invalid_model_topology_query(
+            str(exc),
+            _contract_error_path(exc),
+        ) from exc
 
 
 def _data_binding(document: Mapping[str, object]) -> DataBindingFields:
@@ -634,6 +669,7 @@ __all__ = [
     "InputsListRequestFields",
     "ModelCatalogDetailRequestFields",
     "ModelCatalogListRequestFields",
+    "ModelTopologyDetailRequestFields",
     "OutputsListRequestFields",
     "RequestIdFields",
     "StatusRequestFields",

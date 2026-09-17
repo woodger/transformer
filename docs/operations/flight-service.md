@@ -1,9 +1,9 @@
 # Эксплуатация сервиса Transformer Arrow Flight
 
 > Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v15.
+> сервиса Flight v16.
 
-Wire semantics определены [Flight v15](../../app/contracts/flight/v15/README.md).
+Wire semantics определены [Flight v16](../../app/contracts/flight/v16/README.md).
 Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
 системы.
 
@@ -18,8 +18,8 @@ Wire semantics определены [Flight v15](../../app/contracts/flight/v15/
 - OpenSearch, только когда Training Telemetry Query должна materialize reports.
 
 Недоступность OpenSearch не блокирует fit, predict, публикацию model, Model
-Catalog или shutdown. Она делает telemetry query unavailable либо
-unavailable-after-terminal в соответствии с его query contract.
+Catalog, Model Topology или shutdown. Она делает telemetry query unavailable
+либо unavailable-after-terminal в соответствии с его query contract.
 
 ## CPU budget CUDA Worker-а
 
@@ -82,7 +82,7 @@ artifacts без references в тех же service roots. Не удаляйте 
 PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
 `models delete` либо документированную migration clean cut.
 
-## Релиз Flight v15
+## Исторический clean cut Flight v15
 
 Migration 0027 удаляет предыдущее state boundary. Остановите все instances
 service, дождитесь terminal state jobs, примените её, замените индексы metrics
@@ -93,8 +93,8 @@ recovery и telemetry после этого использовать нельз�
 
 ## Health и troubleshooting
 
-Используйте `transformer.v15.health` для аутентифицированной surface health
-provider-а и `transformer.v15.capabilities` для текущей availability
+Используйте `transformer.v16.health` для аутентифицированной surface health
+provider-а и `transformer.v16.capabilities` для текущей availability
 device/upload/query. Для операционной диагностики используйте logs service и
 state database. Никогда не помещайте bearer credentials, passwords database или
 raw paths checkpoint-а в общие logs или сообщения support.

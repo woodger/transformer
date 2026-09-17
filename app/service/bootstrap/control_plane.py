@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v15 import job_config_sha256
+from app.contracts.flight.v16 import job_config_sha256
 from app.contracts.model_catalog.v3 import (
     CURSOR_TTL_SECONDS,
     MAX_CHECKPOINT_VERIFICATION_BYTES,
@@ -57,6 +57,7 @@ from app.service.application.queries.model_catalog import (
     GetCatalogModel,
     ListCatalogModels,
 )
+from app.service.application.queries.model_topology import GetModelTopology
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
@@ -70,6 +71,7 @@ from app.service.application.queries.training_telemetry import (
     GetGradientInteractions,
     GetTrainingTelemetryReport,
 )
+from app.service.application.services.model_topology import ModelTopologyBuilder
 from app.service.application.services.training_telemetry_snapshot import (
     TrainingTelemetrySnapshotStore,
 )
@@ -94,7 +96,7 @@ def build_job_coordinator(
     lifecycle = PostgresJobLifecycle(
         ledger,
         JobActionNames(
-            create="transformer.v15.job.create",
+            create="transformer.v16.job.create",
             acquire=ACQUIRE_ACTION,
             input_close=INPUT_CLOSE_ACTION,
             cancel=CANCEL_ACTION,
@@ -179,6 +181,11 @@ def build_job_coordinator(
                 spool,
                 max_verification_bytes=MAX_CHECKPOINT_VERIFICATION_BYTES,
             ),
+        ),
+        get_model_topology=GetModelTopology(
+            model_catalog_store,
+            metadata_verifier=metadata_verifier,
+            builder=ModelTopologyBuilder(),
         ),
         get_training_telemetry_report=GetTrainingTelemetryReport(
             model_catalog_store,

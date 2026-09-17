@@ -31,7 +31,7 @@ _CONTRACTS_DIRECTORY = Path(__file__).parents[2]
 _SCHEMA_DIRECTORIES = (
     _SCHEMA_DIRECTORY,
     _CONTRACTS_DIRECTORY / "semantic" / "v3" / "schemas",
-    _CONTRACTS_DIRECTORY / "flight" / "v15" / "schemas",
+    _CONTRACTS_DIRECTORY / "flight" / "v16" / "schemas",
     _CONTRACTS_DIRECTORY / "checkpoint" / "v8" / "schemas",
 )
 _SCHEMA_NAMES = frozenset({

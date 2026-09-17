@@ -3,9 +3,12 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from app.contracts.flight.v15.codec import validate_request_document
-from app.contracts.flight.v15.job_config import job_config_sha256
+from app.contracts.flight.v16.codec import validate_request_document
+from app.contracts.flight.v16.job_config import job_config_sha256
 from app.contracts.model_catalog.v3.codec import validate_catalog_document
+from app.contracts.model_topology.v1.codec import (
+    validate_model_topology_document,
+)
 from app.contracts.semantic.v3 import ModelContract
 from app.contracts.semantic.v3.schema import validate_schema
 from app.contracts.training_telemetry.v3.codec import (
@@ -39,7 +42,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             "objectiveSha256": expected["objectiveSha256"],
         }
 
-    flight_root = PROJECT_ROOT / "app/contracts/flight/v15/fixtures"
+    flight_root = PROJECT_ROOT / "app/contracts/flight/v16/fixtures"
     _validate_manifest(
         flight_root,
         lambda value: validate_request_document(value, "fixture-manifest"),
@@ -69,6 +72,23 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
         document = _json(path)
         validate_catalog_document(document, f"{schema}-{direction}")
         if direction == "result":
+            validate_request_document(document, "action-result")
+
+    topology_root = PROJECT_ROOT / "app/contracts/model_topology/v1/fixtures"
+    _validate_manifest(
+        topology_root,
+        lambda value: validate_model_topology_document(value, "fixture-manifest"),
+    )
+    for path in _fixture_paths(topology_root):
+        document = _json(path)
+        if path.name == "detail.request.json":
+            schema_name = "detail-request"
+        elif path.name.startswith("detail.result."):
+            schema_name = "detail-result"
+        else:
+            schema_name = "error-detail"
+        validate_model_topology_document(document, schema_name)
+        if schema_name == "detail-result":
             validate_request_document(document, "action-result")
 
     telemetry_root = PROJECT_ROOT / "app/contracts/training_telemetry/v3/fixtures"

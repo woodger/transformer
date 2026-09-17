@@ -22,8 +22,9 @@ Torch, CUDA или runtime Flight. Локального пути исполне�
 
 ```text
 app/contracts/semantic/v3          semantic target/objective language
-app/contracts/flight/v15           public Flight workflow
+app/contracts/flight/v16           public Flight workflow
 app/contracts/model_catalog/v3     owner-scoped model discovery/detail
+app/contracts/model_topology/v1    owner-scoped public model topology
 app/contracts/training_telemetry/v3 owner-scoped telemetry report
 app/contracts/worker/v14           internal service-to-worker protocol
 app/contracts/checkpoint/v8        internal checkpoint/recovery metadata
@@ -52,7 +53,7 @@ Domain владеет состояниями job, errors и правилами l
 владеют PostgreSQL, storage artifacts, supervision worker process, inventory
 CUDA и OpenSearch.
 
-Flight v15 принимает предоставленные вызывающей системой data binding, semantic
+Flight v16 принимает предоставленные вызывающей системой data binding, semantic
 model intent, training intent и запрошенную initialization. Он выпускает
 identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
 реализация модели, operational fences, schema fingerprints, версии
@@ -85,10 +86,12 @@ inputs, attempt artifacts, recovery artifacts, checkpoints моделей и в�
 artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
 registry или состояния job.
 
-Model Catalog Query v3 читает owner-scoped state registry. Training Telemetry
-Query v3 валидирует полную projection относительно принадлежащих checkpoint-у
-metadata модели до раскрытия. Ни один query не позволяет вызывающей системе
-получить filesystem paths, bytes checkpoint-а или topology OpenSearch.
+Model Catalog Query v3 читает owner-scoped state registry. Model Topology Query
+v1 строит browser-safe статическую projection из metadata generation. Training
+Telemetry Query v3 валидирует полную projection относительно принадлежащих
+checkpoint-у metadata модели до раскрытия. Ни один query не позволяет
+вызывающей системе получить filesystem paths, bytes checkpoint-а или topology
+OpenSearch.
 
 Migration 0027 намеренно разрушительна: она отклоняет active jobs и удаляет
 предыдущее состояние public boundary. Startup reconciliation удаляет managed

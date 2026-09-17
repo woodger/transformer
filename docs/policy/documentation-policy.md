@@ -39,13 +39,14 @@ identifiers, команды, пути, значения enum и другие э�
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
 | Нормативный semantic language v3 | `app/contracts/semantic/v3/` |
-| Нормативный Flight v15 contract | `app/contracts/flight/v15/` |
+| Нормативный Flight v16 contract | `app/contracts/flight/v16/` |
 | Нормативный worker v14 contract | `app/contracts/worker/v14/` |
 | Нормативный checkpoint/recovery v8 contract | `app/contracts/checkpoint/v8/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
 | Нормативный Model Catalog Query v3 | `app/contracts/model_catalog/v3/` |
+| Нормативный Model Topology Query v1 | `app/contracts/model_topology/v1/` |
 | Нормативный Training Telemetry Query v3 | `app/contracts/training_telemetry/v3/` |
-| Нормативный package упрощённой публичной границы | `app/contracts/semantic/v3/`, `app/contracts/checkpoint/v8/`, `app/contracts/worker/v14/`, `app/contracts/metrics/v7/`, `app/contracts/metrics/fit_run/v7/`, `app/contracts/model_catalog/v3/`, `app/contracts/training_telemetry/v3/`, `app/contracts/flight/v15/` |
+| Нормативный package упрощённой публичной границы | `app/contracts/semantic/v3/`, `app/contracts/checkpoint/v8/`, `app/contracts/worker/v14/`, `app/contracts/metrics/v7/`, `app/contracts/metrics/fit_run/v7/`, `app/contracts/model_catalog/v3/`, `app/contracts/model_topology/v1/`, `app/contracts/training_telemetry/v3/`, `app/contracts/flight/v16/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -111,22 +112,26 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures semantic language v3, Flight v15, worker v14,
-checkpoint/recovery v8, metrics v7, Model Catalog Query v3 и Training Telemetry
-Query v3 нормативны для текущего runtime. README или operations guide не могут
-переопределять их. Flight v15 — единственный текущий remote API contract;
-legacy aliases отсутствуют.
+JSON Schemas и golden fixtures semantic language v3, Flight v16, worker v14,
+checkpoint/recovery v8, metrics v7, Model Catalog Query v3, Model Topology
+Query v1 и Training Telemetry Query v3 нормативны для текущего runtime. README
+или operations guide не могут переопределять их. Flight v16 — единственный
+текущий remote API contract; legacy aliases отсутствуют.
 
-Semantic v3, Flight v15, worker v14, checkpoint/recovery v8, metrics v7 и query
-revision 3 составляют единый active package текущего runtime.
+Semantic v3, Flight v16, worker v14, checkpoint/recovery v8, metrics v7 и
+активные query revisions составляют единый package текущего runtime.
 
 `app/contracts/model_catalog/v3/` имеет независимую revision и активирован
-двумя Flight v15 actions. Изменение его query language не обязано синхронно
+двумя Flight v16 actions. Изменение его query language не обязано синхронно
 менять job workflow Flight.
 
 `app/contracts/training_telemetry/v3/` имеет независимую revision и активирован
-двумя Flight v15 actions. Изменение query language не обязано
+двумя Flight v16 actions. Изменение query language не обязано
 синхронно менять job workflow Flight.
+
+`app/contracts/model_topology/v1/` имеет независимую revision и активирован
+одним Flight v16 action. Изменение topology language не обязано синхронно
+менять job workflow Flight.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -136,7 +141,7 @@ revision 3 составляют единый active package текущего run
 - version/compatibility policy;
 - Руководство по интеграции с Flight.
 
-Flight v15 schemas и fixtures остаются нормативными для remote API. Эти
+Flight v16 schemas и fixtures остаются нормативными для remote API. Эти
 contracts проверяются тестами.
 
 ## Документация текущего состояния

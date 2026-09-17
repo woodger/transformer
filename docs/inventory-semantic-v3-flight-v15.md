@@ -4,6 +4,10 @@
 > Inventory. Нормативными источниками остаются JSON Schema и README пакетов
 > `app/contracts/`.
 
+> Историческая записка Flight v15. Текущая граница определена
+> [Flight v16](../app/contracts/flight/v16/README.md); этот файл сохранён для
+> контекста первоначального clean cut и не описывает активный action surface.
+
 ## Статус развертывания
 
 На 16 сентября 2026 года Transformer развернут с commit

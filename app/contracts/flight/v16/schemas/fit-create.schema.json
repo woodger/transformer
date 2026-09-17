@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v16/fit-create.schema.json",
+  "title": "transformer.v16.fit.create request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId", "idempotencyKey", "modelLabel", "device", "dataBinding",
+    "modelContract", "trainingConfig", "diagnostics", "initialization"
+  ],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "idempotencyKey": {"$ref": "common.schema.json#/$defs/idempotencyKey"},
+    "modelLabel": {"$ref": "common.schema.json#/$defs/label"},
+    "device": {"enum": ["cpu", "gpu", "auto"]},
+    "dataBinding": {"$ref": "common.schema.json#/$defs/dataBinding"},
+    "modelContract": {
+      "$ref": "https://transformer.local/contracts/semantic/v3/model-contract.schema.json"
+    },
+    "trainingConfig": {"$ref": "common.schema.json#/$defs/trainingConfig"},
+    "diagnostics": {"$ref": "common.schema.json#/$defs/diagnosticsConfig"},
+    "initialization": {"$ref": "common.schema.json#/$defs/requestedInitialization"}
+  }
+}

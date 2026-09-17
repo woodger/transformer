@@ -26,8 +26,9 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/semantic/v3/`, `app/contracts/flight/v15/`,
-  `app/contracts/model_catalog/v3/` и `app/contracts/training_telemetry/v3/`,
+- `app/contracts/semantic/v3/`, `app/contracts/flight/v16/`,
+  `app/contracts/model_catalog/v3/`, `app/contracts/model_topology/v1/` и
+  `app/contracts/training_telemetry/v3/`,
   используемые внешними вызывающими системами, runtime и contract tests;
 - `app/contracts/worker/v14/` и `app/contracts/checkpoint/v8/`, используемые
   service и worker processes;

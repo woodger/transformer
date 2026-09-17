@@ -1,7 +1,7 @@
 # Transformer checkpoint и recovery v8
 
 > ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет внутренние для provider-а metadata
-> checkpoint и recovery для Semantic v3, Flight v15 и Worker v14.
+> checkpoint и recovery для Semantic v3, Flight v16 и Worker v14.
 
 `transformer-checkpoint-v8` встраивает валидированное намерение модели semantic
 v3, разрешённую Transformer configuration модели, identities D1,
