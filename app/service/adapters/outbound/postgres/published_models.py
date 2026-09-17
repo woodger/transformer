@@ -9,7 +9,6 @@ from app.service.adapters.outbound.postgres.ledger.support import advisory_lock
 from app.service.adapters.outbound.postgres.models import (
     DeletedModel,
     Job,
-    ModelAlias,
     PublishedModel,
 )
 from app.service.adapters.outbound.postgres.session import Database
@@ -120,14 +119,6 @@ class PublishedModelStore:
                 )
 
             now = datetime.now(UTC)
-            aliases = session.scalars(
-                select(ModelAlias)
-                .where(ModelAlias.model_ref == model_ref)
-                .with_for_update()
-            ).all()
-            for alias in aliases:
-                session.delete(alias)
-
             model.lifecycle_state = ModelLifecycleState.DELETING.value
             model.deletion_requested_at = now
             session.flush()
@@ -177,8 +168,6 @@ class PublishedModelStore:
                 deletion_requested_at=requested_at,
                 deleted_at=datetime.now(UTC),
             ))
-            # The request transaction already removes the current alias. The
-            # foreign key cascade is the final guard against a stale alias.
             session.delete(model)
             session.flush()
             return True

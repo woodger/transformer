@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import cast
 
 import torch
 import torch.nn as nn
 
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -81,7 +80,7 @@ class TransformerModel(nn.Module):
             hidden_dim,
             model_contract.target_width,
             tuple(
-                str(resource["kind"])
+                str(resource["resourceClass"])
                 for resource in model_contract.resource_declarations
             ),
         )
@@ -140,26 +139,21 @@ def public_predictions(
     values = tuple(
         apply_transformation(
             model_output[:, index],
-            str(
-                cast(
-                    Mapping[str, object],
-                    slot["publicPredictionTransformation"],
-                )["kind"]
-            ),
+            cast(str, slot["publicPredictionTransformation"]),
         )
         for index, slot in enumerate(model_contract.target_slots)
     )
     return torch.stack(values, dim=1)
 
 
-def apply_transformation(value: torch.Tensor, kind: str) -> torch.Tensor:
-    if kind == "Identity":
+def apply_transformation(value: torch.Tensor, transformation: str) -> torch.Tensor:
+    if transformation == "Identity":
         return value
-    if kind == "Tanh":
+    if transformation == "Tanh":
         return torch.tanh(value)
-    if kind == "Sigmoid":
+    if transformation == "Sigmoid":
         return torch.sigmoid(value)
-    raise ValueError(f"unsupported transformation: {kind}")
+    raise ValueError(f"unsupported transformation: {transformation}")
 
 
 __all__ = [

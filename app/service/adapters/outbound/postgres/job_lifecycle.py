@@ -11,7 +11,6 @@ from app.service.adapters.outbound.postgres.mapping import (
     row_integer,
     row_integer_tuple,
     row_json_object,
-    row_optional_string,
     row_string,
 )
 from app.service.application.messages.jobs import (
@@ -123,11 +122,11 @@ class PostgresJobLifecycle:
                 operation=command.operation,
                 requested_device=command.requested_device,
                 prediction_column=command.prediction_column,
-                source_encoding=command.source_encoding,
+                source_encoding=prepared.source_encoding,
                 config_hash=prepared.result.job_config_sha256,
-                data_contract=command.data_contract,
-                model_contract=command.model_contract,
-                semantic_digests=command.semantic_digests,
+                data_contract=prepared.data_contract,
+                model_contract=prepared.model_contract,
+                semantic_digests=prepared.semantic_digests,
                 create_result=encoded,
                 model_label=command.model_label,
                 resolved_model_ref=prepared.resolved_model_ref,
@@ -215,24 +214,13 @@ class PostgresJobLifecycle:
             )
             if current is None:
                 raise not_found("job not found")
-            selected = select_device(
-                row_string(current, "requested_device"),
-                row_optional_string(current, "selected_device"),
-                row_string(current, "operation"),
-                command.total_rows,
-            )
             job, repeated = self.ledger.close_input(
                 command.job_id,
                 client_execution_id=command.client_execution_id,
                 fencing_token=command.fencing_token,
-                payload_count=command.payload_count,
-                total_chunks=command.total_chunks,
-                total_rows=command.total_rows,
-                total_native_rows=command.total_native_rows,
-                range_count=command.range_count,
-                total_bytes=command.total_bytes,
+                expected_logical_rows=command.expected_logical_rows,
                 manifest_sha256=command.manifest_sha256,
-                selected_device=selected,
+                select_device=select_device,
                 connection=connection,
             )
             queued = (
@@ -282,17 +270,19 @@ class PostgresJobLifecycle:
     def cancel(
         self,
         command: CancelJobCommand,
+        *,
+        stop_active_worker: Callable[[str], None],
     ) -> LifecycleMutation[JobCancelled]:
-        notify = False
         cleanup: tuple[tuple[str, str], ...] = ()
 
         def mutation(connection: Session) -> tuple[JsonObject, str | None]:
-            nonlocal notify, cleanup
-            job, notify, cleanup = self.ledger.cancel_job(
+            nonlocal cleanup
+            job, cleanup = self.ledger.cancel_job(
                 command.job_id,
                 owner_subject=command.owner_subject,
                 client_execution_id=command.client_execution_id,
                 fencing_token=command.fencing_token,
+                stop_active_worker=stop_active_worker,
                 connection=connection,
             )
             result = JobCancelled(
@@ -322,7 +312,6 @@ class PostgresJobLifecycle:
             _decode_cancelled(document),
             replayed=replayed,
             cleanup=() if replayed else _locations(cleanup),
-            notify_worker=not replayed and notify,
         )
 
     def _resolve_model(
@@ -333,20 +322,12 @@ class PostgresJobLifecycle:
         model_ref = command.model_ref
         if model_ref is None:
             raise ValueError("job command requires a model reference")
-        if command.operation == "predict" and command.model_selector == "alias":
-            model = self.ledger.resolve_published_model_alias(
-                command.owner_subject,
-                model_ref,
-                connection=connection,
-                for_update=True,
-            )
-        else:
-            model = self.ledger.get_published_model(
-                model_ref,
-                owner_subject=command.owner_subject,
-                connection=connection,
-                for_update=True,
-            )
+        model = self.ledger.get_published_model(
+            model_ref,
+            owner_subject=command.owner_subject,
+            connection=connection,
+            for_update=True,
+        )
         if model is None:
             raise not_found("model generation not found")
         return model

@@ -16,10 +16,8 @@ identifiers, команды, пути, значения enum и другие э�
 | Тема | Основной источник |
 | --- | --- |
 | Назначение, навигация и общий CLI | `readme.md` |
-| Локальный quick start | `docs/getting-started.md` |
-| Local CLI commands, options и artifact paths | `docs/cli/index.md` |
-| Локальные Arrow IPC columns и framed stream protocol | `docs/local-arrow-protocol.md` |
-| Local training runtime, checkpoint и metrics | `docs/training-runtime.md` |
+| Быстрый старт Flight service | `docs/getting-started.md` |
+| Training runtime, checkpoint и metrics | `docs/training-runtime.md` |
 | Версии Python-пакетов проекта | `requirements.txt` |
 | Конфигурация Ruff, Pyright, pytest и Alembic | `pyproject.toml` |
 | Python types и tensor runtime contracts | `docs/policy/typing-policy.md` |
@@ -33,20 +31,22 @@ identifiers, команды, пути, значения enum и другие э�
 | Environment example | `.env.example` |
 | ML behavior и training reference | профильные документы в `docs/` |
 | Flight service behavior и operations | `docs/operations/flight-service.md` |
-| Consumer integration | `docs/consumer-flight-integration.md` |
+| Интеграция с Flight | `docs/flight-integration.md` |
 | Текущие процессы, компоненты, contracts и data ownership | `docs/architecture.md` |
 | Dependency boundaries и размещение кода | `docs/policy/architecture.md` |
 | Активные ненормативные проектные предложения | `docs/design/index.md` |
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный semantic language v1 | `app/contracts/semantic/v1/` |
-| Нормативный Flight v13 contract | `app/contracts/flight/v13/` |
-| Нормативный worker v12 contract | `app/contracts/worker/v12/` |
-| Нормативный checkpoint/recovery v6 contract | `app/contracts/checkpoint/v6/` |
+| Нормативный semantic language v3 | `app/contracts/semantic/v3/` |
+| Нормативный Flight v16 contract | `app/contracts/flight/v16/` |
+| Нормативный worker v14 contract | `app/contracts/worker/v14/` |
+| Нормативный checkpoint/recovery v8 contract | `app/contracts/checkpoint/v8/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
-| Нормативный Model Catalog Query v1 | `app/contracts/model_catalog/v1/` |
-| Нормативный Training Telemetry Query v1 | `app/contracts/training_telemetry/v1/` |
+| Нормативный Model Catalog Query v3 | `app/contracts/model_catalog/v3/` |
+| Нормативный Model Topology Query v1 | `app/contracts/model_topology/v1/` |
+| Нормативный Training Telemetry Query v3 | `app/contracts/training_telemetry/v3/` |
+| Нормативный package упрощённой публичной границы | `app/contracts/semantic/v3/`, `app/contracts/checkpoint/v8/`, `app/contracts/worker/v14/`, `app/contracts/metrics/v7/`, `app/contracts/metrics/fit_run/v7/`, `app/contracts/model_catalog/v3/`, `app/contracts/model_topology/v1/`, `app/contracts/training_telemetry/v3/`, `app/contracts/flight/v16/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -76,7 +76,7 @@ CLI help является публичным контрактом.
 - `app/cli/parser.py` и `app/cli/parsers/` — parser tree и command groups;
 - `app/cli/formatting.py` и `app/cli/options.py` — rendering и общие options;
 - `app/cli/args.py` — parsing entry;
-- `app/local/` и `app/admin/` — command behavior;
+- `app/admin/` — command behavior;
 - process roots в `app/service/bootstrap/`, `app/worker/bootstrap/` и
   `app/admin/bootstrap/` — resource lifecycle.
 
@@ -99,7 +99,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Встроенные operational defaults находятся в
 `app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
-`app/service/bootstrap/config.py`, `app/contracts/worker/v12/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v14/config.py`,
 PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
@@ -112,19 +112,26 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures consumer-neutral package `semantic/v1`, Flight
-v13, worker v12, checkpoint/recovery v6, metrics v5, Model Catalog Query v1 и
-Training Telemetry Query v1 нормативны для текущего runtime. README или
-operations guide не могут переопределять их. Flight v13 — единственный
+JSON Schemas и golden fixtures semantic language v3, Flight v16, worker v14,
+checkpoint/recovery v8, metrics v7, Model Catalog Query v3, Model Topology
+Query v1 и Training Telemetry Query v3 нормативны для текущего runtime. README
+или operations guide не могут переопределять их. Flight v16 — единственный
 текущий remote API contract; legacy aliases отсутствуют.
 
-`app/contracts/model_catalog/v1/` имеет независимую revision и активирован
-двумя Flight v13 actions. Изменение его query language не обязано синхронно
+Semantic v3, Flight v16, worker v14, checkpoint/recovery v8, metrics v7 и
+активные query revisions составляют единый package текущего runtime.
+
+`app/contracts/model_catalog/v3/` имеет независимую revision и активирован
+двумя Flight v16 actions. Изменение его query language не обязано синхронно
 менять job workflow Flight.
 
-`app/contracts/training_telemetry/v1/` имеет независимую revision и активирован
-двумя Flight v13 actions. Изменение query language не обязано
+`app/contracts/training_telemetry/v3/` имеет независимую revision и активирован
+двумя Flight v16 actions. Изменение query language не обязано
 синхронно менять job workflow Flight.
+
+`app/contracts/model_topology/v1/` имеет независимую revision и активирован
+одним Flight v16 action. Изменение topology language не обязано синхронно
+менять job workflow Flight.
 
 Изменение Flight contract требует синхронно проверить:
 
@@ -132,12 +139,10 @@ operations guide не могут переопределять их. Flight v13 �
 - parser/serializer;
 - contract tests;
 - version/compatibility policy;
-- Consumer integration guide.
+- Руководство по интеграции с Flight.
 
-Для local CLI checkpoint, Arrow columns и framed protocol имеют единственные
-основные источники: `docs/training-runtime.md` и
-`docs/local-arrow-protocol.md`. Flight v13 schemas и fixtures остаются
-нормативными для remote API. Эти contracts проверяются тестами.
+Flight v16 schemas и fixtures остаются нормативными для remote API. Эти
+contracts проверяются тестами.
 
 ## Документация текущего состояния
 
@@ -196,7 +201,8 @@ reference-инструкцию не добавляются.
 
 Документы в `docs/policy/` должны быть прямыми и применимыми на review.
 Примеры обязаны использовать Python и реальные concepts Transformer, но не
-должны превращать общую policy в описание конкретной модели или consumer.
+должны превращать общую policy в описание конкретной модели или внешней
+системы.
 
 ## Имена и оформление
 
@@ -207,6 +213,14 @@ reference-инструкцию не добавляются.
 - code identifiers и wire fields сохраняются в исходной форме;
 - relative links должны разрешаться из текущего файла;
 - путь документа считается стабильным контрактом и не меняется без причины.
+
+## Терминология границ
+
+В документации не используется общий ярлык `Consumer` для разных понятий.
+Называйте аутентифицированную сторону Flight вызывающей системой, источник
+предметной семантики — внешней предметной стороной, а зависимый код —
+использующим кодом. Эти роли не становятся префиксами schemas, fixtures,
+sample identities или package names.
 
 ## Добавление документа
 

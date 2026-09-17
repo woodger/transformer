@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v1 import semantic_capabilities
-from app.contracts.worker.v12 import (
+from app.contracts.semantic.v3 import semantic_capabilities
+from app.contracts.worker.v14 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -26,7 +26,7 @@ def inspect_capabilities() -> JsonObject:
     import torch
 
     devices: list[JsonValue] = [{
-        "kind": "cpu",
+        "backend": "cpu",
         "opaqueId": "cpu",
         "name": "CPU",
     }]
@@ -39,7 +39,7 @@ def inspect_capabilities() -> JsonObject:
                 ),
             )
             devices.append({
-                "kind": "cuda",
+                "backend": "cuda",
                 "opaqueId": f"cuda:{ordinal}",
                 "name": properties.name,
             })

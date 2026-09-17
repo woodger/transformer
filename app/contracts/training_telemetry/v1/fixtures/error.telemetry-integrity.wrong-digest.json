@@ -1,7 +1,0 @@
-{
-  "code": "TELEMETRY_CORRUPT",
-  "reason": "TRAINING_TELEMETRY_INTEGRITY_FAILED",
-  "modelRef": "mdl_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "path": "/semanticDigests/objectiveSha256",
-  "message": "training telemetry semantic digests differ from the model"
-}

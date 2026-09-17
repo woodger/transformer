@@ -1,10 +1,10 @@
-# ADR 0009: best-effort training telemetry через artifact и outbox
+# ADR 0009: best-effort telemetry обучения через artifact и outbox
 
-- Status: Accepted
-- Decision date: 2026-08-15
+- Статус: Принято
+- Дата решения: 2026-08-15
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -57,6 +57,6 @@ bounded retry lifecycle.
 ## Текущая документация
 
 - [Политика metrics и OpenSearch](../policy/metrics-policy.md)
-- [Training runtime](../training-runtime.md)
-- [Operations OpenSearch](../deployment/opensearch.md)
-- [Metrics contracts](../../app/contracts/metrics/)
+- [Runtime обучения](../training-runtime.md)
+- [Эксплуатация OpenSearch](../deployment/opensearch.md)
+- [Контракты metrics](../../app/contracts/metrics/)

@@ -1,10 +1,10 @@
-# ADR 0015: единая public identity индикаторов
+# ADR 0015: единая публичная identity индикаторов
 
-- Status: Accepted
-- Decision date: 2026-08-20
+- Статус: Принято
+- Дата решения: 2026-08-20
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -51,7 +51,7 @@ parameters и покрывает его canonical digest. Transformer храни
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Функция потерь](../losses.md)
 - [Политика metrics](../policy/metrics-policy.md)

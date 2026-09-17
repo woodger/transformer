@@ -1,6 +1,6 @@
 from typing import TypeVar, cast
 
-from app.contracts.worker.v12.config import (
+from app.contracts.worker.v14.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,

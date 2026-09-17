@@ -1,5 +1,4 @@
 import copy
-import json
 import math
 import threading
 import warnings
@@ -11,24 +10,21 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT
-from app.contracts.worker.v12.config import (
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
-from app.worker.application.artifacts import checkpoint_metadata
-from app.worker.checkpoints.model import load_checkpoint
+from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility
 from app.worker.telemetry import (
     EpochTelemetry,
     ObservedTrainingEpoch,
-    append_epoch_telemetry,
     epoch_telemetry_document,
-    plot_metrics,
 )
 from app.worker.training import batching as batching_module
 from app.worker.training.batching import BatchPrefetcher
@@ -38,12 +34,34 @@ from app.worker.training.factory import build_trainer
 from app.worker.training.losses import MaterializedLossStatistics
 from app.worker.training.run_config import model_config_from_args
 from app.worker.training.trainer import Trainer
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
-DEFAULT_MODEL_CONTRACT = model_contract(
+
+def _contract(
+    fixture: str,
+    *,
+    hidden: int,
+    layers: int,
+    dropout: float,
+    nhead: int,
+    mode: str,
+) -> ModelContract:
+    document = semantic_fixture_document(fixture)["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": hidden,
+        "encoderLayerCount": layers,
+        "dropoutProbability": dropout,
+        "attentionHeadCount": nhead,
+        "missingValuePolicy": mode,
+    })
+    return ModelContract.from_document(document)
+
+
+DEFAULT_MODEL_CONTRACT = _contract(
     "multi-target-shared-resource",
-    seq_len=5,
-    feature_dim=4,
     hidden=32,
     layers=1,
     dropout=0.0,
@@ -92,15 +110,12 @@ def model_config(*, seq_len=5, feature_dim=4):
     )
 
 
-def data_contract(*, seq_len=5, feature_dim=4):
-    return {
-        "identity": "test.learning-dataset",
-        "revision": 1,
-        "profile": "test.profile",
-        "dataContractSha256": "d" * 64,
-        "seqLen": seq_len,
-        "featureDim": feature_dim,
-    }
+def _model_definition_sha256(contract: ModelContract) -> str:
+    return str(resolved_semantic_digests(
+        contract,
+        "d" * 64,
+        model_config(),
+    )["modelDefinitionSha256"])
 
 
 def new_model(contract=DEFAULT_MODEL_CONTRACT):
@@ -126,52 +141,9 @@ def new_trainer(
         device=torch.device("cpu"),
         train_config=train_config,
         model_contract=contract,
-        data_contract=data_contract(
-            seq_len=int(contract.model_config["seqLen"]),
-            feature_dim=int(contract.model_config["featureDim"]),
-        ),
+        model_config=model_config(),
+        model_definition_sha256=_model_definition_sha256(contract),
     )
-
-
-def test_trainer_fit_saves_target_aligned_checkpoint(tmp_path):
-    batch = make_dummy_data(n=8)
-    config = TrainConfig(
-        batch_size=4,
-        epochs=1,
-        use_amp=False,
-    )
-    trainer = build_trainer(
-        config,
-        new_model(),
-        torch.device("cpu"),
-        model_config(),
-        data_contract=data_contract(),
-        model_contract=DEFAULT_MODEL_CONTRACT,
-        initialization={"kind": "random"},
-    )
-
-    path = tmp_path / "model.pth"
-    manifest = {
-        "jobId": "11111111-1111-4111-8111-111111111111",
-        "dataContract": data_contract(),
-        "modelContract": DEFAULT_MODEL_CONTRACT.to_document(),
-        "semanticDigests": DEFAULT_MODEL_CONTRACT.digests("d" * 64),
-        "jobConfigSha256": "a" * 64,
-        "manifestSha256": "b" * 64,
-    }
-    trainer.fit(
-        batch,
-        str(path),
-        metadata=lambda: checkpoint_metadata(trainer, manifest),
-    )
-
-    checkpoint = load_checkpoint(str(path), torch.device("cpu"))
-    metadata = checkpoint["metadata"]
-    assert metadata["format"] == CHECKPOINT_FORMAT
-    assert metadata["modelContract"]["modelConfig"]["featureDim"] == 4
-    assert metadata["trainingConfig"] == config.to_manifest()
-    assert metadata["dataContract"] == data_contract()
-    assert metadata["modelContract"] == DEFAULT_MODEL_CONTRACT.to_document()
 
 
 def test_model_config_can_be_loaded_from_checkpoint_defaults():
@@ -228,19 +200,6 @@ def test_cpu_training_disables_amp_and_updates_parameters():
     )
 
 
-def test_local_trainer_resolves_model_identity_before_data_digest():
-    trainer = Trainer(
-        model=new_model(),
-        device=torch.device("cpu"),
-        train_config=TrainConfig(batch_size=4, epochs=1),
-        model_contract=DEFAULT_MODEL_CONTRACT,
-    )
-
-    assert trainer.metrics_context["model_contract_sha256"] == (
-        DEFAULT_MODEL_CONTRACT.digests("d" * 64)["modelContractSha256"]
-    )
-
-
 def test_fit_batch_reports_target_metrics():
     batch = make_dummy_data()
     trainer = new_trainer(
@@ -289,10 +248,8 @@ def test_gradient_interactions_are_sampled_at_completed_step_interval():
 
 
 def test_single_target_objective_trains_and_predicts_one_public_value():
-    contract = model_contract(
+    contract = _contract(
         "single-regression",
-        seq_len=5,
-        feature_dim=4,
         hidden=32,
         layers=1,
         dropout=0.0,
@@ -683,10 +640,12 @@ def test_payload_partitioning_does_not_change_training_state():
         trainer = build_trainer(
             config,
             model,
-            torch.device("cpu"),
-            model_config(),
-            data_contract=data_contract(),
-            model_contract=DEFAULT_MODEL_CONTRACT,
+        torch.device("cpu"),
+        model_config(),
+        model_contract=DEFAULT_MODEL_CONTRACT,
+        model_definition_sha256=_model_definition_sha256(
+            DEFAULT_MODEL_CONTRACT,
+        ),
         )
         metrics = trainer.fit_payloads(lambda: iter(payloads))
         return model.state_dict(), [
@@ -728,10 +687,12 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
         trainer = build_trainer(
             config,
             model,
-            torch.device("cpu"),
-            model_config(),
-            data_contract=data_contract(),
-            model_contract=DEFAULT_MODEL_CONTRACT,
+        torch.device("cpu"),
+        model_config(),
+        model_contract=DEFAULT_MODEL_CONTRACT,
+        model_definition_sha256=_model_definition_sha256(
+            DEFAULT_MODEL_CONTRACT,
+        ),
         )
         epochs = []
 
@@ -776,99 +737,6 @@ def test_closed_and_delayed_streaming_inputs_are_semantically_equivalent(
     assert closed_state == streaming_state
 
 
-def test_metrics_jsonl_contains_per_target_metrics(tmp_path):
-    path = tmp_path / "metrics.jsonl"
-    metrics = ObservedTrainingEpoch(
-        targets=TARGETS,
-        direct_components=DIRECT_COMPONENTS,
-        auxiliary_components=AUXILIARY_COMPONENTS,
-        rows=4,
-        batches=1,
-        direct_loss_values={DIRECT_COMPONENTS[0][0]: 0.2},
-        telemetry=EpochTelemetry(
-            targets=TARGETS,
-            training_batches_completed=1,
-            optimizer_updates_applied=1,
-            finite_gradient_batches=1,
-            pre_clip_gradient_norm_mean=1.0,
-            pre_clip_gradient_norm_max=1.0,
-            pre_clip_gradient_norm_p95=1.0,
-        ),
-    )
-    append_epoch_telemetry(str(path), metrics, mode="fit")
-
-    row = json.loads(path.read_text().strip())
-
-    assert row["directLosses"][0] == {
-        "componentIdentity": "direct.location",
-        "operator": "SmoothL1",
-        "targetIdentity": "Location",
-        "targetIndex": 0,
-        "value": pytest.approx(0.2),
-    }
-    assert [item["targetIdentity"] for item in row["targetMetrics"]] == list(
-        TARGETS
-    )
-    assert all(
-        "mae" in item and "rmse" in item
-        for item in row["targetMetrics"]
-    )
-    assert "ret_mae_skill" not in row
-
-
-def test_plot_metrics_writes_target_metric_svg(tmp_path):
-    path = tmp_path / "metrics.jsonl"
-    output = tmp_path / "plots"
-    metrics = ObservedTrainingEpoch(
-        targets=TARGETS,
-        direct_components=DIRECT_COMPONENTS,
-        rows=2,
-        telemetry=EpochTelemetry(
-            targets=TARGETS,
-            target_mae={"Location": 0.25},
-        ),
-    )
-    append_epoch_telemetry(str(path), metrics, mode="fit")
-
-    paths = plot_metrics(str(path), str(output))
-
-    expected = output / "target.Location.mae.svg"
-    assert str(expected) in paths
-    assert "<svg" in expected.read_text()
-
-
-def test_plot_metrics_treats_target_and_component_identities_as_opaque(tmp_path):
-    path = tmp_path / "metrics.jsonl"
-    output = tmp_path / "plots"
-    path.write_text(
-        json.dumps({
-            "step": 1,
-            "targetMetrics": [
-                {"targetIdentity": "Consumer.Target", "mae": 0.25},
-            ],
-            "gradientInteractions": {
-                "components": [],
-                "pairs": [
-                    {
-                        "leftComponentIdentity": "direct__left",
-                        "rightComponentIdentity": "aux__right",
-                        "meanCosine": -0.5,
-                    }
-                ],
-            },
-        })
-        + "\n",
-        encoding="utf-8",
-    )
-
-    paths = plot_metrics(str(path), str(output))
-
-    assert str(output / "target.Consumer.Target.mae.svg") in paths
-    pair = output / "gradient.pair.direct%5F%5Fleft__aux%5F%5Fright.svg"
-    assert str(pair) in paths
-    assert "gradient.pair.direct__left__aux__right" in pair.read_text()
-
-
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_cuda_amp_recovers_scale_and_updates_parameters():
     batch = make_dummy_data(n=4)
@@ -883,7 +751,9 @@ def test_cuda_amp_recovers_scale_and_updates_parameters():
             use_amp=True,
         ),
         model_contract=DEFAULT_MODEL_CONTRACT,
-        data_contract=data_contract(),
+        model_definition_sha256=_model_definition_sha256(
+            DEFAULT_MODEL_CONTRACT,
+        ),
     )
     before = {
         name: value.detach().clone()

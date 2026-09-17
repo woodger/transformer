@@ -4,7 +4,7 @@
 > boundary Transformer Arrow Flight service.
 
 Нормативное требование к заголовку каждого RPC находится в
-[`app/contracts/flight/v13`](../app/contracts/flight/v13/README.md), а команды
+[`app/contracts/flight/v16`](../app/contracts/flight/v16/README.md), а команды
 выпуска, ротации и отзыва — в
 [`руководстве по управлению API access tokens`](./operations/api-access-tokens.md).
 Rationale выбранного класса credential system сохранён в
@@ -14,14 +14,14 @@ Rationale выбранного класса credential system сохранён �
 ## Граница системы
 
 Transformer использует local opaque Bearer API access tokens для общей service
-identity, доступной контролируемым Consumer-ам. Transformer самостоятельно
-выпускает и проверяет credentials, а PostgreSQL является долговечным authority
-их состояния.
+identity, доступной контролируемым вызывающим системам. Transformer
+самостоятельно выпускает и проверяет credentials, а PostgreSQL является
+долговечным authority их состояния.
 
 Эта модель рассчитана на следующие условия:
 
-- provider и Consumer-ы находятся под единым операционным контролем;
-- Consumer-ы известны заранее и их мало;
+- provider и вызывающие системы находятся под единым операционным контролем;
+- вызывающие системы известны заранее и их мало;
 - нет интерактивных пользователей и неконтролируемых сторонних clients;
 - полномочия не делегируются;
 - не требуются scopes, audiences, federation, SSO или refresh tokens;
@@ -40,9 +40,9 @@ Credential имеет форму `a.<base64url>` и содержит 64 случ
 является JWT и не несёт subject или authorization claims. Все действующие
 credentials соответствуют стабильному owner subject `inventory` и видят один
 owner-scoped state jobs, models и aliases. Это технический owner identifier, а
-не ограничение API одноимённым Consumer-проектом. Отдельные credentials могут
-быть переданы разным контролируемым Consumer-ам, но не создают разные identity,
-permissions или изоляцию состояния.
+не ограничение API конкретным проектом. Отдельные credentials могут быть
+переданы разным контролируемым вызывающим системам, но не создают разные
+identity, permissions или изоляцию состояния.
 
 При выпуске создаётся отдельный UUID `token_id`. Это management handle для
 `list` и `revoke`, а не credential: знание ID не позволяет пройти
@@ -113,7 +113,8 @@ PostgreSQL обязателен на cache miss или после истечен
 Bearer является replayable secret. Получивший точное значение может действовать
 от имени `inventory` до expiration, revoke или окончания уже закэшированного
 решения. Digest-only storage снижает последствия чтения database dump, но не
-защищает credential в памяти Consumer-а, command output или network transport.
+защищает credential в памяти вызывающей системы, command output или network
+transport.
 
 Transport определяется только certificate options команды `flight serve`:
 
@@ -124,6 +125,6 @@ Transport определяется только certificate options команд
 
 При передаче через недоверенную сеть deployment обязан использовать TLS и
 проверять identity server-а. Plaintext допустим только внутри явно доверенной
-transport boundary. Credential передаётся Consumer-у через принятый secret
-channel и не помещается в repository, shell history, command arguments,
+transport boundary. Credential передаётся вызывающей системе через принятый
+secret channel и не помещается в repository, shell history, command arguments,
 structured logs или exception text.

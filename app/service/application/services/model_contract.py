@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.contracts.semantic.v1 import ModelContract, SemanticContractError
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v3 import ModelContract, SemanticContractError
+from app.contracts.worker.v14.config import ModelConfig
+from app.contracts.worker.v14.constants import CHECKPOINT_FORMAT
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
@@ -14,7 +16,7 @@ _DIGEST_LAYERS = (
     ("data", "dataContractSha256"),
     ("target", "targetContractSha256"),
     ("objective", "objectiveSha256"),
-    ("model", "modelContractSha256"),
+    ("model", "modelDefinitionSha256"),
 )
 
 
@@ -25,19 +27,23 @@ def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
             model.data_contract.get("dataContractSha256"),
             "published model data contract digest",
         )
-        calculated = contract.digests(data_digest)
+        metadata = model.metadata
+        model_config = ModelConfig.from_manifest(metadata.get("modelConfig"))
+        calculated = resolved_semantic_digests(
+            contract,
+            data_digest,
+            model_config,
+        )
         if calculated != model.semantic_digests:
             _raise_corrupt_digest(model.semantic_digests, calculated)
 
-        metadata = model.metadata
         if (
-            metadata.get("format") != "transformer-checkpoint-v6"
+            metadata.get("format") != CHECKPOINT_FORMAT
             or metadata.get("dataContract") != model.data_contract
             or metadata.get("modelContract") != model.model_contract
             or metadata.get("semanticDigests") != model.semantic_digests
         ):
             raise ValueError("checkpoint metadata differs from published model")
-        model_config = ModelConfig.from_manifest(contract.model_config)
         model_initialization(model)
     except ServiceError:
         raise
@@ -59,16 +65,10 @@ def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
 def verify_model_for_predict(
     model: PublishedModelRecord,
     *,
-    model_contract: JsonObject,
-    semantic_digests: JsonObject,
+    data_contract: JsonObject,
 ) -> ModelConfig:
     model_config = verify_model_integrity(model)
-    _verify_compatible(model.semantic_digests, semantic_digests)
-    if model.model_contract != model_contract:
-        raise ServiceError(
-            ErrorCode.MODEL_CORRUPT,
-            "equal semantic digests identify different canonical documents",
-        )
+    _verify_data_compatibility(model.semantic_digests, data_contract)
     return model_config
 
 
@@ -125,6 +125,35 @@ def _verify_compatible(
                     "message": message,
                 },
             )
+
+
+def _verify_data_compatibility(
+    expected: Mapping[str, object],
+    data_contract: Mapping[str, object],
+) -> None:
+    expected_digest = _digest(
+        expected.get("dataContractSha256"),
+        "stored data digest",
+    )
+    actual_digest = _digest(
+        data_contract.get("dataContractSha256"),
+        "requested data digest",
+    )
+    if expected_digest == actual_digest:
+        return
+    message = "model data contract does not match the requested job"
+    raise ServiceError(
+        ErrorCode.MODEL_SCHEMA_MISMATCH,
+        message,
+        detail={
+            "code": "MODEL_SCHEMA_MISMATCH",
+            "reason": "DIGEST_MISMATCH",
+            "layer": "data",
+            "expectedSha256": expected_digest,
+            "actualSha256": actual_digest,
+            "message": message,
+        },
+    )
 
 
 def _raise_corrupt_digest(

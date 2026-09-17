@@ -22,7 +22,7 @@ def _document(identifier: str, digest: str) -> dict[str, object]:
     return {
         "eventId": identifier,
         "documentSha256": digest,
-        "schema": "transformer.metrics-point.v5",
+        "schema": "transformer.metrics-point.v6",
     }
 
 
@@ -205,7 +205,7 @@ def test_http_client_uses_plain_connection_with_optional_authentication(
     ))
 
     client.create_documents(
-        "metrics-points-v5",
+        "metrics-points-v6",
         (_document("a" * 64, "b" * 64),),
         id_field="eventId",
     )
@@ -239,7 +239,7 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
     ])
 
     client.create_documents(
-        "metrics-points-v5",
+        "metrics-points-v6",
         (_document(identifier, digest),),
         id_field="eventId",
     )
@@ -248,10 +248,10 @@ def test_bulk_uses_create_and_accepts_only_identical_conflicts():
     assert json.loads(bulk_lines[0]) == {
         "create": {
             "_id": identifier,
-            "_index": "metrics-points-v5",
+            "_index": "metrics-points-v6",
         }
     }
-    assert requests[1][1] == "/metrics-points-v5/_mget"
+    assert requests[1][1] == "/metrics-points-v6/_mget"
     assert json.loads(requests[1][2]) == {
         "docs": [
             {
@@ -278,7 +278,7 @@ def test_conflicting_document_with_different_digest_blocks_delivery():
 
     with pytest.raises(BlockedMetricsDeliveryError, match="integrity"):
         client.create_documents(
-            "metrics-points-v5",
+            "metrics-points-v6",
             (_document(identifier, "b" * 64),),
             id_field="eventId",
         )
@@ -288,7 +288,7 @@ def test_conflicting_run_summary_compares_the_complete_document() -> None:
     identifier = "a" * 64
     document = {
         "summaryId": identifier,
-        "schema": "transformer.metrics-fit-run.v5",
+        "schema": "transformer.metrics-fit-run.v6",
         "runId": "11111111-1111-4111-8111-111111111111",
     }
     client, _ = _client([
@@ -301,7 +301,7 @@ def test_conflicting_run_summary_compares_the_complete_document() -> None:
     ])
 
     client.create_documents(
-        "metrics-runs-v5",
+        "metrics-runs-v6",
         (document,),
         id_field="summaryId",
     )
@@ -311,7 +311,7 @@ def test_conflicting_run_summary_with_changed_content_blocks_delivery() -> None:
     identifier = "a" * 64
     document = {
         "summaryId": identifier,
-        "schema": "transformer.metrics-fit-run.v5",
+        "schema": "transformer.metrics-fit-run.v6",
         "runId": "11111111-1111-4111-8111-111111111111",
     }
     client, _ = _client([
@@ -329,7 +329,7 @@ def test_conflicting_run_summary_with_changed_content_blocks_delivery() -> None:
 
     with pytest.raises(BlockedMetricsDeliveryError, match="integrity"):
         client.create_documents(
-            "metrics-runs-v5",
+            "metrics-runs-v6",
             (document,),
             id_field="summaryId",
         )
@@ -341,7 +341,7 @@ def test_refresh_waits_for_visibility_of_completion_boundaries() -> None:
     ])
 
     client.create_documents(
-        "metrics-points-v5",
+        "metrics-points-v6",
         (_document("a" * 64, "b" * 64),),
         id_field="eventId",
         refresh=True,
@@ -370,15 +370,15 @@ def test_bounded_document_and_search_reads_return_sources_and_sort_keys() -> Non
         },
     ])
 
-    assert client.document_source("metrics-runs-v5", "a" * 64) == {
+    assert client.document_source("metrics-runs-v6", "a" * 64) == {
         "value": 1
     }
     assert client.search_page(
-        "metrics-points-v5",
+        "metrics-points-v6",
         {"size": 1},
     ) == (({"value": 2}, (1, "event")),)
-    assert requests[0][1] == "/metrics-runs-v5/_mget"
-    assert requests[1][1] == "/metrics-points-v5/_search"
+    assert requests[0][1] == "/metrics-runs-v6/_mget"
+    assert requests[1][1] == "/metrics-points-v6/_search"
 
 
 def test_retryable_bulk_item_does_not_report_the_chunk_as_delivered():
@@ -388,7 +388,7 @@ def test_retryable_bulk_item_does_not_report_the_chunk_as_delivered():
 
     with pytest.raises(RetryableMetricsDeliveryError, match="status 429"):
         client.create_documents(
-            "metrics-points-v5",
+            "metrics-points-v6",
             (_document("a" * 64, "b" * 64),),
             id_field="eventId",
         )

@@ -1,105 +1,64 @@
 # Начало работы
 
-> Тип: руководство. Локальный сценарий для working copy Transformer Arrow
-> Flight service.
+> Тип: руководство. Подготовка working copy и запуск Transformer Arrow Flight
+> service.
 
-Этот документ описывает запуск локального CLI. Для remote Arrow Flight service
-с PostgreSQL используйте [runbook](./operations/flight-service.md), для production
-systemd — [deployment guide](./deployment/systemd.md).
+Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
+начинаются только через аутентифицированную границу вызывающей системы Flight
+v16.
 
 ## Подготовить окружение
-
-Из корня проекта создайте чистое virtual environment от системного
-`/usr/bin/python3` и установите зафиксированные зависимости:
 
 ```bash
 /usr/bin/python3 -m venv --clear .venv
 ./.venv/bin/python -m pip install -r requirements.txt
 ./.venv/bin/python -m pip check
+./.venv/bin/python app/main.py --help
 ```
 
-Владелец development-среды отвечает за подходящую версию системного Python.
-Проект использует только `.venv`: application dependencies не устанавливаются
-в system Python или user-site. Полные правила находятся в
-[политике Python runtime](./policy/python-runtime-policy.md).
+Используйте только `.venv` проекта. Версию системного Python и системные
+зависимости выбирает владелец окружения; зависимости приложения не
+устанавливаются в системный Python или пользовательский site.
 
-При изменении `requirements.txt` или системного `/usr/bin/python3` повторите
-этот сценарий. Не используйте для приложения bare `pip` или `pip3`.
+## Подготовить control plane
 
-## Проверить CLI
+Настройте PostgreSQL и окружение согласно
+[операционному руководству](./operations/flight-service.md), затем проверьте и
+примените migrations:
 
 ```bash
-./.venv/bin/python ./app/main.py --help
-./.venv/bin/python ./app/main.py --version
+./.venv/bin/python app/main.py db migrations status
+./.venv/bin/python app/main.py db migrations apply
 ```
 
-Точные arguments, defaults и примеры leaf-команд показывает
-`./.venv/bin/python ./app/main.py <command> --help`. Краткая карта команд и их
-поведение собраны в [справочнике CLI](./cli/index.md).
-
-## Создать API-токен
-
-После настройки PostgreSQL и применения migrations выпустите bearer token для
-клиентского service identity:
+Выпустите bearer credential для вызывающей service identity:
 
 ```bash
-./.venv/bin/python ./app/main.py auth tokens issue
+./.venv/bin/python app/main.py auth tokens issue
 ```
 
-Команда один раз выводит token ID, expiration time и новый credential вида
-`a.<base64url>`. Сохраните credential в secret storage клиентского приложения;
-не помещайте его в repository, логи или server `.env`.
+Credential выводится один раз. Храните его в secret storage, не в repository,
+command history, или логах.
 
-Просмотр, безопасную передачу Consumer-у, ротацию и отзыв описывает
-[`руководство по управлению API access tokens`](./operations/api-access-tokens.md).
-Persistence, cache и security semantics находятся в
-[`справочнике аутентификации`](./authentication.md).
-
-## Локальное обучение и prediction
-
-Входной файл — самостоятельный Arrow IPC file с колонками, описанными в
-[локальном Arrow contract](./local-arrow-protocol.md). Пример обучения:
+## Запустить service
 
 ```bash
-./.venv/bin/python ./app/main.py fit ./data/train.arrow \
-  --device=cpu \
-  --checkpoint-out=model_weights.pth \
-  --model-contract=./data/model-contract.json \
-  --epochs=25 \
-  --batch-size=256
+./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Prediction использует созданный checkpoint:
+Для production используйте процедуру systemd. Migration 0027 была разовым
+destructive clean cut для перехода на Semantic v3; Flight v16 не требует
+повторного удаления опубликованных generations.
 
-```bash
-./.venv/bin/python ./app/main.py predict ./data/test.arrow \
-  --device=cpu \
-  --checkpoint=model_weights.pth \
-  --output=/tmp/preds.arrow \
-  --pred-col=out
-```
-
-Относительные checkpoint и metrics paths принадлежат project `models/`;
-детали записи артефактов, совместимости checkpoint и training semantics — в
-[справочнике CLI](./cli/index.md) и
-[training reference](./training-runtime.md).
-
-## Следующие сценарии
-
-- [`fit-stream` и `predict-stream`](./local-arrow-protocol.md) принимают и
-  возвращают framed Arrow payloads через standard streams.
-- [Arrow Flight v13 contract](../app/contracts/flight/v13/README.md) задаёт
-  public remote API; [Flight runbook](./operations/flight-service.md) описывает
-  PostgreSQL, recovery, TLS и lifecycle service.
-- [Операционные руководства](./operations/index.md) описывают lifecycle API
-  access tokens, PostgreSQL schema и published models.
-- [systemd guide](./deployment/systemd.md) — единственный ручной production
-  deployment path для Fedora.
-- [OpenSearch guide](./deployment/opensearch.md) — необязательная доставка
-  run-owned training metrics после durable publication.
+Вызывающая система материализует `ModelContract` Semantic v3, создаёт job fit
+или predict v16, загружает compact `indexedFeatureBlocks`, закрывает input и
+опрашивает выпущенное job. Форма contract описана в
+[Flight v16](../app/contracts/flight/v16/README.md); это руководство намеренно
+не дублирует wire examples.
 
 ## Проверка изменений
 
-Основной набор тестов самодостаточен; GPU-сценарии запускаются отдельно. Полный
-набор штатных команд находится в единственном нормативном источнике —
-[политике тестирования](./policy/testing-policy.md#запуск).
+Точные команды validation находятся в
+[политике тестирования](./policy/testing-policy.md#запуск). GPU-specific
+verification выполняют на deployment host с GPU, когда задача затрагивает
+runtime CUDA.

@@ -1,11 +1,11 @@
-# ADR 0026: strict published-model warm start
+# ADR 0026: строгий warm start опубликованной модели
 
-- Status: Accepted
-- Decision date: 2026-09-02
-- Supersedes: [ADR 0025](0025-unified-published-model-initialization.md)
+- Статус: Принято
+- Дата решения: 2026-09-02
+- Заменяет: [ADR 0025](0025-unified-published-model-initialization.md)
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -63,7 +63,7 @@ PostgreSQL revision `0021` сохраняются. Новая migration не т�
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Worker process contract v12](../../app/contracts/worker/v12/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
-- [Training runtime](../training-runtime.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Интеграция с Flight](../flight-integration.md)
+- [Runtime обучения](../training-runtime.md)

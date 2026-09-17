@@ -2,24 +2,23 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.worker.v12.config import ModelConfig
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
     InputUploadMetadata,
 )
 from app.service.application.services.input_upload import (
-    InputKindMismatch,
     InputUploadLifecycle,
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode, InputState
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
     "featureBlocks": [
-        {"position": 0, "windowRows": 1, "nativeRowWidth": 3},
+        {"windowRows": 1, "nativeRowWidth": 3},
     ],
 }
 
@@ -42,10 +41,8 @@ class UploadStore:
 
 
 def _job(**overrides):
-    contract = model_contract(
-        "single-regression",
-        seq_len=2,
-        feature_dim=3,
+    contract = ModelContract.from_document(
+        semantic_fixture_document("single-regression")["modelContract"],
     )
     job = InputUploadJob(
         job_id="job-id",
@@ -108,30 +105,33 @@ def test_upload_authorization_selects_device_and_durable_fit_storage():
     assert len(authorization.upload_token) == 48
 
 
-@pytest.mark.parametrize(
-    ("metadata", "exception", "code"),
-    [
-        (_metadata(input_kind="predict"), InputKindMismatch, None),
-        (_metadata(fencing_token=6), ServiceError, ErrorCode.STALE_FENCE),
-        (
-            _metadata(data_contract_sha256="b" * 64),
-            ServiceError,
-            ErrorCode.MODEL_SCHEMA_MISMATCH,
-        ),
-    ],
-)
-def test_upload_authorization_rejects_contract_and_fence_mismatch(
-    metadata,
-    exception,
-    code,
-):
+def test_upload_authorization_resolves_contract_fields_from_the_job():
     lifecycle = _lifecycle(UploadStore(_job()))
 
-    with pytest.raises(exception) as error:
-        lifecycle.authorize("inventory", "job-id", metadata)
+    authorization = lifecycle.authorize(
+        "inventory",
+        "job-id",
+        _metadata(
+            schema_id="untrusted-schema",
+            input_kind="predict",
+            data_contract_sha256="b" * 64,
+        ),
+    )
 
-    if code is not None:
-        assert error.value.code is code
+    assert authorization.metadata.schema_id == (
+        "transformer.indexed-feature-blocks.fit.v1"
+    )
+    assert authorization.metadata.input_kind == "fit"
+    assert authorization.metadata.data_contract_sha256 == "a" * 64
+
+
+def test_upload_authorization_rejects_a_stale_mutation_lease():
+    lifecycle = _lifecycle(UploadStore(_job()))
+
+    with pytest.raises(ServiceError) as error:
+        lifecycle.authorize("inventory", "job-id", _metadata(fencing_token=6))
+
+    assert error.value.code is ErrorCode.STALE_FENCE
 
 
 def test_exact_replay_uses_current_input_frontier_without_recommit():

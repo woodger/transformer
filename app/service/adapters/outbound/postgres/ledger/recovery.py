@@ -4,7 +4,7 @@ from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.checkpoint.v6 import RECOVERY_FORMAT
+from app.contracts.checkpoint.v8 import RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,

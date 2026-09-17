@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v3/gradient-interactions-request.schema.json",
+  "title": "transformer.training-telemetry.v3.gradient-interactions request",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "modelRef", "epoch", "pageSize", "cursor"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+    "epoch": {"$ref": "common.schema.json#/$defs/positiveInteger"},
+    "pageSize": {"type": "integer", "minimum": 1, "maximum": 1000},
+    "cursor": {"oneOf": [{"type": "null"}, {"$ref": "common.schema.json#/$defs/gradientCursor"}]}
+  }
+}

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.transformer import public_predictions
 
 

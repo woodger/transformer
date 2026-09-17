@@ -270,19 +270,6 @@ class FlightApplication:
                 grace_seconds=config.cancel_grace_seconds,
                 logger=logger,
             )
-            (
-                removed_recovery_staging,
-                removed_recovery_staging_bytes,
-            ) = spool.cleanup_recovery_checkpoint_staging()
-            if removed_recovery_staging:
-                metrics.add(
-                    "recoveryCheckpointStagingRemoved",
-                    len(removed_recovery_staging),
-                )
-                metrics.add(
-                    "recoveryCheckpointStagingBytesRemoved",
-                    removed_recovery_staging_bytes,
-                )
             precleaned = spool.cleanup_temporary_files()
             recovery_precleaned = (
                 recovery_store.cleanup_temporary_files()
@@ -290,15 +277,49 @@ class FlightApplication:
             epoch_result = ledger.synchronize_runtime_epoch(
                 spool.storage_epoch()
             )
-            recovery = ledger.reconcile_interrupted_jobs()
-            temporary_paths = _string_list(recovery, "temporary_paths")
+            startup_reconciliation = ledger.reconcile_startup_jobs()
+            temporary_paths = _string_list(
+                startup_reconciliation,
+                "temporary_paths",
+            )
             recovery_temporary_paths = _string_list(
-                recovery,
+                startup_reconciliation,
                 "recovery_temporary_paths",
             )
-            interrupted_jobs = _string_list(recovery, "interrupted_jobs")
-            retried_jobs = _string_list(recovery, "retried_jobs")
-            cancelled_jobs = _string_list(recovery, "cancelled_jobs")
+            startup_failures = (
+                (
+                    "WAITING_INPUT",
+                    _string_list(
+                        startup_reconciliation,
+                        "failed_waiting_input_jobs",
+                    ),
+                ),
+                (
+                    "QUEUED",
+                    _string_list(
+                        startup_reconciliation,
+                        "failed_queued_jobs",
+                    ),
+                ),
+                (
+                    "RUNNING",
+                    _string_list(
+                        startup_reconciliation,
+                        "failed_running_jobs",
+                    ),
+                ),
+                (
+                    "RETRYING",
+                    _string_list(
+                        startup_reconciliation,
+                        "failed_retrying_jobs",
+                    ),
+                ),
+            )
+            cancelled_jobs = _string_list(
+                startup_reconciliation,
+                "cancelled_jobs",
+            )
             reconciliation = spool.reconcile(
                 ledger.referenced_paths(),
                 temporary_paths=temporary_paths,
@@ -311,9 +332,6 @@ class FlightApplication:
                 ledger.recovery_referenced_paths(),
                 known_job_ids=ledger.active_recovery_job_ids(),
                 temporary_paths=recovery_temporary_paths,
-            )
-            removed_retired_model_artifacts = (
-                spool.cleanup_retired_model_artifacts()
             )
             removed_models = spool.reconcile_model_directories(
                 published_models.retained_model_refs()
@@ -425,26 +443,17 @@ class FlightApplication:
                     application.metrics_publisher = None
             worker.start()
             maintenance.start()
-            for job_id in interrupted_jobs:
-                metrics.record_transition("RUNNING", "FAILED")
-                logger.event(
-                    "flight.job.transition",
-                    jobId=job_id,
-                    fromState="RUNNING",
-                    toState="FAILED",
-                    code="EXECUTION_INTERRUPTED",
-                    recovery=True,
-                )
-            for job_id in retried_jobs:
-                metrics.record_transition("RUNNING", "RETRYING")
-                logger.event(
-                    "flight.job.transition",
-                    jobId=job_id,
-                    fromState="RUNNING",
-                    toState="RETRYING",
-                    code="EXECUTION_INTERRUPTED",
-                    recovery=True,
-                )
+            for from_state, job_ids in startup_failures:
+                for job_id in job_ids:
+                    metrics.record_transition(from_state, "FAILED")
+                    logger.event(
+                        "flight.job.transition",
+                        jobId=job_id,
+                        fromState=from_state,
+                        toState="FAILED",
+                        code="EXECUTION_INTERRUPTED",
+                        startup=True,
+                    )
             for job_id in cancelled_jobs:
                 metrics.record_transition("CANCELLING", "CANCELLED")
                 logger.event(
@@ -452,7 +461,7 @@ class FlightApplication:
                     jobId=job_id,
                     fromState="CANCELLING",
                     toState="CANCELLED",
-                    recovery=True,
+                    startup=True,
                 )
             usage = spool.disk_usage()
             recovery_usage = recovery_store.disk_usage()
@@ -461,27 +470,20 @@ class FlightApplication:
                 host=config.host,
                 port=server.port,
                 tls=config.tls_enabled,
-                recoveredInterruptedJobs=len(interrupted_jobs),
-                recoveredRetryingJobs=len(retried_jobs),
+                failedStartupJobs=sum(
+                    len(job_ids) for _, job_ids in startup_failures
+                ),
+                cancelledStartupJobs=len(cancelled_jobs),
                 recoveredProcessGroups=sum(
                     result.outcome in ("terminated", "killed")
                     for result in process_recovery
                 ),
                 removedOrphans=len(_string_list(reconciliation, "removed")),
                 removedUnpublishedModels=len(removed_models),
-                removedRetiredModelArtifacts=len(
-                    removed_retired_model_artifacts
-                ),
                 removedTelemetryRuns=len(removed_telemetry_runs),
                 removedStartupTemporaries=len(precleaned),
                 removedRecoveryTemporaries=len(
                     recovery_precleaned
-                ),
-                removedRecoveryStagingCheckpoints=len(
-                    removed_recovery_staging
-                ),
-                removedRecoveryStagingBytes=(
-                    removed_recovery_staging_bytes
                 ),
                 removedRecoveryOrphans=len(
                     recovery_reconciliation

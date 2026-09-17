@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v3/report-result.schema.json",
+  "title": "transformer.training-telemetry.v3.report result",
+  "oneOf": [
+    {"$ref": "#/$defs/pending"},
+    {"$ref": "#/$defs/unavailable"},
+    {"$ref": "#/$defs/available"}
+  ],
+  "$defs": {
+    "pending": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "state", "modelRef", "reason", "retryAfterSeconds"],
+      "properties": {
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "pending"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "reason": {"const": "MATERIALIZATION_PENDING"},
+        "retryAfterSeconds": {"type": "integer", "minimum": 1, "maximum": 300}
+      }
+    },
+    "unavailable": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "state", "modelRef", "reason"],
+      "properties": {
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "unavailable"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "reason": {"enum": ["NO_COMPLETE_REPORT", "RETENTION_EXPIRED", "FORMAT_UNSUPPORTED"]}
+      }
+    },
+    "available": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "state", "modelRef", "producingRunId", "dataContractSha256", "modelDefinitionSha256", "layout", "coverage", "selection", "anchors", "healthTotals", "gradientInteractions", "epochPage"],
+      "properties": {
+        "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "state": {"const": "available"},
+        "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+        "producingRunId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "dataContractSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+        "modelDefinitionSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+        "layout": {"$ref": "common.schema.json#/$defs/reportLayout"},
+        "coverage": {"$ref": "common.schema.json#/$defs/coverage"},
+        "selection": {"$ref": "common.schema.json#/$defs/selection"},
+        "anchors": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "common.schema.json#/$defs/epochAnchor"}},
+        "healthTotals": {"$ref": "common.schema.json#/$defs/health"},
+        "gradientInteractions": {"$ref": "common.schema.json#/$defs/gradientInteractionsSummary"},
+        "epochPage": {"$ref": "common.schema.json#/$defs/epochPage"}
+      }
+    }
+  }
+}

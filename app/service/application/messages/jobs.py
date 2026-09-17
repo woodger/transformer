@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.records import (
@@ -39,14 +39,13 @@ class CreateJobCommand:
     prediction_column: str
     source_encoding: JsonObject
     data_contract: JsonObject
-    model_contract: JsonObject
-    semantic_digests: JsonObject
+    model_contract: JsonObject | None
+    semantic_digests: JsonObject | None
     model_label: str | None = None
-    model_selector: str | None = None
     model_ref: str | None = None
     model_config: ModelConfig | None = None
     training_config: TrainConfig | None = None
-    initialization_kind: str | None = None
+    initialization_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,12 +69,7 @@ class CloseInputCommand:
     job_id: str
     client_execution_id: str
     fencing_token: int
-    payload_count: int
-    total_chunks: int
-    total_rows: int
-    total_native_rows: tuple[int, ...]
-    range_count: int
-    total_bytes: int
+    expected_logical_rows: int | None
     manifest_sha256: str
 
 
@@ -182,6 +176,10 @@ class JobCreationPreparation:
     model_config: ModelConfig
     training_config: TrainConfig | None
     resolved_model_ref: str | None
+    source_encoding: JsonObject
+    data_contract: JsonObject
+    model_contract: JsonObject
+    semantic_digests: JsonObject
 
 
 @dataclass(frozen=True, slots=True)

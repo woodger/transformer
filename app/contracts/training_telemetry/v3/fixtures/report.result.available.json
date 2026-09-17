@@ -1,0 +1,81 @@
+{
+  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "state": "available",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "producingRunId": "11111111-1111-4111-8111-111111111111",
+  "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "modelDefinitionSha256": "609b77dfb9d2d678e126d84c18b3091e9b36b48048b5f5c677677e9d659db1d0",
+  "layout": {
+    "targetIdentities": ["EventProbability"],
+    "directComponents": [
+      {
+        "identity": "direct.event-probability",
+        "operator": "BinaryCrossEntropyWithLogits"
+      }
+    ],
+    "auxiliaryComponents": []
+  },
+  "coverage": {"completedEpochs": 1},
+  "selection": {
+    "enabled": false,
+    "bestEpoch": null,
+    "publishedEpoch": 1,
+    "publishedSource": "last_epoch"
+  },
+  "anchors": [
+    {
+      "epoch": 1,
+      "globalStep": 10,
+      "attempt": 1,
+      "totalLoss": 0.4,
+      "selectionScore": null,
+      "directLosses": [0.4],
+      "auxiliaryLosses": [],
+      "targetMetrics": [{"mae": 0.3, "rmse": 0.4}],
+      "health": {
+        "trainingBatchesCompleted": 10,
+        "optimizerUpdatesApplied": 10,
+        "optimizerUpdatesSkipped": 0,
+        "ampOverflowBatches": 0,
+        "finiteGradientBatches": 10,
+        "nonFiniteGradientBatches": 0
+      },
+      "gradientInteractionsCollected": false,
+      "roles": ["first", "published"]
+    }
+  ],
+  "healthTotals": {
+    "trainingBatchesCompleted": 10,
+    "optimizerUpdatesApplied": 10,
+    "optimizerUpdatesSkipped": 0,
+    "ampOverflowBatches": 0,
+    "finiteGradientBatches": 10,
+    "nonFiniteGradientBatches": 0
+  },
+  "gradientInteractions": {"state": "notConfigured"},
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 10,
+        "attempt": 1,
+        "totalLoss": 0.4,
+        "selectionScore": null,
+        "directLosses": [0.4],
+        "auxiliaryLosses": [],
+        "targetMetrics": [{"mae": 0.3, "rmse": 0.4}],
+        "health": {
+          "trainingBatchesCompleted": 10,
+          "optimizerUpdatesApplied": 10,
+          "optimizerUpdatesSkipped": 0,
+          "ampOverflowBatches": 0,
+          "finiteGradientBatches": 10,
+          "nonFiniteGradientBatches": 0
+        },
+        "gradientInteractionsCollected": false
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

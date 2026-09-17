@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v15/action-result.schema.json",
+  "title": "Transformer Flight v15 action result",
+  "type": "object",
+  "oneOf": [
+    {"$ref": "capabilities-result.schema.json"},
+    {"$ref": "health-result.schema.json"},
+    {"$ref": "fit-create-result.schema.json"},
+    {"$ref": "predict-create-result.schema.json"},
+    {"$ref": "acquire-result.schema.json"},
+    {"$ref": "status-result.schema.json"},
+    {"$ref": "inputs-list-result.schema.json"},
+    {"$ref": "input-close-result.schema.json"},
+    {"$ref": "outputs-list-result.schema.json"},
+    {"$ref": "cancel-result.schema.json"},
+    {"$ref": "https://transformer.local/contracts/model-catalog/v3/list-result.schema.json"},
+    {"$ref": "https://transformer.local/contracts/model-catalog/v3/detail-result.schema.json"},
+    {"$ref": "https://transformer.local/contracts/training-telemetry/v3/report-result.schema.json"},
+    {"$ref": "https://transformer.local/contracts/training-telemetry/v3/gradient-interactions-result.schema.json"}
+  ]
+}

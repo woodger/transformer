@@ -1,8 +1,0 @@
-{
-  "code": "RESOURCE_EXHAUSTED",
-  "reason": "TELEMETRY_SNAPSHOT_CAPACITY_EXHAUSTED",
-  "operation": "report",
-  "retryable": true,
-  "retryAfterSeconds": 30,
-  "message": "training telemetry snapshot capacity is exhausted"
-}

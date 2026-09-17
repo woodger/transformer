@@ -1,0 +1,7 @@
+{
+  "requestId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "state": "pending",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "reason": "MATERIALIZATION_PENDING",
+  "retryAfterSeconds": 5
+}

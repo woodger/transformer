@@ -1,11 +1,11 @@
-# ADR 0024: explicit cross-instrument transfer initialization
+# ADR 0024: явная transfer initialization между instruments
 
-- Status: Superseded
-- Superseded by: [ADR 0025](0025-unified-published-model-initialization.md)
-- Decision date: 2026-09-02
+- Статус: Заменено
+- Заменено: [ADR 0025](0025-unified-published-model-initialization.md)
+- Дата решения: 2026-09-02
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -73,9 +73,9 @@ compatibility layer не поддерживаются.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Worker process contract v12](../../app/contracts/worker/v12/README.md)
-- [Terminal fit telemetry v5](../../app/contracts/metrics/fit_run/v5/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
-- [Training runtime](../training-runtime.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Terminal fit telemetry v6](../../app/contracts/metrics/fit_run/v6/README.md)
+- [Интеграция с Flight](../flight-integration.md)
+- [Runtime обучения](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

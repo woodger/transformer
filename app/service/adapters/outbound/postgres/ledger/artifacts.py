@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import MAX_CHECKPOINT_VERIFICATION_BYTES
+from app.contracts.model_catalog.v3 import MAX_CHECKPOINT_VERIFICATION_BYTES
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -30,7 +30,6 @@ from app.service.adapters.outbound.postgres.models import (
     Job,
     JobAttempt,
     JobOutput,
-    ModelAlias,
     OutputTicket,
     PublishedModel,
 )
@@ -244,21 +243,6 @@ class ArtifactLedgerSlice:
                     created_at=published_at,
                 ))
                 session.flush()
-                alias = session.get(
-                    ModelAlias,
-                    (job.owner_subject, label),
-                    with_for_update=True,
-                )
-                if alias is None:
-                    session.add(ModelAlias(
-                        owner_subject=job.owner_subject,
-                        label=label,
-                        model_ref=model_ref,
-                        updated_at=published_at,
-                    ))
-                else:
-                    alias.model_ref = model_ref
-                    alias.updated_at = published_at
                 record.status = ExecutionState.SUCCEEDED.value
                 record.finished_at = published_at
                 job.execution_state = ExecutionState.SUCCEEDED.value
@@ -347,56 +331,6 @@ class ArtifactLedgerSlice:
             statement = statement.with_for_update()
         with self.sessions.read(connection) as session:
             return published_model_record(session.scalar(statement))
-
-    def resolve_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-    ) -> RowMapping | None:
-        with self.sessions.read(connection) as session:
-            model = session.scalar(
-                select(PublishedModel)
-                .join(
-                    ModelAlias,
-                    ModelAlias.model_ref == PublishedModel.model_ref,
-                )
-                .where(
-                    ModelAlias.owner_subject == owner_subject,
-                    ModelAlias.label == label,
-                    PublishedModel.lifecycle_state
-                    == ModelLifecycleState.AVAILABLE.value,
-                )
-            )
-            return decode_optional(model)
-
-    def resolve_published_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-        for_update: bool = False,
-    ) -> PublishedModelRecord | None:
-        with self.sessions.read(connection) as session:
-            statement = (
-                select(PublishedModel)
-                .join(
-                    ModelAlias,
-                    ModelAlias.model_ref == PublishedModel.model_ref,
-                )
-                .where(
-                    ModelAlias.owner_subject == owner_subject,
-                    ModelAlias.label == label,
-                    PublishedModel.lifecycle_state
-                    == ModelLifecycleState.AVAILABLE.value,
-                )
-            )
-            if for_update:
-                statement = statement.with_for_update(of=PublishedModel)
-            model = session.scalar(statement)
-            return published_model_record(model)
 
     def list_models(self) -> list[RowMapping]:
         with self.database.session() as session:

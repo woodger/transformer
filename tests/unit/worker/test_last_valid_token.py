@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.transformer import TransformerModel, public_predictions
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 
 class PassThroughEncoder(nn.Module):
@@ -15,11 +16,32 @@ class PassThroughHead(nn.Module):
         return values, values
 
 
+def _contract(
+    fixture: str,
+    *,
+    hidden: int,
+    layers: int,
+    dropout: float,
+    nhead: int,
+    mode: str,
+) -> ModelContract:
+    document = semantic_fixture_document(fixture)["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": hidden,
+        "encoderLayerCount": layers,
+        "dropoutProbability": dropout,
+        "attentionHeadCount": nhead,
+        "missingValuePolicy": mode,
+    })
+    return ModelContract.from_document(document)
+
+
 def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
-    contract = model_contract(
+    contract = _contract(
         "target-reorder-a-b",
-        seq_len=4,
-        feature_dim=2,
         hidden=2,
         layers=1,
         dropout=0.0,
@@ -59,10 +81,8 @@ def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
 
 
 def test_transformer_forward_with_missing_tokens_is_finite():
-    contract = model_contract(
+    contract = _contract(
         "multi-target-shared-resource",
-        seq_len=4,
-        feature_dim=2,
         hidden=16,
         layers=1,
         dropout=0.0,

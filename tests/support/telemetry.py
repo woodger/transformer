@@ -4,17 +4,30 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.contracts.metrics.fit_run.v5 import build_run_summary
-from app.contracts.metrics.v5 import (
+from app.contracts.metrics.fit_run.v7 import build_run_summary
+from app.contracts.metrics.v7 import (
     build_training_record,
 )
-from app.contracts.worker.v12 import CHECKPOINT_FORMAT
-from app.contracts.worker.v12.config import TrainConfig
-from tests.support.consumer_neutral import model_contract
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14 import CHECKPOINT_FORMAT
+from app.contracts.worker.v14.config import TrainConfig
+from app.contracts.worker.v14.model_config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from tests.fixture_documents import semantic_fixture_document
 
 DATA_CONTRACT_SHA256 = "d" * 64
-MODEL_CONTRACT = model_contract("single-regression")
-SEMANTIC_DIGESTS = MODEL_CONTRACT.digests(DATA_CONTRACT_SHA256)
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
+)
+SEMANTIC_DIGESTS = resolved_semantic_digests(
+    MODEL_CONTRACT,
+    DATA_CONTRACT_SHA256,
+    ModelConfig.from_tuning(
+        MODEL_CONTRACT.model_tuning,
+        seq_len=10,
+        feature_dim=64848,
+    ),
+)
 TARGET = MODEL_CONTRACT.target_identities[0]
 DIRECT_COMPONENT = MODEL_CONTRACT.direct_components[0]
 
@@ -157,7 +170,7 @@ def create_test_run_summary_artifact(
         application_version="0.1.10",
         git_commit="0" * 40,
         targets=MODEL_CONTRACT.target_identities,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
         milestones={
             "createdAt": "1970-01-01T00:00:01.000Z",
             "firstInputCommittedAt": "1970-01-01T00:00:02.000Z",

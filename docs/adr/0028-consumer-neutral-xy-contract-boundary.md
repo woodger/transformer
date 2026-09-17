@@ -1,11 +1,11 @@
 # ADR 0028: consumer-neutral граница `x/y`
 
-- Status: Accepted
-- Decision date: 2026-09-05
-- Supersedes: [ADR 0022](0022-declarative-target-objectives.md)
+- Статус: Принято
+- Дата решения: 2026-09-05
+- Заменяет: [ADR 0022](0022-declarative-target-objectives.md)
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -77,11 +77,11 @@ recovery fencing, но не в target, objective или model identity. Пере
 
 ## Текущая документация
 
-- [Нормативный semantic contract v1](../../app/contracts/semantic/v1/README.md)
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Worker process contract v12](../../app/contracts/worker/v12/README.md)
-- [Checkpoint/recovery contract v6](../../app/contracts/checkpoint/v6/README.md)
-- [Training metrics contract v5](../../app/contracts/metrics/v5/README.md)
-- [Terminal fit metrics contract v5](../../app/contracts/metrics/fit_run/v5/README.md)
+- [Нормативный semantic contract v2](../../app/contracts/semantic/v2/README.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Контракт checkpoint/recovery v7](../../app/contracts/checkpoint/v7/README.md)
+- [Контракт метрик обучения v6](../../app/contracts/metrics/v6/README.md)
+- [Контракт terminal fit metrics v6](../../app/contracts/metrics/fit_run/v6/README.md)
 - [Архитектура Transformer](../architecture.md)
-- [ADR 0027: compact indexed feature-block input](0027-compact-indexed-feature-block-input.md)
+- [ADR 0027: компактный input indexed feature blocks](0027-compact-indexed-feature-block-input.md)

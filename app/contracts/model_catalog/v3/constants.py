@@ -1,0 +1,21 @@
+CONTRACT_NAME = "transformer-model-catalog"
+CONTRACT_REVISION = 3
+
+LIST_ACTION = "transformer.model-catalog.v3.list"
+DETAIL_ACTION = "transformer.model-catalog.v3.detail"
+
+MAX_PAGE_SIZE = 100
+CURSOR_TTL_SECONDS = 900
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_CHECKPOINT_VERIFICATION_BYTES = 1024 * 1024 * 1024
+
+__all__ = [
+    "CONTRACT_NAME",
+    "CONTRACT_REVISION",
+    "CURSOR_TTL_SECONDS",
+    "DETAIL_ACTION",
+    "LIST_ACTION",
+    "MAX_CHECKPOINT_VERIFICATION_BYTES",
+    "MAX_PAGE_SIZE",
+    "MAX_RESPONSE_BYTES",
+]

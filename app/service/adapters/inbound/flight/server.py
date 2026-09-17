@@ -1,4 +1,3 @@
-import re
 import time
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -17,13 +16,15 @@ from app.service.adapters.inbound.flight.constants import (
     ACTIONS,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    CREATE_ACTION,
+    FIT_CREATE_ACTION,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
+    PREDICT_CREATE_ACTION,
     STATUS_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
@@ -35,13 +36,7 @@ from app.service.adapters.inbound.flight.errors import (
     invalid,
     to_flight_exception,
 )
-from app.service.adapters.inbound.flight.model_catalog import (
-    unavailable_catalog_revision,
-)
 from app.service.adapters.inbound.flight.output import OutputHandler
-from app.service.adapters.inbound.flight.training_telemetry import (
-    unavailable_telemetry_revision,
-)
 from app.service.adapters.inbound.flight.upload import PutMetadataWriter, UploadHandler
 from app.service.adapters.inbound.flight.upload_session import FlightStreamReader
 from app.service.adapters.inbound.flight.validation import (
@@ -52,9 +47,10 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v13 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v16 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
-    CREATE_ACTION: "Create a durable streaming job.",
+    FIT_CREATE_ACTION: "Create a durable fit job.",
+    PREDICT_CREATE_ACTION: "Create a durable predict job.",
     ACQUIRE_ACTION: "Transfer externally fenced job ownership.",
     STATUS_ACTION: "Read durable job status.",
     INPUTS_LIST_ACTION: "List committed inputs by revision snapshot.",
@@ -63,6 +59,7 @@ ACTION_DESCRIPTIONS = {
     CANCEL_ACTION: "Cancel a job.",
     MODEL_CATALOG_LIST_ACTION: "List owner-visible model generations.",
     MODEL_CATALOG_DETAIL_ACTION: "Describe one owner-visible model generation.",
+    MODEL_TOPOLOGY_DETAIL_ACTION: "Return public topology for one model generation.",
     TRAINING_TELEMETRY_REPORT_ACTION: "Read training telemetry for one model generation.",
     TRAINING_TELEMETRY_GRADIENT_ACTION: "Read gradient interactions for one model epoch.",
 }
@@ -88,15 +85,6 @@ class _ExceptionFactory(Protocol):
 
 
 _FLIGHT_ERROR = cast(type[Exception], vars(flight)["FlightError"])
-_CATALOG_ACTION = re.compile(
-    r"^transformer\.model-catalog\.v([1-9][0-9]*)\.(?:detail|list)$"
-)
-_TELEMETRY_ACTION = re.compile(
-    r"^transformer\.training-telemetry\.v([1-9][0-9]*)\."
-    r"(?:gradient-interactions|report)$"
-)
-
-
 class TransformerFlightServer(
     flight.FlightServerBase,  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage, reportUntypedBaseClass]
 ):
@@ -150,16 +138,6 @@ class TransformerFlightServer(
         try:
             owner = authenticated_owner_subject(context)
             if action.type not in ACTIONS:
-                catalog_action = _CATALOG_ACTION.fullmatch(action.type)
-                if catalog_action is not None:
-                    raise unavailable_catalog_revision(
-                        int(catalog_action.group(1))
-                    )
-                telemetry_action = _TELEMETRY_ACTION.fullmatch(action.type)
-                if telemetry_action is not None:
-                    raise unavailable_telemetry_revision(
-                        int(telemetry_action.group(1))
-                    )
                 raise invalid(f"unsupported action: {action.type}")
             document = parse_action_body(action.body)
             request = validate_action_request(action.type, document)

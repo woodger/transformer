@@ -1,10 +1,10 @@
-# ADR 0007: target-aligned public ML contract
+# ADR 0007: выровненный по target-ам публичный ML contract
 
-- Status: Accepted
-- Decision date: 2026-08-12
+- Статус: Принято
+- Дата решения: 2026-08-12
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -57,7 +57,7 @@ public identities в ADR 0015 сохранило сам target-aligned прин�
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Функция потерь](../losses.md)
-- [Training runtime](../training-runtime.md)
+- [Runtime обучения](../training-runtime.md)
 - [ADR 0015: единая identity индикаторов](0015-unified-indicator-identity-flight-v5.md)

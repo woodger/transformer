@@ -9,13 +9,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from app.contracts.checkpoint.v6 import (
+from app.contracts.checkpoint.v8 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v12 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v12.config import train_config_to_manifest
+from app.contracts.worker.v14 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v14.config import train_config_to_manifest
 from app.worker.application.documents import (
     integer_field,
     integer_list,
@@ -72,6 +72,8 @@ def checkpoint_metadata(
 ) -> JsonObject:
     if trainer.initialization is None:
         raise ValueError("fit checkpoint initialization is unavailable")
+    if trainer.model_config is None:
+        raise ValueError("fit checkpoint model configuration is unavailable")
     best_selection_score = trainer.best_selection_score
     if not math.isfinite(best_selection_score):
         best_selection_score = None
@@ -82,14 +84,15 @@ def checkpoint_metadata(
         "jobId": string_field(manifest, "jobId"),
         "dataContract": dict(object_field(manifest, "dataContract")),
         "modelContract": dict(object_field(manifest, "modelContract")),
+        "modelConfig": trainer.model_config.to_manifest(),
         "semanticDigests": dict(object_field(manifest, "semanticDigests")),
         "trainingConfig": train_config_to_manifest(trainer.train_config),
         "diagnostics": trainer.train_config.diagnostics.to_document(),
         "selection": {
             "enabled": trainer.selection is not None,
-            "modelContractSha256": string_field(
+            "modelDefinitionSha256": string_field(
                 object_field(manifest, "semanticDigests"),
-                "modelContractSha256",
+                "modelDefinitionSha256",
             ),
             "bestSelectionScore": best_selection_score,
             "bestEpoch": trainer.best_epoch,

@@ -1,10 +1,10 @@
 # ADR 0001: граница Arrow Flight job service
 
-- Status: Accepted
-- Decision date: 2026-07-18
+- Статус: Принято
+- Дата решения: 2026-07-18
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -55,5 +55,5 @@ artifacts. Torch выполняется вне RPC handler в отдельном
 ## Текущая документация
 
 - [Архитектура Transformer](../architecture.md)
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
 - [Операционное руководство Flight](../operations/flight-service.md)

@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
 from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
 from app.service.adapters.inbound.flight.validation import validate_upload_metadata

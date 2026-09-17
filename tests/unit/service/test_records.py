@@ -6,7 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -20,15 +22,21 @@ from app.service.domain.records import (
     ExecutionJobRecord,
     RecoverableAttemptRecord,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
-MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=2,
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
 MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
-SEMANTIC_DIGESTS = MODEL_CONTRACT.digests("a" * 64)
+SEMANTIC_DIGESTS = resolved_semantic_digests(
+    MODEL_CONTRACT,
+    "a" * 64,
+    ModelConfig.from_tuning(
+        MODEL_CONTRACT.model_tuning,
+        seq_len=2,
+        feature_dim=2,
+    ),
+)
 DATA_CONTRACT = {
     "identity": "test.dataset",
     "revision": 1,
@@ -58,12 +66,11 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         "selected_device": "cuda",
         "model_label": "daily",
         "resolved_model_ref": None,
-        "initialization": {"kind": "random"},
+        "initialization": {"source": "random"},
         "prediction_column": "out",
         "source_encoding": {
-            "kind": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         "model_config": ModelConfig(
@@ -130,9 +137,8 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             prediction_column="out",
             config_hash="b" * 64,
             source_encoding={
-                "kind": "indexedFeatureBlocks",
                 "featureBlocks": [
-                    {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                    {"windowRows": 1, "nativeRowWidth": 2},
                 ],
             },
             data_contract=DATA_CONTRACT,
@@ -142,7 +148,7 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             model_label="daily",
             model_config=ModelConfig(seq_len=2, feature_dim=2),
             training_config=train_config,
-            initialization={"kind": "random"},
+            initialization={"source": "random"},
             now=1.0,
             connection=session,
         )

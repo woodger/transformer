@@ -1,35 +1,23 @@
 from typing import cast
 
-import pyarrow
-
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v1 import (
+from app.contracts.model_catalog.v3 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
-    catalog_capabilities,
     validate_catalog_document,
-)
-from app.contracts.semantic.v1 import semantic_capabilities
-from app.contracts.training_telemetry.v1 import training_telemetry_capabilities
-from app.contracts.worker.v12.constants import (
-    CHECKPOINT_FORMAT,
-    CONTRACT_VERSION as WORKER_CONTRACT_VERSION,
-    RECOVERY_FORMAT,
 )
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
     CAPABILITIES_ACTION,
-    CONTRACT_VERSION,
-    CREATE_ACTION,
-    FIT_SCHEMA_ID,
+    FIT_CREATE_ACTION,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
     INPUTS_LIST_ACTION,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
-    PREDICT_SCHEMA_ID,
-    PREDICTION_SCHEMA_ID,
+    PREDICT_CREATE_ACTION,
     STATUS_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
@@ -47,6 +35,16 @@ from app.service.adapters.inbound.flight.model_catalog import (
     invalid_catalog_cursor,
     model_not_found,
     registry_unavailable,
+)
+from app.service.adapters.inbound.flight.model_topology import (
+    model_topology_response,
+    model_topology_unavailable,
+    present_model_topology,
+    topology_invalid,
+    topology_model_not_found,
+    topology_registry_unavailable,
+    topology_response_budget_exceeded,
+    topology_stored_metadata_invalid,
 )
 from app.service.adapters.inbound.flight.presentation import (
     limits_to_api,
@@ -81,6 +79,7 @@ from app.service.adapters.inbound.flight.validation import (
     InputsListRequestFields,
     ModelCatalogDetailRequestFields,
     ModelCatalogListRequestFields,
+    ModelTopologyDetailRequestFields,
     OutputsListRequestFields,
     RequestIdFields,
     StatusRequestFields,
@@ -107,6 +106,9 @@ from app.service.application.messages.model_catalog import (
     GetCatalogModelQuery,
     ListCatalogModelsQuery,
 )
+from app.service.application.messages.model_topology import (
+    GetModelTopologyQuery,
+)
 from app.service.application.messages.training_telemetry import (
     GetGradientInteractionsQuery,
     GetTrainingTelemetryReportQuery,
@@ -125,6 +127,7 @@ from app.service.application.queries.model_catalog import (
     GetCatalogModel,
     ListCatalogModels,
 )
+from app.service.application.queries.model_topology import GetModelTopology
 from app.service.application.queries.service import (
     ServiceAvailability,
     ServiceStatusQuery,
@@ -152,7 +155,6 @@ from app.service.application.services.training_telemetry_snapshot import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
-from app.version import __version__
 
 
 class JobCoordinator:
@@ -168,6 +170,7 @@ class JobCoordinator:
         list_outputs: ListJobOutputs,
         list_catalog_models: ListCatalogModels,
         get_catalog_model: GetCatalogModel,
+        get_model_topology: GetModelTopology | None = None,
         service_status: ServiceStatusQuery,
         availability: ServiceAvailability,
         get_training_telemetry_report: GetTrainingTelemetryReport | None = None,
@@ -182,6 +185,7 @@ class JobCoordinator:
         self._list_outputs = list_outputs
         self._list_catalog_models = list_catalog_models
         self._get_catalog_model = get_catalog_model
+        self._get_model_topology = get_model_topology
         self._service_status = service_status
         self._availability = availability
         self._get_training_telemetry_report = get_training_telemetry_report
@@ -200,7 +204,7 @@ class JobCoordinator:
         elif action == HEALTH_ACTION:
             fields = cast(RequestIdFields, request)
             result = self.health(fields["request_id"])
-        elif action == CREATE_ACTION:
+        elif action in (FIT_CREATE_ACTION, PREDICT_CREATE_ACTION):
             fields = cast(CreateRequestFields, request)
             result = present_job_created(
                 self._create_job.create(
@@ -306,6 +310,38 @@ class JobCoordinator:
             except ModelCatalogStoreUnavailable as exc:
                 raise registry_unavailable() from exc
             return _catalog_response(result, "detail-result")
+        elif action == MODEL_TOPOLOGY_DETAIL_ACTION:
+            fields = cast(ModelTopologyDetailRequestFields, request)
+            if self._get_model_topology is None:
+                raise model_topology_unavailable()
+            try:
+                result = present_model_topology(
+                    self._get_model_topology.execute(
+                        GetModelTopologyQuery(
+                            owner_subject=owner,
+                            request_id=fields["request_id"],
+                            model_ref=fields["model_ref"],
+                        )
+                    )
+                )
+                return model_topology_response(result)
+            except CatalogModelNotFound as exc:
+                raise topology_model_not_found(exc.model_ref) from exc
+            except ModelCatalogStoreUnavailable as exc:
+                raise topology_registry_unavailable() from exc
+            except ServiceError as exc:
+                if _stored_metadata_error(exc):
+                    raise topology_stored_metadata_invalid(
+                        fields["model_ref"],
+                        _error_path(exc),
+                    ) from exc
+                raise
+            except OverflowError as exc:
+                raise topology_response_budget_exceeded(
+                    fields["model_ref"]
+                ) from exc
+            except ValueError as exc:
+                raise topology_invalid(fields["model_ref"], "") from exc
         elif action == TRAINING_TELEMETRY_REPORT_ACTION:
             fields = cast(TrainingTelemetryReportRequestFields, request)
             if self._get_training_telemetry_report is None:
@@ -400,59 +436,19 @@ class JobCoordinator:
         inventory = capabilities.device_inventory
         return response_document(
             request_id,
-            protocolVersions=[CONTRACT_VERSION],
-            service={
-                "name": "transformer-flight",
-                "version": __version__,
-                "pyarrowVersion": str(vars(pyarrow)["__version__"]),
-                "torchVersion": inventory.torch_version,
-            },
-            schemaIds={
-                "fitInput": FIT_SCHEMA_ID,
-                "predictInput": PREDICT_SCHEMA_ID,
-                "predictionOutput": PREDICTION_SCHEMA_ID,
-            },
-            sourceEncodings=["indexedFeatureBlocks"],
-            workerProtocolVersion=WORKER_CONTRACT_VERSION,
-            checkpointFormat=CHECKPOINT_FORMAT,
-            recoveryFormat=RECOVERY_FORMAT,
-            metricsFormats=[
-                "transformer.fit-run-summary.v5",
-                "transformer.training-metrics.v5",
-            ],
-            semantic=semantic_capabilities(),
-            modelCatalog=catalog_capabilities(),
-            trainingTelemetry=training_telemetry_capabilities(),
             limits=limits_to_api(capabilities.limits),
             devices={
                 "cpu": {"available": True},
                 "gpu": {
                     "available": inventory.cuda_capacity > 0,
-                    "deviceCount": inventory.device_count,
-                    "quarantinedCount": inventory.quarantined_count,
                 },
             },
-            queue={
-                "cpuCapacity": capabilities.cpu_capacity,
-                "gpuCapacity": inventory.cuda_capacity,
-                "singleInstance": True,
-            },
-            supportedOperations=["fit", "predict"],
-            fitInitializations=[
-                "publishedModel",
-                "random",
-            ],
-            features={
-                "doExchange": False,
-                "pollFlightInfo": False,
-                "durableStreamingInput": True,
-                "clientGeneratedJobId": True,
-                "crossSystemFencing": True,
-                "revisionPagination": True,
-                "resumableFit": True,
-                "recoveryBoundary": "globalEpoch",
-                "deviceAwareGpu": True,
-                "structuredErrorDetails": True,
+            queries={
+                "modelCatalog": True,
+                "modelTopology": self._get_model_topology is not None,
+                "trainingTelemetry": (
+                    self._get_training_telemetry_report is not None
+                ),
             },
         )
 
@@ -474,7 +470,6 @@ class JobCoordinator:
                 "runtime": {"freeBytes": health.runtime_storage.free},
                 "recovery": {"freeBytes": health.recovery_storage.free},
             },
-            metrics=health.metrics,
         )
 
     def set_draining(self, value: bool = True) -> None:
@@ -494,12 +489,26 @@ def _catalog_response(document: JsonObject, schema_name: str) -> bytes:
     return encoded
 
 
+def _stored_metadata_error(error: ServiceError) -> bool:
+    return (
+        error.code == ErrorCode.MODEL_CORRUPT
+        and error.detail is not None
+        and error.detail.get("reason") == "STORED_MODEL_METADATA_INVALID"
+    )
+
+
+def _error_path(error: ServiceError) -> str:
+    if error.detail is None:
+        return ""
+    path = error.detail.get("path")
+    return path if isinstance(path, str) else ""
+
+
 def _create_command(
     owner: str,
     request: CreateRequestFields,
     document: JsonObject,
 ) -> CreateJobCommand:
-    wire_model_selector = request.get("model_selector")
     return CreateJobCommand(
         owner_subject=owner,
         request_id=request["request_id"],
@@ -509,25 +518,24 @@ def _create_command(
         client_execution_id=request["client_execution_id"],
         operation=request["operation"],
         requested_device=device_from_api(request["device"]),
-        prediction_column=request["prediction_column"],
+        prediction_column="prediction",
         source_encoding=dict(request["source_encoding"]),
-        data_contract=cast(JsonObject, dict(request["data_contract"])),
-        model_contract=dict(request["model_contract"]),
-        semantic_digests=dict(request["semantic_digests"]),
-        model_label=request.get("model_label"),
-        model_selector=(
+        data_contract=dict(request["data_contract"]),
+        model_contract=(
             None
-            if wire_model_selector is None
-            else (
-                "alias"
-                if wire_model_selector == "modelAlias"
-                else "reference"
-            )
+            if request["model_contract"] is None
+            else dict(request["model_contract"])
         ),
+        semantic_digests=(
+            None
+            if request["semantic_digests"] is None
+            else dict(request["semantic_digests"])
+        ),
+        model_label=request.get("model_label"),
         model_ref=request.get("model_ref"),
         model_config=request.get("model_config"),
         training_config=request.get("train_config"),
-        initialization_kind=request.get("initialization_kind"),
+        initialization_source=request.get("initialization_source"),
     )
 
 
@@ -561,12 +569,7 @@ def _close_command(
         job_id=request["job_id"],
         client_execution_id=request["client_execution_id"],
         fencing_token=request["fencing_token"],
-        payload_count=request["payload_count"],
-        total_chunks=request["total_chunks"],
-        total_rows=request["total_rows"],
-        total_native_rows=tuple(request["total_native_rows"]),
-        range_count=request["range_count"],
-        total_bytes=request["total_bytes"],
+        expected_logical_rows=request["expected_logical_rows"],
         manifest_sha256=request["manifest_sha256"],
     )
 

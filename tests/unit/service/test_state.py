@@ -5,10 +5,10 @@ from app.service.domain.policies import (
     AttemptOutcomeDecision,
     CancelDecision,
     DeviceDecision,
-    RecoveryDecision,
+    StartupDecision,
     decide_attempt_outcome,
     decide_cancel,
-    decide_interrupted_attempt,
+    decide_startup_interruption,
     is_terminal,
     resolve_device,
     validate_execution_transition,
@@ -109,15 +109,27 @@ def test_cancel_policy_covers_every_execution_state(state, expected):
     assert decide_cancel(state) == expected
 
 
-def test_interrupted_attempt_policy_distinguishes_run_and_cancel():
-    assert decide_interrupted_attempt(ExecutionState.RUNNING) == RecoveryDecision(
+@pytest.mark.parametrize(
+    "state",
+    (
+        ExecutionState.WAITING_INPUT,
+        ExecutionState.QUEUED,
+        ExecutionState.RUNNING,
+        ExecutionState.RETRYING,
+    ),
+)
+def test_startup_interruption_terminalizes_every_unfinished_job(state):
+    assert decide_startup_interruption(state) == StartupDecision(
         ExecutionState.FAILED,
         ErrorCode.EXECUTION_INTERRUPTED,
-        "worker execution was interrupted by service restart",
+        "job was interrupted by service restart",
     )
-    assert decide_interrupted_attempt(
+
+
+def test_startup_interruption_preserves_requested_cancellation():
+    assert decide_startup_interruption(
         ExecutionState.CANCELLING
-    ) == RecoveryDecision(ExecutionState.CANCELLED, None, None)
+    ) == StartupDecision(ExecutionState.CANCELLED, None, None)
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,10 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.checkpoint.v6 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v8 import RECOVERY_FORMAT
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.model_config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus
@@ -14,16 +17,22 @@ from app.service.domain.records import (
     StatusSnapshot,
     TrainingRecoveryCheckpointRecord,
 )
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 JOB_ID = "00000000-0000-4000-8000-000000000001"
-MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=2,
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
 MODEL_CONTRACT_DOCUMENT = MODEL_CONTRACT.to_document()
-SEMANTIC_DIGESTS = MODEL_CONTRACT.digests("b" * 64)
+SEMANTIC_DIGESTS = resolved_semantic_digests(
+    MODEL_CONTRACT,
+    "b" * 64,
+    ModelConfig.from_tuning(
+        MODEL_CONTRACT.model_tuning,
+        seq_len=2,
+        feature_dim=2,
+    ),
+)
 
 
 def _job(**overrides):
@@ -50,15 +59,11 @@ def _job(**overrides):
         resolved_model_ref=None,
         prediction_column="predictions",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         data_contract={
-            "identity": "test.dataset",
-            "revision": 1,
-            "profile": "test.profile",
             "dataContractSha256": "b" * 64,
             "seqLen": 2,
             "featureDim": 2,
@@ -82,7 +87,7 @@ def _job(**overrides):
         started_at=4.0,
         cancel_requested_at=None,
         finished_at=8.0,
-        initialization={"kind": "random"},
+        initialization={"source": "random"},
     )
     return replace(value, **overrides)
 
@@ -149,15 +154,10 @@ def test_status_exposes_bounded_state_without_artifact_paths():
         "revision": 3,
         "nextOrdinal": 3,
         "payloadCount": 3,
-        "totalChunks": 4,
-        "totalLogicalRows": 12,
-        "totalNativeRows": [15],
-        "rangeCount": 2,
-        "totalBytes": 4096,
+        "logicalRows": 12,
         "manifestSha256": "a" * 64,
     }
     assert result["execution"] == {"state": "SUCCEEDED", "attempt": 2}
-    assert result["ownership"]["fencingToken"] == "7"
     assert result["device"] == {"requested": "auto", "selected": "gpu"}
     assert result["progress"] == {
         "epoch": 2,
@@ -167,19 +167,19 @@ def test_status_exposes_bounded_state_without_artifact_paths():
     assert result["results"] == {
         "outputCount": 0,
         "modelRef": "mdl_generation",
-        "checkpoint": None,
     }
-    assert result["recovery"]["latestCheckpoint"]["generation"] == 2
+    assert "ownership" not in result
+    assert "recovery" not in result
     assert result["pollAfterMs"] == 0
     assert "private" not in repr(result)
 
 
-def test_status_keeps_initialization_separate_from_checkpoint_identity():
+def test_status_hides_provider_checkpoint_and_initialization_details():
     snapshot = StatusSnapshot(
         job=_job(result={
             "modelRef": "mdl_generation",
             "checkpoint": {
-                "format": CHECKPOINT_FORMAT,
+                    "format": "provider-internal",
                 "sha256": "c" * 64,
                 "bytes": 4096,
                 "generation": 2,
@@ -191,13 +191,8 @@ def test_status_keeps_initialization_separate_from_checkpoint_identity():
 
     result = _execute(_query(snapshot), "request-existing-checkpoint")
 
-    assert result["initialization"] == {"kind": "random"}
-    assert result["results"]["checkpoint"] == {
-        "format": CHECKPOINT_FORMAT,
-        "sha256": "c" * 64,
-        "bytes": 4096,
-        "generation": 2,
-    }
+    assert "initialization" not in result
+    assert "checkpoint" not in result["results"]
 
 
 def test_failed_status_has_stable_error_and_nonterminal_status_polls():

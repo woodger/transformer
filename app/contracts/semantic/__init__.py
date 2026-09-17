@@ -1,2 +1,1 @@
-"""Versioned consumer-neutral semantic contracts."""
-
+"""Versioned semantic contracts."""

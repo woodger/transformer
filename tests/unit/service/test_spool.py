@@ -190,48 +190,6 @@ def test_run_telemetry_reconcile_uses_run_identity(spool):
     assert removed == (orphan_job_id,)
 
 
-def test_retired_model_artifact_cleanup_keeps_checkpoint(spool):
-    model_ref = "mdl_" + uuid.uuid4().hex
-    metadata_path = os.path.join(
-        spool.model_directory(model_ref),
-        "metadata.json",
-    )
-    metrics_path = os.path.join(
-        spool.model_directory(model_ref),
-        "metrics.jsonl",
-    )
-    summary_path = os.path.join(
-        spool.model_directory(model_ref),
-        "run-summary.json",
-    )
-    legacy_run_path = os.path.join(
-        spool.models_dir,
-        "_telemetry",
-        str(uuid.uuid4()),
-        "metrics.jsonl",
-    )
-    checkpoint_path = spool.model_checkpoint_path(model_ref)
-    spool.atomic_write_json(metadata_path, {"format": "retired"})
-    spool.atomic_write_bytes(metrics_path, b"legacy metrics")
-    spool.atomic_write_bytes(summary_path, b"legacy summary")
-    spool.atomic_write_bytes(legacy_run_path, b"legacy run")
-    spool.atomic_write_bytes(checkpoint_path, b"checkpoint")
-
-    removed = spool.cleanup_retired_model_artifacts()
-
-    assert removed == (
-        "_telemetry",
-        f"{model_ref}/metadata.json",
-        f"{model_ref}/metrics.jsonl",
-        f"{model_ref}/run-summary.json",
-    )
-    assert not os.path.exists(metadata_path)
-    assert not os.path.exists(metrics_path)
-    assert not os.path.exists(summary_path)
-    assert not os.path.exists(legacy_run_path)
-    assert os.path.isfile(checkpoint_path)
-
-
 def test_preledger_cleanup_removes_only_temporary_artifacts(spool):
     job_id = str(uuid.uuid4())
     committed = spool.input_path(job_id, 0)
@@ -245,35 +203,6 @@ def test_preledger_cleanup_removes_only_temporary_artifacts(spool):
     assert os.path.isfile(committed)
     assert not os.path.exists(temporary_path)
     assert spool.relative_path(temporary_path) in removed
-
-
-def test_startup_cleanup_removes_only_attempt_recovery_checkpoint_staging(spool):
-    first_job_id = str(uuid.uuid4())
-    second_job_id = str(uuid.uuid4())
-    first = spool.attempt_recovery_checkpoint_path(first_job_id, 1, 1)
-    second = spool.attempt_recovery_checkpoint_path(second_job_id, 2, 3)
-    final = spool.attempt_checkpoint_path(first_job_id, 1)
-    unrelated = os.path.join(
-        spool.attempt_directory(first_job_id, 1),
-        "checkpoints",
-        "notes.txt",
-    )
-    spool.atomic_write_bytes(first, b"first")
-    spool.atomic_write_bytes(second, b"second checkpoint")
-    spool.atomic_write_bytes(final, b"final")
-    spool.atomic_write_bytes(unrelated, b"notes")
-
-    removed, removed_bytes = spool.cleanup_recovery_checkpoint_staging()
-
-    assert removed == tuple(sorted((
-        spool.relative_path(first),
-        spool.relative_path(second),
-    )))
-    assert removed_bytes == len(b"first") + len(b"second checkpoint")
-    assert not os.path.exists(first)
-    assert not os.path.exists(second)
-    assert os.path.isfile(final)
-    assert os.path.isfile(unrelated)
 
 
 def test_paths_cannot_escape_runtime_directory_or_follow_external_symlink(spool, tmp_path):

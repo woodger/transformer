@@ -6,12 +6,12 @@
 OpenSearch используется только для наблюдаемости и не является состоянием
 приложения, механизмом синхронизации или источником истины. Текущую структуру
 telemetry slice описывает [архитектурный справочник](../architecture.md),
-training telemetry — [training reference](../training-runtime.md), нормативные
+training telemetry — [справочник обучения](../training-runtime.md), нормативные
 documents и projections —
 [`app/contracts/metrics/`](../../app/contracts/metrics/), а настройку доставки
 — [инструкция OpenSearch](../deployment/opensearch.md).
 Read-only public projection полного report задаёт
-[`Training Telemetry Query v1`](../../app/contracts/training_telemetry/v1/README.md).
+[`Training Telemetry Query v3`](../../app/contracts/training_telemetry/v3/README.md).
 
 Rationale best-effort artifact/outbox boundary сохранён в
 [ADR 0009](../adr/0009-centralized-training-metrics.md).
@@ -40,7 +40,7 @@ Rationale best-effort artifact/outbox boundary сохранён в
   обоснования.
 - Секреты, tokens, credentials и чувствительные данные в metrics не попадают.
 - Метрики не дублируют данные, уже полноценно представленные в logs.
-- Transformer не вычисляет Consumer-owned target statistics и не создаёт
+- Transformer не вычисляет предметные target statistics внешней стороны и не создаёт
   отдельную OpenSearch projection для metadata локального artifact.
 
 ## Границы инструментации

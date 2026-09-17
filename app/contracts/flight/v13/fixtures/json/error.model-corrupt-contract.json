@@ -1,7 +1,0 @@
-{
-  "code": "MODEL_CORRUPT",
-  "reason": "STORED_CONTRACT_INVALID",
-  "layer": "objective",
-  "path": "/objective/auxiliaryComponents/0/roles/scale",
-  "message": "stored objective contains an unresolved resource reference"
-}

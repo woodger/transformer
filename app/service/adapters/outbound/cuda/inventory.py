@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v12 import CONTRACT_VERSION, validate_document
+from app.contracts.worker.v14 import CONTRACT_VERSION, validate_document
 from app.project import PROJECT_ROOT
 from app.service.application.ports.observability import EventLogger
 
@@ -334,7 +334,7 @@ def _probe_cuda() -> JsonObject:
             cuda_devices = [
                 device
                 for device in visible_devices
-                if isinstance(device, dict) and device.get("kind") == "cuda"
+                if isinstance(device, dict) and device.get("backend") == "cuda"
             ]
             if len(cuda_devices) != 1:
                 continue

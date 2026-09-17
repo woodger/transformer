@@ -6,15 +6,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Protocol, cast, runtime_checkable
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v12.config import (
-    ModelConfig,
-    TrainConfig,
-    train_config_to_manifest,
-)
-from app.service.adapters.inbound.flight.constants import (
-    CONTRACT_NAME,
-    CONTRACT_VERSION,
-)
 from app.service.adapters.inbound.flight.errors import invalid
 from app.service.domain.input_manifest import canonical_receipts, manifest_sha256
 
@@ -66,8 +57,6 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 def response_document(request_id: str, **fields: object) -> JsonObject:
     return {
-        "contract": CONTRACT_NAME,
-        "version": CONTRACT_VERSION,
         "requestId": request_id,
         **{key: _json_value(value, key) for key, value in fields.items()},
     }
@@ -102,50 +91,6 @@ def canonical_manifest_hash(inputs: Iterable[object]) -> str:
     return manifest_sha256(inputs)
 
 
-def model_config_to_api(
-    config: ModelConfig | Mapping[str, object],
-) -> JsonObject:
-    if not isinstance(config, ModelConfig):
-        parsed = ModelConfig.from_dict(config)
-        if parsed is None:
-            raise invalid("model configuration must not be empty")
-        config = parsed
-    return config.to_manifest()
-
-
-def train_config_to_api(
-    config: TrainConfig | Mapping[str, object],
-) -> JsonObject:
-    if not isinstance(config, TrainConfig):
-        parsed = TrainConfig.from_dict(config)
-        if parsed is None:
-            raise invalid("training configuration must not be empty")
-        config = parsed
-    return train_config_to_manifest(config)
-
-
-def data_contract_to_api(contract: Mapping[str, object]) -> JsonObject:
-    return {
-        "identity": cast(JsonValue, contract.get("identity")),
-        "revision": cast(JsonValue, contract.get("revision")),
-        "profile": cast(JsonValue, contract.get("profile")),
-        "dataContractSha256": cast(
-            JsonValue,
-            contract.get(
-                "data_contract_sha256", contract.get("dataContractSha256")
-            ),
-        ),
-        "seqLen": cast(
-            JsonValue,
-            contract.get("seq_len", contract.get("seqLen")),
-        ),
-        "featureDim": cast(
-            JsonValue,
-            contract.get("feature_dim", contract.get("featureDim")),
-        ),
-    }
-
-
 def _json_value(value: object, location: str) -> JsonValue:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -173,10 +118,7 @@ __all__ = [
     "canonical_manifest_hash",
     "canonical_manifest_receipts",
     "canonical_request_hash",
-    "data_contract_to_api",
     "encode_document",
-    "model_config_to_api",
     "parse_action_body",
     "response_document",
-    "train_config_to_api",
 ]

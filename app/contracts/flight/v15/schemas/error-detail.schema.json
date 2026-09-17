@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v15/error-detail.schema.json",
+  "title": "Transformer Flight v15 application error detail",
+  "anyOf": [
+    {
+      "$ref": "https://transformer.local/contracts/semantic/v3/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/model-catalog/v3/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/training-telemetry/v3/error-detail.schema.json"
+    }
+  ]
+}

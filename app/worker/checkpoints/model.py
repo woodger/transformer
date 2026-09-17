@@ -6,12 +6,14 @@ from typing import cast
 
 import torch
 
-from app.contracts.checkpoint.v6 import (
+from app.contracts.checkpoint.v8 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import ModelConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import atomic_output_path, resolve_artifact_path
 from app.worker.checkpoints.checkpoint_corrupt import CheckpointCorrupt
@@ -85,30 +87,27 @@ def load_checkpoint(
         data_digest = data_contract.get("dataContractSha256")
         if not isinstance(data_digest, str):
             raise ValueError("checkpoint data contract digest is invalid")
-        model_config = model_contract.model_config
+        model_config = ModelConfig.from_manifest(metadata.get("modelConfig"))
         if (
-            data_contract.get("seqLen") != model_config.get("seqLen")
-            or data_contract.get("featureDim") != model_config.get("featureDim")
+            data_contract.get("seqLen") != model_config.seq_len
+            or data_contract.get("featureDim") != model_config.feature_dim
+            or model_config.to_tuning() != model_contract.model_tuning
         ):
             raise ValueError("checkpoint data and model geometry differ")
         semantic_digests = _object_dict(
             cast(Mapping[object, object], metadata["semanticDigests"]),
             "checkpoint semantic digests",
         )
-        if semantic_digests != model_contract.digests(data_digest):
+        if semantic_digests != resolved_semantic_digests(
+            model_contract,
+            data_digest,
+            model_config,
+        ):
             raise ValueError("checkpoint semantic digests are inconsistent")
     except (TypeError, ValueError) as exc:
         raise CheckpointCorrupt("checkpoint contents are invalid") from exc
     payload["metadata"] = metadata
     return payload
-
-
-def load_checkpoint_metadata(
-    model_name: str,
-    device: str | torch.device = "cpu",
-) -> JsonObject:
-    payload = load_checkpoint(model_name, device)
-    return cast(JsonObject, dict(cast(Mapping[str, object], payload["metadata"])))
 
 
 def save_model(
@@ -118,16 +117,6 @@ def save_model(
     metadata: JsonObject,
 ) -> None:
     save_checkpoint(model_name, model, metadata=metadata)
-
-
-def load_model(
-    model_name: str,
-    model: torch.nn.Module,
-    device: str | torch.device,
-) -> torch.nn.Module:
-    checkpoint = load_checkpoint(model_name, device)
-    model.load_state_dict(_tensor_state_dict(checkpoint["state_dict"]))
-    return model
 
 
 def _tensor_state_dict(value: object) -> Mapping[str, torch.Tensor]:
@@ -156,7 +145,6 @@ __all__ = [
     "CheckpointCorrupt",
     "CheckpointFormatMismatch",
     "load_checkpoint",
-    "load_checkpoint_metadata",
     "model_path",
     "save_checkpoint",
     "save_model",

@@ -157,7 +157,7 @@ def test_inventory_probe_failure_keeps_cpu_service_startable():
     assert inventory.snapshot().cuda_capacity == 0
 
 
-def test_default_probe_selects_cuda_from_worker_v12_devices(
+def test_default_probe_selects_cuda_from_worker_devices(
     monkeypatch,
 ):
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
@@ -168,9 +168,9 @@ def test_default_probe_selects_cuda_from_worker_v12_devices(
             "cudaRuntimeVersion": "13.0",
             "torchVersion": "2.12.0+cu130",
             "devices": [
-                {"kind": "cpu", "opaqueId": "cpu", "name": "CPU"},
+                {"backend": "cpu", "opaqueId": "cpu", "name": "CPU"},
                 {
-                    "kind": "cuda",
+                    "backend": "cuda",
                     "opaqueId": "cuda:0",
                     "name": "NVIDIA GPU",
                 },

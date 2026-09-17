@@ -1,10 +1,10 @@
-# ADR 0004: Clean Architecture по process boundaries
+# ADR 0004: Clean Architecture по границам процессов
 
-- Status: Accepted
-- Decision date: 2026-08-06
+- Статус: Принято
+- Дата решения: 2026-08-06
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -53,5 +53,5 @@ models выполняет service.
 ## Текущая документация
 
 - [Архитектурная политика](../policy/architecture.md)
-- [Worker process contract v12](../../app/contracts/worker/v12/README.md)
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
+- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)

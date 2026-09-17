@@ -5,7 +5,7 @@ import json
 import sys
 from contextlib import redirect_stdout
 
-from app.contracts.worker.v12 import (
+from app.contracts.worker.v14 import (
     CONTRACT_VERSION,
     WorkerContractError,
     load_document,
@@ -55,6 +55,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         manifest = load_document(args.manifest, "command-manifest")
+        from app.worker.application.documents import object_field, string_field
+        from app.worker.runtime.thread_budget import (
+            configure_cuda_torch_thread_budget,
+        )
+
+        backend = string_field(object_field(manifest, "device"), "backend")
+        if backend == "cuda":
+            # Do this before importing the training application and PyTorch runtime.
+            configure_cuda_torch_thread_budget()
         from app.worker.application.executor import WorkerApplication
 
         with redirect_stdout(sys.stderr):

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v3/model-contract-envelope.schema.json",
+  "title": "ModelContract envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "targetContract",
+    "objective",
+    "modelTuning"
+  ],
+  "properties": {
+    "targetContract": {
+      "type": "object"
+    },
+    "objective": {
+      "type": "object"
+    },
+    "modelTuning": {
+      "$ref": "https://transformer.local/contracts/semantic/v3/common.schema.json#/$defs/modelTuning"
+    }
+  }
+}

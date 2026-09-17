@@ -10,16 +10,17 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v6 import (
+from app.contracts.checkpoint.v8 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v13.arrow import validate_prediction_file
+from app.contracts.flight.v16.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v12.config import TrainConfig
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -333,15 +334,26 @@ class WorkerArtifactPublisher:
                 checkpoint_metadata,
                 "checkpoint-metadata",
             )
+            if job.model_config is None or job.training_config is None:
+                raise ValueError("fit job configuration is unavailable")
             contract = ModelContract.from_document(job.model_contract)
-            expected_digests = contract.digests(_string(
-                job.semantic_digests.get("dataContractSha256"),
-                "job data contract digest",
-            ))
+            model_config = ModelConfig.from_manifest(
+                checkpoint_metadata.get("modelConfig")
+            )
+            if model_config != job.model_config:
+                raise ValueError("fit model configuration is unavailable")
+            expected_digests = resolved_semantic_digests(
+                contract,
+                _string(
+                    job.semantic_digests.get("dataContractSha256"),
+                    "job data contract digest",
+                ),
+                model_config,
+            )
             actual_train = TrainConfig.from_dict(
                 checkpoint_metadata.get("trainingConfig")
             )
-            if actual_train is None or job.training_config is None:
+            if actual_train is None:
                 raise ValueError("fit training configuration is unavailable")
             actual_train = _with_diagnostics(
                 actual_train,
@@ -354,6 +366,8 @@ class WorkerArtifactPublisher:
                 != job.data_contract
                 or checkpoint_metadata.get("modelContract")
                 != job.model_contract
+                or checkpoint_metadata.get("modelConfig")
+                != job.model_config.to_manifest()
                 or checkpoint_metadata.get("semanticDigests")
                 != expected_digests
                 or checkpoint_metadata.get("jobConfigSha256")
@@ -417,7 +431,7 @@ class WorkerArtifactPublisher:
                 modelRef=model_ref,
                 bytes=byte_count,
                 sha256=digest,
-                initialization=initialization["kind"],
+                initialization=initialization["source"],
                 parentModelRef=initialization.get("parentModelRef"),
             )
             return PublishedModelArtifacts(

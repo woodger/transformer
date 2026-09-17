@@ -1,0 +1,11 @@
+{
+  "contract": "transformer-model-catalog-fixtures",
+  "revision": 3,
+  "files": [
+    {"path": "detail.request.json", "sha256": "6fc23d0fe2b22faa90baa3a743667f2a4fdadecb27b92576245674773eb98c28"},
+    {"path": "detail.result.random.json", "sha256": "2d66599682d97c3f10fdd35995010c7f44f280b42c698d4e5abc6df1a55347fb"},
+    {"path": "list.request.initial.json", "sha256": "2ed905267dfc1128550808949d69f275d8ac6b2ca3a6431742f0f44b034409d9"},
+    {"path": "list.result.empty.json", "sha256": "60026f22a7fde86d576b5e955af69a2ff3152126874362dd9fe12ce82c4eca8a"},
+    {"path": "list.result.first.json", "sha256": "7a065077d812d162579ca71541bb723ebee61e315834c0ff4db05eff510af2c2"}
+  ]
+}

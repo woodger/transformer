@@ -1,6 +1,6 @@
 # Политика тестирования
 
-> Type: Policy. Этот документ задаёт текущую границу pytest tests Transformer.
+> Тип: политика. Этот документ задаёт текущую границу pytest tests Transformer.
 
 Тест защищает наблюдаемое поведение, persisted/wire contract или существенный
 production-риск. Он не должен фиксировать случайную структуру реализации.
@@ -62,9 +62,8 @@ CUDA/AMP и serialization.
 Тесты группируются по проверяемой границе и владельцу:
 
 ```text
-tests/unit/{admin,cli,local,service,worker}
-tests/contract/consumer_neutral_v1
-tests/integration/{flight,worker_process}
+tests/unit/{admin,cli,service,worker}
+tests/integration/worker_process
 tests/architecture
 tests/support
 ```

@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.training_telemetry.v1 import (
-    CONTRACT_NAME,
-    CONTRACT_REVISION,
+from app.contracts.training_telemetry.v3 import (
     MAX_RESPONSE_BYTES,
     SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS,
     validate_training_telemetry_document,
@@ -23,8 +21,6 @@ def present_training_telemetry_report(
     result: TrainingTelemetryReportResult,
 ) -> JsonObject:
     common: JsonObject = {
-        "contract": CONTRACT_NAME,
-        "revision": CONTRACT_REVISION,
         "requestId": result.request_id,
         "state": result.state,
         "modelRef": result.model_ref,
@@ -45,6 +41,7 @@ def present_training_telemetry_report(
         for value in (
             result.producing_run_id,
             result.semantic_digests,
+            result.layout,
             result.coverage,
             result.selection,
             result.health_totals,
@@ -55,7 +52,15 @@ def present_training_telemetry_report(
     return {
         **common,
         "producingRunId": result.producing_run_id,
-        "semanticDigests": dict(cast(JsonObject, result.semantic_digests)),
+        "dataContractSha256": cast(
+            str,
+            cast(JsonObject, result.semantic_digests)["dataContractSha256"],
+        ),
+        "modelDefinitionSha256": cast(
+            str,
+            cast(JsonObject, result.semantic_digests)["modelDefinitionSha256"],
+        ),
+        "layout": dict(cast(JsonObject, result.layout)),
         "coverage": dict(cast(JsonObject, result.coverage)),
         "selection": dict(cast(JsonObject, result.selection)),
         "anchors": [dict(item) for item in result.anchors],
@@ -75,8 +80,6 @@ def present_gradient_interactions(
     result: GradientInteractionsResult,
 ) -> JsonObject:
     common: JsonObject = {
-        "contract": CONTRACT_NAME,
-        "revision": CONTRACT_REVISION,
         "requestId": result.request_id,
         "state": result.state,
         "modelRef": result.model_ref,
@@ -171,15 +174,6 @@ def invalidated_telemetry_cursor() -> ServiceError:
     )
 
 
-def unavailable_telemetry_revision(revision: int) -> ServiceError:
-    return telemetry_error(
-        ErrorCode.FAILED_PRECONDITION,
-        "TELEMETRY_QUERY_REVISION_UNAVAILABLE",
-        "training telemetry query revision is unavailable",
-        requestedRevision=revision,
-    )
-
-
 def telemetry_model_not_found(model_ref: str) -> ServiceError:
     return telemetry_error(
         ErrorCode.NOT_FOUND,
@@ -242,5 +236,4 @@ __all__ = [
     "telemetry_snapshot_capacity_exhausted",
     "telemetry_stored_metadata_invalid",
     "training_telemetry_response",
-    "unavailable_telemetry_revision",
 ]

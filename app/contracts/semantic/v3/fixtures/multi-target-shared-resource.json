@@ -1,0 +1,127 @@
+{
+  "fixtureId": "semantic.multi-target-shared-resource.v3",
+  "tensorGeometry": {"seqLen": 3, "featureDim": 12},
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "Location",
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Identity"
+        },
+        {
+          "identity": "PositiveOutcome",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        },
+        {
+          "identity": "NegativeOutcome",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "resources": [
+        {
+          "identity": "sharedScale",
+          "resourceClass": "PositiveScalarPerObservation"
+        }
+      ],
+      "directComponents": [
+        {
+          "identity": "direct.location",
+          "operator": "SmoothL1",
+          "weight": 1,
+          "targetIdentity": "Location"
+        },
+        {
+          "identity": "direct.positive",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "PositiveOutcome"
+        },
+        {
+          "identity": "direct.negative",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "NegativeOutcome"
+        }
+      ],
+      "auxiliaryComponents": [
+        {
+          "identity": "aux.expected-value",
+          "operator": "ExpectedValue",
+          "weight": 0.5,
+          "roles": {
+            "positiveOutcomeProbability": "PositiveOutcome",
+            "negativeOutcomeProbability": "NegativeOutcome"
+          }
+        },
+        {
+          "identity": "aux.gaussian-nll",
+          "operator": "GaussianNLL",
+          "weight": 1,
+          "roles": {
+            "locationEstimate": "Location",
+            "observedLocation": "Location",
+            "scale": "sharedScale"
+          }
+        },
+        {
+          "identity": "aux.risk-adjusted",
+          "operator": "RiskAdjustedExpectedValue",
+          "weight": 1,
+          "roles": {
+            "positiveOutcomeProbability": "PositiveOutcome",
+            "negativeOutcomeProbability": "NegativeOutcome",
+            "uncertaintyScale": "sharedScale"
+          },
+          "parameters": {
+            "riskPenalty": 0.1
+          }
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 24,
+      "encoderLayerCount": 2,
+      "dropoutProbability": 0.1,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "relaxed"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "shared-scale-risk",
+      "inputs": {
+        "locationEstimate": 0.1,
+        "observedLocation": 0.2,
+        "positiveOutcomeProbability": 0.75,
+        "negativeOutcomeProbability": 0.25,
+        "sharedScale": 0.2
+      },
+      "outputs": {
+        "expectedValueLoss": -0.5,
+        "gaussianNllLoss": -1.4844285375122248,
+        "riskAdjustedExpectedValueLoss": -0.49
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "370ebf29951d1eda76b1fa9eacc46f72ff7a1f9779c223c7323369e2e3f668a6",
+    "objectiveSha256": "67c7b06a691280bea532c6f0adb5ee06f6e3998ca531eb062bee96a25a8bae07"
+  }
+}

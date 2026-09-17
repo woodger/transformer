@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v3/objective.schema.json",
+  "title": "Objective v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directComponents"],
+  "properties": {
+    "resources": {
+      "type": "array",
+      "items": {"$ref": "common.schema.json#/$defs/resourceDeclaration"}
+    },
+    "directComponents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/directComponent"}
+    },
+    "auxiliaryComponents": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/auxiliaryComponent"}
+    }
+  },
+  "$defs": {
+    "componentBase": {
+      "type": "object",
+      "required": ["identity", "operator", "weight"],
+      "properties": {
+        "identity": {"$ref": "common.schema.json#/$defs/identity"},
+        "weight": {"$ref": "common.schema.json#/$defs/positiveNumber"}
+      }
+    },
+    "smoothL1": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetIdentity"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "SmoothL1"},
+            "weight": true,
+            "targetIdentity": {
+              "$ref": "common.schema.json#/$defs/identity"
+            }
+          }
+        }
+      ]
+    },
+    "binaryCrossEntropy": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetIdentity"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "BinaryCrossEntropyWithLogits"},
+            "weight": true,
+            "targetIdentity": {
+              "$ref": "common.schema.json#/$defs/identity"
+            }
+          }
+        }
+      ]
+    },
+    "logMse": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetIdentity"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "LogMSE"},
+            "weight": true,
+            "targetIdentity": {
+              "$ref": "common.schema.json#/$defs/identity"
+            }
+          }
+        }
+      ]
+    },
+    "directComponent": {
+      "oneOf": [
+        {"$ref": "#/$defs/smoothL1"},
+        {"$ref": "#/$defs/binaryCrossEntropy"},
+        {"$ref": "#/$defs/logMse"}
+      ]
+    },
+    "gaussianNll": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roles"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "GaussianNLL"},
+            "weight": true,
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["locationEstimate", "observedLocation", "scale"],
+              "properties": {
+                "locationEstimate": {"$ref": "common.schema.json#/$defs/identity"},
+                "observedLocation": {"$ref": "common.schema.json#/$defs/identity"},
+                "scale": {"$ref": "common.schema.json#/$defs/identity"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "expectedValue": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roles"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "ExpectedValue"},
+            "weight": true,
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["positiveOutcomeProbability", "negativeOutcomeProbability"],
+              "properties": {
+                "positiveOutcomeProbability": {"$ref": "common.schema.json#/$defs/identity"},
+                "negativeOutcomeProbability": {"$ref": "common.schema.json#/$defs/identity"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "riskAdjustedExpectedValue": {
+      "allOf": [
+        {"$ref": "#/$defs/componentBase"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roles", "parameters"],
+          "properties": {
+            "identity": true,
+            "operator": {"const": "RiskAdjustedExpectedValue"},
+            "weight": true,
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["positiveOutcomeProbability", "negativeOutcomeProbability", "uncertaintyScale"],
+              "properties": {
+                "positiveOutcomeProbability": {"$ref": "common.schema.json#/$defs/identity"},
+                "negativeOutcomeProbability": {"$ref": "common.schema.json#/$defs/identity"},
+                "uncertaintyScale": {"$ref": "common.schema.json#/$defs/identity"}
+              }
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["riskPenalty"],
+              "properties": {
+                "riskPenalty": {"$ref": "common.schema.json#/$defs/positiveNumber"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "auxiliaryComponent": {
+      "oneOf": [
+        {"$ref": "#/$defs/gaussianNll"},
+        {"$ref": "#/$defs/expectedValue"},
+        {"$ref": "#/$defs/riskAdjustedExpectedValue"}
+      ]
+    }
+  }
+}

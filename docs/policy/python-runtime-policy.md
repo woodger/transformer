@@ -1,6 +1,6 @@
 # Политика Python runtime и виртуальных окружений
 
-> Type: Policy. Этот документ задаёт ownership base interpreter, project
+> Тип: политика. Этот документ задаёт ownership base interpreter, project
 > virtual environment и Python package installation.
 
 ## Граница ответственности

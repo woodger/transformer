@@ -1,6 +1,6 @@
 # Политика скриптов и точек запуска
 
-> Type: Policy. Этот документ защищает CLI entrypoint, runtime wiring,
+> Тип: политика. Этот документ защищает CLI entrypoint, runtime wiring,
 > subprocess protocol и операторские команды.
 
 Проект не имеет отдельного build step. Основная точка запуска:
@@ -13,8 +13,8 @@
 нормативно определены в [Политике Python runtime и виртуальных окружений](./python-runtime-policy.md).
 
 `app/main.py` выполняет dispatch и лениво подключает command-specific
-dependencies. CLI schema и help находятся в `app/cli/`, handlers — в
-`app/local/`, а process-specific roots — в `app/service/bootstrap/`,
+dependencies. CLI schema и help находятся в `app/cli/`, а process-specific
+roots — в `app/service/bootstrap/`,
 `app/worker/bootstrap/` и `app/admin/bootstrap/`.
 
 ## Что считается контрактом

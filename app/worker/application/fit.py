@@ -9,14 +9,15 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12 import (
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
-from app.contracts.worker.v12.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,
@@ -64,8 +65,10 @@ def execute_fit(
     input_stream: DurableInputStream,
     emitter: WorkerEventEmitter,
 ) -> JsonObject:
-    model_contract = _validated_model_contract(manifest)
-    model_config = ModelConfig.from_manifest(model_contract.model_config)
+    model_config = ModelConfig.from_manifest(
+        object_field(manifest, "modelConfig")
+    )
+    model_contract = _validated_model_contract(manifest, model_config)
     train_config = TrainConfig.from_dict(object_field(manifest, "training"))
     if train_config is None:
         raise ValueError("fit training configuration is unavailable")
@@ -74,8 +77,9 @@ def execute_fit(
     )
     train_config = replace(train_config, diagnostics=diagnostics)
     configure_reproducibility(train_config.seed, train_config.deterministic)
-    device = get_device(string_field(object_field(manifest, "device"), "kind"))
-    data_contract = object_field(manifest, "dataContract")
+    device = get_device(
+        string_field(object_field(manifest, "device"), "backend")
+    )
     source_encoding = object_field(manifest, "sourceEncoding")
     committed_inputs = CommittedInputArtifacts()
 
@@ -125,8 +129,11 @@ def execute_fit(
         model,
         device,
         model_config,
-        data_contract=data_contract,
         model_contract=model_contract,
+        model_definition_sha256=string_field(
+            object_field(manifest, "semanticDigests"),
+            "modelDefinitionSha256",
+        ),
         initialization=initialization,
     )
     if parent_checkpoint is not None:
@@ -236,13 +243,18 @@ def execute_fit(
     return result
 
 
-def _validated_model_contract(manifest: JsonObject) -> ModelContract:
+def _validated_model_contract(
+    manifest: JsonObject,
+    model_config: ModelConfig,
+) -> ModelContract:
     model_contract = ModelContract.from_document(
         object_field(manifest, "modelContract")
     )
     data_contract = object_field(manifest, "dataContract")
-    digests = model_contract.digests(
-        string_field(data_contract, "dataContractSha256")
+    digests = resolved_semantic_digests(
+        model_contract,
+        string_field(data_contract, "dataContractSha256"),
+        model_config,
     )
     if digests != object_field(manifest, "semanticDigests"):
         raise ValueError("worker semantic digests do not match modelContract")
@@ -255,11 +267,11 @@ def _load_initialization(
     model_contract: ModelContract,
 ) -> tuple[JsonObject, dict[str, object] | None]:
     initialization = object_field(manifest, "initialization")
-    kind = string_field(initialization, "kind")
-    if kind == "random":
-        return {"kind": "random"}, None
-    if kind != "publishedModel":
-        raise ValueError("fit initialization kind is invalid")
+    source = string_field(initialization, "source")
+    if source == "random":
+        return {"source": "random"}, None
+    if source != "publishedModel":
+        raise ValueError("fit initialization source is invalid")
 
     artifact = object_field(object_field(manifest, "model"), "parentCheckpoint")
     if string_field(initialization, "parentCheckpointSha256") != string_field(
@@ -358,8 +370,8 @@ def _validate_initialization_digests(
         ("targetContractSha256", "targetContractSha256"),
         ("parentObjectiveSha256", "objectiveSha256"),
         ("objectiveSha256", "objectiveSha256"),
-        ("parentModelContractSha256", "modelContractSha256"),
-        ("modelContractSha256", "modelContractSha256"),
+        ("parentModelDefinitionSha256", "modelDefinitionSha256"),
+        ("modelDefinitionSha256", "modelDefinitionSha256"),
     )
     if any(
         initialization.get(initialization_key)

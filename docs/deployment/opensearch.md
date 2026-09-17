@@ -1,160 +1,85 @@
-# Доставка и чтение training metrics в OpenSearch
+# Развёртывание training telemetry OpenSearch
 
-> Тип: руководство по развёртыванию. Настройка OpenSearch projection
-> Transformer для publisher-а и Training Telemetry Query.
+> Тип: руководство по развёртыванию. Принадлежащая provider-у projection
+> metrics v7 для Training Telemetry Query v3.
 
-Best-effort boundary и ownership telemetry описаны в
-[`политике metrics`](../policy/metrics-policy.md). Текущие schemas и templates
-находятся в
-[`app/contracts/metrics/v5`](../../app/contracts/metrics/v5/README.md) и
-[`app/contracts/metrics/fit_run/v5`](../../app/contracts/metrics/fit_run/v5/README.md).
-Публичную read-only проекцию задаёт
-[`Training Telemetry Query v1`](../../app/contracts/training_telemetry/v1/README.md).
+OpenSearch не является registry моделей и никогда не вызывается напрямую
+Inventory или Terminal. Transformer записывает projections point/run v7 и
+валидирует их до выдачи нормализованных reports telemetry.
 
-Текущее развёртывание использует доверенную локальную сеть:
+В примерах используются `OPENSEARCH_ENDPOINT` и credential file
+`OPENSEARCH_NETRC` с mode 0600. Храните его вне repository и удаляйте либо
+ротируйте согласно policy secret deployment.
 
-```text
-http://hp260g9.home:9200
-```
+## Исторический чистый переход Flight v15
 
-REST TLS отключён, OpenSearch требует существующую Basic Auth.
+Индексы metrics v6 несовместимы с runtime v15. Выполняйте это только после
+остановки всех сервисов Transformer, использующих один deployment, и после
+решения оператора, что historical telemetry можно удалить.
 
-## Подготовить templates и индексы
-
-Операцию выполняет администратор OpenSearch до включения publisher-а.
-
-```bash
-search_endpoint=http://hp260g9.home:9200
-read -r -s -p 'OpenSearch password: ' OPENSEARCH_PASSWORD
-printf '\n'
-```
-
-Обычный index и data stream не могут одновременно использовать одно имя.
-Перед clean-cut переходом остановите publisher. Текущий runtime не читает и
-не дописывает прежние `metrics-points-v4` и `metrics-runs-v4`; согласованное
-удаление historical metrics выполняется отдельно после проверки точных имён:
+Сначала проверьте точные targets:
 
 ```bash
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
-  "$search_endpoint/_cat/indices/metrics-*-v4?v"
+  --netrc-file "$OPENSEARCH_NETRC" \
+  "$OPENSEARCH_ENDPOINT/_cat/indices/metrics-*-v6?v"
+```
 
+Если output подтверждает только ожидаемые старые индексы, удалите эти явные
+имена и не используйте wildcard:
+
+```bash
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
+  --netrc-file "$OPENSEARCH_NETRC" \
   --request DELETE \
-  "$search_endpoint/metrics-points-v4,metrics-runs-v4"
+  "$OPENSEARCH_ENDPOINT/metrics-points-v6,metrics-runs-v6"
 ```
 
-Эти команды безвозвратно удаляют только два явно названных legacy index.
-Прежние templates можно удалить после переключения, но они не совпадают с
-именами v5 и не влияют на новый runtime.
+Это удаление необратимо. Оно не выполняется migration PostgreSQL 0027 или
+сервисом при запуске.
+
+## Установить templates v7 до создания индексов
 
 ```bash
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
+  --netrc-file "$OPENSEARCH_NETRC" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-points-v5" \
+  "$OPENSEARCH_ENDPOINT/_index_template/metrics-points-v7" \
   --data-binary \
-  @app/contracts/metrics/v5/opensearch/metrics-points-v5.template.json
+  @app/contracts/metrics/v7/opensearch/metrics-points-v7.template.json
 
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
+  --netrc-file "$OPENSEARCH_NETRC" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$search_endpoint/_index_template/metrics-runs-v5" \
+  "$OPENSEARCH_ENDPOINT/_index_template/metrics-runs-v7" \
   --data-binary \
-  @app/contracts/metrics/fit_run/v5/opensearch/metrics-runs-v5.template.json
+  @app/contracts/metrics/fit_run/v7/opensearch/metrics-runs-v7.template.json
 
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
-  --request PUT \
-  "$search_endpoint/metrics-points-v5"
+  --netrc-file "$OPENSEARCH_NETRC" \
+  --request PUT "$OPENSEARCH_ENDPOINT/metrics-points-v7"
 
 curl --fail --silent --show-error \
-  --user "admin:$OPENSEARCH_PASSWORD" \
-  --request PUT \
-  "$search_endpoint/metrics-runs-v5"
-
-unset OPENSEARCH_PASSWORD
+  --netrc-file "$OPENSEARCH_NETRC" \
+  --request PUT "$OPENSEARCH_ENDPOINT/metrics-runs-v7"
 ```
 
-Templates закрепляют `dynamic: strict` и `number_of_replicas: 0`. Не
-преобразуйте индексы в data streams и не назначайте им rollover alias или ISM
-rollover policy: проверка повторного `create` и `_mget` требует одного concrete
-index на каждую versioned projection. Service account Transformer
-должен иметь доступ на bulk create, `_mget` и bounded `_search` в этих двух
-индексах; administrative template/delete privileges runtime не требуются.
+Templates должны существовать до создания любого из индексов. Установка template
+не исправляет уже динамически отображённый index. Учётной записи сервиса
+Transformer нужны только доступы bulk-create, `_mget` и bounded `_search` к
+этим индексам; permissions на удаление template и index являются
+административными.
 
-Transformer публикует только projection `transformer.metrics.v5` в текущие
-versioned indices `metrics-points-v5` и `metrics-runs-v5`. Поддержки прежних
-экспериментальных артефактов, записей outbox и индексов нет.
+## Настроить и проверить
 
-## Настроить Transformer
+Настройте endpoint и credential service через secret configuration deployment.
+Не печатайте, не коммитьте и не передавайте password в command line, который
+может сохраниться в shell history. Запускайте service только после подготовки
+templates и indices.
 
-Добавьте в project `.env`:
-
-```dotenv
-OPENSEARCH_ENDPOINT=http://hp260g9.home:9200
-OPENSEARCH_USERNAME=admin
-OPENSEARCH_PASSWORD=<пароль OpenSearch>
-OPENSEARCH_DEPLOYMENT_ID=hp800g9.home
-```
-
-HTTP-профиль допускает либо отсутствие credentials, либо полную пару
-`OPENSEARCH_USERNAME`/`OPENSEARCH_PASSWORD`; CA для него не задаётся. Текущий
-deployment использует Basic Auth. `deploymentId` различает установки
-Transformer в общей платформе и участвует в semantic identity каждого point.
-
-Версия приложения и Git commit записываются в каждый artifact и point. При
-развёртывании из Git checkout commit определяется автоматически. Если каталог
-`.git` не поставляется вместе с приложением, дополнительно задайте полный
-lowercase SHA-1 развёрнутого commit:
-
-```dotenv
-TRANSFORMER_GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
-```
-
-Если ни одной `OPENSEARCH_*` переменной нет, publisher выключен, но model
-publication продолжает создавать durable artifact и outbox backlog. Частичная
-или смешанная конфигурация считается ошибкой deployment и оставляет publisher
-выключенным; service продолжает работать. Без полной конфигурации
-Training Telemetry Query возвращает structured backend-unavailable error; fit,
-predict и Model Catalog от OpenSearch не зависят.
-
-Migrations применяются отдельно по
-[`операционному руководству PostgreSQL`](../operations/database-migrations.md).
-Перед перезапуском service убедитесь, что `db migrations status` показывает
-`Pending migrations: no`, затем примените изменение `.env` перезапуском.
-
-## Проверить работу
-
-После короткого fit проверьте:
-
-- при успешном сборе telemetry run содержит
-  `telemetry/{jobId}/metrics.jsonl` и
-  `telemetry/{jobId}/run-summary.json`;
-- health показывает gauges `metricsOutboxEntries`, `metricsOutboxBytes` и
-  `metricsOutboxOldestAgeSeconds`;
-- журнал содержит `metrics.run.delivered`;
-- поиск по `runId`, `transformerJobId` или `modelRef` возвращает epoch points и
-  один terminal fit run summary;
-- повторная доставка не создаёт второй документ с тем же `_id`.
-- `transformer.training-telemetry.v1.report` для owner-visible published
-  model возвращает `available` только после проверки complete projection.
-
-Перед terminal run marker publisher ожидает refresh последней партии
-points, а затем refresh самого marker. Поэтому видимый marker
-означает, что все ранее доставленные points уже видимы query-пути.
-
-`metrics.delivery.retry_scheduled` означает временную ошибку.
-`metrics.delivery.blocked` означает schema/mapping/integrity error: такая entry
-автоматически не повторяется и удаляется после terminal retention.
-`metrics.delivery.dropped` означает исчерпание retry budget;
-`metrics.outbox.dropped` — отказ admission из-за заполненного outbox.
-
-Некорректная конфигурация отключает publisher и создаёт
-`metrics.publisher.disabled`, но не блокирует запуск сервиса. Одна entry
-повторяется не больше 288 раз и не дольше 24 часов. Admission outbox ограничен
-10 000 entries и 10 GiB; сбой или потеря telemetry не меняют fit outcome и
-model lifecycle.
+После завершённого нового fit v15 проверьте, что `metrics-runs-v7` содержит
+terminal completion marker, а `metrics-points-v7` — все ожидаемые observations
+epoch. Для поведения вызывающей системы запрашивайте публичный action Training
+Telemetry v3; не делайте имена index или mappings частью её кода.

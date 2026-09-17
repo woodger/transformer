@@ -1,8 +1,0 @@
-{
-  "code": "MODEL_CORRUPT",
-  "reason": "MODEL_CHECKPOINT_DIGEST_MISMATCH",
-  "modelRef": "mdl_11111111111111111111111111111111",
-  "expectedSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-  "actualSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-  "message": "model checkpoint digest does not match registry metadata"
-}

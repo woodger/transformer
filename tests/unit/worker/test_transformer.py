@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,
@@ -9,25 +10,27 @@ from app.worker.model.context import (
     prepare_context_input,
 )
 from app.worker.model.transformer import TransformerModel, public_predictions
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 
 def _contract(
     *,
-    seq_len: int,
-    feature_dim: int,
     mode: str = "relaxed",
 ):
-    return model_contract(
-        "multi-target-shared-resource",
-        seq_len=seq_len,
-        feature_dim=feature_dim,
-        hidden=32,
-        layers=1,
-        dropout=0.0,
-        nhead=4,
-        mode=mode,
-    )
+    document = semantic_fixture_document("multi-target-shared-resource")[
+        "modelContract"
+    ]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": 32,
+        "encoderLayerCount": 1,
+        "dropoutProbability": 0.0,
+        "attentionHeadCount": 4,
+        "missingValuePolicy": mode,
+    })
+    return ModelContract.from_document(document)
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +44,7 @@ def test_transformer_forward_shape():
     batch = 4
     seq_len = 10
     feat_dim = 8
-    contract = _contract(seq_len=seq_len, feature_dim=feat_dim)
+    contract = _contract()
 
     model = TransformerModel(
         input_dim=feat_dim,
@@ -73,7 +76,7 @@ def test_transformer_forward_shape():
     ],
 )
 def test_transformer_rejects_input_outside_tensor_contract(features, message):
-    contract = _contract(seq_len=3, feature_dim=8)
+    contract = _contract()
     model = TransformerModel(
         input_dim=8,
         seq_len=3,
@@ -89,7 +92,7 @@ def test_transformer_rejects_input_outside_tensor_contract(features, message):
 
 
 def test_transformer_rejects_invalid_attention_dimensions():
-    contract = _contract(seq_len=3, feature_dim=8)
+    contract = _contract()
     with pytest.raises(ValueError, match="divisible"):
         TransformerModel(
             input_dim=8,
@@ -103,10 +106,8 @@ def test_transformer_rejects_invalid_attention_dimensions():
 
 
 def test_transformer_input_dim_matches_context_mode():
-    relaxed_contract = _contract(seq_len=10, feature_dim=8)
+    relaxed_contract = _contract()
     strict_contract = _contract(
-        seq_len=10,
-        feature_dim=8,
         mode="strict",
     )
     relaxed = TransformerModel(
@@ -218,7 +219,7 @@ def test_relaxed_keeps_missing_flags_after_nan_to_num():
 
 
 def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
-    contract = _contract(seq_len=3, feature_dim=3)
+    contract = _contract()
     model = TransformerModel(
         input_dim=3,
         seq_len=3,
@@ -242,7 +243,7 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
 
 
 def test_public_predictions_apply_declared_slot_transformations():
-    contract = _contract(seq_len=3, feature_dim=3)
+    contract = _contract()
     output = torch.tensor([
         [-0.25, 0.0, 2.0, 3.5],
     ])
@@ -259,7 +260,7 @@ def test_public_predictions_apply_declared_slot_transformations():
 
 
 def test_public_predictions_reject_raw_overflow_before_bounded_transformation():
-    contract = _contract(seq_len=3, feature_dim=3)
+    contract = _contract()
     output = torch.full(
         (1, contract.target_width + len(contract.resource_declarations)),
         torch.finfo(torch.float32).max,

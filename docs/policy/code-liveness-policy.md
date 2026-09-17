@@ -1,6 +1,6 @@
 # Политика жизненности кода
 
-> Type: Policy. Этот документ задаёт правила deletion audit и cleanup pass.
+> Тип: политика. Этот документ задаёт правила audit удаления и cleanup pass.
 
 Файл считается живым не потому, что импортируется тестом. У него должна быть
 подтверждённая роль в runtime graph, tool graph, внешнем contract или
@@ -26,12 +26,13 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/semantic/v1/`, `app/contracts/flight/v13/`,
-  `app/contracts/model_catalog/v1/` и `app/contracts/training_telemetry/v1/`, используемые
-  внешними consumers, runtime и contract tests;
-- `app/contracts/worker/v12/` и `app/contracts/checkpoint/v6/`, используемые
+- `app/contracts/semantic/v3/`, `app/contracts/flight/v16/`,
+  `app/contracts/model_catalog/v3/`, `app/contracts/model_topology/v1/` и
+  `app/contracts/training_telemetry/v3/`,
+  используемые внешними вызывающими системами, runtime и contract tests;
+- `app/contracts/worker/v14/` и `app/contracts/checkpoint/v8/`, используемые
   service и worker processes;
-- `app/contracts/metrics/v5/` и `app/contracts/metrics/fit_run/v5/`,
+- `app/contracts/metrics/v7/` и `app/contracts/metrics/fit_run/v7/`,
   используемые telemetry publisher-ом и OpenSearch;
 - `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;
@@ -70,7 +71,8 @@ contract role.
 
 ### Placeholder
 
-Файл содержит только TODO, stub или будущую идею без runtime consumer.
+Файл содержит только TODO, stub или будущую идею без использующего runtime
+кода.
 
 Решение: перенести намерение в issue или профильную документацию либо удалить.
 Пустая архитектурная заготовка не должна жить в `app/`.

@@ -1,10 +1,10 @@
-# ADR 0029: owner-scoped Model Catalog Query
+# ADR 0029: owner-scoped запрос каталога моделей
 
-- Status: Accepted
-- Decision date: 2026-09-06
+- Статус: Принято
+- Дата решения: 2026-09-06
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -67,8 +67,8 @@ workflow.
 
 ## Текущая документация
 
-- [Model Catalog Query v1](../../app/contracts/model_catalog/v1/README.md)
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Запрос каталога моделей v2](../../app/contracts/model_catalog/v2/README.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Архитектура Transformer](../architecture.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

@@ -46,6 +46,7 @@ class _ActiveAttempt:
     job_id: str
     attempt: int
     cancel: threading.Event = field(default_factory=threading.Event)
+    explicit_cancel: threading.Event = field(default_factory=threading.Event)
 
 
 class WorkerAttemptExecutor:
@@ -79,16 +80,17 @@ class WorkerAttemptExecutor:
         self._monotonic = monotonic
         self._active_lock = threading.Lock()
         self._active: dict[str, _ActiveAttempt] = {}
-        self._pending_cancellations: set[str] = set()
+        self._pending_explicit_cancellations: set[str] = set()
         self._force_stop = threading.Event()
 
     def notify_cancel(self, job_id: str) -> None:
-        """Deliver a committed RUNNING -> CANCELLING notification."""
+        """Deliver a validated explicit cancellation to an active attempt."""
         with self._active_lock:
             active = self._active.get(job_id)
             if active is None:
-                self._pending_cancellations.add(job_id)
+                self._pending_explicit_cancellations.add(job_id)
             else:
+                active.explicit_cancel.set()
                 active.cancel.set()
 
     def notify_input(self, job_id: str) -> None:
@@ -116,8 +118,9 @@ class WorkerAttemptExecutor:
         active = _ActiveAttempt(job_id, attempt)
         with self._active_lock:
             self._active[job_id] = active
-            if job_id in self._pending_cancellations:
-                self._pending_cancellations.remove(job_id)
+            if job_id in self._pending_explicit_cancellations:
+                self._pending_explicit_cancellations.remove(job_id)
+                active.explicit_cancel.set()
                 active.cancel.set()
             if self._force_stop.is_set():
                 active.cancel.set()
@@ -142,6 +145,11 @@ class WorkerAttemptExecutor:
                     ErrorCode.CANCELLED,
                     "job cancellation was requested",
                 )
+            if active.explicit_cancel.is_set():
+                raise WorkerAttemptError(
+                    ErrorCode.CANCELLED,
+                    "job cancellation was requested",
+                )
             if self._force_stop.is_set():
                 raise WorkerAttemptError(
                     ErrorCode.EXECUTION_INTERRUPTED,
@@ -151,6 +159,11 @@ class WorkerAttemptExecutor:
                 plan = self.plan_builder.build(job, attempt)
             except AttemptExecutionError as exc:
                 raise WorkerAttemptError(exc.code, exc.message) from exc
+            if active.explicit_cancel.is_set():
+                raise WorkerAttemptError(
+                    ErrorCode.CANCELLED,
+                    "job cancellation was requested",
+                )
             try:
                 result = self.subprocess_runner.run(
                     job,
@@ -164,6 +177,11 @@ class WorkerAttemptExecutor:
                     exc.message,
                     exc.exit_code,
                 ) from exc
+            if active.explicit_cancel.is_set():
+                raise WorkerAttemptError(
+                    ErrorCode.CANCELLED,
+                    "job cancellation was requested",
+                )
             try:
                 if job.operation == "predict":
                     closed = self.ledger.get_execution_job(job_id)
@@ -239,7 +257,13 @@ class WorkerAttemptExecutor:
             else:
                 self.artifact_publisher.cleanup_unpublished(job)
                 failure = self._coerce_failure(exc)
-                if failure.code == ErrorCode.DEVICE_LOST:
+                if active.explicit_cancel.is_set():
+                    failure = WorkerAttemptError(
+                        ErrorCode.CANCELLED,
+                        "job cancellation was requested",
+                        failure.exit_code,
+                    )
+                elif failure.code == ErrorCode.DEVICE_LOST:
                     failure = self._confirm_device_loss(job, failure)
                 if failure.code == ErrorCode.GPU_OUT_OF_MEMORY:
                     self.metrics.add("gpuOutOfMemory")
@@ -301,7 +325,7 @@ class WorkerAttemptExecutor:
             with self._active_lock:
                 if self._active.get(job_id) is active:
                     self._active.pop(job_id, None)
-                    self._pending_cancellations.discard(job_id)
+                    self._pending_explicit_cancellations.discard(job_id)
             elapsed = self._monotonic() - started
             self.metrics.add("workerRunSeconds", elapsed)
             self.logger.event(

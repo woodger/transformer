@@ -1,7 +1,0 @@
-{
-  "code": "FAILED_PRECONDITION",
-  "reason": "CATALOG_CURSOR_EXPIRED",
-  "path": "/cursor",
-  "restartRequired": true,
-  "message": "catalog cursor expired; restart traversal"
-}

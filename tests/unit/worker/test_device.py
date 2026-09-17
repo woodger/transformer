@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v14_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,9 +27,9 @@ def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 12,
-        "checkpointFormat": "transformer-checkpoint-v6",
-        "recoveryFormat": "transformer-recovery-v6",
+        "protocolVersion": 14,
+        "checkpointFormat": "transformer-checkpoint-v8",
+        "recoveryFormat": "transformer-recovery-v8",
         "schemaIds": {
             "fitInput": "transformer.indexed-feature-blocks.fit.v1",
             "predictInput": "transformer.indexed-feature-blocks.predict.v1",
@@ -37,37 +37,19 @@ def test_worker_capabilities_follow_the_v12_contract(monkeypatch):
         },
         "semantic": {
             "objectiveLanguage": {
-                "revision": 1,
-                "constraints": ["ClosedInterval", "Finite"],
-                "transformations": ["Identity", "Sigmoid", "Tanh"],
-                "resourceKinds": ["PositiveScalarPerObservation"],
-                "directOperators": [
-                    "BinaryCrossEntropyWithLogits",
-                    "LogMSE",
-                    "SmoothL1",
-                ],
-                "auxiliaryOperators": [
-                    "ExpectedValue",
-                    "GaussianNLL",
-                    "RiskAdjustedExpectedValue",
-                ],
-                "aggregations": ["WeightedSum"],
-                "reductions": ["GlobalRowMean"],
+                "revision": 3,
+                "closed": True,
             },
             "semanticLimits": {
                 "maxTargetSlots": 128,
                 "maxObjectiveComponents": 256,
                 "maxPrivateResources": 64,
             },
-            "modelArchitectures": [{
-                "identity": "transformer.sequence-model",
-                "revision": 1,
-            }],
         },
         "torchVersion": "2.12.0+test",
         "cudaRuntimeVersion": "13.0",
         "devices": [{
-            "kind": "cpu",
+            "backend": "cpu",
             "opaqueId": "cpu",
             "name": "CPU",
         }],
@@ -95,7 +77,7 @@ def test_cli_version(capsys, monkeypatch, option):
     assert output == f"{version_text('transformer')}\n"
 
 
-def test_cli_help(capsys, monkeypatch):
+def test_cli_help_exposes_only_current_service_commands(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["transformer", "--help"])
 
     with pytest.raises(SystemExit) as exc:
@@ -103,76 +85,7 @@ def test_cli_help(capsys, monkeypatch):
     assert exc.value.code == 0
 
     output = capsys.readouterr().out
-    assert output == f"""transformer {__version__}
-
-Usage:
-  transformer <command> [args] [options]
-  transformer <command> --help
-  transformer --help
-  transformer --version
-
-Global options:
-  --help, -h       Show help and exit
-  --version, -v    Show package version and exit
-
-Commands:
-
-Flight:
-  flight serve                    Run the durable Arrow Flight job service.
-
-Access:
-  auth tokens issue               Issue a local API access token
-  auth tokens list                List API access token metadata
-  auth tokens revoke <token-id>   Revoke an API access token
-
-Models:
-  models list                     List published model generations
-  models delete <model-ref>       Delete one model generation
-
-Training and inference:
-  fit                             Train from an Arrow file.
-  predict                         Predict from an Arrow file.
-  fit-stream                      Train from framed stdin.
-  predict-stream                  Predict from framed stdin.
-
-Diagnostics:
-  gmark                           Stress one CUDA GPU with synthetic training.
-
-Metrics:
-  plot-metrics                    Render SVG charts from metrics JSONL.
-
-Database:
-  db migrations status            Read-only schema migration state
-  db migrations apply             Apply pending schema migrations
-  db migrations rollback          Revert the latest schema migration
-
-Command details:
-  transformer <command> --help
-"""
-
-
-def test_cli_use_amp(monkeypatch):
-    monkeypatch.setattr(sys, "argv", [
-        "main.py",
-        "fit-stream",
-        "--model-contract=contract.json",
-        "--use-amp",
-    ])
-
-    args = parse_args()
-
-    assert args.use_amp is True
-
-
-def test_cli_rejects_removed_loss_schedule_args(monkeypatch):
-    monkeypatch.setattr(sys, "argv", [
-        "main.py",
-        "fit-stream",
-        "--seq-len=12",
-        "--loss-stage=4",
-        "--loss-schedule=step",
-        "--stage-size=100",
-    ])
-
-    with pytest.raises(SystemExit):
-        parse_args()
+    assert output.startswith(f"transformer {__version__}\n")
+    assert "flight serve" in output
+    assert "fit-stream" not in output
+    assert "predict-stream" not in output

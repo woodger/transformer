@@ -1,0 +1,57 @@
+{
+  "fixtureId": "semantic.single-regression.v3",
+  "tensorGeometry": {"seqLen": 10, "featureDim": 64848},
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "MeanReturn",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Tanh",
+          "publicPredictionTransformation": "Tanh"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.mean-return",
+          "operator": "SmoothL1",
+          "weight": 1,
+          "targetIdentity": "MeanReturn"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 256,
+      "encoderLayerCount": 5,
+      "dropoutProbability": 0.1,
+      "attentionHeadCount": 8,
+      "missingValuePolicy": "relaxed"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "tanh-smooth-l1",
+      "inputs": {
+        "rawCoordinate": 0.5,
+        "observed": 0.25
+      },
+      "outputs": {
+        "lossEstimate": 0.46211715726000974,
+        "publicPrediction": 0.46211715726000974,
+        "componentLoss": 0.02249684420203385
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "ce69ef92937096abc418f1007c626965cbfd9008ba3bcb2bfcd7ce1a7bb334ea",
+    "objectiveSha256": "8d6aa8b90a8deb4870dfd169c48b0f734c58462e32b75a2401ae4a8c9eabb29c"
+  }
+}

@@ -6,7 +6,9 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.worker.v12.config import CheckpointSelectionConfig
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import CheckpointSelectionConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -17,24 +19,47 @@ from app.worker.checkpoints.recovery import (
 from app.worker.data.tensors import TrainingBatch
 from app.worker.training.run_config import ModelConfig, TrainConfig
 from app.worker.training.trainer import Trainer
-from tests.support.consumer_neutral import data_contract, model_contract
+from tests.fixture_documents import semantic_fixture_document
 
 CONFIG_HASH = "a" * 64
 MANIFEST_HASH = "b" * 64
-MODEL_CONTRACT = model_contract(
+_MODEL_CONTRACT_DOCUMENT = semantic_fixture_document(
     "multi-target-shared-resource",
-    seq_len=2,
-    feature_dim=2,
-    hidden=8,
-    layers=1,
-    dropout=0.2,
-    nhead=2,
-    mode="relaxed",
-)
+)["modelContract"]
+assert isinstance(_MODEL_CONTRACT_DOCUMENT, dict)
+_MODEL_TUNING = _MODEL_CONTRACT_DOCUMENT["modelTuning"]
+assert isinstance(_MODEL_TUNING, dict)
+_MODEL_TUNING.update({
+    "hiddenWidth": 8,
+    "encoderLayerCount": 1,
+    "dropoutProbability": 0.2,
+    "attentionHeadCount": 2,
+    "missingValuePolicy": "relaxed",
+})
+MODEL_CONTRACT = ModelContract.from_document(_MODEL_CONTRACT_DOCUMENT)
 
 
 class InjectedInterruption(Exception):
     pass
+
+
+def _model_config() -> ModelConfig:
+    return ModelConfig(
+        seq_len=2,
+        hidden=8,
+        layers=1,
+        dropout=0.2,
+        nhead=2,
+        feature_dim=2,
+    )
+
+
+def _semantic_digests() -> dict:
+    return resolved_semantic_digests(
+        MODEL_CONTRACT,
+        "d" * 64,
+        _model_config(),
+    )
 
 
 def _model() -> nn.Module:
@@ -58,14 +83,7 @@ def _model() -> nn.Module:
 def _trainer(initial_state: dict) -> Trainer:
     model = _model()
     model.load_state_dict(initial_state)
-    model_config = ModelConfig(
-        seq_len=2,
-        hidden=8,
-        layers=1,
-        dropout=0.2,
-        nhead=2,
-        feature_dim=2,
-    )
+    model_config = _model_config()
     train_config = TrainConfig(
         lr=0.001,
         batch_size=3,
@@ -80,17 +98,23 @@ def _trainer(initial_state: dict) -> Trainer:
         train_config=train_config,
         model_contract=MODEL_CONTRACT,
         model_config=model_config,
-        data_contract=data_contract(MODEL_CONTRACT),
-        initialization={"kind": "random"},
+        model_definition_sha256=_semantic_digests()[
+            "modelDefinitionSha256"
+        ],
+        initialization={"source": "random"},
     )
 
 
 def _manifest() -> dict:
     return {
         "jobId": "11111111-1111-4111-8111-111111111111",
-        "dataContract": data_contract(MODEL_CONTRACT),
+        "dataContract": {
+            "dataContractSha256": "d" * 64,
+            "seqLen": 2,
+            "featureDim": 2,
+        },
         "modelContract": MODEL_CONTRACT.to_document(),
-        "semanticDigests": MODEL_CONTRACT.digests("d" * 64),
+        "semanticDigests": _semantic_digests(),
         "jobConfigSha256": CONFIG_HASH,
         "manifestSha256": MANIFEST_HASH,
     }

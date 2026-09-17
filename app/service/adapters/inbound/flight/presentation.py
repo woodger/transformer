@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.model_catalog.v1 import CONTRACT_NAME, CONTRACT_REVISION
+from app.contracts.json_types import JsonObject
+from app.contracts.semantic.v3 import ModelContract
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
-    FIT_SCHEMA_ID,
-    PREDICT_SCHEMA_ID,
 )
 from app.service.adapters.inbound.flight.devices import device_to_api
 from app.service.adapters.inbound.flight.documents import (
-    data_contract_to_api,
     response_document,
 )
 from app.service.adapters.inbound.flight.model_catalog import (
     model_detail,
     model_summary,
+)
+from app.service.adapters.inbound.flight.mutation_lease import (
+    encode_mutation_lease,
 )
 from app.service.application.messages.jobs import (
     InputClosed,
@@ -35,43 +35,27 @@ from app.service.application.messages.model_catalog import (
 from app.service.domain.job import TERMINAL_EXECUTION_STATES, ExecutionState
 from app.service.domain.records import (
     JobRecord,
-    StatusRecoveryRecord,
 )
 
 
 def present_job_created(result: JobCreated) -> JsonObject:
-    return response_document(
-        result.request_id,
-        jobId=result.job_id,
-        operation=result.operation,
-        revision=result.revision,
-        input={
+    common = {
+        "jobId": result.job_id,
+        "mutationLease": encode_mutation_lease(
+            result.client_execution_id,
+            result.fencing_token,
+        ),
+        "input": {
             "state": result.input_state.value,
             "revision": result.input_revision,
             "nextOrdinal": result.next_input_ordinal,
         },
-        execution={"state": result.execution_state.value},
-        ownership={
-            "clientExecutionId": result.client_execution_id,
-            "fencingToken": str(result.fencing_token),
-        },
-        device={
+        "execution": {"state": result.execution_state.value},
+        "device": {
             "requested": device_to_api(result.requested_device),
             "selected": device_to_api(result.selected_device),
         },
-        initialization=result.initialization,
-        resolvedModelRef=(
-            result.resolved_model_ref
-            if result.operation == "predict"
-            else None
-        ),
-        sourceEncoding=dict(result.source_encoding),
-        dataContract=data_contract_to_api(result.data_contract),
-        modelContract=dict(result.model_contract),
-        semanticDigests=dict(result.semantic_digests),
-        jobConfigSha256=result.job_config_sha256,
-        limits=limits_to_api(result.limits),
-        upload={
+        "upload": {
             "descriptorPath": [
                 "transformer",
                 CONTRACT_PATH_VERSION,
@@ -80,12 +64,49 @@ def present_job_created(result: JobCreated) -> JsonObject:
                 "inputs",
                 "{ordinal}",
             ],
-            "schemaId": (
-                FIT_SCHEMA_ID
-                if result.operation == "fit"
-                else PREDICT_SCHEMA_ID
-            ),
             "oneDoPutIsOnePhysicalPayload": True,
+        },
+        "limits": limits_to_api(result.limits),
+    }
+    if result.operation == "fit":
+        return response_document(
+            result.request_id,
+            **common,
+            resolvedDefinition={
+                "dataBinding": _data_binding_to_api(
+                    result.data_contract,
+                    result.source_encoding,
+                ),
+                "modelContract": dict(result.model_contract),
+                "semanticDigests": dict(result.semantic_digests),
+                "requestedInitialization": _requested_initialization(
+                    result.initialization,
+                ),
+            },
+        )
+    if result.resolved_model_ref is None:
+        raise ValueError("predict job is missing its resolved model reference")
+    model_contract = ModelContract.from_document(result.model_contract)
+    targets: list[JsonObject] = []
+    for slot in model_contract.target_slots:
+        identity = slot["identity"]
+        transformation = slot["publicPredictionTransformation"]
+        if not isinstance(identity, str) or not isinstance(transformation, str):
+            raise ValueError("model target slots are invalid")
+        targets.append(
+            {
+                "identity": identity,
+                "publicPredictionTransformation": transformation,
+            },
+        )
+    return response_document(
+        result.request_id,
+        **common,
+        modelRef=result.resolved_model_ref,
+        predictionDefinition={
+            "seqLen": result.data_contract["seqLen"],
+            "outputWidth": model_contract.target_width,
+            "targets": targets,
         },
     )
 
@@ -95,10 +116,10 @@ def present_job_acquired(result: JobAcquired) -> JsonObject:
         result.request_id,
         jobId=result.job_id,
         revision=result.revision,
-        ownership={
-            "clientExecutionId": result.client_execution_id,
-            "fencingToken": str(result.fencing_token),
-        },
+        mutationLease=encode_mutation_lease(
+            result.client_execution_id,
+            result.fencing_token,
+        ),
     )
 
 
@@ -109,13 +130,8 @@ def present_input_closed(result: InputClosed) -> JsonObject:
         revision=result.revision,
         input={
             "state": result.input_state.value,
-            "revision": result.input_revision,
             "payloadCount": result.payload_count,
-            "totalChunks": result.total_chunks,
-            "totalLogicalRows": result.total_rows,
-            "totalNativeRows": list(result.total_native_rows),
-            "rangeCount": result.range_count,
-            "totalBytes": result.total_bytes,
+            "logicalRows": result.total_rows,
             "manifestSha256": result.manifest_sha256,
         },
         execution={"state": result.execution_state.value},
@@ -152,43 +168,23 @@ def present_job_status(result: JobStatusResult) -> JsonObject:
             "revision": job.input_revision,
             "nextOrdinal": job.next_input_ordinal,
             "payloadCount": job.payload_count,
-            "totalChunks": job.total_chunks,
-            "totalLogicalRows": job.total_rows,
-            "totalNativeRows": list(job.total_native_rows),
-            "rangeCount": job.range_count,
-            "totalBytes": job.total_bytes,
+            "logicalRows": job.total_rows,
             "manifestSha256": job.manifest_sha256,
         },
         execution={
             "state": job.execution_state.value,
             "attempt": job.attempt,
         },
-        ownership={
-            "clientExecutionId": job.client_execution_id,
-            "fencingToken": str(job.fencing_token),
-        },
         timestamps=_timestamps(job),
         device={
             "requested": device_to_api(job.requested_device),
             "selected": device_to_api(job.selected_device),
         },
-        sourceEncoding=dict(job.source_encoding),
-        dataContract=data_contract_to_api(job.data_contract),
-        modelContract=dict(job.model_contract),
-        semanticDigests=dict(job.semantic_digests),
-        jobConfigSha256=job.config_hash,
-        initialization=job.initialization,
-        resolvedModelRef=(
-            job.resolved_model_ref if job.operation == "predict" else None
-        ),
-        predictionColumn=job.prediction_column,
         progress=job.progress,
-        recovery=_safe_recovery(snapshot.recovery),
         error=error,
         results={
             "outputCount": snapshot.output_count,
             "modelRef": durable_result.get("modelRef"),
-            "checkpoint": _checkpoint_to_api(durable_result),
         },
         pollAfterMs=0 if terminal else 500,
     )
@@ -206,8 +202,6 @@ def present_job_inputs(result: JobInputsPage) -> JsonObject:
                 "payloadId": item.payload_id,
                 "ordinal": item.ordinal,
                 "commitRevision": item.commit_revision,
-                "schemaId": item.schema_id,
-                "dataContractSha256": item.data_contract_sha256,
                 "chunks": item.chunks,
                 "logicalRows": item.rows,
                 "nativeRows": list(item.native_rows),
@@ -243,7 +237,7 @@ def present_job_outputs(result: JobOutputsPage) -> JsonObject:
                     "outputs",
                     str(item.ordinal),
                 ],
-                "rows": item.rows,
+                "logicalRows": item.rows,
                 "bytes": item.byte_count,
                 "sha256": item.sha256,
             }
@@ -256,8 +250,6 @@ def present_job_outputs(result: JobOutputsPage) -> JsonObject:
 
 def present_catalog_models_page(result: CatalogModelsPage) -> JsonObject:
     return {
-        "contract": CONTRACT_NAME,
-        "revision": CONTRACT_REVISION,
         "requestId": result.request_id,
         "models": [model_summary(model) for model in result.models],
         "nextCursor": result.next_cursor,
@@ -267,8 +259,6 @@ def present_catalog_models_page(result: CatalogModelsPage) -> JsonObject:
 
 def present_catalog_model_detail(result: CatalogModelDetail) -> JsonObject:
     return {
-        "contract": CONTRACT_NAME,
-        "revision": CONTRACT_REVISION,
         "requestId": result.request_id,
         "model": model_detail(result.model),
     }
@@ -276,25 +266,40 @@ def present_catalog_model_detail(result: CatalogModelDetail) -> JsonObject:
 
 def limits_to_api(limits: ServiceLimits) -> JsonObject:
     return {
-        "maxMessageBytes": limits.max_message_bytes,
-        "targetBatchBytes": limits.target_batch_bytes,
-        "maxBatchBytes": limits.max_batch_bytes,
         "maxPayloadBytes": limits.max_payload_bytes,
         "maxRowsPerPayload": limits.max_rows_per_payload,
         "maxPayloadsPerJob": limits.max_payloads_per_job,
         "maxJobBytes": limits.max_job_bytes,
-        "maxActiveJobsPerSubject": limits.max_active_jobs_per_subject,
-        "maxPageItems": limits.max_page_items,
         "inputIdleTimeoutSeconds": limits.input_idle_timeout_seconds,
-        "transportMessageLimitEnforced": False,
     }
 
 
-def _checkpoint_to_api(
-    result: JsonObject,
-) -> JsonValue:
-    value = result.get("checkpoint")
-    return value
+def _data_binding_to_api(
+    data_contract: JsonObject,
+    input_layout: JsonObject,
+) -> JsonObject:
+    return {
+        "dataContractSha256": data_contract["dataContractSha256"],
+        "tensorGeometry": {
+            "seqLen": data_contract["seqLen"],
+            "featureDim": data_contract["featureDim"],
+        },
+        "inputLayout": dict(input_layout),
+    }
+
+
+def _requested_initialization(
+    initialization: JsonObject | None,
+) -> JsonObject:
+    if initialization is None or initialization.get("source") == "random":
+        return {"source": "random"}
+    parent_model_ref = initialization.get("parentModelRef")
+    if not isinstance(parent_model_ref, str):
+        raise ValueError("published-model initialization is invalid")
+    return {
+        "source": "publishedModel",
+        "modelRef": parent_model_ref,
+    }
 
 
 def _error_to_api(code: str | None, message: str | None) -> JsonObject:
@@ -312,30 +317,6 @@ def _error_to_api(code: str | None, message: str | None) -> JsonObject:
         else:
             message = "GPU execution failed"
     return {"code": code, "message": message, "detail": None}
-
-
-def _safe_recovery(
-    recovery: StatusRecoveryRecord | None,
-) -> JsonObject | None:
-    if recovery is None:
-        return None
-    checkpoint = recovery.checkpoint
-    return {
-        "latestCheckpoint": (
-            None
-            if checkpoint is None
-            else {
-                "generation": checkpoint.generation,
-                "completedEpochs": checkpoint.completed_epochs,
-                "globalStep": checkpoint.global_step,
-                "trainingComplete": checkpoint.training_complete,
-            }
-        ),
-        "resumedFromGeneration": recovery.resumed_from_generation,
-        "retryCount": recovery.retry_count,
-        "lastRetryCode": recovery.last_retry_code,
-        "boundary": "globalEpoch",
-    }
 
 
 def _timestamps(job: JobRecord) -> JsonObject:

@@ -6,10 +6,6 @@ import pyarrow as pa
 
 from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
-from app.service.adapters.inbound.flight.constants import (
-    CONTRACT_NAME,
-    CONTRACT_VERSION,
-)
 from app.service.adapters.inbound.flight.descriptors import parse_input_descriptor
 from app.service.adapters.inbound.flight.documents import encode_document
 from app.service.adapters.inbound.flight.upload_session import (
@@ -113,8 +109,6 @@ class UploadHandler:
 
 def _put_result(record: CommittedInput) -> JsonObject:
     return {
-        "contract": CONTRACT_NAME,
-        "version": CONTRACT_VERSION,
         "jobId": record.job_id,
         "payloadId": record.payload_id,
         "ordinal": record.ordinal,

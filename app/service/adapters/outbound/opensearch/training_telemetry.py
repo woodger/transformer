@@ -7,11 +7,11 @@ from typing import Protocol, cast
 import rfc8785
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.metrics.fit_run.v5 import (
+from app.contracts.metrics.fit_run.v7 import (
     RUN_INDEX,
     validate_run_document,
 )
-from app.contracts.metrics.v5 import POINT_INDEX, validate_point_document
+from app.contracts.metrics.v7 import POINT_INDEX, validate_point_document
 from app.service.application.messages.training_telemetry import (
     ProjectedTrainingTelemetry,
 )
@@ -171,7 +171,7 @@ class OpenSearchTrainingTelemetrySource:
         epoch: int | None = None,
     ) -> tuple[JsonObject, ...]:
         filters: list[JsonObject] = [
-            {"term": {"schema": "transformer.metrics-point.v5"}},
+            {"term": {"schema": "transformer.metrics-point.v7"}},
             {"term": {"deploymentId": self._deployment_id}},
             {"term": {"runId": producing_run_id}},
             {"term": {"modelRef": model_ref}},
@@ -265,7 +265,7 @@ def _run_document_id(
 ) -> str:
     return hashlib.sha256(
         rfc8785.dumps([
-            "transformer.metrics-fit-run.v5",
+            "transformer.metrics-fit-run.v7",
             deployment_id,
             run_id,
             model_ref,

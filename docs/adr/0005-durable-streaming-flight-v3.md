@@ -1,10 +1,10 @@
-# ADR 0005: durable streaming lifecycle и fencing
+# ADR 0005: надёжный streaming lifecycle и fencing
 
-- Status: Accepted
-- Decision date: 2026-08-10
+- Статус: Принято
+- Дата решения: 2026-08-10
 
-> Historical decision record; not a current system reference. See
-> [ADR index](index.md).
+> Историческая запись решения; не является актуальным описанием системы. См.
+> [указатель ADR](index.md).
 
 ## Контекст
 
@@ -59,7 +59,7 @@ lifecycle boundary.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v13](../../app/contracts/flight/v13/README.md)
-- [Интеграция Consumer-ов](../consumer-flight-integration.md)
+- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Интеграция с Flight](../flight-integration.md)
 - [Операционное руководство Flight](../operations/flight-service.md)
-- [Training runtime](../training-runtime.md)
+- [Runtime обучения](../training-runtime.md)

@@ -7,7 +7,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v1 import ModelContract
+from app.contracts.semantic.v3 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -169,12 +169,7 @@ def combined_loss(
         slot = model_contract.target_slots[index]
         estimate = apply_transformation(
             model_output[:, index],
-            str(
-                cast(
-                    Mapping[str, object],
-                    slot["lossInputTransformation"],
-                )["kind"]
-            ),
+            cast(str, slot["lossInputTransformation"]),
         )
         direct = _direct_loss(
             operator,
@@ -273,13 +268,9 @@ def _auxiliary_loss(
         ]
         estimate = apply_transformation(
             model_output[:, index],
-            str(
-                cast(
-                    Mapping[str, object],
-                    model_contract.target_slots[index][
-                        "lossInputTransformation"
-                    ],
-                )["kind"]
+            cast(
+                str,
+                model_contract.target_slots[index]["lossInputTransformation"],
             ),
         )
         variance = scale.square() + 1e-6
@@ -321,13 +312,15 @@ def _auxiliary_loss(
 
 
 def _target_index(value: object, indices: Mapping[str, int]) -> int:
-    reference = cast(Mapping[str, object], value)
-    return indices[str(reference["identity"])]
+    if not isinstance(value, str):
+        raise ValueError("target role must be an opaque target identity")
+    return indices[value]
 
 
 def _resource_index(value: object, indices: Mapping[str, int]) -> int:
-    reference = cast(Mapping[str, object], value)
-    return indices[str(reference["identity"])]
+    if not isinstance(value, str):
+        raise ValueError("resource role must be an opaque resource identity")
+    return indices[value]
 
 
 def _number(value: object, label: str) -> float:

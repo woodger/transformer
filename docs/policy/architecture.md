@@ -20,9 +20,9 @@ resources.
 Внутри Flight service:
 
 - domain не зависит от application, adapters или bootstrap;
-- application зависит только от domain и внутренних process/metrics contracts;
-- application не зависит от adapters, bootstrap или публичного Flight
-  contract;
+- application зависит от domain, внутренних process/metrics contracts и pure
+  physical-input validation активного Flight contract;
+- application не зависит от adapters, bootstrap или Flight transport adapter;
 - adapters зависят от application/domain, но inbound и outbound adapters не
   импортируют друг друга;
 - service domain и общий PostgreSQL ledger не содержат telemetry records или
@@ -35,9 +35,7 @@ resources.
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
 - service/worker обмениваются данными только через
-  `app/contracts/worker/v12`;
-- local CLI может напрямую использовать worker-код, потому что это один
-  локальный execution path, а не Flight service boundary.
+  `app/contracts/worker/v14`.
 
 Import graph не содержит циклов. Environment, connections, CUDA
 initialization и filesystem mutation не выполняются при import. Эти правила
@@ -47,9 +45,9 @@ initialization и filesystem mutation не выполняются при import.
 ## Ports и ownership
 
 Application ports называются по возможностям, а не по технологиям. Generic
-`Repository[T]` и technology-specific port names не используются. Каждый port
-имеет текущего runtime consumer и adapter; интерфейсы без действующего
-потребителя не добавляются.
+`Repository[T]` и technology-specific port names не используются. У каждого
+port есть действующий adapter и использующий его runtime-код; интерфейсы без
+действующего использования не добавляются.
 
 PostgreSQL adapter владеет транзакциями, idempotency, row locks и mapping
 database projections. PostgreSQL-транзакция не охватывает filesystem или
@@ -78,8 +76,8 @@ validation и wiring остаются у соответствующих runtime-
 зависят от типов внешнего provider SDK или runtime library; преобразование в
 provider-owned representation выполняет infrastructure adapter на границе.
 
-Generic `app/commands` не вводится как второй владелец рядом с local CLI и
-application use cases.
+Generic `app/commands` не вводится как второй владелец рядом с application use
+cases.
 
 ## Размещение нового кода
 
@@ -104,7 +102,6 @@ application use cases.
 - model/loss/trainer/Arrow tensor/checkpoint — профильный пакет в
   `app/worker/`;
 - worker runtime observations, JSONL и plots — `app/worker/telemetry/`;
-- local file/stream command — `app/local/`;
 - wire/process schema — соответствующий versioned package в `app/contracts/`;
 - runtime wiring — composition root конкретного процесса.
 

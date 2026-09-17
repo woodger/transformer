@@ -1,6 +1,6 @@
-"""Flight v13 wire constants combined with service lifecycle values."""
+"""Flight v16 wire constants combined with service lifecycle values."""
 
-from app.contracts.flight.v13.constants import (
+from app.contracts.flight.v16.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
@@ -8,7 +8,7 @@ from app.contracts.flight.v13.constants import (
     CONTRACT_NAME,
     CONTRACT_PATH_VERSION,
     CONTRACT_VERSION,
-    CREATE_ACTION,
+    FIT_CREATE_ACTION,
     FIT_SCHEMA_ID,
     HEALTH_ACTION,
     INPUT_CLOSE_ACTION,
@@ -17,7 +17,9 @@ from app.contracts.flight.v13.constants import (
     MAX_PAYLOADS_PER_JOB,
     MODEL_CATALOG_DETAIL_ACTION,
     MODEL_CATALOG_LIST_ACTION,
+    MODEL_TOPOLOGY_DETAIL_ACTION,
     OUTPUTS_LIST_ACTION,
+    PREDICT_CREATE_ACTION,
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
@@ -40,7 +42,7 @@ __all__ = [
     "CONTRACT_NAME",
     "CONTRACT_PATH_VERSION",
     "CONTRACT_VERSION",
-    "CREATE_ACTION",
+    "FIT_CREATE_ACTION",
     "FIT_SCHEMA_ID",
     "HEALTH_ACTION",
     "INPUTS_LIST_ACTION",
@@ -49,8 +51,10 @@ __all__ = [
     "MAX_PAYLOADS_PER_JOB",
     "MODEL_CATALOG_DETAIL_ACTION",
     "MODEL_CATALOG_LIST_ACTION",
+    "MODEL_TOPOLOGY_DETAIL_ACTION",
     "OUTPUTS_LIST_ACTION",
     "PREDICTION_SCHEMA_ID",
+    "PREDICT_CREATE_ACTION",
     "PREDICT_SCHEMA_ID",
     "STATUS_ACTION",
     "SUPPORTED_OPERATIONS",

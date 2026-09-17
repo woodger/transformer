@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.indexed_feature_blocks import feature_block_dimensions
+from app.contracts.flight.v16.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -210,7 +210,7 @@ class Ledger:
             "dataContractSha256",
             "targetContractSha256",
             "objectiveSha256",
-            "modelContractSha256",
+            "modelDefinitionSha256",
         ):
             _digest(typed_semantic_digests.get(key), key)
         seq_len = _positive(
@@ -231,10 +231,10 @@ class Ledger:
             initialization = validate_initialization(initialization)
             parent_model_ref = initialization.get("parentModelRef")
             if (
-                initialization["kind"] == "random"
+                initialization["source"] == "random"
                 and resolved_model_ref is not None
             ) or (
-                initialization["kind"] == "publishedModel"
+                initialization["source"] == "publishedModel"
                 and resolved_model_ref != parent_model_ref
             ):
                 raise ValueError(
@@ -457,9 +457,10 @@ class Ledger:
         owner_subject: str,
         client_execution_id: str,
         fencing_token: int,
+        stop_active_worker: Callable[[str], None],
         now: float | None = None,
         connection: Session | None = None,
-    ) -> tuple[RowMapping, bool, tuple[tuple[str, str], ...]]:
+    ) -> tuple[RowMapping, tuple[tuple[str, str], ...]]:
         client_execution_id = _canonical_uuid(
             client_execution_id,
             "client_execution_id",
@@ -482,6 +483,9 @@ class Ledger:
                 fencing_token,
             )
             decision = decide_cancel(job.execution_state)
+            if decision.notify_worker:
+                stop_active_worker(job_id)
+
             changed = False
             if decision.abort_open_input and job.input_state == InputState.OPEN.value:
                 job.input_state = InputState.ABORTED.value
@@ -494,6 +498,13 @@ class Ledger:
                 if decision.target == ExecutionState.CANCELLED:
                     job.finished_at = cancelled_at
                 changed = True
+
+            if changed:
+                job.waiting_for_input = False
+                job.waiting_input_ordinal = None
+                job.input_waiting_since = None
+                job.acquire_grace_until = None
+
             uploads = tuple(session.scalars(
                 select(InputUpload)
                 .where(InputUpload.job_id == job_id)
@@ -508,14 +519,10 @@ class Ledger:
             if uploads:
                 changed = True
             if changed:
-                job.waiting_for_input = False
-                job.waiting_input_ordinal = None
-                job.input_waiting_since = None
-                job.acquire_grace_until = None
                 job.revision += 1
                 job.updated_at = cancelled_at
             session.flush()
-            return _decode(job), decision.notify_worker, cleanup
+            return _decode(job), cleanup
 
     def get_execution_job(
         self,
@@ -914,14 +921,9 @@ class Ledger:
         *,
         client_execution_id: str,
         fencing_token: int,
-        payload_count: int,
-        total_chunks: int,
-        total_rows: int,
-        total_native_rows: tuple[int, ...],
-        range_count: int,
-        total_bytes: int,
+        expected_logical_rows: int | None,
         manifest_sha256: str,
-        selected_device: str,
+        select_device: Callable[[str, str | None, str, int], str],
         now: float | None = None,
         connection: Session | None = None,
     ) -> tuple[RowMapping, bool]:
@@ -929,14 +931,9 @@ class Ledger:
             job_id,
             client_execution_id=client_execution_id,
             fencing_token=fencing_token,
-            payload_count=payload_count,
-            total_chunks=total_chunks,
-            total_rows=total_rows,
-            total_native_rows=total_native_rows,
-            range_count=range_count,
-            total_bytes=total_bytes,
+            expected_logical_rows=expected_logical_rows,
             expected_manifest_sha256=manifest_sha256,
-            selected_device=selected_device,
+            select_device=select_device,
             now=now,
             connection=connection,
         )
@@ -1266,19 +1263,6 @@ class Ledger:
             connection=connection,
         )
 
-    def resolve_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-    ) -> RowMapping | None:
-        return self._artifacts.resolve_model_alias(
-            owner_subject,
-            label,
-            connection=connection,
-        )
-
     def get_published_model(
         self,
         model_ref: str,
@@ -1290,21 +1274,6 @@ class Ledger:
         return self._artifacts.get_published_model(
             model_ref,
             owner_subject=owner_subject,
-            connection=connection,
-            for_update=for_update,
-        )
-
-    def resolve_published_model_alias(
-        self,
-        owner_subject: str,
-        label: str,
-        *,
-        connection: Session | None = None,
-        for_update: bool = False,
-    ) -> PublishedModelRecord | None:
-        return self._artifacts.resolve_published_model_alias(
-            owner_subject,
-            label,
             connection=connection,
             for_update=for_update,
         )
@@ -1382,12 +1351,12 @@ class Ledger:
             now=now,
         )
 
-    def reconcile_interrupted_jobs(
+    def reconcile_startup_jobs(
         self,
         *,
         now: float | None = None,
     ) -> JsonObject:
-        return self._maintenance.reconcile_interrupted_jobs(now=now)
+        return self._maintenance.reconcile_startup_jobs(now=now)
 
     def referenced_paths(self) -> set[str]:
         return self._maintenance.referenced_paths()

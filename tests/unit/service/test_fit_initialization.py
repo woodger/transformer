@@ -4,9 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v13 import job_config_sha256
-from app.contracts.semantic.v1 import ModelContract
-from app.contracts.worker.v12.config import ModelConfig, TrainConfig
+from app.contracts.flight.v16 import job_config_sha256
+from app.contracts.semantic.v3 import ModelContract
+from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v14.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -16,7 +17,33 @@ from app.service.application.ports.job_lifecycle import LifecycleMutation
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
 from app.service.domain.records import PublishedModelRecord
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
+
+
+def _single_regression_contract() -> ModelContract:
+    document = semantic_fixture_document("single-regression")["modelContract"]
+    assert isinstance(document, dict)
+    tuning = document["modelTuning"]
+    assert isinstance(tuning, dict)
+    tuning.update({
+        "hiddenWidth": 8,
+        "encoderLayerCount": 1,
+        "dropoutProbability": 0.0,
+        "attentionHeadCount": 2,
+    })
+    return ModelContract.from_document(document)
+
+
+def _semantic_digests(contract: ModelContract) -> dict:
+    return resolved_semantic_digests(
+        contract,
+        "a" * 64,
+        ModelConfig.from_tuning(
+            contract.model_tuning,
+            seq_len=2,
+            feature_dim=2,
+        ),
+    )
 
 
 def test_published_model_fit_resolves_immutable_parent_lineage():
@@ -49,7 +76,7 @@ def test_published_model_fit_resolves_immutable_parent_lineage():
     result = action.create(command)
 
     assert result.initialization == {
-        "kind": "publishedModel",
+        "source": "publishedModel",
         "parentModelRef": parent.model_ref,
         "parentCheckpointSha256": parent.sha256,
         "parentDataContractSha256": "a" * 64,
@@ -62,11 +89,11 @@ def test_published_model_fit_resolves_immutable_parent_lineage():
         ],
         "parentObjectiveSha256": parent.semantic_digests["objectiveSha256"],
         "objectiveSha256": parent.semantic_digests["objectiveSha256"],
-        "parentModelContractSha256": parent.semantic_digests[
-            "modelContractSha256"
+        "parentModelDefinitionSha256": parent.semantic_digests[
+            "modelDefinitionSha256"
         ],
-        "modelContractSha256": parent.semantic_digests[
-            "modelContractSha256"
+        "modelDefinitionSha256": parent.semantic_digests[
+            "modelDefinitionSha256"
         ],
     }
     assert result.resolved_model_ref == parent.model_ref
@@ -138,25 +165,6 @@ def test_published_model_fit_rejects_a_new_data_contract_digest():
     )
 
 
-def test_published_model_fit_treats_data_envelope_as_opaque():
-    command, parent = _published_model_command()
-    command = replace(
-        command,
-        data_contract={
-            **command.data_contract,
-            "identity": "test.opaque-envelope-renamed",
-        },
-    )
-    action, prepared, _ = _action_for_parent(parent)
-
-    result = action.create(command)
-
-    assert result.semantic_digests == parent.semantic_digests
-    assert prepared[0].result.data_contract["identity"] == (
-        "test.opaque-envelope-renamed"
-    )
-
-
 def test_predict_still_rejects_a_new_data_contract_digest():
     command, parent = _published_model_command()
     command = replace(
@@ -168,7 +176,7 @@ def test_predict_still_rejects_a_new_data_contract_digest():
             "dataContractSha256": "d" * 64,
         },
         model_label=None,
-        initialization_kind=None,
+        initialization_source=None,
     )
     action, _, _ = _action_for_parent(parent)
 
@@ -186,7 +194,7 @@ def test_published_model_fit_rejects_a_different_objective():
     changed_document = deepcopy(command.model_contract)
     changed_document["objective"]["directComponents"][0]["weight"] = 0.5
     changed_contract = ModelContract.from_document(changed_document)
-    changed_digests = changed_contract.digests("a" * 64)
+    changed_digests = _semantic_digests(changed_contract)
     command = replace(
         command,
         model_contract=changed_contract.to_document(),
@@ -230,29 +238,22 @@ def _action_for_parent(parent):
 
 def _published_model_command(
 ) -> tuple[CreateJobCommand, PublishedModelRecord]:
-    semantic_contract = model_contract(
-        "single-regression",
+    semantic_contract = _single_regression_contract()
+    model_config = ModelConfig.from_tuning(
+        semantic_contract.model_tuning,
         seq_len=2,
         feature_dim=2,
-        hidden=8,
-        layers=1,
-        dropout=0.0,
-        nhead=2,
     )
-    model_config = ModelConfig.from_manifest(semantic_contract.model_config)
     train_config = TrainConfig()
     data_contract = {
-        "identity": "test.dataset",
-        "revision": 1,
-        "profile": "test.profile",
         "dataContractSha256": "a" * 64,
         "seqLen": 2,
         "featureDim": 2,
     }
     model_contract_document = semantic_contract.to_document()
-    semantic_digests = semantic_contract.digests("a" * 64)
+    resolved_digests = _semantic_digests(semantic_contract)
     parent = PublishedModelRecord(
-        model_ref="mdl_parent",
+        model_ref="mdl_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         owner_subject="inventory",
         label="returns.daily",
         generation=1,
@@ -260,15 +261,16 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v6",
+        "format": "transformer-checkpoint-v8",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
-            "semanticDigests": semantic_digests,
-            "initialization": {"kind": "random"},
+            "modelConfig": model_config.to_manifest(),
+            "semanticDigests": resolved_digests,
+            "initialization": {"source": "random"},
         },
         data_contract=data_contract,
         model_contract=model_contract_document,
-        semantic_digests=semantic_digests,
+        semantic_digests=resolved_digests,
         producing_job_id="00000000-0000-4000-8000-000000000001",
         created_at=1.0,
     )
@@ -283,20 +285,18 @@ def _published_model_command(
         requested_device="cpu",
         prediction_column="out",
         source_encoding={
-            "kind": "indexedFeatureBlocks",
             "featureBlocks": [
-                {"position": 0, "windowRows": 1, "nativeRowWidth": 2},
+                {"windowRows": 1, "nativeRowWidth": 2},
             ],
         },
         data_contract=data_contract,
         model_contract=model_contract_document,
-        semantic_digests=semantic_digests,
+        semantic_digests=resolved_digests,
         model_label="returns.daily.fine-tuned",
-        model_selector="reference",
         model_ref=parent.model_ref,
         model_config=model_config,
         training_config=train_config,
-        initialization_kind="publishedModel",
+        initialization_source="publishedModel",
     )
     return command, parent
 

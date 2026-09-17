@@ -6,11 +6,12 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v13.arrow import (
+from app.contracts.flight.v16.arrow import (
     canonical_input_schema,
     validate_target_values,
 )
-from app.contracts.flight.v13.target_value_error import TargetValueError
+from app.contracts.flight.v16.target_value_error import TargetValueError
+from app.contracts.semantic.v3 import ModelContract
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -18,19 +19,16 @@ from app.service.adapters.inbound.flight.arrow import (
 )
 from app.service.domain.errors import ServiceError
 from app.service.domain.job import ErrorCode
-from tests.support.consumer_neutral import model_contract
+from tests.fixture_documents import semantic_fixture_document
 
-MODEL_CONTRACT = model_contract(
-    "single-regression",
-    seq_len=2,
-    feature_dim=4,
+MODEL_CONTRACT = ModelContract.from_document(
+    semantic_fixture_document("single-regression")["modelContract"],
 )
 TARGET_CONTRACT = MODEL_CONTRACT.target_contract
 SOURCE_ENCODING = {
-    "kind": "indexedFeatureBlocks",
     "featureBlocks": [
-        {"position": 0, "windowRows": 2, "nativeRowWidth": 1},
-        {"position": 2, "windowRows": 1, "nativeRowWidth": 2},
+        {"windowRows": 2, "nativeRowWidth": 1},
+        {"windowRows": 1, "nativeRowWidth": 2},
     ],
 }
 
@@ -139,7 +137,7 @@ def test_predict_schema_rejects_fit_schema_and_feature_mismatch():
     with pytest.raises(ServiceError, match="canonical physical schema"):
         validator("predict", schema=input_schema("fit"))
 
-    with pytest.raises(ValueError, match=r"must equal dataContract\.featureDim"):
+    with pytest.raises(ValueError, match=r"must equal tensorGeometry\.featureDim"):
         InputBatchValidator(
             "predict",
             input_schema("predict"),
