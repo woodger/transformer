@@ -123,24 +123,37 @@ class TrainingTelemetryCursorCodec:
             values = cast(list[object], raw)
             if len(values) != 11:
                 raise InvalidTrainingTelemetryCursor
-            pair = _pair(values[8])
+            (
+                revision,
+                encoded_operation,
+                encoded_model_ref,
+                encoded_producing_run_id,
+                report_identity,
+                encoded_page_size,
+                encoded_after_epoch_value,
+                encoded_epoch_value,
+                encoded_pair,
+                expiration_micros,
+                cursor_boot_identity,
+            ) = values
+            pair = _pair(encoded_pair)
             if (
-                values[0] != 3
-                or values[1] != operation
-                or values[2] != model_ref
-                or values[3] != producing_run_id
-                or not isinstance(values[4], str)
-                or len(values[4]) != 64
-                or not _integer(values[5])
-                or values[5] != page_size
-                or not _optional_integer(values[6])
-                or not _optional_integer(values[7])
-                or not _integer(values[9])
-                or not _boot_identity(values[10])
+                revision != 3
+                or encoded_operation != operation
+                or encoded_model_ref != model_ref
+                or encoded_producing_run_id != producing_run_id
+                or not isinstance(report_identity, str)
+                or len(report_identity) != 64
+                or not _integer(encoded_page_size)
+                or encoded_page_size != page_size
+                or not _optional_integer(encoded_after_epoch_value)
+                or not _optional_integer(encoded_epoch_value)
+                or not _integer(expiration_micros)
+                or not _boot_identity(cursor_boot_identity)
             ):
                 raise InvalidTrainingTelemetryCursor
-            after_epoch = cast(int | None, values[6])
-            encoded_epoch = cast(int | None, values[7])
+            after_epoch = cast(int | None, encoded_after_epoch_value)
+            encoded_epoch = cast(int | None, encoded_epoch_value)
             if operation == "report":
                 if after_epoch is None or after_epoch < 1 or encoded_epoch is not None or pair is not None:
                     raise InvalidTrainingTelemetryCursor
@@ -154,13 +167,13 @@ class TrainingTelemetryCursorCodec:
             cursor = TrainingTelemetryCursor(
                 operation=operation,
                 model_ref=model_ref,
-                producing_run_id=cast(str, values[3]),
-                report_identity=values[4],
-                page_size=cast(int, values[5]),
+                producing_run_id=cast(str, encoded_producing_run_id),
+                report_identity=report_identity,
+                page_size=cast(int, encoded_page_size),
                 after_epoch=after_epoch,
                 epoch=encoded_epoch,
                 after_pair=pair,
-                expires_at=_from_micros(cast(int, values[9])),
+                expires_at=_from_micros(cast(int, expiration_micros)),
             )
         except InvalidTrainingTelemetryCursor:
             raise
@@ -175,7 +188,7 @@ class TrainingTelemetryCursorCodec:
             raise InvalidTrainingTelemetryCursor from exc
         if now.astimezone(UTC) >= cursor.expires_at:
             raise ExpiredTrainingTelemetryCursor
-        if values[10] != self._boot_identity:
+        if cursor_boot_identity != self._boot_identity:
             raise InvalidatedTrainingTelemetryCursor
         return cursor
 

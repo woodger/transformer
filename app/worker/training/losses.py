@@ -46,32 +46,39 @@ class LossStatistics:
                 for value in device_values
             )).cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
         )
-        core_count = len(core_values)
-        direct_count = len(self.direct_losses)
-        auxiliary_count = len(self.auxiliary_losses)
+        loss_index = 0
+        direct_start = loss_index + 1
+        direct_end = direct_start + len(self.direct_losses)
+        auxiliary_start = direct_end
+        auxiliary_end = auxiliary_start + len(self.auxiliary_losses)
+        observations_start = auxiliary_end
+        observations_end = observations_start + len(observations)
+
+        loss_value = host_values[loss_index]
+        direct_loss_values = host_values[direct_start:direct_end]
+        auxiliary_loss_values = host_values[auxiliary_start:auxiliary_end]
+        observation_values = host_values[observations_start:observations_end]
+        grad_norm_value = (
+            None if grad_norm is None else host_values[observations_end]
+        )
         return MaterializedLossStatistics(
-            loss=float(host_values[0]),
+            loss=float(loss_value),
             direct_losses=tuple(
                 float(value)
-                for value in host_values[1:1 + direct_count]
+                for value in direct_loss_values
             ),
             auxiliary_losses=tuple(
                 (identity, operator, float(value))
                 for (identity, operator, _tensor), value in zip(
                     self.auxiliary_losses,
-                    host_values[
-                        1 + direct_count:
-                        1 + direct_count + auxiliary_count
-                    ],
+                    auxiliary_loss_values,
                     strict=True,
                 )
             ),
-            grad_norm=(
-                None if grad_norm is None else float(host_values[-1])
-            ),
+            grad_norm=None if grad_norm_value is None else float(grad_norm_value),
             observations=tuple(
                 float(value)
-                for value in host_values[core_count:core_count + len(observations)]
+                for value in observation_values
             ),
         )
 
