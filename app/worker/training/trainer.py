@@ -196,18 +196,11 @@ class Trainer:
 
                     batch_rows = batch.features.size(0)
                     phase_started = time.perf_counter()
-                    missingness_ratios: dict[str, float] = {}
-                    if telemetry is not None:
-                        try:
-                            missingness_ratios = context_missingness_ratios(
-                                batch.features,
-                                self.context_mode,
-                            )
-                            telemetry.missing_stats_ms += (
-                                time.perf_counter() - phase_started
-                            ) * 1000
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    missingness_ratios = self._collect_missingness_ratios(
+                        epoch_result,
+                        batch.features,
+                        phase_started,
+                    )
 
                     phase_started = time.perf_counter()
                     batch_features = batch.features.to(self.device)
@@ -275,18 +268,11 @@ class Trainer:
                         except Exception as exc:
                             self._disable_epoch_telemetry(epoch_result, exc)
 
-                    target_error_observation: TargetErrorObservation | None = None
-                    if epoch_result.telemetry is not None:
-                        try:
-                            target_error_observation = (
-                                TargetErrorObservation.evaluate(
-                                    model_output,
-                                    batch_targets,
-                                    self.model_contract,
-                                )
-                            )
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    target_error_observation = self._observe_target_errors(
+                        epoch_result,
+                        model_output,
+                        batch_targets,
+                    )
 
                     self.scaler.scale(
                         loss
@@ -331,33 +317,17 @@ class Trainer:
                         materialized_statistics,
                         step=step,
                     )
-                    telemetry = epoch_result.telemetry
-                    if telemetry is not None and target_error_observation is not None:
-                        try:
-                            target_errors = target_error_observation.decode(
-                                materialized_statistics.observations
-                            )
-                            telemetry.observe_batch(
-                                rows=batch_rows,
-                                target_errors=target_errors,
-                                grad_norm=grad_norm_value,
-                                optimizer_update_applied=(
-                                    optimizer_update_applied
-                                ),
-                                amp_overflow=(
-                                    self.use_amp and not optimizer_update_applied
-                                ),
-                                **missingness_ratios,
-                            )
-                            if gradient_observation is not None:
-                                telemetry.observe_gradient_interactions(
-                                    gradient_observation.materialize()
-                                )
-                            telemetry.train_step_ms += (
-                                time.perf_counter() - phase_started
-                            ) * 1000
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    self._record_batch_telemetry(
+                        epoch_result,
+                        batch_rows=batch_rows,
+                        target_error_observation=target_error_observation,
+                        observations=materialized_statistics.observations,
+                        grad_norm=grad_norm_value,
+                        optimizer_update_applied=optimizer_update_applied,
+                        missingness_ratios=missingness_ratios,
+                        gradient_observation=gradient_observation,
+                        phase_started=phase_started,
+                    )
             finally:
                 if isinstance(batches, Closable):
                     batches.close()
@@ -367,6 +337,82 @@ class Trainer:
             telemetry.elapsed_ms = (time.perf_counter() - started) * 1000
             telemetry.finalize_gradient_statistics()
         return epoch_result
+
+    def _collect_missingness_ratios(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        features: torch.Tensor,
+        phase_started: float,
+    ) -> dict[str, float]:
+        telemetry = epoch_result.telemetry
+        if telemetry is None:
+            return {}
+        try:
+            ratios = context_missingness_ratios(
+                features,
+                self.context_mode,
+            )
+            telemetry.missing_stats_ms += (
+                time.perf_counter() - phase_started
+            ) * 1000
+            return ratios
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
+            return {}
+
+    def _observe_target_errors(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        model_output: torch.Tensor,
+        batch_targets: torch.Tensor,
+    ) -> TargetErrorObservation | None:
+        if epoch_result.telemetry is None:
+            return None
+        try:
+            return TargetErrorObservation.evaluate(
+                model_output,
+                batch_targets,
+                self.model_contract,
+            )
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
+            return None
+
+    def _record_batch_telemetry(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        *,
+        batch_rows: int,
+        target_error_observation: TargetErrorObservation | None,
+        observations: tuple[float, ...],
+        grad_norm: float | None,
+        optimizer_update_applied: bool,
+        missingness_ratios: dict[str, float],
+        gradient_observation: GradientInteractionObservation | None,
+        phase_started: float,
+    ) -> None:
+        telemetry = epoch_result.telemetry
+        if telemetry is None or target_error_observation is None:
+            return
+        try:
+            target_errors = target_error_observation.decode(observations)
+            telemetry.observe_batch(
+                rows=batch_rows,
+                target_errors=target_errors,
+                grad_norm=grad_norm,
+                optimizer_update_applied=optimizer_update_applied,
+                amp_overflow=self.use_amp and not optimizer_update_applied,
+                **missingness_ratios,
+            )
+            if gradient_observation is not None:
+                telemetry.observe_gradient_interactions(
+                    gradient_observation.materialize()
+                )
+            telemetry.train_step_ms += (
+                time.perf_counter() - phase_started
+            ) * 1000
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
 
     @staticmethod
     def _disable_epoch_telemetry(
