@@ -119,6 +119,8 @@ class TrainingTelemetrySnapshotStore:
                         expires_at,
                     )
                 return existing.value
+            # Do not evict a live entry: an issued cursor must retain this
+            # exact projection until its expiry.
             if (
                 byte_count > self._max_snapshot_bytes
                 or len(self._entries) >= self._max_count

@@ -215,6 +215,8 @@ def _iter_committed_indexed_arrow(
                         else 0
                     )
                 )
+                # Bound temporary dense reconstruction while the compact IPC
+                # artifact remains memory-mapped.
                 rows_per_slice = max(1, (8 * 1024 * 1024) // row_bytes)
                 for start in range(0, logical_rows, rows_per_slice):
                     stop = min(start + rows_per_slice, logical_rows)

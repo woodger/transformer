@@ -484,6 +484,8 @@ class Ledger:
             )
             decision = decide_cancel(job.execution_state)
             if decision.notify_worker:
+                # A later transaction failure must not leave a validated cancel
+                # request running its Worker.
                 stop_active_worker(job_id)
 
             changed = False

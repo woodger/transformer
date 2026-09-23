@@ -50,6 +50,8 @@ class OutputHead(nn.Module):
         shared = self.shared(hidden_states)
         targets = self.target_head(shared)
         resources = [
+            # Keep declared positive scales away from zero if float32 softplus
+            # underflows.
             F.softplus(head(shared)) + 1e-6
             for head in self.resource_heads
         ]
