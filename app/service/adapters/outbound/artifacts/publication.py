@@ -477,8 +477,8 @@ class WorkerArtifactPublisher:
             try:
                 self.spool.remove(path)
             except Exception as exc:
-                # Publication is ledger-gated. A filesystem cleanup failure
-                # leaves only an invisible orphan for startup reconciliation.
+                # Публикация ограничена журналом. Сбой очистки файловой системы
+                # оставляет лишь невидимый осиротевший артефакт для сверки при старте.
                 self.logger.event(
                     "flight.worker.cleanup_failed",
                     jobId=job.job_id,

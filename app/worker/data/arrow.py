@@ -299,7 +299,7 @@ def _committed_target_values(
 def _list_values_to_tensor(values: np.ndarray) -> torch.Tensor:
     import torch
 
-    # PyTorch leaves the ndarray parameter unknown in its public type surface.
+    # Библиотека PyTorch оставляет параметр ndarray неизвестным в публичной типовой поверхности.
     return torch.from_numpy(values)  # pyright: ignore[reportUnknownMemberType]
 
 

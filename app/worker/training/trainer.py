@@ -178,7 +178,7 @@ class Trainer:
         )
         started = time.perf_counter()
 
-        # Phase timers stay host-side and must never force CUDA synchronization.
+        # Таймеры фаз работают на CPU и не должны принудительно синхронизировать CUDA.
         for loader in loaders:
             batches = iter(loader)
             try:
@@ -689,9 +689,9 @@ class Trainer:
                     if self.best_state_dict is None
                     else _tree_to_cpu(self.best_state_dict)
                 ),
-                # Kept as an inert field to preserve the current durable
-                # recovery format. Telemetry is no longer restored into the
-                # training state.
+                # Поле сохранено неактивным, чтобы сохранить текущий надёжный
+                # формат восстановления. Телеметрия больше не восстанавливается
+                # в состояние обучения.
                 "best_metrics": None,
                 "best_frame": self.best_frame,
                 "best_epoch": self.best_epoch,

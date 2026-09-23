@@ -105,8 +105,9 @@ class WorkerAttemptExecutor:
 
     def interrupt_for_shutdown(self) -> None:
         """Interrupt all attempts after the worker-pool drain deadline."""
-        # Set force-stop first so an attempt registering after this snapshot
-        # cannot mistake shutdown for an ordinary client cancellation.
+        # Сначала устанавливаем принудительную остановку, чтобы попытка,
+        # регистрируемая после этого снимка, не приняла остановку сервиса
+        # за обычную отмену клиентом.
         self._force_stop.set()
         with self._active_lock:
             for active in self._active.values():
@@ -275,9 +276,9 @@ class WorkerAttemptExecutor:
                     )
                 elif failure.code == ErrorCode.DEVICE_LOST:
                     self.metrics.add("gpuUnavailableDuringExecution")
-                # Cleanup can race with a committed cancel action. Refresh
-                # state before choosing the terminal outcome so cancel wins
-                # whenever it was registered before final artifact commit.
+                # Очистка может пересечься с зафиксированной командой отмены.
+                # Обновляем состояние до выбора итога, чтобы отмена побеждала,
+                # когда была зарегистрирована до фиксации финального артефакта.
                 current = self.ledger.get_execution_job(job_id)
                 if current is not None and not self._same_attempt(current, job):
                     self.logger.event(
@@ -449,9 +450,9 @@ class WorkerAttemptExecutor:
                 code=failure.code.value,
             )
         except (ServiceError, ValueError):
-            # If cancel committed its PostgreSQL transition first, the attempted
-            # RUNNING -> FAILED transition observes CANCELLING. Re-read and
-            # complete cancellation; otherwise preserve the original error.
+            # Если отмена сначала зафиксировала переход в PostgreSQL, попытка
+            # перехода RUNNING -> FAILED обнаруживает CANCELLING. Перечитываем
+            # состояние и завершаем отмену; иначе сохраняем исходную ошибку.
             latest = self.ledger.get_execution_job(job.job_id)
             if (
                 latest is not None

@@ -184,8 +184,8 @@ def _recover_process_group(
         or leader.pgrp != pgid
         or leader.session != pid
     ):
-        # The numeric PID has been reused. Never signal a process that does not
-        # exactly match the durable boot/start/session identity.
+        # Числовой PID был переиспользован. Никогда не посылаем сигнал процессу,
+        # который в точности не соответствует сохранённой идентичности запуска и сессии.
         return ProcessRecoveryResult(job_id, attempt_number, pgid, "identity_mismatch")
 
     members = _live_group_members(pgid, pid, proc_root, current_boot_id)
@@ -238,12 +238,12 @@ def _live_group_members(
                 proc_root=proc_root,
             )
         except OSError:
-            # Processes can disappear or become unreadable while /proc is
-            # scanned. An unreadable unrelated entry is not a recovery error.
+            # Процессы могут исчезнуть или стать недоступными для чтения во время
+            # обхода /proc. Недоступная посторонняя запись не является ошибкой восстановления.
             continue
         except ProcessRecoveryError:
-            # A malformed process table entry makes it unsafe to conclude that
-            # the recorded group is gone.
+            # Некорректная запись в таблице процессов не позволяет безопасно
+            # заключить, что сохранённая группа исчезла.
             raise
         if (
             identity is not None

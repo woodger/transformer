@@ -303,9 +303,9 @@ class Ledger:
         try:
             with self._write(connection) as session:
                 session.add(identity)
-                # The ORM models intentionally have no navigation relationship;
-                # make the durable identity visible before inserting its
-                # foreign-keyed runtime row.
+                # У ORM-моделей намеренно нет навигационной связи; делаем надёжную
+                # идентичность видимой перед вставкой связанной с ней строки
+                # выполнения по внешнему ключу.
                 session.flush()
                 session.add(job)
                 session.flush()

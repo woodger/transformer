@@ -107,8 +107,8 @@ class BearerAuthMiddlewareFactory(
                 "FlightUnauthenticatedError",
             )
         except Exception:
-            # Fail closed and never expose an adapter error that could contain
-            # the credential.
+            # Закрываем ошибку и никогда не раскрываем ошибку адаптера, которая
+            # могла бы содержать учётные данные.
             self._reject(
                 method,
                 started,

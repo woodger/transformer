@@ -131,11 +131,11 @@ class MaintenanceService:
                     "flight.maintenance.drain_exceeded",
                     timeoutSeconds=timeout,
                 )
-                # The runtime-directory lock must remain exclusively owned until
-                # all maintenance mutation has stopped.  Python threads cannot
-                # be safely killed, so a slow local filesystem/PostgreSQL pass is
-                # allowed to finish before application shutdown can release
-                # that lock.
+                # Блокировка каталога выполнения должна оставаться исключительно
+                # занятой, пока не прекратятся все изменения при обслуживании.
+                # Потоки Python нельзя безопасно остановить принудительно, поэтому
+                # медленный проход по локальной ФС/PostgreSQL завершается до освобождения
+                # этой блокировки при остановке приложения.
                 thread.join()
 
     def run_once(self, *, now: float | None = None) -> MaintenanceResult:

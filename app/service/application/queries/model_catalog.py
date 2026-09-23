@@ -116,9 +116,9 @@ class GetCatalogModel:
         try:
             self._artifact_verifier.verify(entry.model)
         except CatalogArtifactVerificationError:
-            # Deletion may win after the initial registry read. Preserve the
-            # security-equivalent not-found outcome instead of exposing a
-            # transient filesystem symptom for a no-longer-visible model.
+            # Удаление может победить после начального чтения реестра. Сохраняем
+            # эквивалентный по безопасности результат «не найдено», не раскрывая
+            # переходный симптом файловой системы для уже невидимой модели.
             if self._store.get_model(
                 query.owner_subject,
                 query.model_ref,

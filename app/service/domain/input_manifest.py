@@ -106,8 +106,8 @@ def _field(document: object, *names: str) -> object:
     record = cast(object, document)
     for name in names:
         if hasattr(record, name):
-            # Canonicalization accepts wire-shaped mappings and immutable
-            # receipt records without making either representation canonical.
+            # Канонизация принимает отображения транспортной формы и неизменяемые
+            # записи квитанций, не делая ни одно представление каноническим.
             return cast(object, getattr(record, name))
     raise ValueError(f"input receipt has no field {names[0]}")
 

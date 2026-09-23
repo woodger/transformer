@@ -60,9 +60,9 @@ class PublishedModelStore:
                 records_by_ref = {
                     model.model_ref: _record(model) for model in pending_rows
                 }
-                # READ COMMITTED may observe the same generation before and
-                # after maintenance moves it between the two tables. Prefer
-                # the completed archive record in that harmless race.
+                # При READ COMMITTED одно и то же поколение можно увидеть до и
+                # после перемещения обслуживанием между таблицами. В этой
+                # безвредной гонке предпочитаем запись завершённого архива.
                 records_by_ref.update({
                     model.model_ref: _deleted_record(model)
                     for model in deleted_rows
@@ -85,9 +85,9 @@ class PublishedModelStore:
     def request_deletion(self, model_ref: str) -> ModelLifecycleRecord:
         model_ref = _model_ref(model_ref)
         with self.database.transaction() as session:
-            # Publication uses the same transaction-scoped generation lock.
-            # The first read discovers its owner/label key; the second read
-            # observes the winning lifecycle state under a row lock.
+            # Публикация использует ту же блокировку поколения в транзакции.
+            # Первое чтение находит ключ владельца и метку; второе читает
+            # победившее состояние жизненного цикла под блокировкой строки.
             candidate = session.get(PublishedModel, model_ref)
             if candidate is None:
                 raise LookupError(f"model generation not found: {model_ref}")

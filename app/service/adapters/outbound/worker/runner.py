@@ -675,9 +675,9 @@ class WorkerSubprocessRunner:
                         )
                     except ServiceError as exc:
                         if self._progress_rejected_by_cancel(job):
-                            # A committed cancel makes progress immutable. Keep
-                            # draining until the cancellation signal stops the
-                            # process.
+                            # Зафиксированная отмена делает ход выполнения неизменным.
+                            # Продолжаем считывание, пока сигнал отмены не остановит
+                            # процесс.
                             continue
                         raise WorkerSubprocessError(
                             ErrorCode.EXECUTION_INTERRUPTED,
@@ -835,7 +835,7 @@ class WorkerSubprocessRunner:
         except OSError as exc:
             persistence_failed = True
             errors.put(_worker_log_persistence_error(exc))
-            # Continue draining even after a logging failure to avoid deadlock.
+            # Продолжаем считывание даже после сбоя логирования, чтобы избежать взаимной блокировки.
             try:
                 while stream.read(64 * 1024):
                     pass

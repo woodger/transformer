@@ -175,10 +175,10 @@ class WorkerPool:
                 "flight.worker.drain_exceeded",
                 activeWorkers=sum(thread.is_alive() for thread in self._threads),
             )
-            # The process-level state lock cannot be released while a worker
-            # thread can still mutate PostgreSQL or the spool. Process groups have
-            # already received SIGKILL; finish joining before returning control
-            # to FlightApplication.shutdown().
+            # Блокировку состояния уровня процесса нельзя освобождать, пока рабочий
+            # поток ещё может менять PostgreSQL или рабочее хранилище. Группы уже
+            # получили SIGKILL; ждём завершения до возврата управления в
+            # FlightApplication.shutdown().
             for thread in tuple(self._threads):
                 thread.join()
 
@@ -308,10 +308,10 @@ class WorkerPool:
                 if not claimed:
                     self._requeue_if_pending(job_id)
             except Exception as exc:
-                # A single unexpected attempt-finalization/storage error must
-                # not permanently remove capacity from the service.  The
-                # Durable attempt finalization decides whether a fit becomes
-                # RETRYING. The lane never invents a retry from an exception.
+                # Одна непредвиденная ошибка финализации попытки или хранилища не
+                # должна навсегда отнимать ёмкость у сервиса. Надёжная финализация
+                # попытки решает, перейдёт ли обучение в RETRYING. Поток выполнения
+                # не создаёт повторную попытку из исключения.
                 self.metrics.add("workerLaneErrors")
                 self.logger.event(
                     "flight.worker.lane_error",

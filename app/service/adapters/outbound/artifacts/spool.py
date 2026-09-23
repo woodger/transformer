@@ -522,10 +522,10 @@ class Spool:
                     candidate,
                     self.jobs_dir,
                 ):
-                    # Attempt checkpoints are never published in place.  A
-                    # successful fit owns a copy under models/<modelRef>/;
-                    # any checkpoint left below an attempt after restart is
-                    # therefore unpublished and must not survive recovery.
+                    # Контрольные точки попыток никогда не публикуются на месте.
+                    # Успешное обучение владеет копией в models/<modelRef>/;
+                    # любая контрольная точка, оставшаяся в попытке после рестарта,
+                    # не опубликована и не должна сохраняться при восстановлении.
                     if candidate not in referenced and self.remove(candidate):
                         removed.append(self.relative_path(candidate))
                     continue

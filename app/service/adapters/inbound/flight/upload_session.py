@@ -104,9 +104,9 @@ class InputUploadSession:
                     break
 
                 if self.authorization is not None:
-                    # Cancellation can commit while a transport stream is
-                    # still delivering chunks. The final commit remains the
-                    # authoritative fence for the race after the last chunk.
+                    # Отмена может зафиксироваться, пока транспортный поток ещё
+                    # передаёт фрагменты. Финальная фиксация остаётся авторитетной
+                    # границей в гонке после последнего фрагмента.
                     self.lifecycle.assert_accepting(self.authorization)
 
                 if chunk.app_metadata is not None:
@@ -282,9 +282,9 @@ class InputUploadSession:
                     False,
                 )
 
-            # durable_create can raise after publication while fsyncing the
-            # parent directory. Mark it first so cleanup treats the final name
-            # as a candidate whose ledger ownership must be checked.
+            # Метод durable_create может выбросить исключение после публикации при fsync
+            # родительского каталога. Сначала помечаем файл, чтобы очистка считала
+            # конечное имя кандидатом, чью принадлежность журналу нужно проверить.
             self.destination_published = True
             artifact_store.durable_create(
                 temporary_path,
@@ -453,8 +453,8 @@ def _committed_record_exists(
     try:
         return lifecycle.find_committed(authorization) is not None
     except Exception:
-        # Lookup failure does not prove that the commit is absent. Preserve
-        # the final artifact so startup reconciliation can resolve ownership.
+        # Сбой поиска не доказывает отсутствия фиксации. Сохраняем финальный
+        # артефакт, чтобы сверка при старте могла разрешить принадлежность.
         return True
 
 

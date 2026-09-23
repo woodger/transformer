@@ -26,9 +26,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.contracts.json_types import JsonObject, JsonValue
 
-# SQLAlchemy resolves recursive aliases in postponed Mapped annotations from
-# this module's namespace. Keep JsonValue available even though annotations
-# refer to it indirectly through JsonObject.
+# Библиотека SQLAlchemy разрешает рекурсивные псевдонимы в отложенных аннотациях Mapped
+# из пространства имён этого модуля. JsonValue остаётся доступным, хотя
+# аннотации ссылаются на него косвенно через JsonObject.
 _JSON_VALUE_TYPE = JsonValue
 
 SCHEMA = "transformer"

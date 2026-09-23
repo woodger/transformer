@@ -30,7 +30,7 @@ def configure_cuda_torch_thread_budget(
 
         runtime = cast(_TorchThreadRuntime, torch)
 
-    # PyTorch requires this pool to be configured before parallel work begins.
+    # Библиотека PyTorch требует настроить этот пул до начала параллельной работы.
     runtime.set_num_threads(intraop_threads)
     runtime.set_num_interop_threads(interop_threads)
     return intraop_threads, interop_threads

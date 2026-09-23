@@ -38,9 +38,9 @@ def upgrade() -> None:
         $migration$
     """))
 
-    # The v15 clean cut has no reader for v14 job, model, recovery or
-    # telemetry records.  Foreign-key cascades remove dependent receipts,
-    # attempts, outputs and recovery rows when jobs are removed.
+    # Чистый переход v15 не содержит читателя для записей v14 о заданиях,
+    # моделях, восстановлении или телеметрии. Каскады внешних ключей удаляют
+    # связанные квитанции, попытки, выходы и строки восстановления при удалении.
     for table in (
         "metrics_outbox",
         "fit_run_summary_artifacts",

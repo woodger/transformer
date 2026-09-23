@@ -537,9 +537,9 @@ class FlightApplication:
 
         def handle_signal(signum: int, _frame: FrameType | None) -> None:
             self.logger.event("flight.service.signal", signal=signum)
-            # Keep shutdown outside the signal handler and outside Flight RPC
-            # threads.  The non-daemon thread guarantees process exit cannot
-            # skip durable worker, ledger, and state-lock cleanup.
+            # Выполняем остановку вне обработчика сигнала и потоков Flight RPC.
+            # Недемонический поток гарантирует, что завершение процесса не пропустит
+            # надёжную очистку рабочего процесса, журнала и блокировки состояния.
             threading.Thread(
                 target=self.shutdown,
                 name="transformer-flight-shutdown",
@@ -555,9 +555,9 @@ class FlightApplication:
             daemon=False,
         )
         try:
-            # FlightServerBase.serve() is a blocking C-extension call.  Run it
-            # off the Python main thread so SIGINT/SIGTERM handlers are
-            # dispatched promptly even while no RPC is active.
+            # Вызов FlightServerBase.serve() блокирует расширение C. Выполняем
+            # его вне главного потока Python, чтобы обработчики SIGINT/SIGTERM
+            # вызывались без задержки, даже когда RPC не активно.
             server_thread.start()
             self.logger.event(
                 "flight.service.serving",
@@ -594,10 +594,10 @@ class FlightApplication:
             return
         errors: list[BaseException] = []
         try:
-            # Close the queue claim boundary before RPC shutdown.  A start
-            # already racing with this point may still commit QUEUED, but it
-            # cannot become RUNNING and is therefore safe to recover on the
-            # next service start.
+            # Закрываем границу захвата очереди перед остановкой RPC. Запуск,
+            # уже пересекающийся с этой точкой, всё ещё может зафиксировать QUEUED,
+            # но не может стать RUNNING и потому безопасен для восстановления при
+            # следующем запуске сервиса.
             try:
                 stop_claiming = getattr(self.worker, "stop_claiming", None)
                 if stop_claiming is not None:

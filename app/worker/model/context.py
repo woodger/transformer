@@ -113,9 +113,10 @@ def prepare_context_input(
     missing = torch.isnan(features)
     key_padding_mask = _key_padding_mask(missing, context_mode)
 
-    # PyTorch attention can produce non-finite outputs when every token in a
-    # sequence is masked. Keep one placeholder token attendable; NaN values
-    # are filled below and relaxed mode still retains its missing flags.
+    # Механизм внимания PyTorch может выдавать не конечные значения, когда каждый
+    # токен последовательности замаскирован. Оставляем один служебный токен
+    # доступным для внимания; значения NaN заполняются ниже, а мягкий режим
+    # сохраняет свои флаги отсутствия.
     all_missing_rows = key_padding_mask.all(dim=1)
     key_padding_mask[:, 0] &= ~all_missing_rows
 

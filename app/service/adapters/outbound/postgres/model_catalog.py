@@ -89,9 +89,9 @@ class PostgresModelCatalogStore:
     ) -> StoredCatalogPage:
         try:
             with self._database.transaction() as session:
-                # Publication acquires the same owner lock before allocating
-                # its catalog ordinal. No uncommitted ordinal at or below this
-                # high-water mark can become visible on a later page.
+                # Публикация получает ту же блокировку владельца перед выделением
+                # порядкового номера каталога. Ни один незафиксированный номер,
+                # не превышающий эту верхнюю границу, не станет видимым позже.
                 advisory_lock(
                     session,
                     "model-catalog-publication",

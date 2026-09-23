@@ -3,18 +3,18 @@ import tempfile
 
 from app.project import PROJECT_NAME
 
-# API access token authentication.
+# Аутентификация по токену доступа к API.
 ACCESS_TOKEN_CACHE_MAX_ENTRIES = 1024
 ACCESS_TOKEN_CACHE_TTL_SECONDS = 60.0
 
-# Local runtime.
+# Локальное выполнение.
 DEFAULT_DEVICE = "cpu"
 DEFAULT_MAX_FRAME_BYTES = 512 * 1024 * 1024
-# Limit host-side PyTorch parallelism in CUDA workers; these are not CPU quotas.
+# Ограничиваем параллелизм PyTorch на хосте для CUDA-процессов; это не квоты CPU.
 CUDA_TORCH_INTRAOP_THREADS = 8
 CUDA_TORCH_INTEROP_THREADS = 1
 
-# Flight service.
+# Сервис Flight.
 HOST_DEFAULT = "127.0.0.1"
 PORT_DEFAULT = 8815
 CPU_WORKERS = 2
@@ -36,11 +36,11 @@ SUBPROCESS_TIMEOUT_SECONDS_DEFAULT = 24 * 60 * 60
 INPUT_IDLE_TIMEOUT_SECONDS_DEFAULT = 15 * 60
 ACQUIRE_IDLE_GRACE_SECONDS_DEFAULT = 30.0
 
-# PostgreSQL.
+# Параметры PostgreSQL.
 POSTGRES_PORT_DEFAULT = 5432
 POSTGRES_SCHEMA_DEFAULT = "transformer"
 
-# OpenSearch metrics.
+# Метрики OpenSearch.
 OPENSEARCH_CONNECT_TIMEOUT_SECONDS_DEFAULT = 3.0
 OPENSEARCH_REQUEST_TIMEOUT_SECONDS_DEFAULT = 15.0
 OPENSEARCH_MAX_BULK_DOCUMENTS_DEFAULT = 500

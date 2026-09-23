@@ -189,9 +189,9 @@ class CudaDeviceInventory:
             }
             lost = device_id not in live_ids
         except Exception:
-            # An inventory probe which cannot initialize the CUDA runtime is
-            # itself evidence that this process must stop scheduling the
-            # assigned device.
+            # Проба инвентаря, не способная инициализировать среду CUDA, сама
+            # показывает, что процесс должен прекратить назначать выделенное
+            # устройство.
             lost = True
         if not lost:
             return False

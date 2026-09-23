@@ -266,8 +266,8 @@ def validate_upload_metadata(document: JsonObject) -> UploadMetadataFields:
         "fencing_token": fencing_token,
         "payload_id": _uuid(document, "payloadId"),
         "ordinal": _integer(document, "ordinal"),
-        # These values are resolved from the owner-scoped job rather than
-        # accepted from the transport client.
+        # Эти значения разрешаются из задания в области владельца, а не
+        # принимаются от транспортного клиента.
         "schema_id": "",
         "input_kind": "",
         "data_contract_sha256": "",
