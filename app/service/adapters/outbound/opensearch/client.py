@@ -112,8 +112,8 @@ class OpenSearchMetricsClient:
                 f"OpenSearch rejected metrics documents with status {blocked[0]}"
             )
         if conflicts:
-            # A create conflict is idempotent only when the stored immutable
-            # document has the exact expected identity.
+            # Конфликт создания идемпотентен лишь тогда, когда сохранённый неизменяемый
+            # документ имеет в точности ожидаемую идентичность.
             self._verify_conflicts(index, conflicts)
         if retryable:
             raise RetryableMetricsDeliveryError(

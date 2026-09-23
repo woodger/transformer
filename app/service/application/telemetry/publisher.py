@@ -133,8 +133,8 @@ class MetricsPublisher:
                 ):
                     self.metrics.add("metricsPointsDelivered", len(chunk))
                 return
-            # The visible summary is the completion marker, so every point
-            # batch must be refresh-visible before publishing it.
+            # Видимая сводка служит маркером завершения, поэтому до её публикации
+            # каждая пачка метрик должна стать видимой после обновления индекса.
             run_summary = self.projection.run_summary_document(
                 entry,
                 deployment_id=self.deployment_id,

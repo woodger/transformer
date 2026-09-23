@@ -265,8 +265,8 @@ class FlightApplication:
                     deployment_id=metrics_config.deployment_id,
                     delivery_expected=metrics_publisher.is_running,
                 )
-            # Reap workers from the previous service before terminalizing jobs
-            # or removing any artifacts they could still write.
+            # Завершаем процессы предыдущего сервиса до терминализации заданий
+            # и удаления артефактов, которые они ещё могли записывать.
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,

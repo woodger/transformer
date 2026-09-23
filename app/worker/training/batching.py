@@ -145,8 +145,8 @@ class PayloadBatcher:
                     * batch.targets.element_size()
                 )
                 batch_bytes = self.batch_size * row_bytes
-                # Shuffle only a bounded window; retaining the entire input
-                # stream would defeat streaming training.
+                # Перемешиваем только ограниченное окно: хранение всего входного
+                # потока разрушило бы потоковый режим обучения.
                 window_batches = min(
                     _MAX_SHUFFLE_WINDOW_BATCHES,
                     max(1, _MAX_SHUFFLE_WINDOW_BYTES // batch_bytes),
