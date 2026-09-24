@@ -1,4 +1,4 @@
-# Интеграция с Transformer Flight v16
+# Интеграция с Transformer Flight v17
 
 > Тип: руководство. Практический порядок работы вызывающей системы с действующей
 > provider boundary. JSON Schema в `app/contracts/` имеет приоритет над этим
@@ -13,23 +13,23 @@ Scope owner-а выводится из аутентифицированного 
 
 Перед интеграцией используйте точные актуальные packages:
 
-- [Семантическая модель v3](../app/contracts/semantic/v3/README.md)
-- [Flight v16](../app/contracts/flight/v16/README.md)
-- [Запрос каталога моделей v3](../app/contracts/model_catalog/v3/README.md)
-- [Запрос topology модели v1](../app/contracts/model_topology/v1/README.md)
-- [Запрос телеметрии обучения v3](../app/contracts/training_telemetry/v3/README.md)
+- [Семантическая модель v4](../app/contracts/semantic/v4/README.md)
+- [Flight v17](../app/contracts/flight/v17/README.md)
+- [Запрос каталога моделей v4](../app/contracts/model_catalog/v4/README.md)
+- [Запрос topology модели v2](../app/contracts/model_topology/v2/README.md)
+- [Запрос телеметрии обучения v4](../app/contracts/training_telemetry/v4/README.md)
 
-Путь compatibility v14 отсутствует. Existing generations, созданные до
-migration 0027, удалены и не могут использоваться для predict или warm start.
+Путь compatibility v16 отсутствует. Existing generations, созданные до
+migration 0028, удалены и не могут использоваться для predict или warm start.
 
 ## Fit
 
-1. Materialize self-contained Semantic v3 `ModelContract` из локальной
+1. Materialize self-contained Semantic v4 `ModelContract` из локальной
    семантики target/catalog/profile. Не передавайте paths profile, keys lookup
    target-ов или исполняемый loss code.
 2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, geometry
    tensor-а и `inputLayout.featureBlocks`.
-3. Вызовите `transformer.v16.fit.create` с UUID `requestId`, стабильным
+3. Вызовите `transformer.v17.fit.create` с UUID `requestId`, стабильным
    `idempotencyKey`, label, запрошенным устройством, model contract,
    configuration training и diagnostics и запрошенной initialization.
 4. Сохраните возвращённые `jobId`, `mutationLease` и resolved definition.
@@ -50,7 +50,7 @@ published.
 
 ## Predict
 
-Вызовите `transformer.v16.predict.create` с точным `modelRef`, запрошенным
+Вызовите `transformer.v17.predict.create` с точным `modelRef`, запрошенным
 устройством и текущим `dataBinding`. Не передавайте повторно TargetContract,
 Objective или model tuning. Create result передаёт `predictionDefinition` до
 upload: `seqLen`, output width и упорядоченные непрозрачные targets с public
@@ -75,22 +75,22 @@ validation errors имеют разные structured outcomes.
 
 ## Model catalog, topology и telemetry
 
-Используйте `transformer.model-catalog.v3.list` для owner-scoped discovery и
+Используйте `transformer.model-catalog.v4.list` для owner-scoped discovery и
 `.detail` для точного выбранного `modelRef`. List — bounded high-water/keyset
 traversal; параллельное deletion может заставить detail вернуть
 `MODEL_NOT_FOUND`, тогда вызывающая система обновляет своё представление.
 
-Используйте `transformer.training-telemetry.v3.report` для observations
+Используйте `transformer.training-telemetry.v4.report` для observations
 завершённого training pass и запрашивайте gradient interactions только после
 раскрытия этой секции UI. Отсутствие telemetry не скрывает и не делает
 опубликованную model некорректной.
 
-Используйте `transformer.model-topology.v1.detail` только для точного
+Используйте `transformer.model-topology.v2.detail` только для точного
 опубликованного `modelRef` и загружайте response лениво при открытии схемы
 модели. Topology уже привязана к `modelDefinitionSha256`; не выводите graph из
 model tuning или target names. Для объединения с telemetry сначала сравните
 точные `modelRef` и `modelDefinitionSha256`.
 
 Все три query packages определяют собственные schemas и rules outcomes. Их
-availability объявляется capabilities Flight v16, но их семантика не встроена в
+availability объявляется capabilities Flight v17, но их семантика не встроена в
 generic job actions.

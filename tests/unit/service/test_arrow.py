@@ -6,12 +6,12 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v16.arrow import (
+from app.contracts.flight.v17.arrow import (
     canonical_input_schema,
     validate_target_values,
 )
-from app.contracts.flight.v16.target_value_error import TargetValueError
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.flight.v17.target_value_error import TargetValueError
+from app.contracts.semantic.v4 import ModelContract
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
@@ -254,6 +254,73 @@ def test_closed_interval_compares_exact_float32_value_to_binary64_bound():
 
     with pytest.raises(TargetValueError):
         validate_target_values(values, target_contract)
+
+
+def test_weighted_binary_target_requires_exact_zero_or_one():
+    document = semantic_fixture_document(
+        "positive-class-weighted-binary-w1"
+    )["modelContract"]
+    assert isinstance(document, dict)
+    contract = ModelContract.from_document(document)
+
+    validate_target_values(
+        np.array([[0.0], [-0.0], [1.0]], dtype=np.float32),
+        contract.target_contract,
+        binary_target_indices=contract.weighted_binary_target_indices,
+    )
+
+    with pytest.raises(TargetValueError) as error:
+        validate_target_values(
+            np.array([[0.5]], dtype=np.float32),
+            contract.target_contract,
+            binary_target_indices=contract.weighted_binary_target_indices,
+        )
+
+    assert error.value.expected_domain == "Binary"
+
+
+def test_upload_reports_binary_target_domain_in_structured_error():
+    document = semantic_fixture_document(
+        "positive-class-weighted-binary-w1"
+    )["modelContract"]
+    assert isinstance(document, dict)
+    contract = ModelContract.from_document(document)
+    schema = canonical_input_schema(
+        "fit",
+        SOURCE_ENCODING,
+        seq_len=2,
+        feature_dim=4,
+        target_contract=contract.target_contract,
+    )
+    payload = InputBatchValidator(
+        "fit",
+        schema,
+        source_encoding=SOURCE_ENCODING,
+        target_contract=contract.target_contract,
+        binary_target_indices=contract.weighted_binary_target_indices,
+        seq_len=2,
+        expected_feature_dim=4,
+        max_batch_bytes=1024 * 1024,
+        max_payload_bytes=2 * 1024 * 1024,
+        max_rows=10,
+    )
+    batch = compact_batch()
+    columns = [batch.column(index) for index in range(batch.num_columns)]
+    columns[-1] = pa.array([[[0.5]]], type=schema.field("tgt").type)
+
+    with pytest.raises(ServiceError) as error:
+        payload.validate_batch(pa.record_batch(columns, schema=schema))
+
+    assert error.value.code is ErrorCode.INVALID_ARGUMENT
+    assert error.value.detail == {
+        "code": "INVALID_ARGUMENT",
+        "reason": "TARGET_VALUE_INVALID",
+        "targetIdentity": "OpaqueBinaryEvent",
+        "targetIndex": 0,
+        "logicalRow": 0,
+        "expectedDomain": "Binary",
+        "message": "target OpaqueBinaryEvent is invalid at logical row 0",
+    }
 
 
 @pytest.mark.parametrize(

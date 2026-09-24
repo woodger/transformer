@@ -2,10 +2,11 @@ from collections.abc import Callable
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v3 import (
+from app.contracts.model_catalog.v4 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
     validate_catalog_document,
 )
+from app.contracts.semantic.v4 import semantic_capabilities
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -474,6 +475,7 @@ class JobCoordinator:
                     self._get_training_telemetry_report is not None
                 ),
             },
+            semantic=semantic_capabilities(),
         )
 
     def health(self, request_id: str) -> JsonObject:

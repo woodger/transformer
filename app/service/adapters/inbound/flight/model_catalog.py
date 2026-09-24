@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v8 import validate_checkpoint_document
+from app.contracts.checkpoint.v9 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v3 import validate_catalog_document
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.model_catalog.v4 import validate_catalog_document
+from app.contracts.semantic.v4 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )
@@ -25,6 +25,7 @@ _CHECKPOINT_METADATA_FIELDS = (
     "jobId",
     "dataContract",
     "modelContract",
+    "predictionDefinition",
     "modelConfig",
     "semanticDigests",
     "trainingConfig",
@@ -137,6 +138,9 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
                 },
             },
             "modelContract": dict(model.model_contract),
+            "predictionDefinition": dict(
+                cast(JsonObject, checkpoint_metadata["predictionDefinition"])
+            ),
             "semanticDigests": dict(model.semantic_digests),
             "trainingConfig": dict(
                 cast(JsonObject, metadata["trainingConfig"])

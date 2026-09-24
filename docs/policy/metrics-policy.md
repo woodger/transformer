@@ -11,7 +11,7 @@ documents и projections —
 [`app/contracts/metrics/`](../../app/contracts/metrics/), а настройку доставки
 — [инструкция OpenSearch](../deployment/opensearch.md).
 Read-only public projection полного report задаёт
-[`Training Telemetry Query v3`](../../app/contracts/training_telemetry/v3/README.md).
+[`Training Telemetry Query v4`](../../app/contracts/training_telemetry/v4/README.md).
 
 Rationale best-effort artifact/outbox boundary сохранён в
 [ADR 0009](../adr/0009-centralized-training-metrics.md).

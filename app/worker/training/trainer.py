@@ -14,8 +14,8 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import (
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,

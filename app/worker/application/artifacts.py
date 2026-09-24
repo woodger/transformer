@@ -9,13 +9,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from app.contracts.checkpoint.v8 import (
+from app.contracts.checkpoint.v9 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v14 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v14.config import train_config_to_manifest
+from app.contracts.worker.v15 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v15.config import train_config_to_manifest
 from app.worker.application.documents import (
     integer_field,
     integer_list,
@@ -77,13 +77,17 @@ def checkpoint_metadata(
     best_selection_score = trainer.best_selection_score
     if not math.isfinite(best_selection_score):
         best_selection_score = None
+    data_contract = object_field(manifest, "dataContract")
     metadata: JsonObject = {
         "format": CHECKPOINT_FORMAT,
         "serviceVersion": __version__,
         "generation": trainer.state.global_epoch,
         "jobId": string_field(manifest, "jobId"),
-        "dataContract": dict(object_field(manifest, "dataContract")),
+        "dataContract": dict(data_contract),
         "modelContract": dict(object_field(manifest, "modelContract")),
+        "predictionDefinition": trainer.model_contract.prediction_definition(
+            integer_field(data_contract, "seqLen")
+        ),
         "modelConfig": trainer.model_config.to_manifest(),
         "semanticDigests": dict(object_field(manifest, "semanticDigests")),
         "trainingConfig": train_config_to_manifest(trainer.train_config),

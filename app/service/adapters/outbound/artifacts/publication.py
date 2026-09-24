@@ -10,17 +10,17 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v8 import (
+from app.contracts.checkpoint.v9 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v16.arrow import validate_prediction_file
+from app.contracts.flight.v17.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v15.config import ModelConfig, TrainConfig
+from app.contracts.worker.v15.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v15.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -366,6 +366,8 @@ class WorkerArtifactPublisher:
                 != job.data_contract
                 or checkpoint_metadata.get("modelContract")
                 != job.model_contract
+                or checkpoint_metadata.get("predictionDefinition")
+                != contract.prediction_definition(job.model_config.seq_len)
                 or checkpoint_metadata.get("modelConfig")
                 != job.model_config.to_manifest()
                 or checkpoint_metadata.get("semanticDigests")

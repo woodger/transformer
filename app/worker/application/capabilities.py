@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v3 import semantic_capabilities
-from app.contracts.worker.v14 import (
+from app.contracts.semantic.v4 import semantic_capabilities
+from app.contracts.worker.v15 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,

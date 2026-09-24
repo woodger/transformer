@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,

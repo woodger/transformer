@@ -47,7 +47,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v16 capabilities and limits.",
+    CAPABILITIES_ACTION: "Return Flight v17 capabilities and limits.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     FIT_CREATE_ACTION: "Create a durable fit job.",
     PREDICT_CREATE_ACTION: "Create a durable predict job.",

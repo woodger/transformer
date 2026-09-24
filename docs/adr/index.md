@@ -118,6 +118,7 @@ references. Он не воспроизводит их значения, кома
 | [0030](0030-owner-scoped-training-telemetry-query.md) | Принято | Публиковать owner-scoped training telemetry опубликованной generation |
 | [0031](0031-subject-specific-contract-vocabulary.md) | Заменено | Использовать предметный vocabulary shared contracts без `kind` |
 | [0032](0032-public-contract-simplification-clean-cut.md) | Принято | Упростить публичную границу и удалить несовместимое durable state |
+| [0033](0033-positive-class-weighted-binary-bce.md) | Принято | Добавить отдельный бинарный BCE с весом положительного класса |
 
 Отсутствующие номера принадлежат документам, не прошедшим admission при
 нормализации. Их содержание доступно в Git history, но не является частью

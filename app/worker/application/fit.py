@@ -9,15 +9,15 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import (
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.worker.v15.config import ModelConfig, TrainConfig
+from app.contracts.worker.v15.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v15.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,
@@ -95,6 +95,7 @@ def execute_fit(
             seq_len=model_config.seq_len,
             feature_dim=model_config.feature_dim,
             target_contract=model_contract.target_contract,
+            binary_target_indices=model_contract.weighted_binary_target_indices,
         )
 
     def decoded(items: Iterator[JsonObject]) -> Iterator[TrainingBatch]:

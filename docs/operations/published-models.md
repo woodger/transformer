@@ -10,7 +10,7 @@ maintenance boundaries описаны в
 [`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
 
 Публичные discovery и detail выполняются owner-scoped actions из
-[Model Catalog Query v3](../../app/contracts/model_catalog/v3/README.md).
+[Model Catalog Query v4](../../app/contracts/model_catalog/v4/README.md).
 Каталог является read-only и не заменяет описанные здесь административные
 команды удаления.
 

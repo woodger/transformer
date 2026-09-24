@@ -6,29 +6,29 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v16.codec import (
+from app.contracts.flight.v17.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
-from app.contracts.flight.v16.source_encoding import canonical_source_encoding
+from app.contracts.flight.v17.source_encoding import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v3 import (
+from app.contracts.model_catalog.v4 import (
     ModelCatalogContractError,
     validate_catalog_document,
 )
-from app.contracts.model_topology.v1 import (
+from app.contracts.model_topology.v2 import (
     ModelTopologyContractError,
     validate_model_topology_document,
 )
-from app.contracts.semantic.v3 import ModelContract, SemanticContractError
-from app.contracts.training_telemetry.v3 import (
+from app.contracts.semantic.v4 import ModelContract, SemanticContractError
+from app.contracts.training_telemetry.v4 import (
     TrainingTelemetryContractError,
     validate_training_telemetry_document,
 )
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import (
+from app.contracts.worker.v15.config import ModelConfig, TrainConfig
+from app.contracts.worker.v15.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v15.model_definition import (
     resolved_semantic_digests,
 )
 from app.service.adapters.inbound.flight.constants import (
@@ -211,11 +211,11 @@ def validate_action_request(
     action_name: str,
     document: JsonObject,
 ) -> ValidatedActionRequest:
-    from app.contracts.model_catalog.v3.constants import (
+    from app.contracts.model_catalog.v4.constants import (
         DETAIL_ACTION as MODEL_CATALOG_DETAIL_ACTION,
         LIST_ACTION as MODEL_CATALOG_LIST_ACTION,
     )
-    from app.contracts.training_telemetry.v3.constants import (
+    from app.contracts.training_telemetry.v4.constants import (
         GRADIENT_INTERACTIONS_ACTION as TRAINING_TELEMETRY_GRADIENT_ACTION,
         REPORT_ACTION as TRAINING_TELEMETRY_REPORT_ACTION,
     )

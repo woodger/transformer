@@ -35,7 +35,7 @@ resources.
 - worker не импортирует service, Flight или database implementation;
 - admin не импортирует worker или Flight server;
 - service/worker обмениваются данными только через
-  `app/contracts/worker/v14`.
+  `app/contracts/worker/v15`.
 
 Import graph не содержит циклов. Environment, connections, CUDA
 initialization и filesystem mutation не выполняются при import. Эти правила

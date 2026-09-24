@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/checkpoint/v9/common.schema.json",
+  "title": "Transformer checkpoint v9 common definitions",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dataContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataContractSha256", "seqLen", "featureDim"],
+      "properties": {
+        "dataContractSha256": {"$ref": "#/$defs/sha256"},
+        "seqLen": {"type": "integer", "minimum": 1},
+        "featureDim": {"type": "integer", "minimum": 1}
+      }
+    },
+    "modelConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seqLen", "featureDim", "hiddenWidth", "encoderLayerCount", "dropoutProbability", "attentionHeadCount", "missingValuePolicy"],
+      "properties": {
+        "seqLen": {"type": "integer", "minimum": 1},
+        "featureDim": {"type": "integer", "minimum": 1},
+        "hiddenWidth": {"type": "integer", "minimum": 1},
+        "encoderLayerCount": {"type": "integer", "minimum": 1},
+        "dropoutProbability": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+        "attentionHeadCount": {"type": "integer", "minimum": 1},
+        "missingValuePolicy": {"enum": ["strict", "relaxed"]}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "byteCount",
+        "checkpointSha256"
+      ],
+      "properties": {
+        "format": {
+          "const": "transformer-checkpoint-v9"
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkpointSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "trainingConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lr",
+        "batchSize",
+        "epochs",
+        "useAmp",
+        "weightDecay",
+        "selection",
+        "seed",
+        "deterministic"
+      ],
+      "properties": {
+        "lr": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "batchSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "useAmp": {
+          "type": "boolean"
+        },
+        "weightDecay": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selection": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "minDelta",
+                "patience"
+              ],
+              "properties": {
+                "minDelta": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "patience": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          ]
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "deterministic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "diagnosticsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "gradientInteractions"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "gradientInteractions": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "everySteps",
+                "maxBatches"
+              ],
+              "properties": {
+                "everySteps": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "maxBatches": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "selectionState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "modelDefinitionSha256",
+        "bestSelectionScore",
+        "bestEpoch",
+        "source"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "modelDefinitionSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bestSelectionScore": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "bestEpoch": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "source": {
+          "enum": [
+            "best_direct_selection_score",
+            "last_epoch"
+          ]
+        }
+      }
+    },
+    "resolvedInitialization": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "source": {
+              "const": "random"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "parentModelRef",
+            "parentCheckpointSha256",
+            "parentDataContractSha256",
+            "dataContractSha256",
+            "parentTargetContractSha256",
+            "targetContractSha256",
+            "parentObjectiveSha256",
+            "objectiveSha256",
+            "parentModelDefinitionSha256",
+            "modelDefinitionSha256"
+          ],
+          "properties": {
+            "source": {
+              "const": "publishedModel"
+            },
+            "parentModelRef": {
+              "type": "string",
+              "pattern": "^mdl_[0-9a-f]{32}$"
+            },
+            "parentCheckpointSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "parentDataContractSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "dataContractSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "parentTargetContractSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "targetContractSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "parentObjectiveSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "objectiveSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "parentModelDefinitionSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "modelDefinitionSha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      ]
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completedEpochs",
+        "globalStep",
+        "trainingComplete"
+      ],
+      "properties": {
+        "completedEpochs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "globalStep": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trainingComplete": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

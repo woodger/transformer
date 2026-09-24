@@ -4,15 +4,15 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.contracts.metrics.fit_run.v7 import build_run_summary
-from app.contracts.metrics.v7 import (
+from app.contracts.metrics.fit_run.v8 import build_run_summary
+from app.contracts.metrics.v8 import (
     build_training_record,
 )
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import CHECKPOINT_FORMAT
-from app.contracts.worker.v14.config import TrainConfig
-from app.contracts.worker.v14.model_config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15 import CHECKPOINT_FORMAT
+from app.contracts.worker.v15.config import TrainConfig
+from app.contracts.worker.v15.model_config import ModelConfig
+from app.contracts.worker.v15.model_definition import resolved_semantic_digests
 from tests.fixture_documents import semantic_fixture_document
 
 DATA_CONTRACT_SHA256 = "d" * 64

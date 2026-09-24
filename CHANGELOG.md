@@ -7,6 +7,35 @@
 
 ## [Не выпущено]
 
+### Добавлено
+
+- Semantic v4 вводит отдельный бинарный примитив
+  `PositiveClassWeightedBinaryCrossEntropyWithLogits`. Он принимает явный
+  вес положительного класса, применяет его до `GlobalRowMean` и публикует
+  вероятность исходного распределения как `sigmoid(logit - log(weight))`.
+- Model Catalog v4, predict-create и Model Topology v2 публикуют
+  checkpoint-owned описание публичного prediction; topology явно показывает
+  выводимую поправку взвешенного бинарного head.
+- Migration `0028` выполняет destructive clean cut старых jobs, models,
+  recovery и telemetry metadata после terminal fencing jobs. OpenSearch
+  telemetry переходит с нормативных v7 indices на v8 отдельной deployment
+  procedure.
+
+### Изменено
+
+- Единственная активная граница — Semantic v4 / Flight v17 / Worker v15 /
+  checkpoint-recovery v9 / metrics v8 / Model Catalog v4 / Training Telemetry
+  v4 / Model Topology v2.
+- Взвешенные бинарные targets принимают только точные значения `0` или `1` при
+  upload и при повторном чтении входных Arrow данных Worker-ом. Существующий
+  `BinaryCrossEntropyWithLogits` и его soft-label semantics не изменены.
+
+### Удалено
+
+- Flight v16 и прежние Semantic v3, Worker v14, checkpoint/recovery v8,
+  metrics v7 и query packages не обслуживаются runtime и не имеют
+  compatibility reader или alias.
+
 ### Изменено
 
 - PyTorch обновлён до 2.14.0 вместе с его совместимыми зависимостями CUDA 13:

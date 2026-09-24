@@ -5,7 +5,7 @@
 
 Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
 начинаются только через аутентифицированную границу вызывающей системы Flight
-v16.
+v17.
 
 ## Подготовить окружение
 
@@ -46,14 +46,14 @@ command history, или логах.
 ./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Для production используйте процедуру systemd. Migration 0027 была разовым
-destructive clean cut для перехода на Semantic v3; Flight v16 не требует
+Для production используйте процедуру systemd. Migration 0028 является
+destructive clean cut для перехода на Semantic v4; Flight v17 не требует
 повторного удаления опубликованных generations.
 
-Вызывающая система материализует `ModelContract` Semantic v3, создаёт job fit
-или predict v16, загружает compact `indexedFeatureBlocks`, закрывает input и
+Вызывающая система материализует `ModelContract` Semantic v4, создаёт job fit
+или predict v17, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
-[Flight v16](../app/contracts/flight/v16/README.md); это руководство намеренно
+[Flight v17](../app/contracts/flight/v17/README.md); это руководство намеренно
 не дублирует wire examples.
 
 ## Проверка изменений

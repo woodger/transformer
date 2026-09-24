@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-topology/v2/common.schema.json",
+  "title": "Transformer model topology query v2 common definitions",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "modelRef": {"type": "string", "pattern": "^mdl_[0-9a-f]{32}$"},
+    "identity": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/common.schema.json#/$defs/identity"
+    },
+    "positiveInteger": {
+      "type": "integer", "minimum": 1, "maximum": 9007199254740991
+    },
+    "nonnegativeInteger": {
+      "type": "integer", "minimum": 0, "maximum": 9007199254740991
+    },
+    "nodeId": {
+      "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "portId": {
+      "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$"
+    },
+    "plainText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"$ref": "#/$defs/portId"},
+        "label": {"$ref": "#/$defs/plainText"}
+      }
+    },
+    "axis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["axis", "size"],
+          "properties": {
+            "axis": {"const": "batch"},
+            "size": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["axis", "size"],
+          "properties": {
+            "axis": {
+              "enum": ["sequence", "feature", "contextFeature", "hidden"]
+            },
+            "size": {"$ref": "#/$defs/positiveInteger"}
+          }
+        }
+      ]
+    },
+    "logicalShape": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {"$ref": "#/$defs/axis"}
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "inputPorts", "outputPorts"],
+      "properties": {
+        "id": {"$ref": "#/$defs/nodeId"},
+        "label": {"$ref": "#/$defs/plainText"},
+        "inputPorts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/port"}
+        },
+        "outputPorts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/port"}
+        },
+        "targetIdentity": {"$ref": "#/$defs/identity"},
+        "targetIndex": {"$ref": "#/$defs/nonnegativeInteger"},
+        "resourceIdentity": {"$ref": "#/$defs/identity"},
+        "resourceClass": {"const": "PositiveScalarPerObservation"},
+        "componentIdentity": {"$ref": "#/$defs/identity"},
+        "operator": {
+          "enum": [
+            "SmoothL1",
+            "BinaryCrossEntropyWithLogits",
+            "LogMSE",
+            "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+            "GaussianNLL",
+            "ExpectedValue",
+            "RiskAdjustedExpectedValue"
+          ]
+        },
+        "componentWeight": {"type": "number", "exclusiveMinimum": 0},
+        "positiveClassWeight": {
+          "$ref": "https://transformer.local/contracts/semantic/v4/common.schema.json#/$defs/positiveNumber"
+        },
+        "derivedCorrection": {
+          "const": "subtractLogPositiveClassWeight"
+        },
+        "transformation": {"enum": ["Identity", "Tanh", "Sigmoid"]},
+        "reduction": {"const": "GlobalRowMean"},
+        "aggregation": {"const": "WeightedSum"},
+        "encoderLayer": {"$ref": "#/$defs/positiveInteger"},
+        "attentionHeadCount": {"$ref": "#/$defs/positiveInteger"}
+      },
+      "dependentRequired": {
+        "targetIdentity": ["targetIndex"],
+        "targetIndex": ["targetIdentity"],
+        "resourceIdentity": ["resourceClass"],
+        "resourceClass": ["resourceIdentity"],
+        "componentIdentity": ["operator", "componentWeight", "reduction"],
+        "operator": ["componentIdentity", "componentWeight", "reduction"],
+        "componentWeight": ["componentIdentity", "operator", "reduction"],
+        "reduction": ["componentIdentity", "operator", "componentWeight"],
+        "positiveClassWeight": ["derivedCorrection", "targetIdentity", "targetIndex"],
+        "derivedCorrection": ["positiveClassWeight", "targetIdentity", "targetIndex"],
+        "encoderLayer": ["attentionHeadCount"],
+        "attentionHeadCount": ["encoderLayer"]
+      },
+      "allOf": [
+        {
+          "not": {
+            "anyOf": [
+              {"required": ["targetIdentity", "resourceIdentity"]},
+              {"required": ["resourceIdentity", "componentIdentity"]},
+              {"required": ["transformation", "componentIdentity"]},
+              {"required": ["transformation", "resourceIdentity"]},
+              {"required": ["aggregation", "targetIdentity"]},
+              {"required": ["aggregation", "resourceIdentity"]},
+              {"required": ["aggregation", "componentIdentity"]},
+              {"required": ["aggregation", "transformation"]},
+              {"required": ["aggregation", "encoderLayer"]},
+              {"required": ["positiveClassWeight", "resourceIdentity"]},
+              {"required": ["positiveClassWeight", "componentIdentity"]},
+              {"required": ["positiveClassWeight", "transformation"]},
+              {"required": ["positiveClassWeight", "aggregation"]},
+              {"required": ["positiveClassWeight", "encoderLayer"]},
+              {"required": ["encoderLayer", "targetIdentity"]},
+              {"required": ["encoderLayer", "resourceIdentity"]},
+              {"required": ["encoderLayer", "componentIdentity"]},
+              {"required": ["encoderLayer", "transformation"]}
+            ]
+          }
+        },
+        {
+          "if": {"required": ["transformation"]},
+          "then": {"required": ["targetIdentity", "targetIndex"]}
+        },
+        {
+          "if": {"required": ["derivedCorrection"]},
+          "then": {"required": ["targetIdentity", "targetIndex"]}
+        }
+      ]
+    },
+    "nodePortRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "portId"],
+      "properties": {
+        "nodeId": {"$ref": "#/$defs/nodeId"},
+        "portId": {"$ref": "#/$defs/portId"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "logicalShape", "gradientFlow"],
+      "properties": {
+        "from": {"$ref": "#/$defs/nodePortRef"},
+        "to": {"$ref": "#/$defs/nodePortRef"},
+        "logicalShape": {"$ref": "#/$defs/logicalShape"},
+        "gradientFlow": {
+          "enum": ["propagates", "stopped", "notApplicable"]
+        }
+      }
+    }
+  }
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v4 import ModelContract
 from app.service.adapters.inbound.flight.constants import (
     CONTRACT_PATH_VERSION,
 )
@@ -87,27 +87,14 @@ def present_job_created(result: JobCreated) -> JsonObject:
     if result.resolved_model_ref is None:
         raise ValueError("predict job is missing its resolved model reference")
     model_contract = ModelContract.from_document(result.model_contract)
-    targets: list[JsonObject] = []
-    for slot in model_contract.target_slots:
-        identity = slot["identity"]
-        transformation = slot["publicPredictionTransformation"]
-        if not isinstance(identity, str) or not isinstance(transformation, str):
-            raise ValueError("model target slots are invalid")
-        targets.append(
-            {
-                "identity": identity,
-                "publicPredictionTransformation": transformation,
-            },
-        )
+    seq_len = result.data_contract["seqLen"]
+    if type(seq_len) is not int:
+        raise ValueError("prediction data sequence length is invalid")
     return response_document(
         result.request_id,
         **common,
         modelRef=result.resolved_model_ref,
-        predictionDefinition={
-            "seqLen": result.data_contract["seqLen"],
-            "outputWidth": model_contract.target_width,
-            "targets": targets,
-        },
+        predictionDefinition=model_contract.prediction_definition(seq_len),
     )
 
 

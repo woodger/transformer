@@ -21,15 +21,15 @@ Torch, CUDA или runtime Flight. Локального пути исполне�
 нет.
 
 ```text
-app/contracts/semantic/v3          semantic target/objective language
-app/contracts/flight/v16           public Flight workflow
-app/contracts/model_catalog/v3     owner-scoped model discovery/detail
-app/contracts/model_topology/v1    owner-scoped public model topology
-app/contracts/training_telemetry/v3 owner-scoped telemetry report
-app/contracts/worker/v14           internal service-to-worker protocol
-app/contracts/checkpoint/v8        internal checkpoint/recovery metadata
-app/contracts/metrics/v7           internal epoch metrics/OpenSearch points
-app/contracts/metrics/fit_run/v7   internal terminal run summary
+app/contracts/semantic/v4          semantic target/objective language
+app/contracts/flight/v17           public Flight workflow
+app/contracts/model_catalog/v4     owner-scoped model discovery/detail
+app/contracts/model_topology/v2    owner-scoped public model topology
+app/contracts/training_telemetry/v4 owner-scoped telemetry report
+app/contracts/worker/v15           internal service-to-worker protocol
+app/contracts/checkpoint/v9        internal checkpoint/recovery metadata
+app/contracts/metrics/v8           internal epoch metrics/OpenSearch points
+app/contracts/metrics/fit_run/v8   internal terminal run summary
 ```
 
 ## Сервис Flight
@@ -53,7 +53,7 @@ Domain владеет состояниями job, errors и правилами l
 владеют PostgreSQL, storage artifacts, supervision worker process, inventory
 CUDA и OpenSearch.
 
-Flight v16 принимает предоставленные вызывающей системой data binding, semantic
+Flight v17 принимает предоставленные вызывающей системой data binding, semantic
 model intent, training intent и запрошенную initialization. Он выпускает
 identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
 реализация модели, operational fences, schema fingerprints, версии
@@ -62,7 +62,7 @@ worker/checkpoint и детали artifacts — не пересекают пуб
 ## Worker и tensor data plane
 
 Один process Worker исполняет один принадлежащий service attempt. Он получает
-immutable manifest Worker v14, записывает только artifacts workspace attempt и
+immutable manifest Worker v15, записывает только artifacts workspace attempt и
 возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
 identity.
 
@@ -73,7 +73,7 @@ Float32 `[rows, seqLen, featureDim]` ограниченными slices до batc
 физических payload/chunk не меняют логический порядок, training rows или target
 coordinates.
 
-Target identities Semantic v3 непрозрачны. Упорядоченные slots определяют
+Target identities Semantic v4 непрозрачны. Упорядоченные slots определяют
 ширину target и prediction. Transformer интерпретирует generic transformations,
 operators, typed roles и private resource classes, но никогда не имена target
 внешней предметной области, profiles, FIGIs или feature formulas.
@@ -86,17 +86,17 @@ inputs, attempt artifacts, recovery artifacts, checkpoints моделей и в�
 artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
 registry или состояния job.
 
-Model Catalog Query v3 читает owner-scoped state registry. Model Topology Query
-v1 строит browser-safe статическую projection из metadata generation. Training
-Telemetry Query v3 валидирует полную projection относительно принадлежащих
+Model Catalog Query v4 читает owner-scoped state registry. Model Topology Query
+v2 строит browser-safe статическую projection из metadata generation. Training
+Telemetry Query v4 валидирует полную projection относительно принадлежащих
 checkpoint-у metadata модели до раскрытия. Ни один query не позволяет
 вызывающей системе получить filesystem paths, bytes checkpoint-а или topology
 OpenSearch.
 
-Migration 0027 намеренно разрушительна: она отклоняет active jobs и удаляет
+Migration 0028 намеренно разрушительна: она отклоняет active jobs и удаляет
 предыдущее состояние public boundary. Startup reconciliation удаляет managed
 artifacts, оставшиеся без references после clean cut. Замена индексов OpenSearch
-v6 на v7 — явная release operation.
+v7 на v8 — явная release operation.
 
 ## Правила зависимостей
 

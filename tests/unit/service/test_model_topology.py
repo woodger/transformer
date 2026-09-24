@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v16.codec import validate_request_document
-from app.contracts.flight.v16.constants import ACTIONS
-from app.contracts.model_topology.v1 import validate_model_topology_document
-from app.contracts.model_topology.v1.constants import DETAIL_ACTION
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.flight.v17.codec import validate_request_document
+from app.contracts.flight.v17.constants import ACTIONS
+from app.contracts.model_topology.v2 import validate_model_topology_document
+from app.contracts.model_topology.v2.constants import DETAIL_ACTION
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15.config import ModelConfig
+from app.contracts.worker.v15.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.model_topology import (
     model_topology_response,
@@ -47,6 +47,31 @@ def _model() -> PublishedModelRecord:
         sha256="b" * 64,
         metadata={"modelConfig": config.to_manifest()},
         data_contract={"seqLen": 3, "featureDim": 12},
+        model_contract=contract.to_document(),
+        semantic_digests=resolved_semantic_digests(contract, "a" * 64, config),
+        producing_job_id="22222222-2222-4222-8222-222222222222",
+        created_at=0,
+    )
+
+
+def _weighted_binary_model() -> PublishedModelRecord:
+    document = semantic_fixture_document("positive-class-weighted-binary-w28")
+    contract = ModelContract.from_document(document["modelContract"])
+    config = ModelConfig.from_tuning(
+        contract.model_tuning,
+        seq_len=2,
+        feature_dim=8,
+    )
+    return PublishedModelRecord(
+        model_ref="mdl_33333333333333333333333333333333",
+        owner_subject="owner-a",
+        label="topology",
+        generation=1,
+        checkpoint_path="/missing/checkpoint.pth",
+        byte_count=1,
+        sha256="b" * 64,
+        metadata={"modelConfig": config.to_manifest()},
+        data_contract={"seqLen": 2, "featureDim": 8},
         model_contract=contract.to_document(),
         semantic_digests=resolved_semantic_digests(contract, "a" * 64, config),
         producing_job_id="22222222-2222-4222-8222-222222222222",
@@ -94,6 +119,37 @@ def test_topology_materializes_public_execution_graph():
     } in topology["edges"]
 
 
+def test_topology_exposes_derived_positive_class_logit_correction():
+    model = _weighted_binary_model()
+    topology = ModelTopologyBuilder().build(model)
+
+    validate_model_topology_document(
+        {
+            "requestId": "11111111-1111-4111-8111-111111111111",
+            "modelRef": model.model_ref,
+            **topology,
+        },
+        "detail-result",
+    )
+
+    nodes = {node["id"]: node for node in topology["nodes"]}
+    correction = nodes["target-0-public-correction"]
+    assert correction["positiveClassWeight"] == 28.0
+    assert correction["derivedCorrection"] == "subtractLogPositiveClassWeight"
+    assert {
+        "from": {
+            "nodeId": "target-0-public-correction",
+            "portId": "corrected",
+        },
+        "to": {
+            "nodeId": "target-0-prediction",
+            "portId": "raw",
+        },
+        "logicalShape": [{"axis": "batch", "size": None}],
+        "gradientFlow": "propagates",
+    } in topology["edges"]
+
+
 def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     model = _model()
     topology = ModelTopologyBuilder().build(model)
@@ -107,7 +163,7 @@ def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     validate_request_document(document, "action-result")
 
 
-def test_flight_v16_dispatches_the_model_topology_action():
+def test_flight_v17_dispatches_the_model_topology_action():
     model = _model()
     entry = CatalogModelRecord(
         model=model,
@@ -152,7 +208,7 @@ def test_flight_v16_dispatches_the_model_topology_action():
     )
 
     assert response["modelRef"] == model.model_ref
-    assert response["topologyRevision"] == 1
+    assert response["topologyRevision"] == 2
 
 
 def test_topology_query_is_owner_scoped_and_does_not_read_the_checkpoint():

@@ -8,19 +8,20 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.contracts.flight.v16.arrow import (
+from app.contracts.flight.v17.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,
     validate_target_values,
 )
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
+from app.contracts.flight.v17.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
 
 if TYPE_CHECKING:
     import torch
+
 
 class _ArrowTable(Protocol):
     @property
@@ -60,6 +61,7 @@ def iter_committed_fit_arrow(
     seq_len: int,
     feature_dim: int,
     target_contract: JsonObject,
+    binary_target_indices: Sequence[int] = (),
 ) -> Iterator[TrainingBatch]:
     """Decode one immutable compact fit artifact in bounded row slices.
 
@@ -77,6 +79,7 @@ def iter_committed_fit_arrow(
         feature_dim=feature_dim,
         require_target=True,
         target_contract=target_contract,
+        binary_target_indices=binary_target_indices,
     ):
         if target_values is None:
             raise AssertionError("fit compact input has no target values")
@@ -123,6 +126,7 @@ def _iter_committed_indexed_arrow(
     feature_dim: int,
     require_target: bool,
     target_contract: JsonObject,
+    binary_target_indices: Sequence[int] = (),
 ) -> Iterator[tuple[np.ndarray, np.ndarray | None]]:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
@@ -206,6 +210,7 @@ def _iter_committed_indexed_arrow(
                         target_values,
                         target_contract,
                         logical_row_offset=observed_rows,
+                        binary_target_indices=binary_target_indices,
                     )
                 row_bytes = 4 * (
                     seq_len * feature_dim

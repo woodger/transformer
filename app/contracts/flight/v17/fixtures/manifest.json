@@ -1,0 +1,54 @@
+{
+  "contract": "transformer-flight-fixtures",
+  "version": 17,
+  "files": [
+    {
+      "path": "indexed-feature-blocks/heterogeneous-multi-block.json",
+      "sha256": "ca6a57abffd56621d0689d797ab62d77b30d4d35709b4bd9cfcb971af65f20ec"
+    },
+    {
+      "path": "indexed-feature-blocks/missing-native-prefix.json",
+      "sha256": "269f2676c7bce6d7d3cac9cdd5bfa0783784b37cef6070a20fdf973c6bdbb8d3"
+    },
+    {
+      "path": "indexed-feature-blocks/non-contiguous-native-offsets.json",
+      "sha256": "d40e2f7781ef43b6a21e18bb3b08de7b260e455952a9b58964c34096a0a83ff0"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-one-chunk.json",
+      "sha256": "1fbea3d18c42fb54fe2474babb70b5ceb490277869b6d48cf50873442adfc8a1"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-two-chunks.json",
+      "sha256": "b7299ee39359ddf49f10d2bacdb34e3abe4b1606a91a16dc4515f8394602b2f9"
+    },
+    {
+      "path": "indexed-feature-blocks/single-block.json",
+      "sha256": "3097183798bbb34fe07fd950c38beb9bbab9cf48d08af3425bd269ad185bbf6f"
+    },
+    {
+      "path": "json/capabilities.result.json",
+      "sha256": "b9385f268c555cdeecb615884388eb2e5f18d6172e8f7ccb6854385183eedbc2"
+    },
+    {
+      "path": "json/job-config.fit.json",
+      "sha256": "9f9fd8bb04a10224eb4749c283764f0fc99720b34b1307f91997eda950380552"
+    },
+    {
+      "path": "json/job-config.predict.json",
+      "sha256": "e31df0acb081588dc1b00f9eadcb3e56c3d6b24b32ae5033555d3f9bd3529e6d"
+    },
+    {
+      "path": "json/job-config.published-model.json",
+      "sha256": "faaca2073e81232bd98a5d011e861b1cb621b75f286c964a22be170fe62d3d08"
+    },
+    {
+      "path": "json/requested-initialization.published-model.json",
+      "sha256": "2f6b4cacc4a4f50f66cec57f60ad3aadb19a165c5267b9604d59a0100974e6b7"
+    },
+    {
+      "path": "json/requested-initialization.random.json",
+      "sha256": "47ae2d1c603239ba5b76837b3d155745e7b94c96224cd2e6d7b7ccb4a2869e3e"
+    }
+  ]
+}

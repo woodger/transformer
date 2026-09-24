@@ -4,8 +4,8 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
-from app.contracts.worker.v14.constants import (
+from app.contracts.flight.v17.source_encoding import feature_block_dimensions
+from app.contracts.worker.v15.constants import (
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
 )

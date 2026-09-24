@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.contracts.semantic.v3 import ModelContract, SemanticContractError
-from app.contracts.worker.v14.config import ModelConfig
-from app.contracts.worker.v14.constants import CHECKPOINT_FORMAT
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v4 import ModelContract, SemanticContractError
+from app.contracts.worker.v15.config import ModelConfig
+from app.contracts.worker.v15.constants import CHECKPOINT_FORMAT
+from app.contracts.worker.v15.model_definition import resolved_semantic_digests
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
@@ -41,6 +41,10 @@ def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
             metadata.get("format") != CHECKPOINT_FORMAT
             or metadata.get("dataContract") != model.data_contract
             or metadata.get("modelContract") != model.model_contract
+            or metadata.get("predictionDefinition")
+            != contract.prediction_definition(
+                _positive_integer(model.data_contract.get("seqLen"))
+            )
             or metadata.get("semanticDigests") != model.semantic_digests
         ):
             raise ValueError("checkpoint metadata differs from published model")
@@ -187,6 +191,12 @@ def _digest(value: object, label: str) -> str:
         or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError(f"{label} is invalid")
+    return value
+
+
+def _positive_integer(value: object) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError("positive integer is invalid")
     return value
 
 

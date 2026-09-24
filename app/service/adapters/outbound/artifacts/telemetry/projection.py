@@ -6,14 +6,14 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v7 import (
+from app.contracts.metrics.fit_run.v8 import (
     PROJECTION_VERSION,
     SUMMARY_FORMAT,
     SUMMARY_MEDIA_TYPE,
     build_run_document,
     validate_run_summary,
 )
-from app.contracts.metrics.v7 import (
+from app.contracts.metrics.v8 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     project_training_points,

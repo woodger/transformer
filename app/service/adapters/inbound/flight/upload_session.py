@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v4 import ModelContract
 from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
 from app.service.adapters.inbound.flight.validation import validate_upload_metadata
@@ -139,15 +139,19 @@ class InputUploadSession:
                         self.authorization.storage_class
                     ]
                     feature_dim = self.authorization.job.model_config.feature_dim
+                    model_contract = ModelContract.from_document(
+                        self.authorization.job.model_contract
+                    )
                     self.validator = InputBatchValidator(
                         self.authorization.job.operation,
                         self.reader.schema,
                         source_encoding=(
                             self.authorization.job.source_encoding
                         ),
-                        target_contract=ModelContract.from_document(
-                            self.authorization.job.model_contract
-                        ).target_contract,
+                        target_contract=model_contract.target_contract,
+                        binary_target_indices=(
+                            model_contract.weighted_binary_target_indices
+                        ),
                         seq_len=(
                             self.authorization.job.model_config.seq_len
                         ),

@@ -1,6 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://transformer.local/contracts/checkpoint/v8/checkpoint-artifact.schema.json",
-  "title": "Transformer checkpoint v8 external artifact identity",
-  "$ref": "common.schema.json#/$defs/artifact"
-}

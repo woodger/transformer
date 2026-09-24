@@ -7,13 +7,16 @@ PyTorch через аутентифицированные задания Apache 
 
 ## Актуальная граница
 
-- Flight v16 — единственный публичный workflow заданий.
-- Semantic v3 содержит упорядоченные непрозрачные targets, явные bindings
+- Flight v17 — единственный публичный workflow заданий.
+- Semantic v4 содержит упорядоченные непрозрачные targets, явные bindings
   objective и настройку модели без внешних предметных литералов
-  архитектуры.
-- Model Catalog Query v3, Model Topology Query v1 и Training Telemetry Query
-  v3 — owner-scoped поверхности только для чтения, активируемые Flight v16.
-- Worker v14, checkpoint/recovery v8 и metrics v7 являются внутренними для
+  архитектуры. Для строго бинарной цели прямого компонента доступен отдельный
+  примитив `PositiveClassWeightedBinaryCrossEntropyWithLogits` с явным весом
+  положительного класса и автоматической проекцией вероятности исходного
+  распределения.
+- Model Catalog Query v4, Model Topology Query v2 и Training Telemetry Query
+  v4 — owner-scoped поверхности только для чтения, активируемые Flight v17.
+- Worker v15, checkpoint/recovery v9 и metrics v8 являются внутренними для
   provider-а.
 - `indexedFeatureBlocks` остаётся компактным Arrow-представлением входных
   данных; его семантика логического восстановления не изменилась.
@@ -50,13 +53,13 @@ generations и состояния Alembic. Точные параметры по�
 
 ## Документация
 
-- [Flight v16](./app/contracts/flight/v16/README.md)
-- [Семантическая модель v3](./app/contracts/semantic/v3/README.md)
-- [Запрос каталога моделей v3](./app/contracts/model_catalog/v3/README.md)
-- [Запрос topology модели v1](./app/contracts/model_topology/v1/README.md)
-- [Запрос телеметрии обучения v3](./app/contracts/training_telemetry/v3/README.md)
-- [Worker v14](./app/contracts/worker/v14/README.md)
-- [Checkpoint/recovery v8](./app/contracts/checkpoint/v8/README.md)
+- [Flight v17](./app/contracts/flight/v17/README.md)
+- [Семантическая модель v4](./app/contracts/semantic/v4/README.md)
+- [Запрос каталога моделей v4](./app/contracts/model_catalog/v4/README.md)
+- [Запрос topology модели v2](./app/contracts/model_topology/v2/README.md)
+- [Запрос телеметрии обучения v4](./app/contracts/training_telemetry/v4/README.md)
+- [Worker v15](./app/contracts/worker/v15/README.md)
+- [Checkpoint/recovery v9](./app/contracts/checkpoint/v9/README.md)
 - [Архитектура](./docs/architecture.md)
 - [Интеграция с Flight](./docs/flight-integration.md)
 - [Эксплуатация Flight](./docs/operations/flight-service.md)

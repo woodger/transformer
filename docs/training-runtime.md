@@ -1,11 +1,11 @@
 # Runtime обучения и checkpoint
 
-> Тип: справочник. Принадлежащие provider-у обучение Worker v14, checkpoint
-> v8 и поведение recovery за Flight v16.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v15, checkpoint
+> v9 и поведение recovery за Flight v17.
 
 ## Model definition и обучение
 
-Fit Flight v16 получает документ target/objective Semantic v3 и geometry
+Fit Flight v17 получает документ target/objective Semantic v4 и geometry
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
@@ -14,7 +14,7 @@ target slots задают output coordinates; ни одна ветвь model/los
 Worker применяет loss-input и public-prediction transformations каждого slot к
 одной raw output coordinate. Direct и auxiliary operators, private resource
 classes и gradient semantics документированы в [losses](./losses.md) и Semantic
-v3. Training policy отделена от identity model definition. При включённом
+v4. Training policy отделена от identity model definition. При включённом
 selection используется weighted direct-loss score; auxiliary components не
 входят в этот score.
 
@@ -30,14 +30,14 @@ placeholder.
 
 ## Input, epochs и recovery
 
-Worker восстанавливает компактный input Flight v16 `indexedFeatureBlocks` в
+Worker восстанавливает компактный input Flight v17 `indexedFeatureBlocks` в
 ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
 являются batches optimizer-а, границами shuffle или границами epoch. Durable
 fit может начаться после появления input-а; close отмечает EOF и фиксирует
 input manifest для последующих полных epochs.
 
 Checkpoints recovery создаются только на завершённых границах global epoch после
-EOF. Checkpoint v8 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
+EOF. Checkpoint v9 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
 progress, semantic identities, resolved configuration job и fences input
 manifest. Recovery проверяет их до загрузки state. Другая definition data/model
 или manifest отклоняются; remapping target-ов и частичная загрузка state не
@@ -61,13 +61,13 @@ Telemetry epoch — observation её training pass до каждого optimizer
 gradient interactions. Её best-effort persistence не меняет исполнение
 optimizer-а, selection, успех fit или публикацию модели.
 
-OpenSearch получает принадлежащую provider-у projection v7. Вызывающая система
-получает валидированный, нормализованный report через Training Telemetry Query v3, а не
+OpenSearch получает принадлежащую provider-у projection v8. Вызывающая система
+получает валидированный, нормализованный report через Training Telemetry Query v4, а не
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 
 ## Исторический чистый переход
 
-Checkpoint/recovery v8 не имеет reader для прежнего state checkpoint-а.
-Migration 0027 удаляет старые jobs и generations перед активацией Flight v15;
+Checkpoint/recovery v9 не имеет reader для прежнего state checkpoint-а.
+Migration 0028 удаляет старые jobs и generations перед активацией Flight v17;
 после deployment обучите новые generations.

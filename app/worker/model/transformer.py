@@ -5,8 +5,8 @@ from typing import cast
 import torch
 import torch.nn as nn
 
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -136,13 +136,21 @@ def public_predictions(
         )
     if not bool(torch.isfinite(model_output).all()):
         raise ValueError("model output contains non-finite raw values")
-    values = tuple(
-        apply_transformation(
-            model_output[:, index],
-            cast(str, slot["publicPredictionTransformation"]),
+    values: list[torch.Tensor] = []
+    for index, slot in enumerate(model_contract.target_slots):
+        raw_value = model_output[:, index]
+        positive_class_weight = model_contract.positive_class_weight_for_target(
+            index
         )
-        for index, slot in enumerate(model_contract.target_slots)
-    )
+        if positive_class_weight is not None:
+            values.append(torch.sigmoid(
+                raw_value - torch.log(raw_value.new_tensor(positive_class_weight))
+            ))
+            continue
+        values.append(apply_transformation(
+            raw_value,
+            cast(str, slot["publicPredictionTransformation"]),
+        ))
     return torch.stack(values, dim=1)
 
 

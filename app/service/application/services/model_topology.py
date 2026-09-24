@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.model_topology.v1.constants import MAX_EDGES, MAX_NODES
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig
+from app.contracts.model_topology.v2.constants import MAX_EDGES, MAX_NODES
+from app.contracts.semantic.v4 import ModelContract
+from app.contracts.worker.v15.config import ModelConfig
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
 
@@ -30,6 +30,7 @@ class ModelTopologyBuilder:
             6
             + model_config.layers
             + 4 * len(target_slots)
+            + len(contract.weighted_binary_target_indices)
             + len(resources)
             + len(direct_components)
             + len(auxiliary_components)
@@ -202,11 +203,15 @@ class ModelTopologyBuilder:
             raw_id = f"target-{index}-raw"
             loss_transformation_id = f"target-{index}-loss-input"
             prediction_transformation_id = f"target-{index}-prediction"
+            correction_id = f"target-{index}-public-correction"
             target_nodes[identity] = {
                 "observed": observed_id,
                 "loss": loss_transformation_id,
                 "prediction": prediction_transformation_id,
             }
+            prediction_source_id = raw_id
+            prediction_source_port = "raw"
+            positive_class_weight = contract.positive_class_weight_for_target(index)
             _append_node(
                 nodes,
                 _node(
@@ -237,6 +242,31 @@ class ModelTopologyBuilder:
                 shared_shape,
                 "propagates",
             )
+            if positive_class_weight is not None:
+                _append_node(
+                    nodes,
+                    _node(
+                        correction_id,
+                        f"Positive-class logit correction {index}",
+                        input_ports=("raw", "Raw coordinate"),
+                        output_ports=("corrected", "Corrected logit"),
+                        targetIdentity=identity,
+                        targetIndex=index,
+                        positiveClassWeight=positive_class_weight,
+                        derivedCorrection="subtractLogPositiveClassWeight",
+                    ),
+                )
+                _append_edge(
+                    edges,
+                    raw_id,
+                    "raw",
+                    correction_id,
+                    "raw",
+                    observation_shape,
+                    "propagates",
+                )
+                prediction_source_id = correction_id
+                prediction_source_port = "corrected"
             _append_node(
                 nodes,
                 _node(
@@ -272,8 +302,8 @@ class ModelTopologyBuilder:
             )
             _append_edge(
                 edges,
-                raw_id,
-                "raw",
+                prediction_source_id,
+                prediction_source_port,
                 prediction_transformation_id,
                 "raw",
                 observation_shape,
@@ -430,7 +460,7 @@ class ModelTopologyBuilder:
 
         return cast(JsonObject, {
             "modelDefinitionSha256": model_definition_sha256,
-            "topologyRevision": 1,
+            "topologyRevision": 2,
             "nodes": [cast(JsonValue, node) for node in nodes],
             "edges": [cast(JsonValue, edge) for edge in edges],
         })

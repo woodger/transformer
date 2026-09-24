@@ -7,7 +7,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v4 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -180,6 +180,7 @@ def combined_loss(
         )
         direct = _direct_loss(
             operator,
+            specification,
             estimate,
             targets[:, index],
         ).mean()
@@ -237,6 +238,7 @@ def combined_loss(
 
 def _direct_loss(
     operator: str,
+    specification: Mapping[str, object],
     model_value: torch.Tensor,
     target_value: torch.Tensor,
 ) -> torch.Tensor:
@@ -247,6 +249,19 @@ def _direct_loss(
             model_value,
             target_value,
             reduction="none",
+        )
+    if operator == "PositiveClassWeightedBinaryCrossEntropyWithLogits":
+        positive_class_weight = model_value.new_tensor(
+            _number(
+                specification["positiveClassWeight"],
+                "positive class weight",
+            )
+        )
+        return F.binary_cross_entropy_with_logits(
+            model_value,
+            target_value,
+            reduction="none",
+            pos_weight=positive_class_weight,
         )
     if operator == "LogMSE":
         return (

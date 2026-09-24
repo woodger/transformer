@@ -1,0 +1,42 @@
+{
+  "fixtureId": "semantic.new-opaque-target.v4",
+  "tensorGeometry": {"seqLen": 2, "featureDim": 8},
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "Opaque.EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.opaque-event",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "Opaque.EventProbability"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "6cebc4b6254f4c0aeca5c67eece541363fbc5c9c5bb9344b594b66f18a32631f",
+    "objectiveSha256": "d747f2a5fa4c6074064f4844708e2a975869ade2d38429ebc14d1e82ac7ca994"
+  }
+}
