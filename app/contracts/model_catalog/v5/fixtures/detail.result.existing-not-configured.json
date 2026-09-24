@@ -1,0 +1,114 @@
+{
+  "requestId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+  "model": {
+    "summary": {
+      "modelRef": "mdl_44444444444444444444444444444444",
+      "label": "weighted-binary-model",
+      "generation": 2,
+      "createdAt": "2026-09-16T12:00:00.000000Z",
+      "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "modelDefinitionSha256": "d5bd737004306d03f78e808a6c3a19ea7bf73a763c1ce537e772980b77963e3b",
+      "modelTuning": {
+        "hiddenWidth": 16,
+        "encoderLayerCount": 1,
+        "attentionHeadCount": 4,
+        "dropoutProbability": 0,
+        "missingValuePolicy": "strict"
+      },
+      "targetIdentities": [
+        "OpaqueBinaryEvent"
+      ],
+      "initialization": {
+        "source": "random"
+      },
+      "producingRunId": "11111111-1111-4111-8111-111111111111"
+    },
+    "dataDefinition": {
+      "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "tensorGeometry": {
+        "seqLen": 2,
+        "featureDim": 8
+      }
+    },
+    "modelContract": {
+      "targetContract": {
+        "slots": [
+          {
+            "identity": "OpaqueBinaryEvent",
+            "observedConstraint": {
+              "constraint": "ClosedInterval",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "lossInputTransformation": "Identity",
+            "publicPredictionTransformation": "Sigmoid"
+          }
+        ]
+      },
+      "objective": {
+        "directComponents": [
+          {
+            "identity": "direct.opaque-binary-event",
+            "targetIdentity": "OpaqueBinaryEvent",
+            "operator": "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+            "weight": 1,
+            "positiveClassWeight": 28
+          }
+        ]
+      },
+      "modelTuning": {
+        "hiddenWidth": 16,
+        "encoderLayerCount": 1,
+        "attentionHeadCount": 4,
+        "dropoutProbability": 0,
+        "missingValuePolicy": "strict"
+      }
+    },
+    "predictionDefinition": {
+      "seqLen": 2,
+      "outputWidth": 1,
+      "targets": [
+        {
+          "identity": "OpaqueBinaryEvent",
+          "publicPredictionTransformation": "Sigmoid",
+          "positiveClassWeight": 28
+        }
+      ]
+    },
+    "semanticDigests": {
+      "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "targetContractSha256": "3540d82d862e8774dd6d62fd1c9e2dfa8d3f910608811a4f0caaffcf5849348d",
+      "objectiveSha256": "553de9beb28de35a6792869feab68d8c1a5180336436ffdb2e4969793ce61dda",
+      "modelDefinitionSha256": "d5bd737004306d03f78e808a6c3a19ea7bf73a763c1ce537e772980b77963e3b"
+    },
+    "trainingConfig": {
+      "lr": 0.0005,
+      "batchSize": 256,
+      "epochs": 25,
+      "useAmp": true,
+      "weightDecay": 0.00001,
+      "selection": null,
+      "seed": 42,
+      "deterministic": false
+    },
+    "diagnostics": {
+      "schemaVersion": 2,
+      "gradientInteractions": null,
+      "targetHead": null
+    },
+    "selection": {
+      "enabled": false,
+      "bestSelectionScore": null,
+      "bestEpoch": null,
+      "source": "last_epoch"
+    },
+    "progress": {
+      "completedEpochs": 25,
+      "globalStep": 112050,
+      "trainingComplete": true
+    },
+    "initialization": {
+      "source": "random"
+    }
+  }
+}

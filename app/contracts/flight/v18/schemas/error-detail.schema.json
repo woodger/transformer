@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v18/error-detail.schema.json",
+  "title": "Transformer Flight v18 application error detail",
+  "anyOf": [
+    {
+      "$ref": "https://transformer.local/contracts/semantic/v4/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/model-catalog/v5/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/training-telemetry/v4/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/target-head-diagnostics/v1/error-detail.schema.json"
+    }
+  ]
+}

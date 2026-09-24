@@ -1,0 +1,51 @@
+{
+  "requestId": "66666666-6666-4666-8666-666666666666",
+  "state": "available",
+  "modelRef": "mdl_22222222222222222222222222222222",
+  "producingRunId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "modelDefinitionSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sampleIdentity": "thds_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "sampleRowCount": 1479,
+  "layout": [
+    {
+      "targetIdentity": "Opaque.BinaryEvent",
+      "targetIndex": 0,
+      "directComponentIdentity": "direct.opaque-binary-event"
+    }
+  ],
+  "coverage": {"completedEpochs": 1},
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 12,
+        "headInput": {"rowCenteredL2Mean": 0.05},
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 2.332204510175204,
+              "maximum": 4.332204510175204,
+              "mean": 3.332204510175204,
+              "standardDeviation": 0.816496580927726
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.2689414213699951,
+              "maximum": 0.7310585786300049,
+              "mean": 0.5,
+              "standardDeviation": 0.18865853944541916
+            },
+            "gradientL2Mean": 0.012,
+            "gradientL2Maximum": 0.022,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.2,
+            "biasAfterEpoch": 3.32
+          }
+        ]
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

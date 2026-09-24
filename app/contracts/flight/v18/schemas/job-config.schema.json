@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v18/job-config.schema.json",
+  "title": "Transformer Flight v18 resolved jobConfigSha256 preimage",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/fit"
+    },
+    {
+      "$ref": "#/$defs/predict"
+    }
+  ],
+  "$defs": {
+    "fit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "requestedDevice",
+        "modelLabel",
+        "inputLayout",
+        "dataContractSha256",
+        "modelDefinitionSha256",
+        "trainingConfig",
+        "diagnostics",
+        "initialization"
+      ],
+      "properties": {
+        "operation": {
+          "const": "fit"
+        },
+        "requestedDevice": {
+          "enum": [
+            "cpu",
+            "gpu",
+            "auto"
+          ]
+        },
+        "modelLabel": {
+          "$ref": "common.schema.json#/$defs/label"
+        },
+        "inputLayout": {
+          "$ref": "common.schema.json#/$defs/inputLayout"
+        },
+        "dataContractSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "modelDefinitionSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "trainingConfig": {
+          "$ref": "common.schema.json#/$defs/trainingConfig"
+        },
+        "diagnostics": {
+          "$ref": "common.schema.json#/$defs/diagnosticsConfig"
+        },
+        "initialization": {
+          "$ref": "common.schema.json#/$defs/resolvedInitialization"
+        }
+      }
+    },
+    "predict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "requestedDevice",
+        "resolvedModelRef",
+        "inputLayout",
+        "dataContractSha256",
+        "modelDefinitionSha256"
+      ],
+      "properties": {
+        "operation": {
+          "const": "predict"
+        },
+        "requestedDevice": {
+          "enum": [
+            "cpu",
+            "gpu",
+            "auto"
+          ]
+        },
+        "resolvedModelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "inputLayout": {
+          "$ref": "common.schema.json#/$defs/inputLayout"
+        },
+        "dataContractSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "modelDefinitionSha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
