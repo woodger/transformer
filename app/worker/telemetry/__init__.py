@@ -7,6 +7,7 @@ from app.worker.telemetry.epoch import (
 from app.worker.telemetry.gradient_interactions import (
     GradientInteractionObservation,
 )
+
 __all__ = [
     "EpochTelemetry",
     "GradientInteractionObservation",
