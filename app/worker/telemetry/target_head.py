@@ -10,7 +10,7 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v1.constants import (
+from app.contracts.target_head_diagnostics.v2.constants import (
     ARTIFACT_FORMAT,
 )
 from app.worker.model.transformer import TransformerModel, public_predictions
@@ -127,12 +127,17 @@ class TargetHeadDiagnosticsCollector:
         transformer.eval()
         try:
             summaries = _new_distribution_statistics(target_width)
-            head_sum: torch.Tensor | None = None
+            representation_sums: list[torch.Tensor] | None = None
             with torch.no_grad(), autocast():
                 for batch_features in features():
                     if batch_features.size(0) == 0:
                         continue
-                    model_output, shared = transformer.forward_with_shared_representation(
+                    (
+                        model_output,
+                        shared,
+                        encoder_input,
+                        encoder_layers,
+                    ) = transformer.forward_with_representation_flow(
                         batch_features.to(device)
                     )
                     raw_logits = model_output[:, :target_width].detach().double()
@@ -140,33 +145,82 @@ class TargetHeadDiagnosticsCollector:
                         model_output,
                         self._model_contract,
                     ).detach().double()
-                    shared_values = shared.detach().double()
                     _observe_distributions(summaries, raw_logits, predictions)
-                    batch_head_sum = shared_values.sum(dim=0).detach().cpu()
-                    head_sum = (
-                        batch_head_sum
-                        if head_sum is None
-                        else head_sum + batch_head_sum
+                    representations = (
+                        encoder_input,
+                        *encoder_layers,
+                        shared,
                     )
+                    batch_sums = [
+                        values.detach().double().sum(dim=0).detach().cpu()
+                        for values in representations
+                    ]
+                    if representation_sums is None:
+                        representation_sums = batch_sums
+                    elif len(representation_sums) != len(batch_sums):
+                        raise ValueError(
+                            "target head diagnostic representation count differs"
+                        )
+                    else:
+                        representation_sums = [
+                            total + batch_sum
+                            for total, batch_sum in zip(
+                                representation_sums,
+                                batch_sums,
+                                strict=True,
+                            )
+                        ]
 
-            if _row_count(summaries) != expected_rows or head_sum is None:
+            if (
+                _row_count(summaries) != expected_rows
+                or representation_sums is None
+            ):
                 raise ValueError(
                     "target head diagnostics row count differs from committed input"
                 )
-            head_mean = (head_sum / expected_rows).to(device)
-            centered_l2_sum = 0.0
+            representation_means = tuple(
+                (total / expected_rows).to(device)
+                for total in representation_sums
+            )
+            representation_centered_l2_sums = [
+                0.0
+                for _mean in representation_means
+            ]
             centered_rows = 0
             with torch.no_grad(), autocast():
                 for batch_features in features():
                     if batch_features.size(0) == 0:
                         continue
-                    _model_output, shared = transformer.forward_with_shared_representation(
+                    (
+                        _model_output,
+                        shared,
+                        encoder_input,
+                        encoder_layers,
+                    ) = transformer.forward_with_representation_flow(
                         batch_features.to(device)
                     )
-                    centered = shared.detach().double() - head_mean
-                    distances = torch.sqrt(centered.square().sum(dim=1))
-                    centered_l2_sum += float(distances.sum().detach().cpu())
-                    centered_rows += distances.size(0)
+                    representations = (
+                        encoder_input,
+                        *encoder_layers,
+                        shared,
+                    )
+                    if len(representations) != len(representation_means):
+                        raise ValueError(
+                            "target head diagnostic representation count differs"
+                        )
+                    for index, (values, mean) in enumerate(
+                        zip(
+                            representations,
+                            representation_means,
+                            strict=True,
+                        )
+                    ):
+                        centered = values.detach().double() - mean
+                        distances = torch.sqrt(centered.square().sum(dim=1))
+                        representation_centered_l2_sums[index] += float(
+                            distances.sum().detach().cpu()
+                        )
+                    centered_rows += shared.size(0)
 
             if centered_rows != expected_rows:
                 raise ValueError(
@@ -209,9 +263,10 @@ class TargetHeadDiagnosticsCollector:
             self._epochs.append(cast(JsonObject, {
                 "epoch": epoch,
                 "globalStep": global_step,
-                "headInput": {
-                    "rowCenteredL2Mean": centered_l2_sum / expected_rows,
-                },
+                "representationFlow": _representation_flow(
+                    representation_centered_l2_sums,
+                    expected_rows,
+                ),
                 "targetHeads": cast(list[object], target_heads),
             }))
         finally:
@@ -270,7 +325,7 @@ class TargetHeadDiagnosticsCollector:
             return None
         sample_identity = hashlib.sha256(
             (
-                "target-head-diagnostics-v1\\0"
+                "target-head-diagnostics-v2\\0"
                 + manifest_sha256
                 + "\\0"
                 + str(input_revision)
@@ -303,6 +358,29 @@ def _target_head(
     if target_head.out_features != target_width:
         raise ValueError("target head width differs from model contract")
     return target_head
+
+
+def _representation_flow(
+    centered_l2_sums: list[float],
+    row_count: int,
+) -> JsonObject:
+    if len(centered_l2_sums) < 3:
+        raise ValueError("target head diagnostics require encoder layers")
+    return {
+        "encoderInput": {
+            "rowCenteredL2Mean": centered_l2_sums[0] / row_count,
+        },
+        "encoderLayers": [
+            {
+                "layerIndex": index,
+                "rowCenteredL2Mean": value / row_count,
+            }
+            for index, value in enumerate(centered_l2_sums[1:-1])
+        ],
+        "targetHeadInput": {
+            "rowCenteredL2Mean": centered_l2_sums[-1] / row_count,
+        },
+    }
 
 
 def _transformer_model(model: torch.nn.Module) -> TransformerModel:

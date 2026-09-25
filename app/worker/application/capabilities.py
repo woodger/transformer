@@ -4,7 +4,7 @@ from typing import Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.semantic.v4 import semantic_capabilities
-from app.contracts.worker.v16 import (
+from app.contracts.worker.v17 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,

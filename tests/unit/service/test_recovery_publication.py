@@ -10,8 +10,8 @@ import pytest
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
 from app.contracts.checkpoint.v10 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v16.model_config import ModelConfig
-from app.contracts.worker.v16.model_definition import resolved_semantic_digests
+from app.contracts.worker.v17.model_config import ModelConfig
+from app.contracts.worker.v17.model_definition import resolved_semantic_digests
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,

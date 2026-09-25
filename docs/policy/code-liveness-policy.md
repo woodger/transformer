@@ -26,12 +26,12 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/semantic/v4/`, `app/contracts/flight/v18/`,
+- `app/contracts/semantic/v4/`, `app/contracts/flight/v19/`,
   `app/contracts/model_catalog/v5/`, `app/contracts/model_topology/v2/`,
   `app/contracts/training_telemetry/v4/` и
-  `app/contracts/target_head_diagnostics/v1/`,
+  `app/contracts/target_head_diagnostics/v2/`,
   используемые внешними вызывающими системами, runtime и contract tests;
-- `app/contracts/worker/v16/` и `app/contracts/checkpoint/v10/`, используемые
+- `app/contracts/worker/v17/` и `app/contracts/checkpoint/v10/`, используемые
   service и worker processes;
 - `app/contracts/checkpoint/v9/`, используемый только Model Catalog v5 для
   безопасной проекции metadata ранее опубликованной generation;

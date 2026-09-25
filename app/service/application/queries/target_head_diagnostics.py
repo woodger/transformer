@@ -10,12 +10,12 @@ from typing import cast
 import rfc8785
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v1.constants import (
+from app.contracts.target_head_diagnostics.v2.constants import (
     ARTIFACT_FORMAT,
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v16 import validate_document
-from app.contracts.worker.v16.diagnostics import (
+from app.contracts.worker.v17 import validate_document
+from app.contracts.worker.v17.diagnostics import (
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.service.application.messages.target_head_diagnostics import (
@@ -273,6 +273,11 @@ def _validate_artifact(
     ):
         raise ValueError("target head diagnostics artifact differs from model")
     contract = ModelContract.from_document(model.model_contract)
+    tuning = contract.model_tuning
+    expected_encoder_layers = _positive_integer(
+        tuning.get("encoderLayerCount"),
+        "encoder layer count",
+    )
     expected_layout = [
         {
             "targetIdentity": identity,
@@ -312,10 +317,9 @@ def _validate_artifact(
         if global_step <= previous_step:
             raise ValueError("target head diagnostics global step is not increasing")
         previous_step = global_step
-        head_input = _object(epoch, "headInput")
-        _nonnegative_finite(
-            head_input.get("rowCenteredL2Mean"),
-            "head input norm",
+        _validate_representation_flow(
+            _object(epoch, "representationFlow"),
+            expected_encoder_layers,
         )
         target_heads = _array(epoch, "targetHeads")
         if len(target_heads) != len(expected_layout):
@@ -349,6 +353,44 @@ def _validate_target_head(
         "target head weight norm",
     )
     _finite(target_head.get("biasAfterEpoch"), "target head bias")
+
+
+def _validate_representation_flow(
+    flow: Mapping[str, JsonValue],
+    expected_encoder_layers: int,
+) -> None:
+    _validate_row_representation(
+        _object(flow, "encoderInput"),
+        "encoder input norm",
+    )
+    layers = _array(flow, "encoderLayers")
+    if len(layers) != expected_encoder_layers:
+        raise ValueError("target head diagnostics encoder layer count differs")
+    for index, layer in enumerate(layers):
+        layer_index = _nonnegative_integer(
+            layer.get("layerIndex"),
+            "encoder layer index",
+        )
+        if layer_index != index:
+            raise ValueError("target head diagnostics encoder layer order differs")
+        _nonnegative_finite(
+            layer.get("rowCenteredL2Mean"),
+            "encoder layer norm",
+        )
+    _validate_row_representation(
+        _object(flow, "targetHeadInput"),
+        "target head input norm",
+    )
+
+
+def _validate_row_representation(
+    representation: Mapping[str, JsonValue],
+    name: str,
+) -> None:
+    _nonnegative_finite(
+        representation.get("rowCenteredL2Mean"),
+        name,
+    )
 
 
 def _validate_distribution(

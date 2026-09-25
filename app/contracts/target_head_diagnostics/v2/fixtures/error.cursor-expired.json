@@ -1,0 +1,7 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_CURSOR_EXPIRED",
+  "path": "/cursor",
+  "restartRequired": true,
+  "message": "срок действия курсора диагностики истёк"
+}

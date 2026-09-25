@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v18.constants import ACTIONS
+from app.contracts.flight.v19.constants import ACTIONS
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v1.constants import REPORT_ACTION
-from app.contracts.worker.v16.config import ModelConfig
-from app.contracts.worker.v16.model_definition import resolved_semantic_digests
+from app.contracts.target_head_diagnostics.v2.constants import REPORT_ACTION
+from app.contracts.worker.v17.config import ModelConfig
+from app.contracts.worker.v17.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
@@ -31,7 +31,7 @@ from tests.fixture_documents import semantic_fixture_document
 def _model(
     *,
     target_head: str | None,
-    artifact_format: str = "transformer-target-head-diagnostics-v1",
+    artifact_format: str = "transformer-target-head-diagnostics-v2",
 ) -> PublishedModelRecord:
     fixture = semantic_fixture_document("positive-class-weighted-binary-w28")
     model_contract = fixture["modelContract"]
@@ -111,7 +111,13 @@ def _epoch(epoch: int, global_step: int) -> dict[str, object]:
     return {
         "epoch": epoch,
         "globalStep": global_step,
-        "headInput": {"rowCenteredL2Mean": 0.5},
+        "representationFlow": {
+            "encoderInput": {"rowCenteredL2Mean": 0.7},
+            "encoderLayers": [
+                {"layerIndex": 0, "rowCenteredL2Mean": 0.6},
+            ],
+            "targetHeadInput": {"rowCenteredL2Mean": 0.5},
+        },
         "targetHeads": [
             {
                 "rawLogit": _distribution(),
@@ -222,7 +228,7 @@ def test_target_head_diagnostics_reports_not_configured_without_opt_in():
 def test_target_head_diagnostics_reports_unsupported_artifact_format():
     model = _model(
         target_head="fullCommittedArtifact",
-        artifact_format="transformer-target-head-diagnostics-v2",
+        artifact_format="transformer-target-head-diagnostics-v1",
     )
 
     result = _query(model).execute(
@@ -241,6 +247,34 @@ def test_target_head_diagnostics_reports_unsupported_artifact_format():
         "modelRef": model.model_ref,
         "reason": "FORMAT_UNSUPPORTED",
     }
+
+
+def test_target_head_diagnostics_rejects_wrong_encoder_layer_order():
+    model = _model(target_head="fullCommittedArtifact")
+    artifact = model.metadata["targetHeadDiagnostics"]
+    assert isinstance(artifact, dict)
+    epochs = artifact["epochs"]
+    assert isinstance(epochs, list)
+    first_epoch = epochs[0]
+    assert isinstance(first_epoch, dict)
+    flow = first_epoch["representationFlow"]
+    assert isinstance(flow, dict)
+    layers = flow["encoderLayers"]
+    assert isinstance(layers, list)
+    first_layer = layers[0]
+    assert isinstance(first_layer, dict)
+    first_layer["layerIndex"] = 1
+
+    with pytest.raises(ValueError, match="encoder layer order"):
+        _query(model).execute(
+            GetTargetHeadDiagnosticsReportQuery(
+                owner_subject="owner-a",
+                request_id="11111111-1111-4111-8111-111111111111",
+                model_ref=model.model_ref,
+                page_size=1,
+                cursor=None,
+            )
+        )
 
 
 def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
@@ -289,7 +323,7 @@ def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
         )
 
 
-def test_flight_v18_dispatches_target_head_diagnostics_report():
+def test_flight_v19_dispatches_target_head_diagnostics_report():
     model = _model(target_head="fullCommittedArtifact")
     query = _query(model)
     coordinator = JobCoordinator(

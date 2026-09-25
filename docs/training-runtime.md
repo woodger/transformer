@@ -1,11 +1,11 @@
 # Runtime обучения и checkpoint
 
-> Тип: справочник. Принадлежащие provider-у обучение Worker v16, checkpoint
-> v10 и поведение recovery за Flight v18.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v17, checkpoint
+> v10 и поведение recovery за Flight v19.
 
 ## Model definition и обучение
 
-Fit Flight v18 получает документ target/objective Semantic v4 и geometry
+Fit Flight v19 получает документ target/objective Semantic v4 и geometry
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
@@ -30,7 +30,7 @@ placeholder.
 
 ## Input, epochs и recovery
 
-Worker восстанавливает компактный input Flight v18 `indexedFeatureBlocks` в
+Worker восстанавливает компактный input Flight v19 `indexedFeatureBlocks` в
 ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
 являются batches optimizer-а, границами shuffle или границами epoch. Durable
 fit может начаться после появления input-а; close отмечает EOF и фиксирует
@@ -66,11 +66,12 @@ OpenSearch получает принадлежащую provider-у projection v9
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 
-При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v16 после
+При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v17 после
 каждой завершённой эпохи выполняет отдельный наблюдательный проход по полному
 committed input artifact в `eval()` и `torch.no_grad()`. Он сохраняет только
-агрегаты raw logit, public prediction, входа финальной target head, градиента
-direct component и параметров target head. Этот best-effort artifact не меняет
+агрегаты raw logit, public prediction, представления до encoder, после каждого
+encoder layer и перед финальной target head, градиента direct component и
+параметров target head. Этот best-effort artifact не меняет
 веса, optimizer, RNG, telemetry epoch или результат `predict`; без настройки
 он не создаётся.
 
@@ -80,5 +81,5 @@ Model Catalog v5 читает metadata checkpoint v9 только для без�
 такая legacy generation возвращает `notConfigured` в Target Head Diagnostics
 Query. Worker не возобновляет state v9. Migration 0028 удаляет старые jobs и
 generations перед первоначальной активацией Semantic v4; после перехода на
-Flight v18 замените OpenSearch indices v8 на v9 и обучите новые generations
+Flight v19 замените OpenSearch indices v8 на v9 и обучите новые generations
 для opt-in diagnostics.

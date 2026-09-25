@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.target_head_diagnostics.v1 import (
+from app.contracts.target_head_diagnostics.v2 import (
     MAX_RESPONSE_BYTES,
     SNAPSHOT_CAPACITY_RETRY_AFTER_SECONDS,
     validate_target_head_diagnostics_document,

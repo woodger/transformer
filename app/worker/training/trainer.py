@@ -15,12 +15,12 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v16.config import (
+from app.contracts.worker.v17.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v16.diagnostics import (
+from app.contracts.worker.v17.diagnostics import (
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.worker.checkpoints.model import save_model

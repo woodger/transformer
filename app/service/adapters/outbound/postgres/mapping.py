@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v16.config import ModelConfig, TrainConfig
+from app.contracts.worker.v17.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.models import (
     Job,
     JobInput,

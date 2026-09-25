@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v16 import CONTRACT_VERSION, validate_document
+from app.contracts.worker.v17 import CONTRACT_VERSION, validate_document
 from app.project import PROJECT_ROOT
 from app.service.application.ports.observability import EventLogger
 

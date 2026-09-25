@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v16 import validate_document
+from app.contracts.worker.v17 import validate_document
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.losses import combined_loss
@@ -97,8 +97,48 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
 
     model.eval()
     with torch.no_grad():
-        raw_logits = model(features)[:, 0]
-        predictions = public_predictions(model(features), contract)[:, 0]
+        model_output, shared = model.forward_with_shared_representation(features)
+        (
+            diagnostic_output,
+            diagnostic_shared,
+            encoder_input,
+            encoder_layers,
+        ) = model.forward_with_representation_flow(features)
+        raw_logits = model_output[:, 0]
+        predictions = public_predictions(model_output, contract)[:, 0]
+
+    torch.testing.assert_close(diagnostic_output, model_output)
+    torch.testing.assert_close(diagnostic_shared, shared)
+
+    representation_flow = epoch["representationFlow"]
+    assert isinstance(representation_flow, dict)
+    encoder_input_summary = representation_flow["encoderInput"]
+    encoder_layers_summary = representation_flow["encoderLayers"]
+    target_head_input_summary = representation_flow["targetHeadInput"]
+    assert isinstance(encoder_input_summary, dict)
+    assert isinstance(encoder_layers_summary, list)
+    assert isinstance(target_head_input_summary, dict)
+    assert len(encoder_layers_summary) == 1
+    assert isinstance(encoder_layers_summary[0], dict)
+
+    def row_centered_l2_mean(values: torch.Tensor) -> float:
+        centered = values.double() - values.double().mean(dim=0)
+        return centered.square().sum(dim=1).sqrt().mean().item()
+
+    assert encoder_input_summary["rowCenteredL2Mean"] == pytest.approx(
+        row_centered_l2_mean(encoder_input),
+        abs=1e-6,
+    )
+    assert encoder_layers_summary[0]["layerIndex"] == 0
+    assert encoder_layers_summary[0]["rowCenteredL2Mean"] == pytest.approx(
+        row_centered_l2_mean(encoder_layers[0]),
+        abs=1e-6,
+    )
+    assert target_head_input_summary["rowCenteredL2Mean"] == pytest.approx(
+        row_centered_l2_mean(shared),
+        abs=1e-6,
+    )
+
     raw_summary = target_head["rawLogit"]
     public_summary = target_head["publicPrediction"]
     assert isinstance(raw_summary, dict)

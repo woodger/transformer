@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v16.config import ModelConfig
+from app.contracts.worker.v17.config import ModelConfig
 from app.service.domain.job import InputState
 from app.service.domain.json_types import JsonObject
 

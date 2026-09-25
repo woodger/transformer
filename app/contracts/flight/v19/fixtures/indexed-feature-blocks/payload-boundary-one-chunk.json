@@ -1,0 +1,72 @@
+{
+  "fixtureId": "input-layout.payload-boundary-one-chunk.v3",
+  "inputLayout": {
+    "featureBlocks": [
+      {
+        "windowRows": 2,
+        "nativeRowWidth": 1
+      }
+    ]
+  },
+  "seqLen": 2,
+  "featureDim": 2,
+  "chunks": [
+    {
+      "rangeOrdinal": 0,
+      "exampleOffset": 0,
+      "blocks": [
+        {
+          "nativeRows": [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ],
+          "observationOffsets": [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              2
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "logicalFeatures": [
+      [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ]
+  }
+}

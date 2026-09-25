@@ -1,7 +1,7 @@
 # Запрос каталога моделей в области владельца v5
 
 > ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет действующую revision read-only
-> Model Catalog Query для Flight v18.
+> Model Catalog Query для Flight v19.
 
 Операции сохраняют owner-scoped discovery и точный detail:
 
@@ -25,7 +25,7 @@ checkpoint/recovery v10 configuration v2 и всегда содержит `targe
 }
 ```
 
-Так вызывающая система до lazy запроса Target Head Diagnostics v1 видит, была
+Так вызывающая система до lazy запроса Target Head Diagnostics v2 видит, была
 ли диагностика запрошена для generation. Значение не доказывает доступность
 полного отчёта: `pending`, `unavailable` и integrity outcomes принадлежат
 самой диагностической поверхности.
@@ -35,7 +35,7 @@ diagnostics configuration v1 в данную форму v2, добавляя `ta
 Это единственный compatibility mapping: он не изменяет checkpoint, не
 пересчитывает observations и не делает старую generation диагностированной.
 Поэтому сохранённая v9 модель остаётся видимой в Catalog v5, а Target Head
-Diagnostics v1 возвращает ей `notConfigured`.
+Diagnostics v2 возвращает ей `notConfigured`.
 
 Registry остаётся единственным источником существования model. Неизвестный,
 чужой и удалённый `modelRef` security-equivalent. Checkpoint details, physical

@@ -7,8 +7,8 @@ import torch
 from torch import nn
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v16.config import CheckpointSelectionConfig
-from app.contracts.worker.v16.model_definition import resolved_semantic_digests
+from app.contracts.worker.v17.config import CheckpointSelectionConfig
+from app.contracts.worker.v17.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery

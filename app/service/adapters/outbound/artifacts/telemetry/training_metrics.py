@@ -15,7 +15,7 @@ from app.contracts.metrics.v9 import (
     build_training_record,
 )
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v16 import validate_training_metrics_for_model
+from app.contracts.worker.v17 import validate_training_metrics_for_model
 from app.service.application.telemetry.records import TrainingMetricIntervalRecord
 
 

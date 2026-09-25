@@ -14,22 +14,22 @@ from app.contracts.checkpoint.v10 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v18.arrow import validate_prediction_file
+from app.contracts.flight.v19.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v1.constants import (
+from app.contracts.target_head_diagnostics.v2.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v16 import (
+from app.contracts.worker.v17 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v16.config import ModelConfig, TrainConfig
-from app.contracts.worker.v16.diagnostics import (
+from app.contracts.worker.v17.config import ModelConfig, TrainConfig
+from app.contracts.worker.v17.diagnostics import (
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
     DiagnosticsConfig,
 )
-from app.contracts.worker.v16.model_definition import resolved_semantic_digests
+from app.contracts.worker.v17.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,

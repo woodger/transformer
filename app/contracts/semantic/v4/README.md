@@ -2,7 +2,7 @@
 
 > ДОКУМЕНТ КОНТРАКТА. Этот каталог определяет закрытый язык target slots,
 > objectives, model tuning и семантических идентичностей D1, используемый
-> Flight v18 и принадлежащим provider-у runtime Worker v16/checkpoint v10.
+> Flight v19 и принадлежащим provider-у runtime Worker v17/checkpoint v10.
 
 Схемы являются авторитетной формой документов. Этот файл определяет
 семантические правила, которые нельзя выразить JSON Schema. Ревизия 4 —

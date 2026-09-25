@@ -3,15 +3,15 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from app.contracts.flight.v18.codec import validate_request_document
-from app.contracts.flight.v18.job_config import job_config_sha256
+from app.contracts.flight.v19.codec import validate_request_document
+from app.contracts.flight.v19.job_config import job_config_sha256
 from app.contracts.model_catalog.v5.codec import validate_catalog_document
 from app.contracts.model_topology.v2.codec import (
     validate_model_topology_document,
 )
 from app.contracts.semantic.v4 import ModelContract
 from app.contracts.semantic.v4.schema import validate_schema
-from app.contracts.target_head_diagnostics.v1.codec import (
+from app.contracts.target_head_diagnostics.v2.codec import (
     validate_target_head_diagnostics_document,
 )
 from app.contracts.training_telemetry.v4.codec import (
@@ -45,7 +45,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             "objectiveSha256": expected["objectiveSha256"],
         }
 
-    flight_root = PROJECT_ROOT / "app/contracts/flight/v18/fixtures"
+    flight_root = PROJECT_ROOT / "app/contracts/flight/v19/fixtures"
     _validate_manifest(
         flight_root,
         lambda value: validate_request_document(value, "fixture-manifest"),
@@ -127,7 +127,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             validate_request_document(document, "action-result")
 
     target_head_root = (
-        PROJECT_ROOT / "app/contracts/target_head_diagnostics/v1/fixtures"
+        PROJECT_ROOT / "app/contracts/target_head_diagnostics/v2/fixtures"
     )
     _validate_manifest(
         target_head_root,

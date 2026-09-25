@@ -2,7 +2,7 @@
 
 > ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет owner-scoped read-only проекцию
 > публичной вычислительной topology опубликованной generation. Он активируется
-> Flight v18 action `transformer.model-topology.v2.detail`.
+> Flight v19 action `transformer.model-topology.v2.detail`.
 
 ## Граница
 
