@@ -2,11 +2,22 @@ from collections.abc import Callable
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v4 import (
+from app.contracts.model_catalog.v5 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
     validate_catalog_document,
 )
 from app.contracts.semantic.v4 import semantic_capabilities
+from app.contracts.target_head_diagnostics.v1.constants import (
+    CONTRACT_NAME as TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
+    CONTRACT_REVISION as TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
+    CURSOR_TTL_SECONDS as TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
+    MAX_COMMITTED_ARTIFACT_ROWS,
+    MAX_EPOCH_PAGE_SIZE as TARGET_HEAD_DIAGNOSTICS_MAX_EPOCH_PAGE_SIZE,
+    MAX_RESPONSE_BYTES as TARGET_HEAD_DIAGNOSTICS_MAX_RESPONSE_BYTES,
+    MAX_RETAINED_SNAPSHOT_BYTES as TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_BYTES,
+    MAX_RETAINED_SNAPSHOT_COUNT as TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_COUNT,
+    MAX_RETAINED_SNAPSHOT_TOTAL_BYTES as TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_TOTAL_BYTES,
+)
 from app.service.adapters.inbound.flight.constants import (
     ACQUIRE_ACTION,
     CANCEL_ACTION,
@@ -21,6 +32,7 @@ from app.service.adapters.inbound.flight.constants import (
     OUTPUTS_LIST_ACTION,
     PREDICT_CREATE_ACTION,
     STATUS_ACTION,
+    TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
 )
@@ -60,6 +72,18 @@ from app.service.adapters.inbound.flight.presentation import (
     present_job_outputs,
     present_job_status,
 )
+from app.service.adapters.inbound.flight.target_head_diagnostics import (
+    expired_target_head_diagnostics_cursor,
+    invalid_target_head_diagnostics_cursor,
+    invalidated_target_head_diagnostics_cursor,
+    target_head_diagnostics_backend_unavailable,
+    target_head_diagnostics_integrity_failed,
+    target_head_diagnostics_model_not_found,
+    target_head_diagnostics_query_unavailable,
+    target_head_diagnostics_response,
+    target_head_diagnostics_snapshot_capacity_exhausted,
+    target_head_diagnostics_stored_metadata_invalid,
+)
 from app.service.adapters.inbound.flight.training_telemetry import (
     expired_telemetry_cursor,
     invalid_telemetry_cursor,
@@ -85,6 +109,7 @@ from app.service.adapters.inbound.flight.validation import (
     OutputsListRequestFields,
     RequestIdFields,
     StatusRequestFields,
+    TargetHeadDiagnosticsReportRequestFields,
     TrainingTelemetryGradientRequestFields,
     TrainingTelemetryReportRequestFields,
     ValidatedActionRequest,
@@ -110,6 +135,9 @@ from app.service.application.messages.model_catalog import (
 )
 from app.service.application.messages.model_topology import (
     GetModelTopologyQuery,
+)
+from app.service.application.messages.target_head_diagnostics import (
+    GetTargetHeadDiagnosticsReportQuery,
 )
 from app.service.application.messages.training_telemetry import (
     GetGradientInteractionsQuery,
@@ -139,6 +167,9 @@ from app.service.application.queries.status import (
     ListJobInputs,
     ListJobOutputs,
 )
+from app.service.application.queries.target_head_diagnostics import (
+    GetTargetHeadDiagnosticsReport,
+)
 from app.service.application.queries.training_telemetry import (
     GetGradientInteractions,
     GetTrainingTelemetryReport,
@@ -146,6 +177,9 @@ from app.service.application.queries.training_telemetry import (
 from app.service.application.services.model_catalog_cursor import (
     ExpiredCatalogCursor,
     InvalidCatalogCursor,
+)
+from app.service.application.services.target_head_diagnostics_cursor import (
+    TargetHeadDiagnosticsCursorError,
 )
 from app.service.application.services.training_telemetry_cursor import (
     ExpiredTrainingTelemetryCursor,
@@ -177,6 +211,9 @@ class JobCoordinator:
         availability: ServiceAvailability,
         get_training_telemetry_report: GetTrainingTelemetryReport | None = None,
         get_gradient_interactions: GetGradientInteractions | None = None,
+        get_target_head_diagnostics_report: (
+            GetTargetHeadDiagnosticsReport | None
+        ) = None,
     ) -> None:
         self._create_job = create_job
         self._acquire_job = acquire_job
@@ -192,6 +229,9 @@ class JobCoordinator:
         self._availability = availability
         self._get_training_telemetry_report = get_training_telemetry_report
         self._get_gradient_interactions = get_gradient_interactions
+        self._get_target_head_diagnostics_report = (
+            get_target_head_diagnostics_report
+        )
 
     def dispatch(
         self,
@@ -288,6 +328,9 @@ class JobCoordinator:
         elif action == TRAINING_TELEMETRY_GRADIENT_ACTION:
             fields = cast(TrainingTelemetryGradientRequestFields, request)
             return self._gradient_interactions_response(owner, fields)
+        elif action == TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION:
+            fields = cast(TargetHeadDiagnosticsReportRequestFields, request)
+            return self._target_head_diagnostics_report_response(owner, fields)
         else:
             raise ServiceError(
                 ErrorCode.INVALID_ARGUMENT,
@@ -456,6 +499,54 @@ class JobCoordinator:
             raise telemetry_backend_unavailable(model_ref) from exc
         return training_telemetry_response(result, schema_name)
 
+    def _target_head_diagnostics_report_response(
+        self,
+        owner: str,
+        fields: TargetHeadDiagnosticsReportRequestFields,
+    ) -> bytes:
+        report_query = self._get_target_head_diagnostics_report
+        if report_query is None:
+            raise target_head_diagnostics_query_unavailable()
+        try:
+            result = report_query.execute(
+                GetTargetHeadDiagnosticsReportQuery(
+                    owner_subject=owner,
+                    request_id=fields["request_id"],
+                    model_ref=fields["model_ref"],
+                    page_size=fields["page_size"],
+                    cursor=fields["cursor"],
+                )
+            )
+            return target_head_diagnostics_response(result)
+        except CatalogModelNotFound as exc:
+            raise target_head_diagnostics_model_not_found(exc.model_ref) from exc
+        except TargetHeadDiagnosticsCursorError as exc:
+            if exc.reason == "expired":
+                raise expired_target_head_diagnostics_cursor() from exc
+            if exc.reason == "invalidated":
+                raise invalidated_target_head_diagnostics_cursor() from exc
+            raise invalid_target_head_diagnostics_cursor() from exc
+        except TrainingTelemetrySnapshotCapacityExhausted as exc:
+            if exc.operation != "targetHeadDiagnostics":
+                raise
+            raise target_head_diagnostics_snapshot_capacity_exhausted() from exc
+        except ModelCatalogStoreUnavailable as exc:
+            raise target_head_diagnostics_backend_unavailable(
+                fields["model_ref"]
+            ) from exc
+        except ServiceError as exc:
+            if _stored_metadata_error(exc):
+                raise target_head_diagnostics_stored_metadata_invalid(
+                    fields["model_ref"],
+                    _error_path(exc),
+                ) from exc
+            raise
+        except ValueError as exc:
+            raise target_head_diagnostics_integrity_failed(
+                fields["model_ref"],
+                "",
+            ) from exc
+
     def capabilities(self, request_id: str) -> JsonObject:
         capabilities = self._service_status.capabilities()
         inventory = capabilities.device_inventory
@@ -473,6 +564,30 @@ class JobCoordinator:
                 "modelTopology": self._get_model_topology is not None,
                 "trainingTelemetry": (
                     self._get_training_telemetry_report is not None
+                ),
+                "targetHeadDiagnostics": (
+                    False
+                    if self._get_target_head_diagnostics_report is None
+                    else {
+                        "contract": TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
+                        "revision": TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
+                        "actions": [TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION],
+                        "artifactScope": "fullCommittedArtifact",
+                        "maxEpochPageSize": TARGET_HEAD_DIAGNOSTICS_MAX_EPOCH_PAGE_SIZE,
+                        "cursorTtlSeconds": TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
+                        "maxResponseBytes": TARGET_HEAD_DIAGNOSTICS_MAX_RESPONSE_BYTES,
+                        "maxCommittedArtifactRows": MAX_COMMITTED_ARTIFACT_ROWS,
+                        "maxRetainedSnapshotCount": TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_COUNT,
+                        "maxRetainedSnapshotBytes": TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_BYTES,
+                        "maxRetainedSnapshotTotalBytes": TARGET_HEAD_DIAGNOSTICS_MAX_SNAPSHOT_TOTAL_BYTES,
+                        "availabilityStates": [
+                            "notConfigured",
+                            "pending",
+                            "unavailable",
+                            "available",
+                        ],
+                        "structuredErrors": True,
+                    }
                 ),
             },
             semantic=semantic_capabilities(),

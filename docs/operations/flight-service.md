@@ -1,9 +1,9 @@
 # Эксплуатация сервиса Transformer Arrow Flight
 
 > Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v17.
+> сервиса Flight v18.
 
-Wire semantics определены [Flight v17](../../app/contracts/flight/v17/README.md).
+Wire semantics определены [Flight v18](../../app/contracts/flight/v18/README.md).
 Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
 системы.
 
@@ -82,19 +82,20 @@ artifacts без references в тех же service roots. Не удаляйте 
 PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
 `models delete` либо документированную migration clean cut.
 
-## Текущий clean cut Semantic v4 / Flight v17
+## Текущий runtime Semantic v4 / Flight v18
 
-Migration 0028 удаляет state предыдущей границы. Остановите все instances
-service, дождитесь terminal state jobs, примените её, замените индексы metrics
-OpenSearch на v8, затем deploy service v17. Старые models, checkpoints, state
-recovery и telemetry после этого использовать нельзя. См.
-[управление migrations](database-migrations.md) и
+Migration 0028 удаляет state предыдущей semantic boundary. Для первого перехода
+на Semantic v4 остановите все instances service, дождитесь terminal state jobs
+и примените её. Flight v18 не добавляет PostgreSQL migration, но требует
+заменить индексы metrics OpenSearch v8 на v9 до нового fit. Старые models,
+checkpoints, state recovery и telemetry до migration 0028 использовать нельзя.
+См. [управление migrations](database-migrations.md) и
 [deployment OpenSearch](../deployment/opensearch.md).
 
 ## Health и troubleshooting
 
-Используйте `transformer.v17.health` для аутентифицированной surface health
-provider-а и `transformer.v17.capabilities` для текущей availability
+Используйте `transformer.v18.health` для аутентифицированной surface health
+provider-а и `transformer.v18.capabilities` для текущей availability
 device/upload/query. Для операционной диагностики используйте logs service и
 state database. Никогда не помещайте bearer credentials, passwords database или
 raw paths checkpoint-а в общие logs или сообщения support.

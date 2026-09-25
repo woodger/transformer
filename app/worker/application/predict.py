@@ -8,13 +8,13 @@ import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v15 import (
+from app.contracts.worker.v16 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v15.config import ModelConfig, TrainConfig
-from app.contracts.worker.v15.model_definition import resolved_semantic_digests
+from app.contracts.worker.v16.config import ModelConfig, TrainConfig
+from app.contracts.worker.v16.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,

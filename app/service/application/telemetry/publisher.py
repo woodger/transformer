@@ -5,8 +5,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.fit_run.v8 import RUN_INDEX
-from app.contracts.metrics.v8 import POINT_INDEX
+from app.contracts.metrics.fit_run.v9 import RUN_INDEX
+from app.contracts.metrics.v9 import POINT_INDEX
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,

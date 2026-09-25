@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v15.config import DEFAULT_CONTEXT_MODE
+from app.contracts.worker.v16.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,

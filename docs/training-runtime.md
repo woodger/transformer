@@ -1,11 +1,11 @@
 # Runtime обучения и checkpoint
 
-> Тип: справочник. Принадлежащие provider-у обучение Worker v15, checkpoint
-> v9 и поведение recovery за Flight v17.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v16, checkpoint
+> v10 и поведение recovery за Flight v18.
 
 ## Model definition и обучение
 
-Fit Flight v17 получает документ target/objective Semantic v4 и geometry
+Fit Flight v18 получает документ target/objective Semantic v4 и geometry
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
@@ -30,14 +30,14 @@ placeholder.
 
 ## Input, epochs и recovery
 
-Worker восстанавливает компактный input Flight v17 `indexedFeatureBlocks` в
+Worker восстанавливает компактный input Flight v18 `indexedFeatureBlocks` в
 ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
 являются batches optimizer-а, границами shuffle или границами epoch. Durable
 fit может начаться после появления input-а; close отмечает EOF и фиксирует
 input manifest для последующих полных epochs.
 
 Checkpoints recovery создаются только на завершённых границах global epoch после
-EOF. Checkpoint v9 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
+EOF. Checkpoint v10 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
 progress, semantic identities, resolved configuration job и fences input
 manifest. Recovery проверяет их до загрузки state. Другая definition data/model
 или manifest отклоняются; remapping target-ов и частичная загрузка state не
@@ -61,13 +61,24 @@ Telemetry epoch — observation её training pass до каждого optimizer
 gradient interactions. Её best-effort persistence не меняет исполнение
 optimizer-а, selection, успех fit или публикацию модели.
 
-OpenSearch получает принадлежащую provider-у projection v8. Вызывающая система
+OpenSearch получает принадлежащую provider-у projection v9. Вызывающая система
 получает валидированный, нормализованный report через Training Telemetry Query v4, а не
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 
+При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v16 после
+каждой завершённой эпохи выполняет отдельный наблюдательный проход по полному
+committed input artifact в `eval()` и `torch.no_grad()`. Он сохраняет только
+агрегаты raw logit, public prediction, входа финальной target head, градиента
+direct component и параметров target head. Этот best-effort artifact не меняет
+веса, optimizer, RNG, telemetry epoch или результат `predict`; без настройки
+он не создаётся.
+
 ## Исторический чистый переход
 
-Checkpoint/recovery v9 не имеет reader для прежнего state checkpoint-а.
-Migration 0028 удаляет старые jobs и generations перед активацией Flight v17;
-после deployment обучите новые generations.
+Model Catalog v5 читает metadata checkpoint v9 только для безопасной проекции:
+такая legacy generation возвращает `notConfigured` в Target Head Diagnostics
+Query. Worker не возобновляет state v9. Migration 0028 удаляет старые jobs и
+generations перед первоначальной активацией Semantic v4; после перехода на
+Flight v18 замените OpenSearch indices v8 на v9 и обучите новые generations
+для opt-in diagnostics.

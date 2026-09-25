@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from app.contracts.checkpoint.v9.constants import (
+    CHECKPOINT_FORMAT as LEGACY_CHECKPOINT_FORMAT,
+)
 from app.contracts.semantic.v4 import ModelContract, SemanticContractError
-from app.contracts.worker.v15.config import ModelConfig
-from app.contracts.worker.v15.constants import CHECKPOINT_FORMAT
-from app.contracts.worker.v15.model_definition import resolved_semantic_digests
+from app.contracts.worker.v16.config import ModelConfig
+from app.contracts.worker.v16.constants import CHECKPOINT_FORMAT
+from app.contracts.worker.v16.model_definition import resolved_semantic_digests
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode
@@ -20,7 +23,11 @@ _DIGEST_LAYERS = (
 )
 
 
-def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
+def verify_model_integrity(
+    model: PublishedModelRecord,
+    *,
+    allow_legacy_checkpoint: bool = False,
+) -> ModelConfig:
     try:
         contract = ModelContract.from_document(model.model_contract)
         data_digest = _digest(
@@ -37,8 +44,11 @@ def verify_model_integrity(model: PublishedModelRecord) -> ModelConfig:
         if calculated != model.semantic_digests:
             _raise_corrupt_digest(model.semantic_digests, calculated)
 
+        accepted_checkpoint_formats = {CHECKPOINT_FORMAT}
+        if allow_legacy_checkpoint:
+            accepted_checkpoint_formats.add(LEGACY_CHECKPOINT_FORMAT)
         if (
-            metadata.get("format") != CHECKPOINT_FORMAT
+            metadata.get("format") not in accepted_checkpoint_formats
             or metadata.get("dataContract") != model.data_contract
             or metadata.get("modelContract") != model.model_contract
             or metadata.get("predictionDefinition")

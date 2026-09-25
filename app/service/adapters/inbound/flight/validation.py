@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v17.codec import (
+from app.contracts.flight.v18.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
-from app.contracts.flight.v17.source_encoding import canonical_source_encoding
+from app.contracts.flight.v18.source_encoding import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v4 import (
+from app.contracts.model_catalog.v5 import (
     ModelCatalogContractError,
     validate_catalog_document,
 )
@@ -22,13 +22,17 @@ from app.contracts.model_topology.v2 import (
     validate_model_topology_document,
 )
 from app.contracts.semantic.v4 import ModelContract, SemanticContractError
+from app.contracts.target_head_diagnostics.v1 import (
+    TargetHeadDiagnosticsContractError,
+    validate_target_head_diagnostics_document,
+)
 from app.contracts.training_telemetry.v4 import (
     TrainingTelemetryContractError,
     validate_training_telemetry_document,
 )
-from app.contracts.worker.v15.config import ModelConfig, TrainConfig
-from app.contracts.worker.v15.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v15.model_definition import (
+from app.contracts.worker.v16.config import ModelConfig, TrainConfig
+from app.contracts.worker.v16.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v16.model_definition import (
     resolved_semantic_digests,
 )
 from app.service.adapters.inbound.flight.constants import (
@@ -56,6 +60,10 @@ from app.service.adapters.inbound.flight.model_topology import (
 from app.service.adapters.inbound.flight.mutation_lease import (
     MutationLeaseError,
     decode_mutation_lease,
+)
+from app.service.adapters.inbound.flight.target_head_diagnostics import (
+    invalid_target_head_diagnostics_cursor,
+    invalid_target_head_diagnostics_query,
 )
 from app.service.adapters.inbound.flight.training_telemetry import (
     invalid_telemetry_cursor,
@@ -176,6 +184,12 @@ class TrainingTelemetryGradientRequestFields(RequestIdFields):
     cursor: str | None
 
 
+class TargetHeadDiagnosticsReportRequestFields(RequestIdFields):
+    model_ref: str
+    page_size: int
+    cursor: str | None
+
+
 class UploadMetadataFields(TypedDict):
     job_id: str
     client_execution_id: str
@@ -204,6 +218,7 @@ ValidatedActionRequest = (
     | ModelTopologyDetailRequestFields
     | TrainingTelemetryReportRequestFields
     | TrainingTelemetryGradientRequestFields
+    | TargetHeadDiagnosticsReportRequestFields
 )
 
 
@@ -211,9 +226,12 @@ def validate_action_request(
     action_name: str,
     document: JsonObject,
 ) -> ValidatedActionRequest:
-    from app.contracts.model_catalog.v4.constants import (
+    from app.contracts.model_catalog.v5.constants import (
         DETAIL_ACTION as MODEL_CATALOG_DETAIL_ACTION,
         LIST_ACTION as MODEL_CATALOG_LIST_ACTION,
+    )
+    from app.contracts.target_head_diagnostics.v1.constants import (
+        REPORT_ACTION as TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION,
     )
     from app.contracts.training_telemetry.v4.constants import (
         GRADIENT_INTERACTIONS_ACTION as TRAINING_TELEMETRY_GRADIENT_ACTION,
@@ -230,6 +248,8 @@ def validate_action_request(
         return _validate_training_telemetry_report(document)
     if action_name == TRAINING_TELEMETRY_GRADIENT_ACTION:
         return _validate_training_telemetry_gradient(document)
+    if action_name == TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION:
+        return _validate_target_head_diagnostics_report(document)
     schema_name = _ACTION_SCHEMAS.get(action_name)
     if schema_name is None:
         raise invalid(f"unsupported action: {action_name}")
@@ -491,6 +511,24 @@ def _validate_training_telemetry_gradient(document: JsonObject) -> TrainingTelem
     }
 
 
+def _validate_target_head_diagnostics_report(
+    document: JsonObject,
+) -> TargetHeadDiagnosticsReportRequestFields:
+    try:
+        validate_target_head_diagnostics_document(document, "report-request")
+    except TargetHeadDiagnosticsContractError as exc:
+        path = _contract_error_path(exc)
+        if path == "/cursor" and document.get("cursor") is not None:
+            raise invalid_target_head_diagnostics_cursor() from exc
+        raise invalid_target_head_diagnostics_query(str(exc), path) from exc
+    return {
+        "request_id": _uuid(document, "requestId"),
+        "model_ref": _string(document, "modelRef"),
+        "page_size": _integer(document, "pageSize"),
+        "cursor": cast(str | None, document["cursor"]),
+    }
+
+
 def _validate_catalog_schema(document: JsonObject, schema_name: str) -> None:
     try:
         validate_catalog_document(document, schema_name)
@@ -545,10 +583,11 @@ def _internal_data_contract(data_binding: DataBindingFields) -> JsonObject:
 
 
 def _diagnostics_config(document: object) -> DiagnosticsConfig:
-    if document is None:
-        return DiagnosticsConfig()
     try:
-        return DiagnosticsConfig.from_document({"schemaVersion": 1, **_mapping(document)})
+        return DiagnosticsConfig.from_document({
+            "schemaVersion": 2,
+            **_mapping(document),
+        })
     except (TypeError, ValueError) as exc:
         raise invalid(f"invalid diagnostics: {exc}") from exc
 
@@ -673,6 +712,7 @@ __all__ = [
     "OutputsListRequestFields",
     "RequestIdFields",
     "StatusRequestFields",
+    "TargetHeadDiagnosticsReportRequestFields",
     "TrainingTelemetryGradientRequestFields",
     "TrainingTelemetryReportRequestFields",
     "UploadMetadataFields",

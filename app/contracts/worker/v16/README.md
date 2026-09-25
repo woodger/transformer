@@ -1,8 +1,8 @@
 # Процессный контракт Transformer Worker v16
 
-> ДОКУМЕНТ КОНТРАКТА. Этот staged-пакет определяет внутренний процессный
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет действующий внутренний процессный
 > протокол между сервисом и Worker для Flight v18. Он не является публичным
-> wire contract и не изменяет действующий Worker v15.
+> wire contract.
 
 Worker v16 получает `diagnostics` v2 из checkpoint/recovery v10. При
 `targetHead: "fullCommittedArtifact"` он после каждой завершённой эпохи
@@ -29,7 +29,7 @@ attempt, закрытым input manifest, model definition и job configuration,
 fit. Структура result manifest не означает, что сырые observations или пути
 артефакта пересекают публичную Flight-границу.
 
-Внутренние форматы staged revision:
+Внутренние форматы revision:
 
 ```text
 transformer-worker protocol 16

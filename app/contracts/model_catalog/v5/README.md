@@ -1,8 +1,7 @@
 # Запрос каталога моделей в области владельца v5
 
-> ДОКУМЕНТ КОНТРАКТА. Этот staged-пакет определяет следующую revision
-> read-only Model Catalog Query. Он будет активирован Flight v18 и не изменяет
-> текущий Model Catalog v4.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет действующую revision read-only
+> Model Catalog Query для Flight v18.
 
 Операции сохраняют owner-scoped discovery и точный detail:
 

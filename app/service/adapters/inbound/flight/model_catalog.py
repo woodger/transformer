@@ -3,9 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v9 import validate_checkpoint_document
+from app.contracts.checkpoint.v9 import (
+    CHECKPOINT_FORMAT as LEGACY_CHECKPOINT_FORMAT,
+    validate_checkpoint_document as validate_legacy_checkpoint_document,
+)
+from app.contracts.checkpoint.v10 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v4 import validate_catalog_document
+from app.contracts.model_catalog.v5 import validate_catalog_document
 from app.contracts.semantic.v4 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
@@ -47,7 +51,7 @@ class CatalogModelMetadataVerifier:
 
 def model_summary(model: PublishedModelRecord) -> JsonObject:
     try:
-        verify_model_integrity(model)
+        verify_model_integrity(model, allow_legacy_checkpoint=True)
         contract = ModelContract.from_document(model.model_contract)
         initialization = model_initialization(model)
         metadata = model.metadata
@@ -105,13 +109,7 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
     summary = model_summary(model)
     try:
         metadata = model.metadata
-        checkpoint_metadata: JsonObject = {
-            name: metadata[name] for name in _CHECKPOINT_METADATA_FIELDS
-        }
-        validate_checkpoint_document(
-            checkpoint_metadata,
-            "checkpoint-metadata",
-        )
+        checkpoint_metadata = _checkpoint_metadata(metadata)
         progress = cast(JsonObject, checkpoint_metadata["progress"])
         if progress.get("trainingComplete") is not True:
             raise ValueError("published checkpoint is not terminal")
@@ -145,7 +143,7 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
             "trainingConfig": dict(
                 cast(JsonObject, metadata["trainingConfig"])
             ),
-            "diagnostics": dict(cast(JsonObject, metadata["diagnostics"])),
+            "diagnostics": _catalog_diagnostics(metadata["diagnostics"]),
             "selection": selection_public,
             "progress": dict(progress),
             "initialization": dict(cast(JsonObject, summary["initialization"])),
@@ -262,6 +260,34 @@ def _timestamp(value: float) -> str:
         .isoformat(timespec="microseconds")
         .replace("+00:00", "Z")
     )
+
+
+def _checkpoint_metadata(metadata: JsonObject) -> JsonObject:
+    checkpoint_metadata: JsonObject = {
+        name: metadata[name] for name in _CHECKPOINT_METADATA_FIELDS
+    }
+    if checkpoint_metadata["format"] == LEGACY_CHECKPOINT_FORMAT:
+        validate_legacy_checkpoint_document(
+            checkpoint_metadata,
+            "checkpoint-metadata",
+        )
+    else:
+        validate_checkpoint_document(
+            checkpoint_metadata,
+            "checkpoint-metadata",
+        )
+    return checkpoint_metadata
+
+
+def _catalog_diagnostics(value: object) -> JsonObject:
+    diagnostics = cast(JsonObject, value)
+    if diagnostics.get("schemaVersion") == 1:
+        return {
+            "schemaVersion": 2,
+            "gradientInteractions": diagnostics["gradientInteractions"],
+            "targetHead": None,
+        }
+    return dict(diagnostics)
 
 
 __all__ = [

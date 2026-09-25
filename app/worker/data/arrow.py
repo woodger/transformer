@@ -8,13 +8,13 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.contracts.flight.v17.arrow import (
+from app.contracts.flight.v18.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,
     validate_target_values,
 )
-from app.contracts.flight.v17.source_encoding import feature_block_dimensions
+from app.contracts.flight.v18.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
@@ -89,6 +89,33 @@ def iter_committed_fit_arrow(
         )
 
 
+def iter_committed_fit_features(
+    path: str,
+    *,
+    expected_rows: int,
+    expected_chunks: int,
+    expected_native_rows: Sequence[int],
+    source_encoding: Mapping[str, object],
+    seq_len: int,
+    feature_dim: int,
+    target_contract: JsonObject,
+) -> Iterator[torch.Tensor]:
+    """Декодировать признаки fit-артефакта без материализации целей."""
+    for features, _ in _iter_committed_indexed_arrow(
+        path,
+        expected_rows=expected_rows,
+        expected_chunks=expected_chunks,
+        expected_native_rows=expected_native_rows,
+        source_encoding=source_encoding,
+        seq_len=seq_len,
+        feature_dim=feature_dim,
+        require_target=True,
+        target_contract=target_contract,
+        materialize_targets=False,
+    ):
+        yield _list_values_to_tensor(features)
+
+
 def iter_committed_source_arrow(
     path: str,
     *,
@@ -127,6 +154,7 @@ def _iter_committed_indexed_arrow(
     require_target: bool,
     target_contract: JsonObject,
     binary_target_indices: Sequence[int] = (),
+    materialize_targets: bool = True,
 ) -> Iterator[tuple[np.ndarray, np.ndarray | None]]:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
@@ -164,7 +192,7 @@ def _iter_committed_indexed_arrow(
             )
             target_column = (
                 batch.column(batch.schema.get_field_index("tgt"))
-                if require_target
+                if require_target and materialize_targets
                 else None
             )
             for chunk_index in range(batch.num_rows):
@@ -199,11 +227,15 @@ def _iter_committed_indexed_arrow(
 
                 if logical_rows is None:
                     raise ValueError("Committed Arrow has no feature blocks")
-                target_values = _committed_target_values(
-                    target_column,
-                    chunk_index,
-                    logical_rows,
-                    target_width(target_contract),
+                target_values = (
+                    None
+                    if not materialize_targets
+                    else _committed_target_values(
+                        target_column,
+                        chunk_index,
+                        logical_rows,
+                        target_width(target_contract),
+                    )
                 )
                 if target_values is not None:
                     validate_target_values(
@@ -216,7 +248,7 @@ def _iter_committed_indexed_arrow(
                     seq_len * feature_dim
                     + (
                         target_width(target_contract)
-                        if require_target
+                        if require_target and materialize_targets
                         else 0
                     )
                 )

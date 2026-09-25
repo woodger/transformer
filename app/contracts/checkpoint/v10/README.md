@@ -1,8 +1,7 @@
 # Transformer checkpoint и recovery v10
 
-> ДОКУМЕНТ КОНТРАКТА. Этот staged-пакет определяет внутренние metadata
-> checkpoint/recovery для Semantic v4, Flight v18 и Worker v16. Он не
-> изменяет действующий checkpoint/recovery v9.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет действующие внутренние metadata
+> checkpoint/recovery для Semantic v4, Flight v18 и Worker v16.
 
 `transformer-checkpoint-v10` сохраняет разрешённую configuration diagnostics
 v2 вместе с остальными fences задания: `jobConfigSha256`, input manifest,

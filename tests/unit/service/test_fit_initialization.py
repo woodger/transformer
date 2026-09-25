@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v17 import job_config_sha256
+from app.contracts.flight.v18 import job_config_sha256
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v15.config import ModelConfig, TrainConfig
-from app.contracts.worker.v15.model_definition import resolved_semantic_digests
+from app.contracts.worker.v16.config import ModelConfig, TrainConfig
+from app.contracts.worker.v16.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -189,6 +189,23 @@ def test_predict_still_rejects_a_new_data_contract_digest():
     )
 
 
+def test_published_model_fit_rejects_a_legacy_checkpoint_format():
+    command, parent = _published_model_command()
+    parent = replace(
+        parent,
+        metadata={
+            **parent.metadata,
+            "format": "transformer-checkpoint-v9",
+        },
+    )
+    action, _, _ = _action_for_parent(parent)
+
+    with pytest.raises(ServiceError) as raised:
+        action.create(command)
+
+    assert raised.value.code is ErrorCode.MODEL_CORRUPT
+
+
 def test_published_model_fit_rejects_a_different_objective():
     command, parent = _published_model_command()
     changed_document = deepcopy(command.model_contract)
@@ -261,7 +278,7 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v9",
+            "format": "transformer-checkpoint-v10",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
             "modelConfig": model_config.to_manifest(),

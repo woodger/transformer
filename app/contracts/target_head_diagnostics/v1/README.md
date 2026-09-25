@@ -1,9 +1,8 @@
 # Диагностика выходных головок целей v1
 
-> ДОКУМЕНТ КОНТРАКТА. Этот staged-пакет задаёт отдельную owner-scoped
-> проекцию наблюдений выходных головок целей опубликованной модели. Он будет
-> активирован Flight v18 после отдельного согласования и не изменяет текущий
-> runtime Flight v17.
+> ДОКУМЕНТ КОНТРАКТА. Этот пакет задаёт отдельную owner-scoped проекцию
+> наблюдений выходных головок целей опубликованной модели. Он активирован
+> Flight v18.
 
 ## Операция и граница
 
@@ -203,9 +202,9 @@ payload и не использует deployment или commit identity. При �
 | Неполные или противоречивые observations | `TARGET_HEAD_DIAGNOSTICS_CORRUPT / TARGET_HEAD_DIAGNOSTICS_INTEGRITY_FAILED` |
 | Временная недоступность backend-а | `UNAVAILABLE / TARGET_HEAD_DIAGNOSTICS_BACKEND_UNAVAILABLE` |
 
-## Связанные staged-версии
+## Связанные версии
 
-Пакет предполагает следующие новые, пока неактивные версии:
+Пакет использует следующие активные версии:
 
 | Область | Версия | Назначение |
 | --- | --- | --- |
@@ -214,7 +213,7 @@ payload и не использует deployment или commit identity. При �
 | Checkpoint/recovery | v10 | Сохранение расширенной runtime-настройки diagnostics. |
 | Model Catalog | v5 | Раскрытие этой настройки в detail. |
 
-Semantic v4, Training Telemetry v4, Metrics v8 и Model Topology v2 остаются
+Semantic v4, Training Telemetry v4, Metrics v9 и Model Topology v2 остаются
 без изменения. Existing published generations не требуют destructive migration:
 их результат новой поверхности равен `notConfigured`.
 

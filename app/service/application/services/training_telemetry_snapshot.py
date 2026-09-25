@@ -11,7 +11,11 @@ import rfc8785
 
 from app.service.domain.json_types import JsonValue
 
-TelemetrySnapshotOperation = Literal["report", "gradientInteractions"]
+TelemetrySnapshotOperation = Literal[
+    "report",
+    "gradientInteractions",
+    "targetHeadDiagnostics",
+]
 
 
 class TrainingTelemetrySnapshotCapacityExhausted(RuntimeError):
@@ -35,7 +39,7 @@ class _SnapshotEntry:
 
 
 class TrainingTelemetrySnapshotStore:
-    """Retain exact cursor projections in one atomically bounded pool."""
+    """Удерживает точные cursor-проекции в одном атомарно ограниченном пуле."""
 
     def __init__(
         self,

@@ -9,13 +9,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from app.contracts.checkpoint.v9 import (
+from app.contracts.checkpoint.v10 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v15 import CONTRACT_NAME, CONTRACT_VERSION
-from app.contracts.worker.v15.config import train_config_to_manifest
+from app.contracts.worker.v16 import CONTRACT_NAME, CONTRACT_VERSION
+from app.contracts.worker.v16.config import train_config_to_manifest
 from app.worker.application.documents import (
     integer_field,
     integer_list,

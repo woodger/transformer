@@ -1,6 +1,6 @@
-"""Flight v17 wire constants combined with service lifecycle values."""
+"""Константы Flight v18 и состояния жизненного цикла сервиса."""
 
-from app.contracts.flight.v17.constants import (
+from app.contracts.flight.v18.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,
@@ -23,6 +23,7 @@ from app.contracts.flight.v17.constants import (
     PREDICT_SCHEMA_ID,
     PREDICTION_SCHEMA_ID,
     STATUS_ACTION,
+    TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "PREDICT_SCHEMA_ID",
     "STATUS_ACTION",
     "SUPPORTED_OPERATIONS",
+    "TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION",
     "TERMINAL_EXECUTION_STATES",
     "TRAINING_TELEMETRY_GRADIENT_ACTION",
     "TRAINING_TELEMETRY_REPORT_ACTION",

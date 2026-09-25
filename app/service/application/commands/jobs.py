@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
-from app.contracts.worker.v15.config import TrainConfig
+from app.contracts.worker.v16.config import TrainConfig
 from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,
@@ -285,6 +285,7 @@ def _job_diagnostics(training: TrainConfig | None) -> JsonObject:
     document = training.diagnostics.to_document()
     return {
         "gradientInteractions": document["gradientInteractions"],
+        "targetHead": document["targetHead"],
     }
 
 

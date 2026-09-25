@@ -1,14 +1,12 @@
 # Контракт Arrow Flight v18
 
-> ДОКУМЕНТ КОНТРАКТА. Этот каталог задаёт нормативный staged-кандидат
-> следующей публичной границы Arrow Flight Transformer. Он не является
-> действующим runtime contract до отдельного clean cut; Flight v17 этим
-> пакетом не изменяется.
+> ДОКУМЕНТ КОНТРАКТА. Этот каталог задаёт действующую публичную границу
+> Arrow Flight Transformer. Flight v17 не обслуживается runtime.
 
 Flight v18 сохраняет физическую плоскость данных и workflow Flight v17, но
 добавляет отдельную read-only поверхность диагностики выходных головок целей.
-Новый action не расширяет v17: при активации v18 будет единственным
-объявляемым action surface без aliases v17.
+Новый action не расширяет v17: v18 является единственным объявляемым action
+surface без aliases v17.
 
 Отсутствие wire aliases не удаляет уже опубликованные Semantic v4 поколения.
 Для retained checkpoint metadata v9 provider выполняет только явно заданную
@@ -79,9 +77,9 @@ diagnostics artifact не создаётся; lazy query возвращает
 форму. Конкретный action определяет авторитетную request/result schema; общий
 документ проверяет, что ответ принадлежит хотя бы одной объявленной форме.
 
-Новая диагностика связана с staged Worker v16,
-checkpoint/recovery v10 и Model Catalog v5. Semantic v4, Metrics v8 и
-Topology v2 остаются exact прежними пакетами.
+Новая диагностика связана с Worker v16, checkpoint/recovery v10 и Model
+Catalog v5. Semantic v4, Metrics v9 и Topology v2 остаются exact прежними
+пакетами.
 
 ## Сохранённые свойства
 

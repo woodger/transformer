@@ -5,7 +5,7 @@
 
 Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
 начинаются только через аутентифицированную границу вызывающей системы Flight
-v17.
+v18.
 
 ## Подготовить окружение
 
@@ -47,13 +47,14 @@ command history, или логах.
 ```
 
 Для production используйте процедуру systemd. Migration 0028 является
-destructive clean cut для перехода на Semantic v4; Flight v17 не требует
-повторного удаления опубликованных generations.
+destructive clean cut для перехода на Semantic v4; Flight v18 не требует
+повторного удаления опубликованных generations, но требует готовых OpenSearch
+индексов metrics v9.
 
 Вызывающая система материализует `ModelContract` Semantic v4, создаёт job fit
-или predict v17, загружает compact `indexedFeatureBlocks`, закрывает input и
+или predict v18, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
-[Flight v17](../app/contracts/flight/v17/README.md); это руководство намеренно
+[Flight v18](../app/contracts/flight/v18/README.md); это руководство намеренно
 не дублирует wire examples.
 
 ## Проверка изменений

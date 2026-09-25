@@ -15,10 +15,13 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v15.config import (
+from app.contracts.worker.v16.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
+)
+from app.contracts.worker.v16.diagnostics import (
+    TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.worker.checkpoints.model import save_model
 from app.worker.data.tensors import TrainingBatch
@@ -30,6 +33,7 @@ from app.worker.telemetry import (
     ObservedTrainingEpoch,
     TargetErrorObservation,
 )
+from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.batching import Closable, PayloadBatcher, TrainingBatches
 from app.worker.training.constants import GRAD_CLIP_NORM
 from app.worker.training.early_stopping import SelectionState
@@ -107,6 +111,12 @@ class Trainer:
         self.training_complete = False
         self._payload_shuffle_generator = torch.Generator()
         self._payload_shuffle_generator.manual_seed(self.seed)
+        self._target_head_diagnostics = (
+            None
+            if train_config.diagnostics.target_head
+            != TARGET_HEAD_FULL_COMMITTED_ARTIFACT
+            else TargetHeadDiagnosticsCollector(model_contract)
+        )
 
         self.use_amp = bool(train_config.use_amp and device.type == "cuda")
         self.scaler = torch.GradScaler("cuda", enabled=self.use_amp)
@@ -132,6 +142,10 @@ class Trainer:
     def train_step(self, value: int) -> None:
         self.state.train_step = value
 
+    @property
+    def target_head_diagnostics_enabled(self) -> bool:
+        return self._target_head_diagnostics is not None
+
     def _autocast(self) -> AbstractContextManager[object]:
         if self.use_amp:
             return torch.autocast(device_type="cuda", enabled=True)
@@ -150,6 +164,7 @@ class Trainer:
         self,
         loaders: Iterable[TrainingBatches],
     ) -> ObservedTrainingEpoch:
+        self._begin_target_head_diagnostics_epoch()
         self.model.train()
         epoch_result = ObservedTrainingEpoch(
             targets=self.model_contract.target_identities,
@@ -267,6 +282,10 @@ class Trainer:
                             )
                         except Exception as exc:
                             self._disable_epoch_telemetry(epoch_result, exc)
+
+                    self._record_target_head_component_gradients(
+                        loss_evaluation.diagnostic_components,
+                    )
 
                     target_error_observation = self._observe_target_errors(
                         epoch_result,
@@ -413,6 +432,84 @@ class Trainer:
             ) * 1000
         except Exception as exc:
             self._disable_epoch_telemetry(epoch_result, exc)
+
+    def _begin_target_head_diagnostics_epoch(self) -> None:
+        collector = self._target_head_diagnostics
+        if collector is not None:
+            collector.begin_epoch()
+
+    def _record_target_head_component_gradients(
+        self,
+        components: tuple[tuple[str, torch.Tensor], ...],
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_component_gradients(components, self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def collect_target_head_diagnostics(
+        self,
+        features: Callable[[], Iterable[torch.Tensor]],
+        *,
+        epoch: int,
+        global_step: int,
+        expected_rows: int,
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_post_update(
+                self.model,
+                features,
+                device=self.device,
+                autocast=self._autocast,
+                epoch=epoch,
+                global_step=global_step,
+                expected_rows=expected_rows,
+            )
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def target_head_diagnostics_artifact(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        attempt_id: str,
+        input_revision: int,
+        manifest_sha256: str,
+        job_config_sha256: str,
+    ) -> JsonObject | None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return None
+        return collector.artifact(
+            job_id=job_id,
+            attempt=attempt,
+            attempt_id=attempt_id,
+            input_revision=input_revision,
+            manifest_sha256=manifest_sha256,
+            model_definition_sha256=self.model_definition_sha256,
+            job_config_sha256=job_config_sha256,
+            completed_epochs=self.state.global_epoch,
+        )
+
+    @staticmethod
+    def _disable_target_head_diagnostics(
+        collector: TargetHeadDiagnosticsCollector,
+        exc: Exception,
+    ) -> None:
+        if collector.disable():
+            print(
+                "диагностика выходной головки отключена: "
+                + type(exc).__name__,
+                file=sys.stderr,
+                flush=True,
+            )
 
     @staticmethod
     def _disable_epoch_telemetry(
@@ -706,6 +803,11 @@ class Trainer:
                 "cuda": cuda_rng_state,
             },
             "training_complete": self.training_complete,
+            "target_head_diagnostics": (
+                None
+                if self._target_head_diagnostics is None
+                else self._target_head_diagnostics.recovery_document()
+            ),
         }
 
     def load_recovery_state_dict(
@@ -725,6 +827,7 @@ class Trainer:
             "payload_shuffle_generator_state",
             "rng",
             "training_complete",
+            "target_head_diagnostics",
         }
         if set(payload) != required:
             raise ValueError("training recovery state has invalid fields")
@@ -898,6 +1001,14 @@ class Trainer:
             payload["training_complete"],
             "training completion marker",
         )
+        diagnostics_state = payload["target_head_diagnostics"]
+        if self._target_head_diagnostics is None:
+            if diagnostics_state is not None:
+                raise ValueError("training recovery diagnostics state is invalid")
+        else:
+            if diagnostics_state is None:
+                raise ValueError("training recovery diagnostics state is missing")
+            self._target_head_diagnostics.load_recovery_document(diagnostics_state)
 
     def predict(self, features: torch.Tensor) -> torch.Tensor:
         self.model.eval()
