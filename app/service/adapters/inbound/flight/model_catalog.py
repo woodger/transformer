@@ -3,14 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v9 import (
-    CHECKPOINT_FORMAT as LEGACY_CHECKPOINT_FORMAT,
-    validate_checkpoint_document as validate_legacy_checkpoint_document,
-)
-from app.contracts.checkpoint.v11 import validate_checkpoint_document
+from app.contracts.checkpoint.v12 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v6 import validate_catalog_document
-from app.contracts.semantic.v4 import ModelContract
+from app.contracts.model_catalog.v7 import validate_catalog_document
+from app.contracts.semantic.v5 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )
@@ -51,7 +47,7 @@ class CatalogModelMetadataVerifier:
 
 def model_summary(model: PublishedModelRecord) -> JsonObject:
     try:
-        verify_model_integrity(model, allow_legacy_checkpoint=True)
+        verify_model_integrity(model)
         contract = ModelContract.from_document(model.model_contract)
         initialization = model_initialization(model)
         metadata = model.metadata
@@ -266,16 +262,10 @@ def _checkpoint_metadata(metadata: JsonObject) -> JsonObject:
     checkpoint_metadata: JsonObject = {
         name: metadata[name] for name in _CHECKPOINT_METADATA_FIELDS
     }
-    if checkpoint_metadata["format"] == LEGACY_CHECKPOINT_FORMAT:
-        validate_legacy_checkpoint_document(
-            checkpoint_metadata,
-            "checkpoint-metadata",
-        )
-    else:
-        validate_checkpoint_document(
-            checkpoint_metadata,
-            "checkpoint-metadata",
-        )
+    validate_checkpoint_document(
+        checkpoint_metadata,
+        "checkpoint-metadata",
+    )
     return checkpoint_metadata
 
 

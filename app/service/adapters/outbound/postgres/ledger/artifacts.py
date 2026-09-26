@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v6 import MAX_CHECKPOINT_VERIFICATION_BYTES
+from app.contracts.model_catalog.v7 import MAX_CHECKPOINT_VERIFICATION_BYTES
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,

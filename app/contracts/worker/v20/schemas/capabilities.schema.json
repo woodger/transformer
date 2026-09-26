@@ -20,7 +20,7 @@
       "const": "transformer-worker"
     },
     "protocolVersion": {
-      "const": 19
+      "const": 20
     },
     "checkpointFormat": {
       "const": "transformer-checkpoint-v12"

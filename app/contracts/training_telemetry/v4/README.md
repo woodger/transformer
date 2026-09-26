@@ -108,9 +108,10 @@ Clients ветвятся по `code` и `reason`, а не по тексту ош
 
 ## Чистый переход и fixtures
 
-Revision 4 не читает telemetry предыдущих revisions. Migration 0028 удаляет
-старые models и telemetry; новые reports создаются только новыми fits Worker
-v18 и принадлежащей provider-у projection metrics v10.
+Активный runtime не читает telemetry предыдущих metrics revisions. Migration
+0029 удаляет старые models и database telemetry; deployment procedure отдельно
+заменяет индексы OpenSearch metrics v10 на v11. Новые reports создаются только
+fits Worker v20 и принадлежащей provider-у projection metrics v11.
 
 `fixtures/` содержит компактные примеры pending/available report и lazy
 gradient. Его manifest хеширует только bundle fixtures для офлайн-проверки; он

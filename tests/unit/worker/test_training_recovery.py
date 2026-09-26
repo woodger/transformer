@@ -6,9 +6,9 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import CheckpointSelectionConfig
-from app.contracts.worker.v19.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import CheckpointSelectionConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -46,6 +46,7 @@ class InjectedInterruption(Exception):
 def _model_config() -> ModelConfig:
     return ModelConfig(
         seq_len=2,
+        normalization_order="postNorm",
         hidden=8,
         layers=1,
         dropout=0.2,

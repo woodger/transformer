@@ -22,7 +22,7 @@
       "const": "transformer-worker"
     },
     "protocolVersion": {
-      "const": 19
+      "const": 20
     },
     "jobId": {
       "$ref": "common.schema.json#/$defs/uuid"

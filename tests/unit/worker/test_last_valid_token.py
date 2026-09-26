@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from app.contracts.semantic.v4 import ModelContract
+from app.contracts.semantic.v5 import ModelContract
 from app.worker.model.transformer import TransformerModel, public_predictions
 from tests.fixture_documents import semantic_fixture_document
 
@@ -57,6 +57,7 @@ def test_transformer_selects_last_valid_position_and_all_missing_placeholder():
         model_contract=contract,
         nhead=2,
         context_mode="strict",
+        normalization_order="postNorm",
     )
     model.input_proj = nn.Identity()
     model.pos = nn.Identity()
@@ -98,6 +99,7 @@ def test_transformer_forward_with_missing_tokens_is_finite():
         model_contract=contract,
         nhead=4,
         context_mode="relaxed",
+        normalization_order="postNorm",
     )
     features = torch.arange(24, dtype=torch.float32).reshape(3, 4, 2)
     features[0, 0, :] = float("nan")

@@ -1,9 +1,8 @@
 # Топология модели v3
 
-> ДОКУМЕНТ КОНТРАКТА. Этот подготовленный пакет определяет owner-scoped
-> read-only проекцию публичной вычислительной topology опубликованной
-> generation для Flight v22 action `transformer.model-topology.v3.detail`.
-> До review активная surface не меняется.
+> ДОКУМЕНТ КОНТРАКТА. Пакет определяет owner-scoped read-only проекцию
+> публичной вычислительной topology опубликованной generation для активного
+> Flight v22 action `transformer.model-topology.v3.detail`.
 
 ## Граница
 

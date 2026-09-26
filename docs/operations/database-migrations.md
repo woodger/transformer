@@ -20,12 +20,12 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Базовый Semantic v4 clean cut и текущий Flight v21
+## Semantic v5 clean cut и текущий Flight v22
 
-Revision `0028_positive_class_weighted_binary_bce` разрушительна и не имеет
-downgrade. Она удаляет jobs, опубликованные generations, recovery/checkpoint
-metadata, idempotency records и database telemetry, для которых отсутствует
-reader Semantic v4 / первоначального Flight v19.
+Revision `0029_encoder_normalization_order` разрушительна и не имеет downgrade.
+Она удаляет jobs, опубликованные generations, recovery/checkpoint metadata,
+idempotency records и database telemetry, для которых отсутствует reader
+Semantic v5 / Flight v22.
 
 Перед её применением:
 
@@ -33,15 +33,16 @@ reader Semantic v4 / первоначального Flight v19.
    PostgreSQL.
 2. Убедитесь, что каждое job terminal. Migration отклоняет `WAITING_INPUT`,
    `QUEUED`, `RUNNING`, `RETRYING` и `CANCELLING`, а не удаляет active work.
-3. Решите, нужен ли внешний backup. Предыдущие models и telemetry намеренно не
-   сохраняются этим release.
-4. Примените migration один раз.
-5. До нового обучения Flight v21 выполните замену индексов OpenSearch v9 на v10 по
-   [руководству deployment OpenSearch](../deployment/opensearch.md).
+3. Решите, нужен ли внешний backup. Предыдущие models и database telemetry
+   намеренно не сохраняются этим release. Уже существующие documents Metrics
+   v10 в OpenSearch migration не удаляет, но без registry generation они не
+   становятся доступными через query.
+4. Примените migration один раз, затем выполните documented destructive
+   replacement индексов OpenSearch metrics v10 на v11 до запуска Flight v22.
 
-Не запускайте executable, не поддерживающий Semantic v4, после применения
-revision 0028. У него нет совместимого reader database, и он не должен
+Не запускайте executable, не поддерживающий Semantic v5, после применения
+revision 0029. У него нет совместимого reader database, и он не должен
 создавать legacy state вновь.
 
-Flight v21 не добавляет migration PostgreSQL: его target head diagnostics
-хранятся в checkpoint metadata и registry metadata опубликованной модели.
+Target head diagnostics хранятся в checkpoint metadata и registry metadata
+опубликованной модели.

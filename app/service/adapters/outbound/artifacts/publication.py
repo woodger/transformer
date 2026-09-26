@@ -10,27 +10,27 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v11 import (
+from app.contracts.checkpoint.v12 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v21.arrow import validate_prediction_file
+from app.contracts.flight.v22.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v4.constants import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.target_head_diagnostics.v5.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v19 import (
+from app.contracts.worker.v20 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v19.config import ModelConfig, TrainConfig
-from app.contracts.worker.v19.diagnostics import (
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
     DiagnosticsConfig,
 )
-from app.contracts.worker.v19.model_definition import resolved_semantic_digests
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,

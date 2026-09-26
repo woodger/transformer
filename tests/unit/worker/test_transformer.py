@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from app.contracts.semantic.v4 import ModelContract
+from app.contracts.semantic.v5 import ModelContract
 from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,
@@ -16,6 +16,7 @@ from tests.fixture_documents import semantic_fixture_document
 def _contract(
     *,
     mode: str = "relaxed",
+    normalization_order: str = "postNorm",
 ):
     document = semantic_fixture_document("multi-target-shared-resource")[
         "modelContract"
@@ -29,6 +30,7 @@ def _contract(
         "dropoutProbability": 0.0,
         "attentionHeadCount": 4,
         "missingValuePolicy": mode,
+        "encoderNormalizationOrder": normalization_order,
     })
     return ModelContract.from_document(document)
 
@@ -54,6 +56,7 @@ def test_transformer_forward_shape():
         dropout=0.0,
         model_contract=contract,
         nhead=4,
+        normalization_order="postNorm",
     )
 
     features = torch.randn(batch, seq_len, feat_dim)
@@ -64,6 +67,28 @@ def test_transformer_forward_shape():
         model_output,
         contract,
     ).shape == (batch, 3)
+
+
+@pytest.mark.parametrize(
+    ("normalization_order", "norm_first"),
+    (("postNorm", False), ("preNorm", True)),
+)
+def test_transformer_materializes_declared_encoder_normalization_order(
+    normalization_order: str,
+    norm_first: bool,
+):
+    model = TransformerModel(
+        input_dim=8,
+        seq_len=3,
+        hidden_dim=32,
+        layers=2,
+        dropout=0.0,
+        model_contract=_contract(normalization_order=normalization_order),
+        nhead=4,
+        normalization_order=normalization_order,
+    )
+
+    assert all(layer.norm_first is norm_first for layer in model.encoder.layers)
 
 
 @pytest.mark.parametrize(
@@ -85,6 +110,7 @@ def test_transformer_rejects_input_outside_tensor_contract(features, message):
         dropout=0.0,
         model_contract=contract,
         nhead=4,
+        normalization_order="postNorm",
     )
 
     with pytest.raises(ValueError, match=message):
@@ -102,6 +128,7 @@ def test_transformer_rejects_invalid_attention_dimensions():
             dropout=0.0,
             model_contract=contract,
             nhead=8,
+            normalization_order="postNorm",
         )
 
 
@@ -119,6 +146,7 @@ def test_transformer_input_dim_matches_context_mode():
         model_contract=relaxed_contract,
         nhead=4,
         context_mode="relaxed",
+        normalization_order="postNorm",
     )
     strict = TransformerModel(
         input_dim=8,
@@ -129,6 +157,7 @@ def test_transformer_input_dim_matches_context_mode():
         model_contract=strict_contract,
         nhead=4,
         context_mode="strict",
+        normalization_order="postNorm",
     )
 
     assert context_input_dim(8, "relaxed") == 16
@@ -229,6 +258,7 @@ def test_transformer_forward_with_partial_and_full_nan_tokens_is_finite():
         model_contract=contract,
         nhead=4,
         context_mode="relaxed",
+        normalization_order="postNorm",
     )
 
     features = torch.randn(2, 3, 3)

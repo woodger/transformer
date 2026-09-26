@@ -23,7 +23,7 @@ from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 
 
-def test_staged_encoder_normalization_order_contract_fixtures_are_valid():
+def test_encoder_normalization_order_contract_fixtures_are_valid():
     _validate_semantic_fixtures()
     _validate_flight_fixtures()
     _validate_catalog_fixtures()
@@ -31,7 +31,7 @@ def test_staged_encoder_normalization_order_contract_fixtures_are_valid():
     _validate_target_head_diagnostics_fixtures()
 
 
-def test_staged_model_definitions_bind_normalization_order():
+def test_model_definitions_bind_normalization_order():
     tuning = {
         "hiddenWidth": 16,
         "encoderLayerCount": 3,
@@ -80,7 +80,7 @@ def test_staged_model_definitions_bind_normalization_order():
     assert error.value.path == "/modelTuning"
 
 
-def test_staged_internal_schemas_require_complete_model_configuration():
+def test_internal_schemas_require_complete_model_configuration():
     for schema_name in (
         "checkpoint-artifact",
         "checkpoint-metadata",

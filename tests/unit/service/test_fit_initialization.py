@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v21 import job_config_sha256
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import ModelConfig, TrainConfig
-from app.contracts.worker.v19.model_definition import resolved_semantic_digests
+from app.contracts.flight.v22 import job_config_sha256
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -107,6 +107,7 @@ def test_published_model_fit_rejects_a_different_model_configuration():
         command,
         model_config=ModelConfig(
             seq_len=2,
+            normalization_order="postNorm",
             hidden=16,
             layers=1,
             dropout=0.0,
@@ -278,7 +279,7 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v11",
+            "format": "transformer-checkpoint-v12",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
             "modelConfig": model_config.to_manifest(),

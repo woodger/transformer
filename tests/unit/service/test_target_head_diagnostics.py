@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v21.constants import ACTIONS
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v4.constants import REPORT_ACTION
-from app.contracts.worker.v19.config import ModelConfig
-from app.contracts.worker.v19.model_definition import resolved_semantic_digests
+from app.contracts.flight.v22.constants import ACTIONS
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.target_head_diagnostics.v5.constants import REPORT_ACTION
+from app.contracts.worker.v20.config import ModelConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
@@ -31,7 +31,7 @@ from tests.fixture_documents import semantic_fixture_document
 def _model(
     *,
     target_head: str | None,
-    artifact_format: str = "transformer-target-head-diagnostics-v4",
+    artifact_format: str = "transformer-target-head-diagnostics-v5",
 ) -> PublishedModelRecord:
     fixture = semantic_fixture_document("positive-class-weighted-binary-w28")
     model_contract = fixture["modelContract"]
@@ -324,6 +324,30 @@ def test_target_head_diagnostics_rejects_wrong_encoder_block_layer_order():
         )
 
 
+def test_target_head_diagnostics_rejects_wrong_encoder_normalization_order():
+    model = _model(target_head="fullCommittedArtifact")
+    artifact = model.metadata["targetHeadDiagnostics"]
+    assert isinstance(artifact, dict)
+    epochs = artifact["epochs"]
+    assert isinstance(epochs, list)
+    first_epoch = epochs[0]
+    assert isinstance(first_epoch, dict)
+    block_flow = first_epoch["encoderBlockFlow"]
+    assert isinstance(block_flow, dict)
+    block_flow["normalizationOrder"] = "preNorm"
+
+    with pytest.raises(ValueError, match="normalization order"):
+        _query(model).execute(
+            GetTargetHeadDiagnosticsReportQuery(
+                owner_subject="owner-a",
+                request_id="11111111-1111-4111-8111-111111111111",
+                model_ref=model.model_ref,
+                page_size=1,
+                cursor=None,
+            )
+        )
+
+
 def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
     model = _model(target_head="fullCommittedArtifact")
     entry = CatalogModelRecord(
@@ -370,7 +394,7 @@ def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
         )
 
 
-def test_flight_v21_dispatches_target_head_diagnostics_report():
+def test_flight_v22_dispatches_target_head_diagnostics_report():
     model = _model(target_head="fullCommittedArtifact")
     query = _query(model)
     coordinator = JobCoordinator(

@@ -7,8 +7,9 @@ import torch
 import torch.nn as nn
 from torch.utils.hooks import RemovableHandle
 
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v5.constants import ENCODER_NORMALIZATION_ORDERS
+from app.contracts.worker.v20.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -49,6 +50,7 @@ class TransformerModel(nn.Module):
         *,
         nhead: int = 8,
         context_mode: str = DEFAULT_CONTEXT_MODE,
+        normalization_order: str,
     ) -> None:
         super().__init__()
 
@@ -64,11 +66,16 @@ class TransformerModel(nn.Module):
             raise ValueError("hidden_dim must be divisible by a positive nhead")
         if not 0 <= dropout < 1:
             raise ValueError("dropout must be in the range [0, 1)")
+        if normalization_order not in ENCODER_NORMALIZATION_ORDERS:
+            raise ValueError(
+                "normalization_order must be one of: postNorm, preNorm"
+            )
 
         self.input_dim = input_dim
         self.seq_len = seq_len
         self.model_contract = model_contract
         self.context_mode = validate_context_mode(context_mode)
+        self.normalization_order = normalization_order
         self.input_proj = nn.Linear(
             context_input_dim(input_dim, self.context_mode),
             hidden_dim,
@@ -81,6 +88,7 @@ class TransformerModel(nn.Module):
             dim_feedforward=hidden_dim * 4,
             dropout=dropout,
             batch_first=True,
+            norm_first=normalization_order == "preNorm",
         )
         self.encoder = nn.TransformerEncoder(
             encoder_layer,
@@ -222,7 +230,7 @@ class TransformerModel(nn.Module):
         tuple[tuple[torch.Tensor, ...], ...],
         tuple[torch.Tensor, ...],
     ]:
-        """Вернуть состояния post-norm encoder и OutputHead.shared."""
+        """Вернуть состояния encoder и OutputHead.shared."""
         if features.ndim != 3:
             raise ValueError("features must have shape [batch, sequence, features]")
         if features.shape[1] != self.seq_len:
@@ -239,12 +247,13 @@ class TransformerModel(nn.Module):
         encoder_input = self.input_proj(prepared_context.features)
         encoder_input = self.pos(encoder_input)
         layers = tuple(self.encoder.layers)
+        norm_first = self.normalization_order == "preNorm"
         if not layers or any(
             not isinstance(layer, torch.nn.TransformerEncoderLayer)
-            or layer.norm_first
+            or layer.norm_first != norm_first
             for layer in layers
         ):
-            raise ValueError("encoder block flow requires post-norm encoder layers")
+            raise ValueError("encoder block flow requires configured encoder layers")
         shared_modules = tuple(self.head.shared.children())
         if (
             len(shared_modules) != len(_OUTPUT_HEAD_SHARED_BOUNDARIES)
@@ -306,23 +315,39 @@ class TransformerModel(nn.Module):
         for layer_index, layer in enumerate(layers):
             norm1 = cast(nn.Module, layer.norm1)
             norm2 = cast(nn.Module, layer.norm2)
-            handles.extend((
-                layer.register_forward_pre_hook(
-                    capture_input(layer_index, "input")
-                ),
-                norm1.register_forward_pre_hook(
-                    capture_input(layer_index, "attentionResidual")
-                ),
-                norm1.register_forward_hook(
-                    capture_output(layer_index, "norm1")
-                ),
-                norm2.register_forward_pre_hook(
-                    capture_input(layer_index, "feedForwardResidual")
-                ),
-                norm2.register_forward_hook(
-                    capture_output(layer_index, "norm2")
-                ),
+            handles.append(layer.register_forward_pre_hook(
+                capture_input(layer_index, "input")
             ))
+            if self.normalization_order == "postNorm":
+                handles.extend((
+                    norm1.register_forward_pre_hook(
+                        capture_input(layer_index, "attentionResidual")
+                    ),
+                    norm1.register_forward_hook(
+                        capture_output(layer_index, "norm1")
+                    ),
+                    norm2.register_forward_pre_hook(
+                        capture_input(layer_index, "feedForwardResidual")
+                    ),
+                    norm2.register_forward_hook(
+                        capture_output(layer_index, "norm2")
+                    ),
+                ))
+            else:
+                handles.extend((
+                    norm1.register_forward_hook(
+                        capture_output(layer_index, "norm1")
+                    ),
+                    norm2.register_forward_pre_hook(
+                        capture_input(layer_index, "attentionResidual")
+                    ),
+                    norm2.register_forward_hook(
+                        capture_output(layer_index, "norm2")
+                    ),
+                    layer.register_forward_hook(
+                        capture_output(layer_index, "feedForwardResidual")
+                    ),
+                ))
         for boundary, module in zip(
             _OUTPUT_HEAD_SHARED_BOUNDARIES,
             shared_modules,
@@ -357,8 +382,16 @@ class TransformerModel(nn.Module):
                 )
                 for state in layer_states
             )
+            final_layer_boundary = (
+                "norm2"
+                if self.normalization_order == "postNorm"
+                else "feedForwardResidual"
+            )
+            final_layer_boundary_index = _ENCODER_BLOCK_BOUNDARIES.index(
+                final_layer_boundary
+            )
             encoder_layer_rows = tuple(
-                values[-1] for values in block_rows
+                values[final_layer_boundary_index] for values in block_rows
             )
             last_valid = encoded[batch_indices, last_unmasked_indices]
             model_output, shared = self.head.forward_with_shared_representation(

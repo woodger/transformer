@@ -49,6 +49,7 @@ _CONTRACTS_DIRECTORY = Path(__file__).parents[2]
 _SCHEMA_DIRECTORIES = (
     _SCHEMA_DIRECTORY,
     _CONTRACTS_DIRECTORY / "semantic" / "v5" / "schemas",
+    _CONTRACTS_DIRECTORY / "semantic" / "v4" / "schemas",
     _CONTRACTS_DIRECTORY / "checkpoint" / "v12" / "schemas",
     _CONTRACTS_DIRECTORY / "model_catalog" / "v7" / "schemas",
     _CONTRACTS_DIRECTORY / "model_topology" / "v3" / "schemas",

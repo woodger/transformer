@@ -5,7 +5,7 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v19 import (
+from app.contracts.worker.v20 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -14,7 +14,7 @@ from app.contracts.worker.v19 import (
     RECOVERY_FORMAT,
     validate_document,
 )
-from app.contracts.worker.v19.config import train_config_to_manifest
+from app.contracts.worker.v20.config import train_config_to_manifest
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError

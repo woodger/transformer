@@ -46,15 +46,15 @@ command history, или логах.
 ./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Для production используйте процедуру systemd. Migration 0028 является
-destructive clean cut для перехода на Semantic v4; Flight v21 не требует
-повторного удаления опубликованных generations, но требует готовых OpenSearch
-индексов metrics v10.
+Для production используйте процедуру systemd. Migration 0029 является
+destructive clean cut для перехода на Semantic v5. Перед запуском Flight v22
+выполните destructive replacement OpenSearch metrics v10 на v11 по
+`docs/deployment/opensearch.md`.
 
-Вызывающая система материализует `ModelContract` Semantic v4, создаёт job fit
-или predict v21, загружает compact `indexedFeatureBlocks`, закрывает input и
+Вызывающая система материализует `ModelContract` Semantic v5, создаёт job fit
+или predict v22, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
-[Flight v21](../app/contracts/flight/v21/README.md); это руководство намеренно
+[Flight v22](../app/contracts/flight/v22/README.md); это руководство намеренно
 не дублирует wire examples.
 
 ## Проверка изменений

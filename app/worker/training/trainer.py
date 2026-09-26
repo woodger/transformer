@@ -14,13 +14,13 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v19.diagnostics import (
+from app.contracts.worker.v20.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )

@@ -7,7 +7,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v4 import ModelContract
+from app.contracts.semantic.v5 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 

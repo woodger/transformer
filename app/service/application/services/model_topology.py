@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.model_topology.v2.constants import MAX_EDGES, MAX_NODES
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.model_topology.v3.constants import MAX_EDGES, MAX_NODES
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
 
@@ -155,6 +155,7 @@ class ModelTopologyBuilder:
                     output_ports=("sequence", "Encoded sequence"),
                     encoderLayer=layer,
                     attentionHeadCount=model_config.nhead,
+                    encoderNormalizationOrder=model_config.normalization_order,
                 ),
             )
             _append_edge(
@@ -460,7 +461,7 @@ class ModelTopologyBuilder:
 
         return cast(JsonObject, {
             "modelDefinitionSha256": model_definition_sha256,
-            "topologyRevision": 2,
+            "topologyRevision": 3,
             "nodes": [cast(JsonValue, node) for node in nodes],
             "edges": [cast(JsonValue, edge) for edge in edges],
         })

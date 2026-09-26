@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -58,7 +58,11 @@ def _job(**overrides):
         data_contract_sha256="a" * 64,
         source_encoding=SOURCE_ENCODING,
         model_contract=contract.to_document(),
-        model_config=ModelConfig(seq_len=2, feature_dim=3),
+        model_config=ModelConfig(
+            seq_len=2,
+            feature_dim=3,
+            normalization_order="postNorm",
+        ),
     )
     return replace(job, **overrides)
 

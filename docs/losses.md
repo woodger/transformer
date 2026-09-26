@@ -1,8 +1,8 @@
 # Семантика objective и loss
 
-> Тип: справочник. Числовая семантика языка objective Semantic v4.
+> Тип: справочник. Числовая семантика языка objective Semantic v5.
 
-Нормативный документ — [семантическая модель v4](../app/contracts/semantic/v4/README.md).
+Нормативный документ — [семантическая модель v5](../app/contracts/semantic/v5/README.md).
 Этот справочник поясняет formulas, реализованные Transformer; он не вводит
 поведение, специфичное для target-а.
 

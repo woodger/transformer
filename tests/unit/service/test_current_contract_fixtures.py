@@ -3,15 +3,15 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from app.contracts.flight.v21.codec import validate_request_document
-from app.contracts.flight.v21.job_config import job_config_sha256
-from app.contracts.model_catalog.v6.codec import validate_catalog_document
-from app.contracts.model_topology.v2.codec import (
+from app.contracts.flight.v22.codec import validate_request_document
+from app.contracts.flight.v22.job_config import job_config_sha256
+from app.contracts.model_catalog.v7.codec import validate_catalog_document
+from app.contracts.model_topology.v3.codec import (
     validate_model_topology_document,
 )
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.semantic.v4.schema import validate_schema
-from app.contracts.target_head_diagnostics.v4.codec import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v5.schema import validate_schema
+from app.contracts.target_head_diagnostics.v5.codec import (
     validate_target_head_diagnostics_document,
 )
 from app.contracts.training_telemetry.v4.codec import (
@@ -21,7 +21,7 @@ from app.project import PROJECT_ROOT
 
 
 def test_current_cross_project_fixtures_are_valid_and_intact():
-    semantic_root = PROJECT_ROOT / "app/contracts/semantic/v4/fixtures"
+    semantic_root = PROJECT_ROOT / "app/contracts/semantic/v5/fixtures"
     _validate_manifest(semantic_root, lambda value: validate_schema(
         value,
         "fixture-manifest",
@@ -45,7 +45,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             "objectiveSha256": expected["objectiveSha256"],
         }
 
-    flight_root = PROJECT_ROOT / "app/contracts/flight/v21/fixtures"
+    flight_root = PROJECT_ROOT / "app/contracts/flight/v22/fixtures"
     _validate_manifest(
         flight_root,
         lambda value: validate_request_document(value, "fixture-manifest"),
@@ -59,6 +59,8 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             assert job_config_sha256(document["jobConfig"]) == document[
                 "expectedJobConfigSha256"
             ]
+        elif path.name.startswith("fit-create."):
+            validate_request_document(document, "fit-create")
         elif path.name == "capabilities.result.json":
             validate_request_document(document, "capabilities-result")
         elif path.name.startswith("error."):
@@ -66,7 +68,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
         else:
             validate_request_document(document, "requested-initialization")
 
-    catalog_root = PROJECT_ROOT / "app/contracts/model_catalog/v6/fixtures"
+    catalog_root = PROJECT_ROOT / "app/contracts/model_catalog/v7/fixtures"
     _validate_manifest(
         catalog_root,
         lambda value: validate_catalog_document(value, "fixture-manifest"),
@@ -99,7 +101,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
                 "objectiveSha256": semantic_digests["objectiveSha256"],
             } == digests
 
-    topology_root = PROJECT_ROOT / "app/contracts/model_topology/v2/fixtures"
+    topology_root = PROJECT_ROOT / "app/contracts/model_topology/v3/fixtures"
     _validate_manifest(
         topology_root,
         lambda value: validate_model_topology_document(value, "fixture-manifest"),
@@ -129,7 +131,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             validate_request_document(document, "action-result")
 
     target_head_root = (
-        PROJECT_ROOT / "app/contracts/target_head_diagnostics/v4/fixtures"
+        PROJECT_ROOT / "app/contracts/target_head_diagnostics/v5/fixtures"
     )
     _validate_manifest(
         target_head_root,

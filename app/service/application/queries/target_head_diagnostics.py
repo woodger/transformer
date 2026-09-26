@@ -9,13 +9,13 @@ from typing import cast
 
 import rfc8785
 
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v4.constants import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.target_head_diagnostics.v5.constants import (
     ARTIFACT_FORMAT,
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v19 import validate_document
-from app.contracts.worker.v19.diagnostics import (
+from app.contracts.worker.v20 import validate_document
+from app.contracts.worker.v20.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
@@ -279,6 +279,10 @@ def _validate_artifact(
         tuning.get("encoderLayerCount"),
         "encoder layer count",
     )
+    expected_normalization_order = _string(
+        tuning,
+        "encoderNormalizationOrder",
+    )
     expected_layout = [
         {
             "targetIdentity": identity,
@@ -326,6 +330,7 @@ def _validate_artifact(
         _validate_encoder_block_flow(
             _object(epoch, "encoderBlockFlow"),
             expected_encoder_layers,
+            expected_normalization_order,
         )
         target_heads = _array(epoch, "targetHeads")
         if len(target_heads) != len(expected_layout):
@@ -479,8 +484,9 @@ def _validate_representation_flow(
 def _validate_encoder_block_flow(
     flow: Mapping[str, JsonValue],
     expected_encoder_layers: int,
+    expected_normalization_order: str,
 ) -> None:
-    if flow.get("normalizationOrder") != "postNorm":
+    if flow.get("normalizationOrder") != expected_normalization_order:
         raise ValueError("encoder block normalization order differs")
     layers = _array(flow, "layers")
     if len(layers) != expected_encoder_layers:

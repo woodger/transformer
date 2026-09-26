@@ -1,7 +1,6 @@
 # Диагностика выходных головок и прохождения encoder v5
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленный пакет диагностики для Flight v22. До
-> review он не меняет active query surface.
+> ДОКУМЕНТ КОНТРАКТА. Пакет диагностики для активного Flight v22.
 
 ## Назначение
 
@@ -173,9 +172,8 @@ v5 не вводит.
 ## Версии и границы
 
 v5 требует Target Head Diagnostics v5, Worker v20, checkpoint/recovery v12,
-Model Catalog v7 и Flight v22. Semantic v5, Metrics
-v10, Training Telemetry v4, Model Topology v3, PostgreSQL и Arrow data plane
-не меняются.
+Model Catalog v7, Metrics v11 и Flight v22. Semantic v5, Training Telemetry
+v4, Model Topology v3, PostgreSQL и Arrow data plane не меняются.
 
 `fixtures/manifest.json` предназначен только для офлайн conformance review.
 Он не является runtime fence и не участвует в compatibility или prediction.

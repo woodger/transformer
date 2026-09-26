@@ -1,8 +1,7 @@
 # Контракт Arrow Flight v22
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленный closed package для controlled experiment
-> порядка нормализации encoder. До отдельного review он не меняет активный
-> Flight v21 или runtime.
+> ДОКУМЕНТ КОНТРАКТА. Closed package активного controlled experiment порядка
+> нормализации encoder.
 
 Flight v22 образует clean cut с v21. Он принимает только Semantic v5
 `ModelContract`; поле `modelTuning.encoderNormalizationOrder` обязательно и
@@ -64,7 +63,9 @@ named boundaries (`input`, `norm1`, `attentionResidual`, `norm2`,
 `indexedFeatureBlocks`, Arrow schemas, logical reconstruction, target/objective
 формулы, optimizer, AMP, gradient clipping, selection, public `predict` и
 Training Telemetry v4 сохраняют прежнее значение. Flight v22 не добавляет
-runtime override, миграцию, OpenSearch index или compatibility reader v21.
+runtime override. Revision 0029 выполняет destructive clean cut, а release
+procedure заменяет OpenSearch metrics v10 на v11; compatibility reader Flight
+v21 отсутствует.
 
 `fixtures/` содержит офлайн conformance bundle. Его manifest хеширует только
 fixtures; он не является runtime fence, входом predict/fit или частью D1.

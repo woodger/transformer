@@ -3,15 +3,18 @@ from contextlib import nullcontext
 import pytest
 import torch
 
-from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v19 import validate_document
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20 import validate_document
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.losses import combined_loss
 from tests.fixture_documents import semantic_fixture_document
 
 
-def test_target_head_diagnostics_collects_direct_gradient_and_corrected_prediction():
+@pytest.mark.parametrize("normalization_order", ("postNorm", "preNorm"))
+def test_target_head_diagnostics_collects_direct_gradient_and_corrected_prediction(
+    normalization_order: str,
+):
     document = semantic_fixture_document(
         "positive-class-weighted-binary-w28"
     )
@@ -27,6 +30,7 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
         model_contract=contract,
         nhead=4,
         context_mode="strict",
+        normalization_order=normalization_order,
     )
     features = torch.randn(4, 2, 8)
     targets = torch.tensor([[1.0], [0.0], [0.0], [1.0]])
@@ -154,7 +158,7 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
 
     encoder_block_flow = epoch["encoderBlockFlow"]
     assert isinstance(encoder_block_flow, dict)
-    assert encoder_block_flow["normalizationOrder"] == "postNorm"
+    assert encoder_block_flow["normalizationOrder"] == normalization_order
     encoder_block_layers = encoder_block_flow["layers"]
     output_head_shared_flow = encoder_block_flow["outputHeadShared"]
     assert isinstance(encoder_block_layers, list)

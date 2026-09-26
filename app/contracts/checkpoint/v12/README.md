@@ -1,7 +1,7 @@
 # Transformer checkpoint и recovery v12
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленный внутренний пакет metadata для Flight v22
-> и Worker v20; до review он не меняет active checkpoint/recovery format.
+> ДОКУМЕНТ КОНТРАКТА. Внутренний пакет metadata для активных Flight v22 и
+> Worker v20.
 
 `transformer-checkpoint-v12` сохраняет resolved runtime diagnostics
 configuration вместе с `jobConfigSha256`, input manifest, semantic identities,
