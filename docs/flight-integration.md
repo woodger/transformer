@@ -1,4 +1,4 @@
-# Интеграция с Transformer Flight v20
+# Интеграция с Transformer Flight v21
 
 > Тип: руководство. Практический порядок работы вызывающей системы с действующей
 > provider boundary. JSON Schema в `app/contracts/` имеет приоритет над этим
@@ -14,11 +14,11 @@ Scope owner-а выводится из аутентифицированного 
 Перед интеграцией используйте точные актуальные packages:
 
 - [Семантическая модель v4](../app/contracts/semantic/v4/README.md)
-- [Flight v20](../app/contracts/flight/v20/README.md)
+- [Flight v21](../app/contracts/flight/v21/README.md)
 - [Запрос каталога моделей v6](../app/contracts/model_catalog/v6/README.md)
 - [Запрос topology модели v2](../app/contracts/model_topology/v2/README.md)
 - [Запрос телеметрии обучения v4](../app/contracts/training_telemetry/v4/README.md)
-- [Диагностика выходных головок v3](../app/contracts/target_head_diagnostics/v3/README.md)
+- [Диагностика выходных головок v4](../app/contracts/target_head_diagnostics/v4/README.md)
 
 Путь compatibility предыдущих Flight revisions отсутствует. Existing generations, созданные до
 migration 0028, удалены и не могут использоваться для predict или warm start.
@@ -30,7 +30,7 @@ migration 0028, удалены и не могут использоваться �
    target-ов или исполняемый loss code.
 2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, geometry
    tensor-а и `inputLayout.featureBlocks`.
-3. Вызовите `transformer.v20.fit.create` с UUID `requestId`, стабильным
+3. Вызовите `transformer.v21.fit.create` с UUID `requestId`, стабильным
    `idempotencyKey`, label, запрошенным устройством, model contract,
    configuration training и diagnostics и запрошенной initialization.
 4. Сохраните возвращённые `jobId`, `mutationLease` и resolved definition.
@@ -51,7 +51,7 @@ published.
 
 ## Predict
 
-Вызовите `transformer.v20.predict.create` с точным `modelRef`, запрошенным
+Вызовите `transformer.v21.predict.create` с точным `modelRef`, запрошенным
 устройством и текущим `dataBinding`. Не передавайте повторно TargetContract,
 Objective или model tuning. Create result передаёт `predictionDefinition` до
 upload: `seqLen`, output width и упорядоченные непрозрачные targets с public
@@ -92,7 +92,7 @@ traversal; параллельное deletion может заставить detai
 model tuning или target names. Для объединения с telemetry сначала сравните
 точные `modelRef` и `modelDefinitionSha256`.
 
-Используйте `transformer.target-head-diagnostics.v3.report` только для модели,
+Используйте `transformer.target-head-diagnostics.v4.report` только для модели,
 созданной с явной runtime-настройкой `diagnostics.targetHead`.
 Для learning observations encoder также задайте
 `diagnostics.encoderLayerDiagnostics: "directComponentPerBatch"`.
@@ -103,8 +103,9 @@ model tuning или target names. Для объединения с telemetry с�
 `encoderInput`, упорядоченный `encoderLayers` и `targetHeadInput`. Во всех
 трёх случаях `rowCenteredL2Mean` измерен тем же post-update проходом полного
 committed artifact; по последовательности значений UI показывает первую
-границу, на которой различие между строками сжалось.
+границу, на которой различие между строками сжалось. `encoderBlockFlow`
+уточняет это место границами post-norm encoder и `OutputHead.shared`.
 
 Все четыре query packages определяют собственные schemas и rules outcomes. Их
-availability объявляется capabilities Flight v20, но их семантика не встроена в
+availability объявляется capabilities Flight v21, но их семантика не встроена в
 generic job actions.

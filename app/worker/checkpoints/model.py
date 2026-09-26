@@ -12,8 +12,8 @@ from app.contracts.checkpoint.v11 import (
 )
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import ModelConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import atomic_output_path, resolve_artifact_path
 from app.worker.checkpoints.checkpoint_corrupt import CheckpointCorrupt

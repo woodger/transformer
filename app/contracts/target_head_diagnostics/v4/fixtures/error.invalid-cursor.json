@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_TARGET_HEAD_DIAGNOSTICS_CURSOR",
+  "path": "/cursor",
+  "message": "курсор диагностики недопустим"
+}

@@ -47,14 +47,14 @@ command history, или логах.
 ```
 
 Для production используйте процедуру systemd. Migration 0028 является
-destructive clean cut для перехода на Semantic v4; Flight v20 не требует
+destructive clean cut для перехода на Semantic v4; Flight v21 не требует
 повторного удаления опубликованных generations, но требует готовых OpenSearch
 индексов metrics v10.
 
 Вызывающая система материализует `ModelContract` Semantic v4, создаёт job fit
-или predict v20, загружает compact `indexedFeatureBlocks`, закрывает input и
+или predict v21, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
-[Flight v20](../app/contracts/flight/v20/README.md); это руководство намеренно
+[Flight v21](../app/contracts/flight/v21/README.md); это руководство намеренно
 не дублирует wire examples.
 
 ## Проверка изменений

@@ -1,7 +1,7 @@
 # Запрос каталога моделей в области владельца v6
 
 > ДОКУМЕНТ КОНТРАКТА. Текущий запрос Model Catalog только для чтения для
-> Flight v20.
+> Flight v21.
 
 Операции сохраняют owner-scoped discovery и точный detail:
 
@@ -29,7 +29,7 @@ v3 и заранее сообщает, запрашивались ли learning 
 `encoderLayerDiagnostics: null` означает отсутствие layer-learning
 observations. Значение configuration не доказывает готовность report:
 `pending`, `unavailable` и integrity outcomes остаются свойствами Target Head
-Diagnostics v3.
+Diagnostics v4.
 
 Registry остаётся единственным источником существования model. Неизвестный,
 чужой и удалённый `modelRef` security-equivalent. Checkpoint details, physical

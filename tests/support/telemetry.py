@@ -9,10 +9,10 @@ from app.contracts.metrics.v10 import (
     build_training_record,
 )
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18 import CHECKPOINT_FORMAT
-from app.contracts.worker.v18.config import TrainConfig
-from app.contracts.worker.v18.model_config import ModelConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19 import CHECKPOINT_FORMAT
+from app.contracts.worker.v19.config import TrainConfig
+from app.contracts.worker.v19.model_config import ModelConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from tests.fixture_documents import semantic_fixture_document
 
 DATA_CONTRACT_SHA256 = "d" * 64

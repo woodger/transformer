@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v20 import job_config_sha256
+from app.contracts.flight.v21 import job_config_sha256
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import ModelConfig, TrainConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.config import ModelConfig, TrainConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,

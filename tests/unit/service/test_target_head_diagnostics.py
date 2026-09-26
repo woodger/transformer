@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v20.constants import ACTIONS
+from app.contracts.flight.v21.constants import ACTIONS
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v3.constants import REPORT_ACTION
-from app.contracts.worker.v18.config import ModelConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.target_head_diagnostics.v4.constants import REPORT_ACTION
+from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
@@ -31,7 +31,7 @@ from tests.fixture_documents import semantic_fixture_document
 def _model(
     *,
     target_head: str | None,
-    artifact_format: str = "transformer-target-head-diagnostics-v3",
+    artifact_format: str = "transformer-target-head-diagnostics-v4",
 ) -> PublishedModelRecord:
     fixture = semantic_fixture_document("positive-class-weighted-binary-w28")
     model_contract = fixture["modelContract"]
@@ -118,6 +118,24 @@ def _epoch(epoch: int, global_step: int) -> dict[str, object]:
                 {"layerIndex": 0, "rowCenteredL2Mean": 0.6},
             ],
             "targetHeadInput": {"rowCenteredL2Mean": 0.5},
+        },
+        "encoderBlockFlow": {
+            "normalizationOrder": "postNorm",
+            "layers": [
+                {
+                    "layerIndex": 0,
+                    "input": {"rowCenteredL2Mean": 0.7},
+                    "attentionResidual": {"rowCenteredL2Mean": 0.65},
+                    "norm1": {"rowCenteredL2Mean": 0.6},
+                    "feedForwardResidual": {"rowCenteredL2Mean": 0.62},
+                    "norm2": {"rowCenteredL2Mean": 0.6},
+                },
+            ],
+            "outputHeadShared": {
+                "linear": {"rowCenteredL2Mean": 0.55},
+                "gelu": {"rowCenteredL2Mean": 0.52},
+                "layerNorm": {"rowCenteredL2Mean": 0.5},
+            },
         },
         "targetHeads": [
             {
@@ -278,6 +296,34 @@ def test_target_head_diagnostics_rejects_wrong_encoder_layer_order():
         )
 
 
+def test_target_head_diagnostics_rejects_wrong_encoder_block_layer_order():
+    model = _model(target_head="fullCommittedArtifact")
+    artifact = model.metadata["targetHeadDiagnostics"]
+    assert isinstance(artifact, dict)
+    epochs = artifact["epochs"]
+    assert isinstance(epochs, list)
+    first_epoch = epochs[0]
+    assert isinstance(first_epoch, dict)
+    block_flow = first_epoch["encoderBlockFlow"]
+    assert isinstance(block_flow, dict)
+    layers = block_flow["layers"]
+    assert isinstance(layers, list)
+    first_layer = layers[0]
+    assert isinstance(first_layer, dict)
+    first_layer["layerIndex"] = 1
+
+    with pytest.raises(ValueError, match="encoder block layer order"):
+        _query(model).execute(
+            GetTargetHeadDiagnosticsReportQuery(
+                owner_subject="owner-a",
+                request_id="11111111-1111-4111-8111-111111111111",
+                model_ref=model.model_ref,
+                page_size=1,
+                cursor=None,
+            )
+        )
+
+
 def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
     model = _model(target_head="fullCommittedArtifact")
     entry = CatalogModelRecord(
@@ -324,7 +370,7 @@ def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
         )
 
 
-def test_flight_v20_dispatches_target_head_diagnostics_report():
+def test_flight_v21_dispatches_target_head_diagnostics_report():
     model = _model(target_head="fullCommittedArtifact")
     query = _query(model)
     coordinator = JobCoordinator(

@@ -11,13 +11,13 @@ from torch import nn
 
 import app.worker.training.trainer as trainer_module
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import (
+from app.contracts.worker.v19.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v18.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility

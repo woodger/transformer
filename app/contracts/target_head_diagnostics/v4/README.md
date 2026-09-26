@@ -1,0 +1,169 @@
+# Диагностика выходных головок и прохождения encoder v4
+
+> ДОКУМЕНТ КОНТРАКТА. Текущий пакет диагностики для Flight v21.
+
+## Назначение
+
+```text
+transformer.target-head-diagnostics.v4.report
+```
+
+Запрос только для чтения в области владельца возвращает явно включённые
+наблюдения обучения конкретной опубликованной версии модели. Наряду с
+`rawLogit`, `publicPrediction`, gradients target head, `representationFlow` и
+`encoderLearning`, v4 показывает границы прямого прохождения внутри каждого
+encoder layer и `OutputHead.shared`.
+
+Запрос принимает только точный `modelRef`, `requestId`, `pageSize` и
+непрозрачный cursor. Владелец выводится из аутентифицированного subject.
+Неизвестная, чужая и удалённая version модели возвращают одинаковый
+`MODEL_NOT_FOUND`.
+
+Наружу не выдаются строки, значения признаков и целей, тензоры и имена
+параметров, байты и пути checkpoint, сведения об устройстве или топологии
+хранения.
+
+`layout` один раз связывает каждую запись target head с точными
+`targetIdentity`, `targetIndex` и `directComponentIdentity`. Все `targetHeads`
+в observation epoch идут строго в этом порядке. Перед выдачей `available`
+проверяется соответствие layout direct components и ordered target slots
+checkpoint-owned `ModelContract`, плотный диапазон epoch `1..completedEpochs`,
+строгое возрастание `globalStep`, конечность чисел и согласованность row counts
+с `sampleRowCount`.
+
+## Явная runtime-настройка
+
+Полная диагностика включается так:
+
+```json
+{
+  "schemaVersion": 3,
+  "gradientInteractions": null,
+  "targetHead": "fullCommittedArtifact",
+  "encoderLayerDiagnostics": "directComponentPerBatch"
+}
+```
+
+`encoderLayerDiagnostics` допускает только `null` или
+`directComponentPerBatch`; второе значение требует
+`targetHead: "fullCommittedArtifact"`. Оно означает сбор direct-component
+gradients на каждом training batch и parameter updates после каждого успешного
+optimizer step. `null` отключает только `encoderLearning`; v4
+`encoderBlockFlow` всё равно входит в каждый complete artifact.
+
+Configuration входит в `jobConfigSha256` и recovery fence. Она не входит в
+Semantic v4, `modelDefinitionSha256`, D1, warm-start compatibility, objective
+или public predict definition.
+
+## Наблюдения encoder
+
+`encoderBlockFlow` измеряется в том же post-update проходе полного committed
+artifact, что `rawLogit`, `publicPrediction` и `representationFlow`: модель
+находится в `eval()` и под `no_grad()`. Для каждого слоя в execution order
+выдаются `input`, `attentionResidual`, `norm1`, `feedForwardResidual` и
+`norm2`. Текущая архитектура использует `postNorm`: `attentionResidual` —
+вход `norm1`, `feedForwardResidual` — вход `norm2`, а `norm2` — выход слоя.
+Для `OutputHead.shared` выдаются выходы `linear`, `gelu` и `layerNorm`;
+вход shared уже представлен `representationFlow.targetHeadInput`.
+
+Каждая boundary имеет `rowCenteredL2Mean`: среднее по строкам нормы разности
+между row vector и средним вектором полного committed artifact. Это сравнение
+разброса на одной границе, а не обещание сопоставимости абсолютных значений
+между boundary разной размерности или normalization. Неожиданная архитектура
+encoder либо `OutputHead.shared` отключает best-effort сбор целиком, а не
+публикует неполный flow.
+
+Для каждой epoch `encoderLearning.layers` идёт в execution order и точно
+совпадает с `representationFlow.encoderLayers`; `layerIndex` начинается с 0.
+`directComponentGradients` идёт в порядке прямых компонентов layout. Каждая
+запись имеет три закрытые группы, определённые provider-ом:
+
+- `attention` — все trainable parameters `layer.self_attn`;
+- `feedForward` — все trainable parameters `layer.linear1` и `layer.linear2`;
+- `normalization` — все trainable parameters `layer.norm1` и `layer.norm2`.
+
+Состав групп проверяется относительно всех trainable parameters конкретного
+`TransformerEncoderLayer`: параметр обязан входить ровно в одну группу. `None`
+gradient даёт нулевой вклад в L2 группы. Наблюдение, содержащее non-finite
+gradient или update группы, не входит в соответствующий aggregate; поэтому
+его счётчик не увеличивается. При отсутствии finite observations счётчик равен
+нулю, а оба L2 значения равны `null`.
+
+Для component `c` и группы параметров `P` batch observation определён так:
+
+```text
+gradientL2(c, P) = sqrt(Σₚ∈P ||∂c / ∂p||²)
+```
+
+`c` — `GlobalRowMean` именованного direct component после его declared
+`weight`, но до aggregation с остальными direct и auxiliary components.
+Observation не включает total loss, AMP scaling, global gradient clipping или
+`optimizer.step()`. Epoch aggregates содержат `l2Mean`, `l2Maximum` и
+`finiteBatchCount`; при count `0` оба L2 значения равны `null`. При ненулевом
+count все L2 значения конечны и `l2Mean <= l2Maximum`.
+
+`parameterUpdates` не связываются с отдельным component. Для группы `P` и
+успешного optimizer update:
+
+```text
+parameterUpdateL2(P) = sqrt(Σₚ∈P ||p_after - p_before||²)
+```
+
+Это наблюдение описывает полный optimizer path, включая total objective,
+auxiliary components, global clipping, Adam и weight decay. Пропущенный AMP
+update не входит в aggregate. При `appliedBatchCount = 0` L2 значения равны
+`null`; при ненулевом count значения конечны и `l2Mean <= l2Maximum`. Global
+skipped/non-finite counters остаются в Training Telemetry.
+
+`representationFlow` сохраняет прежнюю semantics. Его абсолютная L2-величина не
+самостоятельное доказательство потери информации между boundary с разной
+normalization; она интерпретируется вместе с encoder gradients, updates и raw
+logits.
+
+`rawLogit` остаётся значением до публичного преобразования.
+`publicPrediction` вычисляется строго через checkpoint-owned определение
+предсказания; для
+`PositiveClassWeightedBinaryCrossEntropyWithLogits` это
+`sigmoid(rawLogit - log(positiveClassWeight))`, а не weighted score.
+
+## Сбор и availability
+
+Worker собирает gradient observations до `backward`/clipping и snapshots
+parameter updates вокруг `optimizer.step()`. Post-update `representationFlow`,
+logits и public predictions по-прежнему измеряются на полном committed artifact
+в `eval()`/`no_grad()`.
+
+Сбор остаётся best-effort: он не меняет weights, optimizer/scaler state, RNG,
+batch order, selection, fit terminal outcome или prediction values. `available`
+выдаётся только для плотной полной последовательности epochs. Частичный или
+противоречивый artifact даёт
+`TARGET_HEAD_DIAGNOSTICS_INTEGRITY_FAILED`.
+
+Градиент direct component получается наблюдательным вызовом autograd без
+записи в `.grad`; после измерения training path продолжает обычный `backward`.
+
+Модель без `targetHead` configuration возвращает
+`notConfigured / TARGET_HEAD_DIAGNOSTICS_NOT_CONFIGURED`. Модель с
+`encoderLayerDiagnostics: null` возвращает v4 report без
+`encoderLearning`. Artifact предыдущего формата не достраивается из checkpoint
+и в v4 возвращает `unavailable / FORMAT_UNSUPPORTED`.
+
+Порядок outcomes: поиск модели в области владельца и проверка metadata, затем
+`notConfigured`, затем `pending` только пока materialization доказуемо
+продолжается, `unavailable`, structured integrity error для противоречивого
+artifact и `available` только для полной проверенной проекции. Pagination
+сохраняет epoch ASC, owner/model/run/page-size binding и TTL 900 seconds.
+Не terminal страница удерживает проверенную immutable projection в bounded
+snapshot cache; удаление модели имеет приоритет над cursor. Точные structured
+errors определены в `schemas/error-detail.schema.json`; новых error categories
+v4 не вводит.
+
+## Версии и границы
+
+v4 требует Target Head Diagnostics v4, Worker v19, checkpoint/recovery v11,
+Model Catalog v6 и Flight v21. Semantic v4, Metrics
+v10, Training Telemetry v4, Model Topology v2, PostgreSQL и Arrow data plane
+не меняются.
+
+`fixtures/manifest.json` предназначен только для офлайн conformance review.
+Он не является runtime fence и не участвует в compatibility или prediction.

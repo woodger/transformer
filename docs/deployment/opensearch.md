@@ -11,7 +11,7 @@ Inventory или Terminal. Transformer записывает projections point/ru
 `OPENSEARCH_NETRC` с mode 0600. Храните его вне repository и удаляйте либо
 ротируйте согласно policy secret deployment.
 
-## Текущий runtime Semantic v4 / Flight v20
+## Текущий runtime Semantic v4 / Flight v21
 
 Индексы metrics v9 несовместимы с projection metrics v10. Выполняйте эту
 процедуру только после остановки всех сервисов Transformer, использующих один deployment, и
@@ -72,7 +72,7 @@ Transformer нужны только доступы bulk-create, `_mget` и bound
 этим индексам; permissions на удаление template и index являются
 административными.
 
-После завершённого нового fit v20 проверьте, что `metrics-runs-v10` содержит
+После завершённого нового fit v21 проверьте, что `metrics-runs-v10` содержит
 terminal completion marker, а `metrics-points-v10` — все ожидаемые observations
 epoch. Для поведения вызывающей системы запрашивайте публичный action Training
 Telemetry v4; не делайте имена index или mappings частью её кода.

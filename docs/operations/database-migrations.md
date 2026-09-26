@@ -20,7 +20,7 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Базовый Semantic v4 clean cut и текущий Flight v20
+## Базовый Semantic v4 clean cut и текущий Flight v21
 
 Revision `0028_positive_class_weighted_binary_bce` разрушительна и не имеет
 downgrade. Она удаляет jobs, опубликованные generations, recovery/checkpoint
@@ -36,12 +36,12 @@ reader Semantic v4 / первоначального Flight v19.
 3. Решите, нужен ли внешний backup. Предыдущие models и telemetry намеренно не
    сохраняются этим release.
 4. Примените migration один раз.
-5. До нового обучения Flight v20 выполните замену индексов OpenSearch v9 на v10 по
+5. До нового обучения Flight v21 выполните замену индексов OpenSearch v9 на v10 по
    [руководству deployment OpenSearch](../deployment/opensearch.md).
 
 Не запускайте executable, не поддерживающий Semantic v4, после применения
 revision 0028. У него нет совместимого reader database, и он не должен
 создавать legacy state вновь.
 
-Flight v20 не добавляет migration PostgreSQL: его target head diagnostics
+Flight v21 не добавляет migration PostgreSQL: его target head diagnostics
 хранятся в checkpoint metadata и registry metadata опубликованной модели.

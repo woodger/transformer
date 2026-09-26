@@ -38,7 +38,7 @@ from app.service.bootstrap.config import FlightServiceConfig
 
 
 class WorkerPool(WorkerScheduler):
-    """Собрать durable scheduler с process adapters Worker v18."""
+    """Собрать durable scheduler с process adapters Worker v19."""
 
     def __init__(
         self,

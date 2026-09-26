@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
-from app.contracts.worker.v18.config import TrainConfig
+from app.contracts.worker.v19.config import TrainConfig
 from app.service.application.messages.jobs import (
     AcquireJobCommand,
     CancelJobCommand,

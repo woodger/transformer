@@ -1,0 +1,38 @@
+{
+  "fixtureId": "transformer.v21.job-config.published-model",
+  "jobConfig": {
+    "operation": "fit",
+    "requestedDevice": "gpu",
+    "modelLabel": "model-a-next",
+    "inputLayout": {
+      "featureBlocks": [{"windowRows": 2, "nativeRowWidth": 2}]
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782",
+    "trainingConfig": {
+      "learningRate": 0.001,
+      "batchSize": 64,
+      "epochs": 2,
+      "mixedPrecision": true,
+      "weightDecay": 0,
+      "selection": null,
+      "seed": 42,
+      "deterministic": true
+    },
+    "diagnostics": {"gradientInteractions": null, "targetHead": null, "encoderLayerDiagnostics": null},
+    "initialization": {
+      "source": "publishedModel",
+      "parentModelRef": "mdl_0123456789abcdef0123456789abcdef",
+      "parentCheckpointSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "parentDataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "parentTargetContractSha256": "ce69ef92937096abc418f1007c626965cbfd9008ba3bcb2bfcd7ce1a7bb334ea",
+      "targetContractSha256": "ce69ef92937096abc418f1007c626965cbfd9008ba3bcb2bfcd7ce1a7bb334ea",
+      "parentObjectiveSha256": "8d6aa8b90a8deb4870dfd169c48b0f734c58462e32b75a2401ae4a8c9eabb29c",
+      "objectiveSha256": "8d6aa8b90a8deb4870dfd169c48b0f734c58462e32b75a2401ae4a8c9eabb29c",
+      "parentModelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782",
+      "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782"
+    }
+  },
+  "expectedJobConfigSha256": "da1350c1b06702756e9cada910f5d0dce3ad945bfb43a2cb18d4879b776f0d35"
+}

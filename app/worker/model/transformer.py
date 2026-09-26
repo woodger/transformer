@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import cast
 
 import torch
 import torch.nn as nn
+from torch.utils.hooks import RemovableHandle
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import DEFAULT_CONTEXT_MODE
+from app.contracts.worker.v19.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
@@ -14,6 +16,15 @@ from app.worker.model.context import (
 )
 from app.worker.model.output_head import OutputHead
 from app.worker.model.positional_encoding import PositionalEncoding
+
+_ENCODER_BLOCK_BOUNDARIES = (
+    "input",
+    "attentionResidual",
+    "norm1",
+    "feedForwardResidual",
+    "norm2",
+)
+_OUTPUT_HEAD_SHARED_BOUNDARIES = ("linear", "gelu", "layerNorm")
 
 
 def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
@@ -200,6 +211,176 @@ class TransformerModel(nn.Module):
             encoder_layer_rows,
         )
 
+    def forward_with_encoder_block_flow(
+        self,
+        features: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        tuple[torch.Tensor, ...],
+        tuple[tuple[torch.Tensor, ...], ...],
+        tuple[torch.Tensor, ...],
+    ]:
+        """Вернуть состояния post-norm encoder и OutputHead.shared."""
+        if features.ndim != 3:
+            raise ValueError("features must have shape [batch, sequence, features]")
+        if features.shape[1] != self.seq_len:
+            raise ValueError("sequence length differs from model configuration")
+        if features.shape[2] != self.input_dim:
+            raise ValueError("feature dimension differs from model configuration")
+        if features.dtype != torch.float32:
+            raise ValueError("features must use float32")
+
+        prepared_context = prepare_context_input(
+            features,
+            self.context_mode,
+        )
+        encoder_input = self.input_proj(prepared_context.features)
+        encoder_input = self.pos(encoder_input)
+        layers = tuple(self.encoder.layers)
+        if not layers or any(
+            not isinstance(layer, torch.nn.TransformerEncoderLayer)
+            or layer.norm_first
+            for layer in layers
+        ):
+            raise ValueError("encoder block flow requires post-norm encoder layers")
+        shared_modules = tuple(self.head.shared.children())
+        if (
+            len(shared_modules) != len(_OUTPUT_HEAD_SHARED_BOUNDARIES)
+            or not isinstance(shared_modules[0], nn.Linear)
+            or not isinstance(shared_modules[1], nn.GELU)
+            or not isinstance(shared_modules[2], nn.LayerNorm)
+        ):
+            raise ValueError("encoder block flow requires the current OutputHead.shared")
+
+        layer_states: list[dict[str, torch.Tensor]] = [
+            {} for _layer in layers
+        ]
+        shared_states: dict[str, torch.Tensor] = {}
+
+        def capture_input(
+            layer_index: int,
+            boundary: str,
+        ) -> Callable[[torch.nn.Module, tuple[object, ...]], None]:
+            def hook(
+                _module: torch.nn.Module,
+                inputs: tuple[object, ...],
+            ) -> None:
+                layer_states[layer_index][boundary] = _hook_input(
+                    inputs,
+                    boundary,
+                )
+
+            return hook
+
+        def capture_output(
+            layer_index: int,
+            boundary: str,
+        ) -> Callable[[torch.nn.Module, tuple[object, ...], object], None]:
+            def hook(
+                _module: torch.nn.Module,
+                _inputs: tuple[object, ...],
+                output: object,
+            ) -> None:
+                layer_states[layer_index][boundary] = _hook_output(
+                    output,
+                    boundary,
+                )
+
+            return hook
+
+        def capture_shared_output(
+            boundary: str,
+        ) -> Callable[[torch.nn.Module, tuple[object, ...], object], None]:
+            def hook(
+                _module: torch.nn.Module,
+                _inputs: tuple[object, ...],
+                output: object,
+            ) -> None:
+                shared_states[boundary] = _hook_output(output, boundary)
+
+            return hook
+
+        handles: list[RemovableHandle] = []
+        for layer_index, layer in enumerate(layers):
+            norm1 = cast(nn.Module, layer.norm1)
+            norm2 = cast(nn.Module, layer.norm2)
+            handles.extend((
+                layer.register_forward_pre_hook(
+                    capture_input(layer_index, "input")
+                ),
+                norm1.register_forward_pre_hook(
+                    capture_input(layer_index, "attentionResidual")
+                ),
+                norm1.register_forward_hook(
+                    capture_output(layer_index, "norm1")
+                ),
+                norm2.register_forward_pre_hook(
+                    capture_input(layer_index, "feedForwardResidual")
+                ),
+                norm2.register_forward_hook(
+                    capture_output(layer_index, "norm2")
+                ),
+            ))
+        for boundary, module in zip(
+            _OUTPUT_HEAD_SHARED_BOUNDARIES,
+            shared_modules,
+            strict=True,
+        ):
+            handles.append(module.register_forward_hook(
+                capture_shared_output(boundary)
+            ))
+        try:
+            encoded = self.encoder(
+                encoder_input,
+                src_key_padding_mask=prepared_context.key_padding_mask,
+            )
+            last_unmasked_indices = _last_unmasked_indices(
+                prepared_context.key_padding_mask
+            )
+            batch_indices = torch.arange(
+                encoder_input.size(0),
+                device=encoder_input.device,
+            )
+            encoder_input_rows = encoder_input[
+                batch_indices,
+                last_unmasked_indices,
+            ]
+            block_rows = tuple(
+                tuple(
+                    _block_boundary(state, boundary)[
+                        batch_indices,
+                        last_unmasked_indices,
+                    ]
+                    for boundary in _ENCODER_BLOCK_BOUNDARIES
+                )
+                for state in layer_states
+            )
+            encoder_layer_rows = tuple(
+                values[-1] for values in block_rows
+            )
+            last_valid = encoded[batch_indices, last_unmasked_indices]
+            model_output, shared = self.head.forward_with_shared_representation(
+                last_valid
+            )
+            shared_rows = tuple(
+                _block_boundary(shared_states, boundary)
+                for boundary in _OUTPUT_HEAD_SHARED_BOUNDARIES
+            )
+        finally:
+            for handle in handles:
+                handle.remove()
+
+        return (
+            model_output,
+            shared,
+            encoder_input_rows,
+            encoder_layer_rows,
+            block_rows,
+            shared_rows,
+        )
+
 
 def public_predictions(
     model_output: torch.Tensor,
@@ -240,6 +421,31 @@ def apply_transformation(value: torch.Tensor, transformation: str) -> torch.Tens
     if transformation == "Sigmoid":
         return torch.sigmoid(value)
     raise ValueError(f"unsupported transformation: {transformation}")
+
+
+def _hook_input(
+    inputs: tuple[object, ...],
+    boundary: str,
+) -> torch.Tensor:
+    if not inputs or not isinstance(inputs[0], torch.Tensor):
+        raise ValueError(f"{boundary} hook input must be a tensor")
+    return inputs[0]
+
+
+def _hook_output(output: object, boundary: str) -> torch.Tensor:
+    if not isinstance(output, torch.Tensor):
+        raise ValueError(f"{boundary} hook output must be a tensor")
+    return output
+
+
+def _block_boundary(
+    values: dict[str, torch.Tensor],
+    boundary: str,
+) -> torch.Tensor:
+    try:
+        return values[boundary]
+    except KeyError as exc:
+        raise ValueError(f"encoder block boundary is unavailable: {boundary}") from exc
 
 
 __all__ = [

@@ -1,11 +1,11 @@
 # Runtime обучения и checkpoint
 
-> Тип: справочник. Принадлежащие provider-у обучение Worker v18, checkpoint
-> v11 и поведение recovery за Flight v20.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v19, checkpoint
+> v11 и поведение recovery за Flight v21.
 
 ## Model definition и обучение
 
-Fit Flight v20 получает документ target/objective Semantic v4 и geometry
+Fit Flight v21 получает документ target/objective Semantic v4 и geometry
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
@@ -30,7 +30,7 @@ placeholder.
 
 ## Input, epochs и recovery
 
-Worker восстанавливает компактный input Flight v20 `indexedFeatureBlocks` в
+Worker восстанавливает компактный input Flight v21 `indexedFeatureBlocks` в
 ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
 являются batches optimizer-а, границами shuffle или границами epoch. Durable
 fit может начаться после появления input-а; close отмечает EOF и фиксирует
@@ -66,20 +66,24 @@ OpenSearch получает принадлежащую provider-у projection v1
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 
-При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v18 после
+При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v19 после
 каждой завершённой эпохи выполняет отдельный наблюдательный проход по полному
 committed input artifact в `eval()` и `torch.no_grad()`. Он сохраняет только
 агрегаты raw logit, public prediction, представления до encoder, после каждого
 encoder layer и перед финальной target head, градиента direct component и
-параметров target head. Этот best-effort artifact не меняет
+параметров target head. В v4 artifact также сохраняет границы `input`,
+`attentionResidual`, `norm1`, `feedForwardResidual`, `norm2` каждого encoder
+layer и `linear`, `gelu`, `layerNorm` блока `OutputHead.shared`. Этот
+best-effort artifact не меняет
 веса, optimizer, RNG, telemetry epoch или результат `predict`; без настройки
 он не создаётся.
 
 При дополнительной `diagnostics.encoderLayerDiagnostics =
 "directComponentPerBatch"` artifact также содержит direct-component gradients
 и нормы обновлений групп `attention`, `feedForward` и `normalization` каждого
-encoder layer. Точный состав групп и правила обработки отсутствующих или
-non-finite observations определяет Target Head Diagnostics v3.
+encoder layer. Точный состав групп, границ прямого прохождения и правила
+обработки отсутствующих или non-finite observations определяет Target Head
+Diagnostics v4.
 
 ## Исторический чистый переход
 
@@ -87,5 +91,5 @@ Model Catalog v6 читает metadata checkpoint v9 только для без�
 такая legacy generation возвращает `notConfigured` в Target Head Diagnostics
 Query. Worker не возобновляет state v9. Migration 0028 удаляет старые jobs и
 generations перед первоначальной активацией Semantic v4; после перехода на
-Flight v20 используйте OpenSearch indices v10 и обучите новые generations
+Flight v21 используйте OpenSearch indices v10 и обучите новые generations
 для opt-in diagnostics.

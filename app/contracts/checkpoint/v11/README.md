@@ -1,7 +1,7 @@
 # Transformer checkpoint и recovery v11
 
-> ДОКУМЕНТ КОНТРАКТА. Текущий внутренний пакет metadata для Flight v20
-> и Worker v18.
+> ДОКУМЕНТ КОНТРАКТА. Текущий внутренний пакет metadata для Flight v21
+> и Worker v19.
 
 `transformer-checkpoint-v11` сохраняет resolved runtime diagnostics
 configuration вместе с `jobConfigSha256`, input manifest, semantic identities,
@@ -18,7 +18,7 @@ progress и selection:
 
 `encoderLayerDiagnostics` допускает `null` или `directComponentPerBatch`.
 Ненулевое значение требует `targetHead: "fullCommittedArtifact"` и включает
-сбор learning observations encoder в отдельный Worker v18 artifact.
+сбор learning observations encoder в отдельный Worker v19 artifact.
 
 Configuration является runtime/recovery fence: она входит в
 `jobConfigSha256`, но не изменяет ModelContract, Semantic v4,

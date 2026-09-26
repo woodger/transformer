@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v21/fit-create-result.schema.json",
+  "title": "transformer.v21.fit.create result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "jobId", "mutationLease", "input", "execution", "device", "resolvedDefinition", "upload", "limits"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "mutationLease": {"$ref": "common.schema.json#/$defs/mutationLease"},
+    "input": {"$ref": "#/$defs/openInput"},
+    "execution": {"$ref": "#/$defs/waitingExecution"},
+    "device": {"$ref": "#/$defs/requestedDevice"},
+    "resolvedDefinition": {"$ref": "#/$defs/fitDefinition"},
+    "upload": {"$ref": "#/$defs/upload"},
+    "limits": {"$ref": "#/$defs/limits"}
+  },
+  "$defs": {
+    "openInput": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "revision", "nextOrdinal"],
+      "properties": {"state": {"const": "OPEN"}, "revision": {"const": 0}, "nextOrdinal": {"const": 0}}
+    },
+    "waitingExecution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state"], "properties": {"state": {"const": "WAITING_INPUT"}}
+    },
+    "requestedDevice": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requested", "selected"],
+      "properties": {"requested": {"enum": ["cpu", "gpu", "auto"]}, "selected": {"const": null}}
+    },
+    "fitDefinition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dataBinding", "modelContract", "semanticDigests", "requestedInitialization"],
+      "properties": {
+        "dataBinding": {"$ref": "common.schema.json#/$defs/dataBinding"},
+        "modelContract": {"$ref": "https://transformer.local/contracts/semantic/v4/model-contract.schema.json"},
+        "semanticDigests": {"$ref": "https://transformer.local/contracts/semantic/v4/semantic-digests.schema.json"},
+        "requestedInitialization": {"$ref": "common.schema.json#/$defs/requestedInitialization"}
+      }
+    },
+    "upload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["descriptorPath", "oneDoPutIsOnePhysicalPayload"],
+      "properties": {
+        "descriptorPath": {"type": "array", "items": {"type": "string"}, "minItems": 6, "maxItems": 6},
+        "oneDoPutIsOnePhysicalPayload": {"const": true}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["maxPayloadBytes", "maxRowsPerPayload", "maxPayloadsPerJob", "maxJobBytes", "inputIdleTimeoutSeconds"],
+      "properties": {
+        "maxPayloadBytes": {"type": "integer", "minimum": 1},
+        "maxRowsPerPayload": {"type": "integer", "minimum": 1},
+        "maxPayloadsPerJob": {"type": "integer", "minimum": 1},
+        "maxJobBytes": {"type": "integer", "minimum": 1},
+        "inputIdleTimeoutSeconds": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

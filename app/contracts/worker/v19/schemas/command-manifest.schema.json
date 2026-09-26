@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v19/command-manifest.schema.json",
+  "title": "Transformer worker v19 startup manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "protocolVersion",
+    "jobId",
+    "attempt",
+    "attemptId",
+    "operation",
+    "device",
+    "inputs",
+    "inputRevision",
+    "inputClosed",
+    "manifestSha256",
+    "workspace",
+    "model",
+    "sourceEncoding",
+    "dataContract",
+    "modelContract",
+    "modelConfig",
+    "semanticDigests",
+    "jobConfigSha256"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-worker"
+    },
+    "protocolVersion": {
+      "const": 19
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "attemptId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "operation": {
+      "enum": [
+        "fit",
+        "predict"
+      ]
+    },
+    "predictionColumn": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend"
+      ],
+      "properties": {
+        "opaqueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "backend": {
+          "enum": [
+            "cpu",
+            "cuda"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "backend": {
+                "const": "cuda"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "opaqueId"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "opaqueId"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "arrow-manifest.schema.json"
+      },
+      "maxItems": 100000
+    },
+    "inputRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "inputClosed": {
+      "type": "boolean"
+    },
+    "manifestSha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root"
+      ],
+      "properties": {
+        "root": {
+          "$ref": "common.schema.json#/$defs/path"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "checkpoint": {
+          "$ref": "common.schema.json#/$defs/checkpointArtifact"
+        },
+        "parentCheckpoint": {
+          "$ref": "common.schema.json#/$defs/checkpointArtifact"
+        }
+      }
+    },
+    "sourceEncoding": {
+      "$ref": "common.schema.json#/$defs/sourceEncoding"
+    },
+    "dataContract": {
+      "$ref": "common.schema.json#/$defs/dataContract"
+    },
+    "modelContract": {
+      "$ref": "common.schema.json#/$defs/modelContract"
+    },
+    "modelConfig": {
+      "$ref": "common.schema.json#/$defs/modelConfig"
+    },
+    "semanticDigests": {
+      "$ref": "common.schema.json#/$defs/semanticDigests"
+    },
+    "jobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "training": {
+      "$ref": "common.schema.json#/$defs/trainingConfig"
+    },
+    "diagnostics": {
+      "$ref": "common.schema.json#/$defs/diagnosticsConfig"
+    },
+    "initialization": {
+      "$ref": "common.schema.json#/$defs/resolvedInitialization"
+    },
+    "recovery": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "recovery-descriptor.schema.json"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "inputClosed": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "manifestSha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "manifestSha256": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fit"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "training",
+          "diagnostics",
+          "initialization",
+          "recovery"
+        ],
+        "properties": {
+          "model": {
+            "required": [
+              "label"
+            ]
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "predictionColumn"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "training"
+              ]
+            },
+            {
+              "required": [
+                "diagnostics"
+              ]
+            },
+            {
+              "required": [
+                "initialization"
+              ]
+            },
+            {
+              "required": [
+                "recovery"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "model": {
+            "required": [
+              "checkpoint"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "initialization"
+        ],
+        "properties": {
+          "initialization": {
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "const": "publishedModel"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "required": [
+              "parentCheckpoint"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

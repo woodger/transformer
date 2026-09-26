@@ -10,12 +10,12 @@ from typing import cast
 import rfc8785
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v3.constants import (
+from app.contracts.target_head_diagnostics.v4.constants import (
     ARTIFACT_FORMAT,
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v18 import validate_document
-from app.contracts.worker.v18.diagnostics import (
+from app.contracts.worker.v19 import validate_document
+from app.contracts.worker.v19.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
@@ -323,6 +323,10 @@ def _validate_artifact(
             _object(epoch, "representationFlow"),
             expected_encoder_layers,
         )
+        _validate_encoder_block_flow(
+            _object(epoch, "encoderBlockFlow"),
+            expected_encoder_layers,
+        )
         target_heads = _array(epoch, "targetHeads")
         if len(target_heads) != len(expected_layout):
             raise ValueError("target head diagnostics target layout differs")
@@ -470,6 +474,37 @@ def _validate_representation_flow(
         _object(flow, "targetHeadInput"),
         "target head input norm",
     )
+
+
+def _validate_encoder_block_flow(
+    flow: Mapping[str, JsonValue],
+    expected_encoder_layers: int,
+) -> None:
+    if flow.get("normalizationOrder") != "postNorm":
+        raise ValueError("encoder block normalization order differs")
+    layers = _array(flow, "layers")
+    if len(layers) != expected_encoder_layers:
+        raise ValueError("encoder block layer count differs")
+    for index, layer in enumerate(layers):
+        if _nonnegative_integer(layer.get("layerIndex"), "encoder block layer index") != index:
+            raise ValueError("encoder block layer order differs")
+        for boundary in (
+            "input",
+            "attentionResidual",
+            "norm1",
+            "feedForwardResidual",
+            "norm2",
+        ):
+            _validate_row_representation(
+                _object(layer, boundary),
+                f"encoder block {boundary} norm",
+            )
+    output_head = _object(flow, "outputHeadShared")
+    for boundary in ("linear", "gelu", "layerNorm"):
+        _validate_row_representation(
+            _object(output_head, boundary),
+            f"output head shared {boundary} norm",
+        )
 
 
 def _validate_row_representation(

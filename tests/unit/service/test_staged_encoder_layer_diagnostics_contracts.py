@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 
 from app.contracts.checkpoint.v11.codec import validate_checkpoint_document
-from app.contracts.flight.v20.codec import validate_request_document
-from app.contracts.flight.v20.job_config import job_config_sha256
+from app.contracts.flight.v21.codec import validate_request_document
+from app.contracts.flight.v21.job_config import job_config_sha256
 from app.contracts.model_catalog.v6.codec import validate_catalog_document
-from app.contracts.target_head_diagnostics.v3.codec import (
+from app.contracts.target_head_diagnostics.v4.codec import (
     validate_target_head_diagnostics_document,
 )
-from app.contracts.worker.v18.codec import validate_document
-from app.contracts.worker.v18.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v19.codec import validate_document
+from app.contracts.worker.v19.diagnostics import DiagnosticsConfig
 from app.project import PROJECT_ROOT
 
 
@@ -64,7 +64,7 @@ def test_staged_internal_contract_schemas_are_loadable():
 
 
 def _validate_target_head_diagnostics_fixtures() -> None:
-    root = PROJECT_ROOT / "app/contracts/target_head_diagnostics/v3/fixtures"
+    root = PROJECT_ROOT / "app/contracts/target_head_diagnostics/v4/fixtures"
     _validate_manifest(
         root,
         lambda value: validate_target_head_diagnostics_document(
@@ -104,7 +104,7 @@ def _validate_model_catalog_fixtures() -> None:
 
 
 def _validate_flight_fixtures() -> None:
-    root = PROJECT_ROOT / "app/contracts/flight/v20/fixtures"
+    root = PROJECT_ROOT / "app/contracts/flight/v21/fixtures"
     _validate_manifest(
         root,
         lambda value: validate_request_document(value, "fixture-manifest"),

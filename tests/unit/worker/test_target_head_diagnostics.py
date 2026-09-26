@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18 import validate_document
+from app.contracts.worker.v19 import validate_document
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.losses import combined_loss
@@ -22,7 +22,7 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
         input_dim=8,
         seq_len=2,
         hidden_dim=16,
-        layers=1,
+        layers=2,
         dropout=0.0,
         model_contract=contract,
         nhead=4,
@@ -111,7 +111,9 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
             diagnostic_shared,
             encoder_input,
             encoder_layers,
-        ) = model.forward_with_representation_flow(features)
+            encoder_blocks,
+            output_head_shared,
+        ) = model.forward_with_encoder_block_flow(features)
         raw_logits = model_output[:, 0]
         predictions = public_predictions(model_output, contract)[:, 0]
 
@@ -126,8 +128,7 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
     assert isinstance(encoder_input_summary, dict)
     assert isinstance(encoder_layers_summary, list)
     assert isinstance(target_head_input_summary, dict)
-    assert len(encoder_layers_summary) == 1
-    assert isinstance(encoder_layers_summary[0], dict)
+    assert len(encoder_layers_summary) == 2
 
     def row_centered_l2_mean(values: torch.Tensor) -> float:
         centered = values.double() - values.double().mean(dim=0)
@@ -137,15 +138,61 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
         row_centered_l2_mean(encoder_input),
         abs=1e-6,
     )
-    assert encoder_layers_summary[0]["layerIndex"] == 0
-    assert encoder_layers_summary[0]["rowCenteredL2Mean"] == pytest.approx(
-        row_centered_l2_mean(encoder_layers[0]),
-        abs=1e-6,
-    )
+    for index, (summary, values) in enumerate(
+        zip(encoder_layers_summary, encoder_layers, strict=True)
+    ):
+        assert isinstance(summary, dict)
+        assert summary["layerIndex"] == index
+        assert summary["rowCenteredL2Mean"] == pytest.approx(
+            row_centered_l2_mean(values),
+            abs=1e-6,
+        )
     assert target_head_input_summary["rowCenteredL2Mean"] == pytest.approx(
         row_centered_l2_mean(shared),
         abs=1e-6,
     )
+
+    encoder_block_flow = epoch["encoderBlockFlow"]
+    assert isinstance(encoder_block_flow, dict)
+    assert encoder_block_flow["normalizationOrder"] == "postNorm"
+    encoder_block_layers = encoder_block_flow["layers"]
+    output_head_shared_flow = encoder_block_flow["outputHeadShared"]
+    assert isinstance(encoder_block_layers, list)
+    assert isinstance(output_head_shared_flow, dict)
+    assert len(encoder_block_layers) == 2
+    for layer_index, (layer_summary, boundary_values) in enumerate(
+        zip(encoder_block_layers, encoder_blocks, strict=True)
+    ):
+        assert isinstance(layer_summary, dict)
+        assert layer_summary["layerIndex"] == layer_index
+        for boundary, values in zip(
+            (
+                "input",
+                "attentionResidual",
+                "norm1",
+                "feedForwardResidual",
+                "norm2",
+            ),
+            boundary_values,
+            strict=True,
+        ):
+            summary = layer_summary[boundary]
+            assert isinstance(summary, dict)
+            assert summary["rowCenteredL2Mean"] == pytest.approx(
+                row_centered_l2_mean(values),
+                abs=1e-6,
+            )
+    for boundary, values in zip(
+        ("linear", "gelu", "layerNorm"),
+        output_head_shared,
+        strict=True,
+    ):
+        summary = output_head_shared_flow[boundary]
+        assert isinstance(summary, dict)
+        assert summary["rowCenteredL2Mean"] == pytest.approx(
+            row_centered_l2_mean(values),
+            abs=1e-6,
+        )
 
     raw_summary = target_head["rawLogit"]
     public_summary = target_head["publicPrediction"]

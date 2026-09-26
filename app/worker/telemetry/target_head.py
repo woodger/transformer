@@ -10,7 +10,7 @@ import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v3.constants import ARTIFACT_FORMAT
+from app.contracts.target_head_diagnostics.v4.constants import ARTIFACT_FORMAT
 from app.worker.model.transformer import TransformerModel, public_predictions
 
 _ENCODER_GROUP_NAMES = ("attention", "feedForward", "normalization")
@@ -304,6 +304,7 @@ class TargetHeadDiagnosticsCollector:
         try:
             summaries = _new_distribution_statistics(target_width)
             representation_sums: list[torch.Tensor] | None = None
+            encoder_layer_count: int | None = None
             with torch.no_grad(), autocast():
                 for batch_features in features():
                     if batch_features.size(0) == 0:
@@ -313,7 +314,9 @@ class TargetHeadDiagnosticsCollector:
                         shared,
                         encoder_input,
                         encoder_layers,
-                    ) = transformer.forward_with_representation_flow(
+                        encoder_blocks,
+                        output_head_shared,
+                    ) = transformer.forward_with_encoder_block_flow(
                         batch_features.to(device)
                     )
                     raw_logits = model_output[:, :target_width].detach().double()
@@ -322,11 +325,19 @@ class TargetHeadDiagnosticsCollector:
                         self._model_contract,
                     ).detach().double()
                     _observe_distributions(summaries, raw_logits, predictions)
-                    representations = (
+                    representations = _flow_representations(
                         encoder_input,
-                        *encoder_layers,
                         shared,
+                        encoder_layers,
+                        encoder_blocks,
+                        output_head_shared,
                     )
+                    if encoder_layer_count is None:
+                        encoder_layer_count = len(encoder_layers)
+                    elif len(encoder_layers) != encoder_layer_count:
+                        raise ValueError(
+                            "target head diagnostic encoder layer count differs"
+                        )
                     batch_sums = [
                         values.detach().double().sum(dim=0).detach().cpu()
                         for values in representations
@@ -350,6 +361,7 @@ class TargetHeadDiagnosticsCollector:
             if (
                 _row_count(summaries) != expected_rows
                 or representation_sums is None
+                or encoder_layer_count is None
             ):
                 raise ValueError(
                     "target head diagnostics row count differs from committed input"
@@ -372,14 +384,22 @@ class TargetHeadDiagnosticsCollector:
                         shared,
                         encoder_input,
                         encoder_layers,
-                    ) = transformer.forward_with_representation_flow(
+                        encoder_blocks,
+                        output_head_shared,
+                    ) = transformer.forward_with_encoder_block_flow(
                         batch_features.to(device)
                     )
-                    representations = (
+                    representations = _flow_representations(
                         encoder_input,
-                        *encoder_layers,
                         shared,
+                        encoder_layers,
+                        encoder_blocks,
+                        output_head_shared,
                     )
+                    if len(encoder_layers) != encoder_layer_count:
+                        raise ValueError(
+                            "target head diagnostic encoder layer count differs"
+                        )
                     if len(representations) != len(representation_means):
                         raise ValueError(
                             "target head diagnostic representation count differs"
@@ -442,6 +462,12 @@ class TargetHeadDiagnosticsCollector:
                 "representationFlow": _representation_flow(
                     representation_centered_l2_sums,
                     expected_rows,
+                    encoder_layer_count,
+                ),
+                "encoderBlockFlow": _encoder_block_flow(
+                    representation_centered_l2_sums,
+                    expected_rows,
+                    encoder_layer_count,
                 ),
                 "targetHeads": cast(list[JsonValue], target_heads),
             }
@@ -504,7 +530,7 @@ class TargetHeadDiagnosticsCollector:
             return None
         sample_identity = hashlib.sha256(
             (
-                "target-head-diagnostics-v3\\0"
+                "target-head-diagnostics-v4\\0"
                 + manifest_sha256
                 + "\\0"
                 + str(input_revision)
@@ -747,8 +773,10 @@ def _target_head(
 def _representation_flow(
     centered_l2_sums: list[float],
     row_count: int,
+    encoder_layer_count: int,
 ) -> JsonObject:
-    if len(centered_l2_sums) < 3:
+    base_count = encoder_layer_count + 2
+    if encoder_layer_count < 1 or len(centered_l2_sums) < base_count:
         raise ValueError("target head diagnostics require encoder layers")
     return {
         "encoderInput": {
@@ -757,14 +785,92 @@ def _representation_flow(
         "encoderLayers": [
             {
                 "layerIndex": index,
-                "rowCenteredL2Mean": value / row_count,
+                "rowCenteredL2Mean": centered_l2_sums[index + 1] / row_count,
             }
-            for index, value in enumerate(centered_l2_sums[1:-1])
+            for index in range(encoder_layer_count)
         ],
         "targetHeadInput": {
-            "rowCenteredL2Mean": centered_l2_sums[-1] / row_count,
+            "rowCenteredL2Mean": (
+                centered_l2_sums[encoder_layer_count + 1] / row_count
+            ),
         },
     }
+
+
+def _encoder_block_flow(
+    centered_l2_sums: list[float],
+    row_count: int,
+    encoder_layer_count: int,
+) -> JsonObject:
+    base_count = encoder_layer_count + 2
+    expected_count = base_count + encoder_layer_count * 5 + 3
+    if len(centered_l2_sums) != expected_count:
+        raise ValueError("target head diagnostic block flow count differs")
+    index = base_count
+    layers: list[JsonObject] = []
+    for layer_index in range(encoder_layer_count):
+        layers.append({
+            "layerIndex": layer_index,
+            "input": _row_representation(centered_l2_sums[index], row_count),
+            "attentionResidual": _row_representation(
+                centered_l2_sums[index + 1],
+                row_count,
+            ),
+            "norm1": _row_representation(
+                centered_l2_sums[index + 2],
+                row_count,
+            ),
+            "feedForwardResidual": _row_representation(
+                centered_l2_sums[index + 3],
+                row_count,
+            ),
+            "norm2": _row_representation(
+                centered_l2_sums[index + 4],
+                row_count,
+            ),
+        })
+        index += 5
+    return {
+        "normalizationOrder": "postNorm",
+        "layers": cast(list[JsonValue], layers),
+        "outputHeadShared": {
+            "linear": _row_representation(centered_l2_sums[index], row_count),
+            "gelu": _row_representation(
+                centered_l2_sums[index + 1],
+                row_count,
+            ),
+            "layerNorm": _row_representation(
+                centered_l2_sums[index + 2],
+                row_count,
+            ),
+        },
+    }
+
+
+def _row_representation(value: float, row_count: int) -> JsonObject:
+    return {"rowCenteredL2Mean": value / row_count}
+
+
+def _flow_representations(
+    encoder_input: torch.Tensor,
+    shared: torch.Tensor,
+    encoder_layers: tuple[torch.Tensor, ...],
+    encoder_blocks: tuple[tuple[torch.Tensor, ...], ...],
+    output_head_shared: tuple[torch.Tensor, ...],
+) -> tuple[torch.Tensor, ...]:
+    if len(encoder_layers) != len(encoder_blocks):
+        raise ValueError("target head diagnostic encoder block count differs")
+    if any(len(values) != 5 for values in encoder_blocks):
+        raise ValueError("target head diagnostic encoder block boundary count differs")
+    if len(output_head_shared) != 3:
+        raise ValueError("target head diagnostic output head boundary count differs")
+    return (
+        encoder_input,
+        *encoder_layers,
+        shared,
+        *(value for block in encoder_blocks for value in block),
+        *output_head_shared,
+    )
 
 
 def _transformer_model(model: torch.nn.Module) -> TransformerModel:

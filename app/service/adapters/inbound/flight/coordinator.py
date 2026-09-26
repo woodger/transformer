@@ -7,7 +7,7 @@ from app.contracts.model_catalog.v6 import (
     validate_catalog_document,
 )
 from app.contracts.semantic.v4 import semantic_capabilities
-from app.contracts.target_head_diagnostics.v3.constants import (
+from app.contracts.target_head_diagnostics.v4.constants import (
     CONTRACT_NAME as TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
     CONTRACT_REVISION as TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
     CURSOR_TTL_SECONDS as TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,

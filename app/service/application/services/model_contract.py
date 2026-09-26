@@ -6,9 +6,9 @@ from app.contracts.checkpoint.v9.constants import (
     CHECKPOINT_FORMAT as LEGACY_CHECKPOINT_FORMAT,
 )
 from app.contracts.semantic.v4 import ModelContract, SemanticContractError
-from app.contracts.worker.v18.config import ModelConfig
-from app.contracts.worker.v18.constants import CHECKPOINT_FORMAT
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.worker.v19.constants import CHECKPOINT_FORMAT
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode

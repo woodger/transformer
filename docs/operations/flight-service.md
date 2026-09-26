@@ -1,9 +1,9 @@
 # Эксплуатация сервиса Transformer Arrow Flight
 
 > Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v20.
+> сервиса Flight v21.
 
-Wire semantics определены [Flight v20](../../app/contracts/flight/v20/README.md).
+Wire semantics определены [Flight v21](../../app/contracts/flight/v21/README.md).
 Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
 системы.
 
@@ -82,11 +82,11 @@ artifacts без references в тех же service roots. Не удаляйте 
 PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
 `models delete` либо документированную migration clean cut.
 
-## Текущий runtime Semantic v4 / Flight v20
+## Текущий runtime Semantic v4 / Flight v21
 
 Migration 0028 удаляет state предыдущей semantic boundary. Для первого перехода
 на Semantic v4 остановите все instances service, дождитесь terminal state jobs
-и примените её. Flight v20 не добавляет PostgreSQL migration; перед первым
+и примените её. Flight v21 не добавляет PostgreSQL migration; перед первым
 fit он использует индексы metrics OpenSearch v10. Старые models,
 checkpoints, state recovery и telemetry до migration 0028 использовать нельзя.
 См. [управление migrations](database-migrations.md) и
@@ -94,8 +94,8 @@ checkpoints, state recovery и telemetry до migration 0028 использов�
 
 ## Health и troubleshooting
 
-Используйте `transformer.v20.health` для аутентифицированной surface health
-provider-а и `transformer.v20.capabilities` для текущей availability
+Используйте `transformer.v21.health` для аутентифицированной surface health
+provider-а и `transformer.v21.capabilities` для текущей availability
 device/upload/query. Для операционной диагностики используйте logs service и
 state database. Никогда не помещайте bearer credentials, passwords database или
 raw paths checkpoint-а в общие logs или сообщения support.

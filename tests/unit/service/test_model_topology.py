@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v20.codec import validate_request_document
-from app.contracts.flight.v20.constants import ACTIONS
+from app.contracts.flight.v21.codec import validate_request_document
+from app.contracts.flight.v21.constants import ACTIONS
 from app.contracts.model_topology.v2 import validate_model_topology_document
 from app.contracts.model_topology.v2.constants import DETAIL_ACTION
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import ModelConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.config import ModelConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.model_topology import (
     model_topology_response,
@@ -163,7 +163,7 @@ def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     validate_request_document(document, "action-result")
 
 
-def test_flight_v20_dispatches_the_model_topology_action():
+def test_flight_v21_dispatches_the_model_topology_action():
     model = _model()
     entry = CatalogModelRecord(
         model=model,

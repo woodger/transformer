@@ -5,9 +5,9 @@ import torch
 
 import app.worker.checkpoints.model as checkpoint_module
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v18.config import TrainConfig
-from app.contracts.worker.v18.model_config import ModelConfig
-from app.contracts.worker.v18.model_definition import resolved_semantic_digests
+from app.contracts.worker.v19.config import TrainConfig
+from app.contracts.worker.v19.model_config import ModelConfig
+from app.contracts.worker.v19.model_definition import resolved_semantic_digests
 from app.worker.checkpoints.model import (
     CHECKPOINT_FORMAT,
     load_checkpoint,
