@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.contracts.flight.v22.codec import validate_request_document
 from app.contracts.flight.v22.constants import ACTIONS
 from app.contracts.semantic.v5 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import REPORT_ACTION
@@ -427,3 +428,50 @@ def test_flight_v22_dispatches_target_head_diagnostics_report():
 
     assert response["state"] == "available"
     assert response["modelRef"] == model.model_ref
+
+
+def test_flight_v22_capabilities_advertise_target_head_normalization_orders():
+    coordinator = JobCoordinator(
+        create_job=SimpleNamespace(),
+        acquire_job=SimpleNamespace(),
+        close_input=SimpleNamespace(),
+        cancel_job=SimpleNamespace(),
+        get_status=SimpleNamespace(),
+        list_inputs=SimpleNamespace(),
+        list_outputs=SimpleNamespace(),
+        list_catalog_models=SimpleNamespace(),
+        get_catalog_model=SimpleNamespace(),
+        get_model_topology=SimpleNamespace(),
+        service_status=SimpleNamespace(
+            capabilities=lambda: SimpleNamespace(
+                device_inventory=SimpleNamespace(cuda_capacity=1),
+                limits=SimpleNamespace(
+                    max_payload_bytes=536870912,
+                    max_rows_per_payload=2000000,
+                    max_payloads_per_job=100000,
+                    max_job_bytes=68719476736,
+                    input_idle_timeout_seconds=900,
+                ),
+            )
+        ),
+        availability=SimpleNamespace(),
+        get_target_head_diagnostics_report=SimpleNamespace(),
+    )
+
+    document = coordinator.capabilities(
+        "11111111-1111-4111-8111-111111111111"
+    )
+    validate_request_document(document, "capabilities-result")
+
+    diagnostics = document["queries"]["targetHeadDiagnostics"]
+    assert diagnostics["revision"] == 5
+    assert diagnostics["actions"] == [REPORT_ACTION]
+    assert diagnostics["encoderLayerDiagnosticsModes"] == [
+        "directComponentPerBatch",
+    ]
+    assert diagnostics["encoderNormalizationOrders"] == ["postNorm", "preNorm"]
+    assert document["semantic"]["objectiveLanguage"]["revision"] == 5
+    assert document["semantic"]["encoderNormalizationOrders"] == [
+        "postNorm",
+        "preNorm",
+    ]

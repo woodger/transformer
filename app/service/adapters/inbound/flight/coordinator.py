@@ -7,6 +7,7 @@ from app.contracts.model_catalog.v7 import (
     validate_catalog_document,
 )
 from app.contracts.semantic.v5 import semantic_capabilities
+from app.contracts.semantic.v5.constants import ENCODER_NORMALIZATION_ORDERS
 from app.contracts.target_head_diagnostics.v5.constants import (
     CONTRACT_NAME as TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
     CONTRACT_REVISION as TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
@@ -576,6 +577,9 @@ class JobCoordinator:
                         "encoderLayerDiagnosticsModes": [
                             "directComponentPerBatch",
                         ],
+                        "encoderNormalizationOrders": list(
+                            ENCODER_NORMALIZATION_ORDERS
+                        ),
                         "maxEpochPageSize": TARGET_HEAD_DIAGNOSTICS_MAX_EPOCH_PAGE_SIZE,
                         "cursorTtlSeconds": TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
                         "maxResponseBytes": TARGET_HEAD_DIAGNOSTICS_MAX_RESPONSE_BYTES,
