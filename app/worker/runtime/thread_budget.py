@@ -15,7 +15,7 @@ def configure_cuda_torch_thread_budget(
     *,
     runtime: _TorchThreadRuntime | None = None,
 ) -> tuple[int, int]:
-    """Apply host-side PyTorch thread limits in a fresh CUDA worker."""
+    """Применить лимиты потоков хоста PyTorch в новом CUDA Worker."""
 
     intraop_threads = _positive_integer(
         settings.CUDA_TORCH_INTRAOP_THREADS,

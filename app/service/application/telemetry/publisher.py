@@ -31,7 +31,7 @@ _MAX_DELIVERY_AGE_SECONDS = 24 * 60 * 60
 
 
 class MetricsPublisher:
-    """Deliver immutable metrics projections after the application commit."""
+    """Доставить неизменяемую проекцию метрик после фиксации приложения."""
 
     def __init__(
         self,

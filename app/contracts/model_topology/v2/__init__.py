@@ -1,4 +1,3 @@
-"""Контракт owner-scoped запроса публичной topology модели revision 1."""
 
 from app.contracts.model_topology.v2.codec import (
     ModelTopologyContractError,

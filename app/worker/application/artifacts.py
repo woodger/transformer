@@ -30,7 +30,7 @@ _COPY_CHUNK_BYTES = 1024 * 1024
 
 
 class CommittedInputArtifacts:
-    """Verify each immutable input receipt exactly once per worker attempt."""
+    """Проверить каждую неизменяемую входную квитанцию ровно раз на попытку Worker."""
 
     def __init__(self) -> None:
         self._verified: dict[

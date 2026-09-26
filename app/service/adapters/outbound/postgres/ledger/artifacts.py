@@ -45,7 +45,7 @@ from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 
 
 class ArtifactLedgerSlice:
-    """Atomic publication and retrieval of Transformer-owned artifacts."""
+    """Атомарная публикация и получение артефактов, принадлежащих Transformer."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

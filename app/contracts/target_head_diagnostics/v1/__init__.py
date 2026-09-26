@@ -1,4 +1,3 @@
-"""Контракт owner-scoped Target Head Diagnostics Query revision 1."""
 
 from app.contracts.target_head_diagnostics.v1.codec import (
     TargetHeadDiagnosticsContractError,

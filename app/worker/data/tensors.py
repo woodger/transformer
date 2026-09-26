@@ -5,11 +5,12 @@ import torch
 
 @dataclass(frozen=True, slots=True)
 class TrainingBatch:
-    """Worker-owned fit data with one aligned row axis.
+    """Данные fit Worker с одной выровненной осью строк.
 
-    ``features`` is float32 ``[rows, source_width]`` at the Arrow boundary and
-    float32 ``[batch, sequence, features]`` after source reshaping. ``targets``
-    is float32 ``[rows, selected_targets]`` in the target-aligned public order.
+    ``features`` имеет float32 ``[rows, source_width]`` на границе Arrow и
+    float32 ``[batch, sequence, features]`` после преобразования источника.
+    ``targets`` имеет float32 ``[rows, selected_targets]`` в публичном порядке
+    target.
     """
 
     features: torch.Tensor
@@ -20,7 +21,7 @@ def reshape_source(
     features: torch.Tensor,
     seq_len: int | None,
 ) -> torch.Tensor:
-    """Reshape flattened CPU features from [rows, seq*features] to rank 3."""
+    """Преобразовать плоские признаки CPU [rows, seq*features] в тензор ранга 3."""
 
     if seq_len is None or seq_len <= 0:
         raise ValueError("seq_len must be a positive integer")
@@ -39,7 +40,7 @@ def validate_feature_dim(
     features: torch.Tensor,
     expected_feat_dim: int | None,
 ) -> int:
-    """Validate the feature axis of [rows, sequence, features]."""
+    """Проверить ось ``features`` у [rows, sequence, features]."""
 
     if features.ndim != 3:
         raise ValueError("source features must have shape [rows, sequence, features]")
@@ -55,7 +56,7 @@ def validate_checkpoint_feature_dim(
     features: torch.Tensor,
     checkpoint_feature_dim: int | None,
 ) -> int:
-    """Match [rows, sequence, features] against checkpoint metadata."""
+    """Сопоставить [rows, sequence, features] с метаданными контрольной точки."""
 
     if checkpoint_feature_dim is None:
         raise ValueError("Checkpoint feature_dim is unavailable")
@@ -74,7 +75,7 @@ def validate_target_dim(
     targets: torch.Tensor,
     expected_target_dim: int | None,
 ) -> int:
-    """Validate target width for a [rows, targets] tensor."""
+    """Проверить ширину тензора target [rows, targets]."""
 
     if targets.ndim != 2:
         raise ValueError("targets must have shape [rows, targets]")

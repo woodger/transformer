@@ -42,7 +42,7 @@ def _binary64_json(value: JsonValue) -> JsonValue:
 def target_objective_digests(
     model_contract: Mapping[str, object],
 ) -> JsonObject:
-    """Calculate the cross-project target and objective D1 identities."""
+    """Вычислить межпроектные D1-идентификаторы target и objective."""
 
     target_preimage: JsonObject = {
         "objectiveLanguageRevision": OBJECTIVE_LANGUAGE_REVISION,

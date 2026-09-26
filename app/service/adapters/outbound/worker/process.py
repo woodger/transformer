@@ -15,7 +15,7 @@ _PROC_ROOT = "/proc"
 
 
 class ProcessRecoveryError(RuntimeError):
-    """A recorded worker process group could not be recovered safely."""
+    """Зарегистрированную группу процессов Worker нельзя безопасно восстановить."""
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ def read_process_identity(
 
 
 def capture_worker_process(pid: int) -> ProcessIdentity:
-    """Capture and verify the identity created by ``start_new_session=True``."""
+    """Захватить и проверить identity, созданную ``start_new_session=True``."""
     boot_id = read_boot_id()
     identity = read_process_identity(pid, boot_id=boot_id)
     if identity is None:

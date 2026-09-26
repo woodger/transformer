@@ -46,20 +46,21 @@ class MaintenanceResult:
 
 
 class MaintenanceService:
-    """Reconcile durable queues and expire tickets and retained terminal jobs.
+    """Сверять долговременные очереди и истекать билеты и удержанные задачи.
 
-    Terminal ledger rows are deleted before their server-owned job directories.
-    Reversing that order could leave live ledger references to missing artifacts.
-    A process crash between the two operations can therefore leave an orphan job
-    directory. Startup reconciliation must remove ``spool/jobs/<jobId>`` entries
-    whose canonical job IDs are absent from the ledger-provided known-job set.
-    The in-memory pending set only closes retry gaps while this process remains
-    alive; it is deliberately not treated as durable state.
+    Строки журнала завершённых задач удаляются до принадлежащих серверу
+    каталогов задач. Обратный порядок мог бы оставить живые ссылки журнала на
+    отсутствующие артефакты. Поэтому сбой процесса между двумя операциями может
+    оставить осиротевший каталог задачи. Согласование при старте должно удалить
+    записи ``spool/jobs/<jobId>``, чьи канонические идентификаторы задач
+    отсутствуют в журнале. Набор ожидающих задач в памяти закрывает промежутки
+    повторной попытки только пока этот процесс жив и намеренно не считается
+    долговременным состоянием.
 
-    Published model generations outlive the producing job. Their directories
-    are removed only after an explicit PostgreSQL deletion request; the model
-    identity is archived and the working row is purged only after the
-    filesystem operation succeeds.
+    Опубликованные поколения моделей переживают создавшую их задачу. Их
+    каталоги удаляются только после явного запроса удаления в PostgreSQL;
+    идентификатор модели архивируется, а рабочая строка очищается только после
+    успешной операции файловой системы.
     """
 
     def __init__(

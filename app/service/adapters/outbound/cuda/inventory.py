@@ -58,7 +58,7 @@ class CudaInventorySnapshot:
 
 
 class CudaDeviceInventory:
-    """Boot-scoped physical CUDA inventory and monotonic quarantine."""
+    """Физический inventory CUDA в пределах boot и монотонный карантин."""
 
     def __init__(
         self,
@@ -172,7 +172,7 @@ class CudaDeviceInventory:
             )
 
     def confirm_loss(self, device_id: str) -> bool:
-        """Probe once and quarantine a missing device until the next boot."""
+        """Проверить устройство один раз и изолировать пропавшее до следующего boot."""
 
         with self._lock:
             assigned = self._devices.get(device_id)

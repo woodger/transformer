@@ -21,7 +21,7 @@ class _CudaDeviceProperties(Protocol):
 
 
 def inspect_capabilities() -> JsonObject:
-    """Inspect Torch/CUDA inside the worker process boundary."""
+    """Проверить Torch/CUDA внутри границы процесса Worker."""
 
     import torch
 

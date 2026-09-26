@@ -12,7 +12,7 @@ from app.contracts.semantic.v4.validation import validate_model_contract
 
 @dataclass(frozen=True, slots=True)
 class ModelContract:
-    """Validated target/objective intent and model tuning."""
+    """Проверенное намерение target/objective и настройка модели."""
 
     document: JsonObject
 

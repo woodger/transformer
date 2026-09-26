@@ -37,7 +37,7 @@ def _last_unmasked_indices(key_padding_mask: torch.Tensor) -> torch.Tensor:
 
 
 class TransformerModel(nn.Module):
-    """Map sequence inputs to selected public heads and required private heads."""
+    """Отобразить последовательный вход в выбранные публичные и требуемые закрытые head."""
 
     def __init__(
         self,
@@ -150,7 +150,7 @@ class TransformerModel(nn.Module):
         torch.Tensor,
         tuple[torch.Tensor, ...],
     ]:
-        """Вернуть output и row-level состояния на границах encoder/head."""
+        """Вернуть вывод и построчные состояния на границах encoder/head."""
         if features.ndim != 3:
             raise ValueError("features must have shape [batch, sequence, features]")
         if features.shape[1] != self.seq_len:
@@ -177,7 +177,7 @@ class TransformerModel(nn.Module):
                 raise ValueError("encoder layer output must be a tensor")
             captured_layer_outputs.append(output)
 
-        # Hooks сохраняют обычный вызов self.encoder, а не повторяют его по слоям.
+        # Перехватчики сохраняют обычный вызов self.encoder, а не повторяют его по слоям.
         handles = [
             layer.register_forward_hook(capture_layer_output)
             for layer in self.encoder.layers

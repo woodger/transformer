@@ -1,7 +1,7 @@
-"""Add bounded traversal identity for the model catalog.
+"""Добавить ограниченный идентификатор обхода каталога моделей.
 
-Revision ID: 0025
-Revises: 0024
+Идентификатор ревизии: 0025
+Предыдущая ревизия: 0024
 """
 
 from __future__ import annotations

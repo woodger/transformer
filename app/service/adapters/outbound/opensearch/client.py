@@ -24,7 +24,7 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 
 
 class OpenSearchMetricsClient:
-    """Use bounded metrics writes and owner-gated telemetry projection reads."""
+    """Выполнять ограниченные записи метрик и чтение проекции телеметрии с проверкой владельца."""
 
     def __init__(self, config: OpenSearchMetricsConfig) -> None:
         self.config = config

@@ -63,11 +63,12 @@ def iter_committed_fit_arrow(
     target_contract: JsonObject,
     binary_target_indices: Sequence[int] = (),
 ) -> Iterator[TrainingBatch]:
-    """Decode one immutable compact fit artifact in bounded row slices.
+    """Декодировать один неизменяемый компактный артефакт fit ограниченными срезами строк.
 
-    The service validates values before durable commit and the worker verifies
-    the receipt digest before the first read. Replay rechecks its physical
-    schema and receipt counters without retaining the full dense dataset.
+    Сервис проверяет значения до долговременной фиксации, а Worker сверяет
+    дайджест квитанции до первого чтения. Повторное воспроизведение проверяет
+    физическую схему и счётчики квитанции, не удерживая полный плотный набор
+    данных.
     """
     for features, target_values in _iter_committed_indexed_arrow(
         path,
@@ -100,7 +101,7 @@ def iter_committed_fit_features(
     feature_dim: int,
     target_contract: JsonObject,
 ) -> Iterator[torch.Tensor]:
-    """Декодировать признаки fit-артефакта без материализации целей."""
+    """Декодировать признаки артефакта fit без материализации целей."""
     for features, _ in _iter_committed_indexed_arrow(
         path,
         expected_rows=expected_rows,
@@ -127,7 +128,7 @@ def iter_committed_source_arrow(
     feature_dim: int,
     target_contract: JsonObject,
 ) -> Iterator[torch.Tensor]:
-    """Decode one immutable compact prediction artifact in bounded slices."""
+    """Декодировать один неизменяемый компактный артефакт предсказания ограниченными срезами."""
     for features, _ in _iter_committed_indexed_arrow(
         path,
         expected_rows=expected_rows,

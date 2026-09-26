@@ -69,10 +69,10 @@ def load_database_config(
     env_file: str | os.PathLike[str] | None = None,
     schema: str = defaults.POSTGRES_SCHEMA_DEFAULT,
 ) -> DatabaseConfig:
-    """Load PostgreSQL settings without mutating ``os.environ``.
+    """Загрузить настройки PostgreSQL, не изменяя ``os.environ``.
 
-    Values already present in the process environment take precedence over
-    the project-local ``.env`` file.
+    Значения, уже находящиеся в окружении процесса, имеют приоритет над
+    локальным файлом проекта ``.env``.
     """
 
     environment = os.environ if environ is None else environ

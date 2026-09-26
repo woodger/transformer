@@ -7,7 +7,7 @@ from app.service.domain.job import ErrorCode
 
 @dataclass(frozen=True)
 class AttemptExecutionError(Exception):
-    """Safe failure reported by an execution capability adapter."""
+    """Безопасный сбой, сообщённый адаптером возможности выполнения."""
 
     code: ErrorCode
     message: str

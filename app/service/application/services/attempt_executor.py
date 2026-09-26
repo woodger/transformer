@@ -50,7 +50,7 @@ class _ActiveAttempt:
 
 
 class WorkerAttemptExecutor:
-    """Execute and durably finalize one already-claimed worker attempt."""
+    """Выполнить и долговременно завершить одну уже захваченную попытку Worker."""
 
     def __init__(
         self,
@@ -84,7 +84,7 @@ class WorkerAttemptExecutor:
         self._force_stop = threading.Event()
 
     def notify_cancel(self, job_id: str) -> None:
-        """Deliver a validated explicit cancellation to an active attempt."""
+        """Передать проверенную явную отмену активной attempt."""
         with self._active_lock:
             active = self._active.get(job_id)
             if active is None:
@@ -104,7 +104,7 @@ class WorkerAttemptExecutor:
             cast(Callable[[str], None], notifier)(job_id)
 
     def interrupt_for_shutdown(self) -> None:
-        """Interrupt all attempts after the worker-pool drain deadline."""
+        """Прервать все attempt после истечения drain deadline WorkerPool."""
         # Сначала устанавливаем принудительную остановку, чтобы попытка,
         # регистрируемая после этого снимка, не приняла остановку сервиса
         # за обычную отмену клиентом.

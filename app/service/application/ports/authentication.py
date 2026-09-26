@@ -6,7 +6,7 @@ from app.service.domain.authentication import AuthenticatedPrincipal
 
 
 class InvalidAccessTokenError(Exception):
-    """The supplied credential is not an active API access token."""
+    """Переданные учётные данные не являются активным токеном доступа API."""
 
 
 class AccessTokenAuthenticator(Protocol):

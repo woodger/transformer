@@ -36,13 +36,13 @@ class WorkerCapabilitySnapshot(Protocol):
 
 
 class WorkerCapabilities(Protocol):
-    """Inspect worker runtime without importing its implementation."""
+    """Проверить среду выполнения Worker без импорта его реализации."""
 
     def snapshot(self) -> WorkerCapabilitySnapshot: ...
 
 
 class DeviceLeaseManager(WorkerCapabilities, Protocol):
-    """Lease opaque execution devices and quarantine confirmed failures."""
+    """Выдавать аренду непрозрачных устройств выполнения и изолировать подтверждённые сбои."""
 
     def schedulable_devices(self) -> Sequence[WorkerDevice]: ...
 

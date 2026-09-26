@@ -1,4 +1,3 @@
-"""Подготовленный контракт Model Catalog Query v7 в области владельца."""
 
 from app.contracts.model_catalog.v7.codec import (
     ModelCatalogContractError,

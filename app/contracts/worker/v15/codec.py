@@ -23,7 +23,7 @@ from app.contracts.worker.v15.constants import (
 
 
 class WorkerContractError(ValueError):
-    """A worker document does not satisfy process contract v15."""
+    """Документ Worker не соответствует процессному контракту v15."""
 
 
 _SCHEMA_DIRECTORY = Path(__file__).with_name("schemas")

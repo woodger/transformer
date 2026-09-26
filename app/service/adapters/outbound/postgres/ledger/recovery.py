@@ -32,7 +32,7 @@ from app.service.domain.records import TrainingRecoveryCheckpointRecord
 
 
 class RecoveryLedgerSlice:
-    """Atomic visibility and retry operations for training recovery."""
+    """Операции атомарной видимости и повтора для восстановления обучения."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

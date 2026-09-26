@@ -1,7 +1,7 @@
-"""Persist compact indexed feature-block input metadata.
+"""Сохранить компактные метаданные входа блоков indexedFeature.
 
-Revision ID: 0023
-Revises: 0022
+Идентификатор ревизии: 0023
+Предыдущая ревизия: 0022
 """
 
 from __future__ import annotations

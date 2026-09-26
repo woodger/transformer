@@ -19,7 +19,7 @@ from app.worker.application.predict import execute_predict
 
 
 class WorkerApplication:
-    """Выполнить один durable-streaming command manifest Worker v20."""
+    """Выполнить один долговременный потоковый манифест команды Worker v20."""
 
     def __init__(
         self,

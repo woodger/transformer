@@ -35,7 +35,7 @@ class LifecycleMutation(Generic[ResultT]):
 
 
 class JobLifecycleStore(Protocol):
-    """Atomic persistence operations required by public job mutations."""
+    """Операции атомарного хранения, нужные публичным изменениям job."""
 
     def create(
         self,

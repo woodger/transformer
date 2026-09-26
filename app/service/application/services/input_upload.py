@@ -33,7 +33,7 @@ class InputKindMismatch(Exception):
 
 
 class InputUploadLifecycle:
-    """Authorize and commit one physical payload around transport staging."""
+    """Авторизовать и зафиксировать один физический пакет вокруг транспортного буфера."""
 
     def __init__(
         self,

@@ -1,7 +1,7 @@
-"""Adopt the clean-cut subject-specific contract vocabulary.
+"""Принять чистый переход на предметный словарь контрактов.
 
-Revision ID: 0026
-Revises: 0025
+Идентификатор ревизии: 0026
+Предыдущая ревизия: 0025
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def _schema() -> str:
 
 
 def upgrade() -> None:
-    """Discard artifacts whose v1 canonical bytes cannot be reinterpreted."""
+    """Удалить артефакты, чьи канонические байты v1 нельзя интерпретировать заново."""
 
     schema = _schema()
     op.execute(sa.text(f"""

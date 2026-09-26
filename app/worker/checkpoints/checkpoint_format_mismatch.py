@@ -1,5 +1,5 @@
 class CheckpointFormatMismatch(ValueError):
-    """Checkpoint belongs to a format unsupported by this runtime."""
+    """Контрольная точка принадлежит формату, не поддержанному этой средой выполнения."""
 
 
 __all__ = ["CheckpointFormatMismatch"]

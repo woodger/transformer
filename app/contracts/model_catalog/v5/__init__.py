@@ -1,4 +1,3 @@
-"""Контракт owner-scoped Model Catalog Query revision 5."""
 
 from app.contracts.model_catalog.v5.codec import (
     ModelCatalogContractError,

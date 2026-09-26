@@ -36,7 +36,7 @@ class JsonLogger:
 
 
 class OperationalMetrics:
-    """Small in-process aggregate metrics exposed through the health action."""
+    """Небольшие агрегированные метрики процесса, доступные через действие health."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -51,7 +51,7 @@ class OperationalMetrics:
             self._counters["rpcLatencySecondsTotal"] += elapsed_seconds
 
     def record_transition(self, from_state: str, to_state: str) -> None:
-        """Count a state edge without introducing a per-job metric label."""
+        """Учесть переход состояния без метки метрики для отдельной задачи."""
         with self._lock:
             self._counters[f"jobTransitions.{from_state}.{to_state}"] += 1
 

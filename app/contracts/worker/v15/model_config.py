@@ -16,11 +16,11 @@ DEFAULT_NHEAD = 8
 
 @dataclass(frozen=True, slots=True)
 class ModelConfig:
-    """Resolved provider model configuration.
+    """Разрешённая конфигурация модели, принадлежащая поставщику.
 
-    The public contract supplies tuning only. Geometry is bound by the input
-    definition and this internal representation is persisted for Worker and
-    checkpoint execution.
+    Публичный контракт передаёт только настройку. Геометрия привязана к
+    определению входа, а это внутреннее представление сохраняется для Worker и
+    контрольной точки.
     """
 
     seq_len: int

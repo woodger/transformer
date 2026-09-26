@@ -59,11 +59,11 @@ EpochCommittedCallback = Callable[
 
 
 class Trainer:
-    """Own optimization, checkpoint selection, and resumable training state.
+    """Владеть оптимизацией, выбором контрольной точки и возобновляемым состоянием.
 
-    AMP is enabled only on CUDA. Recovery serialization includes model,
-    optimizer, scaler, RNG, shuffle, early-stopping, and checkpoint-selection
-    state.
+    AMP включается только на CUDA. Сериализация восстановления включает состояние
+    модели, оптимизатора, scaler, RNG, перемешивания, ранней остановки и выбора
+    контрольной точки.
     """
 
     def __init__(
@@ -672,11 +672,12 @@ class Trainer:
         payloads: TrainingBatchFactory,
         on_epoch: EpochCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train global epochs over a payload-independent row stream.
+        """Обучить глобальные эпохи на потоке строк, независимом от payload.
 
-        ``payloads`` is a callable so durable inputs can be reopened for every
-        epoch. Optimizer batches and bounded shuffle windows may cross payload
-        boundaries, so transport partitioning cannot change the trajectory.
+        ``payloads`` — вызываемый объект, чтобы долговременный вход можно было
+        открыть для каждой эпохи. Пакеты оптимизатора и ограниченные окна
+        перемешивания могут пересекать границы payload, поэтому транспортное
+        разбиение не меняет траекторию.
         """
         def loaders() -> Iterator[TrainingBatches]:
             yield self._batcher.prefetched(
@@ -740,7 +741,7 @@ class Trainer:
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train job-wide epochs and expose only complete recovery boundaries."""
+        """Обучить эпохи job и раскрыть только полные границы восстановления."""
 
         def loaders() -> Iterator[TrainingBatches]:
             yield self._batcher.prefetched(
@@ -763,11 +764,12 @@ class Trainer:
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train epoch zero from an open stream, then replay closed input.
+        """Обучить нулевую эпоху из открытого потока, затем повторить закрытый вход.
 
-        The first iterable may block at the durable input frontier. Its EOF is
-        the explicit input-close boundary. Every later epoch reopens the same
-        complete ordered dataset through ``closed_payloads``.
+        Первый итерируемый объект может блокироваться на границе долговременного
+        входа. Его EOF — явная граница закрытия входа. Каждая следующая эпоха
+        заново открывает тот же полный упорядоченный набор данных через
+        ``closed_payloads``.
         """
 
         first_epoch = True
@@ -797,7 +799,7 @@ class Trainer:
         )
 
     def recovery_state_dict(self) -> dict[str, object]:
-        """Return the complete trusted state needed to resume a fit."""
+        """Вернуть полное доверенное состояние, нужное для продолжения fit."""
 
         cuda_rng_state = None
         if self.device.type == "cuda" and torch.cuda.is_available():
@@ -826,8 +828,7 @@ class Trainer:
                     else _tree_to_cpu(self.best_state_dict)
                 ),
                 # Поле сохранено неактивным, чтобы сохранить текущий надёжный
-                # формат восстановления. Телеметрия больше не восстанавливается
-                # в состояние обучения.
+                # формат восстановления: состояние выбора не зависит от лучших метрик.
                 "best_metrics": None,
                 "best_frame": self.best_frame,
                 "best_epoch": self.best_epoch,
@@ -853,7 +854,7 @@ class Trainer:
         self,
         payload: Mapping[str, object],
     ) -> None:
-        """Restore a state produced by :meth:`recovery_state_dict`."""
+        """Восстановить состояние, созданное :meth:`recovery_state_dict`."""
 
         required = {
             "model_state_dict",

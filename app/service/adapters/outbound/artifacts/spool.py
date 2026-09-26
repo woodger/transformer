@@ -25,7 +25,7 @@ class RuntimeDirectoryLocked(RuntimeError):
 
 
 class RuntimeDirectoryLock:
-    """Exclusive process-lifetime ownership of the Flight runtime directory."""
+    """Эксклюзивное владение рабочим каталогом на время жизни Flight-процесса."""
 
     def __init__(self, path: str) -> None:
         self.path = os.path.abspath(os.fspath(path))
@@ -72,11 +72,11 @@ class RuntimeDirectoryLock:
 
 
 class Spool:
-    """Server-controlled runtime, model, and telemetry artifacts.
+    """Рабочие артефакты, модели и телеметрия под контролем сервера.
 
-    Unfinished artifacts live below ``runtime_dir``. Successfully validated
-    model generations are atomically published below ``models_dir``. Durable
-    best-effort observations live below the independent ``telemetry_dir``.
+    Незавершённые артефакты находятся в ``runtime_dir``. Успешно проверенные
+    поколения моделей атомарно публикуются в ``models_dir``. Долговременные
+    необязательные наблюдения находятся в независимом ``telemetry_dir``.
     """
 
     def __init__(
@@ -130,7 +130,7 @@ class Spool:
         self.lock.release()
 
     def storage_epoch(self) -> str:
-        """Return the runtime filesystem generation, creating it when absent."""
+        """Вернуть поколение рабочего хранилища, создав его при отсутствии."""
         try:
             with open(self.epoch_path, encoding="ascii") as source:
                 value = source.read().strip()
@@ -403,7 +403,7 @@ class Spool:
         destination: str,
         document: JsonObject,
     ) -> str:
-        """Durably create one immutable service-owned JSON document."""
+        """Надёжно создать один неизменяемый JSON-документ сервиса."""
 
         destination, _ = self._inside_managed(destination)
         data = json.dumps(
@@ -452,11 +452,11 @@ class Spool:
         return shutil.disk_usage(self.runtime_dir)
 
     def cleanup_temporary_files(self) -> tuple[str, ...]:
-        """Remove definitively orphaned sibling temp artifacts at startup.
+        """Удалить при старте окончательно осиротевшие временные артефакты.
 
-        The caller must hold the runtime-directory process lock. This pass
-        runs before PostgreSQL recovery so crash-left temp files release tmpfs
-        space first.
+        Вызывающая сторона должна удерживать блокировку рабочего каталога. Этот
+        проход выполняется до восстановления PostgreSQL, чтобы временные файлы
+        после сбоя сначала освободили пространство tmpfs.
         """
         removed: list[str] = []
         for root, directories, files in os.walk(self.runtime_dir, topdown=False):
@@ -481,7 +481,7 @@ class Spool:
         temporary_paths: Sequence[str] = (),
         known_job_ids: Sequence[str] | set[str] | None = None,
     ) -> JsonObject:
-        """Remove startup leftovers without touching ledger-referenced data."""
+        """Удалить хвосты запуска, не затрагивая данные со ссылками журнала."""
         referenced = {self.absolute_path(path) for path in referenced_paths}
         removed: list[str] = []
 

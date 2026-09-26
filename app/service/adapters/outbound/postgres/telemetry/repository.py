@@ -37,7 +37,7 @@ from app.service.domain.job import ExecutionState, InputState
 
 
 class PostgresTrainingTelemetry:
-    """Own optional training telemetry persistence and outbox admission."""
+    """Владеть необязательным хранением телеметрии обучения и приёмом в outbox."""
 
     def __init__(self, database: Database) -> None:
         self.database = database

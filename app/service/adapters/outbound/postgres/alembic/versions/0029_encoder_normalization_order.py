@@ -1,7 +1,7 @@
 """Удалить поколения, несовместимые с Semantic v5 и Flight v22.
 
-Revision ID: 0029
-Revises: 0028
+Идентификатор ревизии: 0029
+Предыдущая ревизия: 0028
 """
 
 from __future__ import annotations
@@ -38,8 +38,9 @@ def upgrade() -> None:
         $migration$
     """))
 
-    # Active runtime не читает metadata, checkpoint, recovery descriptors или
-    # телеметрию поколений без обязательного encoderNormalizationOrder.
+    # Активное исполнение не читает метаданные, контрольную точку,
+    # дескрипторы восстановления или телеметрию поколений без обязательного
+    # поля encoderNormalizationOrder.
     for table in (
         "metrics_outbox",
         "fit_run_summary_artifacts",

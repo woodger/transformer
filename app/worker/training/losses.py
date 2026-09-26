@@ -137,7 +137,7 @@ def combined_loss(
     return_parts: bool = False,
     return_statistics: bool = False,
 ) -> torch.Tensor | MaterializedLossEvaluation | LossEvaluation:
-    """Evaluate one immutable declarative objective for every optimizer step."""
+    """Вычислить один неизменяемый декларативный objective на каждом шаге оптимизатора."""
 
     if return_parts and return_statistics:
         raise ValueError(

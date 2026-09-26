@@ -34,7 +34,7 @@ from app.service.domain.records import (
 
 
 class ExecutionLedgerSlice:
-    """PostgreSQL queue, attempt, and worker-execution operations."""
+    """Операции PostgreSQL для очереди, попытки и выполнения Worker."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
@@ -474,7 +474,7 @@ class ExecutionLedgerSlice:
         attempt_id: str,
         now: float | None = None,
     ) -> bool:
-        """Move the active attempt to CANCELLING under its equality fence."""
+        """Перевести активную attempt в CANCELLING под её equality fence."""
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         requested_at = timestamp_now(now)
         with self.database.transaction() as session:

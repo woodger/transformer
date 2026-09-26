@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class OutputHead(nn.Module):
-    """Produce raw public coordinates and private objective resources."""
+    """Создать необработанные публичные координаты и закрытые ресурсы objective."""
 
     def __init__(
         self,

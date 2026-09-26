@@ -117,7 +117,7 @@ class WorkerArtifactError(AttemptExecutionError):
 
 
 class WorkerArtifactPublisher:
-    """Stage, validate, publish, and clean up worker-owned artifacts."""
+    """Подготовить, проверить, опубликовать и очистить артефакты Worker."""
 
     def __init__(
         self,

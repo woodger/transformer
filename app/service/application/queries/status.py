@@ -14,7 +14,7 @@ from app.service.domain.job import ErrorCode
 
 
 class GetJobStatus:
-    """Read one bounded, consistent durable status snapshot."""
+    """Прочитать один ограниченный согласованный долговременный снимок статуса."""
 
     def __init__(self, store: JobQueryStore) -> None:
         self.store = store

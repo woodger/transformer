@@ -26,7 +26,7 @@ _TERMINAL_EXECUTION_STATES = tuple(
 
 
 class PublishedModelStore:
-    """Own administrative lifecycle changes for published model generations."""
+    """Владеть административными изменениями жизненного цикла опубликованного поколения модели."""
 
     def __init__(self, database: Database) -> None:
         self.database = database

@@ -10,7 +10,7 @@ from app.worker.model.transformer import public_predictions
 
 @dataclass(frozen=True, slots=True)
 class TargetErrorObservation:
-    """Device-resident target errors awaiting one batch scalar transfer."""
+    """Ошибки target на устройстве, ожидающие одного пакетного скалярного переноса."""
 
     targets: tuple[str, ...]
     values: tuple[torch.Tensor, ...]

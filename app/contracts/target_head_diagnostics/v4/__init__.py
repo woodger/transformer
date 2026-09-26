@@ -1,4 +1,3 @@
-"""Контракт Target Head Diagnostics Query v4 в области владельца."""
 
 from app.contracts.target_head_diagnostics.v4.codec import (
     TargetHeadDiagnosticsContractError,

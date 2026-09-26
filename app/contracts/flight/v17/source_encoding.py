@@ -15,10 +15,10 @@ def canonical_source_encoding(
     *,
     feature_dim: int,
 ) -> JsonObject:
-    """Validate the only v17 input layout and derive all physical positions.
+    """Проверить единственную схему входа v17 и вывести физические позиции.
 
-    `indexedFeatureBlocks` is revision-bound. Its former single-value
-    discriminator and accumulated positions were redundant input fields.
+    `indexedFeatureBlocks` привязан к ревизии. Его прежний одноэлементный
+    дискриминатор и накопленные позиции были избыточными входными полями.
     """
 
     if not isinstance(value, Mapping):

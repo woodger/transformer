@@ -76,7 +76,7 @@ class _RecoveryStore(_InputStore, Protocol):
 
 
 class WorkerPlanBuilder:
-    """Validate durable artifacts and render one trusted CLI execution plan."""
+    """Проверить долговременные артефакты и сформировать один доверенный CLI-план выполнения."""
 
     def __init__(
         self,
@@ -528,7 +528,7 @@ class WorkerPlanBuilder:
         job: ExecutionJobRecord,
         start_ordinal: int,
     ) -> tuple[ExecutionInput, ...]:
-        """Validate the newly visible contiguous suffix for one attempt."""
+        """Проверить новый видимый непрерывный suffix для одной attempt."""
 
         if start_ordinal < 0 or start_ordinal > job.input_frame_count:
             raise ValueError("invalid streaming input ordinal")

@@ -113,7 +113,7 @@ class MetricsDocumentSink(Protocol):
 
 
 class TrainingTelemetryRepository(Protocol):
-    """Persist optional training observations outside job/model lifecycle."""
+    """Сохранять необязательные наблюдения обучения вне жизненного цикла job и модели."""
 
     def record_epoch_interval(
         self,

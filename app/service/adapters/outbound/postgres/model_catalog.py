@@ -29,7 +29,7 @@ _CURSOR_KEY_STATE = "model_catalog_cursor_hmac_v3"
 
 
 class PostgresModelCatalogStore:
-    """Owner-scoped read model for the public model catalog."""
+    """Модель чтения публичного каталога модели в области владельца."""
 
     def __init__(self, database: Database) -> None:
         self._database = database

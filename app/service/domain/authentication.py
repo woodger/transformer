@@ -6,7 +6,7 @@ from typing import TypeGuard
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedPrincipal:
-    """Stable owner identity established at the service boundary."""
+    """Стабильный идентификатор владельца, установленный на границе сервиса."""
 
     owner_subject: str
 

@@ -14,11 +14,11 @@ def resolved_semantic_digests(
     data_contract_sha256: str,
     model_config: ModelConfig,
 ) -> JsonObject:
-    """Выпустить принадлежащую provider-у identity определения модели.
+    """Выпустить принадлежащий поставщику идентификатор определения модели.
 
-    Identity target-а и objective — межпроектные D1-значения. Определение
-    модели дополнительно связывает revision реализации и resolved
-    configuration Transformer, поэтому его preimage вычисляет только provider.
+    Идентификаторы target и objective — межпроектные значения D1. Определение
+    модели дополнительно связывает ревизию реализации и разрешённую
+    конфигурацию Transformer, поэтому его предобраз вычисляет только поставщик.
     """
 
     if not _sha256(data_contract_sha256):

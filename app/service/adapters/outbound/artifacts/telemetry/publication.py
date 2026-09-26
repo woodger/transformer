@@ -49,7 +49,7 @@ class _TelemetrySpool(Protocol):
 
 
 class FitRunTelemetryPublisher:
-    """Finalize optional run-owned telemetry after core model publication."""
+    """Завершить необязательную телеметрию запуска после публикации ядра модели."""
 
     def __init__(
         self,

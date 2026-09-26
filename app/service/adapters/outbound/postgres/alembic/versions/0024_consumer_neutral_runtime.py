@@ -1,7 +1,7 @@
-"""Adopt the clean-cut consumer-neutral runtime contracts.
+"""Принять чистый переход контрактов среды выполнения без привязки к вызывающей стороне.
 
-Revision ID: 0024
-Revises: 0023
+Идентификатор ревизии: 0024
+Предыдущая ревизия: 0023
 """
 
 from __future__ import annotations

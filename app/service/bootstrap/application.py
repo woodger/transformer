@@ -103,10 +103,10 @@ class _LockRuntime(Protocol):
 
 
 class FlightApplication:
-    """Own service startup reconciliation, process runtime, and shutdown.
+    """Владеть согласованием при запуске, средой выполнения и остановкой сервиса.
 
-    A built instance holds the spool and recovery locks until shutdown has
-    finished stopping every service-owned background component.
+    Собранный экземпляр удерживает блокировки spool и восстановления, пока
+    остановка не завершит все фоновые компоненты, принадлежащие сервису.
     """
 
     def __init__(
@@ -596,8 +596,7 @@ class FlightApplication:
         try:
             # Закрываем границу захвата очереди перед остановкой RPC. Запуск,
             # уже пересекающийся с этой точкой, всё ещё может зафиксировать QUEUED,
-            # но не может стать RUNNING и потому безопасен для восстановления при
-            # следующем запуске сервиса.
+            # но не может стать RUNNING до терминализации при следующем запуске.
             try:
                 stop_claiming = getattr(self.worker, "stop_claiming", None)
                 if stop_claiming is not None:
@@ -659,7 +658,7 @@ def _cleanup_runtime(
     worker_timeout: float,
     maintenance_timeout: float,
 ) -> list[BaseException]:
-    """Stop partially or fully constructed runtime components in safe order."""
+    """Остановить частично или полностью созданные компоненты в безопасном порядке."""
     errors: list[BaseException] = []
     operations: tuple[Callable[[], None] | None, ...] = (
         None if server is None else server.shutdown,

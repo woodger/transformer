@@ -41,7 +41,7 @@ class _MappedRecord(Protocol):
 
 
 class LedgerSessions:
-    """Concrete PostgreSQL session scopes shared by ledger use-case slices."""
+    """Конкретные области PostgreSQL-сеансов, общие для срезов сценариев журнала."""
 
     def __init__(self, database: Database) -> None:
         self.database = database

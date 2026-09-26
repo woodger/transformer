@@ -66,7 +66,7 @@ class _TelemetryClient(Protocol):
 
 
 class OpenSearchTrainingTelemetrySource:
-    """Read the immutable metrics projection behind a neutral query port."""
+    """Читать неизменяемую проекцию метрик за нейтральным портом запросов."""
 
     def __init__(
         self,

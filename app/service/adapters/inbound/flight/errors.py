@@ -34,12 +34,12 @@ class _ExceptionFactory(Protocol):
 
 
 def to_flight_exception(error: ServiceError) -> Exception:
-    """Map service failures to the closest status exposed by PyArrow 24.
+    """Сопоставить сбои сервиса с ближайшим статусом, доступным в PyArrow 24.
 
-    PyArrow has dedicated Flight exceptions for authentication, authorization,
-    cancellation, availability and internal failures. Arrow status exceptions
-    provide the remaining public mappings (Invalid, KeyError and Capacity).
-    The stable application code is kept in every error message.
+    PyArrow имеет выделенные Flight-исключения для аутентификации, авторизации,
+    отмены, недоступности и внутренних сбоев. Остальные публичные соответствия
+    дают статус-исключения Arrow (Invalid, KeyError и Capacity). В каждом
+    сообщении сохраняется стабильный код приложения.
     """
     text = error.safe_text()
     if error.detail is not None:
@@ -84,6 +84,6 @@ def _flight_exception(
     message: str,
     extra_info: bytes = b"",
 ) -> Exception:
-    """Construct a runtime Flight exception missing from PyArrow's stubs."""
+    """Создать Flight-исключение среды выполнения, отсутствующее в декларациях PyArrow."""
     factory = cast(_ExceptionFactory, vars(flight)[name])
     return factory(message, extra_info)

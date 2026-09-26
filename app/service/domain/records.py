@@ -10,7 +10,7 @@ from app.service.domain.model import ModelLifecycleState
 
 @dataclass(frozen=True, slots=True)
 class ExecutionJobRecord:
-    """Immutable job projection required by execution orchestration."""
+    """Неизменяемая проекция job, необходимая оркестрации выполнения."""
 
     job_id: str
     owner_subject: str

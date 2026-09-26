@@ -39,7 +39,7 @@ _CHECKPOINT_METADATA_FIELDS = (
 
 
 class CatalogModelMetadataVerifier:
-    """Validate the complete catalog projection before artifact I/O."""
+    """Проверить полную проекцию каталога до ввода-вывода артефакта."""
 
     def verify(self, model: PublishedModelRecord) -> None:
         model_detail(model)

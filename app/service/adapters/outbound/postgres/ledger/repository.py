@@ -92,7 +92,7 @@ _JOB_IDENTITY_CONSTRAINTS = frozenset({
 
 
 class Ledger:
-    """PostgreSQL source of truth for Flight jobs and published artifacts."""
+    """Источник истины PostgreSQL для Flight-job и опубликованных артефактов."""
 
     def __init__(
         self,
@@ -126,7 +126,7 @@ class Ledger:
 
     @contextmanager
     def connection(self) -> Generator[Session]:
-        """Expose a read-only-by-default ORM session for diagnostics."""
+        """Предоставить ORM-сеанс только для чтения по умолчанию для диагностики."""
         with self.database.session() as session:
             yield session
 
@@ -335,7 +335,7 @@ class Ledger:
         *,
         connection: Session,
     ) -> None:
-        """Serialize creates that use the same client-generated identity."""
+        """Сериализовать create, использующие одну client-generated identity."""
 
         job_id = _canonical_uuid(job_id, "job_id")
         _advisory_lock(connection, "job-identity", job_id)

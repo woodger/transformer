@@ -56,7 +56,7 @@ class _PrefetchError:
 
 
 class BatchPrefetcher:
-    """Prepare at most one closed-input batch ahead of the trainer."""
+    """Подготовить перед Trainer не более одного пакета закрытого входа."""
 
     def __init__(self, batches: TrainingBatches) -> None:
         self._batches = iter(batches)

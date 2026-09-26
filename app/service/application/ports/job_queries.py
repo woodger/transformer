@@ -7,7 +7,7 @@ from app.service.domain.records import StatusSnapshot
 
 
 class JobQueryStore(Protocol):
-    """Read bounded job projections for application queries."""
+    """Читать ограниченные проекции job для запросов приложения."""
 
     def get_status_snapshot_record(
         self,

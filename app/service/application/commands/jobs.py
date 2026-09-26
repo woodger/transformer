@@ -41,7 +41,7 @@ from app.service.domain.records import PublishedModelRecord
 
 
 class CreateJobAction:
-    """Create a client-identified durable job in one transaction."""
+    """Создать долговременную job с идентификатором вызывающей стороны в одной транзакции."""
 
     def __init__(
         self,
@@ -291,7 +291,7 @@ def _job_diagnostics(training: TrainConfig | None) -> JsonObject:
 
 
 class AcquireJobAction:
-    """Transfer external ownership and advance the server fence."""
+    """Передать внешнее владение и сдвинуть server fence."""
 
     def __init__(
         self,
@@ -325,7 +325,7 @@ class AcquireJobAction:
 
 
 class InputCloseAction:
-    """Commit EOF and the immutable complete input summary."""
+    """Зафиксировать EOF и неизменяемую полную сводку входа."""
 
     def __init__(
         self,
@@ -379,7 +379,7 @@ class InputCloseAction:
 
 
 class CancelJobAction:
-    """Cancel under the current external ownership fence."""
+    """Отменить под текущим fence внешнего владения."""
 
     def __init__(
         self,

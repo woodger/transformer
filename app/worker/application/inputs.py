@@ -19,7 +19,7 @@ from app.worker.application.events import WorkerEventEmitter
 
 
 class DurableInputStream:
-    """Consume the immutable startup snapshot and ordered control channel."""
+    """Потреблять неизменяемый снимок запуска и упорядоченный канал управления."""
 
     def __init__(
         self,

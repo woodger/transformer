@@ -54,7 +54,7 @@ class WorkerSubprocessError(AttemptExecutionError):
 
 
 class _WorkerLogPersistenceError(WorkerSubprocessError):
-    """A secondary diagnostics failure that must not mask Worker output."""
+    """Вторичный сбой диагностики, который не должен маскировать вывод Worker."""
 
     pass
 
@@ -144,7 +144,7 @@ StreamingInputProvider = Callable[
 
 
 class WorkerSubprocessRunner:
-    """Own one worker subprocess from Popen through complete process reap."""
+    """Владеть одним дочерним процессом Worker от Popen до полного ожидания процесса."""
 
     def __init__(
         self,
@@ -878,7 +878,7 @@ class WorkerSubprocessRunner:
         process: subprocess.Popen[bytes],
         threads: Sequence[threading.Thread],
     ) -> None:
-        """Kill and reap a child if worker setup fails after Popen."""
+        """Убить и дождаться дочернего процесса, если настройка Worker сбоит после Popen."""
         self._signal_process_group(process, signal.SIGKILL)
         for stream in (process.stdin, process.stdout, process.stderr):
             try:

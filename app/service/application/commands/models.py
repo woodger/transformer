@@ -5,7 +5,7 @@ from app.service.domain.records import ModelLifecycleRecord
 
 
 class ModelAdministration:
-    """Administrative use cases for published model generations."""
+    """Административные сценарии для опубликованных поколений моделей."""
 
     def __init__(self, store: ModelAdministrationStore) -> None:
         self.store = store

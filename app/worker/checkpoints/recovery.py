@@ -27,7 +27,7 @@ def save_training_recovery(
     *,
     metadata: JsonObject,
 ) -> JsonObject:
-    """Atomically persist one complete global-epoch recovery point."""
+    """Атомарно сохранить одну полную точку восстановления глобальной эпохи."""
 
     validate_checkpoint_document(metadata, "checkpoint-metadata")
     payload: dict[str, object] = {
@@ -61,7 +61,7 @@ def load_training_recovery(
     *,
     descriptor: JsonObject,
 ) -> dict[str, object]:
-    """Load a recovery payload and enforce every descriptor fence."""
+    """Загрузить полезную нагрузку восстановления и проверить каждый дескриптор fence."""
 
     loaded: object = torch.load(
         os.path.abspath(os.fspath(path)),

@@ -64,7 +64,7 @@ class UploadOutcome:
 
 
 class InputUploadSession:
-    """Own the transport staging of exactly one authorized DoPut."""
+    """Владеть транспортным буфером ровно одного авторизованного DoPut."""
 
     def __init__(
         self,

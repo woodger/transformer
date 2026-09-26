@@ -90,7 +90,7 @@ _FLIGHT_ERROR = cast(type[Exception], vars(flight)["FlightError"])
 class TransformerFlightServer(
     flight.FlightServerBase,  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage, reportUntypedBaseClass]
 ):
-    """Thin Flight adapter; Torch execution belongs to the worker subprocess."""
+    """Тонкий адаптер Flight; выполнение Torch принадлежит дочернему процессу Worker."""
 
     def __init__(
         self,

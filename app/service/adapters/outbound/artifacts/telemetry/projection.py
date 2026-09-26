@@ -29,7 +29,7 @@ class _TelemetryStorage(Protocol):
 
 
 class TrainingMetricsProjection:
-    """Project one verified immutable fit-run artifact into OpenSearch."""
+    """Спроецировать один проверенный неизменяемый артефакт запуска fit в OpenSearch."""
 
     def __init__(self, storage: _TelemetryStorage) -> None:
         self.storage = storage

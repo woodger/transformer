@@ -7,7 +7,7 @@ from typing import cast
 
 
 class MutationLeaseError(ValueError):
-    """The opaque public lease cannot be resolved to a durable fence."""
+    """Непрозрачная публичная lease не разрешается в durable fence."""
 
 
 def encode_mutation_lease(client_execution_id: str, fencing_token: int) -> str:

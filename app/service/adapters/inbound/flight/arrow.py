@@ -38,7 +38,7 @@ class ArrowStats:
 
 
 class InputBatchValidator:
-    """Validate one compact DoPut payload without expanding logical tensors."""
+    """Проверить один компактный пакет DoPut без развёртывания логических тензоров."""
 
     def __init__(
         self,

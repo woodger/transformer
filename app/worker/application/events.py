@@ -8,7 +8,7 @@ from app.contracts.worker.v20 import encode_event
 
 
 class WorkerEventEmitter:
-    """Write one ordered, identity-bound NDJSON worker event stream."""
+    """Записать один упорядоченный поток событий NDJSON Worker, связанный с идентификатором."""
 
     def __init__(
         self,

@@ -1,4 +1,3 @@
-"""Контракт owner-scoped Training Telemetry Query revision 4."""
 from app.contracts.training_telemetry.v4.codec import (
     TrainingTelemetryContractError,
     validate_training_telemetry_document,

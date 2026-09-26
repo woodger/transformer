@@ -577,6 +577,9 @@ class JobCoordinator:
                         "encoderLayerDiagnosticsModes": [
                             "directComponentPerBatch",
                         ],
+                        # Диагностика явно объявляет тот же набор порядков
+                        # нормализации, что Semantic v5: вызывающая система не
+                        # выводит его из топологии или сохранённого артефакта.
                         "encoderNormalizationOrders": list(
                             ENCODER_NORMALIZATION_ORDERS
                         ),

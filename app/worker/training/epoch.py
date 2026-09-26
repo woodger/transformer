@@ -12,7 +12,7 @@ def _empty_loss_values() -> dict[str, float]:
 
 @dataclass
 class TrainingEpochResult:
-    """Core ML result of one completed global epoch."""
+    """Основной ML-результат одной завершённой глобальной эпохи."""
 
     targets: tuple[str, ...]
     direct_components: tuple[tuple[str, str], ...]
