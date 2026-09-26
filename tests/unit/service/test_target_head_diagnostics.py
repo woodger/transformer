@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v19.constants import ACTIONS
+from app.contracts.flight.v20.constants import ACTIONS
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v2.constants import REPORT_ACTION
-from app.contracts.worker.v17.config import ModelConfig
-from app.contracts.worker.v17.model_definition import resolved_semantic_digests
+from app.contracts.target_head_diagnostics.v3.constants import REPORT_ACTION
+from app.contracts.worker.v18.config import ModelConfig
+from app.contracts.worker.v18.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
@@ -31,7 +31,7 @@ from tests.fixture_documents import semantic_fixture_document
 def _model(
     *,
     target_head: str | None,
-    artifact_format: str = "transformer-target-head-diagnostics-v2",
+    artifact_format: str = "transformer-target-head-diagnostics-v3",
 ) -> PublishedModelRecord:
     fixture = semantic_fixture_document("positive-class-weighted-binary-w28")
     model_contract = fixture["modelContract"]
@@ -53,9 +53,10 @@ def _model(
         "manifestSha256": "a" * 64,
         "progress": {"completedEpochs": 2},
         "diagnostics": {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "gradientInteractions": None,
             "targetHead": target_head,
+            "encoderLayerDiagnostics": None,
         },
     }
     if target_head is not None:
@@ -323,7 +324,7 @@ def test_target_head_diagnostics_hides_model_deleted_while_report_is_built():
         )
 
 
-def test_flight_v19_dispatches_target_head_diagnostics_report():
+def test_flight_v20_dispatches_target_head_diagnostics_report():
     model = _model(target_head="fullCommittedArtifact")
     query = _query(model)
     coordinator = JobCoordinator(

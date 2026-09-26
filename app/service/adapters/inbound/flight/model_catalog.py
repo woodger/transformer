@@ -7,9 +7,9 @@ from app.contracts.checkpoint.v9 import (
     CHECKPOINT_FORMAT as LEGACY_CHECKPOINT_FORMAT,
     validate_checkpoint_document as validate_legacy_checkpoint_document,
 )
-from app.contracts.checkpoint.v10 import validate_checkpoint_document
+from app.contracts.checkpoint.v11 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v5 import validate_catalog_document
+from app.contracts.model_catalog.v6 import validate_catalog_document
 from app.contracts.semantic.v4 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
@@ -283,9 +283,17 @@ def _catalog_diagnostics(value: object) -> JsonObject:
     diagnostics = cast(JsonObject, value)
     if diagnostics.get("schemaVersion") == 1:
         return {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "gradientInteractions": diagnostics["gradientInteractions"],
             "targetHead": None,
+            "encoderLayerDiagnostics": None,
+        }
+    if diagnostics.get("schemaVersion") == 2:
+        return {
+            "schemaVersion": 3,
+            "gradientInteractions": diagnostics["gradientInteractions"],
+            "targetHead": diagnostics["targetHead"],
+            "encoderLayerDiagnostics": None,
         }
     return dict(diagnostics)
 

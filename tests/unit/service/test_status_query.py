@@ -2,10 +2,10 @@ from dataclasses import replace
 
 import pytest
 
-from app.contracts.checkpoint.v10 import RECOVERY_FORMAT
+from app.contracts.checkpoint.v11 import RECOVERY_FORMAT
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v17.model_config import ModelConfig
-from app.contracts.worker.v17.model_definition import resolved_semantic_digests
+from app.contracts.worker.v18.model_config import ModelConfig
+from app.contracts.worker.v18.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.presentation import present_job_status
 from app.service.application.messages.jobs import GetJobStatusQuery
 from app.service.application.queries.status import GetJobStatus

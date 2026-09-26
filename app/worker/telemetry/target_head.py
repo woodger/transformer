@@ -8,19 +8,25 @@ from typing import cast
 
 import torch
 
-from app.contracts.json_types import JsonObject
+from app.contracts.json_types import JsonObject, JsonValue
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v2.constants import (
-    ARTIFACT_FORMAT,
-)
+from app.contracts.target_head_diagnostics.v3.constants import ARTIFACT_FORMAT
 from app.worker.model.transformer import TransformerModel, public_predictions
+
+_ENCODER_GROUP_NAMES = ("attention", "feedForward", "normalization")
 
 
 class TargetHeadDiagnosticsCollector:
     """Собирает best-effort наблюдения выходных головок после каждой эпохи."""
 
-    def __init__(self, model_contract: ModelContract) -> None:
+    def __init__(
+        self,
+        model_contract: ModelContract,
+        *,
+        collect_encoder_learning: bool = False,
+    ) -> None:
         self._model_contract = model_contract
+        self._collect_encoder_learning = collect_encoder_learning
         self._layout = tuple(
             {
                 "targetIdentity": identity,
@@ -44,18 +50,55 @@ class TargetHeadDiagnosticsCollector:
         self._gradient_sums: list[float] = []
         self._gradient_maxima: list[float] = []
         self._gradient_counts: list[int] = []
+        self._encoder_parameter_groups: tuple[
+            tuple[tuple[torch.nn.Parameter, ...], ...],
+            ...,
+        ] = ()
+        self._encoder_gradient_sums: list[list[list[float]]] = []
+        self._encoder_gradient_maxima: list[list[list[float]]] = []
+        self._encoder_gradient_counts: list[list[list[int]]] = []
+        self._encoder_update_sums: list[list[float]] = []
+        self._encoder_update_maxima: list[list[float]] = []
+        self._encoder_update_counts: list[list[int]] = []
+        self._encoder_parameter_snapshots: tuple[
+            tuple[tuple[torch.Tensor, ...], ...],
+            ...,
+        ] | None = None
 
     @property
     def failed(self) -> bool:
         return self._failed
 
-    def begin_epoch(self) -> None:
+    def begin_epoch(self, model: torch.nn.Module | None = None) -> None:
         if self._failed:
             return
         target_width = self._model_contract.target_width
         self._gradient_sums = [0.0] * target_width
         self._gradient_maxima = [0.0] * target_width
         self._gradient_counts = [0] * target_width
+        self._encoder_parameter_snapshots = None
+        if not self._collect_encoder_learning:
+            return
+        if model is None:
+            raise ValueError("encoder diagnostics require a Transformer model")
+        self._encoder_parameter_groups = _encoder_parameter_groups(model)
+        layer_count = len(self._encoder_parameter_groups)
+        component_count = len(self._component_identities)
+        self._encoder_gradient_sums = _new_encoder_gradient_statistics(
+            layer_count,
+            component_count,
+        )
+        self._encoder_gradient_maxima = _new_encoder_gradient_statistics(
+            layer_count,
+            component_count,
+        )
+        self._encoder_gradient_counts = _new_encoder_gradient_counts(
+            layer_count,
+            component_count,
+        )
+        self._encoder_update_sums = _new_encoder_update_statistics(layer_count)
+        self._encoder_update_maxima = _new_encoder_update_statistics(layer_count)
+        self._encoder_update_counts = _new_encoder_update_counts(layer_count)
 
     def observe_component_gradients(
         self,
@@ -102,6 +145,139 @@ class TargetHeadDiagnosticsCollector:
                 value,
             )
             self._gradient_counts[index] += 1
+        if self._collect_encoder_learning:
+            self._observe_encoder_component_gradients(component_losses, model)
+
+    def snapshot_encoder_parameters(self, model: torch.nn.Module) -> None:
+        if self._failed or not self._collect_encoder_learning:
+            return
+        parameter_groups = self._matching_encoder_parameter_groups(model)
+        self._encoder_parameter_snapshots = tuple(
+            tuple(
+                tuple(parameter.detach().clone() for parameter in group)
+                for group in layer_groups
+            )
+            for layer_groups in parameter_groups
+        )
+
+    def observe_encoder_parameter_updates(
+        self,
+        model: torch.nn.Module,
+        *,
+        optimizer_update_applied: bool,
+    ) -> None:
+        if self._failed or not self._collect_encoder_learning:
+            return
+        snapshots = self._encoder_parameter_snapshots
+        self._encoder_parameter_snapshots = None
+        if snapshots is None:
+            raise ValueError("encoder parameter snapshots are unavailable")
+        if not optimizer_update_applied:
+            return
+        parameter_groups = self._matching_encoder_parameter_groups(model)
+        values = _parameter_update_norm_values(parameter_groups, snapshots)
+        value_index = 0
+        for layer_index in range(len(parameter_groups)):
+            for group_index in range(len(_ENCODER_GROUP_NAMES)):
+                value = values[value_index]
+                value_index += 1
+                if not math.isfinite(value):
+                    continue
+                self._encoder_update_sums[layer_index][group_index] += value
+                self._encoder_update_maxima[layer_index][group_index] = max(
+                    self._encoder_update_maxima[layer_index][group_index],
+                    value,
+                )
+                self._encoder_update_counts[layer_index][group_index] += 1
+
+    def _observe_encoder_component_gradients(
+        self,
+        component_losses: Mapping[str, torch.Tensor],
+        model: torch.nn.Module,
+    ) -> None:
+        parameter_groups = self._matching_encoder_parameter_groups(model)
+        parameters = tuple(
+            parameter
+            for layer_groups in parameter_groups
+            for group in layer_groups
+            for parameter in group
+        )
+        for component_index, component_identity in enumerate(
+            self._component_identities
+        ):
+            gradients = torch.autograd.grad(
+                component_losses[component_identity],
+                parameters,
+                retain_graph=True,
+                create_graph=False,
+                allow_unused=True,
+                materialize_grads=False,
+            )
+            values = _gradient_norm_values(parameter_groups, gradients)
+            value_index = 0
+            for layer_index in range(len(parameter_groups)):
+                for group_index in range(len(_ENCODER_GROUP_NAMES)):
+                    value = values[value_index]
+                    value_index += 1
+                    if not math.isfinite(value):
+                        continue
+                    self._encoder_gradient_sums[layer_index][component_index][
+                        group_index
+                    ] += value
+                    self._encoder_gradient_maxima[layer_index][component_index][
+                        group_index
+                    ] = max(
+                        self._encoder_gradient_maxima[layer_index][
+                            component_index
+                        ][group_index],
+                        value,
+                    )
+                    self._encoder_gradient_counts[layer_index][component_index][
+                        group_index
+                    ] += 1
+
+    def _matching_encoder_parameter_groups(
+        self,
+        model: torch.nn.Module,
+    ) -> tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...]:
+        parameter_groups = _encoder_parameter_groups(model)
+        if not _same_parameter_groups(
+            self._encoder_parameter_groups,
+            parameter_groups,
+        ):
+            raise ValueError("encoder parameter groups differ within an epoch")
+        return parameter_groups
+
+    def _encoder_learning_document(self) -> JsonObject:
+        if not self._encoder_parameter_groups:
+            raise ValueError("encoder learning statistics are unavailable")
+        layers: list[JsonObject] = []
+        for layer_index in range(len(self._encoder_parameter_groups)):
+            direct_component_gradients: list[JsonObject] = []
+            for component_index, component_identity in enumerate(
+                self._component_identities
+            ):
+                direct_component_gradients.append({
+                    "directComponentIdentity": component_identity,
+                    "groups": _gradient_groups_document(
+                        self._encoder_gradient_sums[layer_index][component_index],
+                        self._encoder_gradient_maxima[layer_index][component_index],
+                        self._encoder_gradient_counts[layer_index][component_index],
+                    ),
+                })
+            layers.append({
+                "layerIndex": layer_index,
+                "directComponentGradients": cast(
+                    list[JsonValue],
+                    direct_component_gradients,
+                ),
+                "parameterUpdates": _parameter_update_groups_document(
+                    self._encoder_update_sums[layer_index],
+                    self._encoder_update_maxima[layer_index],
+                    self._encoder_update_counts[layer_index],
+                ),
+            })
+        return {"layers": cast(list[JsonValue], layers)}
 
     def observe_post_update(
         self,
@@ -260,15 +436,18 @@ class TargetHeadDiagnosticsCollector:
                     "weightL2AfterEpoch": float(parameters[index]),
                     "biasAfterEpoch": float(parameters[target_width + index]),
                 })
-            self._epochs.append(cast(JsonObject, {
+            observation: JsonObject = {
                 "epoch": epoch,
                 "globalStep": global_step,
                 "representationFlow": _representation_flow(
                     representation_centered_l2_sums,
                     expected_rows,
                 ),
-                "targetHeads": cast(list[object], target_heads),
-            }))
+                "targetHeads": cast(list[JsonValue], target_heads),
+            }
+            if self._collect_encoder_learning:
+                observation["encoderLearning"] = self._encoder_learning_document()
+            self._epochs.append(observation)
         finally:
             transformer.train(was_training)
 
@@ -325,7 +504,7 @@ class TargetHeadDiagnosticsCollector:
             return None
         sample_identity = hashlib.sha256(
             (
-                "target-head-diagnostics-v2\\0"
+                "target-head-diagnostics-v3\\0"
                 + manifest_sha256
                 + "\\0"
                 + str(input_revision)
@@ -347,6 +526,211 @@ class TargetHeadDiagnosticsCollector:
             "coverage": {"completedEpochs": completed_epochs},
             "epochs": [dict(epoch) for epoch in self._epochs],
         }
+
+
+def _encoder_parameter_groups(
+    model: torch.nn.Module,
+) -> tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...]:
+    transformer = _transformer_model(model)
+    layers: list[tuple[tuple[torch.nn.Parameter, ...], ...]] = []
+    for layer in transformer.encoder.layers:
+        if not isinstance(layer, torch.nn.TransformerEncoderLayer):
+            raise ValueError("encoder diagnostics require TransformerEncoderLayer")
+        attention = _trainable_parameters(layer.self_attn)
+        feed_forward = (
+            *_trainable_parameters(layer.linear1),
+            *_trainable_parameters(layer.linear2),
+        )
+        normalization = (
+            *_trainable_parameters(layer.norm1),
+            *_trainable_parameters(layer.norm2),
+        )
+        groups = (attention, feed_forward, normalization)
+        if any(not group for group in groups):
+            raise ValueError("encoder diagnostics parameter group is empty")
+        all_parameters = _trainable_parameters(layer)
+        grouped_parameters = tuple(
+            parameter
+            for group in groups
+            for parameter in group
+        )
+        if (
+            len({id(parameter) for parameter in grouped_parameters})
+            != len(grouped_parameters)
+            or {id(parameter) for parameter in grouped_parameters}
+            != {id(parameter) for parameter in all_parameters}
+        ):
+            raise ValueError("encoder diagnostics parameter groups are incomplete")
+        layers.append(groups)
+    if not layers:
+        raise ValueError("encoder diagnostics require encoder layers")
+    return tuple(layers)
+
+
+def _trainable_parameters(
+    module: torch.nn.Module,
+) -> tuple[torch.nn.Parameter, ...]:
+    return tuple(
+        parameter
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    )
+
+
+def _same_parameter_groups(
+    expected: tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...],
+    actual: tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...],
+) -> bool:
+    return len(expected) == len(actual) and all(
+        len(expected_layer) == len(actual_layer)
+        and all(
+            len(expected_group) == len(actual_group)
+            and all(
+                expected_parameter is actual_parameter
+                for expected_parameter, actual_parameter in zip(
+                    expected_group,
+                    actual_group,
+                    strict=True,
+                )
+            )
+            for expected_group, actual_group in zip(
+                expected_layer,
+                actual_layer,
+                strict=True,
+            )
+        )
+        for expected_layer, actual_layer in zip(expected, actual, strict=True)
+    )
+
+
+def _gradient_norm_values(
+    parameter_groups: tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...],
+    gradients: tuple[torch.Tensor | None, ...],
+) -> list[float]:
+    gradient_index = 0
+    norms: list[torch.Tensor] = []
+    for layer_groups in parameter_groups:
+        for group in layer_groups:
+            group_gradients = gradients[
+                gradient_index : gradient_index + len(group)
+            ]
+            gradient_index += len(group)
+            norms.append(_gradient_l2(group_gradients, group[0]))
+    if gradient_index != len(gradients):
+        raise ValueError("encoder gradient count differs from parameter groups")
+    return _host_values(norms)
+
+
+def _gradient_l2(
+    gradients: tuple[torch.Tensor | None, ...],
+    reference: torch.nn.Parameter,
+) -> torch.Tensor:
+    squares = [
+        gradient.detach().float().square().sum()
+        for gradient in gradients
+        if gradient is not None
+    ]
+    if not squares:
+        return reference.detach().new_zeros((), dtype=torch.float32)
+    return torch.stack(squares).sum().sqrt()
+
+
+def _parameter_update_norm_values(
+    parameter_groups: tuple[tuple[tuple[torch.nn.Parameter, ...], ...], ...],
+    snapshots: tuple[tuple[tuple[torch.Tensor, ...], ...], ...],
+) -> list[float]:
+    if len(parameter_groups) != len(snapshots):
+        raise ValueError("encoder parameter snapshots differ from parameter groups")
+    norms: list[torch.Tensor] = []
+    for layer_groups, layer_snapshots in zip(
+        parameter_groups,
+        snapshots,
+        strict=True,
+    ):
+        if len(layer_groups) != len(layer_snapshots):
+            raise ValueError("encoder parameter snapshots differ from parameter groups")
+        for group, group_snapshots in zip(
+            layer_groups,
+            layer_snapshots,
+            strict=True,
+        ):
+            if len(group) != len(group_snapshots):
+                raise ValueError("encoder parameter snapshots differ from parameter groups")
+            squares = [
+                (parameter.detach().float() - snapshot.float()).square().sum()
+                for parameter, snapshot in zip(group, group_snapshots, strict=True)
+            ]
+            norms.append(torch.stack(squares).sum().sqrt())
+    return _host_values(norms)
+
+
+def _host_values(values: list[torch.Tensor]) -> list[float]:
+    return cast(
+        list[float],
+        torch.stack(values).detach().cpu().tolist(),  # pyright: ignore[reportUnknownMemberType]
+    )
+
+
+def _new_encoder_gradient_statistics(
+    layer_count: int,
+    component_count: int,
+) -> list[list[list[float]]]:
+    return [
+        [[0.0] * len(_ENCODER_GROUP_NAMES) for _ in range(component_count)]
+        for _ in range(layer_count)
+    ]
+
+
+def _new_encoder_gradient_counts(
+    layer_count: int,
+    component_count: int,
+) -> list[list[list[int]]]:
+    return [
+        [[0] * len(_ENCODER_GROUP_NAMES) for _ in range(component_count)]
+        for _ in range(layer_count)
+    ]
+
+
+def _new_encoder_update_statistics(layer_count: int) -> list[list[float]]:
+    return [[0.0] * len(_ENCODER_GROUP_NAMES) for _ in range(layer_count)]
+
+
+def _new_encoder_update_counts(layer_count: int) -> list[list[int]]:
+    return [[0] * len(_ENCODER_GROUP_NAMES) for _ in range(layer_count)]
+
+
+def _gradient_groups_document(
+    sums: list[float],
+    maxima: list[float],
+    counts: list[int],
+) -> JsonObject:
+    return {
+        name: {
+            "l2Mean": None if count == 0 else sums[index] / count,
+            "l2Maximum": None if count == 0 else maxima[index],
+            "finiteBatchCount": count,
+        }
+        for index, (name, count) in enumerate(
+            zip(_ENCODER_GROUP_NAMES, counts, strict=True)
+        )
+    }
+
+
+def _parameter_update_groups_document(
+    sums: list[float],
+    maxima: list[float],
+    counts: list[int],
+) -> JsonObject:
+    return {
+        name: {
+            "l2Mean": None if count == 0 else sums[index] / count,
+            "l2Maximum": None if count == 0 else maxima[index],
+            "appliedBatchCount": count,
+        }
+        for index, (name, count) in enumerate(
+            zip(_ENCODER_GROUP_NAMES, counts, strict=True)
+        )
+    }
 
 
 def _target_head(

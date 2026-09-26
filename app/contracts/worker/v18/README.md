@@ -1,7 +1,7 @@
 # Процессный контракт Transformer Worker v18
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленный внутренний протокол между сервисом и Worker для
-> Flight v20. Он не активирует runtime и не является публичным API.
+> ДОКУМЕНТ КОНТРАКТА. Текущий внутренний протокол между сервисом и Worker для
+> Flight v20. Он не является публичным API.
 
 Worker v18 получает `diagnostics` v3 из checkpoint/recovery v11. Режим
 `encoderLayerDiagnostics: "directComponentPerBatch"` допустим только вместе с

@@ -1,8 +1,7 @@
 # Диагностика обучения слоёв encoder
 
-> Тип: проектная записка. Предложение описывает подготовленный контракт для
-> локализации сжатия представлений в encoder. Оно не меняет действующую
-> исполняемую систему Flight v19.
+> Тип: проектная записка. Решение описывает реализованную диагностику
+> локализации сжатия представлений в encoder для Flight v20.
 
 ## Контекст
 
@@ -95,7 +94,7 @@ objective, auxiliary components, gradient clipping, Adam и weight decay. Она
 
 ## Версионная матрица
 
-| Область | Подготовленная версия | Изменение |
+| Область | Версия | Изменение |
 | --- | --- | --- |
 | Target Head Diagnostics | v3 | Наблюдения обучения слоёв и действие запроса. |
 | Worker | v18 | Новый неизменяемый diagnostics artifact. |
@@ -103,7 +102,7 @@ objective, auxiliary components, gradient clipping, Adam и weight decay. Она
 | Model Catalog | v6 | Отображение configuration v3 в detail. |
 | Flight | v20 | Закрытый набор действий с diagnostics v3 и Catalog v6. |
 
-Semantic v4, Metrics v9, Training Telemetry v4, Model Topology v2, схема
+Semantic v4, Metrics v10, Training Telemetry v4, Model Topology v2, схема
 PostgreSQL, схемы Arrow и логическое восстановление `indexedFeatureBlocks` не
 меняются. Новая миграция PostgreSQL не нужна.
 
@@ -120,9 +119,8 @@ PostgreSQL, схемы Arrow и логическое восстановлени�
 Если градиенты и updates не объяснят сжатие, следующая отдельная задача —
 границы внутри encoder block, а не изменение objective или class weighting.
 
-## Следующий этап
+## Результат
 
-Сначала принимается подготовленный пакет с Target Head Diagnostics v3, Worker v18,
-checkpoint/recovery v11, Model Catalog v6 и Flight v20. Только после точного
-межпроектной проверки отдельная реализация может начать собирать observations;
-до этого действующий Flight v19 и опубликованные v2 artifacts не меняются.
+Target Head Diagnostics v3, Worker v18, checkpoint/recovery v11, Model Catalog
+v6 и Flight v20 реализованы единым переходом. Предыдущий Flight v19 и
+опубликованные v2 artifacts не обслуживаются активной runtime-границей.

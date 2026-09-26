@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v17 import validate_document
+from app.contracts.worker.v18 import validate_document
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.losses import combined_loss
@@ -30,8 +30,11 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
     )
     features = torch.randn(4, 2, 8)
     targets = torch.tensor([[1.0], [0.0], [0.0], [1.0]])
-    collector = TargetHeadDiagnosticsCollector(contract)
-    collector.begin_epoch()
+    collector = TargetHeadDiagnosticsCollector(
+        contract,
+        collect_encoder_learning=True,
+    )
+    collector.begin_epoch(model)
 
     evaluation = combined_loss(
         model(features),
@@ -56,7 +59,12 @@ def test_target_head_diagnostics_collects_direct_gradient_and_corrected_predicti
     )
     evaluation.loss.backward()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    collector.snapshot_encoder_parameters(model)
     optimizer.step()
+    collector.observe_encoder_parameter_updates(
+        model,
+        optimizer_update_applied=True,
+    )
 
     model.train()
     collector.observe_post_update(

@@ -10,26 +10,27 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v10 import (
+from app.contracts.checkpoint.v11 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v19.arrow import validate_prediction_file
+from app.contracts.flight.v20.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v2.constants import (
+from app.contracts.target_head_diagnostics.v3.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v17 import (
+from app.contracts.worker.v18 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v17.config import ModelConfig, TrainConfig
-from app.contracts.worker.v17.diagnostics import (
+from app.contracts.worker.v18.config import ModelConfig, TrainConfig
+from app.contracts.worker.v18.diagnostics import (
+    ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
     DiagnosticsConfig,
 )
-from app.contracts.worker.v17.model_definition import resolved_semantic_digests
+from app.contracts.worker.v18.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -504,6 +505,9 @@ class WorkerArtifactPublisher:
         checkpoint_metadata: JsonObject,
         artifact: JsonObject,
     ) -> None:
+        training_config = job.training_config
+        if training_config is None:
+            raise ValueError("target head diagnostics training configuration is missing")
         progress = _object(
             checkpoint_metadata.get("progress"),
             "target head diagnostics checkpoint progress",
@@ -547,6 +551,23 @@ class WorkerArtifactPublisher:
         ]
         if artifact.get("layout") != expected_layout:
             raise ValueError("target head diagnostics layout differs from model")
+        encoder_learning_enabled = (
+            training_config.diagnostics.encoder_layer_diagnostics
+            == ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH
+        )
+        raw_epochs = artifact.get("epochs")
+        if not isinstance(raw_epochs, list) or not all(
+            isinstance(epoch, dict) for epoch in raw_epochs
+        ):
+            raise ValueError("target head diagnostics epochs are invalid")
+        epochs = cast(list[dict[object, object]], raw_epochs)
+        if any(
+            ("encoderLearning" in epoch) != encoder_learning_enabled
+            for epoch in epochs
+        ):
+            raise ValueError(
+                "encoder learning diagnostics differ from fit job"
+            )
 
     def _drop_target_head_diagnostics(
         self,

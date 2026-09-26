@@ -4,7 +4,7 @@ import os
 from typing import BinaryIO
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v17 import validate_document
+from app.contracts.worker.v18 import validate_document
 from app.worker.application.artifacts import (
     artifact_document,
     validate_workspace,
@@ -19,7 +19,7 @@ from app.worker.application.predict import execute_predict
 
 
 class WorkerApplication:
-    """Выполнить один durable-streaming command manifest Worker v17."""
+    """Выполнить один durable-streaming command manifest Worker v18."""
 
     def __init__(
         self,

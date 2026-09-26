@@ -15,12 +15,13 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v17.config import (
+from app.contracts.worker.v18.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v17.diagnostics import (
+from app.contracts.worker.v18.diagnostics import (
+    ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.worker.checkpoints.model import save_model
@@ -115,7 +116,13 @@ class Trainer:
             None
             if train_config.diagnostics.target_head
             != TARGET_HEAD_FULL_COMMITTED_ARTIFACT
-            else TargetHeadDiagnosticsCollector(model_contract)
+            else TargetHeadDiagnosticsCollector(
+                model_contract,
+                collect_encoder_learning=(
+                    train_config.diagnostics.encoder_layer_diagnostics
+                    == ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH
+                ),
+            )
         )
 
         self.use_amp = bool(train_config.use_amp and device.type == "cuda")
@@ -301,10 +308,14 @@ class Trainer:
                         self.model.parameters(), GRAD_CLIP_NORM
                     )
                     updates_before = self._optimizer_updates_applied_total
+                    self._snapshot_encoder_layer_parameters()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     updates_after = self._optimizer_updates_applied_total
                     optimizer_update_applied = updates_after > updates_before
+                    self._record_encoder_layer_parameter_updates(
+                        optimizer_update_applied,
+                    )
                     try:
                         materialized_statistics = (
                             loss_evaluation.statistics.materialize(
@@ -435,8 +446,12 @@ class Trainer:
 
     def _begin_target_head_diagnostics_epoch(self) -> None:
         collector = self._target_head_diagnostics
-        if collector is not None:
-            collector.begin_epoch()
+        if collector is None:
+            return
+        try:
+            collector.begin_epoch(self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
 
     def _record_target_head_component_gradients(
         self,
@@ -447,6 +462,30 @@ class Trainer:
             return
         try:
             collector.observe_component_gradients(components, self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def _snapshot_encoder_layer_parameters(self) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.snapshot_encoder_parameters(self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def _record_encoder_layer_parameter_updates(
+        self,
+        optimizer_update_applied: bool,
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_encoder_parameter_updates(
+                self.model,
+                optimizer_update_applied=optimizer_update_applied,
+            )
         except Exception as exc:
             self._disable_target_head_diagnostics(collector, exc)
 

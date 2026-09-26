@@ -10,12 +10,13 @@ from typing import cast
 import rfc8785
 
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v2.constants import (
+from app.contracts.target_head_diagnostics.v3.constants import (
     ARTIFACT_FORMAT,
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v17 import validate_document
-from app.contracts.worker.v17.diagnostics import (
+from app.contracts.worker.v18 import validate_document
+from app.contracts.worker.v18.diagnostics import (
+    ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.service.application.messages.target_head_diagnostics import (
@@ -294,6 +295,7 @@ def _validate_artifact(
     ]
     if artifact.get("layout") != expected_layout:
         raise ValueError("target head diagnostics layout differs from model")
+    encoder_learning_enabled = _encoder_learning_enabled(metadata)
     progress = _object(metadata, "progress")
     completed_epochs = _positive_integer(
         progress.get("completedEpochs"),
@@ -326,6 +328,15 @@ def _validate_artifact(
             raise ValueError("target head diagnostics target layout differs")
         for target_head in target_heads:
             _validate_target_head(target_head, sample_rows)
+        _validate_encoder_learning(
+            epoch.get("encoderLearning"),
+            enabled=encoder_learning_enabled,
+            expected_encoder_layers=expected_encoder_layers,
+            expected_component_identities=tuple(
+                str(item["directComponentIdentity"])
+                for item in expected_layout
+            ),
+        )
 
 
 def _validate_target_head(
@@ -353,6 +364,84 @@ def _validate_target_head(
         "target head weight norm",
     )
     _finite(target_head.get("biasAfterEpoch"), "target head bias")
+
+
+def _validate_encoder_learning(
+    value: object,
+    *,
+    enabled: bool,
+    expected_encoder_layers: int,
+    expected_component_identities: tuple[str, ...],
+) -> None:
+    if not enabled:
+        if value is not None:
+            raise ValueError("encoder learning differs from diagnostics configuration")
+        return
+    if not isinstance(value, dict):
+        raise ValueError("encoder learning is unavailable")
+    layers = _array(cast(JsonObject, value), "layers")
+    if len(layers) != expected_encoder_layers:
+        raise ValueError("encoder learning layer count differs")
+    for layer_index, layer in enumerate(layers):
+        if _nonnegative_integer(layer.get("layerIndex"), "encoder learning layer index") != layer_index:
+            raise ValueError("encoder learning layer order differs")
+        gradients = _array(layer, "directComponentGradients")
+        if len(gradients) != len(expected_component_identities):
+            raise ValueError("encoder learning component count differs")
+        for component, expected_identity in zip(
+            gradients,
+            expected_component_identities,
+            strict=True,
+        ):
+            if component.get("directComponentIdentity") != expected_identity:
+                raise ValueError("encoder learning component order differs")
+            _validate_gradient_groups(_object(component, "groups"))
+        _validate_parameter_update_groups(
+            _object(layer, "parameterUpdates")
+        )
+
+
+def _validate_gradient_groups(groups: Mapping[str, JsonValue]) -> None:
+    if set(groups) != {"attention", "feedForward", "normalization"}:
+        raise ValueError("encoder gradient groups are invalid")
+    for name in ("attention", "feedForward", "normalization"):
+        _validate_statistics(
+            _object(groups, name),
+            count_name="finiteBatchCount",
+            label=f"encoder {name} gradient",
+        )
+
+
+def _validate_parameter_update_groups(
+    groups: Mapping[str, JsonValue],
+) -> None:
+    if set(groups) != {"attention", "feedForward", "normalization"}:
+        raise ValueError("encoder parameter update groups are invalid")
+    for name in ("attention", "feedForward", "normalization"):
+        _validate_statistics(
+            _object(groups, name),
+            count_name="appliedBatchCount",
+            label=f"encoder {name} update",
+        )
+
+
+def _validate_statistics(
+    statistics: Mapping[str, JsonValue],
+    *,
+    count_name: str,
+    label: str,
+) -> None:
+    count = _nonnegative_integer(statistics.get(count_name), count_name)
+    mean = statistics.get("l2Mean")
+    maximum = statistics.get("l2Maximum")
+    if count == 0:
+        if mean is not None or maximum is not None:
+            raise ValueError(f"empty {label} has values")
+        return
+    mean_value = _nonnegative_finite(mean, f"{label} mean")
+    maximum_value = _nonnegative_finite(maximum, f"{label} maximum")
+    if mean_value > maximum_value:
+        raise ValueError(f"{label} mean exceeds maximum")
 
 
 def _validate_representation_flow(
@@ -416,6 +505,15 @@ def _target_head_configured(metadata: Mapping[str, JsonValue]) -> bool:
         isinstance(diagnostics, Mapping)
         and diagnostics.get("targetHead")
         == TARGET_HEAD_FULL_COMMITTED_ARTIFACT
+    )
+
+
+def _encoder_learning_enabled(metadata: Mapping[str, JsonValue]) -> bool:
+    diagnostics = metadata.get("diagnostics")
+    return (
+        isinstance(diagnostics, Mapping)
+        and diagnostics.get("encoderLayerDiagnostics")
+        == ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH
     )
 
 

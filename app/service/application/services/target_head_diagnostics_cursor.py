@@ -13,8 +13,8 @@ class TargetHeadDiagnosticsCursorError(ValueError):
         self.reason = reason
 
 
-_PREFIX = "thd2."
-_REVISION = 2
+_PREFIX = "thd3."
+_REVISION = 3
 
 
 def encode_target_head_diagnostics_cursor(
@@ -46,7 +46,7 @@ def encode_target_head_diagnostics_cursor(
     ).encode("utf-8")
     signature = hmac.digest(
         key,
-        b"target-head-diagnostics-v2\0"
+        b"target-head-diagnostics-v3\0"
         + owner_subject.encode("utf-8")
         + b"\0"
         + payload,
@@ -82,7 +82,7 @@ def decode_target_head_diagnostics_cursor(
         payload, signature = envelope[:-32], envelope[-32:]
         expected = hmac.digest(
             key,
-            b"target-head-diagnostics-v2\0"
+            b"target-head-diagnostics-v3\0"
             + owner_subject.encode("utf-8")
             + b"\0"
             + payload,

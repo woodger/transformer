@@ -22,15 +22,15 @@ Torch, CUDA или runtime Flight. Локального пути исполне�
 
 ```text
 app/contracts/semantic/v4          semantic target/objective language
-app/contracts/flight/v19           public Flight workflow
-app/contracts/model_catalog/v5     owner-scoped model discovery/detail
+app/contracts/flight/v20           public Flight workflow
+app/contracts/model_catalog/v6     owner-scoped model discovery/detail
 app/contracts/model_topology/v2    owner-scoped public model topology
 app/contracts/training_telemetry/v4 owner-scoped telemetry report
-app/contracts/target_head_diagnostics/v2 owner-scoped target head diagnostics
-app/contracts/worker/v17           internal service-to-worker protocol
-app/contracts/checkpoint/v10       internal checkpoint/recovery metadata
-app/contracts/metrics/v9           internal epoch metrics/OpenSearch points
-app/contracts/metrics/fit_run/v9   internal terminal run summary
+app/contracts/target_head_diagnostics/v3 owner-scoped target head diagnostics
+app/contracts/worker/v18           internal service-to-worker protocol
+app/contracts/checkpoint/v11       internal checkpoint/recovery metadata
+app/contracts/metrics/v10          internal epoch metrics/OpenSearch points
+app/contracts/metrics/fit_run/v10  internal terminal run summary
 ```
 
 ## Сервис Flight
@@ -54,7 +54,7 @@ Domain владеет состояниями job, errors и правилами l
 владеют PostgreSQL, storage artifacts, supervision worker process, inventory
 CUDA и OpenSearch.
 
-Flight v19 принимает предоставленные вызывающей системой data binding, semantic
+Flight v20 принимает предоставленные вызывающей системой data binding, semantic
 model intent, training intent и запрошенную initialization. Он выпускает
 identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
 реализация модели, operational fences, schema fingerprints, версии
@@ -63,7 +63,7 @@ worker/checkpoint и детали artifacts — не пересекают пуб
 ## Worker и tensor data plane
 
 Один process Worker исполняет один принадлежащий service attempt. Он получает
-immutable manifest Worker v17, записывает только artifacts workspace attempt и
+immutable manifest Worker v18, записывает только artifacts workspace attempt и
 возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
 identity.
 
@@ -87,10 +87,10 @@ inputs, attempt artifacts, recovery artifacts, checkpoints моделей и в�
 artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
 registry или состояния job.
 
-Model Catalog Query v5 читает owner-scoped state registry. Model Topology Query
+Model Catalog Query v6 читает owner-scoped state registry. Model Topology Query
 v2 строит browser-safe статическую projection из metadata generation. Training
 Telemetry Query v4 валидирует полную projection относительно принадлежащих
-checkpoint-у metadata модели до раскрытия. Target Head Diagnostics Query v2
+checkpoint-у metadata модели до раскрытия. Target Head Diagnostics Query v3
 раскрывает opt-in наблюдения выходных головок, сохранённые Worker после эпох.
 Ни один query не позволяет вызывающей системе получить filesystem paths, bytes
 checkpoint-а или topology OpenSearch.
@@ -98,7 +98,7 @@ checkpoint-а или topology OpenSearch.
 Migration 0028 намеренно разрушительна: она отклоняет active jobs и удаляет
 предыдущее состояние public boundary. Startup reconciliation удаляет managed
 artifacts, оставшиеся без references после clean cut. Замена индексов OpenSearch
-v8 на v9 — явная release operation для Flight v18.
+v9 на v10 — явная release operation для Flight v20.
 
 ## Правила зависимостей
 

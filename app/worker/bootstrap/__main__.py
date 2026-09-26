@@ -5,7 +5,7 @@ import json
 import sys
 from contextlib import redirect_stdout
 
-from app.contracts.worker.v17 import (
+from app.contracts.worker.v18 import (
     CONTRACT_VERSION,
     WorkerContractError,
     load_document,

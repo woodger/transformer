@@ -2,12 +2,12 @@ from collections.abc import Callable
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v5 import (
+from app.contracts.model_catalog.v6 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
     validate_catalog_document,
 )
 from app.contracts.semantic.v4 import semantic_capabilities
-from app.contracts.target_head_diagnostics.v2.constants import (
+from app.contracts.target_head_diagnostics.v3.constants import (
     CONTRACT_NAME as TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
     CONTRACT_REVISION as TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
     CURSOR_TTL_SECONDS as TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
@@ -573,6 +573,9 @@ class JobCoordinator:
                         "revision": TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
                         "actions": [TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION],
                         "artifactScope": "fullCommittedArtifact",
+                        "encoderLayerDiagnosticsModes": [
+                            "directComponentPerBatch",
+                        ],
                         "maxEpochPageSize": TARGET_HEAD_DIAGNOSTICS_MAX_EPOCH_PAGE_SIZE,
                         "cursorTtlSeconds": TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
                         "maxResponseBytes": TARGET_HEAD_DIAGNOSTICS_MAX_RESPONSE_BYTES,

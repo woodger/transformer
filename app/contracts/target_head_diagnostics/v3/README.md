@@ -1,7 +1,6 @@
 # Диагностика выходных головок и обучения encoder v3
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленный пакет для межпроектной проверки. Он не
-> активирует runtime и не изменяет действующий Flight v19.
+> ДОКУМЕНТ КОНТРАКТА. Текущий пакет диагностики для Flight v20.
 
 ## Назначение
 
@@ -57,14 +56,21 @@ Semantic v4, `modelDefinitionSha256`, D1, warm-start compatibility, objective
 
 ## Наблюдения encoder
 
-Для каждой epoch `encoderLayerLearning.layers` идёт в execution order и точно
+Для каждой epoch `encoderLearning.layers` идёт в execution order и точно
 совпадает с `representationFlow.encoderLayers`; `layerIndex` начинается с 0.
 `directComponentGradients` идёт в порядке прямых компонентов layout. Каждая
 запись имеет три закрытые группы, определённые provider-ом:
 
-- `attention` — self-attention parameters;
-- `feedForward` — feed-forward path parameters;
-- `normalization` — параметры обеих нормализаций encoder layer.
+- `attention` — все trainable parameters `layer.self_attn`;
+- `feedForward` — все trainable parameters `layer.linear1` и `layer.linear2`;
+- `normalization` — все trainable parameters `layer.norm1` и `layer.norm2`.
+
+Состав групп проверяется относительно всех trainable parameters конкретного
+`TransformerEncoderLayer`: параметр обязан входить ровно в одну группу. `None`
+gradient даёт нулевой вклад в L2 группы. Наблюдение, содержащее non-finite
+gradient или update группы, не входит в соответствующий aggregate; поэтому
+его счётчик не увеличивается. При отсутствии finite observations счётчик равен
+нулю, а оба L2 значения равны `null`.
 
 Для component `c` и группы параметров `P` batch observation определён так:
 
@@ -137,9 +143,9 @@ errors определены в `schemas/error-detail.schema.json`; новых ca
 
 ## Версии и границы
 
-Подготовленный v3 требует Target Head Diagnostics v3, Worker v18,
-checkpoint/recovery v11, Model Catalog v6 и Flight v20. Semantic v4, Metrics
-v9, Training Telemetry v4, Model Topology v2, PostgreSQL и Arrow data plane
+v3 требует Target Head Diagnostics v3, Worker v18, checkpoint/recovery v11,
+Model Catalog v6 и Flight v20. Semantic v4, Metrics
+v10, Training Telemetry v4, Model Topology v2, PostgreSQL и Arrow data plane
 не меняются.
 
 `fixtures/manifest.json` предназначен только для офлайн conformance review.

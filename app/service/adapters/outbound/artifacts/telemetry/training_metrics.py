@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.v9 import (
+from app.contracts.metrics.v10 import (
     ARTIFACT_FORMAT,
     ARTIFACT_MEDIA_TYPE,
     build_training_record,
 )
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v17 import validate_training_metrics_for_model
+from app.contracts.worker.v18 import validate_training_metrics_for_model
 from app.service.application.telemetry.records import TrainingMetricIntervalRecord
 
 

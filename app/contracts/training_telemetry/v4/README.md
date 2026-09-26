@@ -1,7 +1,7 @@
 # Запрос телеметрии обучения в области владельца v4
 
 > ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет telemetry только для чтения одной
-> опубликованной generation модели. Он активируется Flight v19.
+> опубликованной generation модели. Он активируется Flight v20.
 
 Telemetry описывает проход обучения, создавший epoch, а не повторную оценку
 весов финального checkpoint-а. Для каждого batch loss и ошибки target-ов
@@ -108,9 +108,9 @@ Clients ветвятся по `code` и `reason`, а не по тексту ош
 
 ## Чистый переход и fixtures
 
-Revision 4 не читает telemetry предыдущих revisions. Migration 0028 Flight
-v17 удаляет старые models и telemetry; новые reports создаются только новыми
-fits v17 и принадлежащей provider-у projection metrics v8.
+Revision 4 не читает telemetry предыдущих revisions. Migration 0028 удаляет
+старые models и telemetry; новые reports создаются только новыми fits Worker
+v18 и принадлежащей provider-у projection metrics v10.
 
 `fixtures/` содержит компактные примеры pending/available report и lazy
 gradient. Его manifest хеширует только bundle fixtures для офлайн-проверки; он

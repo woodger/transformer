@@ -5,7 +5,7 @@ from typing import cast
 
 from app.contracts.model_topology.v2.constants import MAX_EDGES, MAX_NODES
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.worker.v17.config import ModelConfig
+from app.contracts.worker.v18.config import ModelConfig
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
 

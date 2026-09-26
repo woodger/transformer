@@ -10,17 +10,17 @@ import torch
 
 from app.contracts.json_types import JsonObject
 from app.contracts.semantic.v4 import ModelContract
-from app.contracts.target_head_diagnostics.v2.constants import (
+from app.contracts.target_head_diagnostics.v3.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v17 import (
+from app.contracts.worker.v18 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v17.config import ModelConfig, TrainConfig
-from app.contracts.worker.v17.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v17.model_definition import resolved_semantic_digests
+from app.contracts.worker.v18.config import ModelConfig, TrainConfig
+from app.contracts.worker.v18.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v18.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,

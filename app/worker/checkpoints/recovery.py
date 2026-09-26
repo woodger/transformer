@@ -8,7 +8,7 @@ from typing import Protocol, cast
 
 import torch
 
-from app.contracts.checkpoint.v10 import (
+from app.contracts.checkpoint.v11 import (
     RECOVERY_FORMAT,
     validate_checkpoint_document,
 )

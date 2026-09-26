@@ -1,12 +1,10 @@
 # Контракт Arrow Flight v20
 
-> ДОКУМЕНТ КОНТРАКТА. Подготовленная публичная граница Arrow Flight Transformer. Она
-> не активирует runtime и не меняет действующий Flight v19.
+> ДОКУМЕНТ КОНТРАКТА. Текущая публичная граница Arrow Flight Transformer.
 
-Flight v20 сохраняет физическую плоскость данных и порядок работы Flight v19, но
-переводит Target Head Diagnostics на v3 и Model Catalog на v6. Новый action
-набор действий является независимым: при отдельной активации он не объявляет псевдонимы
-Flight v19.
+Flight v20 сохраняет физическую плоскость данных и порядок работы предыдущей
+границы, но использует Target Head Diagnostics v3 и Model Catalog v6. Action
+surface закрыта и не объявляет псевдонимы предыдущих версий Flight.
 
 ## Actions
 
@@ -81,7 +79,8 @@ diagnostics artifact не создаётся; lazy query возвращает
 документ проверяет, что ответ принадлежит хотя бы одной объявленной форме.
 
 Новая диагностика связана с Worker v18, checkpoint/recovery v11 и Model
-Catalog v6. Semantic v4, Metrics v9 и Topology v2 остаются прежними пакетами.
+Catalog v6. Semantic v4 и Topology v2 остаются прежними пакетами; Metrics v10
+переводит telemetry storage на checkpoint v11.
 
 ## Сохранённые свойства
 

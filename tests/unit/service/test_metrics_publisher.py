@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v9 import RUN_INDEX
-from app.contracts.metrics.v9 import POINT_INDEX
+from app.contracts.metrics.fit_run.v10 import RUN_INDEX
+from app.contracts.metrics.v10 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
@@ -421,7 +421,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         entry,
         training_metrics=replace(
             entry.training_metrics,
-            format="transformer.training-metrics.v9",
+            format="transformer.training-metrics.v10",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
             sha256=artifact.sha256,
@@ -430,7 +430,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=FitRunSummaryArtifactRecord(
             model_ref=entry.training_metrics.model_ref,
-            format="transformer.fit-run-summary.v9",
+            format="transformer.fit-run-summary.v10",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -442,7 +442,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="transformer.metrics.v9",
+        projection_version="transformer.metrics.v10",
     )
 
     projection = TrainingMetricsProjection(spool)
