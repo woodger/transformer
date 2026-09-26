@@ -1,0 +1,58 @@
+{
+  "contract": "transformer-flight-fixtures",
+  "version": 19,
+  "files": [
+    {
+      "path": "indexed-feature-blocks/heterogeneous-multi-block.json",
+      "sha256": "ca6a57abffd56621d0689d797ab62d77b30d4d35709b4bd9cfcb971af65f20ec"
+    },
+    {
+      "path": "indexed-feature-blocks/missing-native-prefix.json",
+      "sha256": "269f2676c7bce6d7d3cac9cdd5bfa0783784b37cef6070a20fdf973c6bdbb8d3"
+    },
+    {
+      "path": "indexed-feature-blocks/non-contiguous-native-offsets.json",
+      "sha256": "d40e2f7781ef43b6a21e18bb3b08de7b260e455952a9b58964c34096a0a83ff0"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-one-chunk.json",
+      "sha256": "1fbea3d18c42fb54fe2474babb70b5ceb490277869b6d48cf50873442adfc8a1"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-two-chunks.json",
+      "sha256": "b7299ee39359ddf49f10d2bacdb34e3abe4b1606a91a16dc4515f8394602b2f9"
+    },
+    {
+      "path": "indexed-feature-blocks/single-block.json",
+      "sha256": "3097183798bbb34fe07fd950c38beb9bbab9cf48d08af3425bd269ad185bbf6f"
+    },
+    {
+      "path": "json/capabilities.result.json",
+      "sha256": "a9e130762f96bf05a03657e7a953622516e217db2a00f3e2c2a5c29f308a01f7"
+    },
+    {
+      "path": "json/job-config.fit.json",
+      "sha256": "79807b54cb5d3b580c4a66d1a7bc6f0bb4ab5346efe83f74d642e29d612811e2"
+    },
+    {
+      "path": "json/job-config.predict.json",
+      "sha256": "5e2be88a2008cad00396d659d46df6962c0208664a00766e307f3f06411cdbce"
+    },
+    {
+      "path": "json/job-config.published-model.json",
+      "sha256": "9d325bba855ac41bcaf598007dbeba6a6934acee8db392e501be4c34c231fc94"
+    },
+    {
+      "path": "json/job-config.target-head-diagnostics.json",
+      "sha256": "44d6648550ef167fa3d2be88efaf3b3e249c4b19af6698e90d01df7433e61327"
+    },
+    {
+      "path": "json/requested-initialization.published-model.json",
+      "sha256": "2f6b4cacc4a4f50f66cec57f60ad3aadb19a165c5267b9604d59a0100974e6b7"
+    },
+    {
+      "path": "json/requested-initialization.random.json",
+      "sha256": "47ae2d1c603239ba5b76837b3d155745e7b94c96224cd2e6d7b7ccb4a2869e3e"
+    }
+  ]
+}

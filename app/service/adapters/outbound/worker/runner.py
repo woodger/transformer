@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v14 import (
+from app.contracts.worker.v20 import (
     CONTRACT_VERSION,
     MAX_EVENT_BYTES,
     WorkerContractError,
@@ -54,7 +54,7 @@ class WorkerSubprocessError(AttemptExecutionError):
 
 
 class _WorkerLogPersistenceError(WorkerSubprocessError):
-    """A secondary diagnostics failure that must not mask Worker output."""
+    """Вторичный сбой диагностики, который не должен маскировать вывод Worker."""
 
     pass
 
@@ -144,7 +144,7 @@ StreamingInputProvider = Callable[
 
 
 class WorkerSubprocessRunner:
-    """Own one worker subprocess from Popen through complete process reap."""
+    """Владеть одним дочерним процессом Worker от Popen до полного ожидания процесса."""
 
     def __init__(
         self,
@@ -335,25 +335,25 @@ class WorkerSubprocessRunner:
                 self._control_wakes.pop(job_id, None)
             raise
 
-        failure: WorkerSubprocessError | None = None
+        stop_reason: WorkerSubprocessError | None = None
         term_sent_at: float | None = None
         killed = False
         try:
             while process.poll() is None:
                 now = self._monotonic()
-                if failure is None and cancel.is_set():
-                    failure = _cancellation_failure(force_stop)
-                if failure is None:
+                if stop_reason is None and cancel.is_set():
+                    stop_reason = _cancellation_failure(force_stop)
+                if stop_reason is None:
                     try:
-                        failure = errors.get_nowait()
+                        stop_reason = errors.get_nowait()
                     except queue.Empty:
                         pass
-                if failure is None and now >= deadline:
-                    failure = WorkerSubprocessError(
+                if stop_reason is None and now >= deadline:
+                    stop_reason = WorkerSubprocessError(
                         ErrorCode.SUBPROCESS_HUNG,
                         "worker subprocess exceeded its execution timeout",
                     )
-                if failure is not None and term_sent_at is None:
+                if stop_reason is not None and term_sent_at is None:
                     self._signal_process_group(process, signal.SIGTERM)
                     term_sent_at = now
                 elif (
@@ -370,19 +370,19 @@ class WorkerSubprocessRunner:
             control_wake.set()
             while any(thread.is_alive() for thread in started_threads):
                 now = self._monotonic()
-                if failure is None and cancel.is_set():
-                    failure = _cancellation_failure(force_stop)
-                if failure is None:
+                if stop_reason is None and cancel.is_set():
+                    stop_reason = _cancellation_failure(force_stop)
+                if stop_reason is None:
                     try:
-                        failure = errors.get_nowait()
+                        stop_reason = errors.get_nowait()
                     except queue.Empty:
                         pass
-                if failure is None and now >= deadline:
-                    failure = WorkerSubprocessError(
+                if stop_reason is None and now >= deadline:
+                    stop_reason = WorkerSubprocessError(
                         ErrorCode.SUBPROCESS_HUNG,
                         "worker subprocess pipes exceeded the execution timeout",
                     )
-                if failure is not None and term_sent_at is None:
+                if stop_reason is not None and term_sent_at is None:
                     self._signal_process_group(process, signal.SIGTERM)
                     term_sent_at = now
                 elif (
@@ -404,13 +404,13 @@ class WorkerSubprocessRunner:
                 if self._control_wakes.get(job_id) is control_wake:
                     self._control_wakes.pop(job_id, None)
 
-        observed_failures = [] if failure is None else [failure]
+        observed_failures = [] if stop_reason is None else [stop_reason]
         while True:
             try:
                 observed_failures.append(errors.get_nowait())
             except queue.Empty:
                 break
-        failure = next(
+        final_failure = next(
             (
                 item
                 for item in observed_failures
@@ -430,13 +430,13 @@ class WorkerSubprocessRunner:
             ErrorCode.DEVICE_LOST,
         ):
             raise classified_exit
-        if failure is not None and not (
-            isinstance(failure, _WorkerLogPersistenceError)
+        if final_failure is not None and not (
+            isinstance(final_failure, _WorkerLogPersistenceError)
             and event_state.terminal == "error"
         ):
             raise WorkerSubprocessError(
-                failure.code,
-                failure.message,
+                final_failure.code,
+                final_failure.message,
                 exit_code,
             )
         if event_state.terminal == "completed":
@@ -675,9 +675,9 @@ class WorkerSubprocessRunner:
                         )
                     except ServiceError as exc:
                         if self._progress_rejected_by_cancel(job):
-                            # A committed cancel makes progress immutable. Keep
-                            # draining until the cancellation signal stops the
-                            # process.
+                            # Зафиксированная отмена делает ход выполнения неизменным.
+                            # Продолжаем считывание, пока сигнал отмены не остановит
+                            # процесс.
                             continue
                         raise WorkerSubprocessError(
                             ErrorCode.EXECUTION_INTERRUPTED,
@@ -835,7 +835,7 @@ class WorkerSubprocessRunner:
         except OSError as exc:
             persistence_failed = True
             errors.put(_worker_log_persistence_error(exc))
-            # Continue draining even after a logging failure to avoid deadlock.
+            # Продолжаем считывание даже после сбоя логирования, чтобы избежать взаимной блокировки.
             try:
                 while stream.read(64 * 1024):
                     pass
@@ -878,7 +878,7 @@ class WorkerSubprocessRunner:
         process: subprocess.Popen[bytes],
         threads: Sequence[threading.Thread],
     ) -> None:
-        """Kill and reap a child if worker setup fails after Popen."""
+        """Убить и дождаться дочернего процесса, если настройка Worker сбоит после Popen."""
         self._signal_process_group(process, signal.SIGKILL)
         for stream in (process.stdin, process.stdout, process.stderr):
             try:

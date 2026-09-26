@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v16.codec import validate_request_document
-from app.contracts.flight.v16.constants import ACTIONS
-from app.contracts.model_topology.v1 import validate_model_topology_document
-from app.contracts.model_topology.v1.constants import DETAIL_ACTION
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.flight.v22.codec import validate_request_document
+from app.contracts.flight.v22.constants import ACTIONS
+from app.contracts.model_topology.v3 import validate_model_topology_document
+from app.contracts.model_topology.v3.constants import DETAIL_ACTION
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.model_topology import (
     model_topology_response,
@@ -54,6 +54,31 @@ def _model() -> PublishedModelRecord:
     )
 
 
+def _weighted_binary_model() -> PublishedModelRecord:
+    document = semantic_fixture_document("positive-class-weighted-binary-w28")
+    contract = ModelContract.from_document(document["modelContract"])
+    config = ModelConfig.from_tuning(
+        contract.model_tuning,
+        seq_len=2,
+        feature_dim=8,
+    )
+    return PublishedModelRecord(
+        model_ref="mdl_33333333333333333333333333333333",
+        owner_subject="owner-a",
+        label="topology",
+        generation=1,
+        checkpoint_path="/missing/checkpoint.pth",
+        byte_count=1,
+        sha256="b" * 64,
+        metadata={"modelConfig": config.to_manifest()},
+        data_contract={"seqLen": 2, "featureDim": 8},
+        model_contract=contract.to_document(),
+        semantic_digests=resolved_semantic_digests(contract, "a" * 64, config),
+        producing_job_id="22222222-2222-4222-8222-222222222222",
+        created_at=0,
+    )
+
+
 def test_topology_materializes_public_execution_graph():
     model = _model()
 
@@ -63,6 +88,7 @@ def test_topology_materializes_public_execution_graph():
     assert len(nodes) == 27
     assert len(topology["edges"]) == 38
     assert nodes["encoder-1"]["attentionHeadCount"] == 4
+    assert nodes["encoder-1"]["encoderNormalizationOrder"] == "postNorm"
     assert nodes["encoder-2"]["encoderLayer"] == 2
     assert nodes["target-0-loss-input"]["transformation"] == "Identity"
     assert nodes["target-1-prediction"]["transformation"] == "Sigmoid"
@@ -94,6 +120,37 @@ def test_topology_materializes_public_execution_graph():
     } in topology["edges"]
 
 
+def test_topology_exposes_derived_positive_class_logit_correction():
+    model = _weighted_binary_model()
+    topology = ModelTopologyBuilder().build(model)
+
+    validate_model_topology_document(
+        {
+            "requestId": "11111111-1111-4111-8111-111111111111",
+            "modelRef": model.model_ref,
+            **topology,
+        },
+        "detail-result",
+    )
+
+    nodes = {node["id"]: node for node in topology["nodes"]}
+    correction = nodes["target-0-public-correction"]
+    assert correction["positiveClassWeight"] == 28.0
+    assert correction["derivedCorrection"] == "subtractLogPositiveClassWeight"
+    assert {
+        "from": {
+            "nodeId": "target-0-public-correction",
+            "portId": "corrected",
+        },
+        "to": {
+            "nodeId": "target-0-prediction",
+            "portId": "raw",
+        },
+        "logicalShape": [{"axis": "batch", "size": None}],
+        "gradientFlow": "propagates",
+    } in topology["edges"]
+
+
 def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     model = _model()
     topology = ModelTopologyBuilder().build(model)
@@ -107,7 +164,7 @@ def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     validate_request_document(document, "action-result")
 
 
-def test_flight_v16_dispatches_the_model_topology_action():
+def test_flight_v22_dispatches_the_model_topology_action():
     model = _model()
     entry = CatalogModelRecord(
         model=model,
@@ -152,7 +209,7 @@ def test_flight_v16_dispatches_the_model_topology_action():
     )
 
     assert response["modelRef"] == model.model_ref
-    assert response["topologyRevision"] == 1
+    assert response["topologyRevision"] == 3
 
 
 def test_topology_query_is_owner_scoped_and_does_not_read_the_checkpoint():
@@ -241,6 +298,7 @@ def test_topology_rejects_a_model_that_exceeds_its_node_limit():
     oversized_config = ModelConfig(
         seq_len=3,
         feature_dim=12,
+        normalization_order="postNorm",
         hidden=24,
         layers=1_020,
         dropout=0.1,

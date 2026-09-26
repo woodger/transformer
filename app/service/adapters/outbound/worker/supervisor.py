@@ -1,4 +1,4 @@
-"""Linux parent-death guard for a worker-owned CLI subprocess."""
+"""Защита Linux от смерти родителя для CLI-процесса, принадлежащего Worker."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     if expected_parent <= 0 or not command or any("\x00" in item for item in command):
         return 64
     if os.getpgrp() != os.getpid() or os.getsid(0) != os.getpid():
-        # Never risk signalling the caller's process group when this internal
-        # module is invoked outside WorkerPool's start_new_session boundary.
+        # Не рискуем послать сигнал группе процессов вызывающей стороны, когда
+        # этот внутренний модуль вызван вне границы start_new_session у WorkerPool.
         return 70
 
     try:
@@ -42,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             return 70
     except (AttributeError, OSError):
         return 70
-    # The parent may exit between the first getppid() and prctl(). Linux does
-    # not retroactively deliver PDEATHSIG, so this second check is required.
+    # Родительский процесс может завершиться между первым getppid() и prctl().
+    # Linux не посылает PDEATHSIG задним числом, поэтому нужна вторая проверка.
     if os.getppid() != expected_parent:
         _kill_own_group()
 

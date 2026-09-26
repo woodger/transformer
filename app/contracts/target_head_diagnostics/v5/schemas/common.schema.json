@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/target-head-diagnostics/v5/common.schema.json",
+  "title": "Transformer target head diagnostics query v5 common definitions",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "safeInteger": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "positiveInteger": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "modelRef": {"type": "string", "pattern": "^mdl_[0-9a-f]{32}$"},
+    "identity": {"$ref": "https://transformer.local/contracts/semantic/v5/common.schema.json#/$defs/identity"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "cursor": {"type": "string", "minLength": 48, "maxLength": 1029, "pattern": "^thd5\\.[A-Za-z0-9_-]{43,1024}$"},
+    "sampleIdentity": {"type": "string", "pattern": "^thds_[0-9a-f]{64}$"},
+    "targetHeadLayoutItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetIdentity", "targetIndex", "directComponentIdentity"],
+      "properties": {
+        "targetIdentity": {"$ref": "#/$defs/identity"},
+        "targetIndex": {"$ref": "#/$defs/safeInteger"},
+        "directComponentIdentity": {"$ref": "#/$defs/identity"}
+      }
+    },
+    "rowRepresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowCenteredL2Mean"],
+      "properties": {
+        "rowCenteredL2Mean": {"type": "number", "minimum": 0}
+      }
+    },
+    "encoderLayerRepresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layerIndex", "rowCenteredL2Mean"],
+      "properties": {
+        "layerIndex": {"$ref": "#/$defs/safeInteger"},
+        "rowCenteredL2Mean": {"type": "number", "minimum": 0}
+      }
+    },
+    "representationFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoderInput", "encoderLayers", "targetHeadInput"],
+      "properties": {
+        "encoderInput": {"$ref": "#/$defs/rowRepresentation"},
+        "encoderLayers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/encoderLayerRepresentation"}
+        },
+        "targetHeadInput": {"$ref": "#/$defs/rowRepresentation"}
+      }
+    },
+    "encoderBlockBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layerIndex", "input", "attentionResidual", "norm1", "feedForwardResidual", "norm2"],
+      "properties": {
+        "layerIndex": {"$ref": "#/$defs/safeInteger"},
+        "input": {"$ref": "#/$defs/rowRepresentation"},
+        "attentionResidual": {"$ref": "#/$defs/rowRepresentation"},
+        "norm1": {"$ref": "#/$defs/rowRepresentation"},
+        "feedForwardResidual": {"$ref": "#/$defs/rowRepresentation"},
+        "norm2": {"$ref": "#/$defs/rowRepresentation"}
+      }
+    },
+    "outputHeadSharedFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["linear", "gelu", "layerNorm"],
+      "properties": {
+        "linear": {"$ref": "#/$defs/rowRepresentation"},
+        "gelu": {"$ref": "#/$defs/rowRepresentation"},
+        "layerNorm": {"$ref": "#/$defs/rowRepresentation"}
+      }
+    },
+    "encoderBlockFlow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalizationOrder", "layers", "outputHeadShared"],
+      "properties": {
+        "normalizationOrder": {"enum": ["postNorm", "preNorm"]},
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/encoderBlockBoundary"}
+        },
+        "outputHeadShared": {"$ref": "#/$defs/outputHeadSharedFlow"}
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowCount", "minimum", "maximum", "mean", "standardDeviation"],
+      "properties": {
+        "rowCount": {"$ref": "#/$defs/positiveInteger"},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "mean": {"type": "number"},
+        "standardDeviation": {"type": "number", "minimum": 0}
+      }
+    },
+    "gradientStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["l2Mean", "l2Maximum", "finiteBatchCount"],
+      "properties": {
+        "l2Mean": {"type": ["number", "null"], "minimum": 0},
+        "l2Maximum": {"type": ["number", "null"], "minimum": 0},
+        "finiteBatchCount": {"$ref": "#/$defs/safeInteger"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "l2Mean": {"type": "null"},
+            "l2Maximum": {"type": "null"},
+            "finiteBatchCount": {"const": 0}
+          }
+        },
+        {
+          "properties": {
+            "l2Mean": {"type": "number", "minimum": 0},
+            "l2Maximum": {"type": "number", "minimum": 0},
+            "finiteBatchCount": {"$ref": "#/$defs/positiveInteger"}
+          }
+        }
+      ]
+    },
+    "parameterUpdateStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["l2Mean", "l2Maximum", "appliedBatchCount"],
+      "properties": {
+        "l2Mean": {"type": ["number", "null"], "minimum": 0},
+        "l2Maximum": {"type": ["number", "null"], "minimum": 0},
+        "appliedBatchCount": {"$ref": "#/$defs/safeInteger"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "l2Mean": {"type": "null"},
+            "l2Maximum": {"type": "null"},
+            "appliedBatchCount": {"const": 0}
+          }
+        },
+        {
+          "properties": {
+            "l2Mean": {"type": "number", "minimum": 0},
+            "l2Maximum": {"type": "number", "minimum": 0},
+            "appliedBatchCount": {"$ref": "#/$defs/positiveInteger"}
+          }
+        }
+      ]
+    },
+    "gradientGroups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attention", "feedForward", "normalization"],
+      "properties": {
+        "attention": {"$ref": "#/$defs/gradientStatistics"},
+        "feedForward": {"$ref": "#/$defs/gradientStatistics"},
+        "normalization": {"$ref": "#/$defs/gradientStatistics"}
+      }
+    },
+    "parameterUpdateGroups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attention", "feedForward", "normalization"],
+      "properties": {
+        "attention": {"$ref": "#/$defs/parameterUpdateStatistics"},
+        "feedForward": {"$ref": "#/$defs/parameterUpdateStatistics"},
+        "normalization": {"$ref": "#/$defs/parameterUpdateStatistics"}
+      }
+    },
+    "directComponentGradient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directComponentIdentity", "groups"],
+      "properties": {
+        "directComponentIdentity": {"$ref": "#/$defs/identity"},
+        "groups": {"$ref": "#/$defs/gradientGroups"}
+      }
+    },
+    "encoderLayerLearning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layerIndex", "directComponentGradients", "parameterUpdates"],
+      "properties": {
+        "layerIndex": {"$ref": "#/$defs/safeInteger"},
+        "directComponentGradients": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {"$ref": "#/$defs/directComponentGradient"}
+        },
+        "parameterUpdates": {"$ref": "#/$defs/parameterUpdateGroups"}
+      }
+    },
+    "encoderLearning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layers"],
+      "properties": {
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/encoderLayerLearning"}
+        }
+      }
+    },
+    "targetHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawLogit", "publicPrediction", "gradientL2Mean", "gradientL2Maximum", "gradientBatchCount", "weightL2AfterEpoch", "biasAfterEpoch"],
+      "properties": {
+        "rawLogit": {"$ref": "#/$defs/distribution"},
+        "publicPrediction": {"$ref": "#/$defs/distribution"},
+        "gradientL2Mean": {"type": ["number", "null"], "minimum": 0},
+        "gradientL2Maximum": {"type": ["number", "null"], "minimum": 0},
+        "gradientBatchCount": {"$ref": "#/$defs/safeInteger"},
+        "weightL2AfterEpoch": {"type": "number", "minimum": 0},
+        "biasAfterEpoch": {"type": "number"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "gradientL2Mean": {"type": "null"},
+            "gradientL2Maximum": {"type": "null"},
+            "gradientBatchCount": {"const": 0}
+          }
+        },
+        {
+          "properties": {
+            "gradientL2Mean": {"type": "number", "minimum": 0},
+            "gradientL2Maximum": {"type": "number", "minimum": 0},
+            "gradientBatchCount": {"$ref": "#/$defs/positiveInteger"}
+          }
+        }
+      ]
+    },
+    "epochObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "globalStep", "representationFlow", "encoderBlockFlow", "targetHeads"],
+      "properties": {
+        "epoch": {"$ref": "#/$defs/positiveInteger"},
+        "globalStep": {"$ref": "#/$defs/safeInteger"},
+        "representationFlow": {"$ref": "#/$defs/representationFlow"},
+        "encoderBlockFlow": {"$ref": "#/$defs/encoderBlockFlow"},
+        "encoderLearning": {"$ref": "#/$defs/encoderLearning"},
+        "targetHeads": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/targetHead"}}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completedEpochs"],
+      "properties": {"completedEpochs": {"$ref": "#/$defs/positiveInteger"}}
+    },
+    "epochPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "nextCursor", "cursorExpiresAt"],
+      "properties": {
+        "items": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/epochObservation"}},
+        "nextCursor": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/cursor"}]},
+        "cursorExpiresAt": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]}
+      }
+    }
+  }
+}

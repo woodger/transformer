@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_TARGET_HEAD_DIAGNOSTICS_QUERY",
+  "path": "/pageSize",
+  "message": "размер страницы диагностики недопустим"
+}

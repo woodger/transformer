@@ -7,7 +7,7 @@ CONTEXT_MODES = ("strict", "relaxed")
 
 @dataclass(frozen=True, slots=True)
 class PreparedContext:
-    """Model features paired with their Transformer padding mask."""
+    """Признаки модели вместе с маской заполнения Transformer."""
 
     features: torch.Tensor
     key_padding_mask: torch.Tensor
@@ -40,7 +40,7 @@ def context_key_padding_mask(
     features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> torch.Tensor:
-    """Return bool [batch, sequence], where True marks an ignored token."""
+    """Вернуть логический [batch, sequence], где True отмечает игнорируемый token."""
 
     _validate_features(features)
     context_mode = validate_context_mode(context_mode)
@@ -61,7 +61,7 @@ def context_missingness_ratios(
     features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> dict[str, float]:
-    """Measure NaN and token ratios for float32 [batch, sequence, features]."""
+    """Измерить доли NaN и token для float32 [batch, sequence, features]."""
 
     _validate_features(features)
     context_mode = validate_context_mode(context_mode)
@@ -96,16 +96,17 @@ def prepare_context_input(
     features: torch.Tensor,
     context_mode: str = "relaxed",
 ) -> PreparedContext:
-    """Prepare float32 features and bool padding mask for TransformerEncoder.
+    """Подготовить float32 ``features`` и логическую маску заполнения для TransformerEncoder.
 
-    Args:
-        features: Tensor [batch, sequence, features]. NaN denotes a missing value.
-        context_mode: ``strict`` masks partially missing tokens; ``relaxed``
-            masks only fully missing tokens and appends per-feature missing flags.
+    Аргументы:
+        features: Tensor [batch, sequence, features]. NaN обозначает отсутствие.
+        context_mode: ``strict`` маскирует частично отсутствующие token; ``relaxed``
+            маскирует только полностью отсутствующие token и добавляет флаги
+            отсутствия для каждого признака.
 
-    Returns:
-        Prepared float32 features and bool mask [batch, sequence]. In the mask,
-        ``True`` means that attention must ignore the token.
+    Возвращает:
+        Подготовленные float32 ``features`` и логическую маску [batch, sequence].
+        В маске ``True`` означает, что attention должен игнорировать token.
     """
 
     _validate_features(features)
@@ -113,9 +114,10 @@ def prepare_context_input(
     missing = torch.isnan(features)
     key_padding_mask = _key_padding_mask(missing, context_mode)
 
-    # PyTorch attention can produce non-finite outputs when every token in a
-    # sequence is masked. Keep one placeholder token attendable; NaN values
-    # are filled below and relaxed mode still retains its missing flags.
+    # Механизм внимания PyTorch может выдавать не конечные значения, когда каждый
+    # токен последовательности замаскирован. Оставляем один служебный токен
+    # доступным для внимания; значения NaN заполняются ниже, а мягкий режим
+    # сохраняет свои флаги отсутствия.
     all_missing_rows = key_padding_mask.all(dim=1)
     key_padding_mask[:, 0] &= ~all_missing_rows
 

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-catalog/v7/detail-result.schema.json",
+  "title": "transformer.model-catalog.v7.detail result",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "model"],
+  "properties": {"requestId": {"$ref": "common.schema.json#/$defs/uuid"}, "model": {"$ref": "common.schema.json#/$defs/modelDetail"}}
+}

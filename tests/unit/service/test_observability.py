@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pyarrow.flight as flight
 import pytest
 
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.model_config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.model_config import ModelConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.constants import (
     CAPABILITIES_ACTION,
 )

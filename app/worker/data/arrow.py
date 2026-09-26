@@ -8,19 +8,20 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.contracts.flight.v16.arrow import (
+from app.contracts.flight.v22.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,
     validate_target_values,
 )
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
+from app.contracts.flight.v22.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch
 
 if TYPE_CHECKING:
     import torch
+
 
 class _ArrowTable(Protocol):
     @property
@@ -60,12 +61,14 @@ def iter_committed_fit_arrow(
     seq_len: int,
     feature_dim: int,
     target_contract: JsonObject,
+    binary_target_indices: Sequence[int] = (),
 ) -> Iterator[TrainingBatch]:
-    """Decode one immutable compact fit artifact in bounded row slices.
+    """Декодировать один неизменяемый компактный артефакт fit ограниченными срезами строк.
 
-    The service validates values before durable commit and the worker verifies
-    the receipt digest before the first read. Replay rechecks its physical
-    schema and receipt counters without retaining the full dense dataset.
+    Сервис проверяет значения до долговременной фиксации, а Worker сверяет
+    дайджест квитанции до первого чтения. Повторное воспроизведение проверяет
+    физическую схему и счётчики квитанции, не удерживая полный плотный набор
+    данных.
     """
     for features, target_values in _iter_committed_indexed_arrow(
         path,
@@ -77,6 +80,7 @@ def iter_committed_fit_arrow(
         feature_dim=feature_dim,
         require_target=True,
         target_contract=target_contract,
+        binary_target_indices=binary_target_indices,
     ):
         if target_values is None:
             raise AssertionError("fit compact input has no target values")
@@ -84,6 +88,33 @@ def iter_committed_fit_arrow(
             features=_list_values_to_tensor(features),
             targets=_list_values_to_tensor(target_values),
         )
+
+
+def iter_committed_fit_features(
+    path: str,
+    *,
+    expected_rows: int,
+    expected_chunks: int,
+    expected_native_rows: Sequence[int],
+    source_encoding: Mapping[str, object],
+    seq_len: int,
+    feature_dim: int,
+    target_contract: JsonObject,
+) -> Iterator[torch.Tensor]:
+    """Декодировать признаки артефакта fit без материализации целей."""
+    for features, _ in _iter_committed_indexed_arrow(
+        path,
+        expected_rows=expected_rows,
+        expected_chunks=expected_chunks,
+        expected_native_rows=expected_native_rows,
+        source_encoding=source_encoding,
+        seq_len=seq_len,
+        feature_dim=feature_dim,
+        require_target=True,
+        target_contract=target_contract,
+        materialize_targets=False,
+    ):
+        yield _list_values_to_tensor(features)
 
 
 def iter_committed_source_arrow(
@@ -97,7 +128,7 @@ def iter_committed_source_arrow(
     feature_dim: int,
     target_contract: JsonObject,
 ) -> Iterator[torch.Tensor]:
-    """Decode one immutable compact prediction artifact in bounded slices."""
+    """Декодировать один неизменяемый компактный артефакт предсказания ограниченными срезами."""
     for features, _ in _iter_committed_indexed_arrow(
         path,
         expected_rows=expected_rows,
@@ -123,6 +154,8 @@ def _iter_committed_indexed_arrow(
     feature_dim: int,
     require_target: bool,
     target_contract: JsonObject,
+    binary_target_indices: Sequence[int] = (),
+    materialize_targets: bool = True,
 ) -> Iterator[tuple[np.ndarray, np.ndarray | None]]:
     if expected_rows < 0:
         raise ValueError("committed Arrow row count must be non-negative")
@@ -160,7 +193,7 @@ def _iter_committed_indexed_arrow(
             )
             target_column = (
                 batch.column(batch.schema.get_field_index("tgt"))
-                if require_target
+                if require_target and materialize_targets
                 else None
             )
             for chunk_index in range(batch.num_rows):
@@ -195,26 +228,33 @@ def _iter_committed_indexed_arrow(
 
                 if logical_rows is None:
                     raise ValueError("Committed Arrow has no feature blocks")
-                target_values = _committed_target_values(
-                    target_column,
-                    chunk_index,
-                    logical_rows,
-                    target_width(target_contract),
+                target_values = (
+                    None
+                    if not materialize_targets
+                    else _committed_target_values(
+                        target_column,
+                        chunk_index,
+                        logical_rows,
+                        target_width(target_contract),
+                    )
                 )
                 if target_values is not None:
                     validate_target_values(
                         target_values,
                         target_contract,
                         logical_row_offset=observed_rows,
+                        binary_target_indices=binary_target_indices,
                     )
                 row_bytes = 4 * (
                     seq_len * feature_dim
                     + (
                         target_width(target_contract)
-                        if require_target
+                        if require_target and materialize_targets
                         else 0
                     )
                 )
+                # Ограничиваем временную плотную реконструкцию, пока компактный IPC-артефакт
+                # остаётся отображённым в память.
                 rows_per_slice = max(1, (8 * 1024 * 1024) // row_bytes)
                 for start in range(0, logical_rows, rows_per_slice):
                     stop = min(start + rows_per_slice, logical_rows)
@@ -297,7 +337,7 @@ def _committed_target_values(
 def _list_values_to_tensor(values: np.ndarray) -> torch.Tensor:
     import torch
 
-    # PyTorch leaves the ndarray parameter unknown in its public type surface.
+    # Библиотека PyTorch оставляет параметр ndarray неизвестным в публичной типовой поверхности.
     return torch.from_numpy(values)  # pyright: ignore[reportUnknownMemberType]
 
 

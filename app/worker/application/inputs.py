@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import BinaryIO
 
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
+from app.contracts.flight.v22.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v14 import WorkerContractError, parse_control_message
+from app.contracts.worker.v20 import WorkerContractError, parse_control_message
 from app.worker.application.documents import (
     boolean_field as _boolean_field,
     integer_field as _integer_field,
@@ -19,7 +19,7 @@ from app.worker.application.events import WorkerEventEmitter
 
 
 class DurableInputStream:
-    """Consume the immutable startup snapshot and ordered control channel."""
+    """Потреблять неизменяемый снимок запуска и упорядоченный канал управления."""
 
     def __init__(
         self,

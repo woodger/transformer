@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class OutputHead(nn.Module):
-    """Produce raw public coordinates and private objective resources."""
+    """Создать необработанные публичные координаты и закрытые ресурсы objective."""
 
     def __init__(
         self,
@@ -50,6 +50,8 @@ class OutputHead(nn.Module):
         shared = self.shared(hidden_states)
         targets = self.target_head(shared)
         resources = [
+            # Не допускаем нулевого положительного масштаба, если softplus в float32
+            # обнуляется из-за потери представимости.
             F.softplus(head(shared)) + 1e-6
             for head in self.resource_heads
         ]

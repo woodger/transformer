@@ -21,7 +21,7 @@ _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class RecoveryStore:
-    """Persistent, server-owned fit inputs and training checkpoints."""
+    """Долговременные входы fit и контрольные точки обучения, принадлежащие серверу."""
 
     def __init__(self, root_dir: str) -> None:
         self.root_dir = os.path.abspath(os.fspath(root_dir))

@@ -8,7 +8,7 @@ class ModelLifecycleState(StrEnum):
 
 
 class ModelDeletionBlocked(RuntimeError):
-    """The requested deletion would break an active durable responsibility."""
+    """Запрошенное удаление нарушило бы активную durable-ответственность."""
 
 
 __all__ = ["ModelDeletionBlocked", "ModelLifecycleState"]

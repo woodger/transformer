@@ -1,0 +1,14 @@
+{
+  "fixtureId": "transformer.v22.job-config.predict",
+  "jobConfig": {
+    "operation": "predict",
+    "requestedDevice": "gpu",
+    "resolvedModelRef": "mdl_0123456789abcdef0123456789abcdef",
+    "inputLayout": {
+      "featureBlocks": [{"windowRows": 2, "nativeRowWidth": 2}]
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782"
+  },
+  "expectedJobConfigSha256": "1c2bc8b5b92a269cbdc56a624198979e60d09b3213d5e1cc49175f40629b1e51"
+}

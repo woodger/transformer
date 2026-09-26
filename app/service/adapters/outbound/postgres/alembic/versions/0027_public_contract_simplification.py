@@ -1,7 +1,7 @@
-"""Discard generations incompatible with the simplified public boundary.
+"""Удалить поколения, несовместимые с упрощённой публичной границей.
 
-Revision ID: 0027
-Revises: 0026
+Идентификатор ревизии: 0027
+Предыдущая ревизия: 0026
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def _schema() -> str:
 
 
 def upgrade() -> None:
-    """Remove all state whose public contract cannot be read by Flight v15."""
+    """Удалить состояние, чей публичный контракт не читается Flight v15."""
 
     schema = _schema()
     op.execute(sa.text(f"""
@@ -38,9 +38,9 @@ def upgrade() -> None:
         $migration$
     """))
 
-    # The v15 clean cut has no reader for v14 job, model, recovery or
-    # telemetry records.  Foreign-key cascades remove dependent receipts,
-    # attempts, outputs and recovery rows when jobs are removed.
+    # Чистый переход v15 не содержит читателя для записей v14 о заданиях,
+    # моделях, восстановлении или телеметрии. Каскады внешних ключей удаляют
+    # связанные квитанции, попытки, выходы и строки восстановления при удалении.
     for table in (
         "metrics_outbox",
         "fit_run_summary_artifacts",

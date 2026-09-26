@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/training-telemetry/v4/common.schema.json",
+  "title": "Transformer Training Telemetry Query v4 common definitions",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "safeInteger": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "positiveInteger": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "modelRef": {"type": "string", "pattern": "^mdl_[0-9a-f]{32}$"},
+    "identity": {"$ref": "https://transformer.local/contracts/semantic/v4/common.schema.json#/$defs/identity"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "epochCursor": {"type": "string", "minLength": 48, "maxLength": 1029, "pattern": "^tte4\\.[A-Za-z0-9_-]{43,1024}$"},
+    "gradientCursor": {"type": "string", "minLength": 48, "maxLength": 1029, "pattern": "^ttg4\\.[A-Za-z0-9_-]{43,1024}$"},
+    "health": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trainingBatchesCompleted", "optimizerUpdatesApplied", "optimizerUpdatesSkipped", "ampOverflowBatches", "finiteGradientBatches", "nonFiniteGradientBatches"],
+      "properties": {
+        "trainingBatchesCompleted": {"$ref": "#/$defs/positiveInteger"},
+        "optimizerUpdatesApplied": {"$ref": "#/$defs/safeInteger"},
+        "optimizerUpdatesSkipped": {"$ref": "#/$defs/safeInteger"},
+        "ampOverflowBatches": {"$ref": "#/$defs/safeInteger"},
+        "finiteGradientBatches": {"$ref": "#/$defs/safeInteger"},
+        "nonFiniteGradientBatches": {"$ref": "#/$defs/safeInteger"}
+      }
+    },
+    "reportLayoutComponent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity", "operator"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/identity"},
+        "operator": {"$ref": "#/$defs/identity"}
+      }
+    },
+    "reportLayout": {
+      "type": "object", "additionalProperties": false,
+      "required": ["targetIdentities", "directComponents", "auxiliaryComponents"],
+      "properties": {
+        "targetIdentities": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/identity"}},
+        "directComponents": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/reportLayoutComponent"}},
+        "auxiliaryComponents": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/reportLayoutComponent"}}
+      }
+    },
+    "targetMetric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mae", "rmse"],
+      "properties": {
+        "mae": {"type": "number", "minimum": 0},
+        "rmse": {"type": "number", "minimum": 0}
+      }
+    },
+    "epochFields": {
+      "type": "object",
+      "required": ["epoch", "globalStep", "attempt", "totalLoss", "selectionScore", "directLosses", "auxiliaryLosses", "targetMetrics", "health", "gradientInteractionsCollected"],
+      "properties": {
+        "epoch": {"$ref": "#/$defs/positiveInteger"},
+        "globalStep": {"$ref": "#/$defs/safeInteger"},
+        "attempt": {"$ref": "#/$defs/positiveInteger"},
+        "totalLoss": {"type": "number"},
+        "selectionScore": {"type": ["number", "null"]},
+        "directLosses": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"type": "number"}},
+        "auxiliaryLosses": {"type": "array", "maxItems": 256, "items": {"type": "number"}},
+        "targetMetrics": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/targetMetric"}},
+        "health": {"$ref": "#/$defs/health"},
+        "gradientInteractionsCollected": {"type": "boolean"}
+      }
+    },
+    "epochMetrics": {"allOf": [{"$ref": "#/$defs/epochFields"}], "unevaluatedProperties": false},
+    "epochAnchor": {
+      "allOf": [
+        {"$ref": "#/$defs/epochFields"},
+        {"type": "object", "required": ["roles"], "properties": {"roles": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["first", "best", "published"]}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["completedEpochs"],
+      "properties": {"completedEpochs": {"$ref": "#/$defs/positiveInteger"}}
+    },
+    "selection": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["enabled", "bestEpoch", "publishedEpoch", "publishedSource"], "properties": {"enabled": {"const": false}, "bestEpoch": {"type": "null"}, "publishedEpoch": {"$ref": "#/$defs/positiveInteger"}, "publishedSource": {"const": "last_epoch"}}},
+        {"type": "object", "additionalProperties": false, "required": ["enabled", "bestEpoch", "publishedEpoch", "publishedSource"], "properties": {"enabled": {"const": true}, "bestEpoch": {"$ref": "#/$defs/positiveInteger"}, "publishedEpoch": {"$ref": "#/$defs/positiveInteger"}, "publishedSource": {"const": "best_direct_selection_score"}}}
+      ]
+    },
+    "gradientInteractionsSummary": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "notConfigured"}}},
+        {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "configuredWithoutObservations"}}},
+        {"type": "object", "additionalProperties": false, "required": ["state", "collectedEpochCount", "defaultEpoch", "publishedEpochCollected"], "properties": {"state": {"const": "available"}, "collectedEpochCount": {"$ref": "#/$defs/positiveInteger"}, "defaultEpoch": {"$ref": "#/$defs/positiveInteger"}, "publishedEpochCollected": {"type": "boolean"}}}
+      ]
+    },
+    "epochPage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["items", "nextCursor", "cursorExpiresAt"],
+      "properties": {
+        "items": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/epochMetrics"}},
+        "nextCursor": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/epochCursor"}]},
+        "cursorExpiresAt": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]}
+      }
+    },
+    "gradientComponent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["componentIdentity", "meanNorm"],
+      "properties": {
+        "componentIdentity": {"$ref": "#/$defs/identity"},
+        "targetIdentity": {"$ref": "#/$defs/identity"},
+        "targetIndex": {"$ref": "#/$defs/safeInteger"},
+        "meanNorm": {"type": "number", "minimum": 0}
+      },
+      "dependentRequired": {"targetIdentity": ["targetIndex"], "targetIndex": ["targetIdentity"]}
+    },
+    "gradientPair": {
+      "type": "object", "additionalProperties": false,
+      "required": ["leftComponentIdentity", "rightComponentIdentity", "meanCosine", "negativeCosineFraction"],
+      "properties": {
+        "leftComponentIdentity": {"$ref": "#/$defs/identity"},
+        "rightComponentIdentity": {"$ref": "#/$defs/identity"},
+        "meanCosine": {"type": "number", "minimum": -1, "maximum": 1},
+        "negativeCosineFraction": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "gradientPairPage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["items", "nextCursor", "cursorExpiresAt"],
+      "properties": {
+        "items": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/gradientPair"}},
+        "nextCursor": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/gradientCursor"}]},
+        "cursorExpiresAt": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/timestamp"}]}
+      }
+    }
+  }
+}

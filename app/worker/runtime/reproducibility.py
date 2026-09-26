@@ -7,7 +7,7 @@ import torch
 def configure_reproducibility(seed: int, deterministic: bool = False) -> None:
     random.seed(seed)
     np.random.seed(seed)
-    # PyTorch leaves the seed parameter unknown in its public type surface.
+    # Библиотека PyTorch оставляет параметр seed неизвестным в публичной типовой поверхности.
     torch.manual_seed(seed)  # pyright: ignore[reportUnknownMemberType]
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)

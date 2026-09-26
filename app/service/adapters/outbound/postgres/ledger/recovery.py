@@ -4,7 +4,7 @@ from typing import cast
 
 from sqlalchemy import select
 
-from app.contracts.checkpoint.v8 import RECOVERY_FORMAT
+from app.contracts.checkpoint.v12 import RECOVERY_FORMAT
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -32,7 +32,7 @@ from app.service.domain.records import TrainingRecoveryCheckpointRecord
 
 
 class RecoveryLedgerSlice:
-    """Atomic visibility and retry operations for training recovery."""
+    """Операции атомарной видимости и повтора для восстановления обучения."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

@@ -37,7 +37,7 @@ from app.service.domain.records import CommittedInputRecord
 
 
 class InputLedgerSlice:
-    """PostgreSQL operations for one job's durable input lifecycle."""
+    """Операции PostgreSQL для долговременного жизненного цикла входа одного job."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

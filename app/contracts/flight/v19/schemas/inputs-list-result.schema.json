@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v19/inputs-list-result.schema.json",
+  "title": "transformer.v19.job.inputs.list result",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "jobId", "afterRevision", "snapshotRevision", "cursor", "items", "nextCursor", "hasMore"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "afterRevision": {"type": "integer", "minimum": 0},
+    "snapshotRevision": {"type": "integer", "minimum": 0},
+    "cursor": {"type": "integer", "minimum": 0},
+    "items": {"type": "array", "maxItems": 100, "items": {"$ref": "common.schema.json#/$defs/inputReceipt"}},
+    "nextCursor": {"type": ["integer", "null"], "minimum": 0},
+    "hasMore": {"type": "boolean"}
+  }
+}

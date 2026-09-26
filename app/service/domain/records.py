@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
 from app.service.domain.job import ExecutionState, InputState
 from app.service.domain.json_types import JsonObject
 from app.service.domain.model import ModelLifecycleState
@@ -10,7 +10,7 @@ from app.service.domain.model import ModelLifecycleState
 
 @dataclass(frozen=True, slots=True)
 class ExecutionJobRecord:
-    """Immutable job projection required by execution orchestration."""
+    """Неизменяемая проекция job, необходимая оркестрации выполнения."""
 
     job_id: str
     owner_subject: str

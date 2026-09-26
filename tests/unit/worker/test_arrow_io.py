@@ -3,8 +3,9 @@ import pyarrow.ipc as ipc
 import pytest
 import torch
 
-from app.contracts.flight.v16.arrow import canonical_input_schema
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.flight.v22.arrow import canonical_input_schema
+from app.contracts.flight.v22.target_value_error import TargetValueError
+from app.contracts.semantic.v5 import ModelContract
 from app.worker.data.arrow import (
     iter_committed_fit_arrow,
     iter_committed_source_arrow,
@@ -100,6 +101,54 @@ def test_committed_arrow_replay_preserves_validated_fit_values(tmp_path):
         [0.5],
         [-0.5],
     ]))
+
+
+def test_committed_arrow_replay_rechecks_binary_target_values(tmp_path):
+    contract = ModelContract.from_document(
+        semantic_fixture_document("positive-class-weighted-binary-w1")[
+            "modelContract"
+        ]
+    )
+    schema = canonical_input_schema(
+        "fit",
+        SOURCE_ENCODING,
+        seq_len=1,
+        feature_dim=4,
+        target_contract=contract.target_contract,
+    )
+    batch = pa.record_batch(
+        [
+            pa.array([0], type=schema.field(0).type),
+            pa.array([0], type=schema.field(1).type),
+            pa.array([{
+                "b0": {
+                    "nativeRows": [[1.0, 2.0], [3.0, 4.0]],
+                    "observationOffsets": [[0]],
+                },
+            }], type=schema.field(2).type),
+            pa.array([[[0.5]]], type=schema.field(3).type),
+        ],
+        schema=schema,
+    )
+    path = tmp_path / "committed-binary-fit.arrow"
+    with pa.OSFile(str(path), "wb") as sink:
+        with ipc.new_file(sink, schema) as writer:
+            writer.write_batch(batch)
+
+    with pytest.raises(TargetValueError) as error:
+        list(iter_committed_fit_arrow(
+            str(path),
+            expected_rows=1,
+            expected_chunks=1,
+            expected_native_rows=(2,),
+            source_encoding=SOURCE_ENCODING,
+            seq_len=1,
+            feature_dim=4,
+            target_contract=contract.target_contract,
+            binary_target_indices=contract.weighted_binary_target_indices,
+        ))
+
+    assert error.value.expected_domain == "Binary"
 
 
 def test_committed_arrow_replay_rechecks_receipt_shape(tmp_path):

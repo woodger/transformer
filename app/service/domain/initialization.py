@@ -10,7 +10,7 @@ _MODEL_REF = re.compile(r"^mdl_[0-9a-f]{32}$")
 
 
 def random_initialization() -> JsonObject:
-    """Return the checkpoint-owned resolved random initialization."""
+    """Вернуть разрешённую случайную инициализацию, принадлежащую контрольной точке."""
 
     return {"source": "random"}
 
@@ -121,7 +121,7 @@ def validate_initialization(
 
 
 def validate_requested_initialization(value: object) -> JsonObject:
-    """Validate the Flight intent form before the service resolves lineage."""
+    """Проверить форму намерения Flight до разрешения происхождения сервисом."""
 
     if not isinstance(value, Mapping):
         raise ValueError("requested model initialization must be an object")

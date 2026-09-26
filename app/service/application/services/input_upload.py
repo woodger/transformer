@@ -4,8 +4,8 @@ import secrets
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
-from app.contracts.worker.v14.constants import (
+from app.contracts.flight.v22.source_encoding import feature_block_dimensions
+from app.contracts.worker.v20.constants import (
     FIT_INPUT_SCHEMA_ID,
     PREDICT_INPUT_SCHEMA_ID,
 )
@@ -33,7 +33,7 @@ class InputKindMismatch(Exception):
 
 
 class InputUploadLifecycle:
-    """Authorize and commit one physical payload around transport staging."""
+    """Авторизовать и зафиксировать один физический пакет вокруг транспортного буфера."""
 
     def __init__(
         self,

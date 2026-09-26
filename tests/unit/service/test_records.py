@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (
@@ -76,6 +76,7 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
         "model_config": ModelConfig(
             seq_len=2,
             feature_dim=2,
+            normalization_order="postNorm",
         ).to_dict(),
         "training_config": train_config.to_dict(),
         "data_contract": DATA_CONTRACT,
@@ -99,7 +100,11 @@ def test_execution_mapping_preserves_both_state_axes_and_typed_config():
     assert record.input_state is InputState.OPEN
     assert record.execution_state is ExecutionState.RUNNING
     assert record.input_frame_count == 2
-    assert record.model_config == ModelConfig(seq_len=2, feature_dim=2)
+    assert record.model_config == ModelConfig(
+        seq_len=2,
+        feature_dim=2,
+        normalization_order="postNorm",
+    )
     assert record.training_config == TrainConfig(
         epochs=3,
         deterministic=True,
@@ -146,7 +151,11 @@ def test_job_creation_persists_round_trippable_training_diagnostics():
             semantic_digests=SEMANTIC_DIGESTS,
             create_result={"jobId": job_id},
             model_label="daily",
-            model_config=ModelConfig(seq_len=2, feature_dim=2),
+            model_config=ModelConfig(
+                seq_len=2,
+                feature_dim=2,
+                normalization_order="postNorm",
+            ),
             training_config=train_config,
             initialization={"source": "random"},
             now=1.0,

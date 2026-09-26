@@ -5,7 +5,7 @@ import os
 from typing import Protocol
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v14 import (
+from app.contracts.worker.v20 import (
     CHECKPOINT_FORMAT,
     CONTRACT_NAME,
     CONTRACT_VERSION,
@@ -14,7 +14,7 @@ from app.contracts.worker.v14 import (
     RECOVERY_FORMAT,
     validate_document,
 )
-from app.contracts.worker.v14.config import train_config_to_manifest
+from app.contracts.worker.v20.config import train_config_to_manifest
 from app.service.application.ports.jobs import JobRepository
 from app.service.application.ports.workers import ExecutionInput, ExecutionPlan
 from app.service.application.services.errors import AttemptExecutionError
@@ -76,7 +76,7 @@ class _RecoveryStore(_InputStore, Protocol):
 
 
 class WorkerPlanBuilder:
-    """Validate durable artifacts and render one trusted CLI execution plan."""
+    """Проверить долговременные артефакты и сформировать один доверенный CLI-план выполнения."""
 
     def __init__(
         self,
@@ -528,7 +528,7 @@ class WorkerPlanBuilder:
         job: ExecutionJobRecord,
         start_ordinal: int,
     ) -> tuple[ExecutionInput, ...]:
-        """Validate the newly visible contiguous suffix for one attempt."""
+        """Проверить новый видимый непрерывный suffix для одной attempt."""
 
         if start_ordinal < 0 or start_ordinal > job.input_frame_count:
             raise ValueError("invalid streaming input ordinal")

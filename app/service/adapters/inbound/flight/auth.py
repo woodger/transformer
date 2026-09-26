@@ -107,8 +107,8 @@ class BearerAuthMiddlewareFactory(
                 "FlightUnauthenticatedError",
             )
         except Exception:
-            # Fail closed and never expose an adapter error that could contain
-            # the credential.
+            # Закрываем ошибку и никогда не раскрываем ошибку адаптера, которая
+            # могла бы содержать учётные данные.
             self._reject(
                 method,
                 started,
@@ -182,6 +182,6 @@ def _single_authorization_header(
 
 
 def _flight_exception(name: str, message: str) -> Exception:
-    """Construct a runtime exception omitted by PyArrow's public stubs."""
+    """Создать исключение среды выполнения, отсутствующее в публичных декларациях PyArrow."""
     factory = cast(_FlightExceptionFactory, vars(flight)[name])
     return factory(message)

@@ -4,10 +4,10 @@ import pytest
 import torch
 
 import app.worker.checkpoints.model as checkpoint_module
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import TrainConfig
-from app.contracts.worker.v14.model_config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import TrainConfig
+from app.contracts.worker.v20.model_config import ModelConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.worker.checkpoints.model import (
     CHECKPOINT_FORMAT,
     load_checkpoint,
@@ -50,6 +50,7 @@ def _checkpoint_metadata():
             "featureDim": 2,
         },
         "modelContract": contract.to_document(),
+        "predictionDefinition": contract.prediction_definition(seq_len=1),
         "modelConfig": {
             "seqLen": 1,
             "featureDim": 2,
@@ -58,6 +59,7 @@ def _checkpoint_metadata():
             "dropoutProbability": 0.0,
             "attentionHeadCount": 2,
             "missingValuePolicy": "relaxed",
+            "encoderNormalizationOrder": "postNorm",
         },
         "semanticDigests": digests,
         "trainingConfig": TrainConfig().to_manifest(),

@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
+from app.contracts.flight.v22.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice
@@ -92,7 +92,7 @@ _JOB_IDENTITY_CONSTRAINTS = frozenset({
 
 
 class Ledger:
-    """PostgreSQL source of truth for Flight jobs and published artifacts."""
+    """Источник истины PostgreSQL для Flight-job и опубликованных артефактов."""
 
     def __init__(
         self,
@@ -126,7 +126,7 @@ class Ledger:
 
     @contextmanager
     def connection(self) -> Generator[Session]:
-        """Expose a read-only-by-default ORM session for diagnostics."""
+        """Предоставить ORM-сеанс только для чтения по умолчанию для диагностики."""
         with self.database.session() as session:
             yield session
 
@@ -303,9 +303,9 @@ class Ledger:
         try:
             with self._write(connection) as session:
                 session.add(identity)
-                # The ORM models intentionally have no navigation relationship;
-                # make the durable identity visible before inserting its
-                # foreign-keyed runtime row.
+                # У ORM-моделей намеренно нет навигационной связи; делаем надёжную
+                # идентичность видимой перед вставкой связанной с ней строки
+                # выполнения по внешнему ключу.
                 session.flush()
                 session.add(job)
                 session.flush()
@@ -335,7 +335,7 @@ class Ledger:
         *,
         connection: Session,
     ) -> None:
-        """Serialize creates that use the same client-generated identity."""
+        """Сериализовать create, использующие одну client-generated identity."""
 
         job_id = _canonical_uuid(job_id, "job_id")
         _advisory_lock(connection, "job-identity", job_id)
@@ -484,6 +484,8 @@ class Ledger:
             )
             decision = decide_cancel(job.execution_state)
             if decision.notify_worker:
+                # Последующий сбой транзакции не должен позволить рабочему процессу
+                # продолжить работу после проверки команды отмены.
                 stop_active_worker(job_id)
 
             changed = False

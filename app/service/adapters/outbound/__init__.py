@@ -1,2 +1,0 @@
-"""Service-owned infrastructure adapters."""
-

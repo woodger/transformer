@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -34,7 +34,7 @@ from app.service.domain.records import (
 
 
 class ExecutionLedgerSlice:
-    """PostgreSQL queue, attempt, and worker-execution operations."""
+    """Операции PostgreSQL для очереди, попытки и выполнения Worker."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions
@@ -474,7 +474,7 @@ class ExecutionLedgerSlice:
         attempt_id: str,
         now: float | None = None,
     ) -> bool:
-        """Move the active attempt to CANCELLING under its equality fence."""
+        """Перевести активную attempt в CANCELLING под её equality fence."""
         attempt_id = canonical_uuid(attempt_id, "attempt_id")
         requested_at = timestamp_now(now)
         with self.database.transaction() as session:

@@ -6,14 +6,14 @@ from typing import cast
 
 import torch
 
-from app.contracts.checkpoint.v8 import (
+from app.contracts.checkpoint.v12 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import ModelConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import ModelConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import atomic_output_path, resolve_artifact_path
 from app.worker.checkpoints.checkpoint_corrupt import CheckpointCorrupt
@@ -94,6 +94,10 @@ def load_checkpoint(
             or model_config.to_tuning() != model_contract.model_tuning
         ):
             raise ValueError("checkpoint data and model geometry differ")
+        if metadata.get("predictionDefinition") != model_contract.prediction_definition(
+            model_config.seq_len
+        ):
+            raise ValueError("checkpoint prediction definition is inconsistent")
         semantic_digests = _object_dict(
             cast(Mapping[object, object], metadata["semanticDigests"]),
             "checkpoint semantic digests",

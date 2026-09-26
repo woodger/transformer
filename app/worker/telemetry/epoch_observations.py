@@ -24,7 +24,7 @@ def _empty_component_target_map() -> dict[str, tuple[str, int]]:
 
 @dataclass
 class EpochTelemetry:
-    """Optional runtime observations for one completed training epoch."""
+    """Необязательные наблюдения среды выполнения одной завершённой эпохи обучения."""
 
     targets: tuple[str, ...]
     component_targets: dict[str, tuple[str, int]] = field(

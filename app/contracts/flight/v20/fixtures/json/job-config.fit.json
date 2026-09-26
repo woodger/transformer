@@ -1,0 +1,26 @@
+{
+  "fixtureId": "transformer.v20.job-config.fit",
+  "jobConfig": {
+    "operation": "fit",
+    "requestedDevice": "auto",
+    "modelLabel": "model-a",
+    "inputLayout": {
+      "featureBlocks": [{"windowRows": 2, "nativeRowWidth": 2}]
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782",
+    "trainingConfig": {
+      "learningRate": 0.001,
+      "batchSize": 64,
+      "epochs": 2,
+      "mixedPrecision": true,
+      "weightDecay": 0,
+      "selection": null,
+      "seed": 42,
+      "deterministic": true
+    },
+    "diagnostics": {"gradientInteractions": null, "targetHead": null, "encoderLayerDiagnostics": null},
+    "initialization": {"source": "random"}
+  },
+  "expectedJobConfigSha256": "a19177f769ac812e688225c41c288555db9689a631037ee3ae5c8b8291f6b73a"
+}

@@ -1,0 +1,77 @@
+{
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "state": "available",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "producingRunId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "modelDefinitionSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sampleIdentity": "thds_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sampleRowCount": 1,
+  "layout": [
+    {
+      "targetIdentity": "Opaque.BinaryEvent",
+      "targetIndex": 0,
+      "directComponentIdentity": "direct.opaque-binary-event"
+    }
+  ],
+  "coverage": {"completedEpochs": 1},
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 1,
+        "representationFlow": {
+          "encoderInput": {"rowCenteredL2Mean": 0.0},
+          "encoderLayers": [{"layerIndex": 0, "rowCenteredL2Mean": 0.0}],
+          "targetHeadInput": {"rowCenteredL2Mean": 0.0}
+        },
+        "encoderLearning": {
+          "layers": [
+            {
+              "layerIndex": 0,
+              "directComponentGradients": [
+                {
+                  "directComponentIdentity": "direct.opaque-binary-event",
+                  "groups": {
+                    "attention": {"l2Mean": null, "l2Maximum": null, "finiteBatchCount": 0},
+                    "feedForward": {"l2Mean": null, "l2Maximum": null, "finiteBatchCount": 0},
+                    "normalization": {"l2Mean": null, "l2Maximum": null, "finiteBatchCount": 0}
+                  }
+                }
+              ],
+              "parameterUpdates": {
+                "attention": {"l2Mean": null, "l2Maximum": null, "appliedBatchCount": 0},
+                "feedForward": {"l2Mean": null, "l2Maximum": null, "appliedBatchCount": 0},
+                "normalization": {"l2Mean": null, "l2Maximum": null, "appliedBatchCount": 0}
+              }
+            }
+          ]
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1,
+              "minimum": 0.0,
+              "maximum": 0.0,
+              "mean": 0.0,
+              "standardDeviation": 0.0
+            },
+            "publicPrediction": {
+              "rowCount": 1,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0.0
+            },
+            "gradientL2Mean": null,
+            "gradientL2Maximum": null,
+            "gradientBatchCount": 0,
+            "weightL2AfterEpoch": 1.0,
+            "biasAfterEpoch": 0.0
+          }
+        ]
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

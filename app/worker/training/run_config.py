@@ -1,6 +1,6 @@
 from typing import TypeVar, cast
 
-from app.contracts.worker.v14.config import (
+from app.contracts.worker.v20.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CONTEXT_MODE,
     DEFAULT_DETERMINISTIC,
@@ -51,6 +51,16 @@ def model_config_from_args(
     if resolved_feature_dim is None:
         raise ValueError("feature_dim must be a positive integer")
 
+    normalization_order = _optional_arg(
+        args,
+        "normalization_order",
+        str,
+    )
+    if normalization_order is None:
+        if checkpoint_config is None:
+            raise ValueError("normalization_order must be provided")
+        normalization_order = checkpoint_config.normalization_order
+
     config = ModelConfig(
         seq_len=seq_len,
         feature_dim=resolved_feature_dim,
@@ -94,6 +104,7 @@ def model_config_from_args(
                 else checkpoint_config.context_mode
             ),
         ),
+        normalization_order=normalization_order,
     )
 
     if config.seq_len <= 0:
@@ -192,6 +203,11 @@ def _validate_checkpoint_model_overrides(
         ("dropout", "dropout", checkpoint_config.dropout),
         ("nhead", "nhead", checkpoint_config.nhead),
         ("context_mode", "mode", checkpoint_config.context_mode),
+        (
+            "normalization_order",
+            "encoder-normalization-order",
+            checkpoint_config.normalization_order,
+        ),
     )
     for attribute, option, checkpoint_value in options:
         cli_value = _argument(args, attribute)

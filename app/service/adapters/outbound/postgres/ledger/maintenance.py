@@ -39,7 +39,7 @@ class _RowCountResult(Protocol):
 
 
 class MaintenanceLedgerSlice:
-    """Restart reconciliation, retention, and runtime epoch operations."""
+    """Операции согласования после рестарта, хранения и рабочего поколения."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

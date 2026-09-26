@@ -5,7 +5,7 @@ import json
 import sys
 from contextlib import redirect_stdout
 
-from app.contracts.worker.v14 import (
+from app.contracts.worker.v20 import (
     CONTRACT_VERSION,
     WorkerContractError,
     load_document,
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
 
         backend = string_field(object_field(manifest, "device"), "backend")
         if backend == "cuda":
-            # Do this before importing the training application and PyTorch runtime.
+            # Выполняем это до импорта приложения обучения и среды выполнения PyTorch.
             configure_cuda_torch_thread_budget()
         from app.worker.application.executor import WorkerApplication
 

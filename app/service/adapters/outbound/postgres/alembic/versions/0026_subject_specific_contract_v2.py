@@ -1,7 +1,7 @@
-"""Adopt the clean-cut subject-specific contract vocabulary.
+"""Принять чистый переход на предметный словарь контрактов.
 
-Revision ID: 0026
-Revises: 0025
+Идентификатор ревизии: 0026
+Предыдущая ревизия: 0025
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def _schema() -> str:
 
 
 def upgrade() -> None:
-    """Discard artifacts whose v1 canonical bytes cannot be reinterpreted."""
+    """Удалить артефакты, чьи канонические байты v1 нельзя интерпретировать заново."""
 
     schema = _schema()
     op.execute(sa.text(f"""
@@ -38,9 +38,9 @@ def upgrade() -> None:
         $migration$
     """))
 
-    # Semantic v1 and v2 intentionally have different D1 preimages.  The
-    # application startup reconciliation removes filesystem artifacts after
-    # these registry and lifecycle records no longer reference them.
+    # У Semantic v1 и v2 намеренно различаются предобразы D1. Сверка при старте
+    # приложения удаляет файловые артефакты после того, как записи реестра и
+    # жизненного цикла перестают на них ссылаться.
     for table in (
         "metrics_outbox",
         "fit_run_summary_artifacts",

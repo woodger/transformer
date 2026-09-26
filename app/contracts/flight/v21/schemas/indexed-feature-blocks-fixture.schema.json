@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v21/indexed-feature-blocks-fixture.schema.json",
+  "title": "Cross-project indexedFeatureBlocks reconstruction fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixtureId",
+    "inputLayout",
+    "seqLen",
+    "featureDim",
+    "chunks",
+    "expected"
+  ],
+  "properties": {
+    "fixtureId": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/common.schema.json#/$defs/identity"
+    },
+    "inputLayout": {
+      "$ref": "common.schema.json#/$defs/inputLayout"
+    },
+    "seqLen": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "featureDim": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rangeOrdinal",
+          "exampleOffset",
+          "blocks"
+        ],
+        "properties": {
+          "rangeOrdinal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exampleOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "nativeRows",
+                "observationOffsets"
+              ],
+              "properties": {
+                "nativeRows": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "observationOffsets": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation",
+            "logicalFeatures"
+          ],
+          "properties": {
+            "validation": {
+              "const": "accepted"
+            },
+            "logicalFeatures": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation",
+            "code",
+            "reason"
+          ],
+          "properties": {
+            "validation": {
+              "const": "rejected"
+            },
+            "code": {
+              "const": "INVALID_ARGUMENT"
+            },
+            "reason": {
+              "const": "INVALID_SOURCE_ENCODING_OFFSET"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

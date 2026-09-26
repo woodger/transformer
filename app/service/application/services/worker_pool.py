@@ -30,12 +30,13 @@ class WorkerPoolConfig(Protocol):
 
 
 class WorkerPool:
-    """Durable single-instance worker pool for queued Flight jobs.
+    """Долговременный пул одного экземпляра Worker для Flight-задач в очереди.
 
-    PostgreSQL records lifecycle transitions. In-process FIFO notifications
-    wake CPU and CUDA lanes; the maintenance service periodically calls
-    ``notify_queued()`` to recover a notification lost after commit. Each
-    claimed attempt gets exactly one trusted CLI subprocess.
+    PostgreSQL фиксирует переходы жизненного цикла. Внутрипроцессные
+    FIFO-уведомления пробуждают линии CPU и CUDA; служба обслуживания
+    периодически вызывает ``notify_queued()``, чтобы восстановить уведомление,
+    потерянное после фиксации транзакции. Каждая захваченная попытка получает
+    ровно один доверенный CLI-подпроцесс.
     """
 
     def __init__(
@@ -130,7 +131,7 @@ class WorkerPool:
         return self
 
     def notify_queued(self, job_id: str | None = None) -> None:
-        """Enqueue a job after the coordinator commits QUEUED."""
+        """Поставить job в очередь после фиксации QUEUED координатором."""
         if job_id is None:
             for job in self.ledger.queued_execution_jobs():
                 self._enqueue(job)
@@ -140,16 +141,16 @@ class WorkerPool:
             self._enqueue(job)
 
     def notify_cancel(self, job_id: str) -> None:
-        """Deliver a validated explicit cancellation to Worker supervision."""
+        """Передать проверенную явную отмену контролю Worker."""
         self._executor().notify_cancel(job_id)
 
     def notify_input(self, job_id: str) -> None:
-        """Wake the bounded worker control channel after a durable commit."""
+        """Разбудить ограниченный канал управления Worker после долговременной фиксации."""
 
         self._executor().notify_input(job_id)
 
     def stop_claiming(self) -> None:
-        """Close the durable queue-claim boundary without cancelling work."""
+        """Закрыть долговременную границу захвата очереди, не отменяя работу."""
         with self._claim_lock:
             if self._stop_claiming.is_set():
                 return
@@ -175,15 +176,15 @@ class WorkerPool:
                 "flight.worker.drain_exceeded",
                 activeWorkers=sum(thread.is_alive() for thread in self._threads),
             )
-            # The process-level state lock cannot be released while a worker
-            # thread can still mutate PostgreSQL or the spool. Process groups have
-            # already received SIGKILL; finish joining before returning control
-            # to FlightApplication.shutdown().
+            # Блокировку состояния уровня процесса нельзя освобождать, пока рабочий
+            # поток ещё может менять PostgreSQL или рабочее хранилище. Группы уже
+            # получили SIGKILL; ждём завершения до возврата управления в
+            # метод FlightApplication.shutdown().
             for thread in tuple(self._threads):
                 thread.join()
 
     def run_once(self, device: str, *, worker_id: str | None = None) -> bool:
-        """Atomically claim and execute at most one job for deterministic tests."""
+        """Атомарно захватить и выполнить не более одного job для детерминированных тестов."""
         if device not in ("cpu", "cuda"):
             raise ValueError("device must be cpu or cuda")
         if self._stop_claiming.is_set():
@@ -308,10 +309,10 @@ class WorkerPool:
                 if not claimed:
                     self._requeue_if_pending(job_id)
             except Exception as exc:
-                # A single unexpected attempt-finalization/storage error must
-                # not permanently remove capacity from the service.  The
-                # Durable attempt finalization decides whether a fit becomes
-                # RETRYING. The lane never invents a retry from an exception.
+                # Одна непредвиденная ошибка финализации попытки или хранилища не
+                # должна навсегда отнимать ёмкость у сервиса. Надёжная финализация
+                # попытки решает, перейдёт ли обучение в RETRYING. Поток выполнения
+                # не создаёт повторную попытку из исключения.
                 self.metrics.add("workerLaneErrors")
                 self.logger.event(
                     "flight.worker.lane_error",

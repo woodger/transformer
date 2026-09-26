@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v20/acquire-result.schema.json",
+  "title": "transformer.v20.job.acquire result",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "jobId", "revision", "mutationLease"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "revision": {"type": "integer", "minimum": 2},
+    "mutationLease": {"$ref": "common.schema.json#/$defs/mutationLease"}
+  }
+}

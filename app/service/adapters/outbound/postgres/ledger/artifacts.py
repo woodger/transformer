@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v3 import MAX_CHECKPOINT_VERIFICATION_BYTES
+from app.contracts.model_catalog.v7 import MAX_CHECKPOINT_VERIFICATION_BYTES
 from app.service.adapters.outbound.postgres.ledger.support import (
     LedgerSessions,
     RowMapping,
@@ -45,7 +45,7 @@ from app.service.domain.records import ModelArtifactRecord, PublishedModelRecord
 
 
 class ArtifactLedgerSlice:
-    """Atomic publication and retrieval of Transformer-owned artifacts."""
+    """Атомарная публикация и получение артефактов, принадлежащих Transformer."""
 
     def __init__(self, sessions: LedgerSessions) -> None:
         self.sessions = sessions

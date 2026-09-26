@@ -55,10 +55,10 @@ representation не является digest-equivalent прежней; model def
 
 ## Текущая документация
 
-- [Семантический контракт v3](../../app/contracts/semantic/v3/README.md)
-- [Контракт Arrow Flight v15](../../app/contracts/flight/v15/README.md)
-- [Процессный контракт Worker v14](../../app/contracts/worker/v14/README.md)
-- [Контракт checkpoint/recovery v8](../../app/contracts/checkpoint/v8/README.md)
-- [Запрос каталога моделей v3](../../app/contracts/model_catalog/v3/README.md)
-- [Запрос телеметрии обучения v3](../../app/contracts/training_telemetry/v3/README.md)
+- [Семантический контракт v4](../../app/contracts/semantic/v4/README.md)
+- [Контракт Arrow Flight v17](../../app/contracts/flight/v17/README.md)
+- [Процессный контракт Worker v15](../../app/contracts/worker/v15/README.md)
+- [Контракт checkpoint/recovery v9](../../app/contracts/checkpoint/v9/README.md)
+- [Запрос каталога моделей v4](../../app/contracts/model_catalog/v4/README.md)
+- [Запрос телеметрии обучения v4](../../app/contracts/training_telemetry/v4/README.md)
 - [Миграции PostgreSQL](../operations/database-migrations.md)

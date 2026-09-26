@@ -1,0 +1,4125 @@
+{
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "state": "available",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "producingRunId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "modelDefinitionSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sampleIdentity": "thds_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sampleRowCount": 1479,
+  "layout": [
+    {
+      "targetIdentity": "Opaque.BinaryEvent",
+      "targetIndex": 0,
+      "directComponentIdentity": "direct.opaque-binary-event"
+    }
+  ],
+  "coverage": {
+    "completedEpochs": 200
+  },
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 12,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050010000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050010000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050010000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01001,
+            "gradientL2Maximum": 0.02001,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.001,
+            "biasAfterEpoch": -3.2998999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 2,
+        "globalStep": 24,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05002
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05002
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05002
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01002,
+            "gradientL2Maximum": 0.02002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.002,
+            "biasAfterEpoch": -3.2998
+          }
+        ]
+      },
+      {
+        "epoch": 3,
+        "globalStep": 36,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050030000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050030000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050030000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01003,
+            "gradientL2Maximum": 0.02003,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.003,
+            "biasAfterEpoch": -3.2996999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 4,
+        "globalStep": 48,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01004,
+            "gradientL2Maximum": 0.02004,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.004,
+            "biasAfterEpoch": -3.2996
+          }
+        ]
+      },
+      {
+        "epoch": 5,
+        "globalStep": 60,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050050000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050050000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050050000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01005,
+            "gradientL2Maximum": 0.020050000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.005,
+            "biasAfterEpoch": -3.2994999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 6,
+        "globalStep": 72,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01006,
+            "gradientL2Maximum": 0.02006,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.006,
+            "biasAfterEpoch": -3.2994
+          }
+        ]
+      },
+      {
+        "epoch": 7,
+        "globalStep": 84,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05007
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05007
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05007
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01007,
+            "gradientL2Maximum": 0.02007,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.007,
+            "biasAfterEpoch": -3.2992999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 8,
+        "globalStep": 96,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05008
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05008
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05008
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01008,
+            "gradientL2Maximum": 0.02008,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.008,
+            "biasAfterEpoch": -3.2992
+          }
+        ]
+      },
+      {
+        "epoch": 9,
+        "globalStep": 108,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05009
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05009
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05009
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01009,
+            "gradientL2Maximum": 0.02009,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.009,
+            "biasAfterEpoch": -3.2990999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 10,
+        "globalStep": 120,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050100000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050100000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050100000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0101,
+            "gradientL2Maximum": 0.0201,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.01,
+            "biasAfterEpoch": -3.299
+          }
+        ]
+      },
+      {
+        "epoch": 11,
+        "globalStep": 132,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05011
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05011
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05011
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010110000000000001,
+            "gradientL2Maximum": 0.02011,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.011,
+            "biasAfterEpoch": -3.2988999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 12,
+        "globalStep": 144,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050120000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050120000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050120000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01012,
+            "gradientL2Maximum": 0.02012,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.012,
+            "biasAfterEpoch": -3.2988
+          }
+        ]
+      },
+      {
+        "epoch": 13,
+        "globalStep": 156,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05013
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05013
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05013
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01013,
+            "gradientL2Maximum": 0.020130000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.013,
+            "biasAfterEpoch": -3.2986999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 14,
+        "globalStep": 168,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050140000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050140000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050140000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01014,
+            "gradientL2Maximum": 0.02014,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.014,
+            "biasAfterEpoch": -3.2986
+          }
+        ]
+      },
+      {
+        "epoch": 15,
+        "globalStep": 180,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05015
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05015
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05015
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010150000000000001,
+            "gradientL2Maximum": 0.02015,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.015,
+            "biasAfterEpoch": -3.2984999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 16,
+        "globalStep": 192,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05016
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05016
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05016
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01016,
+            "gradientL2Maximum": 0.02016,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.016,
+            "biasAfterEpoch": -3.2984
+          }
+        ]
+      },
+      {
+        "epoch": 17,
+        "globalStep": 204,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050170000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050170000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050170000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01017,
+            "gradientL2Maximum": 0.02017,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.017,
+            "biasAfterEpoch": -3.2983
+          }
+        ]
+      },
+      {
+        "epoch": 18,
+        "globalStep": 216,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05018
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05018
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05018
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01018,
+            "gradientL2Maximum": 0.02018,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.018,
+            "biasAfterEpoch": -3.2982
+          }
+        ]
+      },
+      {
+        "epoch": 19,
+        "globalStep": 228,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050190000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050190000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050190000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01019,
+            "gradientL2Maximum": 0.02019,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.019,
+            "biasAfterEpoch": -3.2981
+          }
+        ]
+      },
+      {
+        "epoch": 20,
+        "globalStep": 240,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.0502
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.0502
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.0502
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0102,
+            "gradientL2Maximum": 0.0202,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.02,
+            "biasAfterEpoch": -3.298
+          }
+        ]
+      },
+      {
+        "epoch": 21,
+        "globalStep": 252,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050210000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050210000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050210000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01021,
+            "gradientL2Maximum": 0.02021,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.021,
+            "biasAfterEpoch": -3.2979
+          }
+        ]
+      },
+      {
+        "epoch": 22,
+        "globalStep": 264,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05022
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05022
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05022
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01022,
+            "gradientL2Maximum": 0.020220000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.022,
+            "biasAfterEpoch": -3.2977999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 23,
+        "globalStep": 276,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050230000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050230000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050230000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01023,
+            "gradientL2Maximum": 0.02023,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.023,
+            "biasAfterEpoch": -3.2977
+          }
+        ]
+      },
+      {
+        "epoch": 24,
+        "globalStep": 288,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05024
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05024
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05024
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01024,
+            "gradientL2Maximum": 0.02024,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.024,
+            "biasAfterEpoch": -3.2975999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 25,
+        "globalStep": 300,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05025
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05025
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05025
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01025,
+            "gradientL2Maximum": 0.02025,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.025,
+            "biasAfterEpoch": -3.2975
+          }
+        ]
+      },
+      {
+        "epoch": 26,
+        "globalStep": 312,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050260000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050260000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050260000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01026,
+            "gradientL2Maximum": 0.02026,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.026,
+            "biasAfterEpoch": -3.2973999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 27,
+        "globalStep": 324,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05027
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05027
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05027
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01027,
+            "gradientL2Maximum": 0.02027,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.027,
+            "biasAfterEpoch": -3.2973
+          }
+        ]
+      },
+      {
+        "epoch": 28,
+        "globalStep": 336,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050280000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050280000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050280000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010280000000000001,
+            "gradientL2Maximum": 0.02028,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.028,
+            "biasAfterEpoch": -3.2971999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 29,
+        "globalStep": 348,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05029
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05029
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05029
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01029,
+            "gradientL2Maximum": 0.02029,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.029,
+            "biasAfterEpoch": -3.2971
+          }
+        ]
+      },
+      {
+        "epoch": 30,
+        "globalStep": 360,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050300000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050300000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050300000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0103,
+            "gradientL2Maximum": 0.020300000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.03,
+            "biasAfterEpoch": -3.2969999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 31,
+        "globalStep": 372,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05031
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05031
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05031
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01031,
+            "gradientL2Maximum": 0.02031,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.031,
+            "biasAfterEpoch": -3.2969
+          }
+        ]
+      },
+      {
+        "epoch": 32,
+        "globalStep": 384,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050320000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050320000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050320000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010320000000000001,
+            "gradientL2Maximum": 0.02032,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.032,
+            "biasAfterEpoch": -3.2967999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 33,
+        "globalStep": 396,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05033
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05033
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05033
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01033,
+            "gradientL2Maximum": 0.02033,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.033,
+            "biasAfterEpoch": -3.2967
+          }
+        ]
+      },
+      {
+        "epoch": 34,
+        "globalStep": 408,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05034
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05034
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05034
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01034,
+            "gradientL2Maximum": 0.02034,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.034,
+            "biasAfterEpoch": -3.2965999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 35,
+        "globalStep": 420,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050350000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050350000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050350000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01035,
+            "gradientL2Maximum": 0.02035,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.035,
+            "biasAfterEpoch": -3.2965
+          }
+        ]
+      },
+      {
+        "epoch": 36,
+        "globalStep": 432,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05036
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05036
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05036
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01036,
+            "gradientL2Maximum": 0.02036,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.036,
+            "biasAfterEpoch": -3.2963999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 37,
+        "globalStep": 444,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050370000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050370000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050370000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01037,
+            "gradientL2Maximum": 0.02037,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.037,
+            "biasAfterEpoch": -3.2963
+          }
+        ]
+      },
+      {
+        "epoch": 38,
+        "globalStep": 456,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05038
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05038
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05038
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01038,
+            "gradientL2Maximum": 0.02038,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.038,
+            "biasAfterEpoch": -3.2962
+          }
+        ]
+      },
+      {
+        "epoch": 39,
+        "globalStep": 468,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050390000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050390000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050390000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01039,
+            "gradientL2Maximum": 0.020390000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.039,
+            "biasAfterEpoch": -3.2961
+          }
+        ]
+      },
+      {
+        "epoch": 40,
+        "globalStep": 480,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.0504
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.0504
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.0504
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0104,
+            "gradientL2Maximum": 0.0204,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.04,
+            "biasAfterEpoch": -3.296
+          }
+        ]
+      },
+      {
+        "epoch": 41,
+        "globalStep": 492,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05041
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05041
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05041
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01041,
+            "gradientL2Maximum": 0.02041,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.041,
+            "biasAfterEpoch": -3.2958999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 42,
+        "globalStep": 504,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05042
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05042
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05042
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01042,
+            "gradientL2Maximum": 0.02042,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.042,
+            "biasAfterEpoch": -3.2958
+          }
+        ]
+      },
+      {
+        "epoch": 43,
+        "globalStep": 516,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05043
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05043
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05043
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01043,
+            "gradientL2Maximum": 0.02043,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.043,
+            "biasAfterEpoch": -3.2956999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 44,
+        "globalStep": 528,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050440000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050440000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050440000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01044,
+            "gradientL2Maximum": 0.02044,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.044,
+            "biasAfterEpoch": -3.2956
+          }
+        ]
+      },
+      {
+        "epoch": 45,
+        "globalStep": 540,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05045
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05045
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05045
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010450000000000001,
+            "gradientL2Maximum": 0.02045,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.045,
+            "biasAfterEpoch": -3.2954999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 46,
+        "globalStep": 552,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050460000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050460000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050460000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01046,
+            "gradientL2Maximum": 0.02046,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.046,
+            "biasAfterEpoch": -3.2954
+          }
+        ]
+      },
+      {
+        "epoch": 47,
+        "globalStep": 564,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05047
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05047
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05047
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01047,
+            "gradientL2Maximum": 0.020470000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.047,
+            "biasAfterEpoch": -3.2952999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 48,
+        "globalStep": 576,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050480000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050480000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050480000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01048,
+            "gradientL2Maximum": 0.02048,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.048,
+            "biasAfterEpoch": -3.2952
+          }
+        ]
+      },
+      {
+        "epoch": 49,
+        "globalStep": 588,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05049
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05049
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05049
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01049,
+            "gradientL2Maximum": 0.02049,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.049,
+            "biasAfterEpoch": -3.2950999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 50,
+        "globalStep": 600,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.0505
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.0505
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.0505
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0105,
+            "gradientL2Maximum": 0.0205,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.05,
+            "biasAfterEpoch": -3.295
+          }
+        ]
+      },
+      {
+        "epoch": 51,
+        "globalStep": 612,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05051
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05051
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05051
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01051,
+            "gradientL2Maximum": 0.02051,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.051,
+            "biasAfterEpoch": -3.2948999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 52,
+        "globalStep": 624,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05052
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05052
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05052
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01052,
+            "gradientL2Maximum": 0.02052,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.052,
+            "biasAfterEpoch": -3.2948
+          }
+        ]
+      },
+      {
+        "epoch": 53,
+        "globalStep": 636,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050530000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050530000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050530000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01053,
+            "gradientL2Maximum": 0.02053,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.053,
+            "biasAfterEpoch": -3.2946999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 54,
+        "globalStep": 648,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05054
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05054
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05054
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01054,
+            "gradientL2Maximum": 0.02054,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.054,
+            "biasAfterEpoch": -3.2946
+          }
+        ]
+      },
+      {
+        "epoch": 55,
+        "globalStep": 660,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050550000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050550000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050550000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01055,
+            "gradientL2Maximum": 0.02055,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.055,
+            "biasAfterEpoch": -3.2944999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 56,
+        "globalStep": 672,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05056
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05056
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05056
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01056,
+            "gradientL2Maximum": 0.020560000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.056,
+            "biasAfterEpoch": -3.2944
+          }
+        ]
+      },
+      {
+        "epoch": 57,
+        "globalStep": 684,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050570000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050570000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050570000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01057,
+            "gradientL2Maximum": 0.02057,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.057,
+            "biasAfterEpoch": -3.2943
+          }
+        ]
+      },
+      {
+        "epoch": 58,
+        "globalStep": 696,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05058
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05058
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05058
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01058,
+            "gradientL2Maximum": 0.02058,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.058,
+            "biasAfterEpoch": -3.2942
+          }
+        ]
+      },
+      {
+        "epoch": 59,
+        "globalStep": 708,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05059
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05059
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05059
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01059,
+            "gradientL2Maximum": 0.02059,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.059,
+            "biasAfterEpoch": -3.2941
+          }
+        ]
+      },
+      {
+        "epoch": 60,
+        "globalStep": 720,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050600000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050600000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050600000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0106,
+            "gradientL2Maximum": 0.0206,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.06,
+            "biasAfterEpoch": -3.294
+          }
+        ]
+      },
+      {
+        "epoch": 61,
+        "globalStep": 732,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05061
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05061
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05061
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01061,
+            "gradientL2Maximum": 0.02061,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.061,
+            "biasAfterEpoch": -3.2939
+          }
+        ]
+      },
+      {
+        "epoch": 62,
+        "globalStep": 744,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050620000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050620000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050620000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010620000000000001,
+            "gradientL2Maximum": 0.02062,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.062,
+            "biasAfterEpoch": -3.2937999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 63,
+        "globalStep": 756,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05063
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05063
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05063
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01063,
+            "gradientL2Maximum": 0.02063,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.063,
+            "biasAfterEpoch": -3.2937
+          }
+        ]
+      },
+      {
+        "epoch": 64,
+        "globalStep": 768,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050640000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050640000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050640000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01064,
+            "gradientL2Maximum": 0.020640000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.064,
+            "biasAfterEpoch": -3.2935999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 65,
+        "globalStep": 780,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05065
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05065
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05065
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01065,
+            "gradientL2Maximum": 0.02065,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.065,
+            "biasAfterEpoch": -3.2935
+          }
+        ]
+      },
+      {
+        "epoch": 66,
+        "globalStep": 792,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050660000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050660000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050660000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01066,
+            "gradientL2Maximum": 0.02066,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.066,
+            "biasAfterEpoch": -3.2933999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 67,
+        "globalStep": 804,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05067
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05067
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05067
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01067,
+            "gradientL2Maximum": 0.02067,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.067,
+            "biasAfterEpoch": -3.2933
+          }
+        ]
+      },
+      {
+        "epoch": 68,
+        "globalStep": 816,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05068
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05068
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05068
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01068,
+            "gradientL2Maximum": 0.02068,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.068,
+            "biasAfterEpoch": -3.2931999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 69,
+        "globalStep": 828,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050690000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050690000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050690000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01069,
+            "gradientL2Maximum": 0.02069,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.069,
+            "biasAfterEpoch": -3.2931
+          }
+        ]
+      },
+      {
+        "epoch": 70,
+        "globalStep": 840,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.0507
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.0507
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.0507
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0107,
+            "gradientL2Maximum": 0.0207,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.07,
+            "biasAfterEpoch": -3.2929999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 71,
+        "globalStep": 852,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050710000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050710000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050710000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01071,
+            "gradientL2Maximum": 0.02071,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.071,
+            "biasAfterEpoch": -3.2929
+          }
+        ]
+      },
+      {
+        "epoch": 72,
+        "globalStep": 864,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05072
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05072
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05072
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01072,
+            "gradientL2Maximum": 0.02072,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.072,
+            "biasAfterEpoch": -3.2927999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 73,
+        "globalStep": 876,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050730000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050730000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050730000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01073,
+            "gradientL2Maximum": 0.020730000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.073,
+            "biasAfterEpoch": -3.2927
+          }
+        ]
+      },
+      {
+        "epoch": 74,
+        "globalStep": 888,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05074
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05074
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05074
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01074,
+            "gradientL2Maximum": 0.02074,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.074,
+            "biasAfterEpoch": -3.2925999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 75,
+        "globalStep": 900,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05075
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05075
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05075
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010750000000000001,
+            "gradientL2Maximum": 0.02075,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.075,
+            "biasAfterEpoch": -3.2925
+          }
+        ]
+      },
+      {
+        "epoch": 76,
+        "globalStep": 912,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05076
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05076
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05076
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01076,
+            "gradientL2Maximum": 0.02076,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.076,
+            "biasAfterEpoch": -3.2923999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 77,
+        "globalStep": 924,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05077
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05077
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05077
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01077,
+            "gradientL2Maximum": 0.02077,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.077,
+            "biasAfterEpoch": -3.2923
+          }
+        ]
+      },
+      {
+        "epoch": 78,
+        "globalStep": 936,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050780000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050780000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050780000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01078,
+            "gradientL2Maximum": 0.02078,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.078,
+            "biasAfterEpoch": -3.2922
+          }
+        ]
+      },
+      {
+        "epoch": 79,
+        "globalStep": 948,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05079
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05079
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05079
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010790000000000001,
+            "gradientL2Maximum": 0.02079,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.079,
+            "biasAfterEpoch": -3.2921
+          }
+        ]
+      },
+      {
+        "epoch": 80,
+        "globalStep": 960,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050800000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050800000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050800000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0108,
+            "gradientL2Maximum": 0.0208,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.08,
+            "biasAfterEpoch": -3.292
+          }
+        ]
+      },
+      {
+        "epoch": 81,
+        "globalStep": 972,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05081
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05081
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05081
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01081,
+            "gradientL2Maximum": 0.020810000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.081,
+            "biasAfterEpoch": -3.2918999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 82,
+        "globalStep": 984,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050820000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050820000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050820000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01082,
+            "gradientL2Maximum": 0.02082,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.082,
+            "biasAfterEpoch": -3.2918
+          }
+        ]
+      },
+      {
+        "epoch": 83,
+        "globalStep": 996,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05083
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05083
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05083
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01083,
+            "gradientL2Maximum": 0.02083,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.083,
+            "biasAfterEpoch": -3.2916999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 84,
+        "globalStep": 1008,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05084
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05084
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05084
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01084,
+            "gradientL2Maximum": 0.02084,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.084,
+            "biasAfterEpoch": -3.2916
+          }
+        ]
+      },
+      {
+        "epoch": 85,
+        "globalStep": 1020,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05085
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05085
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05085
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01085,
+            "gradientL2Maximum": 0.02085,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.085,
+            "biasAfterEpoch": -3.2914999999999996
+          }
+        ]
+      },
+      {
+        "epoch": 86,
+        "globalStep": 1032,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05086
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05086
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05086
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01086,
+            "gradientL2Maximum": 0.02086,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.086,
+            "biasAfterEpoch": -3.2914
+          }
+        ]
+      },
+      {
+        "epoch": 87,
+        "globalStep": 1044,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050870000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050870000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050870000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01087,
+            "gradientL2Maximum": 0.02087,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.087,
+            "biasAfterEpoch": -3.2912999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 88,
+        "globalStep": 1056,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05088
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05088
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05088
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01088,
+            "gradientL2Maximum": 0.02088,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.088,
+            "biasAfterEpoch": -3.2912
+          }
+        ]
+      },
+      {
+        "epoch": 89,
+        "globalStep": 1068,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050890000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050890000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050890000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01089,
+            "gradientL2Maximum": 0.02089,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.089,
+            "biasAfterEpoch": -3.2910999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 90,
+        "globalStep": 1080,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.0509
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.0509
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.0509
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.0109,
+            "gradientL2Maximum": 0.020900000000000002,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.09,
+            "biasAfterEpoch": -3.291
+          }
+        ]
+      },
+      {
+        "epoch": 91,
+        "globalStep": 1092,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050910000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050910000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050910000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01091,
+            "gradientL2Maximum": 0.02091,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.091,
+            "biasAfterEpoch": -3.2908999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 92,
+        "globalStep": 1104,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05092
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05092
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05092
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010920000000000001,
+            "gradientL2Maximum": 0.02092,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.092,
+            "biasAfterEpoch": -3.2908
+          }
+        ]
+      },
+      {
+        "epoch": 93,
+        "globalStep": 1116,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05093
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05093
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05093
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01093,
+            "gradientL2Maximum": 0.02093,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.093,
+            "biasAfterEpoch": -3.2906999999999997
+          }
+        ]
+      },
+      {
+        "epoch": 94,
+        "globalStep": 1128,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050940000000000006
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050940000000000006
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050940000000000006
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01094,
+            "gradientL2Maximum": 0.02094,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.094,
+            "biasAfterEpoch": -3.2906
+          }
+        ]
+      },
+      {
+        "epoch": 95,
+        "globalStep": 1140,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05095
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05095
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05095
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01095,
+            "gradientL2Maximum": 0.02095,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.095,
+            "biasAfterEpoch": -3.2904999999999998
+          }
+        ]
+      },
+      {
+        "epoch": 96,
+        "globalStep": 1152,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050960000000000005
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050960000000000005
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050960000000000005
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.010960000000000001,
+            "gradientL2Maximum": 0.02096,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.096,
+            "biasAfterEpoch": -3.2904
+          }
+        ]
+      },
+      {
+        "epoch": 97,
+        "globalStep": 1164,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05097
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05097
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05097
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01097,
+            "gradientL2Maximum": 0.02097,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.097,
+            "biasAfterEpoch": -3.2903
+          }
+        ]
+      },
+      {
+        "epoch": 98,
+        "globalStep": 1176,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.050980000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.050980000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.050980000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01098,
+            "gradientL2Maximum": 0.02098,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.098,
+            "biasAfterEpoch": -3.2902
+          }
+        ]
+      },
+      {
+        "epoch": 99,
+        "globalStep": 1188,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.05099
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.05099
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.05099
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.01099,
+            "gradientL2Maximum": 0.02099,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.099,
+            "biasAfterEpoch": -3.2901
+          }
+        ]
+      },
+      {
+        "epoch": 100,
+        "globalStep": 1200,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 0.051000000000000004
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.051000000000000004
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.051000000000000004
+          }
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 1479,
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0,
+              "standardDeviation": 0
+            },
+            "publicPrediction": {
+              "rowCount": 1479,
+              "minimum": 0.5,
+              "maximum": 0.5,
+              "mean": 0.5,
+              "standardDeviation": 0
+            },
+            "gradientL2Mean": 0.011,
+            "gradientL2Maximum": 0.021,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.1,
+            "biasAfterEpoch": -3.29
+          }
+        ]
+      }
+    ],
+    "nextCursor": "thd2.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "cursorExpiresAt": "2026-09-25T00:15:00Z"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "fixtureId": "transformer.v18.job-config.target-head-diagnostics",
+  "jobConfig": {
+    "operation": "fit",
+    "requestedDevice": "auto",
+    "modelLabel": "model-a",
+    "inputLayout": {
+      "featureBlocks": [{"windowRows": 2, "nativeRowWidth": 2}]
+    },
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelDefinitionSha256": "66f7328ce7d5d9d76ce9bd9ab865113fc58554cc622480791dc0a59f14de6782",
+    "trainingConfig": {
+      "learningRate": 0.001,
+      "batchSize": 64,
+      "epochs": 2,
+      "mixedPrecision": true,
+      "weightDecay": 0,
+      "selection": null,
+      "seed": 42,
+      "deterministic": true
+    },
+    "diagnostics": {
+      "gradientInteractions": null,
+      "targetHead": "fullCommittedArtifact"
+    },
+    "initialization": {"source": "random"}
+  },
+  "expectedJobConfigSha256": "4bfd6029fcba3b96ae17529de6e055e73108aabb3a44d5a137a8ce254ad54cba"
+}

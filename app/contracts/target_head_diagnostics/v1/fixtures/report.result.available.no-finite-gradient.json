@@ -1,0 +1,39 @@
+{
+  "requestId": "55555555-5555-4555-8555-555555555555",
+  "state": "available",
+  "modelRef": "mdl_33333333333333333333333333333333",
+  "producingRunId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "modelDefinitionSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sampleIdentity": "thds_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "sampleRowCount": 1479,
+  "layout": [
+    {
+      "targetIdentity": "Opaque.BinaryEvent",
+      "targetIndex": 0,
+      "directComponentIdentity": "direct.opaque-binary-event"
+    }
+  ],
+  "coverage": {"completedEpochs": 1},
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 12,
+        "headInput": {"rowCenteredL2Mean": 0.05},
+        "targetHeads": [
+          {
+            "rawLogit": {"rowCount": 1479, "minimum": 0, "maximum": 0, "mean": 0, "standardDeviation": 0},
+            "publicPrediction": {"rowCount": 1479, "minimum": 0.5, "maximum": 0.5, "mean": 0.5, "standardDeviation": 0},
+            "gradientL2Mean": null,
+            "gradientL2Maximum": null,
+            "gradientBatchCount": 0,
+            "weightL2AfterEpoch": 1,
+            "biasAfterEpoch": 0
+          }
+        ]
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

@@ -56,7 +56,7 @@ class _PrefetchError:
 
 
 class BatchPrefetcher:
-    """Prepare at most one closed-input batch ahead of the trainer."""
+    """Подготовить перед Trainer не более одного пакета закрытого входа."""
 
     def __init__(self, batches: TrainingBatches) -> None:
         self._batches = iter(batches)
@@ -145,6 +145,8 @@ class PayloadBatcher:
                     * batch.targets.element_size()
                 )
                 batch_bytes = self.batch_size * row_bytes
+                # Перемешиваем только ограниченное окно: хранение всего входного
+                # потока разрушило бы потоковый режим обучения.
                 window_batches = min(
                     _MAX_SHUFFLE_WINDOW_BATCHES,
                     max(1, _MAX_SHUFFLE_WINDOW_BYTES // batch_bytes),

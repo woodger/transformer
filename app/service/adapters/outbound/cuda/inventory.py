@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import cast
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.worker.v14 import CONTRACT_VERSION, validate_document
+from app.contracts.worker.v20 import CONTRACT_VERSION, validate_document
 from app.project import PROJECT_ROOT
 from app.service.application.ports.observability import EventLogger
 
@@ -58,7 +58,7 @@ class CudaInventorySnapshot:
 
 
 class CudaDeviceInventory:
-    """Boot-scoped physical CUDA inventory and monotonic quarantine."""
+    """Физический inventory CUDA в пределах boot и монотонный карантин."""
 
     def __init__(
         self,
@@ -172,7 +172,7 @@ class CudaDeviceInventory:
             )
 
     def confirm_loss(self, device_id: str) -> bool:
-        """Probe once and quarantine a missing device until the next boot."""
+        """Проверить устройство один раз и изолировать пропавшее до следующего boot."""
 
         with self._lock:
             assigned = self._devices.get(device_id)
@@ -189,9 +189,9 @@ class CudaDeviceInventory:
             }
             lost = device_id not in live_ids
         except Exception:
-            # An inventory probe which cannot initialize the CUDA runtime is
-            # itself evidence that this process must stop scheduling the
-            # assigned device.
+            # Проба инвентаря, не способная инициализировать среду CUDA, сама
+            # показывает, что процесс должен прекратить назначать выделенное
+            # устройство.
             lost = True
         if not lost:
             return False

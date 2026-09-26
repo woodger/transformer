@@ -14,11 +14,15 @@ import numpy as np
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import (
     DEFAULT_CONTEXT_MODE,
     ModelConfig,
     TrainConfig,
+)
+from app.contracts.worker.v20.diagnostics import (
+    ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
+    TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )
 from app.worker.checkpoints.model import save_model
 from app.worker.data.tensors import TrainingBatch
@@ -30,6 +34,7 @@ from app.worker.telemetry import (
     ObservedTrainingEpoch,
     TargetErrorObservation,
 )
+from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.batching import Closable, PayloadBatcher, TrainingBatches
 from app.worker.training.constants import GRAD_CLIP_NORM
 from app.worker.training.early_stopping import SelectionState
@@ -54,11 +59,11 @@ EpochCommittedCallback = Callable[
 
 
 class Trainer:
-    """Own optimization, checkpoint selection, and resumable training state.
+    """Владеть оптимизацией, выбором контрольной точки и возобновляемым состоянием.
 
-    AMP is enabled only on CUDA. Recovery serialization includes model,
-    optimizer, scaler, RNG, shuffle, early-stopping, and checkpoint-selection
-    state.
+    AMP включается только на CUDA. Сериализация восстановления включает состояние
+    модели, оптимизатора, scaler, RNG, перемешивания, ранней остановки и выбора
+    контрольной точки.
     """
 
     def __init__(
@@ -107,6 +112,18 @@ class Trainer:
         self.training_complete = False
         self._payload_shuffle_generator = torch.Generator()
         self._payload_shuffle_generator.manual_seed(self.seed)
+        self._target_head_diagnostics = (
+            None
+            if train_config.diagnostics.target_head
+            != TARGET_HEAD_FULL_COMMITTED_ARTIFACT
+            else TargetHeadDiagnosticsCollector(
+                model_contract,
+                collect_encoder_learning=(
+                    train_config.diagnostics.encoder_layer_diagnostics
+                    == ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH
+                ),
+            )
+        )
 
         self.use_amp = bool(train_config.use_amp and device.type == "cuda")
         self.scaler = torch.GradScaler("cuda", enabled=self.use_amp)
@@ -132,6 +149,10 @@ class Trainer:
     def train_step(self, value: int) -> None:
         self.state.train_step = value
 
+    @property
+    def target_head_diagnostics_enabled(self) -> bool:
+        return self._target_head_diagnostics is not None
+
     def _autocast(self) -> AbstractContextManager[object]:
         if self.use_amp:
             return torch.autocast(device_type="cuda", enabled=True)
@@ -150,6 +171,7 @@ class Trainer:
         self,
         loaders: Iterable[TrainingBatches],
     ) -> ObservedTrainingEpoch:
+        self._begin_target_head_diagnostics_epoch()
         self.model.train()
         epoch_result = ObservedTrainingEpoch(
             targets=self.model_contract.target_identities,
@@ -178,7 +200,7 @@ class Trainer:
         )
         started = time.perf_counter()
 
-        # Phase timers stay host-side and must never force CUDA synchronization.
+        # Таймеры фаз работают на CPU и не должны принудительно синхронизировать CUDA.
         for loader in loaders:
             batches = iter(loader)
             try:
@@ -196,18 +218,11 @@ class Trainer:
 
                     batch_rows = batch.features.size(0)
                     phase_started = time.perf_counter()
-                    missingness_ratios: dict[str, float] = {}
-                    if telemetry is not None:
-                        try:
-                            missingness_ratios = context_missingness_ratios(
-                                batch.features,
-                                self.context_mode,
-                            )
-                            telemetry.missing_stats_ms += (
-                                time.perf_counter() - phase_started
-                            ) * 1000
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    missingness_ratios = self._collect_missingness_ratios(
+                        epoch_result,
+                        batch.features,
+                        phase_started,
+                    )
 
                     phase_started = time.perf_counter()
                     batch_features = batch.features.to(self.device)
@@ -275,18 +290,15 @@ class Trainer:
                         except Exception as exc:
                             self._disable_epoch_telemetry(epoch_result, exc)
 
-                    target_error_observation: TargetErrorObservation | None = None
-                    if epoch_result.telemetry is not None:
-                        try:
-                            target_error_observation = (
-                                TargetErrorObservation.evaluate(
-                                    model_output,
-                                    batch_targets,
-                                    self.model_contract,
-                                )
-                            )
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    self._record_target_head_component_gradients(
+                        loss_evaluation.diagnostic_components,
+                    )
+
+                    target_error_observation = self._observe_target_errors(
+                        epoch_result,
+                        model_output,
+                        batch_targets,
+                    )
 
                     self.scaler.scale(
                         loss
@@ -296,10 +308,14 @@ class Trainer:
                         self.model.parameters(), GRAD_CLIP_NORM
                     )
                     updates_before = self._optimizer_updates_applied_total
+                    self._snapshot_encoder_layer_parameters()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     updates_after = self._optimizer_updates_applied_total
                     optimizer_update_applied = updates_after > updates_before
+                    self._record_encoder_layer_parameter_updates(
+                        optimizer_update_applied,
+                    )
                     try:
                         materialized_statistics = (
                             loss_evaluation.statistics.materialize(
@@ -331,33 +347,17 @@ class Trainer:
                         materialized_statistics,
                         step=step,
                     )
-                    telemetry = epoch_result.telemetry
-                    if telemetry is not None and target_error_observation is not None:
-                        try:
-                            target_errors = target_error_observation.decode(
-                                materialized_statistics.observations
-                            )
-                            telemetry.observe_batch(
-                                rows=batch_rows,
-                                target_errors=target_errors,
-                                grad_norm=grad_norm_value,
-                                optimizer_update_applied=(
-                                    optimizer_update_applied
-                                ),
-                                amp_overflow=(
-                                    self.use_amp and not optimizer_update_applied
-                                ),
-                                **missingness_ratios,
-                            )
-                            if gradient_observation is not None:
-                                telemetry.observe_gradient_interactions(
-                                    gradient_observation.materialize()
-                                )
-                            telemetry.train_step_ms += (
-                                time.perf_counter() - phase_started
-                            ) * 1000
-                        except Exception as exc:
-                            self._disable_epoch_telemetry(epoch_result, exc)
+                    self._record_batch_telemetry(
+                        epoch_result,
+                        batch_rows=batch_rows,
+                        target_error_observation=target_error_observation,
+                        observations=materialized_statistics.observations,
+                        grad_norm=grad_norm_value,
+                        optimizer_update_applied=optimizer_update_applied,
+                        missingness_ratios=missingness_ratios,
+                        gradient_observation=gradient_observation,
+                        phase_started=phase_started,
+                    )
             finally:
                 if isinstance(batches, Closable):
                     batches.close()
@@ -367,6 +367,188 @@ class Trainer:
             telemetry.elapsed_ms = (time.perf_counter() - started) * 1000
             telemetry.finalize_gradient_statistics()
         return epoch_result
+
+    def _collect_missingness_ratios(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        features: torch.Tensor,
+        phase_started: float,
+    ) -> dict[str, float]:
+        telemetry = epoch_result.telemetry
+        if telemetry is None:
+            return {}
+        try:
+            ratios = context_missingness_ratios(
+                features,
+                self.context_mode,
+            )
+            telemetry.missing_stats_ms += (
+                time.perf_counter() - phase_started
+            ) * 1000
+            return ratios
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
+            return {}
+
+    def _observe_target_errors(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        model_output: torch.Tensor,
+        batch_targets: torch.Tensor,
+    ) -> TargetErrorObservation | None:
+        if epoch_result.telemetry is None:
+            return None
+        try:
+            return TargetErrorObservation.evaluate(
+                model_output,
+                batch_targets,
+                self.model_contract,
+            )
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
+            return None
+
+    def _record_batch_telemetry(
+        self,
+        epoch_result: ObservedTrainingEpoch,
+        *,
+        batch_rows: int,
+        target_error_observation: TargetErrorObservation | None,
+        observations: tuple[float, ...],
+        grad_norm: float | None,
+        optimizer_update_applied: bool,
+        missingness_ratios: dict[str, float],
+        gradient_observation: GradientInteractionObservation | None,
+        phase_started: float,
+    ) -> None:
+        telemetry = epoch_result.telemetry
+        if telemetry is None or target_error_observation is None:
+            return
+        try:
+            target_errors = target_error_observation.decode(observations)
+            telemetry.observe_batch(
+                rows=batch_rows,
+                target_errors=target_errors,
+                grad_norm=grad_norm,
+                optimizer_update_applied=optimizer_update_applied,
+                amp_overflow=self.use_amp and not optimizer_update_applied,
+                **missingness_ratios,
+            )
+            if gradient_observation is not None:
+                telemetry.observe_gradient_interactions(
+                    gradient_observation.materialize()
+                )
+            telemetry.train_step_ms += (
+                time.perf_counter() - phase_started
+            ) * 1000
+        except Exception as exc:
+            self._disable_epoch_telemetry(epoch_result, exc)
+
+    def _begin_target_head_diagnostics_epoch(self) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.begin_epoch(self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def _record_target_head_component_gradients(
+        self,
+        components: tuple[tuple[str, torch.Tensor], ...],
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_component_gradients(components, self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def _snapshot_encoder_layer_parameters(self) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.snapshot_encoder_parameters(self.model)
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def _record_encoder_layer_parameter_updates(
+        self,
+        optimizer_update_applied: bool,
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_encoder_parameter_updates(
+                self.model,
+                optimizer_update_applied=optimizer_update_applied,
+            )
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def collect_target_head_diagnostics(
+        self,
+        features: Callable[[], Iterable[torch.Tensor]],
+        *,
+        epoch: int,
+        global_step: int,
+        expected_rows: int,
+    ) -> None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return
+        try:
+            collector.observe_post_update(
+                self.model,
+                features,
+                device=self.device,
+                autocast=self._autocast,
+                epoch=epoch,
+                global_step=global_step,
+                expected_rows=expected_rows,
+            )
+        except Exception as exc:
+            self._disable_target_head_diagnostics(collector, exc)
+
+    def target_head_diagnostics_artifact(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        attempt_id: str,
+        input_revision: int,
+        manifest_sha256: str,
+        job_config_sha256: str,
+    ) -> JsonObject | None:
+        collector = self._target_head_diagnostics
+        if collector is None:
+            return None
+        return collector.artifact(
+            job_id=job_id,
+            attempt=attempt,
+            attempt_id=attempt_id,
+            input_revision=input_revision,
+            manifest_sha256=manifest_sha256,
+            model_definition_sha256=self.model_definition_sha256,
+            job_config_sha256=job_config_sha256,
+            completed_epochs=self.state.global_epoch,
+        )
+
+    @staticmethod
+    def _disable_target_head_diagnostics(
+        collector: TargetHeadDiagnosticsCollector,
+        exc: Exception,
+    ) -> None:
+        if collector.disable():
+            print(
+                "диагностика выходной головки отключена: "
+                + type(exc).__name__,
+                file=sys.stderr,
+                flush=True,
+            )
 
     @staticmethod
     def _disable_epoch_telemetry(
@@ -490,11 +672,12 @@ class Trainer:
         payloads: TrainingBatchFactory,
         on_epoch: EpochCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train global epochs over a payload-independent row stream.
+        """Обучить глобальные эпохи на потоке строк, независимом от payload.
 
-        ``payloads`` is a callable so durable inputs can be reopened for every
-        epoch. Optimizer batches and bounded shuffle windows may cross payload
-        boundaries, so transport partitioning cannot change the trajectory.
+        ``payloads`` — вызываемый объект, чтобы долговременный вход можно было
+        открыть для каждой эпохи. Пакеты оптимизатора и ограниченные окна
+        перемешивания могут пересекать границы payload, поэтому транспортное
+        разбиение не меняет траекторию.
         """
         def loaders() -> Iterator[TrainingBatches]:
             yield self._batcher.prefetched(
@@ -558,7 +741,7 @@ class Trainer:
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train job-wide epochs and expose only complete recovery boundaries."""
+        """Обучить эпохи job и раскрыть только полные границы восстановления."""
 
         def loaders() -> Iterator[TrainingBatches]:
             yield self._batcher.prefetched(
@@ -581,11 +764,12 @@ class Trainer:
         on_epoch: EpochCallback | None = None,
         on_epoch_committed: EpochCommittedCallback | None = None,
     ) -> list[ObservedTrainingEpoch]:
-        """Train epoch zero from an open stream, then replay closed input.
+        """Обучить нулевую эпоху из открытого потока, затем повторить закрытый вход.
 
-        The first iterable may block at the durable input frontier. Its EOF is
-        the explicit input-close boundary. Every later epoch reopens the same
-        complete ordered dataset through ``closed_payloads``.
+        Первый итерируемый объект может блокироваться на границе долговременного
+        входа. Его EOF — явная граница закрытия входа. Каждая следующая эпоха
+        заново открывает тот же полный упорядоченный набор данных через
+        ``closed_payloads``.
         """
 
         first_epoch = True
@@ -615,7 +799,7 @@ class Trainer:
         )
 
     def recovery_state_dict(self) -> dict[str, object]:
-        """Return the complete trusted state needed to resume a fit."""
+        """Вернуть полное доверенное состояние, нужное для продолжения fit."""
 
         cuda_rng_state = None
         if self.device.type == "cuda" and torch.cuda.is_available():
@@ -643,9 +827,8 @@ class Trainer:
                     if self.best_state_dict is None
                     else _tree_to_cpu(self.best_state_dict)
                 ),
-                # Kept as an inert field to preserve the current durable
-                # recovery format. Telemetry is no longer restored into the
-                # training state.
+                # Поле сохранено неактивным, чтобы сохранить текущий надёжный
+                # формат восстановления: состояние выбора не зависит от лучших метрик.
                 "best_metrics": None,
                 "best_frame": self.best_frame,
                 "best_epoch": self.best_epoch,
@@ -660,13 +843,18 @@ class Trainer:
                 "cuda": cuda_rng_state,
             },
             "training_complete": self.training_complete,
+            "target_head_diagnostics": (
+                None
+                if self._target_head_diagnostics is None
+                else self._target_head_diagnostics.recovery_document()
+            ),
         }
 
     def load_recovery_state_dict(
         self,
         payload: Mapping[str, object],
     ) -> None:
-        """Restore a state produced by :meth:`recovery_state_dict`."""
+        """Восстановить состояние, созданное :meth:`recovery_state_dict`."""
 
         required = {
             "model_state_dict",
@@ -679,6 +867,7 @@ class Trainer:
             "payload_shuffle_generator_state",
             "rng",
             "training_complete",
+            "target_head_diagnostics",
         }
         if set(payload) != required:
             raise ValueError("training recovery state has invalid fields")
@@ -852,6 +1041,14 @@ class Trainer:
             payload["training_complete"],
             "training completion marker",
         )
+        diagnostics_state = payload["target_head_diagnostics"]
+        if self._target_head_diagnostics is None:
+            if diagnostics_state is not None:
+                raise ValueError("training recovery diagnostics state is invalid")
+        else:
+            if diagnostics_state is None:
+                raise ValueError("training recovery diagnostics state is missing")
+            self._target_head_diagnostics.load_recovery_document(diagnostics_state)
 
     def predict(self, features: torch.Tensor) -> torch.Tensor:
         self.model.eval()

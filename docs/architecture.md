@@ -21,15 +21,16 @@ Torch, CUDA или runtime Flight. Локального пути исполне�
 нет.
 
 ```text
-app/contracts/semantic/v3          semantic target/objective language
-app/contracts/flight/v16           public Flight workflow
-app/contracts/model_catalog/v3     owner-scoped model discovery/detail
-app/contracts/model_topology/v1    owner-scoped public model topology
-app/contracts/training_telemetry/v3 owner-scoped telemetry report
-app/contracts/worker/v14           internal service-to-worker protocol
-app/contracts/checkpoint/v8        internal checkpoint/recovery metadata
-app/contracts/metrics/v7           internal epoch metrics/OpenSearch points
-app/contracts/metrics/fit_run/v7   internal terminal run summary
+app/contracts/semantic/v5          semantic target/objective language
+app/contracts/flight/v22           public Flight workflow
+app/contracts/model_catalog/v7     owner-scoped model discovery/detail
+app/contracts/model_topology/v3    owner-scoped public model topology
+app/contracts/training_telemetry/v4 owner-scoped telemetry report
+app/contracts/target_head_diagnostics/v5 owner-scoped target head diagnostics
+app/contracts/worker/v20           internal service-to-worker protocol
+app/contracts/checkpoint/v12       internal checkpoint/recovery metadata
+app/contracts/metrics/v11          internal epoch metrics/OpenSearch points
+app/contracts/metrics/fit_run/v11  internal terminal run summary
 ```
 
 ## Сервис Flight
@@ -53,7 +54,7 @@ Domain владеет состояниями job, errors и правилами l
 владеют PostgreSQL, storage artifacts, supervision worker process, inventory
 CUDA и OpenSearch.
 
-Flight v16 принимает предоставленные вызывающей системой data binding, semantic
+Flight v22 принимает предоставленные вызывающей системой data binding, semantic
 model intent, training intent и запрошенную initialization. Он выпускает
 identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
 реализация модели, operational fences, schema fingerprints, версии
@@ -62,7 +63,7 @@ worker/checkpoint и детали artifacts — не пересекают пуб
 ## Worker и tensor data plane
 
 Один process Worker исполняет один принадлежащий service attempt. Он получает
-immutable manifest Worker v14, записывает только artifacts workspace attempt и
+immutable manifest Worker v20, записывает только artifacts workspace attempt и
 возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
 identity.
 
@@ -73,7 +74,7 @@ Float32 `[rows, seqLen, featureDim]` ограниченными slices до batc
 физических payload/chunk не меняют логический порядок, training rows или target
 coordinates.
 
-Target identities Semantic v3 непрозрачны. Упорядоченные slots определяют
+Target identities Semantic v5 непрозрачны. Упорядоченные slots определяют
 ширину target и prediction. Transformer интерпретирует generic transformations,
 operators, typed roles и private resource classes, но никогда не имена target
 внешней предметной области, profiles, FIGIs или feature formulas.
@@ -86,17 +87,19 @@ inputs, attempt artifacts, recovery artifacts, checkpoints моделей и в�
 artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
 registry или состояния job.
 
-Model Catalog Query v3 читает owner-scoped state registry. Model Topology Query
-v1 строит browser-safe статическую projection из metadata generation. Training
-Telemetry Query v3 валидирует полную projection относительно принадлежащих
-checkpoint-у metadata модели до раскрытия. Ни один query не позволяет
-вызывающей системе получить filesystem paths, bytes checkpoint-а или topology
-OpenSearch.
+Model Catalog Query v7 читает owner-scoped state registry. Model Topology Query
+v3 строит browser-safe статическую projection из metadata generation. Training
+Telemetry Query v4 валидирует полную projection относительно принадлежащих
+checkpoint-у metadata модели до раскрытия. Target Head Diagnostics Query v5
+раскрывает opt-in наблюдения выходных головок и границы encoder, сохранённые
+Worker после эпох.
+Ни один query не позволяет вызывающей системе получить filesystem paths, bytes
+checkpoint-а или topology OpenSearch.
 
-Migration 0027 намеренно разрушительна: она отклоняет active jobs и удаляет
+Migration 0029 намеренно разрушительна: она отклоняет active jobs и удаляет
 предыдущее состояние public boundary. Startup reconciliation удаляет managed
-artifacts, оставшиеся без references после clean cut. Замена индексов OpenSearch
-v6 на v7 — явная release operation.
+artifacts, оставшиеся без references после clean cut. Release procedure также
+заменяет индексы OpenSearch metrics v10 на v11 до запуска Flight v22.
 
 ## Правила зависимостей
 

@@ -10,14 +10,14 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14.config import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.worker.v20.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility
@@ -102,6 +102,7 @@ def slice_batch(batch, rows):
 def model_config(*, seq_len=5, feature_dim=4):
     return ModelConfig(
         seq_len=seq_len,
+        normalization_order="postNorm",
         hidden=32,
         layers=1,
         dropout=0.0,
@@ -127,6 +128,7 @@ def new_model(contract=DEFAULT_MODEL_CONTRACT):
         dropout=0.0,
         model_contract=contract,
         nhead=4,
+        normalization_order="postNorm",
     )
 
 
@@ -154,6 +156,7 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
         dropout = None
         nhead = None
         context_mode = None
+        normalization_order = None
         out_dim = None
 
     config = model_config_from_args(
@@ -163,7 +166,10 @@ def test_model_config_can_be_loaded_from_checkpoint_defaults():
             "feature_dim": 48,
             "hidden": 512,
             "layers": 4,
+            "dropout": 0.1,
+            "nhead": 8,
             "context_mode": "relaxed",
+            "normalization_order": "postNorm",
         },
     )
 

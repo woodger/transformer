@@ -10,7 +10,7 @@ from app.service.domain.records import ExecutionJobRecord
 
 @dataclass(frozen=True, slots=True)
 class PublishedModelArtifacts:
-    """Core model publication result exposed to optional observers."""
+    """Результат публикации ядра модели, доступный необязательному наблюдателю."""
 
     model_ref: str
     model_contract: JsonObject
@@ -18,7 +18,7 @@ class PublishedModelArtifacts:
 
 
 class ArtifactPublisher(Protocol):
-    """Validate and publish artifacts produced by one active attempt."""
+    """Проверить и опубликовать артефакты, созданные одной активной попыткой."""
 
     def publish_outputs_from_manifest(
         self,

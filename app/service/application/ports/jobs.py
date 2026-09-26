@@ -13,7 +13,7 @@ from app.service.domain.records import (
 
 
 class JobRepository(Protocol):
-    """Durable job capabilities required by execution orchestration."""
+    """Долговременно сохраняемые возможности job, нужные оркестрации выполнения."""
 
     def get_execution_job(self, job_id: str) -> ExecutionJobRecord | None: ...
 

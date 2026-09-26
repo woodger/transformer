@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/checkpoint/v10/checkpoint-metadata.schema.json",
+  "title": "Transformer checkpoint v10 embedded metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "serviceVersion",
+    "generation",
+    "jobId",
+    "dataContract",
+    "modelContract",
+    "predictionDefinition",
+    "modelConfig",
+    "semanticDigests",
+    "trainingConfig",
+    "diagnostics",
+    "selection",
+    "initialization",
+    "jobConfigSha256",
+    "manifestSha256",
+    "progress"
+  ],
+  "properties": {
+    "format": {
+      "const": "transformer-checkpoint-v10"
+    },
+    "serviceVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "dataContract": {
+      "$ref": "common.schema.json#/$defs/dataContract"
+    },
+    "modelContract": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/model-contract-envelope.schema.json"
+    },
+    "predictionDefinition": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/prediction-definition.schema.json"
+    },
+    "modelConfig": {
+      "$ref": "common.schema.json#/$defs/modelConfig"
+    },
+    "semanticDigests": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/semantic-digests.schema.json"
+    },
+    "trainingConfig": {
+      "$ref": "common.schema.json#/$defs/trainingConfig"
+    },
+    "diagnostics": {
+      "$ref": "common.schema.json#/$defs/diagnosticsConfig"
+    },
+    "selection": {
+      "$ref": "common.schema.json#/$defs/selectionState"
+    },
+    "initialization": {
+      "$ref": "common.schema.json#/$defs/resolvedInitialization"
+    },
+    "jobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "manifestSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "progress": {
+      "$ref": "common.schema.json#/$defs/progress"
+    }
+  }
+}

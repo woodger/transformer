@@ -7,6 +7,52 @@
 
 ## [Не выпущено]
 
+## [0.1.21] - 2026-09-26
+
+### Добавлено
+
+- Semantic v4 ввёл отдельный бинарный примитив
+  `PositiveClassWeightedBinaryCrossEntropyWithLogits`. Он принимает явный
+  вес положительного класса, применяет его до `GlobalRowMean` и публикует
+  вероятность исходного распределения как `sigmoid(logit - log(weight))`.
+- Target Head Diagnostics v5 публикует opt-in наблюдения выходных головок,
+  представлений и обучения encoder: границы прямого прохождения, градиенты
+  direct component и нормы обновлений групп attention, feed-forward и
+  normalization.
+- Semantic v5 добавил обязательный
+  `modelTuning.encoderNormalizationOrder` со значениями `postNorm` и
+  `preNorm`. Flight v22, Model Catalog v7, Model Topology v3, checkpoint v12
+  и Target Head Diagnostics v5 сохраняют и возвращают выбранный порядок.
+
+### Изменено
+
+- Единственная активная граница — Semantic v5 / Flight v22 / Worker v20 /
+  checkpoint-recovery v12 / metrics v11 / Model Catalog v7 / Training
+  Telemetry v4 / Model Topology v3 / Target Head Diagnostics v5.
+- Взвешенные бинарные targets принимают только точные значения `0` или `1` при
+  upload и при повторном чтении входных Arrow-данных Worker. Существующий
+  `BinaryCrossEntropyWithLogits` и его soft-label semantics не изменены.
+- Metrics v11 связывает telemetry с checkpoint v12. Его строгие OpenSearch
+  templates и indices заменяют Metrics v10 отдельной operator procedure.
+- PyTorch обновлён до 2.14.0 вместе с совместимыми зависимостями CUDA 13:
+  `cuda-toolkit` 13.0.3, cuDNN 9.24.0.43, NCCL 2.30.7 и Triton 3.8.0.
+  `setuptools` обновлён до 84.0.0.
+
+### Исправлено
+
+- Flight v22 capabilities объявляет Target Head Diagnostics v5 вместе с
+  обоими допустимыми порядками нормализации encoder.
+- Publisher telemetry распознаёт активную проекцию metrics; terminal report
+  больше не становится недоступным из-за устаревшей версии артефакта.
+
+### Удалено
+
+- Flight v21 и прежние Semantic, Worker, checkpoint/recovery, metrics и query
+  revisions не обслуживаются runtime и не имеют compatibility reader или alias.
+- Migration `0029` выполняет destructive clean cut прежних jobs, models,
+  recovery и database telemetry после terminal fencing jobs. Старые Metrics v10
+  OpenSearch indices заменяются отдельной deployment procedure.
+
 ## [0.1.20] - 2026-09-17
 
 ### Добавлено
@@ -889,7 +935,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.20...HEAD
+[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.21...HEAD
+[0.1.21]: https://github.com/woodger/transformer/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/woodger/transformer/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/woodger/transformer/compare/0.1.17...0.1.18

@@ -14,7 +14,7 @@ from app.service.bootstrap.config import FlightServiceConfig
 
 
 class MaintenanceService(MaintenanceApplicationService):
-    """Compatibility composition facade for the maintenance use case."""
+    """Фасад совместимой композиции для сценария обслуживания."""
 
     def __init__(
         self,

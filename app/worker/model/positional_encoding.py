@@ -25,7 +25,7 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        """Add positions to [batch, sequence, hidden] model features."""
+        """Добавить позиции к признакам модели [batch, sequence, hidden]."""
 
         if features.ndim != 3:
             raise ValueError("model features must have shape [batch, sequence, hidden]")

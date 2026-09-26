@@ -5,8 +5,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from app.contracts.metrics.fit_run.v7 import RUN_INDEX
-from app.contracts.metrics.v7 import POINT_INDEX
+from app.contracts.metrics.fit_run.v11 import RUN_INDEX
+from app.contracts.metrics.v11 import POINT_INDEX
 from app.service.application.ports.observability import (
     EventLogger,
     OperationalMetricSink,
@@ -31,7 +31,7 @@ _MAX_DELIVERY_AGE_SECONDS = 24 * 60 * 60
 
 
 class MetricsPublisher:
-    """Deliver immutable metrics projections after the application commit."""
+    """Доставить неизменяемую проекцию метрик после фиксации приложения."""
 
     def __init__(
         self,
@@ -133,6 +133,8 @@ class MetricsPublisher:
                 ):
                     self.metrics.add("metricsPointsDelivered", len(chunk))
                 return
+            # Видимая сводка служит маркером завершения, поэтому до её публикации
+            # каждая пачка метрик должна стать видимой после обновления индекса.
             run_summary = self.projection.run_summary_document(
                 entry,
                 deployment_id=self.deployment_id,

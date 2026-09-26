@@ -45,7 +45,7 @@ class ExecutionResult:
 
 
 class ExecutionPlanBuilder(Protocol):
-    """Build one immutable, server-controlled worker command."""
+    """Построить одну неизменяемую команду Worker под контролем сервера."""
 
     def build(
         self,
@@ -61,7 +61,7 @@ class ExecutionPlanBuilder(Protocol):
 
 
 class AttemptProcess(Protocol):
-    """Run and fully reap one process-contract execution."""
+    """Запустить и полностью дождаться одного выполнения процессного контракта."""
 
     def run(
         self,
@@ -74,7 +74,7 @@ class AttemptProcess(Protocol):
 
 
 class WorkerExecutor(Protocol):
-    """Start and supervise one isolated execution attempt."""
+    """Запустить и контролировать одну изолированную попытку выполнения."""
 
     def execute(self, job: ExecutionJobRecord) -> None: ...
 

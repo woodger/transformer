@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v20/control-message.schema.json",
+  "title": "Transformer worker v20 control message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "protocolVersion",
+    "jobId",
+    "attempt",
+    "attemptId",
+    "sequence",
+    "type",
+    "payload"
+  ],
+  "properties": {
+    "contract": {
+      "const": "transformer-worker"
+    },
+    "protocolVersion": {
+      "const": 20
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "attemptId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "enum": [
+        "input",
+        "input.closed",
+        "cancel"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "input"
+            ],
+            "properties": {
+              "input": {
+                "$ref": "arrow-manifest.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "input.closed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "inputRevision",
+              "manifestSha256"
+            ],
+            "properties": {
+              "inputRevision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "manifestSha256": {
+                "$ref": "common.schema.json#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "cancel"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    }
+  ]
+}

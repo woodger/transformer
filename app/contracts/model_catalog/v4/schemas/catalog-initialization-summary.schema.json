@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-catalog/v4/catalog-initialization-summary.schema.json",
+  "title": "Transformer Model Catalog v4 initialization summary",
+  "$ref": "common.schema.json#/$defs/catalogInitializationSummary"
+}

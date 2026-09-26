@@ -220,13 +220,12 @@ def _stream_batches(
     source: _IpcSource,
     reader: _RecordBatchReader,
 ) -> Generator[pa.RecordBatch]:
-    """Keep the published IPC file open for the complete DoGet stream.
+    """Удерживать опубликованный IPC-файл открытым весь поток DoGet.
 
-    Retention cannot remove a job while its ticket is valid, but a ticket can
-    expire while a client is still downloading.  Opening the file before the
-    stream is returned and retaining the handle until generator finalization
-    makes the active DoGet a stable snapshot even when maintenance unlinks the
-    published name concurrently.
+    Хранение не удаляет задачу, пока действителен её билет, но билет может
+    истечь во время загрузки. Открытие файла до возврата потока и удержание
+    дескриптора до завершения генератора делает активный DoGet стабильным
+    снимком, даже если обслуживание одновременно удаляет опубликованное имя.
     """
     try:
         for index in range(reader.num_record_batches):

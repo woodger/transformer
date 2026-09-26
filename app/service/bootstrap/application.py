@@ -103,10 +103,10 @@ class _LockRuntime(Protocol):
 
 
 class FlightApplication:
-    """Own service startup reconciliation, process runtime, and shutdown.
+    """Владеть согласованием при запуске, средой выполнения и остановкой сервиса.
 
-    A built instance holds the spool and recovery locks until shutdown has
-    finished stopping every service-owned background component.
+    Собранный экземпляр удерживает блокировки spool и восстановления, пока
+    остановка не завершит все фоновые компоненты, принадлежащие сервису.
     """
 
     def __init__(
@@ -265,6 +265,8 @@ class FlightApplication:
                     deployment_id=metrics_config.deployment_id,
                     delivery_expected=metrics_publisher.is_running,
                 )
+            # Завершаем процессы предыдущего сервиса до терминализации заданий
+            # и удаления артефактов, которые они ещё могли записывать.
             process_recovery = recover_process_groups(
                 ledger.list_recoverable_attempts(),
                 grace_seconds=config.cancel_grace_seconds,
@@ -535,9 +537,9 @@ class FlightApplication:
 
         def handle_signal(signum: int, _frame: FrameType | None) -> None:
             self.logger.event("flight.service.signal", signal=signum)
-            # Keep shutdown outside the signal handler and outside Flight RPC
-            # threads.  The non-daemon thread guarantees process exit cannot
-            # skip durable worker, ledger, and state-lock cleanup.
+            # Выполняем остановку вне обработчика сигнала и потоков Flight RPC.
+            # Недемонический поток гарантирует, что завершение процесса не пропустит
+            # надёжную очистку рабочего процесса, журнала и блокировки состояния.
             threading.Thread(
                 target=self.shutdown,
                 name="transformer-flight-shutdown",
@@ -553,9 +555,9 @@ class FlightApplication:
             daemon=False,
         )
         try:
-            # FlightServerBase.serve() is a blocking C-extension call.  Run it
-            # off the Python main thread so SIGINT/SIGTERM handlers are
-            # dispatched promptly even while no RPC is active.
+            # Вызов FlightServerBase.serve() блокирует расширение C. Выполняем
+            # его вне главного потока Python, чтобы обработчики SIGINT/SIGTERM
+            # вызывались без задержки, даже когда RPC не активно.
             server_thread.start()
             self.logger.event(
                 "flight.service.serving",
@@ -592,10 +594,9 @@ class FlightApplication:
             return
         errors: list[BaseException] = []
         try:
-            # Close the queue claim boundary before RPC shutdown.  A start
-            # already racing with this point may still commit QUEUED, but it
-            # cannot become RUNNING and is therefore safe to recover on the
-            # next service start.
+            # Закрываем границу захвата очереди перед остановкой RPC. Запуск,
+            # уже пересекающийся с этой точкой, всё ещё может зафиксировать QUEUED,
+            # но не может стать RUNNING до терминализации при следующем запуске.
             try:
                 stop_claiming = getattr(self.worker, "stop_claiming", None)
                 if stop_claiming is not None:
@@ -657,7 +658,7 @@ def _cleanup_runtime(
     worker_timeout: float,
     maintenance_timeout: float,
 ) -> list[BaseException]:
-    """Stop partially or fully constructed runtime components in safe order."""
+    """Остановить частично или полностью созданные компоненты в безопасном порядке."""
     errors: list[BaseException] = []
     operations: tuple[Callable[[], None] | None, ...] = (
         None if server is None else server.shutdown,

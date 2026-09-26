@@ -24,7 +24,7 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 
 
 class OpenSearchMetricsClient:
-    """Use bounded metrics writes and owner-gated telemetry projection reads."""
+    """Выполнять ограниченные записи метрик и чтение проекции телеметрии с проверкой владельца."""
 
     def __init__(self, config: OpenSearchMetricsConfig) -> None:
         self.config = config
@@ -112,6 +112,8 @@ class OpenSearchMetricsClient:
                 f"OpenSearch rejected metrics documents with status {blocked[0]}"
             )
         if conflicts:
+            # Конфликт создания идемпотентен лишь тогда, когда сохранённый неизменяемый
+            # документ имеет в точности ожидаемую идентичность.
             self._verify_conflicts(index, conflicts)
         if retryable:
             raise RetryableMetricsDeliveryError(

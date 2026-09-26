@@ -1,0 +1,54 @@
+{
+  "contract": "transformer-semantic-fixtures",
+  "version": 4,
+  "files": [
+    {
+      "path": "d1_sha256.mjs",
+      "sha256": "b9eaeb07326cb9d9322cbc1149652901b1939cc41ceb1b49ebed1f627826c376"
+    },
+    {
+      "path": "jcs.mjs",
+      "sha256": "2207a454ceeeec9130e7aaf7dca17752da48897c3ee18f29e1037dbb0c1d6012"
+    },
+    {
+      "path": "language-capabilities.json",
+      "sha256": "2c1d973da7611cfd84a130bce88752b11e01586b96c85239a7a101c9ced2f79f"
+    },
+    {
+      "path": "multi-target-shared-resource.json",
+      "sha256": "57672ccb457d725d5cd13126b2d3e3139cbbd3b59be6c14a9aae9ca7c9f2d4b9"
+    },
+    {
+      "path": "new-opaque-target.json",
+      "sha256": "677376e7962b5e7e5b48f147ee5f6efa9928f9a3812455bc12a7c7829e104a81"
+    },
+    {
+      "path": "positive-class-weighted-binary-w1.json",
+      "sha256": "eca01fafe3e49f09693f77b6150d6e362b0599386cb4845e0746ef3d88b48cca"
+    },
+    {
+      "path": "positive-class-weighted-binary-w28.json",
+      "sha256": "5dfe10e512a75f50b58f07cfb0796fe74306c5232ba3905e50df51df8c2cb8e5"
+    },
+    {
+      "path": "single-positive-regression.json",
+      "sha256": "c2bf3741c2561c7a95f0937f0f2bd93f8b7f4627268e32d39436f22c3c638d93"
+    },
+    {
+      "path": "single-probability.json",
+      "sha256": "39b4639ef497a401fac115562f76878fedff18f5c1835c3b25891e996b1895f0"
+    },
+    {
+      "path": "single-regression.json",
+      "sha256": "7ab8c3ea7ebecf31aec22963f1011dc837d4f16f4b87e130d5d7028f6e8c3769"
+    },
+    {
+      "path": "target-reorder-a-b.json",
+      "sha256": "4697f79755a94050ffdeebbf15ca11933c18e228989ef83b8825ff11e9c93c45"
+    },
+    {
+      "path": "target-reorder-b-a.json",
+      "sha256": "8010cb4a924a3b263866e389b4ec2623f18c5f0b2d819f5d1942b293e153960b"
+    }
+  ]
+}

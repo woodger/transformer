@@ -8,7 +8,7 @@ from app.service.domain.records import OutputRecord
 
 
 class OutputAccess:
-    """Authorize published output discovery and ticket resolution."""
+    """Авторизовать поиск опубликованного вывода и выдачу билета."""
 
     def __init__(
         self,

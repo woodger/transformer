@@ -29,7 +29,7 @@ _CURSOR_KEY_STATE = "model_catalog_cursor_hmac_v3"
 
 
 class PostgresModelCatalogStore:
-    """Owner-scoped read model for the public model catalog."""
+    """Модель чтения публичного каталога модели в области владельца."""
 
     def __init__(self, database: Database) -> None:
         self._database = database
@@ -89,9 +89,9 @@ class PostgresModelCatalogStore:
     ) -> StoredCatalogPage:
         try:
             with self._database.transaction() as session:
-                # Publication acquires the same owner lock before allocating
-                # its catalog ordinal. No uncommitted ordinal at or below this
-                # high-water mark can become visible on a later page.
+                # Публикация получает ту же блокировку владельца перед выделением
+                # порядкового номера каталога. Ни один незафиксированный номер,
+                # не превышающий эту верхнюю границу, не станет видимым позже.
                 advisory_lock(
                     session,
                     "model-catalog-publication",

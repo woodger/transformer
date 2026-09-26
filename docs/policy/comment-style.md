@@ -1,6 +1,7 @@
 # Политика комментариев
 
-> Тип: политика. Этот документ задаёт правила для Python comments и docstrings.
+> Тип: политика. Этот документ задаёт правила для комментариев и строк
+> документации Python.
 
 Комментарий объясняет причину решения, инвариант или внешнее ограничение.
 Он не должен пересказывать код, хранить историю изменений или компенсировать
@@ -10,72 +11,72 @@
 
 > Почему это решение существует именно в таком виде?
 
-## Docstrings
+## Строки документации
 
-Docstring нужен, когда public или reusable component имеет неочевидный
-контракт:
+Строка документации нужна, когда публичный или переиспользуемый компонент имеет
+неочевидный контракт:
 
-- lifecycle и ownership ресурса;
-- side effects;
+- жизненный цикл и владение ресурсом;
+- побочные эффекты;
 - допустимые состояния и ошибки;
-- filesystem, database или subprocess guarantees;
-- wire/checkpoint compatibility;
-- shape, dtype или numerical constraints.
+- гарантии файловой системы, базы данных или дочернего процесса;
+- совместимость wire-контракта и контрольной точки;
+- ограничения формы, dtype или числовых значений.
 
-Docstring обычно не нужен для простого function/class, смысл которого полностью
-виден из имени, type hints и короткой реализации.
+Строка документации обычно не нужна для простой функции или класса, смысл
+которого полностью виден из имени, аннотаций типов и короткой реализации.
 
 Хорошо:
 
 ```python
 class RuntimeDirectoryLock:
-    """Exclusive process-lifetime ownership of the Flight runtime directory."""
+    """Эксклюзивное владение рабочим каталогом на всё время Flight-процесса."""
 ```
 
 Плохо:
 
 ```python
 def load_config():
-    """Loads config."""
+    """Загружает конфигурацию."""
 ```
 
-Module-level docstring добавляется, только если модуль задаёт самостоятельную
+Строка документации уровня модуля добавляется, только если модуль задаёт самостоятельную
 границу, которую нельзя понять из имени и структуры. Обязательные
-«архитектурные шапки» для каждого production-файла не используются.
+«архитектурные шапки» для каждого рабочего файла не используются.
 
-## Inline comments
+## Встроенные комментарии
 
 Комментарий оправдан, если фиксирует:
 
-- порядок операций, важный для atomicity или race safety;
-- причину unusual validation или quota;
+- порядок операций, важный для атомарности или безопасности гонок;
+- причину необычной проверки или квоты;
 - ограничение PyArrow, PyTorch, PostgreSQL или ОС;
-- compatibility с legacy checkpoint или external contract;
+- совместимость с устаревшей контрольной точкой или внешним контрактом;
 - причину намеренно пустой ветки;
-- безопасный shutdown/recovery порядок;
-- numerical stability или masking invariant.
+- безопасный порядок остановки и восстановления;
+- численную устойчивость или инвариант маскирования.
 
 Хорошо:
 
 ```python
-# Revision pagination keeps input listing below the action-document limit.
-# A fixed page bound also makes client traversal memory predictable.
+# Пагинация по ревизии удерживает список входов ниже лимита документа действия.
+# Фиксированный размер страницы также делает память обхода предсказуемой.
 MAX_PAGE_ITEMS = 100
 ```
 
 Хорошо:
 
 ```python
-# Close the queue-claim boundary before RPC shutdown so a racing start can
-# remain durable QUEUED but cannot become RUNNING.
+# Закрываем захват очереди перед остановкой RPC: пересёкшийся с этой точкой
+# запуск может остаться долговременным QUEUED, но не может стать RUNNING.
 worker.stop_claiming()
 ```
 
 Хорошо:
 
 ```python
-# Publish the checkpoint before committing model metadata. A modelRef must
-# never resolve to a file that failed to reach persistent storage.
+# Публикуем контрольную точку до фиксации метаданных модели. modelRef никогда не должен
+# разрешаться в файл, который не достиг постоянного хранилища.
 publish_checkpoint()
 commit_model_metadata()
 ```
@@ -83,14 +84,14 @@ commit_model_metadata()
 Плохо:
 
 ```python
-# Increment revision.
+# Увеличиваем ревизию.
 revision += 1
 ```
 
 Плохо:
 
 ```python
-# Check whether CUDA is available.
+# Проверяем доступность CUDA.
 if torch.cuda.is_available():
     ...
 ```
@@ -100,13 +101,13 @@ if torch.cuda.is_available():
 Гарантия в комментарии должна подтверждаться кодом и, для существенного
 инварианта, тестом. Нельзя обещать:
 
-- retry safety без idempotency record;
-- durability для данных в `/tmp`;
-- deterministic training без соответствующей настройки PyTorch;
-- atomic publication без `fsync`/rename/transaction sequence;
-- поддержку checkpoint, которую reader не проверяет.
+- безопасность повтора без записи идемпотентности;
+- долговременность данных в `/tmp`;
+- детерминированное обучение без соответствующей настройки PyTorch;
+- атомарную публикацию без последовательности `fsync`/rename/transaction;
+- поддержку контрольной точки, которую читатель не проверяет.
 
-Если контракт изменился, комментарий обновляется в том же change set.
+Если контракт изменился, комментарий обновляется в том же наборе изменений.
 
 ## TODO
 
@@ -119,42 +120,42 @@ TODO допустим, только если содержит:
 Хорошо:
 
 ```python
-# TODO: configure a transport receive limit when the PyArrow server binding
-# exposes it. Until then the application rejects oversized batches itself.
+# TODO: настроить лимит приёма транспорта, когда привязка сервера PyArrow
+# позволит это сделать. До тех пор приложение само отклоняет слишком большие пакеты.
 ```
 
 Плохо:
 
 ```python
-# TODO: fix later
+# TODO: исправить позднее
 ```
 
-Placeholder без использующего runtime кода лучше хранить в issue или roadmap, а не в
-пустом Python module.
+Заглушку без использующего её кода среды выполнения лучше хранить в задаче или
+дорожной карте, а не в пустом модуле Python.
 
-## Workarounds
+## Обходные решения
 
-Workaround должен называть внешнюю причину и границу действия:
+Обходное решение должно называть внешнюю причину и границу действия:
 
 ```python
-# FlightServerBase.serve() blocks inside a C extension, so it runs in a thread
-# to let the Python main thread dispatch SIGTERM promptly.
+# FlightServerBase.serve() блокирует выполнение внутри расширения C, поэтому
+# запускается в потоке и не задерживает обработку SIGTERM главным потоком Python.
 server_thread.start()
 ```
 
-Комментарий `# Run in thread` в этом месте не объясняет решение.
+Комментарий `# Запускаем в потоке` в этом месте не объясняет решение.
 
 ## Язык и терминология
 
-В пределах файла используется один основной язык. Stable external names
-(`modelRef`, `DoPut`, `SIGTERM`, `storage epoch`) сохраняются без искусственного
-перевода. Формулировки должны соответствовать
+В Python-коде и тестах комментарии и строки документации пишутся по-русски. Стабильные
+внешние имена (`modelRef`, `DoPut`, `SIGTERM`, `storage epoch`) сохраняются
+без искусственного перевода. Формулировки должны соответствовать
 [Политике именования](./naming-policy.md).
 
 ## Комментарии в тестах
 
-В тесте комментарий нужен только для неочевидного production-risk, fixture или
-expected value. Он не должен размечать `arrange/act/assert` и дублировать имя
+В тесте комментарий нужен только для неочевидного производственного риска,
+фикстуры или ожидаемого значения. Он не должен размечать `arrange/act/assert` и дублировать имя
 теста.
 
 Сначала следует улучшить имя теста и данные. Комментарий добавляется только

@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v8 import validate_checkpoint_document
+from app.contracts.checkpoint.v12 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v3 import validate_catalog_document
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.model_catalog.v7 import validate_catalog_document
+from app.contracts.semantic.v5 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )
@@ -25,6 +25,7 @@ _CHECKPOINT_METADATA_FIELDS = (
     "jobId",
     "dataContract",
     "modelContract",
+    "predictionDefinition",
     "modelConfig",
     "semanticDigests",
     "trainingConfig",
@@ -38,7 +39,7 @@ _CHECKPOINT_METADATA_FIELDS = (
 
 
 class CatalogModelMetadataVerifier:
-    """Validate the complete catalog projection before artifact I/O."""
+    """Проверить полную проекцию каталога до ввода-вывода артефакта."""
 
     def verify(self, model: PublishedModelRecord) -> None:
         model_detail(model)
@@ -104,13 +105,7 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
     summary = model_summary(model)
     try:
         metadata = model.metadata
-        checkpoint_metadata: JsonObject = {
-            name: metadata[name] for name in _CHECKPOINT_METADATA_FIELDS
-        }
-        validate_checkpoint_document(
-            checkpoint_metadata,
-            "checkpoint-metadata",
-        )
+        checkpoint_metadata = _checkpoint_metadata(metadata)
         progress = cast(JsonObject, checkpoint_metadata["progress"])
         if progress.get("trainingComplete") is not True:
             raise ValueError("published checkpoint is not terminal")
@@ -137,11 +132,14 @@ def model_detail(model: PublishedModelRecord) -> JsonObject:
                 },
             },
             "modelContract": dict(model.model_contract),
+            "predictionDefinition": dict(
+                cast(JsonObject, checkpoint_metadata["predictionDefinition"])
+            ),
             "semanticDigests": dict(model.semantic_digests),
             "trainingConfig": dict(
                 cast(JsonObject, metadata["trainingConfig"])
             ),
-            "diagnostics": dict(cast(JsonObject, metadata["diagnostics"])),
+            "diagnostics": _catalog_diagnostics(metadata["diagnostics"]),
             "selection": selection_public,
             "progress": dict(progress),
             "initialization": dict(cast(JsonObject, summary["initialization"])),
@@ -258,6 +256,36 @@ def _timestamp(value: float) -> str:
         .isoformat(timespec="microseconds")
         .replace("+00:00", "Z")
     )
+
+
+def _checkpoint_metadata(metadata: JsonObject) -> JsonObject:
+    checkpoint_metadata: JsonObject = {
+        name: metadata[name] for name in _CHECKPOINT_METADATA_FIELDS
+    }
+    validate_checkpoint_document(
+        checkpoint_metadata,
+        "checkpoint-metadata",
+    )
+    return checkpoint_metadata
+
+
+def _catalog_diagnostics(value: object) -> JsonObject:
+    diagnostics = cast(JsonObject, value)
+    if diagnostics.get("schemaVersion") == 1:
+        return {
+            "schemaVersion": 3,
+            "gradientInteractions": diagnostics["gradientInteractions"],
+            "targetHead": None,
+            "encoderLayerDiagnostics": None,
+        }
+    if diagnostics.get("schemaVersion") == 2:
+        return {
+            "schemaVersion": 3,
+            "gradientInteractions": diagnostics["gradientInteractions"],
+            "targetHead": diagnostics["targetHead"],
+            "encoderLayerDiagnostics": None,
+        }
+    return dict(diagnostics)
 
 
 __all__ = [

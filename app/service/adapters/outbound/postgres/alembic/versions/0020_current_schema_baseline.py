@@ -1,11 +1,11 @@
-"""Create the current PostgreSQL schema baseline.
+"""Создать исходную схему PostgreSQL.
 
-Revision ID: 0020
-Revises: None
+Идентификатор ревизии: 0020
+Предыдущая ревизия: None
 
-This baseline replaces the published 0001-0020 migration chain for new
-databases. Databases created by that chain must already be at revision 0020
-before using this checkout.
+Эта исходная точка заменяет опубликованную цепочку миграций 0001-0020 для
+новых баз данных. Базы данных, созданные этой цепочкой, должны уже иметь
+ревизию 0020 до использования этой версии исходного кода.
 """
 
 from __future__ import annotations

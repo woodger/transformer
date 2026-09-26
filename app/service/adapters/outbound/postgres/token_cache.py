@@ -24,7 +24,7 @@ class _CacheEntry:
 
 
 class AccessTokenCache:
-    """Authenticate token digests through a bounded PostgreSQL cache-aside."""
+    """Аутентифицировать дайджест токена через ограниченный кэш PostgreSQL."""
 
     def __init__(
         self,

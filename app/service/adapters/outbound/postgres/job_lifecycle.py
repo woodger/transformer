@@ -43,7 +43,7 @@ class JobActionNames:
 
 
 class PostgresJobLifecycle:
-    """Keep idempotency and job mutation transactions inside PostgreSQL."""
+    """Удерживать транзакции идемпотентности и изменения job внутри PostgreSQL."""
 
     def __init__(self, ledger: Ledger, action_names: JobActionNames) -> None:
         self.ledger = ledger

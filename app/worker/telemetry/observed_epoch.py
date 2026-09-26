@@ -8,7 +8,7 @@ from app.worker.training.epoch import TrainingEpochResult
 
 @dataclass
 class ObservedTrainingEpoch(TrainingEpochResult):
-    """Core epoch result accompanied by optional best-effort observations."""
+    """Основной результат эпохи с необязательными наблюдениями по возможности."""
 
     telemetry: EpochTelemetry | None = None
 

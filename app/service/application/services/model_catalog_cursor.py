@@ -26,7 +26,7 @@ class CatalogCursor:
 
 
 class CatalogCursorCodec:
-    _PREFIX = "mc3."
+    _PREFIX = "mc7."
 
     def __init__(self, key: bytes) -> None:
         if len(key) < 32:
@@ -36,7 +36,7 @@ class CatalogCursorCodec:
     def encode(self, owner_subject: str, cursor: CatalogCursor) -> str:
         payload = json.dumps(
             [
-                3,
+                7,
                 cursor.page_size,
                 cursor.high_water_ordinal,
                 _micros(cursor.after_created_at),
@@ -89,7 +89,7 @@ class CatalogCursorCodec:
             value = cast(list[object], raw_value)
             if (
                 len(value) != 6
-                or value[0] != 3
+                or value[0] != 7
                 or isinstance(value[1], bool)
                 or not isinstance(value[1], int)
                 or isinstance(value[2], bool)

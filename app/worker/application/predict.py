@@ -7,14 +7,14 @@ from itertools import chain
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.worker.v20 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,
@@ -66,6 +66,8 @@ def execute_predict(
     if (
         metadata.get("modelContract") != model_contract.to_document()
         or metadata.get("semanticDigests") != semantic_digests
+        or metadata.get("predictionDefinition")
+        != model_contract.prediction_definition(model_config.seq_len)
     ):
         raise WorkerExecutionError(
             "MODEL_SCHEMA_MISMATCH",

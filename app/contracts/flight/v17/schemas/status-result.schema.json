@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v17/status-result.schema.json",
+  "title": "transformer.v17.job.status result",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "jobId", "operation", "revision", "input", "execution", "timestamps", "device", "progress", "error", "results", "pollAfterMs"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "operation": {"enum": ["fit", "predict"]},
+    "revision": {"type": "integer", "minimum": 1},
+    "input": {"$ref": "#/$defs/input"},
+    "execution": {"$ref": "#/$defs/execution"},
+    "timestamps": {"$ref": "#/$defs/timestamps"},
+    "device": {"$ref": "#/$defs/device"},
+    "progress": {"type": "object"},
+    "error": {"type": ["object", "null"]},
+    "results": {"type": "object"},
+    "pollAfterMs": {"type": "integer", "minimum": 0}
+  },
+  "$defs": {
+    "input": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "revision", "nextOrdinal", "payloadCount", "logicalRows", "manifestSha256"],
+      "properties": {
+        "state": {"$ref": "common.schema.json#/$defs/inputState"},
+        "revision": {"type": "integer", "minimum": 0},
+        "nextOrdinal": {"type": "integer", "minimum": 0},
+        "payloadCount": {"type": "integer", "minimum": 0},
+        "logicalRows": {"type": "integer", "minimum": 0},
+        "manifestSha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "attempt"],
+      "properties": {"state": {"$ref": "common.schema.json#/$defs/executionState"}, "attempt": {"type": "integer", "minimum": 0}}
+    },
+    "timestamps": {"type": "object"},
+    "device": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requested", "selected"],
+      "properties": {"requested": {"enum": ["cpu", "gpu", "auto"]}, "selected": {"enum": ["cpu", "gpu", null]}}
+    }
+  }
+}

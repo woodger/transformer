@@ -10,7 +10,7 @@ from app.contracts.json_types import JsonObject
 
 @dataclass(frozen=True, slots=True)
 class GradientInteractionObservation:
-    """One sampled set of objective gradients at the shared head input."""
+    """Один выборочный набор градиентов objective на входе общей head."""
 
     component_identities: tuple[str, ...]
     pair_identities: tuple[tuple[str, str], ...]

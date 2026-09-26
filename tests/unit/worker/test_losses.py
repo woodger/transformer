@@ -3,7 +3,8 @@ from copy import deepcopy
 import pytest
 import torch
 
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v5 import ModelContract, SemanticContractError
+from app.worker.model.transformer import public_predictions
 from app.worker.training.losses import combined_loss
 from tests.fixture_documents import semantic_fixture_document
 
@@ -100,6 +101,159 @@ def test_probability_targets_use_logits_for_stable_direct_loss():
     assert statistics.direct_losses[1] == pytest.approx(expected.item())
 
 
+def test_positive_class_weighted_binary_bce_applies_weight_before_reduction():
+    contract = _weighted_binary_contract(28)
+    outputs = torch.tensor([[0.0], [2.0]], dtype=torch.float64)
+    targets = torch.tensor([[1.0], [0.0]], dtype=torch.float64)
+
+    statistics = combined_loss(
+        outputs,
+        targets,
+        contract,
+        return_parts=True,
+    ).statistics
+
+    expected = torch.nn.functional.binary_cross_entropy_with_logits(
+        outputs[:, 0],
+        targets[:, 0],
+        pos_weight=torch.tensor(28.0, dtype=torch.float64),
+    )
+    assert statistics.direct_losses == pytest.approx((expected.item(),))
+
+
+def test_positive_class_weighted_binary_bce_returns_corrected_probability():
+    contract = _weighted_binary_contract(28)
+    outputs = torch.tensor([[0.0], [2.0]], dtype=torch.float64)
+
+    predictions = public_predictions(outputs, contract)
+
+    assert predictions[:, 0] == pytest.approx(torch.sigmoid(
+        outputs[:, 0] - torch.log(torch.tensor(28.0, dtype=torch.float64))
+    ))
+
+
+def test_positive_class_weighted_binary_bce_with_weight_one_matches_bce():
+    weighted_contract = _weighted_binary_contract(1)
+    unweighted_contract = ModelContract.from_document(
+        semantic_fixture_document("single-probability")["modelContract"]
+    )
+    outputs = torch.tensor([[0.0], [2.0]], dtype=torch.float64)
+    targets = torch.tensor([[1.0], [0.0]], dtype=torch.float64)
+
+    weighted = combined_loss(
+        outputs,
+        targets,
+        weighted_contract,
+        return_parts=True,
+    ).statistics
+    unweighted = combined_loss(
+        outputs,
+        targets,
+        unweighted_contract,
+        return_parts=True,
+    ).statistics
+
+    assert weighted.direct_losses == pytest.approx(unweighted.direct_losses)
+    assert public_predictions(outputs, weighted_contract) == pytest.approx(
+        public_predictions(outputs, unweighted_contract)
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture_id",
+    [
+        "positive-class-weighted-binary-w1",
+        "positive-class-weighted-binary-w28",
+    ],
+)
+def test_positive_class_weighted_binary_bce_matches_numerical_golden_cases(
+    fixture_id,
+):
+    fixture = semantic_fixture_document(fixture_id)
+    contract = ModelContract.from_document(fixture["modelContract"])
+    cases = fixture["numericalCases"]
+    assert isinstance(cases, list)
+
+    for case in cases:
+        assert isinstance(case, dict)
+        inputs = case["inputs"]
+        expected = case["outputs"]
+        assert isinstance(inputs, dict)
+        assert isinstance(expected, dict)
+        raw_coordinate = float(inputs["rawCoordinate"])
+        observed = float(inputs["observed"])
+        tolerance = float(case["absoluteTolerance"])
+        outputs = torch.tensor([[raw_coordinate]], dtype=torch.float64)
+        targets = torch.tensor([[observed]], dtype=torch.float64)
+
+        statistics = combined_loss(
+            outputs,
+            targets,
+            contract,
+            return_parts=True,
+        ).statistics
+
+        assert statistics.direct_losses[0] == pytest.approx(
+            float(expected["componentLoss"]),
+            abs=tolerance,
+        )
+        assert public_predictions(outputs, contract)[0, 0] == pytest.approx(
+            float(expected["publicPrediction"]),
+            abs=tolerance,
+        )
+
+
+def test_positive_class_weighted_binary_bce_requires_exact_binary_target_contract():
+    document = _weighted_binary_contract(1).to_document()
+    target_contract = document["targetContract"]
+    assert isinstance(target_contract, dict)
+    slots = target_contract["slots"]
+    assert isinstance(slots, list)
+    slots[0]["lossInputTransformation"] = "Tanh"
+
+    with pytest.raises(SemanticContractError) as error:
+        ModelContract.from_document(document)
+
+    assert error.value.reason == "INVALID_OBJECTIVE"
+    assert error.value.path == "/objective/directComponents/0"
+
+
+@pytest.mark.parametrize("positive_class_weight", [0, -1, float("inf")])
+def test_positive_class_weighted_binary_bce_requires_positive_finite_weight(
+    positive_class_weight,
+):
+    document = _weighted_binary_contract(1).to_document()
+    objective = document["objective"]
+    assert isinstance(objective, dict)
+    direct = objective["directComponents"]
+    assert isinstance(direct, list)
+    direct[0]["positiveClassWeight"] = positive_class_weight
+
+    with pytest.raises(SemanticContractError) as error:
+        ModelContract.from_document(document)
+
+    assert error.value.reason == "INVALID_OBJECTIVE"
+
+
+def test_positive_class_weighted_binary_target_cannot_participate_in_auxiliary_loss():
+    document = semantic_fixture_document("multi-target-shared-resource")[
+        "modelContract"
+    ]
+    assert isinstance(document, dict)
+    objective = document["objective"]
+    assert isinstance(objective, dict)
+    direct = objective["directComponents"]
+    assert isinstance(direct, list)
+    direct[1]["operator"] = "PositiveClassWeightedBinaryCrossEntropyWithLogits"
+    direct[1]["positiveClassWeight"] = 1
+
+    with pytest.raises(SemanticContractError) as error:
+        ModelContract.from_document(document)
+
+    assert error.value.reason == "INVALID_OBJECTIVE"
+    assert error.value.path == "/objective/auxiliaryComponents/0/roles"
+
+
 def test_expected_value_and_risk_adjusted_expected_value_are_distinct():
     outputs, targets = make_outputs_and_targets()
     expected_value = _expected_value_only_contract()
@@ -180,4 +334,17 @@ def _expected_value_only_contract() -> ModelContract:
         for component in auxiliary
         if component["operator"] == "ExpectedValue"
     ]
+    return ModelContract.from_document(document)
+
+
+def _weighted_binary_contract(positive_class_weight: float) -> ModelContract:
+    document = semantic_fixture_document(
+        "positive-class-weighted-binary-w1"
+    )["modelContract"]
+    assert isinstance(document, dict)
+    objective = document["objective"]
+    assert isinstance(objective, dict)
+    direct = objective["directComponents"]
+    assert isinstance(direct, list)
+    direct[0]["positiveClassWeight"] = positive_class_weight
     return ModelContract.from_document(document)

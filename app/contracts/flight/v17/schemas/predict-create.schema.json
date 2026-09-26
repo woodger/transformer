@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v17/predict-create.schema.json",
+  "title": "transformer.v17.predict.create request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "idempotencyKey", "modelRef", "device", "dataBinding"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "idempotencyKey": {"$ref": "common.schema.json#/$defs/idempotencyKey"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"},
+    "device": {"enum": ["cpu", "gpu", "auto"]},
+    "dataBinding": {"$ref": "common.schema.json#/$defs/dataBinding"}
+  }
+}

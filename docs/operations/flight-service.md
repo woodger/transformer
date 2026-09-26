@@ -1,9 +1,9 @@
 # Эксплуатация сервиса Transformer Arrow Flight
 
 > Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v16.
+> сервиса Flight v22.
 
-Wire semantics определены [Flight v16](../../app/contracts/flight/v16/README.md).
+Wire semantics определены [Flight v22](../../app/contracts/flight/v22/README.md).
 Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
 системы.
 
@@ -82,19 +82,21 @@ artifacts без references в тех же service roots. Не удаляйте 
 PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
 `models delete` либо документированную migration clean cut.
 
-## Исторический clean cut Flight v15
+## Текущий runtime Semantic v5 / Flight v22
 
-Migration 0027 удаляет предыдущее state boundary. Остановите все instances
-service, дождитесь terminal state jobs, примените её, замените индексы metrics
-OpenSearch на v7, затем deploy service v15. Старые models, checkpoints, state
-recovery и telemetry после этого использовать нельзя. См.
-[управление migrations](database-migrations.md) и
+Migration 0029 удаляет state предыдущей semantic boundary. Для перехода
+на Semantic v5 остановите все instances service, дождитесь terminal state jobs
+и примените её. Перед запуском Flight v22 замените индексы metrics OpenSearch
+v10 на v11 по documented procedure. Старые models, checkpoints, state recovery
+и telemetry до migration 0029 использовать нельзя.
+
+См. [управление migrations](database-migrations.md) и
 [deployment OpenSearch](../deployment/opensearch.md).
 
 ## Health и troubleshooting
 
-Используйте `transformer.v16.health` для аутентифицированной surface health
-provider-а и `transformer.v16.capabilities` для текущей availability
+Используйте `transformer.v22.health` для аутентифицированной surface health
+provider-а и `transformer.v22.capabilities` для текущей availability
 device/upload/query. Для операционной диагностики используйте logs service и
 state database. Никогда не помещайте bearer credentials, passwords database или
 raw paths checkpoint-а в общие logs или сообщения support.

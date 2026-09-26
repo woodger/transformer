@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v19/target-head-diagnostics-artifact.schema.json",
+  "title": "Transformer worker v19 completed target head diagnostics artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "jobId", "attempt", "attemptId", "inputRevision", "manifestSha256", "modelDefinitionSha256", "jobConfigSha256", "sampleIdentity", "sampleRowCount", "layout", "coverage", "epochs"],
+  "properties": {
+    "format": {"const": "transformer-target-head-diagnostics-v4"},
+    "jobId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "attemptId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "inputRevision": {"type": "integer", "minimum": 0},
+    "manifestSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "modelDefinitionSha256": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/sha256"},
+    "jobConfigSha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "sampleIdentity": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/sampleIdentity"},
+    "sampleRowCount": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/positiveInteger"},
+    "layout": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/targetHeadLayoutItem"}},
+    "coverage": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/coverage"},
+    "epochs": {"type": "array", "minItems": 1, "maxItems": 100000, "items": {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v4/common.schema.json#/$defs/epochObservation"}}
+  }
+}

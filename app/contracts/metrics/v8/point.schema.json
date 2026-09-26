@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/metrics/v8/point.schema.json",
+  "title": "Transformer OpenSearch metric point v8",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "eventId",
+    "documentSha256",
+    "recordedAt",
+    "deploymentId",
+    "runId",
+    "attemptId",
+    "attempt",
+    "modelRef",
+    "semanticDigests",
+    "metric"
+  ],
+  "properties": {
+    "schema": {
+      "const": "transformer.metrics-point.v8"
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "documentSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deploymentId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "runId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "attemptId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "modelRef": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^mdl_[0-9a-f]{32}$"
+    },
+    "semanticDigests": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/semantic-digests.schema.json"
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "component": {
+      "$ref": "#/$defs/component"
+    },
+    "pair": {
+      "$ref": "#/$defs/pair"
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "pair"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "target"
+              ]
+            },
+            {
+              "required": [
+                "component"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identity": {
+      "$ref": "https://transformer.local/contracts/semantic/v4/common.schema.json#/$defs/identity"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "index"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "operator"
+      ],
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "operator": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    },
+    "pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "leftComponentIdentity",
+        "rightComponentIdentity"
+      ],
+      "properties": {
+        "leftComponentIdentity": {
+          "$ref": "#/$defs/identity"
+        },
+        "rightComponentIdentity": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    }
+  }
+}

@@ -38,8 +38,8 @@ def test_inventory_exposes_one_capacity_unit_per_physical_gpu():
     ]
     assert inventory.mark_busy("GPU-a") is True
     assert inventory.snapshot().devices[0].state is CudaDeviceState.BUSY
-    # Capacity describes physical scheduler lanes; a busy lease does not
-    # make the device disappear from capabilities.
+    # Ёмкость описывает физические линии планировщика; занятая аренда не
+    # делает устройство исчезнувшим из доступных возможностей.
     assert inventory.snapshot().cuda_capacity == 2
     inventory.release("GPU-a")
     assert inventory.snapshot().devices[0].state is CudaDeviceState.AVAILABLE
@@ -61,8 +61,8 @@ def test_confirmed_loss_quarantines_device_for_current_inventory():
     assert snapshot.quarantined_count == 1
     assert inventory.is_quarantined("GPU-a") is True
 
-    # Quarantine is monotonic. The third probe is deliberately never
-    # consulted.
+    # Карантин монотонен. Третья проверка намеренно никогда
+    # не используется.
     assert inventory.confirm_loss("GPU-a") is True
     assert inventory.snapshot().quarantined_count == 1
 

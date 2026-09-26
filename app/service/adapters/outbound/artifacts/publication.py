@@ -10,17 +10,27 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v8 import (
+from app.contracts.checkpoint.v12 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v16.arrow import validate_prediction_file
+from app.contracts.flight.v22.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.target_head_diagnostics.v5.constants import (
+    MAX_COMMITTED_ARTIFACT_ROWS,
+)
+from app.contracts.worker.v20 import (
+    PREDICTION_OUTPUT_SCHEMA_ID,
+    validate_document,
+)
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.diagnostics import (
+    ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
+    TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
+    DiagnosticsConfig,
+)
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -107,7 +117,7 @@ class WorkerArtifactError(AttemptExecutionError):
 
 
 class WorkerArtifactPublisher:
-    """Stage, validate, publish, and clean up worker-owned artifacts."""
+    """Подготовить, проверить, опубликовать и очистить артефакты Worker."""
 
     def __init__(
         self,
@@ -305,12 +315,14 @@ class WorkerArtifactPublisher:
         return self._publish_model(
             job,
             checkpoint_metadata,
+            result,
         )
 
     def _publish_model(
         self,
         job: ExecutionJobRecord,
         checkpoint_metadata: JsonObject,
+        result: JsonObject,
     ) -> PublishedModelArtifacts:
         attempt_path = self.spool.attempt_checkpoint_path(
             job.job_id, job.attempt
@@ -366,6 +378,8 @@ class WorkerArtifactPublisher:
                 != job.data_contract
                 or checkpoint_metadata.get("modelContract")
                 != job.model_contract
+                or checkpoint_metadata.get("predictionDefinition")
+                != contract.prediction_definition(job.model_config.seq_len)
                 or checkpoint_metadata.get("modelConfig")
                 != job.model_config.to_manifest()
                 or checkpoint_metadata.get("semanticDigests")
@@ -407,6 +421,11 @@ class WorkerArtifactPublisher:
                 "modelRef": model_ref,
                 "label": _model_label(job),
                 "checkpoint": safe_checkpoint,
+                "targetHeadDiagnostics": self._target_head_diagnostics(
+                    job,
+                    checkpoint_metadata,
+                    result,
+                ),
             }
             self.ledger.publish_model(
                 job.job_id,
@@ -450,6 +469,119 @@ class WorkerArtifactPublisher:
                 self.spool.remove(model_directory)
             raise
 
+    def _target_head_diagnostics(
+        self,
+        job: ExecutionJobRecord,
+        checkpoint_metadata: JsonObject,
+        result: JsonObject,
+    ) -> JsonObject | None:
+        configured = (
+            job.training_config is not None
+            and job.training_config.diagnostics.target_head
+            == TARGET_HEAD_FULL_COMMITTED_ARTIFACT
+        )
+        artifact = result.get("targetHeadDiagnostics")
+        if artifact is None:
+            return None
+        if not configured:
+            self._drop_target_head_diagnostics(job, ValueError())
+            return None
+        try:
+            document = _object(artifact, "target head diagnostics artifact")
+            validate_document(document, "target-head-diagnostics-artifact")
+            self._validate_target_head_diagnostics(
+                job,
+                checkpoint_metadata,
+                document,
+            )
+            return document
+        except Exception as exc:
+            self._drop_target_head_diagnostics(job, exc)
+            return None
+
+    def _validate_target_head_diagnostics(
+        self,
+        job: ExecutionJobRecord,
+        checkpoint_metadata: JsonObject,
+        artifact: JsonObject,
+    ) -> None:
+        training_config = job.training_config
+        if training_config is None:
+            raise ValueError("target head diagnostics training configuration is missing")
+        progress = _object(
+            checkpoint_metadata.get("progress"),
+            "target head diagnostics checkpoint progress",
+        )
+        completed_epochs = _integer(
+            progress.get("completedEpochs"),
+            "target head diagnostics completedEpochs",
+        )
+        if (
+            artifact.get("jobId") != job.job_id
+            or artifact.get("attempt") != job.attempt
+            or artifact.get("attemptId") != _attempt_id(job)
+            or artifact.get("inputRevision") != job.input_revision
+            or artifact.get("manifestSha256") != job.manifest_sha256
+            or artifact.get("jobConfigSha256") != job.config_hash
+            or artifact.get("modelDefinitionSha256")
+            != job.semantic_digests.get("modelDefinitionSha256")
+            or artifact.get("coverage")
+            != {"completedEpochs": completed_epochs}
+            or _integer(
+                artifact.get("sampleRowCount"),
+                "target head diagnostics sampleRowCount",
+            )
+            > MAX_COMMITTED_ARTIFACT_ROWS
+        ):
+            raise ValueError("target head diagnostics differ from fit job")
+        contract = ModelContract.from_document(job.model_contract)
+        expected_layout = [
+            {
+                "targetIdentity": identity,
+                "targetIndex": index,
+                "directComponentIdentity": str(component["identity"]),
+            }
+            for index, (identity, component) in enumerate(
+                zip(
+                    contract.target_identities,
+                    contract.direct_components,
+                    strict=True,
+                )
+            )
+        ]
+        if artifact.get("layout") != expected_layout:
+            raise ValueError("target head diagnostics layout differs from model")
+        encoder_learning_enabled = (
+            training_config.diagnostics.encoder_layer_diagnostics
+            == ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH
+        )
+        raw_epochs = artifact.get("epochs")
+        if not isinstance(raw_epochs, list) or not all(
+            isinstance(epoch, dict) for epoch in raw_epochs
+        ):
+            raise ValueError("target head diagnostics epochs are invalid")
+        epochs = cast(list[dict[object, object]], raw_epochs)
+        if any(
+            ("encoderLearning" in epoch) != encoder_learning_enabled
+            for epoch in epochs
+        ):
+            raise ValueError(
+                "encoder learning diagnostics differ from fit job"
+            )
+
+    def _drop_target_head_diagnostics(
+        self,
+        job: ExecutionJobRecord,
+        exc: Exception,
+    ) -> None:
+        self.metrics.add("targetHeadDiagnosticsDropped", 1)
+        self.logger.event(
+            "flight.target_head_diagnostics.dropped",
+            jobId=job.job_id,
+            attempt=job.attempt,
+            errorType=type(exc).__name__,
+        )
+
     def cleanup_unpublished(self, job: ExecutionJobRecord) -> None:
         try:
             inputs = self.ledger.list_committed_inputs(job.job_id)
@@ -477,8 +609,8 @@ class WorkerArtifactPublisher:
             try:
                 self.spool.remove(path)
             except Exception as exc:
-                # Publication is ledger-gated. A filesystem cleanup failure
-                # leaves only an invisible orphan for startup reconciliation.
+                # Публикация ограничена журналом. Сбой очистки файловой системы
+                # оставляет лишь невидимый осиротевший артефакт для сверки при старте.
                 self.logger.event(
                     "flight.worker.cleanup_failed",
                     jobId=job.job_id,

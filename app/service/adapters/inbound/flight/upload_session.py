@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v5 import ModelContract
 from app.service.adapters.inbound.flight.arrow import ArrowStats, InputBatchValidator
 from app.service.adapters.inbound.flight.configuration import FlightUploadLimits
 from app.service.adapters.inbound.flight.validation import validate_upload_metadata
@@ -64,7 +64,7 @@ class UploadOutcome:
 
 
 class InputUploadSession:
-    """Own the transport staging of exactly one authorized DoPut."""
+    """Владеть транспортным буфером ровно одного авторизованного DoPut."""
 
     def __init__(
         self,
@@ -104,9 +104,9 @@ class InputUploadSession:
                     break
 
                 if self.authorization is not None:
-                    # Cancellation can commit while a transport stream is
-                    # still delivering chunks. The final commit remains the
-                    # authoritative fence for the race after the last chunk.
+                    # Отмена может зафиксироваться, пока транспортный поток ещё
+                    # передаёт фрагменты. Финальная фиксация остаётся авторитетной
+                    # границей в гонке после последнего фрагмента.
                     self.lifecycle.assert_accepting(self.authorization)
 
                 if chunk.app_metadata is not None:
@@ -139,15 +139,19 @@ class InputUploadSession:
                         self.authorization.storage_class
                     ]
                     feature_dim = self.authorization.job.model_config.feature_dim
+                    model_contract = ModelContract.from_document(
+                        self.authorization.job.model_contract
+                    )
                     self.validator = InputBatchValidator(
                         self.authorization.job.operation,
                         self.reader.schema,
                         source_encoding=(
                             self.authorization.job.source_encoding
                         ),
-                        target_contract=ModelContract.from_document(
-                            self.authorization.job.model_contract
-                        ).target_contract,
+                        target_contract=model_contract.target_contract,
+                        binary_target_indices=(
+                            model_contract.weighted_binary_target_indices
+                        ),
                         seq_len=(
                             self.authorization.job.model_config.seq_len
                         ),
@@ -282,9 +286,9 @@ class InputUploadSession:
                     False,
                 )
 
-            # durable_create can raise after publication while fsyncing the
-            # parent directory. Mark it first so cleanup treats the final name
-            # as a candidate whose ledger ownership must be checked.
+            # Метод durable_create может выбросить исключение после публикации при fsync
+            # родительского каталога. Сначала помечаем файл, чтобы очистка считала
+            # конечное имя кандидатом, чью принадлежность журналу нужно проверить.
             self.destination_published = True
             artifact_store.durable_create(
                 temporary_path,
@@ -453,8 +457,8 @@ def _committed_record_exists(
     try:
         return lifecycle.find_committed(authorization) is not None
     except Exception:
-        # Lookup failure does not prove that the commit is absent. Preserve
-        # the final artifact so startup reconciliation can resolve ownership.
+        # Сбой поиска не доказывает отсутствия фиксации. Сохраняем финальный
+        # артефакт, чтобы сверка при старте могла разрешить принадлежность.
         return True
 
 

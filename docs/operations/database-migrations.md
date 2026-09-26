@@ -20,31 +20,29 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Исторический Flight v15 clean cut
+## Semantic v5 clean cut и текущий Flight v22
 
-Revision `0027_public_contract_simplification` разрушительна. Она необходима
-для границы Flight v15 / Semantic v3 и не имеет downgrade.
+Revision `0029_encoder_normalization_order` разрушительна и не имеет downgrade.
+Она удаляет jobs, опубликованные generations, recovery/checkpoint metadata,
+idempotency records и database telemetry, для которых отсутствует reader
+Semantic v5 / Flight v22.
 
 Перед её применением:
 
 1. Остановите каждый instance service Transformer, использующий эту schema
    PostgreSQL.
 2. Убедитесь, что каждое job terminal. Migration отклоняет `WAITING_INPUT`,
-   `QUEUED`, `RUNNING`, `RETRYING`, or `CANCELLING` jobs rather than deleting
-   active work.
-3. Решите, нужен ли внешний backup. Старые models и telemetry намеренно не
-   сохраняются этим release.
-4. Примените migration один раз.
+   `QUEUED`, `RUNNING`, `RETRYING` и `CANCELLING`, а не удаляет active work.
+3. Решите, нужен ли внешний backup. Предыдущие models и database telemetry
+   намеренно не сохраняются этим release. Уже существующие documents Metrics
+   v10 в OpenSearch migration не удаляет, но без registry generation они не
+   становятся доступными через query.
+4. Примените migration один раз, затем выполните documented destructive
+   replacement индексов OpenSearch metrics v10 на v11 до запуска Flight v22.
 
-Migration удаляет старые jobs, attempts, inputs/outputs через database
-cascades, records idempotency, models, records deletion, metadata recovery и
-records telemetry/outbox в database. При следующем старте service v15
-reconciliation managed storage удаляет directories job/model/telemetry без
-references под настроенными roots этого service.
+Не запускайте executable, не поддерживающий Semantic v5, после применения
+revision 0029. У него нет совместимого reader database, и он не должен
+создавать legacy state вновь.
 
-OpenSearch находится вне PostgreSQL и эта migration его не меняет. Следуйте
-[руководству deployment OpenSearch](../deployment/opensearch.md), чтобы заменить
-индексы metrics v6 templates v7 и пустыми indices v7 до нового обучения.
-
-Не запускайте executable до v15 после применения revision 0027. У него нет
-совместимого reader database, и он не должен создавать legacy state вновь.
+Target head diagnostics хранятся в checkpoint metadata и registry metadata
+опубликованной модели.

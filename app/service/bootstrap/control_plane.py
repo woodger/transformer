@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v16 import job_config_sha256
-from app.contracts.model_catalog.v3 import (
+from app.contracts.flight.v22 import job_config_sha256
+from app.contracts.model_catalog.v7 import (
     CURSOR_TTL_SECONDS,
     MAX_CHECKPOINT_VERIFICATION_BYTES,
 )
-from app.contracts.training_telemetry.v3 import (
+from app.contracts.target_head_diagnostics.v5 import (
+    CURSOR_TTL_SECONDS as TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
+)
+from app.contracts.training_telemetry.v4 import (
     CURSOR_TTL_SECONDS as TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
     MAX_RETAINED_SNAPSHOT_BYTES,
     MAX_RETAINED_SNAPSHOT_COUNT,
@@ -67,6 +70,9 @@ from app.service.application.queries.status import (
     ListJobInputs,
     ListJobOutputs,
 )
+from app.service.application.queries.target_head_diagnostics import (
+    GetTargetHeadDiagnosticsReport,
+)
 from app.service.application.queries.training_telemetry import (
     GetGradientInteractions,
     GetTrainingTelemetryReport,
@@ -96,7 +102,7 @@ def build_job_coordinator(
     lifecycle = PostgresJobLifecycle(
         ledger,
         JobActionNames(
-            create="transformer.v16.job.create",
+            create="transformer.v22.job.create",
             acquire=ACQUIRE_ACTION,
             input_close=INPUT_CLOSE_ACTION,
             cancel=CANCEL_ACTION,
@@ -200,6 +206,12 @@ def build_job_coordinator(
             training_telemetry_snapshots,
             metadata_verifier=metadata_verifier,
             cursor_ttl_seconds=TRAINING_TELEMETRY_CURSOR_TTL_SECONDS,
+        ),
+        get_target_head_diagnostics_report=GetTargetHeadDiagnosticsReport(
+            model_catalog_store,
+            training_telemetry_snapshots,
+            metadata_verifier=metadata_verifier,
+            cursor_ttl_seconds=TARGET_HEAD_DIAGNOSTICS_CURSOR_TTL_SECONDS,
         ),
         service_status=service_status,
         availability=availability,

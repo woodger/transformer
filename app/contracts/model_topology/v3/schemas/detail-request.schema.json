@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-topology/v3/detail-request.schema.json",
+  "title": "transformer.model-topology.v3.detail request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "modelRef"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "modelRef": {"$ref": "common.schema.json#/$defs/modelRef"}
+  }
+}

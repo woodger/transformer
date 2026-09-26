@@ -1,0 +1,5 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_QUERY_UNAVAILABLE",
+  "message": "запрос диагностики выходной головки недоступен"
+}

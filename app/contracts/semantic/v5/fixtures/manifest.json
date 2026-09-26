@@ -1,0 +1,58 @@
+{
+  "contract": "transformer-semantic-fixtures",
+  "version": 5,
+  "files": [
+    {
+      "path": "d1_sha256.mjs",
+      "sha256": "e69d36684516d10b5aeb639c527443fd8cdcef98f9e19dc8311236a7daf5a546"
+    },
+    {
+      "path": "jcs.mjs",
+      "sha256": "2207a454ceeeec9130e7aaf7dca17752da48897c3ee18f29e1037dbb0c1d6012"
+    },
+    {
+      "path": "language-capabilities.json",
+      "sha256": "c5b8b9a00f59298b281336fcf766e0476b9d1f69457a0bff50b93218accd6d62"
+    },
+    {
+      "path": "multi-target-shared-resource.json",
+      "sha256": "85d5e8669270e66ca1e940aa5fdc0e27d7c6e72da6333c63d41f56990cd9f429"
+    },
+    {
+      "path": "new-opaque-target.json",
+      "sha256": "6d2c87b960157c7c305fca5e5d1574f0cb20e869e2aeb2df063996d5a9ea137b"
+    },
+    {
+      "path": "positive-class-weighted-binary-w1.json",
+      "sha256": "fb93d515e58ff97b85d337aa753c3200a200a6f65c0401a0dcb0be6003c499a4"
+    },
+    {
+      "path": "positive-class-weighted-binary-w28.json",
+      "sha256": "14b692a8be9e9475e70f4b5ab0021f08eeead5c8f35e9e84f2051357ece792f0"
+    },
+    {
+      "path": "single-positive-regression.json",
+      "sha256": "64a06a9f225d58d773ed5134fb34bd9150d7ad9fa152d77ec7610dd4d4119eec"
+    },
+    {
+      "path": "single-probability.json",
+      "sha256": "0553f72c360708fca6c6eb2986946b412a1c3c4a9c78b4e100bda53cd8480daf"
+    },
+    {
+      "path": "single-regression-pre-norm.json",
+      "sha256": "3be4e73a19b5cc04164b14e00c84fce30340411921eb4a7377a637a6b1cead59"
+    },
+    {
+      "path": "single-regression.json",
+      "sha256": "ac8c610eeddbbe829228f216dcd1d949508e0eeba8951adb87053941fd2680bb"
+    },
+    {
+      "path": "target-reorder-a-b.json",
+      "sha256": "7f1224fbf02ce99ae760fac6c5719682af11a39a4d58fda3c3d7fcb3001aa17b"
+    },
+    {
+      "path": "target-reorder-b-a.json",
+      "sha256": "b69e48908b01ee2ad88988464e047e72339320e159b9a3a435009058911209a6"
+    }
+  ]
+}

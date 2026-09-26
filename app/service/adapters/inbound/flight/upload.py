@@ -103,7 +103,7 @@ class UploadHandler:
             ):
                 self._input_notifier(record.job_id)
 
-        # The durable ledger commit deliberately precedes the sole PutResult.
+        # Надёжная фиксация в журнале намеренно предшествует единственному PutResult.
         writer.write(pa.py_buffer(encode_document(_put_result(record))))
 
 

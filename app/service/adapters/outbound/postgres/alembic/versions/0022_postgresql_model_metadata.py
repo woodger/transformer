@@ -1,7 +1,7 @@
-"""Remove standalone published model metadata sidecars.
+"""Удалить отдельные метаданные опубликованной модели.
 
-Revision ID: 0022
-Revises: 0021
+Идентификатор ревизии: 0022
+Предыдущая ревизия: 0021
 """
 
 from __future__ import annotations

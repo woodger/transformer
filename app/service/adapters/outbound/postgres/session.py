@@ -11,7 +11,7 @@ from app.service.adapters.outbound.postgres.config import DatabaseConfig
 
 
 class Database:
-    """Own the PostgreSQL connection pool and short-lived ORM sessions."""
+    """Владеть пулом подключений PostgreSQL и короткоживущими ORM-сеансами."""
 
     def __init__(
         self,

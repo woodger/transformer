@@ -9,15 +9,18 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v3 import ModelContract
-from app.contracts.worker.v14 import (
+from app.contracts.semantic.v5 import ModelContract
+from app.contracts.target_head_diagnostics.v5.constants import (
+    MAX_COMMITTED_ARTIFACT_ROWS,
+)
+from app.contracts.worker.v20 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v14.config import ModelConfig, TrainConfig
-from app.contracts.worker.v14.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v14.model_definition import resolved_semantic_digests
+from app.contracts.worker.v20.config import ModelConfig, TrainConfig
+from app.contracts.worker.v20.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,
@@ -45,7 +48,10 @@ from app.worker.checkpoints.recovery import (
     load_training_recovery,
     save_training_recovery,
 )
-from app.worker.data.arrow import iter_committed_fit_arrow
+from app.worker.data.arrow import (
+    iter_committed_fit_arrow,
+    iter_committed_fit_features,
+)
 from app.worker.data.tensors import (
     TrainingBatch,
     validate_feature_dim,
@@ -95,6 +101,7 @@ def execute_fit(
             seq_len=model_config.seq_len,
             feature_dim=model_config.feature_dim,
             target_contract=model_contract.target_contract,
+            binary_target_indices=model_contract.weighted_binary_target_indices,
         )
 
     def decoded(items: Iterator[JsonObject]) -> Iterator[TrainingBatch]:
@@ -167,12 +174,47 @@ def execute_fit(
             if batch.features.size(0) != 0:
                 yield batch
 
+    def diagnostic_features() -> Iterator[torch.Tensor]:
+        if not input_stream.closed:
+            raise ValueError("complete input is unavailable for diagnostics")
+        for item in input_stream.inputs:
+            if string_field(item, "schemaId") != FIT_INPUT_SCHEMA_ID:
+                raise ValueError("fit input schemaId is invalid")
+            for features in iter_committed_fit_features(
+                committed_inputs.path(item),
+                expected_rows=integer_field(item, "logicalRows"),
+                expected_chunks=integer_field(item, "chunks"),
+                expected_native_rows=integer_list(
+                    item.get("nativeRows"),
+                    "nativeRows",
+                ),
+                source_encoding=source_encoding,
+                seq_len=model_config.seq_len,
+                feature_dim=model_config.feature_dim,
+                target_contract=model_contract.target_contract,
+            ):
+                validate_feature_dim(features, model_config.feature_dim)
+                if features.size(0) != 0:
+                    yield features
+
     def on_epoch_committed(
         epoch: int,
         metrics: ObservedTrainingEpoch,
         monitor_payload: SelectionPayload,
         _training_complete: bool,
     ) -> None:
+        if trainer.target_head_diagnostics_enabled:
+            diagnostic_rows = sum(
+                integer_field(item, "logicalRows")
+                for item in input_stream.inputs
+            )
+            if diagnostic_rows <= MAX_COMMITTED_ARTIFACT_ROWS:
+                trainer.collect_target_head_diagnostics(
+                    diagnostic_features,
+                    epoch=epoch + 1,
+                    global_step=metrics.step,
+                    expected_rows=diagnostic_rows,
+                )
         emitter.progress({
             "epoch": epoch + 1,
             "step": metrics.step,
@@ -225,6 +267,10 @@ def execute_fit(
     if not input_stream.closed:
         raise ValueError("fit result requires a closed immutable input")
     completed_manifest = _completed_manifest(manifest, input_stream)
+    completed_manifest_sha256 = string_field(
+        completed_manifest,
+        "manifestSha256",
+    )
     metadata = checkpoint_metadata(trainer, completed_manifest)
     checkpoint_path = os.path.join(workspace, "checkpoint.pth")
     serialization_started = time.monotonic()
@@ -233,11 +279,19 @@ def execute_fit(
     result = result_identity(manifest)
     result.update({
         "inputRevision": input_stream.input_revision,
-        "manifestSha256": input_stream.manifest_sha256,
+        "manifestSha256": completed_manifest_sha256,
         "artifacts": [],
         "checkpoint": checkpoint_artifact_document(checkpoint_path),
         "checkpointMetadata": metadata,
         "checkpointSerializationMs": serialization_ms,
+        "targetHeadDiagnostics": trainer.target_head_diagnostics_artifact(
+            job_id=string_field(manifest, "jobId"),
+            attempt=integer_field(manifest, "attempt"),
+            attempt_id=string_field(manifest, "attemptId"),
+            input_revision=input_stream.input_revision,
+            manifest_sha256=completed_manifest_sha256,
+            job_config_sha256=string_field(manifest, "jobConfigSha256"),
+        ),
     })
     validate_document(result, "result-manifest")
     return result

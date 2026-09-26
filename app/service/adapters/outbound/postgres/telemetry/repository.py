@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v7 import PROJECTION_VERSION
+from app.contracts.metrics.fit_run.v11 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     advisory_lock,
     canonical_uuid,
@@ -37,7 +37,7 @@ from app.service.domain.job import ExecutionState, InputState
 
 
 class PostgresTrainingTelemetry:
-    """Own optional training telemetry persistence and outbox admission."""
+    """Владеть необязательным хранением телеметрии обучения и приёмом в outbox."""
 
     def __init__(self, database: Database) -> None:
         self.database = database

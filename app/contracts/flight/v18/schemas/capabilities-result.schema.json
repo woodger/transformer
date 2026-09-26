@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v18/capabilities-result.schema.json",
+  "title": "transformer.v18.capabilities result",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "devices", "limits", "queries", "semantic"],
+  "properties": {
+    "requestId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "devices": {
+      "type": "object", "additionalProperties": false, "required": ["cpu", "gpu"],
+      "properties": {
+        "cpu": {"type": "object", "additionalProperties": false, "required": ["available"], "properties": {"available": {"const": true}}},
+        "gpu": {"type": "object", "additionalProperties": false, "required": ["available"], "properties": {"available": {"type": "boolean"}}}
+      }
+    },
+    "limits": {"$ref": "fit-create-result.schema.json#/$defs/limits"},
+    "queries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelCatalog", "modelTopology", "trainingTelemetry", "targetHeadDiagnostics"],
+      "properties": {
+        "modelCatalog": {"type": "boolean"},
+        "modelTopology": {"type": "boolean"},
+        "trainingTelemetry": {"type": "boolean"},
+        "targetHeadDiagnostics": {
+          "oneOf": [
+            {"const": false},
+            {"$ref": "https://transformer.local/contracts/target-head-diagnostics/v1/capabilities.schema.json"}
+          ]
+        }
+      }
+    },
+    "semantic": {"$ref": "https://transformer.local/contracts/semantic/v4/language-capabilities.schema.json"}
+  }
+}

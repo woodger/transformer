@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v22/error-detail.schema.json",
+  "title": "Transformer Flight v22 application error detail",
+  "anyOf": [
+    {
+      "$ref": "https://transformer.local/contracts/semantic/v5/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/model-catalog/v7/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/training-telemetry/v4/error-detail.schema.json"
+    },
+    {
+      "$ref": "https://transformer.local/contracts/target-head-diagnostics/v5/error-detail.schema.json"
+    },
+    {
+      "$ref": "#/$defs/invalidDiagnosticsConfiguration"
+    }
+  ],
+  "$defs": {
+    "pointer": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"
+    },
+    "invalidDiagnosticsConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "reason", "path", "message"],
+      "properties": {
+        "code": {"const": "INVALID_ARGUMENT"},
+        "reason": {"const": "INVALID_DIAGNOSTICS_CONFIGURATION"},
+        "path": {"$ref": "#/$defs/pointer"},
+        "message": {"type": "string", "minLength": 1, "maxLength": 1024}
+      }
+    }
+  }
+}

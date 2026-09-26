@@ -1,0 +1,226 @@
+{
+  "contract": "transformer-target-head-diagnostics-fixtures",
+  "revision": 4,
+  "files": [
+    {
+      "path": "capabilities.json",
+      "sha256": "90d812152e55fb50fbbcb3617b818140ef589fa02322598025be67c9e5f00f93"
+    },
+    {
+      "path": "error.backend-unavailable.json",
+      "sha256": "8622ed4e7695c558af2b563fb3df330b21190b12b708e3e0026f1ecbf3a14237"
+    },
+    {
+      "path": "error.cursor-expired.json",
+      "sha256": "16eaf4c08b399eb71fe20d4de5928e74adc48ef3620858fa84ed968fc7f95c51"
+    },
+    {
+      "path": "error.cursor-invalidated.json",
+      "sha256": "3404d2db908243eb9584fbcbacfe738afadda852b6c1c1afe892e362aff8d3c7"
+    },
+    {
+      "path": "error.integrity.encoder-block-layer-order.json",
+      "sha256": "b8e085652efa97d8c3a433cc60089ace6998f1f2782c84f1331be6f447b6731c"
+    },
+    {
+      "path": "error.integrity.encoder-layer-order.json",
+      "sha256": "1bff3302cb2813614b206930ad30d631e49cdaf2a8d12dcc79d4c5dc699bb0a1"
+    },
+    {
+      "path": "error.integrity.missing-epoch.json",
+      "sha256": "b10e5e7a6bcb2fcf2c02a9afa03004c05c1b6b3ed9cd315fe88772415a86f238"
+    },
+    {
+      "path": "error.invalid-cursor.json",
+      "sha256": "f10837de93e02ab845d5c903c80fbe5ab4e3c6e87fa5d1d5fcdd8c647c34bb44"
+    },
+    {
+      "path": "error.invalid-query.json",
+      "sha256": "5ed3401f83c4f823eb09170c032af1c3e1b62164a04b0be18c298748857da043"
+    },
+    {
+      "path": "error.model-not-found.json",
+      "sha256": "bab5ffeaa7e8857e968d588c1b6c9a05674c7b82f293eefd1662f59f060726de"
+    },
+    {
+      "path": "error.query-unavailable.json",
+      "sha256": "1d3cf1257430d7d7c49ce7cbfb840d396f25780515864fdf822f20ffd390ce5b"
+    },
+    {
+      "path": "error.response-budget-exceeded.json",
+      "sha256": "3f3ce8b6c4b20380db0cecde4c230fba2fe0f35527fe93edec9644592f094797"
+    },
+    {
+      "path": "error.snapshot-capacity-exhausted.json",
+      "sha256": "fd9bc93eaec060e0e62fc9ca5466573396c7769774493e2d930030bcc24bb5ff"
+    },
+    {
+      "path": "error.stored-metadata-invalid.json",
+      "sha256": "bfe6339260a7918b84e45f64af9661a74998a29931e772ea2114b1196f1f0772"
+    },
+    {
+      "path": "report.request.continuation.json",
+      "sha256": "acbc1da35e5848a05b8aaced21c112da7fd2347e1add2b0bf30f2d7d45584bf8"
+    },
+    {
+      "path": "report.request.initial.json",
+      "sha256": "693dc3576366494438c599c9c04e1daf7b5f0ce55c6783949b8b9b72bfc50d59"
+    },
+    {
+      "path": "report.request.w28.continuation.json",
+      "sha256": "c37156c9a824f5eccba6a594603c60c7031b1828c3d7eb5360893ff7e4e89984"
+    },
+    {
+      "path": "report.request.w28.initial.json",
+      "sha256": "e2433201bc458915028e2c40d80afe8318fe7fb1f01bebf29eac0f514baa8013"
+    },
+    {
+      "path": "report.result.available.encoder-learning-no-finite-gradient.json",
+      "sha256": "2902565a5b9f0f63eec115255af8918e76ea791446105c9a1df35279afefaa2e"
+    },
+    {
+      "path": "report.result.available.encoder-learning.json",
+      "sha256": "f005c0b35c027f0d7f9a809bb54ed8ad0b6ae451c70df8ec06f3cc38c22ca057"
+    },
+    {
+      "path": "report.result.available.no-finite-gradient.json",
+      "sha256": "af602fd4d7ebbe5f8caef850fecb9fccddd15b75e6144c51954bdcabb498a542"
+    },
+    {
+      "path": "report.result.available.representation-flow.json",
+      "sha256": "7f9f7c3ef44ae324aea8f7fb55a3ca2b5cc129e9803187b9046a9b387e44f47f"
+    },
+    {
+      "path": "report.result.available.w1.first.json",
+      "sha256": "92f4e7ef5b1a74f5068181f635a71382016e4b23548b984a84925c6803934068"
+    },
+    {
+      "path": "report.result.available.w1.terminal.json",
+      "sha256": "17d5a9247f4defbdeb97d1c5f5c2ed23798303acd1d3f922704ee9401dcd100e"
+    },
+    {
+      "path": "report.result.available.w28-calibrated-probability.json",
+      "sha256": "bd711fd007b5ed39169648986e59aaaa951839ed1afb2bf379ccf8daaa62e9f8"
+    },
+    {
+      "path": "report.result.available.w28.first.json",
+      "sha256": "7546671fda6d5cdb5af498e9d2240f71d0783404db10aa38abab6792682d66c1"
+    },
+    {
+      "path": "report.result.available.w28.terminal.json",
+      "sha256": "853ecb3769b720207ff6c06dec086880c1a405267fc9e2a218a49d819aefd310"
+    },
+    {
+      "path": "report.result.not-configured.json",
+      "sha256": "0735e1c745b97d25868655c6a7cb5c25aea4c767fb89ac74872397b4dfd0e9df"
+    },
+    {
+      "path": "report.result.pending.json",
+      "sha256": "ea0f2279e38345d5a406c5545abd4fc570f27fa131f978821040efc992516efd"
+    },
+    {
+      "path": "report.result.unavailable.format-unsupported.json",
+      "sha256": "dd27321c9994b733d265785ea1cc610d069a3188aacb1b6f29cbe338ae7b5dfe"
+    },
+    {
+      "path": "report.result.unavailable.no-complete-report.json",
+      "sha256": "7dd7621a54b2daa091773e8ec2bbe98251930bb8163d2f4529f7f3787f702577"
+    },
+    {
+      "path": "report.result.unavailable.retention-expired.json",
+      "sha256": "0ccea1888d33711391612f55952ec6a96c6656e735e7649a4eb71e0b709941e2"
+    }
+  ],
+  "cases": [
+    {
+      "identity": "not-configured",
+      "documents": [
+        "report.request.initial.json",
+        "report.result.not-configured.json"
+      ]
+    },
+    {
+      "identity": "pending",
+      "documents": [
+        "report.request.initial.json",
+        "report.result.pending.json"
+      ]
+    },
+    {
+      "identity": "unavailable",
+      "documents": [
+        "report.request.initial.json",
+        "report.result.unavailable.no-complete-report.json",
+        "report.result.unavailable.retention-expired.json",
+        "report.result.unavailable.format-unsupported.json"
+      ]
+    },
+    {
+      "identity": "weighted-binary-w1",
+      "documents": [
+        "report.request.initial.json",
+        "report.result.available.w1.first.json",
+        "report.request.continuation.json",
+        "report.result.available.w1.terminal.json"
+      ]
+    },
+    {
+      "identity": "weighted-binary-w28",
+      "documents": [
+        "report.request.w28.initial.json",
+        "report.result.available.w28.first.json",
+        "report.request.w28.continuation.json",
+        "report.result.available.w28.terminal.json"
+      ]
+    },
+    {
+      "identity": "weighted-binary-w28-calibrated-probability",
+      "documents": [
+        "report.result.available.w28-calibrated-probability.json"
+      ]
+    },
+    {
+      "identity": "no-finite-direct-gradient",
+      "documents": [
+        "report.result.available.no-finite-gradient.json"
+      ]
+    },
+    {
+      "identity": "encoder-learning-observations",
+      "documents": [
+        "report.result.available.encoder-learning.json",
+        "report.result.available.encoder-learning-no-finite-gradient.json"
+      ]
+    },
+    {
+      "identity": "integrity-missing-epoch",
+      "documents": [
+        "error.integrity.missing-epoch.json"
+      ]
+    },
+    {
+      "identity": "structured-errors",
+      "documents": [
+        "error.backend-unavailable.json",
+        "error.cursor-expired.json",
+        "error.cursor-invalidated.json",
+        "error.integrity.encoder-block-layer-order.json",
+        "error.integrity.encoder-layer-order.json",
+        "error.integrity.missing-epoch.json",
+        "error.invalid-cursor.json",
+        "error.invalid-query.json",
+        "error.model-not-found.json",
+        "error.query-unavailable.json",
+        "error.response-budget-exceeded.json",
+        "error.snapshot-capacity-exhausted.json",
+        "error.stored-metadata-invalid.json"
+      ]
+    },
+    {
+      "identity": "encoder-block-flow-boundaries",
+      "documents": [
+        "report.result.available.representation-flow.json"
+      ]
+    }
+  ]
+}

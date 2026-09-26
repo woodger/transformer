@@ -1,7 +1,7 @@
-"""Persist model initialization and allow published-model fit parents.
+"""Сохранить инициализацию модели и разрешить опубликованные модели-родители для fit.
 
-Revision ID: 0021
-Revises: 0020
+Идентификатор ревизии: 0021
+Предыдущая ревизия: 0020
 """
 
 from __future__ import annotations

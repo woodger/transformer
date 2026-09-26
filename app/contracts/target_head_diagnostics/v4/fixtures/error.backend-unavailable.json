@@ -1,0 +1,6 @@
+{
+  "code": "UNAVAILABLE",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_BACKEND_UNAVAILABLE",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "message": "хранилище диагностики временно недоступно"
+}

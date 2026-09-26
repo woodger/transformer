@@ -1,0 +1,210 @@
+{
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "state": "available",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "producingRunId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "modelDefinitionSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sampleIdentity": "thds_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "sampleRowCount": 4,
+  "layout": [
+    {
+      "targetIdentity": "Opaque.BinaryEvent",
+      "targetIndex": 0,
+      "directComponentIdentity": "direct.opaque-binary-event"
+    }
+  ],
+  "coverage": {
+    "completedEpochs": 1
+  },
+  "epochPage": {
+    "items": [
+      {
+        "epoch": 1,
+        "globalStep": 12,
+        "representationFlow": {
+          "encoderInput": {
+            "rowCenteredL2Mean": 1.2
+          },
+          "encoderLayers": [
+            {
+              "layerIndex": 0,
+              "rowCenteredL2Mean": 0.8
+            },
+            {
+              "layerIndex": 1,
+              "rowCenteredL2Mean": 0.4
+            }
+          ],
+          "targetHeadInput": {
+            "rowCenteredL2Mean": 0.2
+          }
+        },
+        "encoderLearning": {
+          "layers": [
+            {
+              "layerIndex": 0,
+              "directComponentGradients": [
+                {
+                  "directComponentIdentity": "direct.opaque-binary-event",
+                  "groups": {
+                    "attention": {
+                      "l2Mean": 0.3,
+                      "l2Maximum": 0.5,
+                      "finiteBatchCount": 12
+                    },
+                    "feedForward": {
+                      "l2Mean": 0.2,
+                      "l2Maximum": 0.4,
+                      "finiteBatchCount": 12
+                    },
+                    "normalization": {
+                      "l2Mean": 0.1,
+                      "l2Maximum": 0.2,
+                      "finiteBatchCount": 12
+                    }
+                  }
+                }
+              ],
+              "parameterUpdates": {
+                "attention": {
+                  "l2Mean": 0.03,
+                  "l2Maximum": 0.05,
+                  "appliedBatchCount": 12
+                },
+                "feedForward": {
+                  "l2Mean": 0.02,
+                  "l2Maximum": 0.04,
+                  "appliedBatchCount": 12
+                },
+                "normalization": {
+                  "l2Mean": 0.01,
+                  "l2Maximum": 0.02,
+                  "appliedBatchCount": 12
+                }
+              }
+            },
+            {
+              "layerIndex": 1,
+              "directComponentGradients": [
+                {
+                  "directComponentIdentity": "direct.opaque-binary-event",
+                  "groups": {
+                    "attention": {
+                      "l2Mean": 0.04,
+                      "l2Maximum": 0.08,
+                      "finiteBatchCount": 12
+                    },
+                    "feedForward": {
+                      "l2Mean": 0.03,
+                      "l2Maximum": 0.06,
+                      "finiteBatchCount": 12
+                    },
+                    "normalization": {
+                      "l2Mean": 0.02,
+                      "l2Maximum": 0.04,
+                      "finiteBatchCount": 12
+                    }
+                  }
+                }
+              ],
+              "parameterUpdates": {
+                "attention": {
+                  "l2Mean": 0.004,
+                  "l2Maximum": 0.008,
+                  "appliedBatchCount": 12
+                },
+                "feedForward": {
+                  "l2Mean": 0.003,
+                  "l2Maximum": 0.006,
+                  "appliedBatchCount": 12
+                },
+                "normalization": {
+                  "l2Mean": 0.002,
+                  "l2Maximum": 0.004,
+                  "appliedBatchCount": 12
+                }
+              }
+            }
+          ]
+        },
+        "targetHeads": [
+          {
+            "rawLogit": {
+              "rowCount": 4,
+              "minimum": -1,
+              "maximum": 1,
+              "mean": 0,
+              "standardDeviation": 0.5
+            },
+            "publicPrediction": {
+              "rowCount": 4,
+              "minimum": 0.2689414213699951,
+              "maximum": 0.7310585786300049,
+              "mean": 0.5,
+              "standardDeviation": 0.12
+            },
+            "gradientL2Mean": 0.2,
+            "gradientL2Maximum": 0.4,
+            "gradientBatchCount": 12,
+            "weightL2AfterEpoch": 1.1,
+            "biasAfterEpoch": -0.2
+          }
+        ],
+        "encoderBlockFlow": {
+          "normalizationOrder": "preNorm",
+          "layers": [
+            {
+              "layerIndex": 0,
+              "input": {
+                "rowCenteredL2Mean": 1.2
+              },
+              "attentionResidual": {
+                "rowCenteredL2Mean": 0.8
+              },
+              "norm1": {
+                "rowCenteredL2Mean": 0.8
+              },
+              "feedForwardResidual": {
+                "rowCenteredL2Mean": 0.8
+              },
+              "norm2": {
+                "rowCenteredL2Mean": 0.8
+              }
+            },
+            {
+              "layerIndex": 1,
+              "input": {
+                "rowCenteredL2Mean": 0.8
+              },
+              "attentionResidual": {
+                "rowCenteredL2Mean": 0.4
+              },
+              "norm1": {
+                "rowCenteredL2Mean": 0.4
+              },
+              "feedForwardResidual": {
+                "rowCenteredL2Mean": 0.4
+              },
+              "norm2": {
+                "rowCenteredL2Mean": 0.4
+              }
+            }
+          ],
+          "outputHeadShared": {
+            "linear": {
+              "rowCenteredL2Mean": 0.2
+            },
+            "gelu": {
+              "rowCenteredL2Mean": 0.2
+            },
+            "layerNorm": {
+              "rowCenteredL2Mean": 0.2
+            }
+          }
+        }
+      }
+    ],
+    "nextCursor": null,
+    "cursorExpiresAt": null
+  }
+}

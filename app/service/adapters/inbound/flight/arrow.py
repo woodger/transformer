@@ -8,14 +8,14 @@ import numpy as np
 import numpy.typing as npt
 import pyarrow as pa
 
-from app.contracts.flight.v16.arrow import (
+from app.contracts.flight.v22.arrow import (
     canonical_input_schema,
     schema_fingerprint,
     validate_prediction_file as validate_contract_prediction_file,
     validate_target_values,
 )
-from app.contracts.flight.v16.source_encoding import feature_block_dimensions
-from app.contracts.flight.v16.target_value_error import TargetValueError
+from app.contracts.flight.v22.source_encoding import feature_block_dimensions
+from app.contracts.flight.v22.target_value_error import TargetValueError
 from app.contracts.json_types import JsonObject
 from app.service.adapters.inbound.flight.errors import invalid, resource_exhausted
 from app.service.domain.errors import ServiceError
@@ -38,7 +38,7 @@ class ArrowStats:
 
 
 class InputBatchValidator:
-    """Validate one compact DoPut payload without expanding logical tensors."""
+    """Проверить один компактный пакет DoPut без развёртывания логических тензоров."""
 
     def __init__(
         self,
@@ -47,6 +47,7 @@ class InputBatchValidator:
         *,
         source_encoding: Mapping[str, object],
         target_contract: JsonObject,
+        binary_target_indices: Sequence[int] = (),
         seq_len: int,
         expected_feature_dim: int,
         max_batch_bytes: int,
@@ -57,6 +58,7 @@ class InputBatchValidator:
             raise invalid("unsupported input operation")
         self.operation = operation
         self.target_contract = target_contract
+        self.binary_target_indices = tuple(binary_target_indices)
         self.schema = schema
         self.seq_len = seq_len
         self.expected_feature_dim = expected_feature_dim
@@ -240,19 +242,23 @@ class InputBatchValidator:
                     values,
                     self.target_contract,
                     logical_row_offset=self.rows,
+                    binary_target_indices=self.binary_target_indices,
                 )
             except TargetValueError as exc:
+                detail: JsonObject = {
+                    "code": "INVALID_ARGUMENT",
+                    "reason": "TARGET_VALUE_INVALID",
+                    "targetIdentity": exc.target_identity,
+                    "targetIndex": exc.target_index,
+                    "logicalRow": exc.logical_row,
+                    "message": str(exc),
+                }
+                if exc.expected_domain is not None:
+                    detail["expectedDomain"] = exc.expected_domain
                 raise ServiceError(
                     ErrorCode.INVALID_ARGUMENT,
                     str(exc),
-                    detail={
-                        "code": "INVALID_ARGUMENT",
-                        "reason": "TARGET_VALUE_INVALID",
-                        "targetIdentity": exc.target_identity,
-                        "targetIndex": exc.target_index,
-                        "logicalRow": exc.logical_row,
-                        "message": str(exc),
-                    },
+                    detail=detail,
                 ) from exc
 
         for index, (raw_range, raw_start, logical_count) in enumerate(

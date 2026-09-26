@@ -2,7 +2,7 @@ from collections.abc import Mapping
 
 import torch
 
-from app.contracts.semantic.v3 import ModelContract
+from app.contracts.semantic.v5 import ModelContract
 from app.worker.model.transformer import TransformerModel
 from app.worker.training.run_config import (
     ModelConfig,
@@ -39,6 +39,7 @@ def build_model(
         model_contract=model_contract,
         nhead=model_config.nhead,
         context_mode=model_config.context_mode,
+        normalization_order=model_config.normalization_order,
     ).to(device)
 
 

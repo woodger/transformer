@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/worker/v15/arrow-manifest.schema.json",
+  "title": "Transformer worker v15 compact input artifact manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId",
+    "ordinal",
+    "commitRevision",
+    "dataContractSha256",
+    "chunks",
+    "logicalRows",
+    "nativeRows",
+    "firstRangeOrdinal",
+    "firstExampleOffset",
+    "lastRangeOrdinal",
+    "nextExampleOffset",
+    "batches",
+    "artifact"
+  ],
+  "properties": {
+    "schemaId": {
+      "enum": [
+        "transformer.indexed-feature-blocks.fit.v1",
+        "transformer.indexed-feature-blocks.predict.v1"
+      ]
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "commitRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "dataContractSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "chunks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "logicalRows": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nativeRows": {
+      "$ref": "common.schema.json#/$defs/nativeRows"
+    },
+    "firstRangeOrdinal": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "firstExampleOffset": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "lastRangeOrdinal": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "nextExampleOffset": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "batches": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifact": {
+      "$ref": "common.schema.json#/$defs/artifact"
+    }
+  }
+}

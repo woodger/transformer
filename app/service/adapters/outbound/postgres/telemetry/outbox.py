@@ -20,7 +20,7 @@ from app.service.application.telemetry.records import (
 
 
 class PostgresMetricsOutbox:
-    """Persist delivery progress without owning training or model lifecycle."""
+    """Сохранять ход доставки, не владея жизненным циклом обучения или модели."""
 
     def __init__(self, database: Database) -> None:
         self.database = database

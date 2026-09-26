@@ -7,7 +7,7 @@ _OWNER_SUBJECT = "inventory"
 
 
 class AccessTokenAdministration:
-    """Application use cases shared by administrative entrypoints."""
+    """Сценарии приложения, общие для административных точек входа."""
 
     def __init__(self, repository: AccessTokenRepository) -> None:
         self._repository = repository

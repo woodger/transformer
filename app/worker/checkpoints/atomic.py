@@ -36,7 +36,7 @@ def resolve_artifact_path(
 def atomic_output_path(
     path: str,
 ) -> Generator[str, None, None]:
-    """Yield a sibling temporary path and atomically replace the target on success."""
+    """Вернуть соседний временный путь и атомарно заменить цель при успехе."""
     target = os.path.abspath(path)
     parent = os.path.dirname(target) or os.curdir
     os.makedirs(parent, exist_ok=True)

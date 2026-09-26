@@ -5,7 +5,7 @@ from app.service.domain.authentication import AuthenticatedPrincipal
 
 
 class StaticAccessTokenAuthenticator:
-    """Deterministic service-boundary authenticator for isolated tests."""
+    """Детерминированный authenticator границы сервиса для изолированных tests."""
 
     def __init__(self, credentials: dict[str, str]) -> None:
         self._credentials = credentials

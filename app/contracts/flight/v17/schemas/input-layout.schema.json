@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v17/input-layout.schema.json",
+  "title": "Transformer Flight v17 indexed feature block input layout",
+  "$ref": "common.schema.json#/$defs/inputLayout"
+}

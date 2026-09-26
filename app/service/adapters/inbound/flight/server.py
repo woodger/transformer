@@ -26,6 +26,7 @@ from app.service.adapters.inbound.flight.constants import (
     OUTPUTS_LIST_ACTION,
     PREDICT_CREATE_ACTION,
     STATUS_ACTION,
+    TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION,
     TRAINING_TELEMETRY_GRADIENT_ACTION,
     TRAINING_TELEMETRY_REPORT_ACTION,
 )
@@ -47,7 +48,7 @@ from app.service.adapters.observability import JsonLogger, OperationalMetrics
 from app.service.application.ports.authentication import AccessTokenAuthenticator
 
 ACTION_DESCRIPTIONS = {
-    CAPABILITIES_ACTION: "Return Flight v16 capabilities and limits.",
+    CAPABILITIES_ACTION: "Вернуть capabilities и limits Flight v22.",
     HEALTH_ACTION: "Return liveness, readiness and device health.",
     FIT_CREATE_ACTION: "Create a durable fit job.",
     PREDICT_CREATE_ACTION: "Create a durable predict job.",
@@ -62,6 +63,7 @@ ACTION_DESCRIPTIONS = {
     MODEL_TOPOLOGY_DETAIL_ACTION: "Return public topology for one model generation.",
     TRAINING_TELEMETRY_REPORT_ACTION: "Read training telemetry for one model generation.",
     TRAINING_TELEMETRY_GRADIENT_ACTION: "Read gradient interactions for one model epoch.",
+    TARGET_HEAD_DIAGNOSTICS_REPORT_ACTION: "Вернуть диагностику выходных головок одной model generation.",
 }
 
 
@@ -88,7 +90,7 @@ _FLIGHT_ERROR = cast(type[Exception], vars(flight)["FlightError"])
 class TransformerFlightServer(
     flight.FlightServerBase,  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage, reportUntypedBaseClass]
 ):
-    """Thin Flight adapter; Torch execution belongs to the worker subprocess."""
+    """Тонкий адаптер Flight; выполнение Torch принадлежит дочернему процессу Worker."""
 
     def __init__(
         self,

@@ -1,5 +1,5 @@
 class CheckpointCorrupt(ValueError):
-    """Checkpoint violates the active provider checkpoint contract."""
+    """Контрольная точка нарушает активный контракт контрольной точки поставщика."""
 
 
 __all__ = ["CheckpointCorrupt"]
