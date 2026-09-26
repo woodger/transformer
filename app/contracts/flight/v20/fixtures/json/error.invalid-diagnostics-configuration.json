@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_DIAGNOSTICS_CONFIGURATION",
+  "path": "/diagnostics/encoderLayerDiagnostics",
+  "message": "encoder layer diagnostics require full target head diagnostics"
+}

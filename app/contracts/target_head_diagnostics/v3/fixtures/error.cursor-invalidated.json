@@ -1,0 +1,7 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_CURSOR_INVALIDATED",
+  "path": "/cursor",
+  "restartRequired": true,
+  "message": "курсор диагностики принадлежит предыдущему процессу сервиса"
+}

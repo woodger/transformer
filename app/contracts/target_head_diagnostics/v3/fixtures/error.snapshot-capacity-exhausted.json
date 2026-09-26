@@ -1,0 +1,7 @@
+{
+  "code": "RESOURCE_EXHAUSTED",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_SNAPSHOT_CAPACITY_EXHAUSTED",
+  "retryable": true,
+  "retryAfterSeconds": 30,
+  "message": "недостаточно ёмкости для сохранения страницы диагностики"
+}

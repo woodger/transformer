@@ -1,0 +1,7 @@
+{
+  "code": "RESOURCE_EXHAUSTED",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_RESPONSE_BUDGET_EXCEEDED",
+  "maxResponseBytes": 8388608,
+  "actualResponseBytes": 8388609,
+  "message": "ответ диагностики превышает допустимый размер"
+}
