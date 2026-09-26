@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/target-head-diagnostics/v5/capabilities.schema.json",
+  "title": "Transformer target head diagnostics v5 capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "revision", "actions", "artifactScope", "encoderLayerDiagnosticsModes", "encoderNormalizationOrders", "maxEpochPageSize", "cursorTtlSeconds", "maxResponseBytes", "maxCommittedArtifactRows", "maxRetainedSnapshotCount", "maxRetainedSnapshotBytes", "maxRetainedSnapshotTotalBytes", "availabilityStates", "structuredErrors"],
+  "properties": {
+    "contract": {"const": "transformer-target-head-diagnostics"},
+    "revision": {"const": 5},
+    "actions": {"const": ["transformer.target-head-diagnostics.v5.report"]},
+    "artifactScope": {"const": "fullCommittedArtifact"},
+    "encoderLayerDiagnosticsModes": {"const": ["directComponentPerBatch"]},
+    "encoderNormalizationOrders": {"const": ["postNorm", "preNorm"]},
+    "maxEpochPageSize": {"const": 100},
+    "cursorTtlSeconds": {"const": 900},
+    "maxResponseBytes": {"const": 8388608},
+    "maxCommittedArtifactRows": {"$ref": "common.schema.json#/$defs/positiveInteger"},
+    "maxRetainedSnapshotCount": {"const": 64},
+    "maxRetainedSnapshotBytes": {"const": 16777216},
+    "maxRetainedSnapshotTotalBytes": {"const": 67108864},
+    "availabilityStates": {"const": ["notConfigured", "pending", "unavailable", "available"]},
+    "structuredErrors": {"const": true}
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "contract": "transformer-target-head-diagnostics",
+  "revision": 5,
+  "actions": [
+    "transformer.target-head-diagnostics.v5.report"
+  ],
+  "artifactScope": "fullCommittedArtifact",
+  "encoderLayerDiagnosticsModes": [
+    "directComponentPerBatch"
+  ],
+  "maxEpochPageSize": 100,
+  "cursorTtlSeconds": 900,
+  "maxResponseBytes": 8388608,
+  "maxCommittedArtifactRows": 2000000,
+  "maxRetainedSnapshotCount": 64,
+  "maxRetainedSnapshotBytes": 16777216,
+  "maxRetainedSnapshotTotalBytes": 67108864,
+  "availabilityStates": [
+    "notConfigured",
+    "pending",
+    "unavailable",
+    "available"
+  ],
+  "structuredErrors": true,
+  "encoderNormalizationOrders": [
+    "postNorm",
+    "preNorm"
+  ]
+}

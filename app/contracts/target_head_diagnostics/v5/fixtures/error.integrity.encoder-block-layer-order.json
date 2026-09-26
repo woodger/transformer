@@ -1,0 +1,7 @@
+{
+  "code": "TARGET_HEAD_DIAGNOSTICS_CORRUPT",
+  "reason": "TARGET_HEAD_DIAGNOSTICS_INTEGRITY_FAILED",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "path": "/epochs/0/encoderBlockFlow/layers/1/layerIndex",
+  "message": "границы encoder block идут не в порядке исполнения"
+}

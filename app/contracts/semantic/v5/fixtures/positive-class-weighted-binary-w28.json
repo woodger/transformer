@@ -1,0 +1,101 @@
+{
+  "fixtureId": "semantic.positive-class-weighted-binary.w28.v5",
+  "tensorGeometry": {
+    "seqLen": 2,
+    "featureDim": 8
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "OpaqueBinaryEvent",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.opaque-binary-event",
+          "operator": "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "positiveClassWeight": 28,
+          "targetIdentity": "OpaqueBinaryEvent"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "zero-logit-positive",
+      "inputs": {
+        "rawCoordinate": 0,
+        "observed": 1
+      },
+      "outputs": {
+        "lossEstimate": 0,
+        "publicPrediction": 0.034482758620689655,
+        "componentLoss": 19.408121055678468
+      },
+      "absoluteTolerance": 1e-06
+    },
+    {
+      "identity": "zero-logit-negative",
+      "inputs": {
+        "rawCoordinate": 0,
+        "observed": 0
+      },
+      "outputs": {
+        "lossEstimate": 0,
+        "publicPrediction": 0.034482758620689655,
+        "componentLoss": 0.6931471805599453
+      },
+      "absoluteTolerance": 1e-06
+    },
+    {
+      "identity": "negative-extreme-positive",
+      "inputs": {
+        "rawCoordinate": -80,
+        "observed": 1
+      },
+      "outputs": {
+        "lossEstimate": -80,
+        "publicPrediction": 6.4458978137336355e-37,
+        "componentLoss": 2240
+      },
+      "absoluteTolerance": 1e-06
+    },
+    {
+      "identity": "positive-extreme-negative",
+      "inputs": {
+        "rawCoordinate": 80,
+        "observed": 0
+      },
+      "outputs": {
+        "lossEstimate": 80,
+        "publicPrediction": 1,
+        "componentLoss": 80
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "e7d58aa3656a4801ace69e07bf045dde308f963d7d4de3001547d5101fffb9ec",
+    "objectiveSha256": "5b0ee9a22aaec5d33c5dd0240a09278b586bffe27e4d8316b3fc9e977c8f6225"
+  }
+}

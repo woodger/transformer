@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v5/model-contract.schema.json",
+  "title": "ModelContract v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "targetContract",
+    "objective",
+    "modelTuning"
+  ],
+  "properties": {
+    "targetContract": {
+      "$ref": "target-contract.schema.json"
+    },
+    "objective": {
+      "$ref": "objective.schema.json"
+    },
+    "modelTuning": {
+      "$ref": "common.schema.json#/$defs/modelTuning"
+    }
+  }
+}
