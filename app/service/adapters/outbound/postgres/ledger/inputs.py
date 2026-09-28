@@ -318,7 +318,11 @@ class InputLedgerSlice:
                     _clear_input_wait(job)
 
                 queued = False
-                if job.execution_state == ExecutionState.WAITING_INPUT.value:
+                if (
+                    job.operation == "fit"
+                    and job.execution_state
+                    == ExecutionState.WAITING_INPUT.value
+                ):
                     contiguous_rows = int(session.scalar(
                         select(func.coalesce(func.sum(JobInput.rows), 0)).where(
                             JobInput.job_id == job_id,

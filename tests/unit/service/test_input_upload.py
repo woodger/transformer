@@ -1,9 +1,21 @@
+from contextlib import contextmanager
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy.orm import Session
 
+import app.service.adapters.outbound.postgres.ledger.inputs as input_ledger_module
 from app.contracts.semantic.v5 import ModelContract
 from app.contracts.worker.v20.config import ModelConfig
+from app.service.adapters.outbound.postgres.ledger.inputs import (
+    InputLedgerSlice,
+)
+from app.service.adapters.outbound.postgres.ledger.support import (
+    LedgerSessions,
+)
+from app.service.adapters.outbound.postgres.session import Database
 from app.service.application.messages.inputs import (
     CommittedInput,
     InputUploadJob,
@@ -13,7 +25,8 @@ from app.service.application.services.input_upload import (
     InputUploadLifecycle,
 )
 from app.service.domain.errors import ServiceError
-from app.service.domain.job import ErrorCode, InputState
+from app.service.domain.input_manifest import manifest_sha256
+from app.service.domain.job import ErrorCode, ExecutionState, InputState
 from tests.fixture_documents import semantic_fixture_document
 
 SOURCE_ENCODING = {
@@ -182,3 +195,130 @@ def test_exact_replay_uses_current_input_frontier_without_recommit():
     assert replay.next_input_ordinal == 3
     assert replay.queued is False
     assert replay.frontier_advanced is False
+
+
+def test_predict_inputs_wait_for_closed_manifest_before_queueing(monkeypatch):
+    job_id = "00000000-0000-4000-8000-000000000001"
+    execution_id = "00000000-0000-4000-8000-000000000002"
+    job = SimpleNamespace(
+        job_id=job_id,
+        client_execution_id=execution_id,
+        fencing_token=1,
+        operation="predict",
+        input_state=InputState.OPEN.value,
+        execution_state=ExecutionState.WAITING_INPUT.value,
+        data_contract_sha256="a" * 64,
+        total_native_rows=[0],
+        next_input_ordinal=0,
+        input_revision=0,
+        payload_count=0,
+        total_chunks=0,
+        total_rows=0,
+        total_bytes=0,
+        waiting_for_input=False,
+        revision=1,
+        source_width=1,
+        feature_dim=1,
+        selected_device=None,
+        requested_device="cpu",
+    )
+    uploads = [
+        SimpleNamespace(
+            job_id=job_id,
+            client_execution_id=execution_id,
+            fencing_token=1,
+            storage_class="runtime",
+            ordinal=ordinal,
+            payload_id=(
+                f"00000000-0000-4000-8000-00000000000{ordinal + 3}"
+            ),
+        )
+        for ordinal in range(2)
+    ]
+    records = []
+    scalar_values = [job, None, job, None, job, None, 1]
+    scalars_calls = 0
+
+    def scalar(_statement):
+        if not scalar_values:
+            pytest.fail("unexpected scalar query")
+        return scalar_values.pop(0)
+
+    def scalars(_statement):
+        nonlocal scalars_calls
+        scalars_calls += 1
+        if scalars_calls == 1:
+            return [0]
+        if scalars_calls == 3:
+            return [1]
+        if scalars_calls in (2, 4, 5):
+            return records
+        pytest.fail("unexpected scalar collection query")
+
+    session = cast(
+        Session,
+        SimpleNamespace(
+            get=lambda *_args, **_kwargs: uploads.pop(0),
+            scalar=scalar,
+            scalars=scalars,
+            add=records.append,
+            delete=lambda _record: None,
+            flush=lambda: None,
+        ),
+    )
+
+    @contextmanager
+    def transaction():
+        yield session
+
+    database = cast(Database, SimpleNamespace(transaction=transaction))
+    ledger = InputLedgerSlice(LedgerSessions(database))
+    monkeypatch.setattr(
+        input_ledger_module,
+        "decode",
+        lambda record: {"job_id": record.job_id},
+    )
+
+    for ordinal in range(2):
+        receipt = ledger.commit_input(
+            upload_token=f"upload-{ordinal}",
+            job_id=job_id,
+            client_execution_id=execution_id,
+            fencing_token=1,
+            relative_path=f"inputs/{ordinal}.arrow",
+            schema_id="transformer.indexed-feature-blocks.predict.v1",
+            data_contract_sha256="a" * 64,
+            chunks=1,
+            rows=2,
+            native_rows=(2,),
+            first_range_ordinal=ordinal,
+            first_example_offset=0,
+            last_range_ordinal=ordinal,
+            next_example_offset=2,
+            batches=1,
+            byte_count=16,
+            sha256="b" * 64,
+            schema_fingerprint="c" * 64,
+            selected_device="cpu",
+            max_payloads=10,
+            max_job_bytes=1024,
+        )
+
+        assert receipt["queued"] is False
+        assert job.input_state == InputState.OPEN.value
+        assert job.execution_state == ExecutionState.WAITING_INPUT.value
+
+    _, repeated = ledger.close_input(
+        job_id,
+        client_execution_id=execution_id,
+        fencing_token=1,
+        expected_logical_rows=4,
+        expected_manifest_sha256=manifest_sha256(records),
+        select_device=lambda *_args: "cpu",
+        connection=session,
+    )
+
+    assert repeated is False
+    assert job.input_state == InputState.CLOSED.value
+    assert job.execution_state == ExecutionState.QUEUED.value
+    assert job.payload_count == 2

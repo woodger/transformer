@@ -62,6 +62,10 @@ data plane.
 prediction всегда следуют принадлежащему checkpoint-у порядку target-ов;
 неявное remapping не выполняется.
 
+Predict остаётся в `WAITING_INPUT`, пока вызывающая система не загрузит все
+payloads и не зафиксирует manifest через `job.input.close`. В отличие от fit,
+Worker для predict не запускается для открытого input.
+
 ## Mutation, status и errors
 
 `job.acquire` заменяет устаревший непрозрачный mutation lease. `job.cancel` и
