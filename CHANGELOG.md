@@ -7,10 +7,34 @@
 
 ## [Не выпущено]
 
+## [0.1.22] - 2026-10-03
+
 ### Исправлено
 
+- Predict остаётся в `WAITING_INPUT` до `job.input.close`; загрузка отдельного
+  payload больше не запускает Worker для незакрытого manifest.
+- При восстановлении обучения на CUDA состояния shuffle, CPU RNG и CUDA RNG
+  передаются генераторам как CPU tensors независимо от device загрузки checkpoint.
+- Positional encoding поддерживает нечётную `hiddenWidth` и объявленный
+  `seqLen > 5000`. Для прежней геометрии сохраняется размер checkpoint buffer.
+- Взвешенная бинарная BCE и поправка публичной вероятности сохраняют вес
+  положительного класса при входных tensors `float16` и `bfloat16`.
+- Создание jobs одного owner-а сериализует проверку квоты active jobs в
+  PostgreSQL, включая запросы с разными job identities и idempotency keys.
+- Commit входного payload использует порядок блокировок `job → upload`,
+  согласованный с acquire и cancel.
+- Перед публикацией prediction outputs и `SUCCEEDED` синхронизируются файлы
+  и managed parent directories. Ошибка `fsync` предотвращает публикацию
+  всего набора outputs.
 - Общая схема ошибок Flight v22 принимает действующие structured errors
   Model Topology v3; согласованность проверяется нормативными fixtures.
+
+### Изменено
+
+- Документация описывает действующие Flight actions, получение outputs,
+  источники конфигурации PostgreSQL/OpenSearch и приоритет окружения над `.env`.
+- Тесты согласованы с политикой тестирования и дополнены проверками поведения
+  input lifecycle, atomic publication, численных вычислений и recovery.
 
 ## [0.1.21] - 2026-09-26
 
@@ -940,7 +964,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.21...HEAD
+[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.22...HEAD
+[0.1.22]: https://github.com/woodger/transformer/compare/0.1.21...0.1.22
 [0.1.21]: https://github.com/woodger/transformer/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/woodger/transformer/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/woodger/transformer/compare/0.1.18...0.1.19
