@@ -98,6 +98,8 @@ class _PublicationSpool(Protocol):
 
     def relative_path(self, absolute_path: str) -> str: ...
 
+    def sync_file(self, path: str) -> None: ...
+
     def model_directory(self, model_ref: str) -> str: ...
 
     def model_checkpoint_path(self, model_ref: str) -> str: ...
@@ -246,6 +248,8 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "prediction worker output is not valid Arrow",
                 ) from exc
+
+            self.spool.sync_file(path)
             outputs.append(StagedPredictionOutput(
                 ordinal=item.ordinal,
                 rows=stats.rows,

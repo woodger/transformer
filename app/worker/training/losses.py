@@ -251,6 +251,8 @@ def _direct_loss(
             reduction="none",
         )
     if operator == "PositiveClassWeightedBinaryCrossEntropyWithLogits":
+        if model_value.dtype in (torch.float16, torch.bfloat16):
+            model_value = model_value.float()
         positive_class_weight = model_value.new_tensor(
             _number(
                 specification["positiveClassWeight"],

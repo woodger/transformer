@@ -1010,7 +1010,7 @@ class Trainer:
         if not isinstance(shuffle_state, torch.Tensor):
             raise ValueError("training recovery shuffle state is invalid")
         self._payload_shuffle_generator.set_state(
-            shuffle_state
+            shuffle_state.cpu()
         )
         random.setstate(cast(tuple[object, ...], rng["python"]))
         np.random.set_state(
@@ -1022,7 +1022,7 @@ class Trainer:
         torch_rng_state = rng["torch"]
         if not isinstance(torch_rng_state, torch.Tensor):
             raise ValueError("training recovery Torch RNG state is invalid")
-        torch.set_rng_state(torch_rng_state)
+        torch.set_rng_state(torch_rng_state.cpu())
         cuda_rng_state = rng["cuda"]
         if cuda_rng_state is not None:
             if self.device.type != "cuda" or not torch.cuda.is_available():
@@ -1035,7 +1035,7 @@ class Trainer:
             if not all(isinstance(state, torch.Tensor) for state in cuda_states):
                 raise ValueError("training recovery CUDA RNG state is invalid")
             torch.cuda.set_rng_state_all(
-                cast(list[torch.Tensor], cuda_states)
+                [state.cpu() for state in cast(list[torch.Tensor], cuda_states)]
             )
         self.training_complete = _boolean(
             payload["training_complete"],

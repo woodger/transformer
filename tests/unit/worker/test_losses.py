@@ -1,3 +1,4 @@
+import math
 from copy import deepcopy
 
 import pytest
@@ -130,6 +131,53 @@ def test_positive_class_weighted_binary_bce_returns_corrected_probability():
     assert predictions[:, 0] == pytest.approx(torch.sigmoid(
         outputs[:, 0] - torch.log(torch.tensor(28.0, dtype=torch.float64))
     ))
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("positive_class_weight", [100000.0, 0.001])
+def test_weighted_binary_loss_and_gradients_preserve_weight_with_reduced_precision(
+    dtype,
+    positive_class_weight,
+):
+    contract = _weighted_binary_contract(positive_class_weight)
+    outputs = torch.zeros(2, 1, dtype=dtype, requires_grad=True)
+    targets = torch.tensor([[1.0], [0.0]], dtype=torch.float32)
+
+    loss = combined_loss(outputs, targets, contract)
+    loss.backward()
+
+    assert loss.item() == pytest.approx(
+        math.log(2) * (positive_class_weight + 1) / 2,
+        rel=1e-6,
+    )
+    torch.testing.assert_close(
+        outputs.grad.float(),
+        torch.tensor([[-positive_class_weight / 4], [0.25]]),
+        rtol=0.006,
+        atol=0,
+    )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("positive_class_weight", [100000.0, 1e-8])
+def test_weighted_binary_probability_preserves_weight_with_reduced_precision(
+    dtype,
+    positive_class_weight,
+):
+    contract = _weighted_binary_contract(positive_class_weight)
+    outputs = torch.tensor([[0.0], [2.0]], dtype=dtype)
+
+    predictions = public_predictions(outputs, contract)
+
+    torch.testing.assert_close(
+        predictions,
+        torch.tensor([
+            [1 / (1 + positive_class_weight)],
+            [math.exp(2) / (math.exp(2) + positive_class_weight)],
+        ]),
+        rtol=1e-6,
+        atol=0,
+    )
 
 
 def test_positive_class_weighted_binary_bce_with_weight_one_matches_bce():

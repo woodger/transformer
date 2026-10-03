@@ -11,6 +11,10 @@ configuration модели и записывает identities D1. Упорядо
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
 имён target-ов внешней предметной области.
 
+Positional encoding поддерживает нечётную `hiddenWidth` и весь объявленный
+`seqLen`. Для `seqLen <= 5000` сохраняется прежний размер checkpoint buffer;
+для более длинных sequences buffer создаётся по `seqLen`.
+
 Worker применяет loss-input и public-prediction transformations каждого slot к
 одной raw output coordinate. Direct и auxiliary operators, private resource
 classes и gradient semantics документированы в [losses](./losses.md) и Semantic
@@ -42,6 +46,9 @@ progress, semantic identities, resolved configuration job и fences input
 manifest. Recovery проверяет их до загрузки state. Другая definition data/model
 или manifest отклоняются; remapping target-ов и частичная загрузка state не
 выполняются.
+
+Состояния CPU RNG и shuffle восстанавливаются на CPU и при исполнении на CUDA;
+состояния CUDA RNG также передаются генераторам как CPU ByteTensor.
 
 Recovery используется только для retryable сбоя Worker, пока service продолжает
 работать. При любом restart service все незавершённые jobs завершаются до

@@ -325,6 +325,20 @@ class Spool:
         parent = os.path.dirname(path)
         _make_directories_durable(parent, stop_at=root)
 
+    def sync_file(self, path: str) -> None:
+        """Синхронизировать файл Worker и созданные им managed каталоги."""
+        path, root = self._inside_managed(path)
+        if path == root:
+            raise ValueError("artifact path must name a file inside managed storage")
+        _fsync_file(path)
+
+        directory = os.path.dirname(path)
+        while True:
+            fsync_directory(directory)
+            if directory == root:
+                break
+            directory = os.path.dirname(directory)
+
     def create_temporary(self, destination: str) -> tuple[BinaryIO, str]:
         destination, _ = self._inside_managed(destination)
         self.ensure_parent(destination)

@@ -100,6 +100,10 @@ filesystem storage содержит durable inputs, artifacts attempt/recovery,
 published checkpoints и временные files telemetry. OpenSearch — best-effort
 projection.
 
+Перед фиксацией prediction outputs и `SUCCEEDED` service выполняет `fsync`
+файлов и их managed parent directories, включая созданные Worker-ом каталоги.
+Ошибка синхронизации не позволяет опубликовать частичный набор outputs.
+
 Directories published model содержат только managed artifacts checkpoint
 provider-а. Catalog/detail разрешает их metadata из PostgreSQL; ни filesystem
 scan, ни telemetry не могут создать видимую generation модели.

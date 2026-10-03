@@ -17,6 +17,8 @@ def _contract(
     *,
     mode: str = "relaxed",
     normalization_order: str = "postNorm",
+    hidden: int = 32,
+    nhead: int = 4,
 ):
     document = semantic_fixture_document("multi-target-shared-resource")[
         "modelContract"
@@ -25,10 +27,10 @@ def _contract(
     tuning = document["modelTuning"]
     assert isinstance(tuning, dict)
     tuning.update({
-        "hiddenWidth": 32,
+        "hiddenWidth": hidden,
         "encoderLayerCount": 1,
         "dropoutProbability": 0.0,
-        "attentionHeadCount": 4,
+        "attentionHeadCount": nhead,
         "missingValuePolicy": mode,
         "encoderNormalizationOrder": normalization_order,
     })
@@ -60,6 +62,61 @@ def test_transformer_forward_shape():
         model_output,
         contract,
     ).shape == (batch, 3)
+
+
+@pytest.mark.parametrize("hidden", [1, 3, 9])
+def test_transformer_supports_odd_hidden_width(hidden):
+    contract = _contract(hidden=hidden, nhead=1)
+    model = TransformerModel(
+        input_dim=2,
+        seq_len=3,
+        hidden_dim=hidden,
+        layers=1,
+        dropout=0.0,
+        model_contract=contract,
+        nhead=1,
+        normalization_order="postNorm",
+    )
+
+    predictions = public_predictions(model(torch.randn(2, 3, 2)), contract)
+
+    assert predictions.shape == (2, contract.target_width)
+    assert torch.isfinite(predictions).all()
+
+
+def test_transformer_supports_sequences_beyond_default_positional_capacity():
+    contract = _contract(hidden=8, nhead=1)
+    model = TransformerModel(
+        input_dim=1,
+        seq_len=5001,
+        hidden_dim=8,
+        layers=1,
+        dropout=0.0,
+        model_contract=contract,
+        nhead=1,
+        normalization_order="postNorm",
+    ).eval()
+
+    with torch.no_grad():
+        predictions = public_predictions(model(torch.zeros(1, 5001, 1)), contract)
+
+    assert predictions.shape == (1, contract.target_width)
+    assert torch.isfinite(predictions).all()
+
+
+def test_transformer_keeps_existing_checkpoint_positional_buffer_shape():
+    model = TransformerModel(
+        input_dim=1,
+        seq_len=3,
+        hidden_dim=32,
+        layers=1,
+        dropout=0.0,
+        model_contract=_contract(),
+        nhead=4,
+        normalization_order="postNorm",
+    )
+
+    assert model.state_dict()["pos.pe"].shape == (5000, 32)
 
 
 @pytest.mark.parametrize(

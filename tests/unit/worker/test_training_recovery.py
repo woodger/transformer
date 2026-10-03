@@ -81,9 +81,10 @@ def _model() -> nn.Module:
     return TargetAlignedLinear()
 
 
-def _trainer(initial_state: dict) -> Trainer:
+def _trainer(initial_state: dict, *, device: str = "cpu") -> Trainer:
     model = _model()
     model.load_state_dict(initial_state)
+    model.to(device)
     model_config = _model_config()
     train_config = TrainConfig(
         lr=0.001,
@@ -95,7 +96,7 @@ def _trainer(initial_state: dict) -> Trainer:
     )
     return Trainer(
         model=model,
-        device=torch.device("cpu"),
+        device=torch.device(device),
         train_config=train_config,
         model_contract=MODEL_CONTRACT,
         model_config=model_config,
@@ -157,7 +158,7 @@ def _seed() -> None:
 
 def _assert_tree_equal(left, right) -> None:
     if isinstance(left, torch.Tensor):
-        assert torch.equal(left, right)
+        assert torch.equal(left.cpu(), right.cpu())
         return
     if isinstance(left, dict):
         assert set(left) == set(right)
@@ -173,7 +174,14 @@ def _assert_tree_equal(left, right) -> None:
     assert left == right
 
 
-def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
+@pytest.mark.parametrize("device", [
+    "cpu",
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available"),
+    ),
+])
+def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path, device):
     _seed()
     source = torch.randn(11, 2, 2)
     target = torch.rand(11, MODEL_CONTRACT.target_width)
@@ -181,12 +189,14 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     payloads = _payloads(source, target)
 
     _seed()
-    uninterrupted = _trainer(initial_state)
+    uninterrupted = _trainer(initial_state, device=device)
     uninterrupted.fit_payloads_resumable(payloads)
+    expected_cpu_random = torch.rand(5)
+    expected_device_random = torch.rand(5, device=device)
 
     checkpoint = tmp_path / "1.pth"
     _seed()
-    interrupted = _trainer(initial_state)
+    interrupted = _trainer(initial_state, device=device)
     saved_metadata = None
 
     def stop_after_first_epoch(*_args):
@@ -209,10 +219,10 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     assert saved_metadata is not None
     payload = load_training_recovery(
         str(checkpoint),
-        torch.device("cpu"),
+        torch.device(device),
         descriptor=_descriptor(saved_metadata),
     )
-    resumed = _trainer(initial_state)
+    resumed = _trainer(initial_state, device=device)
     resumed.load_recovery_state_dict(payload["trainer_state"])
     resumed.fit_payloads_resumable(payloads)
 
@@ -232,6 +242,8 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
         resumed.best_state_dict,
         uninterrupted.best_state_dict,
     )
+    assert torch.equal(torch.rand(5), expected_cpu_random)
+    assert torch.equal(torch.rand(5, device=device), expected_device_random)
 
 
 def test_recovery_checkpoint_rejects_a_different_closed_input_set(

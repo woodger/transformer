@@ -2,11 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+DEFAULT_MAX_LEN = 5000
+
 
 class PositionalEncoding(nn.Module):
     pe: torch.Tensor
 
-    def __init__(self, d_model: int, max_len: int = 5000) -> None:
+    def __init__(self, d_model: int, max_len: int = DEFAULT_MAX_LEN) -> None:
         super().__init__()
         if d_model <= 0:
             raise ValueError("d_model must be a positive integer")
@@ -20,7 +22,7 @@ class PositionalEncoding(nn.Module):
         )
 
         pe[:, 0::2] = torch.sin(pos * div)
-        pe[:, 1::2] = torch.cos(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div[:d_model // 2])
 
         self.register_buffer("pe", pe)
 
