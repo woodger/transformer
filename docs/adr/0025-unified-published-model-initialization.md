@@ -68,9 +68,9 @@ PostgreSQL revision `0021` сохраняются. Отдельная migration 
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
-- [Terminal fit telemetry v6](../../app/contracts/metrics/fit_run/v6/README.md)
+- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
+- [Процессный контракт Worker v20](../../app/contracts/worker/v20/README.md)
+- [Terminal fit telemetry v11](../../app/contracts/metrics/fit_run/v11/README.md)
 - [Интеграция с Flight](../flight-integration.md)
 - [Runtime обучения](../training-runtime.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

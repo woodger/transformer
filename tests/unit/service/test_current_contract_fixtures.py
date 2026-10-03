@@ -117,6 +117,8 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
         validate_model_topology_document(document, schema_name)
         if schema_name == "detail-result":
             validate_request_document(document, "action-result")
+        elif schema_name == "error-detail":
+            validate_request_document(document, "error-detail")
 
     telemetry_root = PROJECT_ROOT / "app/contracts/training_telemetry/v4/fixtures"
     _validate_manifest(

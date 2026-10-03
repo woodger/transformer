@@ -39,7 +39,7 @@ credentials означает, что authentication model нужно проек�
 Credential имеет форму `a.<base64url>` и содержит 64 случайных байта. Он не
 является JWT и не несёт subject или authorization claims. Все действующие
 credentials соответствуют стабильному owner subject `inventory` и видят один
-owner-scoped state jobs, models и aliases. Это технический owner identifier, а
+owner-scoped state jobs и models. Это технический owner identifier, а
 не ограничение API конкретным проектом. Отдельные credentials могут быть
 переданы разным контролируемым вызывающим системам, но не создают разные
 identity, permissions или изоляцию состояния.

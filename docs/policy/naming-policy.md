@@ -61,7 +61,7 @@ Markdown-документы используют устойчивые сущес
 Внешнее имя сохраняется дословно, даже если оно не соответствует Python style:
 
 - environment variables — `POSTGRES_HOST`, `TRANSFORMER_MAX_PAYLOAD_BYTES`;
-- CLI commands/options — `flight serve`, `fit-stream`, `--tls-cert-file`;
+- CLI commands/options — `flight serve`, `models delete`, `--tls-cert-file`;
 - Flight JSON fields — `requestId`, `modelRef`, `maxPayloadBytes`;
 - machine error/state codes — `INVALID_ARGUMENT`, `RUNNING`;
 - SQL tables и columns — `snake_case`;
@@ -89,7 +89,7 @@ response = {
 - `runtime_dir` не называется `state_dir`, если содержит payload и spool;
 - `model_ref` означает opaque published model identifier, а не filesystem path;
 - `payload`, `batch`, `frame` и `job` не взаимозаменяются;
-- `checkpoint`, `model metadata` и `model alias` называются отдельно;
+- `checkpoint` и `model metadata` называются отдельно;
 - `config`, `data`, `result`, `item` допустимы только при ясном локальном
   контексте.
 

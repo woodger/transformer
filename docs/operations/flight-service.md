@@ -21,6 +21,43 @@ Wire semantics определены [Flight v22](../../app/contracts/flight/v22/
 Catalog, Model Topology или shutdown. Она делает telemetry query unavailable
 либо unavailable-after-terminal в соответствии с его query contract.
 
+## Конфигурация окружения
+
+Подготовьте `.env` в корне проекта по
+[`.env.example`](../../.env.example), заменив примерные значения настройками
+своего deployment. Адаптеры PostgreSQL и OpenSearch читают этот файл без
+изменения `os.environ`; одноимённые переменные окружения процесса имеют
+приоритет над `.env`. Эти настройки PostgreSQL используют и Flight service,
+и локальные команды `auth`, `models` и `db`.
+
+| Переменная | Назначение |
+| --- | --- |
+| `POSTGRES_HOST` | Обязательный адрес PostgreSQL |
+| `POSTGRES_DB` | Обязательное имя базы данных |
+| `POSTGRES_USER` | Обязательный пользователь базы данных |
+| `POSTGRES_PASSWORD` | Обязательный непустой пароль |
+| `POSTGRES_PORT` | Необязательный порт; значение по умолчанию задано в `app/config.py` |
+
+Схема PostgreSQL также задаётся значением по умолчанию в `app/config.py`;
+отдельной переменной окружения для её выбора нет. Разбор и проверка подключения
+определены в
+[`postgres/config.py`](../../app/service/adapters/outbound/postgres/config.py).
+Проверка и применение schema описаны в
+[руководстве migrations](database-migrations.md).
+
+Настройки публикатора и запросов OpenSearch находятся в
+[руководстве OpenSearch](../deployment/opensearch.md#конфигурация-публикатора).
+Для работы без OpenSearch оставьте перечисленные там переменные незаданными
+как в `.env`, так и в окружении процесса.
+
+Лимиты и таймауты `TRANSFORMER_*` читаются только из окружения процесса,
+а не из `.env`. Допустимый набор и правила проверки определяет
+[`bootstrap/config.py`](../../app/service/bootstrap/config.py), значения по
+умолчанию — [`app/config.py`](../../app/config.py). Адрес, порт и TLS задаются
+параметрами `flight serve`; `runtime_dir`, `cpu_capacity` и
+`retention_seconds` используют значения по умолчанию и не читаются из
+`TRANSFORMER_*`.
+
 ## CPU budget CUDA Worker-а
 
 `app/config.py` фиксирует число PyTorch intra-op threads одного CUDA Worker-а

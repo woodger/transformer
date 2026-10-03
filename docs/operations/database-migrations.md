@@ -44,5 +44,8 @@ Semantic v5 / Flight v22.
 revision 0029. У него нет совместимого reader database, и он не должен
 создавать legacy state вновь.
 
-Target head diagnostics хранятся в checkpoint metadata и registry metadata
-опубликованной модели.
+Конфигурация Target Head Diagnostics хранится в checkpoint metadata и
+registry metadata опубликованной модели. Сам артефакт наблюдений Worker
+сохраняется отдельно в registry metadata как `targetHeadDiagnostics` и не
+встраивается в checkpoint; точная граница определена в
+[checkpoint/recovery v12](../../app/contracts/checkpoint/v12/README.md).

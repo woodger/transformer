@@ -5,7 +5,7 @@
 
 Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
 начинаются только через аутентифицированную границу вызывающей системы Flight
-v20.
+v22.
 
 ## Подготовить окружение
 
@@ -23,8 +23,8 @@ v20.
 ## Подготовить control plane
 
 Настройте PostgreSQL и окружение согласно
-[операционному руководству](./operations/flight-service.md), затем проверьте и
-примените migrations:
+[операционному руководству](./operations/flight-service.md#конфигурация-окружения),
+затем проверьте и примените migrations:
 
 ```bash
 ./.venv/bin/python app/main.py db migrations status

@@ -78,8 +78,8 @@ Checkpoint/recovery v5, prediction schema и metrics v4 сохраняются.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
+- [Процессный контракт Worker v20](../../app/contracts/worker/v20/README.md)
 - [Интеграция с Flight](../flight-integration.md)
 - [Архитектура Transformer](../architecture.md)
 - [Управление migrations](../operations/database-migrations.md)

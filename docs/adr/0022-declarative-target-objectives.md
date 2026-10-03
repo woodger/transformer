@@ -71,7 +71,7 @@ Checkpoint навсегда связан с точными targets и objective.
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
 - [Функция потерь](../losses.md)
 - [Runtime обучения](../training-runtime.md)
-- [Метрики обучения v6](../../app/contracts/metrics/v6/README.md)
+- [Метрики обучения v11](../../app/contracts/metrics/v11/README.md)

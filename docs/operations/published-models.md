@@ -7,7 +7,7 @@
 в `models/` и их metadata в PostgreSQL. Rationale двухфазного hard delete
 сохранён в [ADR 0016](../adr/0016-hard-delete-published-models.md), а storage и
 maintenance boundaries описаны в
-[`Flight runbook`](flight-service.md#хранение-и-ошибки-хранилища).
+[`Flight runbook`](flight-service.md#владение-storage).
 
 Публичные discovery и detail выполняются owner-scoped actions из
 [Model Catalog Query v7](../../app/contracts/model_catalog/v7/README.md).
@@ -32,9 +32,8 @@ catalog не читает checkpoint; detail дополнительно пров
 и полный SHA-256 artifact в пределах contract budget. OpenSearch telemetry и
 filesystem scan не добавляют generation в каталог.
 
-Перед удалением зафиксируйте точный `MODEL REF`. Alias или label команда
-`models delete` не принимает, чтобы ротация alias не могла изменить target
-административной операции.
+Перед удалением зафиксируйте точный `MODEL REF`. Команда `models delete`
+принимает только эту identity конкретной generation, а не label.
 
 ## Запросить удаление
 

@@ -66,6 +66,23 @@ Predict остаётся в `WAITING_INPUT`, пока вызывающая си�
 payloads и не зафиксирует manifest через `job.input.close`. В отличие от fit,
 Worker для predict не запускается для открытого input.
 
+После `job.input.close` опрашивайте `job.status` до terminal state. Для
+`SUCCEEDED` получите predictions следующим образом:
+
+1. Вызовите `transformer.v22.job.outputs.list` с `jobId` и UUID `requestId`.
+   Обойдите все страницы через `nextCursor`, пока `hasMore` не станет `false`.
+2. Для каждого output в порядке `ordinal` передайте возвращённый
+   `descriptorPath` как path descriptor в `GetFlightInfo`.
+3. Возьмите непрозрачный ticket из endpoint результата `GetFlightInfo` и
+   передайте его в `DoGet`. Каждый RPC предъявляет Bearer credential того же
+   owner-а.
+4. Прочитайте Arrow stream и декодируйте prediction coordinates согласно
+   сохранённой `predictionDefinition`.
+
+Tickets ограничены по сроку действия и привязаны к owner-у. Если ticket истёк,
+получите новый через `GetFlightInfo`, пока output ещё доступен по retention
+job. Для `FAILED` или `CANCELLED` получение output не выполняется.
+
 ## Mutation, status и errors
 
 `job.acquire` заменяет устаревший непрозрачный mutation lease. `job.cancel` и
@@ -73,7 +90,14 @@ Worker для predict не запускается для открытого inpu
 mutable projection; вызывающая система хранит immutable create response вместо
 ожидания API job-detail provider-а.
 
-Ветвитесь по structured error `code` и `reason`, но никогда по тексту message.
+Для ошибок с structured detail в `FlightError.extra_info` ветвитесь по
+`code` и `reason`; текст `message` служит только пояснением. Обычные ошибки
+jobs без detail передают стабильный application code в префиксе сообщения
+`CODE: ...`, без поля `reason`. Используйте этот code, а не поясняющий текст.
+Класс PyArrow exception и transport status не всегда совпадают с application
+code; ограничения описаны в
+[справочнике PyArrow Flight](./flight-dependency-note.md#отсутствующие-server-status-codes).
+
 `MODEL_NOT_FOUND` security-equivalent для неизвестных, чужих и удалённых
 models. Stored corruption, несовместимые requests, unavailable dependencies и
 validation errors имеют разные structured outcomes.

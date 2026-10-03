@@ -67,8 +67,8 @@ workflow.
 
 ## Текущая документация
 
-- [Запрос каталога моделей v2](../../app/contracts/model_catalog/v2/README.md)
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Запрос каталога моделей v7](../../app/contracts/model_catalog/v7/README.md)
+- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
 - [Интеграция с Flight](../flight-integration.md)
 - [Архитектура Transformer](../architecture.md)
 - [Управление опубликованными моделями](../operations/published-models.md)

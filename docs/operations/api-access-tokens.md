@@ -89,7 +89,7 @@ latency.
 4. Отзовите прежний token по сохранённому `Token ID`.
 
 Оба credentials во время ротации представляют owner `inventory`, поэтому
-переключение не меняет owner-scoped jobs, models или aliases. Ротацию нужно
+переключение не меняет owner-scoped jobs или models. Ротацию нужно
 завершить до `Expires` прежнего token.
 
 ## Отозвать token

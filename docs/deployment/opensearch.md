@@ -11,6 +11,36 @@ Inventory или Terminal. Transformer записывает projections point/ru
 `OPENSEARCH_NETRC` с mode 0600. Храните его вне repository и удаляйте либо
 ротируйте согласно policy secret deployment.
 
+## Конфигурация публикатора
+
+Задайте настройки сервиса в project `.env` или окружении процесса. Приоритет
+источников описан в
+[операционном руководстве Flight](../operations/flight-service.md#конфигурация-окружения).
+`OPENSEARCH_NETRC` используется только административными командами `curl`;
+сервис получает credentials из `OPENSEARCH_USERNAME` и
+`OPENSEARCH_PASSWORD`.
+
+| Переменная | Назначение |
+| --- | --- |
+| `OPENSEARCH_ENDPOINT` | Обязательный HTTP(S) origin без path, query, fragment или credentials в URL |
+| `OPENSEARCH_DEPLOYMENT_ID` | Обязательная стабильная identity deployment для записи и чтения проекции |
+| `OPENSEARCH_USERNAME` | Пользователь публикатора |
+| `OPENSEARCH_PASSWORD` | Пароль публикатора |
+| `OPENSEARCH_CA_FILE` | Путь к существующему файлу доверенного CA для HTTPS |
+
+`OPENSEARCH_DEPLOYMENT_ID` содержит от 1 до 128 символов ASCII: первый —
+буква или цифра, остальные — буквы, цифры, `.`, `_` или `-`.
+Для HTTPS обязательны username, password и CA file; username `admin`
+отклоняется без учёта регистра. В доверенной локальной HTTP-сети credentials
+можно опустить либо задать полной парой; CA file для HTTP не допускается.
+Точные правила проверки находятся в
+[`opensearch/config.py`](../../app/service/adapters/outbound/opensearch/config.py).
+
+Если ни одна из перечисленных переменных не задана, OpenSearch отключён.
+Некорректная конфигурация отключает доставку и отражается в событии
+`metrics.publisher.disabled` с `reason: invalid-configuration`; fit, predict
+и публикация модели продолжают работать независимо от telemetry.
+
 ## Текущий runtime Semantic v5 / Flight v22
 
 Индексы metrics v10 несовместимы с projection metrics v11. Выполняйте эту
