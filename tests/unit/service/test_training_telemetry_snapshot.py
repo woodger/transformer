@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
@@ -8,6 +11,7 @@ import pytest
 import rfc8785
 
 from app.contracts.json_types import JsonValue
+from app.project import PROJECT_ROOT
 from app.service.application.services.training_telemetry_snapshot import (
     TelemetrySnapshotOperation,
     TrainingTelemetrySnapshotCapacityExhausted,
@@ -139,9 +143,9 @@ def test_identical_snapshot_reuse_does_not_consume_capacity_twice() -> None:
     assert store.get(("same",), now=NOW + timedelta(seconds=100)) is first
 
 
-def test_concurrent_admission_respects_shared_capacity_atomically() -> None:
+def _concurrent_admission_snapshot() -> dict[str, object]:
     store = _store(max_count=1)
-    barrier = Barrier(2)
+    barrier = Barrier(2, timeout=2.0)
 
     def admit(key: str) -> str:
         barrier.wait()
@@ -152,7 +156,31 @@ def test_concurrent_admission_respects_shared_capacity_atomically() -> None:
         return "admitted"
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        outcomes = tuple(executor.map(admit, ("one", "two")))
+        try:
+            outcomes = tuple(executor.map(admit, ("one", "two"), timeout=2.0))
+        finally:
+            barrier.abort()
 
-    assert sorted(outcomes) == ["admitted", "rejected"]
-    assert store.usage(now=NOW).count == 1
+    return {"outcomes": sorted(outcomes), "count": store.usage(now=NOW).count}
+
+
+def test_concurrent_admission_respects_shared_capacity_atomically() -> None:
+    # A lock regression must not leave executor threads hanging in pytest teardown.
+    program = """
+import json
+from tests.unit.service.test_training_telemetry_snapshot import _concurrent_admission_snapshot
+print(json.dumps(_concurrent_admission_snapshot()))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10.0,
+    )
+
+    assert json.loads(result.stdout) == {
+        "outcomes": ["admitted", "rejected"],
+        "count": 1,
+    }

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 import uuid
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -311,11 +310,20 @@ def test_model_directory_failure_leaves_deletion_pending():
 def test_periodic_maintenance_shutdown_waits_for_active_mutation():
     entered = threading.Event()
     release = threading.Event()
+    drain_exceeded = threading.Event()
+    shutdown_finished = threading.Event()
+    completed = []
+    failures = []
+
+    def log(event, **_fields):
+        if event == "flight.maintenance.drain_exceeded":
+            drain_exceeded.set()
 
     class LedgerDouble:
         def delete_expired_tickets(self, *, now):
             entered.set()
-            release.wait(1.0)
+            assert release.wait(5.0)
+            completed.append("mutation")
             return 0
 
         def expire_input_waits(self, **_kwargs):
@@ -332,17 +340,34 @@ def test_periodic_maintenance_shutdown_waits_for_active_mutation():
         LedgerDouble(),
         SimpleNamespace(),
         interval_seconds=60,
-        logger=RecordingLogger(),
+        logger=SimpleNamespace(event=log),
         metrics=OperationalMetrics(),
     ).start()
-    assert entered.wait(1.0)
-    release_timer = threading.Timer(0.05, release.set)
-    release_timer.start()
-    started = time.monotonic()
-    try:
-        maintenance.shutdown(timeout=0.001)
-    finally:
-        release_timer.join(timeout=1.0)
 
-    assert time.monotonic() - started >= 0.02
+    def shutdown():
+        try:
+            maintenance.shutdown(timeout=0.001)
+            completed.append("shutdown")
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            shutdown_finished.set()
+
+    shutdown_thread = threading.Thread(target=shutdown)
+    try:
+        assert entered.wait(1.0)
+        shutdown_thread.start()
+        assert drain_exceeded.wait(1.0)
+        assert not shutdown_finished.wait(0.05)
+        release.set()
+        assert shutdown_finished.wait(1.0)
+    finally:
+        release.set()
+        if shutdown_thread.ident is not None:
+            shutdown_thread.join(timeout=2.0)
+        maintenance.shutdown(timeout=2.0)
+
+    assert not shutdown_thread.is_alive()
+    assert failures == []
+    assert completed == ["mutation", "shutdown"]
     assert maintenance.running is False

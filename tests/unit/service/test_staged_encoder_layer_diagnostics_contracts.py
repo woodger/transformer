@@ -15,6 +15,21 @@ from app.contracts.target_head_diagnostics.v4.codec import (
 from app.contracts.worker.v19.codec import validate_document
 from app.contracts.worker.v19.diagnostics import DiagnosticsConfig
 from app.project import PROJECT_ROOT
+from tests.support.internal_contract_documents import (
+    CHECKPOINT_SCHEMAS,
+    WORKER_SCHEMAS,
+    internal_contract_documents,
+)
+
+
+@pytest.fixture(scope="module")
+def internal_documents():
+    return internal_contract_documents(
+        checkpoint_version=11,
+        worker_version=19,
+        semantic_version=4,
+        target_head_version=4,
+    )
 
 
 def test_staged_encoder_layer_diagnostics_contract_fixtures_are_valid():
@@ -23,7 +38,7 @@ def test_staged_encoder_layer_diagnostics_contract_fixtures_are_valid():
     _validate_flight_fixtures()
 
 
-def test_staged_internal_contract_schemas_are_loadable():
+def test_encoder_layer_diagnostics_configuration_requires_target_head():
     valid_diagnostics = DiagnosticsConfig(
         target_head="fullCommittedArtifact",
         encoder_layer_diagnostics="directComponentPerBatch",
@@ -38,29 +53,19 @@ def test_staged_internal_contract_schemas_are_loadable():
     with pytest.raises(ValueError, match="require full target head"):
         DiagnosticsConfig(encoder_layer_diagnostics="directComponentPerBatch")
 
-    for schema_name in (
-        "checkpoint-artifact",
-        "checkpoint-metadata",
-        "recovery-metadata",
-        "resolved-initialization",
-    ):
-        with pytest.raises(ValueError):
-            validate_checkpoint_document({}, schema_name)
 
-    for schema_name in (
-        "arrow-manifest",
-        "capabilities",
-        "command-manifest",
-        "control-message",
-        "event",
-        "prediction-manifest",
-        "recovery-descriptor",
-        "result-manifest",
-        "target-head-diagnostics-artifact",
-        "training-metrics",
-    ):
-        with pytest.raises(ValueError):
-            validate_document({}, schema_name)
+@pytest.mark.parametrize("schema_name", CHECKPOINT_SCHEMAS)
+def test_checkpoint_v11_accepts_valid_contract_documents(internal_documents, schema_name):
+    document = internal_documents["checkpoint"][schema_name]
+
+    assert validate_checkpoint_document(document, schema_name) == document
+
+
+@pytest.mark.parametrize("schema_name", WORKER_SCHEMAS)
+def test_worker_v19_accepts_valid_contract_documents(internal_documents, schema_name):
+    document = internal_documents["worker"][schema_name]
+
+    assert validate_document(document, schema_name) == document
 
 
 def _validate_target_head_diagnostics_fixtures() -> None:

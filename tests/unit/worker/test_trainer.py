@@ -79,13 +79,6 @@ AUXILIARY_COMPONENTS = tuple(
 )
 
 
-@pytest.fixture(autouse=True)
-def torch_rng():
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(1729)
-        yield
-
-
 def make_dummy_data(n=32, seq_len=5, feat_dim=4):
     features = torch.randn(n, seq_len, feat_dim)
     targets = torch.rand(n, DEFAULT_MODEL_CONTRACT.target_width)

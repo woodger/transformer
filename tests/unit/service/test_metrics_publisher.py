@@ -385,11 +385,12 @@ def test_shutdown_timeout_does_not_fail_the_service():
         logger=logger,
         metrics=OperationalMetrics(),
     ).start()
-    assert sink.entered.wait(2.0)
-
-    publisher.shutdown(0.0)
-    sink.release.set()
-    publisher.shutdown(2.0)
+    try:
+        assert sink.entered.wait(2.0)
+        publisher.shutdown(0.0)
+    finally:
+        sink.release.set()
+        publisher.shutdown(2.0)
 
     assert any(
         event == "metrics.publisher.drain_exceeded"
