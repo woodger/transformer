@@ -126,20 +126,35 @@ def test_confidence_penalty_trains_with_cuda_amp():
     contract = _contract(weighted=True)
     with torch.random.fork_rng():
         model = torch.nn.Linear(2, 1).cuda()
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.zero_()
+
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         scaler = torch.GradScaler("cuda")
         features = torch.tensor([[1.0, 2.0], [-1.0, 0.5]], device="cuda")
         targets = torch.tensor([[0.0], [1.0]], device="cuda")
         before = model.weight.detach().clone()
 
-        with torch.autocast("cuda", dtype=torch.float16):
-            loss = combined_loss(model(features), targets, contract)
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        # Weighted BCE gradients can overflow until GradScaler calibrates its scale.
+        for _ in range(8):
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast("cuda", dtype=torch.float16):
+                loss = combined_loss(model(features), targets, contract)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            if not torch.equal(before, model.weight):
+                break
 
     assert torch.isfinite(loss)
-    assert torch.isfinite(model.weight).all()
+    for parameter in model.parameters():
+        assert torch.isfinite(parameter).all()
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+
     assert not torch.equal(before, model.weight)
 
 
