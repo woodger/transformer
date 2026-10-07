@@ -288,14 +288,20 @@ def _auxiliary_loss(
     if operator == "BernoulliConfidencePenalty":
         index = _target_index(roles["probability"], target_indices)
         logit = model_output[:, index]
+        # Для AMP повышаем точность коррекции logit и расчёта энтропии,
+        # особенно при вероятностях около границ [0, 1].
         if logit.dtype in (torch.float16, torch.bfloat16):
             logit = logit.float()
         positive_class_weight = model_contract.positive_class_weight_for_target(
             index,
         )
+        # Энтропия относится к публичной p = sigmoid(z - ln(positiveClassWeight)).
+        # Без коррекции weighted BCE регуляризировал бы другую вероятность.
         if positive_class_weight is not None:
             logit = logit - math.log(positive_class_weight)
 
+        # Возвращаем -H(p): положительный weight поощряет рост энтропии.
+        # logsigmoid(±logit) избегает log(0) при насыщении sigmoid.
         return (
             torch.sigmoid(logit) * F.logsigmoid(logit)
             + torch.sigmoid(-logit) * F.logsigmoid(-logit)

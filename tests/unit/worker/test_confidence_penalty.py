@@ -126,7 +126,6 @@ def test_confidence_penalty_trains_with_cuda_amp():
     contract = _contract(weighted=True)
     with torch.random.fork_rng():
         model = torch.nn.Linear(2, 1).cuda()
-        # Нулевые параметры делают стартовые logits независимыми от RNG.
         with torch.no_grad():
             for parameter in model.parameters():
                 parameter.zero_()
@@ -137,10 +136,7 @@ def test_confidence_penalty_trains_with_cuda_amp():
         targets = torch.tensor([[0.0], [1.0]], device="cuda")
         before = model.weight.detach().clone()
 
-        # Начальный scale может переполнить float16-градиенты weighted BCE.
-        # GradScaler пропускает такие шаги и снижает scale до безопасного значения.
         for _ in range(8):
-            # Иначе inf из пропущенного шага останется в накопленных градиентах.
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast("cuda", dtype=torch.float16):
                 loss = combined_loss(model(features), targets, contract)
@@ -149,7 +145,6 @@ def test_confidence_penalty_trains_with_cuda_amp():
             scaler.step(optimizer)
             scaler.update()
 
-            # Конечный loss сам по себе не доказывает, что optimizer выполнил шаг.
             if not torch.equal(before, model.weight):
                 break
 
