@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v23 import job_config_sha256
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig, TrainConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.flight.v24 import job_config_sha256
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig, TrainConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -226,6 +226,39 @@ def test_published_model_fit_rejects_a_different_objective():
     assert raised.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
 
 
+@pytest.mark.parametrize("change", ["operator", "weight", "addition"])
+def test_published_model_fit_rejects_a_changed_entropy_objective(change):
+    document = semantic_fixture_document("weighted-binary-entropy-penalty")[
+        "modelContract"
+    ]
+    component = deepcopy(document["objective"]["auxiliaryComponents"][0])
+    if change == "addition":
+        document["objective"].pop("auxiliaryComponents")
+
+    command, parent = _published_model_command(ModelContract.from_document(document))
+    changed = deepcopy(command.model_contract)
+    if change == "addition":
+        changed["objective"]["auxiliaryComponents"] = [component]
+    elif change == "operator":
+        changed["objective"]["auxiliaryComponents"][0]["operator"] = (
+            "BernoulliConfidencePenalty"
+        )
+    else:
+        changed["objective"]["auxiliaryComponents"][0]["weight"] = 0.2
+    contract = ModelContract.from_document(changed)
+    command = replace(
+        command,
+        model_contract=changed,
+        semantic_digests=_semantic_digests(contract),
+    )
+    action, _, _ = _action_for_parent(parent)
+
+    with pytest.raises(ServiceError) as error:
+        action.create(command)
+
+    assert error.value.code is ErrorCode.MODEL_SCHEMA_MISMATCH
+
+
 def _action_for_parent(parent):
     verified = []
     prepared = []
@@ -255,8 +288,10 @@ def _action_for_parent(parent):
 
 
 def _published_model_command(
+    semantic_contract: ModelContract | None = None,
 ) -> tuple[CreateJobCommand, PublishedModelRecord]:
-    semantic_contract = _single_regression_contract()
+    if semantic_contract is None:
+        semantic_contract = _single_regression_contract()
     model_config = ModelConfig.from_tuning(
         semantic_contract.model_tuning,
         seq_len=2,
@@ -279,7 +314,7 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v13",
+            "format": "transformer-checkpoint-v14",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
             "modelConfig": model_config.to_manifest(),

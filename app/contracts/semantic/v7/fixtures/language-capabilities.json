@@ -1,0 +1,28 @@
+{
+  "objectiveLanguage": {
+    "revision": 7,
+    "closed": true
+  },
+  "semanticLimits": {
+    "maxTargetSlots": 128,
+    "maxObjectiveComponents": 256,
+    "maxPrivateResources": 64
+  },
+  "directOperators": [
+    "BinaryCrossEntropyWithLogits",
+    "LogMSE",
+    "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+    "SmoothL1"
+  ],
+  "auxiliaryOperators": [
+    "BernoulliConfidencePenalty",
+    "BernoulliEntropyPenalty",
+    "ExpectedValue",
+    "GaussianNLL",
+    "RiskAdjustedExpectedValue"
+  ],
+  "encoderNormalizationOrders": [
+    "postNorm",
+    "preNorm"
+  ]
+}

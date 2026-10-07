@@ -8,7 +8,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v6 import ModelContract
+from app.contracts.semantic.v7 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -285,7 +285,7 @@ def _auxiliary_loss(
     model_contract: ModelContract,
 ) -> torch.Tensor:
     roles = cast(Mapping[str, object], specification["roles"])
-    if operator == "BernoulliConfidencePenalty":
+    if operator in ("BernoulliConfidencePenalty", "BernoulliEntropyPenalty"):
         index = _target_index(roles["probability"], target_indices)
         logit = model_output[:, index]
         # Для AMP повышаем точность коррекции logit и расчёта энтропии,
@@ -300,11 +300,17 @@ def _auxiliary_loss(
         if positive_class_weight is not None:
             logit = logit - math.log(positive_class_weight)
 
-        # Возвращаем -H(p): положительный weight поощряет рост энтропии.
         # logsigmoid(±logit) избегает log(0) при насыщении sigmoid.
-        return (
+        negative_entropy = (
             torch.sigmoid(logit) * F.logsigmoid(logit)
             + torch.sigmoid(-logit) * F.logsigmoid(-logit)
+        )
+        # Положительные weights сохраняются: confidence повышает энтропию,
+        # entropy penalty снижает её. Знак принадлежит оператору, не настройке.
+        return (
+            negative_entropy
+            if operator == "BernoulliConfidencePenalty"
+            else -negative_entropy
         )
 
     if operator == "GaussianNLL":

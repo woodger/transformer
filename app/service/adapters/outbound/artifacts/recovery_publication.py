@@ -8,10 +8,10 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v13 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v14 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21 import (
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22 import (
     WorkerContractError,
     validate_training_metrics_for_model,
 )

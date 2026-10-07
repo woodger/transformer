@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from app.contracts.semantic.v6 import ModelContract
+from app.contracts.semantic.v7 import ModelContract
 from app.worker.model.context import (
     context_input_dim,
     context_key_padding_mask,

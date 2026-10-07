@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.model_topology.v4.constants import MAX_EDGES, MAX_NODES
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig
+from app.contracts.model_topology.v5.constants import MAX_EDGES, MAX_NODES
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
 
@@ -461,7 +461,7 @@ class ModelTopologyBuilder:
 
         return cast(JsonObject, {
             "modelDefinitionSha256": model_definition_sha256,
-            "topologyRevision": 4,
+            "topologyRevision": 5,
             "nodes": [cast(JsonValue, node) for node in nodes],
             "edges": [cast(JsonValue, edge) for edge in edges],
         })
@@ -563,7 +563,7 @@ def _port_ids(node: JsonObject, field: str) -> set[str]:
 
 
 def _auxiliary_role_ports(operator: str) -> tuple[tuple[str, str], ...]:
-    if operator == "BernoulliConfidencePenalty":
+    if operator in ("BernoulliConfidencePenalty", "BernoulliEntropyPenalty"):
         return (("probability", "Public probability"),)
     if operator == "GaussianNLL":
         return (

@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-catalog/v9/error-detail.schema.json",
+  "title": "Transformer model catalog query v9 structured error detail",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/invalidQuery"
+    },
+    {
+      "$ref": "#/$defs/invalidCursor"
+    },
+    {
+      "$ref": "#/$defs/expiredCursor"
+    },
+    {
+      "$ref": "#/$defs/modelNotFound"
+    },
+    {
+      "$ref": "#/$defs/storedMetadataInvalid"
+    },
+    {
+      "$ref": "#/$defs/checkpointInvalid"
+    },
+    {
+      "$ref": "#/$defs/modelVerificationUnavailable"
+    },
+    {
+      "$ref": "#/$defs/responseBudgetExceeded"
+    },
+    {
+      "$ref": "#/$defs/registryUnavailable"
+    }
+  ],
+  "$defs": {
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "pointer": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"
+    },
+    "invalidQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "INVALID_ARGUMENT"
+        },
+        "reason": {
+          "const": "INVALID_CATALOG_QUERY"
+        },
+        "path": {
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "invalidCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "INVALID_ARGUMENT"
+        },
+        "reason": {
+          "const": "INVALID_CATALOG_CURSOR"
+        },
+        "path": {
+          "const": "/cursor"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "expiredCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "path",
+        "restartRequired",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "FAILED_PRECONDITION"
+        },
+        "reason": {
+          "const": "CATALOG_CURSOR_EXPIRED"
+        },
+        "path": {
+          "const": "/cursor"
+        },
+        "restartRequired": {
+          "const": true
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "modelNotFound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "NOT_FOUND"
+        },
+        "reason": {
+          "const": "MODEL_NOT_FOUND"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "storedMetadataInvalid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "MODEL_CORRUPT"
+        },
+        "reason": {
+          "const": "STORED_MODEL_METADATA_INVALID"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "path": {
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "checkpointInvalid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "MODEL_CORRUPT"
+        },
+        "reason": {
+          "const": "MODEL_CHECKPOINT_INVALID"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "modelVerificationUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "RESOURCE_EXHAUSTED"
+        },
+        "reason": {
+          "const": "MODEL_VERIFICATION_UNAVAILABLE"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "responseBudgetExceeded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "maxBytes",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "RESOURCE_EXHAUSTED"
+        },
+        "reason": {
+          "const": "CATALOG_RESPONSE_BUDGET_EXCEEDED"
+        },
+        "maxBytes": {
+          "const": 8388608
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "registryUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "UNAVAILABLE"
+        },
+        "reason": {
+          "const": "MODEL_REGISTRY_UNAVAILABLE"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    }
+  }
+}

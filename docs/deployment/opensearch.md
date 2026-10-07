@@ -1,10 +1,10 @@
 # Развёртывание training telemetry OpenSearch
 
 > Тип: руководство по развёртыванию. Принадлежащая provider-у projection
-> metrics v12 для Training Telemetry Query v4.
+> metrics v13 для Training Telemetry Query v4.
 
 OpenSearch не является registry моделей и никогда не вызывается напрямую
-Inventory или Terminal. Transformer записывает projections point/run v12 и
+Inventory или Terminal. Transformer записывает projections point/run v13 и
 валидирует их до выдачи нормализованных reports telemetry.
 
 В примерах используются `OPENSEARCH_ENDPOINT` и credential file
@@ -41,13 +41,13 @@ Inventory или Terminal. Transformer записывает projections point/ru
 `metrics.publisher.disabled` с `reason: invalid-configuration`; fit, predict
 и публикация модели продолжают работать независимо от telemetry.
 
-## Текущий runtime Semantic v6 / Flight v23
+## Текущий runtime Semantic v7 / Flight v24
 
-Flight v23 использует Metrics v12, связанные с checkpoint v13. Переход с
-Flight v22 требует replacement прежних индексов v11 и установки templates
-v12. Ни сервис, ни migration PostgreSQL не выполняют эту операцию.
+Flight v24 использует Metrics v13, связанные с checkpoint v14. Переход с
+Flight v23 требует replacement прежних индексов v12 и установки templates
+v13. Ни сервис, ни migration PostgreSQL не выполняют эту операцию.
 
-Индексы metrics v11 несовместимы с projection metrics v12. Выполняйте эту
+Индексы metrics v12 несовместимы с projection metrics v13. Выполняйте эту
 процедуру только после остановки всех сервисов Transformer, использующих один deployment, и
 после решения оператора, что historical telemetry можно удалить.
 
@@ -56,7 +56,7 @@ v12. Ни сервис, ни migration PostgreSQL не выполняют эту
 ```bash
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
-  "$OPENSEARCH_ENDPOINT/_cat/indices/metrics-*-v11?v"
+  "$OPENSEARCH_ENDPOINT/_cat/indices/metrics-*-v12?v"
 ```
 
 Если output подтверждает только ожидаемые старые индексы, удалите эти явные
@@ -66,38 +66,38 @@ curl --fail --silent --show-error \
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
   --request DELETE \
-  "$OPENSEARCH_ENDPOINT/metrics-points-v11,metrics-runs-v11"
+  "$OPENSEARCH_ENDPOINT/metrics-points-v12,metrics-runs-v12"
 ```
 
-Это удаление необратимо. Оно не выполняется migration PostgreSQL 0030 или
+Это удаление необратимо. Оно не выполняется migration PostgreSQL 0031 или
 сервисом при запуске.
 
-## Установить templates v12 до создания индексов
+## Установить templates v13 до создания индексов
 
 ```bash
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$OPENSEARCH_ENDPOINT/_index_template/metrics-points-v12" \
+  "$OPENSEARCH_ENDPOINT/_index_template/metrics-points-v13" \
   --data-binary \
-  @app/contracts/metrics/v12/opensearch/metrics-points-v12.template.json
+  @app/contracts/metrics/v13/opensearch/metrics-points-v13.template.json
 
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
   --header 'Content-Type: application/json' \
   --request PUT \
-  "$OPENSEARCH_ENDPOINT/_index_template/metrics-runs-v12" \
+  "$OPENSEARCH_ENDPOINT/_index_template/metrics-runs-v13" \
   --data-binary \
-  @app/contracts/metrics/fit_run/v12/opensearch/metrics-runs-v12.template.json
+  @app/contracts/metrics/fit_run/v13/opensearch/metrics-runs-v13.template.json
 
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
-  --request PUT "$OPENSEARCH_ENDPOINT/metrics-points-v12"
+  --request PUT "$OPENSEARCH_ENDPOINT/metrics-points-v13"
 
 curl --fail --silent --show-error \
   --netrc-file "$OPENSEARCH_NETRC" \
-  --request PUT "$OPENSEARCH_ENDPOINT/metrics-runs-v12"
+  --request PUT "$OPENSEARCH_ENDPOINT/metrics-runs-v13"
 ```
 
 Templates должны существовать до создания любого из индексов. Установка template
@@ -106,7 +106,7 @@ Transformer нужны только доступы bulk-create, `_mget` и bound
 этим индексам; permissions на удаление template и index являются
 административными.
 
-После завершённого нового fit v23 проверьте, что `metrics-runs-v12` содержит
-terminal completion marker, а `metrics-points-v12` — все ожидаемые observations
+После завершённого нового fit v24 проверьте, что `metrics-runs-v13` содержит
+terminal completion marker, а `metrics-points-v13` — все ожидаемые observations
 epoch. Для поведения вызывающей системы запрашивайте публичный action Training
 Telemetry v4; не делайте имена index или mappings частью её кода.

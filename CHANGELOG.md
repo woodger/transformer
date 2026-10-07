@@ -13,6 +13,11 @@
   entropy of public probabilities, including corrected weighted binary outputs.
 - Flight v23, Worker v21, checkpoint/recovery v13, Model Catalog v8 and
   Model Topology v4 with confidence penalty declarations and topology edges.
+- Declarative `BernoulliEntropyPenalty` in Semantic v7: stable positive
+  entropy of public probabilities with ordinary and weighted binary BCE.
+  The existing confidence penalty retains its negative entropy formula.
+- Flight v24, Worker v22, checkpoint/recovery v14, Model Catalog v9 and
+  Model Topology v5 preserve entropy declarations, weights and unary gradient paths.
 
 ### Changed
 
@@ -20,6 +25,9 @@
   formulas, Adam, Arrow layouts and direct-loss checkpoint selection are preserved.
 - Migration 0030 performs a destructive clean cut of incompatible durable state;
   epoch and fit-run Metrics v12 bind checkpoint v13 and replace OpenSearch v11 indices.
+- Migration 0031 prepares the Semantic v7 clean cut; Metrics v13 bind
+  checkpoint v14 and require replacing OpenSearch v12 indices. Training Telemetry
+  v4, Target Head Diagnostics v5 and direct-only checkpoint selection are preserved.
 
 ## [Не выпущено]
 

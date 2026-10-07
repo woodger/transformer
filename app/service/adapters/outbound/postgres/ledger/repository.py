@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.contracts.flight.v23.source_encoding import feature_block_dimensions
+from app.contracts.flight.v24.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
-from app.contracts.worker.v21.config import ModelConfig, TrainConfig
+from app.contracts.worker.v22.config import ModelConfig, TrainConfig
 from app.service.adapters.outbound.postgres.ledger.artifacts import ArtifactLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.execution import ExecutionLedgerSlice
 from app.service.adapters.outbound.postgres.ledger.inputs import InputLedgerSlice

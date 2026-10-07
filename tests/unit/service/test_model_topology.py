@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v23.codec import validate_request_document
-from app.contracts.flight.v23.constants import ACTIONS
-from app.contracts.model_topology.v4 import validate_model_topology_document
-from app.contracts.model_topology.v4.constants import DETAIL_ACTION
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.flight.v24.codec import validate_request_document
+from app.contracts.flight.v24.constants import ACTIONS
+from app.contracts.model_topology.v5 import validate_model_topology_document
+from app.contracts.model_topology.v5.constants import DETAIL_ACTION
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.model_topology import (
     model_topology_response,
@@ -153,8 +153,12 @@ def test_topology_exposes_derived_positive_class_logit_correction():
     } in topology["edges"]
 
 
-def test_topology_connects_confidence_penalty_to_corrected_public_probability():
-    model = _weighted_binary_model("weighted-binary-confidence-penalty")
+@pytest.mark.parametrize(("fixture", "operator"), [
+    ("weighted-binary-confidence-penalty", "BernoulliConfidencePenalty"),
+    ("weighted-binary-entropy-penalty", "BernoulliEntropyPenalty"),
+])
+def test_topology_connects_bernoulli_penalty_to_corrected_public_probability(fixture, operator):
+    model = _weighted_binary_model(fixture)
 
     topology = ModelTopologyBuilder().build(model)
     validate_model_topology_document(
@@ -168,14 +172,19 @@ def test_topology_connects_confidence_penalty_to_corrected_public_probability():
 
     component = next(
         node for node in topology["nodes"]
-        if node.get("operator") == "BernoulliConfidencePenalty"
+        if node.get("operator") == operator
     )
-    assert {
+    assert [port["id"] for port in component["inputPorts"]] == ["probability"]
+    assert not any(node.get("resourceIdentity") for node in topology["nodes"])
+    incoming_edges = [
+        edge for edge in topology["edges"] if edge["to"]["nodeId"] == component["id"]
+    ]
+    assert incoming_edges == [{
         "from": {"nodeId": "target-0-prediction", "portId": "value"},
         "to": {"nodeId": component["id"], "portId": "probability"},
         "logicalShape": [{"axis": "batch", "size": None}],
         "gradientFlow": "propagates",
-    } in topology["edges"]
+    }]
 
 
 def test_topology_response_is_valid_for_its_query_and_flight_action_result():
@@ -191,7 +200,7 @@ def test_topology_response_is_valid_for_its_query_and_flight_action_result():
     validate_request_document(document, "action-result")
 
 
-def test_flight_v23_dispatches_the_model_topology_action():
+def test_flight_v24_dispatches_the_model_topology_action():
     model = _model()
     entry = CatalogModelRecord(
         model=model,
@@ -236,7 +245,7 @@ def test_flight_v23_dispatches_the_model_topology_action():
     )
 
     assert response["modelRef"] == model.model_ref
-    assert response["topologyRevision"] == 4
+    assert response["topologyRevision"] == 5
 
 
 def test_topology_query_is_owner_scoped_and_does_not_read_the_checkpoint():

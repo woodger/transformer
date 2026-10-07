@@ -1,8 +1,8 @@
 # Семантика objective и loss
 
-> Тип: справочник. Числовая семантика языка objective Semantic v6.
+> Тип: справочник. Числовая семантика языка objective Semantic v7.
 
-Нормативный документ — [семантическая модель v6](../app/contracts/semantic/v6/README.md).
+Нормативный документ — [семантическая модель v7](../app/contracts/semantic/v7/README.md).
 Этот справочник поясняет formulas, реализованные Transformer; он не вводит
 поведение, специфичное для target-а.
 
@@ -106,6 +106,30 @@ Transformer вычисляет negative entropy через `sigmoid` и `logsigm
 predictions не обрезаются, gradient не отключается. Auxiliary statistics
 содержат unweighted negative entropy, total loss — её weighted contribution;
 отрицательное значение auxiliary loss допустимо.
+
+## Entropy penalty
+
+`BernoulliEntropyPenalty` — отдельный auxiliary operator с положительным
+weight `b`, добавляющий `+b * mean(H(p))`. При direct weight `a` total равен
+`a * BCE + b * mean(H(p))`, относительный коэффициент `lambda = b / a`.
+Отключение задаётся отсутствием компонента; собственных parameters нет.
+
+Единственная роль `probability` связывает существующий public `Sigmoid` target.
+Расчёт использует тот же corrected public logit и устойчивую entropy, что и
+confidence penalty, с противоположным знаком. Direct BCE не меняется. В
+auxiliary statistics публикуется положительный unweighted `mean(H(p))`;
+component weight применяется только в total loss и gradient contribution.
+
+Для public logit `l` градиент entropy равен `-l * p * (1 - p)`. Минимизация
+усиливает уверенность в обе стороны; при `l = 0` вклад равен нулю. Уверенность
+может быть ошибочной, а редкое событие — дополнительно подавляться. Оператор
+не гарантирует калибровку. Сравнивайте fresh обучения на одинаковых данных и
+параметрах, оценивая entropy вместе с held-out BCE, Brier, PR-AUC и калибровкой.
+
+Declaration и weight входят в objective/model definition; их изменение
+несовместимо с recovery и warm start. Target layout и direct-only selection
+сохраняются. Коэффициент `0.1` в примерах является выбором эксперимента,
+а не default.
 
 ## Diagnostics
 

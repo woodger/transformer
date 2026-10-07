@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig, TrainConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig, TrainConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.adapters.outbound.postgres.config import DatabaseConfig
 from app.service.adapters.outbound.postgres.ledger import Ledger
 from app.service.adapters.outbound.postgres.mapping import (

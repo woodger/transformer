@@ -7,11 +7,11 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v23.arrow import canonical_prediction_schema
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21 import PREDICTION_OUTPUT_SCHEMA_ID
-from app.contracts.worker.v21.config import ModelConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.flight.v24.arrow import canonical_prediction_schema
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22 import PREDICTION_OUTPUT_SCHEMA_ID
+from app.contracts.worker.v22.config import ModelConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.publication import WorkerArtifactPublisher
 from app.service.adapters.outbound.artifacts.spool import Spool

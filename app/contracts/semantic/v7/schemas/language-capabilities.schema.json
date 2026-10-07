@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v7/language-capabilities.schema.json",
+  "title": "Semantic objective language capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectiveLanguage",
+    "semanticLimits",
+    "directOperators",
+    "auxiliaryOperators",
+    "encoderNormalizationOrders"
+  ],
+  "properties": {
+    "objectiveLanguage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "closed"
+      ],
+      "properties": {
+        "revision": {
+          "const": 7
+        },
+        "closed": {
+          "const": true
+        }
+      }
+    },
+    "semanticLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxTargetSlots",
+        "maxObjectiveComponents",
+        "maxPrivateResources"
+      ],
+      "properties": {
+        "maxTargetSlots": {
+          "$ref": "common.schema.json#/$defs/positiveInteger"
+        },
+        "maxObjectiveComponents": {
+          "$ref": "common.schema.json#/$defs/positiveInteger"
+        },
+        "maxPrivateResources": {
+          "$ref": "common.schema.json#/$defs/positiveInteger"
+        }
+      }
+    },
+    "directOperators": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "BinaryCrossEntropyWithLogits",
+          "LogMSE",
+          "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+          "SmoothL1"
+        ]
+      }
+    },
+    "encoderNormalizationOrders": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "postNorm",
+          "preNorm"
+        ]
+      }
+    },
+    "auxiliaryOperators": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "BernoulliConfidencePenalty",
+          "BernoulliEntropyPenalty",
+          "ExpectedValue",
+          "GaussianNLL",
+          "RiskAdjustedExpectedValue"
+        ]
+      }
+    }
+  }
+}

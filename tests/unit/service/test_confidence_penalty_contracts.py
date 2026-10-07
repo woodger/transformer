@@ -3,12 +3,12 @@ from copy import deepcopy
 
 import pytest
 
-from app.contracts.flight.v23.constants import FIT_CREATE_ACTION
-from app.contracts.semantic.v6 import ModelContract, SemanticContractError
-from app.contracts.semantic.v6.capabilities import semantic_capabilities
-from app.contracts.semantic.v6.schema import validate_schema
-from app.contracts.worker.v21.model_config import ModelConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.flight.v24.constants import FIT_CREATE_ACTION
+from app.contracts.semantic.v7 import ModelContract, SemanticContractError
+from app.contracts.semantic.v7.capabilities import semantic_capabilities
+from app.contracts.semantic.v7.schema import validate_schema
+from app.contracts.worker.v22.model_config import ModelConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 from app.service.adapters.inbound.flight.validation import validate_action_request
 from tests.fixture_documents import semantic_fixture_document
@@ -86,12 +86,12 @@ def test_semantic_capabilities_advertise_the_confidence_penalty():
 
     validate_schema(capabilities, "language-capabilities")
 
-    assert capabilities["objectiveLanguage"]["revision"] == 6
+    assert capabilities["objectiveLanguage"]["revision"] == 7
     assert "BernoulliConfidencePenalty" in capabilities["auxiliaryOperators"]
 
 
 def test_flight_accepts_a_weighted_binary_confidence_penalty():
-    path = PROJECT_ROOT / "app/contracts/flight/v23/fixtures/json/fit-create.confidence-penalty.json"
+    path = PROJECT_ROOT / "app/contracts/flight/v24/fixtures/json/fit-create.confidence-penalty.json"
     document = json.loads(path.read_text())
 
     fields = validate_action_request(FIT_CREATE_ACTION, document)

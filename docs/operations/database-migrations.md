@@ -20,13 +20,13 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Semantic v6 clean cut и текущий Flight v23
+## Semantic v7 clean cut и текущий Flight v24
 
-Revision `0030_bernoulli_confidence_penalty` разрушительна и не имеет downgrade.
+Revision `0031_bernoulli_entropy_penalty` разрушительна и не имеет downgrade.
 Она изменяет только границу durable state: D1 включает revision языка даже для
 objective без регуляризатора. Старые jobs, generations, checkpoint/recovery,
-idempotency records и database telemetry не имеют reader Semantic v6 /
-checkpoint v13 и удаляются. Таблицы и поля PostgreSQL не меняются.
+idempotency records и database telemetry не имеют reader Semantic v7 /
+checkpoint v14 и удаляются. Таблицы и поля PostgreSQL не меняются.
 
 Перед её применением:
 
@@ -36,16 +36,16 @@ checkpoint v13 и удаляются. Таблицы и поля PostgreSQL не
 3. Сохраните внешний backup, если нужны прежние models, jobs или telemetry.
    Этот release намеренно не переносит их на новый contract.
 4. Примените migration один раз и выполните documented replacement индексов
-   OpenSearch metrics v11 на v12 до запуска Flight v23. Не запускайте после
-   этого старый executable, не поддерживающий Semantic v6 / checkpoint v13.
+   OpenSearch metrics v12 на v13 до запуска Flight v24. Не запускайте после
+   этого старый executable, не поддерживающий Semantic v7 / checkpoint v14.
 
-Metrics v12 связывает observations с checkpoint v13; runtime не читает прежние
-point/run formats v11. Replacement индексов является отдельной операцией
+Metrics v13 связывает observations с checkpoint v14; runtime не читает прежние
+point/run formats v12. Replacement индексов является отдельной операцией
 из `docs/deployment/opensearch.md`, migration PostgreSQL не удаляет OpenSearch
 documents. Startup reconciliation очищает только
 уже не имеющие references managed artifacts согласно действующему lifecycle.
 
 Target Head Diagnostics v5 сохраняет прежний artifact и configuration v3;
-confidence penalty не встраивается в diagnostics artifact и не меняет его
-формат. Его declaration хранится в objective checkpoint/registry metadata,
-а observations самого penalty — в auxiliary losses и gradient interactions.
+confidence и entropy penalties не встраиваются в diagnostics artifact и не
+меняют его формат. Их declarations хранятся в objective checkpoint/registry
+metadata, а observations — в auxiliary losses и gradient interactions.

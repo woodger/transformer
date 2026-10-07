@@ -1,0 +1,78 @@
+{
+  "contract": "transformer-flight-fixtures",
+  "version": 24,
+  "files": [
+    {
+      "path": "indexed-feature-blocks/heterogeneous-multi-block.json",
+      "sha256": "ca6a57abffd56621d0689d797ab62d77b30d4d35709b4bd9cfcb971af65f20ec"
+    },
+    {
+      "path": "indexed-feature-blocks/missing-native-prefix.json",
+      "sha256": "269f2676c7bce6d7d3cac9cdd5bfa0783784b37cef6070a20fdf973c6bdbb8d3"
+    },
+    {
+      "path": "indexed-feature-blocks/non-contiguous-native-offsets.json",
+      "sha256": "d40e2f7781ef43b6a21e18bb3b08de7b260e455952a9b58964c34096a0a83ff0"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-one-chunk.json",
+      "sha256": "1fbea3d18c42fb54fe2474babb70b5ceb490277869b6d48cf50873442adfc8a1"
+    },
+    {
+      "path": "indexed-feature-blocks/payload-boundary-two-chunks.json",
+      "sha256": "b7299ee39359ddf49f10d2bacdb34e3abe4b1606a91a16dc4515f8394602b2f9"
+    },
+    {
+      "path": "indexed-feature-blocks/single-block.json",
+      "sha256": "3097183798bbb34fe07fd950c38beb9bbab9cf48d08af3425bd269ad185bbf6f"
+    },
+    {
+      "path": "json/capabilities.result.json",
+      "sha256": "c846fb6382cb397798874f60704604ef0dedd831c91b036235a2edde6d4c7f74"
+    },
+    {
+      "path": "json/error.invalid-diagnostics-configuration.json",
+      "sha256": "089770b85af6f12690e6f9ae84d00ec09be28fea71e193bf59370f98c024fe70"
+    },
+    {
+      "path": "json/fit-create.confidence-penalty.json",
+      "sha256": "54203c41414cb200bd7d538022e31345acd402bf96960e00f5d811f9ffd173fc"
+    },
+    {
+      "path": "json/fit-create.entropy-penalty.json",
+      "sha256": "3a0cfe84358701f67f1b3a76b5b66db492ad4b070716c26d556fdef7d1ea4be4"
+    },
+    {
+      "path": "json/fit-create.post-norm.json",
+      "sha256": "e268933fde7a4b4cc013f692dbbc099ad0a7a86228f8c172f70c231badfc9635"
+    },
+    {
+      "path": "json/fit-create.pre-norm.json",
+      "sha256": "8d2c5c425add6af05c888a75964c5d64e4640ef4e24978a2b262a02b5acf6e84"
+    },
+    {
+      "path": "json/job-config.fit.json",
+      "sha256": "dcf145bafac062c17d68106ac1996be1d1fc0cc5fa6b640c89a55bb37fce7c5d"
+    },
+    {
+      "path": "json/job-config.predict.json",
+      "sha256": "7d9dcd78e85d00454421becb5138e23e1f598f13ff498e05eb402c77770f66b7"
+    },
+    {
+      "path": "json/job-config.published-model.json",
+      "sha256": "53d4b26b19ded2cf5662acbb77542da2ca83d117b4abc8d941a3b9610b3c2581"
+    },
+    {
+      "path": "json/job-config.target-head-diagnostics.json",
+      "sha256": "cde624b93f426b8bd24980ec9539faeb826126be6ba8fd36834311d0fdf4cbb6"
+    },
+    {
+      "path": "json/requested-initialization.published-model.json",
+      "sha256": "2f6b4cacc4a4f50f66cec57f60ad3aadb19a165c5267b9604d59a0100974e6b7"
+    },
+    {
+      "path": "json/requested-initialization.random.json",
+      "sha256": "47ae2d1c603239ba5b76837b3d155745e7b94c96224cd2e6d7b7ccb4a2869e3e"
+    }
+  ]
+}

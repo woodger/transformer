@@ -3,14 +3,14 @@ import math
 import pytest
 import torch
 
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.codec import validate_training_metrics_for_model
-from app.contracts.worker.v21.config import (
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.codec import validate_training_metrics_for_model
+from app.contracts.worker.v22.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.telemetry.epoch import epoch_telemetry_document
 from app.worker.training.losses import combined_loss

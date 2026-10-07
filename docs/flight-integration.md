@@ -1,4 +1,4 @@
-# Интеграция с Transformer Flight v23
+# Интеграция с Transformer Flight v24
 
 > Тип: руководство. Практический порядок работы вызывающей системы с действующей
 > provider boundary. JSON Schema в `app/contracts/` имеет приоритет над этим
@@ -13,25 +13,25 @@ Scope owner-а выводится из аутентифицированного 
 
 Перед интеграцией используйте точные актуальные packages:
 
-- [Семантическая модель v6](../app/contracts/semantic/v6/README.md)
-- [Flight v23](../app/contracts/flight/v23/README.md)
-- [Запрос каталога моделей v8](../app/contracts/model_catalog/v8/README.md)
-- [Запрос topology модели v4](../app/contracts/model_topology/v4/README.md)
+- [Семантическая модель v7](../app/contracts/semantic/v7/README.md)
+- [Flight v24](../app/contracts/flight/v24/README.md)
+- [Запрос каталога моделей v9](../app/contracts/model_catalog/v9/README.md)
+- [Запрос topology модели v5](../app/contracts/model_topology/v5/README.md)
 - [Запрос телеметрии обучения v4](../app/contracts/training_telemetry/v4/README.md)
 - [Диагностика выходных головок v5](../app/contracts/target_head_diagnostics/v5/README.md)
 
-Путь compatibility предыдущих Flight revisions отсутствует. Migration 0030
+Путь compatibility предыдущих Flight revisions отсутствует. Migration 0031
 удаляет existing generations предыдущей Semantic revision; после перехода
 их нельзя использовать для predict или warm start.
 
 ## Fit
 
-1. Materialize self-contained Semantic v6 `ModelContract` из локальной
+1. Materialize self-contained Semantic v7 `ModelContract` из локальной
    семантики target/catalog/profile. Не передавайте paths profile, keys lookup
    target-ов или исполняемый loss code.
 2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, geometry
    tensor-а и `inputLayout.featureBlocks`.
-3. Вызовите `transformer.v23.fit.create` с UUID `requestId`, стабильным
+3. Вызовите `transformer.v24.fit.create` с UUID `requestId`, стабильным
    `idempotencyKey`, label, запрошенным устройством, model contract,
    configuration training и diagnostics и запрошенной initialization.
 4. Сохраните возвращённые `jobId`, `mutationLease` и resolved definition.
@@ -69,16 +69,43 @@ profile. Operator добавляет negative entropy публичной вер�
 weighted binary BCE учитывается class-weight correction. При direct weight
 `a` и auxiliary weight `b` получается `a * BCE - b * H(p)`.
 
-Без компонента penalty отсутствует. Вызывающая система проверяет Semantic v6
+Без компонента penalty отсутствует. Вызывающая система проверяет Semantic v7
 и `auxiliaryOperators` в capabilities, разрешает declaration в своём profile
 и материализует тот же objective для всего job. Изменение coefficient меняет
 definition и несовместимо с recovery/warm start. Формулы target и features не
 меняются. Коэффициент следует проверять на held-out данных: entropy может
 завышать вероятность редкого события.
 
+## Entropy penalty в objective
+
+Для минимизации entropy объявите отдельный `BernoulliEntropyPenalty`:
+
+```json
+{
+  "identity": "auxiliary.entropy",
+  "operator": "BernoulliEntropyPenalty",
+  "weight": 0.1,
+  "roles": {"probability": "Opaque.Probability"}
+}
+```
+
+Роль связывает существующий target с public `Sigmoid`, включая corrected
+weighted binary probability. Собственные parameters не передаются. При direct
+weight `a > 0` и auxiliary weight `b > 0` получается `a * BCE + b * H(p)`.
+Это противоположный знак относительно `BernoulliConfidencePenalty`; смысл
+старого оператора сохраняется. Коэффициент в примере не является default.
+
+Проверьте Semantic v7 и advertised operator в capabilities. Declaration и
+weight передаются через Flight/Worker и сохраняются в checkpoint, catalog и
+topology. Изменение objective отклоняется при recovery/warm start. Auxiliary
+loss содержит positive unweighted entropy, selection остаётся direct-only.
+Большая уверенность может усилить ошибочные прогнозы; качество проверяется
+на held-out данных. Интеграция ML Profile вызывающей системы выполняется
+отдельно после публикации provider contract.
+
 ## Predict
 
-Вызовите `transformer.v23.predict.create` с точным `modelRef`, запрошенным
+Вызовите `transformer.v24.predict.create` с точным `modelRef`, запрошенным
 устройством и текущим `dataBinding`. Не передавайте повторно TargetContract,
 Objective или model tuning. Create result передаёт `predictionDefinition` до
 upload: `seqLen`, output width и упорядоченные непрозрачные targets с public
@@ -96,7 +123,7 @@ Worker для predict не запускается для открытого inpu
 После `job.input.close` опрашивайте `job.status` до terminal state. Для
 `SUCCEEDED` получите predictions следующим образом:
 
-1. Вызовите `transformer.v23.job.outputs.list` с `jobId` и UUID `requestId`.
+1. Вызовите `transformer.v24.job.outputs.list` с `jobId` и UUID `requestId`.
    Обойдите все страницы через `nextCursor`, пока `hasMore` не станет `false`.
 2. Для каждого output в порядке `ordinal` передайте возвращённый
    `descriptorPath` как path descriptor в `GetFlightInfo`.
@@ -131,7 +158,7 @@ validation errors имеют разные structured outcomes.
 
 ## Model catalog, topology и telemetry
 
-Используйте `transformer.model-catalog.v8.list` для owner-scoped discovery и
+Используйте `transformer.model-catalog.v9.list` для owner-scoped discovery и
 `.detail` для точного выбранного `modelRef`. List — bounded high-water/keyset
 traversal; параллельное deletion может заставить detail вернуть
 `MODEL_NOT_FOUND`, тогда вызывающая система обновляет своё представление.
@@ -141,7 +168,7 @@ traversal; параллельное deletion может заставить detai
 раскрытия этой секции UI. Отсутствие telemetry не скрывает и не делает
 опубликованную model некорректной.
 
-Используйте `transformer.model-topology.v4.detail` только для точного
+Используйте `transformer.model-topology.v5.detail` только для точного
 опубликованного `modelRef` и загружайте response лениво при открытии схемы
 модели. Topology уже привязана к `modelDefinitionSha256`; не выводите graph из
 model tuning или target names. Для объединения с telemetry сначала сравните
@@ -163,5 +190,5 @@ committed artifact; по последовательности значений U
 `normalizationOrder`, и `OutputHead.shared`.
 
 Все четыре query packages определяют собственные schemas и rules outcomes. Их
-availability объявляется capabilities Flight v23, но их семантика не встроена в
+availability объявляется capabilities Flight v24, но их семантика не встроена в
 generic job actions.

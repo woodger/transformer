@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.contracts.semantic.v6 import ModelContract, SemanticContractError
-from app.contracts.worker.v21.config import ModelConfig
-from app.contracts.worker.v21.constants import CHECKPOINT_FORMAT
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v7 import ModelContract, SemanticContractError
+from app.contracts.worker.v22.config import ModelConfig
+from app.contracts.worker.v22.constants import CHECKPOINT_FORMAT
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.domain.errors import ServiceError
 from app.service.domain.initialization import validate_initialization
 from app.service.domain.job import ErrorCode

@@ -6,22 +6,22 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import NotRequired, TypedDict, cast
 
-from app.contracts.flight.v23.codec import (
+from app.contracts.flight.v24.codec import (
     FlightContractError,
     FlightRequestSchema,
     validate_request_document,
 )
-from app.contracts.flight.v23.source_encoding import canonical_source_encoding
+from app.contracts.flight.v24.source_encoding import canonical_source_encoding
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v8 import (
+from app.contracts.model_catalog.v9 import (
     ModelCatalogContractError,
     validate_catalog_document,
 )
-from app.contracts.model_topology.v4 import (
+from app.contracts.model_topology.v5 import (
     ModelTopologyContractError,
     validate_model_topology_document,
 )
-from app.contracts.semantic.v6 import ModelContract, SemanticContractError
+from app.contracts.semantic.v7 import ModelContract, SemanticContractError
 from app.contracts.target_head_diagnostics.v5 import (
     TargetHeadDiagnosticsContractError,
     validate_target_head_diagnostics_document,
@@ -30,9 +30,9 @@ from app.contracts.training_telemetry.v4 import (
     TrainingTelemetryContractError,
     validate_training_telemetry_document,
 )
-from app.contracts.worker.v21.config import ModelConfig, TrainConfig
-from app.contracts.worker.v21.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v21.model_definition import (
+from app.contracts.worker.v22.config import ModelConfig, TrainConfig
+from app.contracts.worker.v22.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v22.model_definition import (
     resolved_semantic_digests,
 )
 from app.service.adapters.inbound.flight.constants import (
@@ -226,7 +226,7 @@ def validate_action_request(
     action_name: str,
     document: JsonObject,
 ) -> ValidatedActionRequest:
-    from app.contracts.model_catalog.v8.constants import (
+    from app.contracts.model_catalog.v9.constants import (
         DETAIL_ACTION as MODEL_CATALOG_DETAIL_ACTION,
         LIST_ACTION as MODEL_CATALOG_LIST_ACTION,
     )

@@ -117,7 +117,8 @@ fits Worker v20 и принадлежащей provider-у projection metrics v11
 gradient. Его manifest хеширует только bundle fixtures для офлайн-проверки; он
 не входит в identity совместимости telemetry, model или checkpoint.
 
-Flight v23 использует этот public query package без изменения wire semantics.
-Его provider-owned reader читает Metrics v12 и checkpoint/recovery v13
-для generations Semantic v6. Frozen schema references Semantic v4
+Flight v24 использует этот public query package без изменения wire semantics.
+Его provider-owned reader читает Metrics v13 и checkpoint/recovery v14
+для generations Semantic v7. Auxiliary layout и losses допускают
+`BernoulliEntropyPenalty` с positive entropy. Frozen schema references Semantic v4
 сохраняются; они не являются compatibility reader прежних generations.

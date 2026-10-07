@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 import app.service.adapters.outbound.postgres.ledger.inputs as input_ledger_module
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig
 from app.service.adapters.outbound.postgres.ledger.inputs import (
     InputLedgerSlice,
 )

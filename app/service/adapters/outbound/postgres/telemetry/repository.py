@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.contracts.json_types import JsonObject
-from app.contracts.metrics.fit_run.v12 import PROJECTION_VERSION
+from app.contracts.metrics.fit_run.v13 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.ledger.support import (
     advisory_lock,
     canonical_uuid,

@@ -1,9 +1,9 @@
 # Эксплуатация сервиса Transformer Arrow Flight
 
 > Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v23.
+> сервиса Flight v24.
 
-Wire semantics определены [Flight v23](../../app/contracts/flight/v23/README.md).
+Wire semantics определены [Flight v24](../../app/contracts/flight/v24/README.md).
 Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
 системы.
 
@@ -123,21 +123,21 @@ artifacts без references в тех же service roots. Не удаляйте 
 PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
 `models delete` либо документированную migration clean cut.
 
-## Текущий runtime Semantic v6 / Flight v23
+## Текущий runtime Semantic v7 / Flight v24
 
-Migration 0030 удаляет state предыдущей semantic boundary. Для перехода
-на Semantic v6 остановите все instances service, дождитесь terminal state jobs
-и примените её. До запуска Flight v23 замените индексы metrics v11 на v12 по
+Migration 0031 удаляет state предыдущей semantic boundary. Для перехода
+на Semantic v7 остановите все instances service, дождитесь terminal state jobs
+и примените её. До запуска Flight v24 замените индексы metrics v12 на v13 по
 documented procedure. Старые models, checkpoints, state recovery и database telemetry
-до migration 0030 использовать нельзя.
+до migration 0031 использовать нельзя.
 
 См. [управление migrations](database-migrations.md) и
 [deployment OpenSearch](../deployment/opensearch.md).
 
 ## Health и troubleshooting
 
-Используйте `transformer.v23.health` для аутентифицированной surface health
-provider-а и `transformer.v23.capabilities` для текущей availability
+Используйте `transformer.v24.health` для аутентифицированной surface health
+provider-а и `transformer.v24.capabilities` для текущей availability
 device/upload/query. Для операционной диагностики используйте logs service и
 state database. Никогда не помещайте bearer credentials, passwords database или
 raw paths checkpoint-а в общие logs или сообщения support.

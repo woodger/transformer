@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_topology.v4 import (
+from app.contracts.model_topology.v5 import (
     MAX_RESPONSE_BYTES,
     validate_model_topology_document,
 )
@@ -18,7 +18,7 @@ def present_model_topology(result: ModelTopologyResult) -> JsonObject:
         "requestId": result.request_id,
         "modelRef": result.model_ref,
         "modelDefinitionSha256": result.model_definition_sha256,
-        "topologyRevision": 4,
+        "topologyRevision": 5,
         "nodes": [dict(node) for node in result.nodes],
         "edges": [dict(edge) for edge in result.edges],
     }

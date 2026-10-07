@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v24/predict-create-result.schema.json",
+  "title": "transformer.v24.predict.create result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "jobId",
+    "mutationLease",
+    "input",
+    "execution",
+    "device",
+    "modelRef",
+    "predictionDefinition",
+    "upload",
+    "limits"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "mutationLease": {
+      "$ref": "common.schema.json#/$defs/mutationLease"
+    },
+    "input": {
+      "$ref": "fit-create-result.schema.json#/$defs/openInput"
+    },
+    "execution": {
+      "$ref": "fit-create-result.schema.json#/$defs/waitingExecution"
+    },
+    "device": {
+      "$ref": "fit-create-result.schema.json#/$defs/requestedDevice"
+    },
+    "modelRef": {
+      "$ref": "common.schema.json#/$defs/modelRef"
+    },
+    "predictionDefinition": {
+      "$ref": "https://transformer.local/contracts/semantic/v7/prediction-definition.schema.json"
+    },
+    "upload": {
+      "$ref": "fit-create-result.schema.json#/$defs/upload"
+    },
+    "limits": {
+      "$ref": "fit-create-result.schema.json#/$defs/limits"
+    }
+  }
+}

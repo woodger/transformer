@@ -6,14 +6,14 @@ from typing import cast
 
 import torch
 
-from app.contracts.checkpoint.v13 import (
+from app.contracts.checkpoint.v14 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import ModelConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import ModelConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
 from app.worker.checkpoints.atomic import atomic_output_path, resolve_artifact_path
 from app.worker.checkpoints.checkpoint_corrupt import CheckpointCorrupt

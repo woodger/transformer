@@ -8,9 +8,9 @@ import torch
 import torch.nn as nn
 from torch.utils.hooks import RemovableHandle
 
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.semantic.v6.constants import ENCODER_NORMALIZATION_ORDERS
-from app.contracts.worker.v21.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.semantic.v7.constants import ENCODER_NORMALIZATION_ORDERS
+from app.contracts.worker.v22.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,

@@ -2,12 +2,12 @@ from collections.abc import Callable
 from typing import cast
 
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v8 import (
+from app.contracts.model_catalog.v9 import (
     MAX_RESPONSE_BYTES as MODEL_CATALOG_MAX_RESPONSE_BYTES,
     validate_catalog_document,
 )
-from app.contracts.semantic.v6 import semantic_capabilities
-from app.contracts.semantic.v6.constants import ENCODER_NORMALIZATION_ORDERS
+from app.contracts.semantic.v7 import semantic_capabilities
+from app.contracts.semantic.v7.constants import ENCODER_NORMALIZATION_ORDERS
 from app.contracts.target_head_diagnostics.v5.constants import (
     CONTRACT_NAME as TARGET_HEAD_DIAGNOSTICS_CONTRACT_NAME,
     CONTRACT_REVISION as TARGET_HEAD_DIAGNOSTICS_CONTRACT_REVISION,
@@ -578,7 +578,7 @@ class JobCoordinator:
                             "directComponentPerBatch",
                         ],
                         # Диагностика явно объявляет тот же набор порядков
-                        # нормализации, что Semantic v6: вызывающая система не
+                        # нормализации, что Semantic v7: вызывающая система не
                         # выводит его из топологии или сохранённого артефакта.
                         "encoderNormalizationOrders": list(
                             ENCODER_NORMALIZATION_ORDERS

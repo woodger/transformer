@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/model-topology/v5/error-detail.schema.json",
+  "title": "Transformer model topology query v5 structured error detail",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/invalidQuery"
+    },
+    {
+      "$ref": "#/$defs/queryUnavailable"
+    },
+    {
+      "$ref": "#/$defs/modelNotFound"
+    },
+    {
+      "$ref": "#/$defs/storedMetadataInvalid"
+    },
+    {
+      "$ref": "#/$defs/topologyInvalid"
+    },
+    {
+      "$ref": "#/$defs/responseBudgetExceeded"
+    },
+    {
+      "$ref": "#/$defs/registryUnavailable"
+    }
+  ],
+  "$defs": {
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "pointer": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"
+    },
+    "invalidQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "INVALID_ARGUMENT"
+        },
+        "reason": {
+          "const": "INVALID_MODEL_TOPOLOGY_QUERY"
+        },
+        "path": {
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "queryUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "FAILED_PRECONDITION"
+        },
+        "reason": {
+          "const": "MODEL_TOPOLOGY_QUERY_UNAVAILABLE"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "modelNotFound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "NOT_FOUND"
+        },
+        "reason": {
+          "const": "MODEL_NOT_FOUND"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "storedMetadataInvalid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "MODEL_CORRUPT"
+        },
+        "reason": {
+          "const": "STORED_MODEL_METADATA_INVALID"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "path": {
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "topologyInvalid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "MODEL_CORRUPT"
+        },
+        "reason": {
+          "const": "MODEL_TOPOLOGY_INVALID"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "path": {
+          "$ref": "#/$defs/pointer"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "responseBudgetExceeded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "modelRef",
+        "maxResponseBytes",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "RESOURCE_EXHAUSTED"
+        },
+        "reason": {
+          "const": "MODEL_TOPOLOGY_RESPONSE_BUDGET_EXCEEDED"
+        },
+        "modelRef": {
+          "$ref": "common.schema.json#/$defs/modelRef"
+        },
+        "maxResponseBytes": {
+          "$ref": "common.schema.json#/$defs/positiveInteger"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    },
+    "registryUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "reason",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "UNAVAILABLE"
+        },
+        "reason": {
+          "const": "MODEL_REGISTRY_UNAVAILABLE"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        }
+      }
+    }
+  }
+}

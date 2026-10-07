@@ -1,0 +1,57 @@
+{
+  "fixtureId": "semantic.weighted-binary-entropy-penalty.v7",
+  "tensorGeometry": {
+    "seqLen": 2,
+    "featureDim": 8
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "OpaqueBinaryEvent",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.opaque-binary-event",
+          "operator": "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "positiveClassWeight": 28,
+          "targetIdentity": "OpaqueBinaryEvent"
+        }
+      ],
+      "auxiliaryComponents": [
+        {
+          "identity": "auxiliary.entropy",
+          "operator": "BernoulliEntropyPenalty",
+          "weight": 0.1,
+          "roles": {
+            "probability": "OpaqueBinaryEvent"
+          }
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "12149168e0bdaa48380f196f5f4db3ac512401a732b9e16ed152e9eb137541c7",
+    "objectiveSha256": "3ea39083d288095e547b9a1eb70958cd2aede25004d718f404a8e9810f18b6cd"
+  }
+}

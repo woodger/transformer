@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v7/semantic-digests.schema.json",
+  "title": "D1 semantic digest layers",
+  "$ref": "common.schema.json#/$defs/semanticDigests"
+}

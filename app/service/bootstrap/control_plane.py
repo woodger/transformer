@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.contracts.flight.v23 import job_config_sha256
-from app.contracts.model_catalog.v8 import (
+from app.contracts.flight.v24 import job_config_sha256
+from app.contracts.model_catalog.v9 import (
     CURSOR_TTL_SECONDS,
     MAX_CHECKPOINT_VERIFICATION_BYTES,
 )
@@ -102,7 +102,7 @@ def build_job_coordinator(
     lifecycle = PostgresJobLifecycle(
         ledger,
         JobActionNames(
-            create="transformer.v23.job.create",
+            create="transformer.v24.job.create",
             acquire=ACQUIRE_ACTION,
             input_close=INPUT_CLOSE_ACTION,
             cancel=CANCEL_ACTION,

@@ -6,9 +6,9 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.semantic.v6 import ModelContract
-from app.contracts.worker.v21.config import CheckpointSelectionConfig
-from app.contracts.worker.v21.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import CheckpointSelectionConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -186,21 +186,23 @@ def _assert_tree_equal(left, right) -> None:
         marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available"),
     ),
 ])
-@pytest.mark.parametrize("confidence_penalty", [False, True])
+@pytest.mark.parametrize("penalty_operator", [
+    None, "BernoulliConfidencePenalty", "BernoulliEntropyPenalty",
+])
 def test_epoch_checkpoint_resume_matches_uninterrupted_training(
     tmp_path,
     device,
-    confidence_penalty,
+    penalty_operator,
 ):
     document = MODEL_CONTRACT.to_document()
-    if confidence_penalty:
+    if penalty_operator is not None:
         objective = document["objective"]
         assert isinstance(objective, dict)
         components = objective["auxiliaryComponents"]
         assert isinstance(components, list)
         components.append({
-            "identity": "auxiliary.confidence",
-            "operator": "BernoulliConfidencePenalty",
+            "identity": "auxiliary.bernoulli",
+            "operator": penalty_operator,
             "weight": 0.1,
             "roles": {"probability": MODEL_CONTRACT.target_identities[1]},
         })
@@ -319,6 +321,59 @@ def test_recovery_checkpoint_rejects_trainer_progress_that_differs_from_metadata
             torch.device("cpu"),
             descriptor=_descriptor(metadata),
         )
+
+
+@pytest.mark.parametrize("change", ["operator", "weight", "addition"])
+def test_recovery_checkpoint_rejects_a_changed_entropy_objective(tmp_path, change):
+    document = MODEL_CONTRACT.to_document()
+    component = {
+        "identity": "auxiliary.entropy",
+        "operator": "BernoulliEntropyPenalty",
+        "weight": 0.1,
+        "roles": {"probability": MODEL_CONTRACT.target_identities[1]},
+    }
+    if change != "addition":
+        document["objective"]["auxiliaryComponents"].append(copy.deepcopy(component))
+        document["objective"]["auxiliaryComponents"].sort(
+            key=lambda item: item["identity"]
+        )
+
+    contract = ModelContract.from_document(document)
+
+    with torch.random.fork_rng():
+        trainer = _trainer(copy.deepcopy(_model().state_dict()), contract=contract)
+        batch = TrainingBatch(
+            features=torch.zeros(3, 2, 2),
+            targets=torch.zeros(3, contract.target_width),
+        )
+        trainer.fit_epochs(batch)
+        metadata = checkpoint_metadata(trainer, _manifest(contract))
+        checkpoint = tmp_path / "recovery.pth"
+        save_training_recovery(str(checkpoint), trainer, metadata=metadata)
+
+    changed = contract.to_document()
+    if change == "addition":
+        changed["objective"]["auxiliaryComponents"].append(component)
+        changed["objective"]["auxiliaryComponents"].sort(
+            key=lambda item: item["identity"]
+        )
+    else:
+        penalty = next(
+            item for item in changed["objective"]["auxiliaryComponents"]
+            if item["identity"] == "auxiliary.entropy"
+        )
+        if change == "operator":
+            penalty["operator"] = "BernoulliConfidencePenalty"
+        else:
+            penalty["weight"] = 0.2
+
+    descriptor = _descriptor(metadata)
+    descriptor["semanticDigests"] = _semantic_digests(
+        ModelContract.from_document(changed)
+    )
+
+    with pytest.raises(ValueError, match="fence"):
+        load_training_recovery(str(checkpoint), torch.device("cpu"), descriptor=descriptor)
 
 
 def test_fit_rejects_recovery_descriptor_for_a_different_job_config():

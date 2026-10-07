@@ -1,0 +1,56 @@
+{
+  "fixtureId": "semantic.bernoulli-confidence-penalty.v7",
+  "tensorGeometry": {
+    "seqLen": 2,
+    "featureDim": 8
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.event-probability",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "EventProbability"
+        }
+      ],
+      "auxiliaryComponents": [
+        {
+          "identity": "auxiliary.confidence",
+          "operator": "BernoulliConfidencePenalty",
+          "weight": 0.1,
+          "roles": {
+            "probability": "EventProbability"
+          }
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "5f1b0ef94b29bb602da57bcc1d25c9330fbf703a25349e892c511aa1d9e2b63f",
+    "objectiveSha256": "932c10ab16ee10d02d44acf8478b454383c1ac39829060f48254a25dd31ee7a5"
+  }
+}

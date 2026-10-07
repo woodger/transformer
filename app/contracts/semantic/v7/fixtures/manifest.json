@@ -1,0 +1,74 @@
+{
+  "contract": "transformer-semantic-fixtures",
+  "version": 7,
+  "files": [
+    {
+      "path": "bernoulli-confidence-penalty.json",
+      "sha256": "3fb0ab05559f516fc046029c03a606507e3999f7cda696bfb3f0c19bc8e79a57"
+    },
+    {
+      "path": "bernoulli-entropy-penalty.json",
+      "sha256": "ffd0b1b5ca684652a5e9a81ddfe668b98ad7d564abe8c14908b64f78240cc880"
+    },
+    {
+      "path": "d1_sha256.mjs",
+      "sha256": "2bf875c6ebf748c5a2ee2fe196deef1aa834b8226e291a9ccd26fac559be72f2"
+    },
+    {
+      "path": "jcs.mjs",
+      "sha256": "2207a454ceeeec9130e7aaf7dca17752da48897c3ee18f29e1037dbb0c1d6012"
+    },
+    {
+      "path": "language-capabilities.json",
+      "sha256": "46528fb12949975e233ada28734e17337de5e76ee0477151164c0625850e1dd0"
+    },
+    {
+      "path": "multi-target-shared-resource.json",
+      "sha256": "5bc89ff04463c803c370c690b9b7b9fac404be2af6f05483e5238b41193201d3"
+    },
+    {
+      "path": "new-opaque-target.json",
+      "sha256": "fd21adbcdc50318c9a3d4c57f2ce8fdc3473c6f8e0bc353a190a09cff7f3383a"
+    },
+    {
+      "path": "positive-class-weighted-binary-w1.json",
+      "sha256": "38facf9fe79029e1a5a0f0ae71621e10f4ebf7d5d8e945991fc757c5edb10f5a"
+    },
+    {
+      "path": "positive-class-weighted-binary-w28.json",
+      "sha256": "ced4180a78934a138754ed6ad5a60ec1dbcc2b5d347acb9ee41f81235c481f86"
+    },
+    {
+      "path": "single-positive-regression.json",
+      "sha256": "cfec86b393da56cfec29b626821fb0714f0e43ac18904f1bc65b7b4d44a3d1f4"
+    },
+    {
+      "path": "single-probability.json",
+      "sha256": "ec38ac362914bc23d8b1062097a9beecf0b8f21276391099904e539401f187e0"
+    },
+    {
+      "path": "single-regression-pre-norm.json",
+      "sha256": "ed94ae40d046c2e8190b736311fa5167115b1931eed7b527c63b70d72ca75e05"
+    },
+    {
+      "path": "single-regression.json",
+      "sha256": "9b916f7d06605617c391e433649e99b923b678d61186007dec340cd0a7e67e0f"
+    },
+    {
+      "path": "target-reorder-a-b.json",
+      "sha256": "caf0390e75241f72a8e385bce988705a6fe4b63e0d77e1042f42ed22d97b7217"
+    },
+    {
+      "path": "target-reorder-b-a.json",
+      "sha256": "ba7dabbe026bac6563138d04d146a106e70fadee0011961739aea784171c543f"
+    },
+    {
+      "path": "weighted-binary-confidence-penalty.json",
+      "sha256": "554253d3cd09d4665329e73d108b156b8ef5cb35d87307049c48bf543d430b41"
+    },
+    {
+      "path": "weighted-binary-entropy-penalty.json",
+      "sha256": "fcc85b8321c3f9ffaac436e189675f3ef52dd2efc47d342501a07d73054a70b1"
+    }
+  ]
+}

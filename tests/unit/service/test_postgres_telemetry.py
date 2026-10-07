@@ -4,7 +4,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from app.contracts.metrics.fit_run.v12 import PROJECTION_VERSION
+from app.contracts.metrics.fit_run.v13 import PROJECTION_VERSION
 from app.service.adapters.outbound.postgres.models import MetricsOutboxEntry
 from app.service.adapters.outbound.postgres.session import Database
 from app.service.adapters.outbound.postgres.telemetry.repository import (
@@ -41,13 +41,13 @@ def test_register_run_artifacts_uses_current_metrics_projection_version():
         attempt_id=_ATTEMPT_ID,
         attempt=1,
         metrics_path="jobs/test/metrics.jsonl",
-        metrics_format="transformer.training-metrics.v12",
+        metrics_format="transformer.training-metrics.v13",
         metrics_media_type="application/x-ndjson",
         metrics_byte_count=1,
         metrics_sha256="a" * 64,
         metrics_row_count=1,
         run_summary_path="jobs/test/run-summary.json",
-        run_summary_format="transformer.fit-run-summary.v12",
+        run_summary_format="transformer.fit-run-summary.v13",
         run_summary_media_type="application/json",
         run_summary_byte_count=1,
         run_summary_sha256="b" * 64,

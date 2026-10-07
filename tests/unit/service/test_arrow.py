@@ -6,12 +6,12 @@ import pyarrow as pa
 import pyarrow.ipc as ipc
 import pytest
 
-from app.contracts.flight.v23.arrow import (
+from app.contracts.flight.v24.arrow import (
     canonical_input_schema,
     validate_target_values,
 )
-from app.contracts.flight.v23.target_value_error import TargetValueError
-from app.contracts.semantic.v6 import ModelContract
+from app.contracts.flight.v24.target_value_error import TargetValueError
+from app.contracts.semantic.v7 import ModelContract
 from app.service.adapters.inbound.flight.arrow import (
     InputBatchValidator,
     schema_fingerprint,
