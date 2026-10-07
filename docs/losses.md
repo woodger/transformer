@@ -1,8 +1,8 @@
 # Семантика objective и loss
 
-> Тип: справочник. Числовая семантика языка objective Semantic v5.
+> Тип: справочник. Числовая семантика языка objective Semantic v6.
 
-Нормативный документ — [семантическая модель v5](../app/contracts/semantic/v5/README.md).
+Нормативный документ — [семантическая модель v6](../app/contracts/semantic/v6/README.md).
 Этот справочник поясняет formulas, реализованные Transformer; он не вводит
 поведение, специфичное для target-а.
 
@@ -85,6 +85,27 @@ RiskAdjustedExpectedValue:
 `ExpectedValue` и `RiskAdjustedExpectedValue` могут сосуществовать. Weights
 components положительны. Язык фиксирует global-row mean reduction и
 weighted-sum aggregation; они не повторяются в каждом документе objective.
+
+## Confidence penalty
+
+`BernoulliConfidencePenalty` добавляется как auxiliary component для public
+`Sigmoid` target-а, включая weighted binary BCE. Его положительный weight `b`
+задаёт contribution `-b * mean(H(p))`, где
+`H(p) = -p * ln(p) - (1 - p) * ln(1 - p)`. У weighted binary operator-а
+`p = sigmoid(z - ln(positiveClassWeight))`; entropy raw `sigmoid(z)` имела бы
+другой optimum. Без декларации компонента penalty отсутствует.
+
+При direct weight `a` получается `a * BCE - b * H(p)`, поэтому относительный
+`lambda = b / a`. Максимизация entropy тянет вероятность к `0.5` и может
+завышать оценку редкого события. Коррекция class weight не устраняет это
+смещение. Коэффициент выбирается на held-out данных; регуляризатор не
+гарантирует калибровку или улучшение сигнала.
+
+Transformer вычисляет negative entropy через `sigmoid` и `logsigmoid`
+конечного corrected logit; float16/bfloat16 повышаются до float32. Public
+predictions не обрезаются, gradient не отключается. Auxiliary statistics
+содержат unweighted negative entropy, total loss — её weighted contribution;
+отрицательное значение auxiliary loss допустимо.
 
 ## Diagnostics
 

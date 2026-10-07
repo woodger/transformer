@@ -20,32 +20,32 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
-## Semantic v5 clean cut и текущий Flight v22
+## Semantic v6 clean cut и текущий Flight v23
 
-Revision `0029_encoder_normalization_order` разрушительна и не имеет downgrade.
-Она удаляет jobs, опубликованные generations, recovery/checkpoint metadata,
-idempotency records и database telemetry, для которых отсутствует reader
-Semantic v5 / Flight v22.
+Revision `0030_bernoulli_confidence_penalty` разрушительна и не имеет downgrade.
+Она изменяет только границу durable state: D1 включает revision языка даже для
+objective без регуляризатора. Старые jobs, generations, checkpoint/recovery,
+idempotency records и database telemetry не имеют reader Semantic v6 /
+checkpoint v13 и удаляются. Таблицы и поля PostgreSQL не меняются.
 
 Перед её применением:
 
-1. Остановите каждый instance service Transformer, использующий эту schema
-   PostgreSQL.
-2. Убедитесь, что каждое job terminal. Migration отклоняет `WAITING_INPUT`,
-   `QUEUED`, `RUNNING`, `RETRYING` и `CANCELLING`, а не удаляет active work.
-3. Решите, нужен ли внешний backup. Предыдущие models и database telemetry
-   намеренно не сохраняются этим release. Уже существующие documents Metrics
-   v10 в OpenSearch migration не удаляет, но без registry generation они не
-   становятся доступными через query.
-4. Примените migration один раз, затем выполните documented destructive
-   replacement индексов OpenSearch metrics v10 на v11 до запуска Flight v22.
+1. Остановите все instances service Transformer для этой schema PostgreSQL.
+2. Дождитесь terminal outcome каждого job. Migration отклоняет `WAITING_INPUT`,
+   `QUEUED`, `RUNNING`, `RETRYING` и `CANCELLING`.
+3. Сохраните внешний backup, если нужны прежние models, jobs или telemetry.
+   Этот release намеренно не переносит их на новый contract.
+4. Примените migration один раз и выполните documented replacement индексов
+   OpenSearch metrics v11 на v12 до запуска Flight v23. Не запускайте после
+   этого старый executable, не поддерживающий Semantic v6 / checkpoint v13.
 
-Не запускайте executable, не поддерживающий Semantic v5, после применения
-revision 0029. У него нет совместимого reader database, и он не должен
-создавать legacy state вновь.
+Metrics v12 связывает observations с checkpoint v13; runtime не читает прежние
+point/run formats v11. Replacement индексов является отдельной операцией
+из `docs/deployment/opensearch.md`, migration PostgreSQL не удаляет OpenSearch
+documents. Startup reconciliation очищает только
+уже не имеющие references managed artifacts согласно действующему lifecycle.
 
-Конфигурация Target Head Diagnostics хранится в checkpoint metadata и
-registry metadata опубликованной модели. Сам артефакт наблюдений Worker
-сохраняется отдельно в registry metadata как `targetHeadDiagnostics` и не
-встраивается в checkpoint; точная граница определена в
-[checkpoint/recovery v12](../../app/contracts/checkpoint/v12/README.md).
+Target Head Diagnostics v5 сохраняет прежний artifact и configuration v3;
+confidence penalty не встраивается в diagnostics artifact и не меняет его
+формат. Его declaration хранится в objective checkpoint/registry metadata,
+а observations самого penalty — в auxiliary losses и gradient interactions.

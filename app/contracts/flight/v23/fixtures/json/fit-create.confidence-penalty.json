@@ -1,0 +1,84 @@
+{
+  "requestId": "99999999-9999-4999-8999-999999999999",
+  "idempotencyKey": "fit-confidence-penalty-v6",
+  "modelLabel": "confidence-penalty",
+  "device": "cpu",
+  "dataBinding": {
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tensorGeometry": {
+      "seqLen": 10,
+      "featureDim": 64848
+    },
+    "inputLayout": {
+      "featureBlocks": [
+        {
+          "windowRows": 1,
+          "nativeRowWidth": 64848
+        }
+      ]
+    }
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "OpaqueBinaryEvent",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.opaque-binary-event",
+          "operator": "PositiveClassWeightedBinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "positiveClassWeight": 28,
+          "targetIdentity": "OpaqueBinaryEvent"
+        }
+      ],
+      "auxiliaryComponents": [
+        {
+          "identity": "auxiliary.confidence",
+          "operator": "BernoulliConfidencePenalty",
+          "weight": 0.1,
+          "roles": {
+            "probability": "OpaqueBinaryEvent"
+          }
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "trainingConfig": {
+    "learningRate": 0.0005,
+    "batchSize": 128,
+    "epochs": 200,
+    "mixedPrecision": false,
+    "weightDecay": 0,
+    "selection": null,
+    "seed": 42,
+    "deterministic": true
+  },
+  "diagnostics": {
+    "gradientInteractions": null,
+    "targetHead": "fullCommittedArtifact",
+    "encoderLayerDiagnostics": "directComponentPerBatch"
+  },
+  "initialization": {
+    "source": "random"
+  }
+}

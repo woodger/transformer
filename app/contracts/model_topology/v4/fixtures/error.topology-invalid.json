@@ -1,0 +1,7 @@
+{
+  "code": "MODEL_CORRUPT",
+  "reason": "MODEL_TOPOLOGY_INVALID",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "path": "/edges/0",
+  "message": "model topology is invalid"
+}

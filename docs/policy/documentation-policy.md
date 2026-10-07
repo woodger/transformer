@@ -38,16 +38,16 @@ identifiers, команды, пути, значения enum и другие э�
 | Исторический rationale архитектурных решений | `docs/adr/index.md` |
 | Ручное production deployment | `docs/deployment/` |
 | Правила разработки | `docs/policy/` |
-| Нормативный semantic language v5 | `app/contracts/semantic/v5/` |
-| Нормативный Flight v22 contract | `app/contracts/flight/v22/` |
-| Нормативный worker v20 contract | `app/contracts/worker/v20/` |
-| Нормативный checkpoint/recovery v12 contract | `app/contracts/checkpoint/v12/` |
+| Нормативный semantic language v5 | `app/contracts/semantic/v6/` |
+| Нормативный Flight v23 contract | `app/contracts/flight/v23/` |
+| Нормативный worker v20 contract | `app/contracts/worker/v21/` |
+| Нормативный checkpoint/recovery v13 contract | `app/contracts/checkpoint/v13/` |
 | Нормативные training metrics contracts | `app/contracts/metrics/` |
-| Нормативный Model Catalog Query v7 | `app/contracts/model_catalog/v7/` |
-| Нормативный Model Topology Query v3 | `app/contracts/model_topology/v3/` |
+| Нормативный Model Catalog Query v8 | `app/contracts/model_catalog/v8/` |
+| Нормативный Model Topology Query v4 | `app/contracts/model_topology/v4/` |
 | Нормативный Training Telemetry Query v4 | `app/contracts/training_telemetry/v4/` |
 | Нормативная диагностика выходных головок v5 | `app/contracts/target_head_diagnostics/v5/` |
-| Нормативный package weighted binary BCE | `app/contracts/semantic/v5/`, `app/contracts/checkpoint/v12/`, `app/contracts/worker/v20/`, `app/contracts/metrics/v11/`, `app/contracts/metrics/fit_run/v11/`, `app/contracts/model_catalog/v7/`, `app/contracts/model_topology/v3/`, `app/contracts/training_telemetry/v4/`, `app/contracts/target_head_diagnostics/v5/`, `app/contracts/flight/v22/` |
+| Нормативный package weighted binary BCE | `app/contracts/semantic/v6/`, `app/contracts/checkpoint/v13/`, `app/contracts/worker/v21/`, `app/contracts/metrics/v12/`, `app/contracts/metrics/fit_run/v12/`, `app/contracts/model_catalog/v8/`, `app/contracts/model_topology/v4/`, `app/contracts/training_telemetry/v4/`, `app/contracts/target_head_diagnostics/v5/`, `app/contracts/flight/v23/` |
 | История релизов | `CHANGELOG.md` |
 
 В проекте нет отдельного `docs/index.md`; навигационной входной точкой остаётся
@@ -100,7 +100,7 @@ transformer <command> --help
 `.env.example` содержит безопасный рабочий образец и русские комментарии к
 группам переменных. Встроенные operational defaults находятся в
 `app/config.py`. Правила parsing и validation остаются у runtime-владельцев:
-`app/service/bootstrap/config.py`, `app/contracts/worker/v20/config.py`,
+`app/service/bootstrap/config.py`, `app/contracts/worker/v21/config.py`,
 PostgreSQL и OpenSearch adapters.
 
 Документация не должна:
@@ -113,30 +113,30 @@ PostgreSQL и OpenSearch adapters.
 
 ## Нормативные contracts
 
-JSON Schemas и golden fixtures semantic language v5, Flight v22, worker v20,
-checkpoint/recovery v12, metrics v11, Model Catalog Query v7, Model Topology
-Query v3, Training Telemetry Query v4 и Target Head Diagnostics Query v5
+JSON Schemas и golden fixtures semantic language v6, Flight v23, worker v21,
+checkpoint/recovery v13, metrics v12, Model Catalog Query v8, Model Topology
+Query v4, Training Telemetry Query v4 и Target Head Diagnostics Query v5
 нормативны для текущего runtime. README или operations guide не могут
-переопределять их. Flight v22 — единственный
+переопределять их. Flight v23 — единственный
 текущий remote API contract; legacy aliases отсутствуют.
 
-Semantic v5, Flight v22, worker v20, checkpoint/recovery v12, metrics v11 и
+Semantic v6, Flight v23, worker v21, checkpoint/recovery v13, metrics v12 и
 активные query revisions составляют единый package текущего runtime.
 
-`app/contracts/model_catalog/v7/` имеет независимую revision и активирован
-двумя Flight v22 actions. Изменение его query language не обязано синхронно
+`app/contracts/model_catalog/v8/` имеет независимую revision и активирован
+двумя Flight v23 actions. Изменение его query language не обязано синхронно
 менять job workflow Flight.
 
 `app/contracts/training_telemetry/v4/` имеет независимую revision и активирован
-двумя Flight v22 actions. Изменение query language не обязано
+двумя Flight v23 actions. Изменение query language не обязано
 синхронно менять job workflow Flight.
 
-`app/contracts/model_topology/v3/` имеет независимую revision и активирован
-одним Flight v22 action. Изменение topology language не обязано синхронно
+`app/contracts/model_topology/v4/` имеет независимую revision и активирован
+одним Flight v23 action. Изменение topology language не обязано синхронно
 менять job workflow Flight.
 
 `app/contracts/target_head_diagnostics/v5/` имеет независимую revision и
-активирован одним Flight v22 action. Он описывает opt-in runtime observations,
+активирован одним Flight v23 action. Он описывает opt-in runtime observations,
 а не semantic language или checkpoint compatibility.
 
 Изменение Flight contract требует синхронно проверить:
@@ -147,7 +147,7 @@ Semantic v5, Flight v22, worker v20, checkpoint/recovery v12, metrics v11 и
 - version/compatibility policy;
 - Руководство по интеграции с Flight.
 
-Flight v22 schemas и fixtures остаются нормативными для remote API. Эти
+Flight v23 schemas и fixtures остаются нормативными для remote API. Эти
 contracts проверяются тестами.
 
 ## Документация текущего состояния

@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 import torch
 
-from app.contracts.semantic.v5 import ModelContract, SemanticContractError
+from app.contracts.semantic.v6 import ModelContract, SemanticContractError
 from app.worker.model.transformer import public_predictions
 from app.worker.training.losses import combined_loss
 from tests.fixture_documents import semantic_fixture_document

@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from app.contracts.checkpoint.v12 import validate_checkpoint_document
+from app.contracts.checkpoint.v13 import validate_checkpoint_document
 from app.contracts.json_types import JsonObject
-from app.contracts.model_catalog.v7 import validate_catalog_document
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.model_catalog.v8 import validate_catalog_document
+from app.contracts.semantic.v6 import ModelContract
 from app.service.application.ports.model_catalog import (
     CatalogArtifactVerificationError,
 )

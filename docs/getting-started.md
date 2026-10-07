@@ -5,7 +5,7 @@
 
 Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
 начинаются только через аутентифицированную границу вызывающей системы Flight
-v22.
+v23.
 
 ## Подготовить окружение
 
@@ -46,15 +46,16 @@ command history, или логах.
 ./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Для production используйте процедуру systemd. Migration 0029 является
-destructive clean cut для перехода на Semantic v5. Перед запуском Flight v22
-выполните destructive replacement OpenSearch metrics v10 на v11 по
+Для production используйте процедуру systemd. Migration 0030 является
+destructive clean cut для перехода на Semantic v6. Перед запуском Flight v23
+примените процедуру `docs/operations/database-migrations.md`. Для этого
+перехода также замените индексы metrics v11 на v12 по
 `docs/deployment/opensearch.md`.
 
-Вызывающая система материализует `ModelContract` Semantic v5, создаёт job fit
-или predict v22, загружает compact `indexedFeatureBlocks`, закрывает input и
+Вызывающая система материализует `ModelContract` Semantic v6, создаёт job fit
+или predict v23, загружает compact `indexedFeatureBlocks`, закрывает input и
 опрашивает выпущенное job. Форма contract описана в
-[Flight v22](../app/contracts/flight/v22/README.md); это руководство намеренно
+[Flight v23](../app/contracts/flight/v23/README.md); это руководство намеренно
 не дублирует wire examples.
 
 ## Проверка изменений

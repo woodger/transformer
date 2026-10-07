@@ -9,18 +9,18 @@ from dataclasses import replace
 import torch
 
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v6 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v20 import (
+from app.contracts.worker.v21 import (
     FIT_INPUT_SCHEMA_ID,
     validate_document,
     validate_training_metrics_for_model,
 )
-from app.contracts.worker.v20.config import ModelConfig, TrainConfig
-from app.contracts.worker.v20.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.worker.v21.config import ModelConfig, TrainConfig
+from app.contracts.worker.v21.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v21.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     checkpoint_artifact_document,

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v6 import ModelContract
 from app.worker.model.transformer import TransformerModel, public_predictions
 from tests.fixture_documents import semantic_fixture_document
 

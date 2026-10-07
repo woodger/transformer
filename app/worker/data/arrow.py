@@ -8,13 +8,13 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
-from app.contracts.flight.v22.arrow import (
+from app.contracts.flight.v23.arrow import (
     canonical_input_schema,
     canonical_prediction_schema,
     target_width,
     validate_target_values,
 )
-from app.contracts.flight.v22.source_encoding import feature_block_dimensions
+from app.contracts.flight.v23.source_encoding import feature_block_dimensions
 from app.contracts.json_types import JsonObject
 from app.worker.checkpoints.atomic import atomic_output_path
 from app.worker.data.tensors import TrainingBatch

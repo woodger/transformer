@@ -1,0 +1,61 @@
+{
+  "fixtureId": "semantic.single-probability.v6",
+  "tensorGeometry": {
+    "seqLen": 2,
+    "featureDim": 8
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "EventProbability",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.event-probability",
+          "operator": "BinaryCrossEntropyWithLogits",
+          "weight": 1,
+          "targetIdentity": "EventProbability"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 16,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 4,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "zero-logit",
+      "inputs": {
+        "rawCoordinate": 0,
+        "observed": 1
+      },
+      "outputs": {
+        "lossEstimate": 0,
+        "publicPrediction": 0.5,
+        "componentLoss": 0.6931471805599453
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "f3cf7d22657917a577ba73d3db635fdf3f236dd677721d692befaa1e26a747d0",
+    "objectiveSha256": "41d6273e844207146fd4f5e65dd745f9d01e9a0c7ff2de2cd875c3362da72a6d"
+  }
+}

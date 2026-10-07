@@ -177,3 +177,9 @@ v4, Model Topology v3, PostgreSQL и Arrow data plane не меняются.
 
 `fixtures/manifest.json` предназначен только для офлайн conformance review.
 Он не является runtime fence и не участвует в compatibility или prediction.
+
+Flight v23 использует этот package без изменения report/artifact semantics
+через Worker v21 и checkpoint/recovery v13 для generations Semantic v6.
+Confidence penalty не добавляется в direct-component diagnostics; его
+observations доступны через auxiliary losses и gradient interactions. Frozen
+schema references Semantic v5 сохраняются без legacy generation reader.

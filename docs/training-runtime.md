@@ -1,11 +1,11 @@
 # Runtime обучения и checkpoint
 
-> Тип: справочник. Принадлежащие provider-у обучение Worker v20, checkpoint
-> v12 и поведение recovery за Flight v22.
+> Тип: справочник. Принадлежащие provider-у обучение Worker v21, checkpoint
+> v13 и поведение recovery за Flight v23.
 
 ## Model definition и обучение
 
-Fit Flight v22 получает документ target/objective Semantic v5 и geometry
+Fit Flight v23 получает документ target/objective Semantic v6 и geometry
 данных. Transformer валидирует закрытый язык, материализует внутреннюю
 configuration модели и записывает identities D1. Упорядоченные непрозрачные
 target slots задают output coordinates; ни одна ветвь model/loss не зависит от
@@ -34,14 +34,14 @@ placeholder.
 
 ## Input, epochs и recovery
 
-Worker восстанавливает компактный input Flight v22 `indexedFeatureBlocks` в
+Worker восстанавливает компактный input Flight v23 `indexedFeatureBlocks` в
 ограниченные slices `[rows, seqLen, featureDim]`. Границы payload/chunk не
 являются batches optimizer-а, границами shuffle или границами epoch. Durable
 fit может начаться после появления input-а; close отмечает EOF и фиксирует
 input manifest для последующих полных epochs.
 
 Checkpoints recovery создаются только на завершённых границах global epoch после
-EOF. Checkpoint v12 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
+EOF. Checkpoint v13 хранит model, optimizer, AMP scaler, RNG, shuffle, selection,
 progress, semantic identities, resolved configuration job и fences input
 manifest. Recovery проверяет их до загрузки state. Другая definition data/model
 или manifest отклоняются; remapping target-ов и частичная загрузка state не
@@ -73,7 +73,7 @@ OpenSearch получает принадлежащую provider-у projection v1
 напрямую из OpenSearch. Отсутствие report не делает опубликованную model
 некорректной.
 
-При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v20 после
+При явной `diagnostics.targetHead = "fullCommittedArtifact"` Worker v21 после
 каждой завершённой эпохи выполняет отдельный наблюдательный проход по полному
 committed input artifact в `eval()` и `torch.no_grad()`. Он сохраняет только
 агрегаты raw logit, public prediction, представления до encoder, после каждого
@@ -93,10 +93,21 @@ encoder layer. Точный состав групп, границ прямого
 обработки отсутствующих или non-finite observations определяет Target Head
 Diagnostics v5.
 
-## Исторический чистый переход
+## Переход на Semantic v6
 
-Migration 0029 удаляет jobs и generations без обязательного
-`encoderNormalizationOrder` перед активацией Semantic v5. Worker не читает
-прежние checkpoints или recovery state. Flight v22 использует OpenSearch
-indices Metrics v11; после migration обучите новые generations для
+Migration 0030 удаляет jobs и generations прежней Semantic revision перед
+активацией Semantic v6. Worker не читает
+прежние checkpoints или recovery state. Flight v23 использует OpenSearch
+indices Metrics v12; после migration обучите новые generations для
 opt-in diagnostics.
+
+## Confidence penalty
+
+Optional auxiliary `BernoulliConfidencePenalty` использует public probability
+существующего target-а. Он даёт gradient к той же head без нового resource
+или mutable state. Declaration и weight принадлежат objective Semantic v6,
+не runtime defaults или настройке optimizer-а. Recovery и warm start
+проверяют точную definition; смена weight означает другой objective.
+
+Penalty наблюдается в auxiliary losses и gradient interactions. Selection
+и direct-component diagnostics сохраняют текущую семантику.

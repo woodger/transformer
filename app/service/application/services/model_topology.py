@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast
 
-from app.contracts.model_topology.v3.constants import MAX_EDGES, MAX_NODES
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.config import ModelConfig
+from app.contracts.model_topology.v4.constants import MAX_EDGES, MAX_NODES
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.worker.v21.config import ModelConfig
 from app.service.domain.json_types import JsonObject, JsonValue
 from app.service.domain.records import PublishedModelRecord
 
@@ -461,7 +461,7 @@ class ModelTopologyBuilder:
 
         return cast(JsonObject, {
             "modelDefinitionSha256": model_definition_sha256,
-            "topologyRevision": 3,
+            "topologyRevision": 4,
             "nodes": [cast(JsonValue, node) for node in nodes],
             "edges": [cast(JsonValue, edge) for edge in edges],
         })
@@ -563,6 +563,8 @@ def _port_ids(node: JsonObject, field: str) -> set[str]:
 
 
 def _auxiliary_role_ports(operator: str) -> tuple[tuple[str, str], ...]:
+    if operator == "BernoulliConfidencePenalty":
+        return (("probability", "Public probability"),)
     if operator == "GaussianNLL":
         return (
             ("locationEstimate", "Location estimate"),
@@ -595,7 +597,11 @@ def _auxiliary_role_source(
         return targets[identity]["observed"], "value", "notApplicable"
     if role == "locationEstimate":
         return targets[identity]["loss"], "value", "propagates"
-    if role in {"positiveOutcomeProbability", "negativeOutcomeProbability"}:
+    if role in {
+        "probability",
+        "positiveOutcomeProbability",
+        "negativeOutcomeProbability",
+    }:
         return targets[identity]["prediction"], "value", "propagates"
     if role in {"scale", "uncertaintyScale"}:
         return (

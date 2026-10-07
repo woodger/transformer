@@ -26,16 +26,18 @@
 - `app/service/adapters/outbound/postgres/alembic/env.py` и
   `app/service/adapters/outbound/postgres/alembic/versions/*.py`,
   загружаемые Alembic;
-- `app/contracts/semantic/v5/`, `app/contracts/flight/v22/`,
-  `app/contracts/model_catalog/v7/`, `app/contracts/model_topology/v3/`,
+- `app/contracts/semantic/v6/`, `app/contracts/flight/v23/`,
+  `app/contracts/model_catalog/v8/`, `app/contracts/model_topology/v4/`,
   `app/contracts/training_telemetry/v4/` и
   `app/contracts/target_head_diagnostics/v5/`,
   используемые внешними вызывающими системами, runtime и contract tests;
-- `app/contracts/worker/v20/` и `app/contracts/checkpoint/v12/`, используемые
+- `app/contracts/worker/v21/` и `app/contracts/checkpoint/v13/`, используемые
   service и worker processes;
 - `app/contracts/semantic/v4/schemas/`, используемые только resolver-ом Flight
-  v22 для frozen ссылок неизменённого Training Telemetry v4;
-- `app/contracts/metrics/v11/` и `app/contracts/metrics/fit_run/v11/`,
+  v23 для frozen ссылок неизменённого Training Telemetry v4;
+- `app/contracts/semantic/v5/schemas/`, используемые resolver-ами Flight v23 и
+  Worker v21 для frozen ссылок неизменённого Target Head Diagnostics v5;
+- `app/contracts/metrics/v12/` и `app/contracts/metrics/fit_run/v12/`,
   используемые telemetry publisher-ом и OpenSearch;
 - `.env.example`, `pyproject.toml` и deployment reference;
 - golden JSON/Arrow fixtures;

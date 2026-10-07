@@ -3,14 +3,14 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from app.contracts.flight.v22.codec import validate_request_document
-from app.contracts.flight.v22.job_config import job_config_sha256
-from app.contracts.model_catalog.v7.codec import validate_catalog_document
-from app.contracts.model_topology.v3.codec import (
+from app.contracts.flight.v23.codec import validate_request_document
+from app.contracts.flight.v23.job_config import job_config_sha256
+from app.contracts.model_catalog.v8.codec import validate_catalog_document
+from app.contracts.model_topology.v4.codec import (
     validate_model_topology_document,
 )
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.semantic.v5.schema import validate_schema
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.semantic.v6.schema import validate_schema
 from app.contracts.target_head_diagnostics.v5.codec import (
     validate_target_head_diagnostics_document,
 )
@@ -21,7 +21,7 @@ from app.project import PROJECT_ROOT
 
 
 def test_current_cross_project_fixtures_are_valid_and_intact():
-    semantic_root = PROJECT_ROOT / "app/contracts/semantic/v5/fixtures"
+    semantic_root = PROJECT_ROOT / "app/contracts/semantic/v6/fixtures"
     _validate_manifest(semantic_root, lambda value: validate_schema(
         value,
         "fixture-manifest",
@@ -45,7 +45,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             "objectiveSha256": expected["objectiveSha256"],
         }
 
-    flight_root = PROJECT_ROOT / "app/contracts/flight/v22/fixtures"
+    flight_root = PROJECT_ROOT / "app/contracts/flight/v23/fixtures"
     _validate_manifest(
         flight_root,
         lambda value: validate_request_document(value, "fixture-manifest"),
@@ -68,7 +68,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
         else:
             validate_request_document(document, "requested-initialization")
 
-    catalog_root = PROJECT_ROOT / "app/contracts/model_catalog/v7/fixtures"
+    catalog_root = PROJECT_ROOT / "app/contracts/model_catalog/v8/fixtures"
     _validate_manifest(
         catalog_root,
         lambda value: validate_catalog_document(value, "fixture-manifest"),
@@ -86,6 +86,9 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
             contract = ModelContract.from_document(model["modelContract"])
             digests = contract.target_objective_digests()
             semantic_digests = model["semanticDigests"]
+            assert model["summary"]["modelDefinitionSha256"] == (
+                semantic_digests["modelDefinitionSha256"]
+            )
             data_definition = model["dataDefinition"]
             assert isinstance(semantic_digests, dict)
             assert isinstance(data_definition, dict)
@@ -101,7 +104,7 @@ def test_current_cross_project_fixtures_are_valid_and_intact():
                 "objectiveSha256": semantic_digests["objectiveSha256"],
             } == digests
 
-    topology_root = PROJECT_ROOT / "app/contracts/model_topology/v3/fixtures"
+    topology_root = PROJECT_ROOT / "app/contracts/model_topology/v4/fixtures"
     _validate_manifest(
         topology_root,
         lambda value: validate_model_topology_document(value, "fixture-manifest"),

@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v22 import job_config_sha256
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.config import ModelConfig, TrainConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.flight.v23 import job_config_sha256
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.worker.v21.config import ModelConfig, TrainConfig
+from app.contracts.worker.v21.model_definition import resolved_semantic_digests
 from app.service.application.commands.jobs import CreateJobAction
 from app.service.application.messages.jobs import (
     CreateJobCommand,
@@ -279,7 +279,7 @@ def _published_model_command(
         byte_count=1024,
         sha256="b" * 64,
         metadata={
-            "format": "transformer-checkpoint-v12",
+            "format": "transformer-checkpoint-v13",
             "dataContract": data_contract,
             "modelContract": model_contract_document,
             "modelConfig": model_config.to_manifest(),

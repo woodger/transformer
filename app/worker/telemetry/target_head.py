@@ -9,7 +9,7 @@ from typing import cast
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v6 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import ARTIFACT_FORMAT
 from app.worker.model.transformer import TransformerModel, public_predictions
 

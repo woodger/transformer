@@ -13,7 +13,7 @@ def semantic_fixture_document(name: str) -> JsonObject:
         / "app"
         / "contracts"
         / "semantic"
-        / "v5"
+        / "v6"
         / "fixtures"
         / f"{name}.json"
     )

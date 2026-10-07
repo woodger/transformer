@@ -146,7 +146,7 @@ def test_service_domain_and_application_dependencies_point_inward():
         "app.service.application",
         "app.service.domain",
         "app.contracts.checkpoint",
-        "app.contracts.flight.v22.source_encoding",
+        "app.contracts.flight.v23.source_encoding",
         "app.contracts.metrics",
         "app.contracts.model_topology",
         "app.contracts.semantic",
@@ -253,16 +253,16 @@ def test_application_internal_import_graph_is_acyclic():
 
 def test_canonical_contracts_and_composition_roots_exist():
     assert (APP_ROOT / "config.py").is_file()
-    assert (APP_ROOT / "contracts" / "flight" / "v22").is_dir()
-    assert (APP_ROOT / "contracts" / "model_catalog" / "v7").is_dir()
-    assert (APP_ROOT / "contracts" / "model_topology" / "v3").is_dir()
+    assert (APP_ROOT / "contracts" / "flight" / "v23").is_dir()
+    assert (APP_ROOT / "contracts" / "model_catalog" / "v8").is_dir()
+    assert (APP_ROOT / "contracts" / "model_topology" / "v4").is_dir()
     assert (APP_ROOT / "contracts" / "training_telemetry" / "v4").is_dir()
     assert (APP_ROOT / "contracts" / "target_head_diagnostics" / "v5").is_dir()
-    assert (APP_ROOT / "contracts" / "worker" / "v20").is_dir()
-    assert (APP_ROOT / "contracts" / "checkpoint" / "v12").is_dir()
-    assert (APP_ROOT / "contracts" / "semantic" / "v5").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "v11").is_dir()
-    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v11").is_dir()
+    assert (APP_ROOT / "contracts" / "worker" / "v21").is_dir()
+    assert (APP_ROOT / "contracts" / "checkpoint" / "v13").is_dir()
+    assert (APP_ROOT / "contracts" / "semantic" / "v6").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "v12").is_dir()
+    assert (APP_ROOT / "contracts" / "metrics" / "fit_run" / "v12").is_dir()
     assert (APP_ROOT / "cli" / "parser.py").is_file()
     assert (APP_ROOT / "cli" / "formatting.py").is_file()
     assert (APP_ROOT / "cli" / "parsers" / "service.py").is_file()

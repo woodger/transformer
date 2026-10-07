@@ -15,7 +15,7 @@ def test_cpu_device():
     assert device.type == "cpu"
 
 
-def test_worker_capabilities_follow_the_v20_contract(monkeypatch):
+def test_worker_capabilities_follow_the_v21_contract(monkeypatch):
     fake_torch = SimpleNamespace(
         __version__="2.12.0+test",
         version=SimpleNamespace(cuda="13.0"),
@@ -27,9 +27,9 @@ def test_worker_capabilities_follow_the_v20_contract(monkeypatch):
 
     assert document == {
         "contract": "transformer-worker",
-        "protocolVersion": 20,
-        "checkpointFormat": "transformer-checkpoint-v12",
-        "recoveryFormat": "transformer-recovery-v12",
+        "protocolVersion": 21,
+        "checkpointFormat": "transformer-checkpoint-v13",
+        "recoveryFormat": "transformer-recovery-v13",
         "schemaIds": {
             "fitInput": "transformer.indexed-feature-blocks.fit.v1",
             "predictInput": "transformer.indexed-feature-blocks.predict.v1",
@@ -37,7 +37,7 @@ def test_worker_capabilities_follow_the_v20_contract(monkeypatch):
         },
         "semantic": {
             "objectiveLanguage": {
-                "revision": 5,
+                "revision": 6,
                 "closed": True,
             },
             "semanticLimits": {
@@ -50,6 +50,12 @@ def test_worker_capabilities_follow_the_v20_contract(monkeypatch):
                 "LogMSE",
                 "PositiveClassWeightedBinaryCrossEntropyWithLogits",
                 "SmoothL1",
+            ],
+            "auxiliaryOperators": [
+                "BernoulliConfidencePenalty",
+                "ExpectedValue",
+                "GaussianNLL",
+                "RiskAdjustedExpectedValue",
             ],
             "encoderNormalizationOrders": ["postNorm", "preNorm"],
         },

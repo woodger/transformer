@@ -5,6 +5,22 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 а проект следует [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Declarative `BernoulliConfidencePenalty` in Semantic v6: stable negative
+  entropy of public probabilities, including corrected weighted binary outputs.
+- Flight v23, Worker v21, checkpoint/recovery v13, Model Catalog v8 and
+  Model Topology v4 with confidence penalty declarations and topology edges.
+
+### Changed
+
+- Semantic capabilities advertise auxiliary operators. Existing objective
+  formulas, Adam, Arrow layouts and direct-loss checkpoint selection are preserved.
+- Migration 0030 performs a destructive clean cut of incompatible durable state;
+  epoch and fit-run Metrics v12 bind checkpoint v13 and replace OpenSearch v11 indices.
+
 ## [Не выпущено]
 
 ## [0.1.22] - 2026-10-03

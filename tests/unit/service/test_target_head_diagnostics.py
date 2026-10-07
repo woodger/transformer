@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.flight.v22.codec import validate_request_document
-from app.contracts.flight.v22.constants import ACTIONS
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.flight.v23.codec import validate_request_document
+from app.contracts.flight.v23.constants import ACTIONS
+from app.contracts.semantic.v6 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import REPORT_ACTION
-from app.contracts.worker.v20.config import ModelConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.worker.v21.config import ModelConfig
+from app.contracts.worker.v21.model_definition import resolved_semantic_digests
 from app.service.adapters.inbound.flight.coordinator import JobCoordinator
 from app.service.adapters.inbound.flight.validation import (
     validate_action_request,
@@ -430,7 +430,7 @@ def test_flight_v22_dispatches_target_head_diagnostics_report():
     assert response["modelRef"] == model.model_ref
 
 
-def test_flight_v22_capabilities_advertise_target_head_normalization_orders():
+def test_flight_v23_capabilities_advertise_target_head_normalization_orders():
     coordinator = JobCoordinator(
         create_job=SimpleNamespace(),
         acquire_job=SimpleNamespace(),
@@ -470,7 +470,7 @@ def test_flight_v22_capabilities_advertise_target_head_normalization_orders():
         "directComponentPerBatch",
     ]
     assert diagnostics["encoderNormalizationOrders"] == ["postNorm", "preNorm"]
-    assert document["semantic"]["objectiveLanguage"]["revision"] == 5
+    assert document["semantic"]["objectiveLanguage"]["revision"] == 6
     assert document["semantic"]["encoderNormalizationOrders"] == [
         "postNorm",
         "preNorm",

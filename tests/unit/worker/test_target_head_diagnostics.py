@@ -3,8 +3,8 @@ from contextlib import nullcontext
 import pytest
 import torch
 
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20 import validate_document
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.worker.v21 import validate_document
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.telemetry.target_head import TargetHeadDiagnosticsCollector
 from app.worker.training.losses import combined_loss

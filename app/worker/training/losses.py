@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast, overload
@@ -7,7 +8,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v6 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -284,6 +285,22 @@ def _auxiliary_loss(
     model_contract: ModelContract,
 ) -> torch.Tensor:
     roles = cast(Mapping[str, object], specification["roles"])
+    if operator == "BernoulliConfidencePenalty":
+        index = _target_index(roles["probability"], target_indices)
+        logit = model_output[:, index]
+        if logit.dtype in (torch.float16, torch.bfloat16):
+            logit = logit.float()
+        positive_class_weight = model_contract.positive_class_weight_for_target(
+            index,
+        )
+        if positive_class_weight is not None:
+            logit = logit - math.log(positive_class_weight)
+
+        return (
+            torch.sigmoid(logit) * F.logsigmoid(logit)
+            + torch.sigmoid(-logit) * F.logsigmoid(-logit)
+        )
+
     if operator == "GaussianNLL":
         index = _target_index(roles["locationEstimate"], target_indices)
         scale = model_output[

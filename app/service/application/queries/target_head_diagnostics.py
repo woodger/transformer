@@ -9,13 +9,13 @@ from typing import cast
 
 import rfc8785
 
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v6 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import (
     ARTIFACT_FORMAT,
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v20 import validate_document
-from app.contracts.worker.v20.diagnostics import (
+from app.contracts.worker.v21 import validate_document
+from app.contracts.worker.v21.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
 )

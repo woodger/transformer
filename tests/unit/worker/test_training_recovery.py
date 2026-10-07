@@ -6,9 +6,9 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.config import CheckpointSelectionConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.worker.v21.config import CheckpointSelectionConfig
+from app.contracts.worker.v21.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -55,9 +55,9 @@ def _model_config() -> ModelConfig:
     )
 
 
-def _semantic_digests() -> dict:
+def _semantic_digests(contract: ModelContract = MODEL_CONTRACT) -> dict:
     return resolved_semantic_digests(
-        MODEL_CONTRACT,
+        contract,
         "d" * 64,
         _model_config(),
     )
@@ -81,7 +81,12 @@ def _model() -> nn.Module:
     return TargetAlignedLinear()
 
 
-def _trainer(initial_state: dict, *, device: str = "cpu") -> Trainer:
+def _trainer(
+    initial_state: dict,
+    *,
+    device: str = "cpu",
+    contract: ModelContract = MODEL_CONTRACT,
+) -> Trainer:
     model = _model()
     model.load_state_dict(initial_state)
     model.to(device)
@@ -98,16 +103,16 @@ def _trainer(initial_state: dict, *, device: str = "cpu") -> Trainer:
         model=model,
         device=torch.device(device),
         train_config=train_config,
-        model_contract=MODEL_CONTRACT,
+        model_contract=contract,
         model_config=model_config,
-        model_definition_sha256=_semantic_digests()[
+        model_definition_sha256=_semantic_digests(contract)[
             "modelDefinitionSha256"
         ],
         initialization={"source": "random"},
     )
 
 
-def _manifest() -> dict:
+def _manifest(contract: ModelContract = MODEL_CONTRACT) -> dict:
     return {
         "jobId": "11111111-1111-4111-8111-111111111111",
         "dataContract": {
@@ -115,8 +120,8 @@ def _manifest() -> dict:
             "seqLen": 2,
             "featureDim": 2,
         },
-        "modelContract": MODEL_CONTRACT.to_document(),
-        "semanticDigests": _semantic_digests(),
+        "modelContract": contract.to_document(),
+        "semanticDigests": _semantic_digests(contract),
         "jobConfigSha256": CONFIG_HASH,
         "manifestSha256": MANIFEST_HASH,
     }
@@ -181,7 +186,27 @@ def _assert_tree_equal(left, right) -> None:
         marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available"),
     ),
 ])
-def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path, device):
+@pytest.mark.parametrize("confidence_penalty", [False, True])
+def test_epoch_checkpoint_resume_matches_uninterrupted_training(
+    tmp_path,
+    device,
+    confidence_penalty,
+):
+    document = MODEL_CONTRACT.to_document()
+    if confidence_penalty:
+        objective = document["objective"]
+        assert isinstance(objective, dict)
+        components = objective["auxiliaryComponents"]
+        assert isinstance(components, list)
+        components.append({
+            "identity": "auxiliary.confidence",
+            "operator": "BernoulliConfidencePenalty",
+            "weight": 0.1,
+            "roles": {"probability": MODEL_CONTRACT.target_identities[1]},
+        })
+        components.sort(key=lambda component: component["identity"])
+    contract = ModelContract.from_document(document)
+
     _seed()
     source = torch.randn(11, 2, 2)
     target = torch.rand(11, MODEL_CONTRACT.target_width)
@@ -189,19 +214,19 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path, device
     payloads = _payloads(source, target)
 
     _seed()
-    uninterrupted = _trainer(initial_state, device=device)
+    uninterrupted = _trainer(initial_state, device=device, contract=contract)
     uninterrupted.fit_payloads_resumable(payloads)
     expected_cpu_random = torch.rand(5)
     expected_device_random = torch.rand(5, device=device)
 
     checkpoint = tmp_path / "1.pth"
     _seed()
-    interrupted = _trainer(initial_state, device=device)
+    interrupted = _trainer(initial_state, device=device, contract=contract)
     saved_metadata = None
 
     def stop_after_first_epoch(*_args):
         nonlocal saved_metadata
-        saved_metadata = checkpoint_metadata(interrupted, _manifest())
+        saved_metadata = checkpoint_metadata(interrupted, _manifest(contract))
         event = save_training_recovery(
             str(checkpoint),
             interrupted,
@@ -222,7 +247,7 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path, device
         torch.device(device),
         descriptor=_descriptor(saved_metadata),
     )
-    resumed = _trainer(initial_state, device=device)
+    resumed = _trainer(initial_state, device=device, contract=contract)
     resumed.load_recovery_state_dict(payload["trainer_state"])
     resumed.fit_payloads_resumable(payloads)
 

@@ -1,6 +1,6 @@
-"""Константы Flight v22 и состояния жизненного цикла сервиса."""
+"""Константы Flight v23 и состояния жизненного цикла сервиса."""
 
-from app.contracts.flight.v22.constants import (
+from app.contracts.flight.v23.constants import (
     ACQUIRE_ACTION,
     ACTIONS,
     CANCEL_ACTION,

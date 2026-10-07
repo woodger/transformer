@@ -7,14 +7,14 @@ from itertools import chain
 import torch
 
 from app.contracts.json_types import JsonObject, JsonValue
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20 import (
+from app.contracts.semantic.v6 import ModelContract
+from app.contracts.worker.v21 import (
     PREDICT_INPUT_SCHEMA_ID,
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v20.config import ModelConfig, TrainConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.worker.v21.config import ModelConfig, TrainConfig
+from app.contracts.worker.v21.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import (
     CommittedInputArtifacts,
     artifact_document,

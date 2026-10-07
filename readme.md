@@ -7,17 +7,17 @@ PyTorch через аутентифицированные задания Apache 
 
 ## Актуальная граница
 
-- Flight v22 — единственный публичный workflow заданий.
-- Semantic v5 содержит упорядоченные непрозрачные targets, явные bindings
+- Flight v23 — единственный публичный workflow заданий.
+- Semantic v6 содержит упорядоченные непрозрачные targets, явные bindings
   objective и настройку модели без внешних предметных литералов
   архитектуры. Для строго бинарной цели прямого компонента доступен отдельный
   примитив `PositiveClassWeightedBinaryCrossEntropyWithLogits` с явным весом
   положительного класса и автоматической проекцией вероятности исходного
   распределения.
-- Model Catalog Query v7, Model Topology Query v3, Training Telemetry Query
+- Model Catalog Query v8, Model Topology Query v4, Training Telemetry Query
   v4 и Target Head Diagnostics Query v5 — owner-scoped поверхности только для
-  чтения, активируемые Flight v22.
-- Worker v20, checkpoint/recovery v12 и metrics v11 являются внутренними для
+  чтения, активируемые Flight v23.
+- Worker v21, checkpoint/recovery v13 и metrics v12 являются внутренними для
   provider-а.
 - `indexedFeatureBlocks` остаётся компактным Arrow-представлением входных
   данных; его семантика логического восстановления не изменилась.
@@ -54,14 +54,14 @@ generations и состояния Alembic. Точные параметры по�
 
 ## Документация
 
-- [Flight v22](./app/contracts/flight/v22/README.md)
-- [Семантическая модель v5](./app/contracts/semantic/v5/README.md)
-- [Запрос каталога моделей v7](./app/contracts/model_catalog/v7/README.md)
-- [Запрос topology модели v3](./app/contracts/model_topology/v3/README.md)
+- [Flight v23](./app/contracts/flight/v23/README.md)
+- [Семантическая модель v6](./app/contracts/semantic/v6/README.md)
+- [Запрос каталога моделей v8](./app/contracts/model_catalog/v8/README.md)
+- [Запрос topology модели v4](./app/contracts/model_topology/v4/README.md)
 - [Запрос телеметрии обучения v4](./app/contracts/training_telemetry/v4/README.md)
 - [Диагностика выходных головок v5](./app/contracts/target_head_diagnostics/v5/README.md)
-- [Worker v20](./app/contracts/worker/v20/README.md)
-- [Checkpoint/recovery v12](./app/contracts/checkpoint/v12/README.md)
+- [Worker v21](./app/contracts/worker/v21/README.md)
+- [Checkpoint/recovery v13](./app/contracts/checkpoint/v13/README.md)
 - [Архитектура](./docs/architecture.md)
 - [Интеграция с Flight](./docs/flight-integration.md)
 - [Эксплуатация Flight](./docs/operations/flight-service.md)
