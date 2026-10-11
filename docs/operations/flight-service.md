@@ -38,8 +38,9 @@ Catalog, Model Topology или shutdown. Она делает telemetry query una
 | `POSTGRES_PASSWORD` | Обязательный непустой пароль |
 | `POSTGRES_PORT` | Необязательный порт; значение по умолчанию задано в `app/config.py` |
 
-Схема PostgreSQL также задаётся значением по умолчанию в `app/config.py`;
-отдельной переменной окружения для её выбора нет. Разбор и проверка подключения
+Таблицы, последовательности и история Alembic находятся в схеме PostgreSQL
+`public`. Это значение по умолчанию в `app/config.py`; отдельной переменной
+окружения для выбора схемы нет. Разбор и проверка подключения
 определены в
 [`postgres/config.py`](../../app/service/adapters/outbound/postgres/config.py).
 Проверка и применение schema описаны в

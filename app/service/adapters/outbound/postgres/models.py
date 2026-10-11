@@ -31,7 +31,7 @@ from app.contracts.json_types import JsonObject, JsonValue
 # аннотации ссылаются на него косвенно через JsonObject.
 _JSON_VALUE_TYPE = JsonValue
 
-SCHEMA = "transformer"
+SCHEMA = "public"
 QUEUE_SEQUENCE = Sequence("job_queue_sequence_seq", schema=SCHEMA)
 
 

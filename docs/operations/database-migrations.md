@@ -20,6 +20,58 @@ backup до любой destructive migration.
 checkout и затем печатает status. `rollback` не заменяет backup: некоторые
 revisions намеренно отклоняют downgrade.
 
+## Схема public
+
+Текущий runtime и команды `auth`, `models` и `db` используют `public`.
+На новой базе migrations создают таблицы и `alembic_version` в этой схеме.
+У роли должны быть права `USAGE` и `CREATE` на `public`.
+
+Для существующей базы с таблицами в `transformer` выполните однократный перенос
+при остановленных instances service до первого запуска нового runtime или
+`db migrations apply`. Целевая схема `public` должна существовать и не содержать
+конфликтующих имён таблиц, индексов, типов или последовательностей.
+
+Следующий SQL переносит набор таблиц revision `0031` без изменения данных или
+номера revision. Индексы, ограничения и принадлежащая `models` identity sequence
+перемещаются вместе с таблицами; независимая очередь требует отдельного
+`ALTER SEQUENCE`. Удаление пустой схемы использует `RESTRICT`, поэтому
+неучтённые объекты остановят транзакцию.
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+
+ALTER TABLE transformer.job_identities SET SCHEMA public;
+ALTER TABLE transformer.jobs SET SCHEMA public;
+ALTER TABLE transformer.job_attempts SET SCHEMA public;
+ALTER TABLE transformer.job_inputs SET SCHEMA public;
+ALTER TABLE transformer.input_uploads SET SCHEMA public;
+ALTER TABLE transformer.job_outputs SET SCHEMA public;
+ALTER TABLE transformer.models SET SCHEMA public;
+ALTER TABLE transformer.deleted_models SET SCHEMA public;
+ALTER TABLE transformer.idempotency_records SET SCHEMA public;
+ALTER TABLE transformer.api_access_tokens SET SCHEMA public;
+ALTER TABLE transformer.output_tickets SET SCHEMA public;
+ALTER TABLE transformer.runtime_state SET SCHEMA public;
+ALTER TABLE transformer.training_metrics_artifacts SET SCHEMA public;
+ALTER TABLE transformer.fit_run_summary_artifacts SET SCHEMA public;
+ALTER TABLE transformer.metrics_outbox SET SCHEMA public;
+ALTER TABLE transformer.training_metric_intervals SET SCHEMA public;
+ALTER TABLE transformer.training_recovery_checkpoints SET SCHEMA public;
+ALTER TABLE transformer.alembic_version SET SCHEMA public;
+ALTER SEQUENCE transformer.job_queue_sequence_seq SET SCHEMA public;
+
+DROP SCHEMA transformer RESTRICT;
+COMMIT;
+```
+
+После переноса сравните данные и значения sequences, проверьте
+`db migrations status` и доступ к прежним models, jobs и API tokens. Запускайте
+сервис с кодом, использующим `public`. Простая смена schema до переноса
+`alembic_version` заставит Alembic считать базу немигрированной; повторный
+upgrade вместо переноса создаст другой набор таблиц.
+
 ## Semantic v7 clean cut и текущий Flight v24
 
 Revision `0031_bernoulli_entropy_penalty` разрушительна и не имеет downgrade.
