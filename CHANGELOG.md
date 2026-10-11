@@ -5,31 +5,47 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 а проект следует [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-
-### Added
-
-- Declarative `BernoulliConfidencePenalty` in Semantic v6: stable negative
-  entropy of public probabilities, including corrected weighted binary outputs.
-- Flight v23, Worker v21, checkpoint/recovery v13, Model Catalog v8 and
-  Model Topology v4 with confidence penalty declarations and topology edges.
-- Declarative `BernoulliEntropyPenalty` in Semantic v7: stable positive
-  entropy of public probabilities with ordinary and weighted binary BCE.
-  The existing confidence penalty retains its negative entropy formula.
-- Flight v24, Worker v22, checkpoint/recovery v14, Model Catalog v9 and
-  Model Topology v5 preserve entropy declarations, weights and unary gradient paths.
-
-### Changed
-
-- Semantic capabilities advertise auxiliary operators. Existing objective
-  formulas, Adam, Arrow layouts and direct-loss checkpoint selection are preserved.
-- Migration 0030 performs a destructive clean cut of incompatible durable state;
-  epoch and fit-run Metrics v12 bind checkpoint v13 and replace OpenSearch v11 indices.
-- Migration 0031 prepares the Semantic v7 clean cut; Metrics v13 bind
-  checkpoint v14 and require replacing OpenSearch v12 indices. Training Telemetry
-  v4, Target Head Diagnostics v5 and direct-only checkpoint selection are preserved.
-
 ## [Не выпущено]
+
+## [0.1.23] - 2026-10-11
+
+### Добавлено
+
+- Два необязательных регуляризатора для вероятностных целей:
+  `BernoulliConfidencePenalty` добавляет отрицательную энтропию и сдвигает
+  вероятность к `0.5`; `BernoulliEntropyPenalty` добавляет положительную
+  энтропию и усиливает уверенность в сторону `0` или `1`.
+  Оба используют публичную вероятность, включая поправку на вес класса
+  при взвешенной бинарной BCE. Расчёт устойчив для `float16` и `bfloat16`.
+- Объявления регуляризаторов, их веса и пути градиентов передаются через
+  API и Worker и сохраняются в контрольных точках, каталоге и схеме модели.
+  Capabilities перечисляет доступные вспомогательные операторы.
+
+### Изменено
+
+- Текущий API использует Flight v24 и Semantic v7. Внутренние форматы обновлены
+  до Worker v22, checkpoint/recovery v14 и метрик v13; каталог моделей — до v9,
+  схема модели — до v5. Обновление прошло через промежуточные Semantic v6,
+  Flight v23 и связанные форматы. Прежние версии не обслуживаются.
+- Миграции `0030` и `0031` удаляют несовместимые задания, модели, состояние
+  восстановления и метрики в PostgreSQL. Старые модели требуют нового
+  обучения; индексы OpenSearch прежних версий заменяются отдельно по
+  [инструкции обновления](docs/deployment/opensearch.md).
+- Сервис и административные команды используют схему PostgreSQL `public`.
+  Для существующей базы требуется однократный перенос таблиц,
+  последовательностей и истории Alembic при остановленном сервисе по
+  [руководству миграций](docs/operations/database-migrations.md#схема-public).
+  Перенос сохраняет данные и номер применённой миграции.
+- README и основные руководства объясняют назначение сервиса и действия
+  читателя простым русским языком. Ссылки на текущие спецификации обновлены;
+  тексты решений ADR сохранены.
+
+### Исправлено
+
+- CUDA AMP-тест confidence penalty учитывает начальную калибровку
+  `GradScaler`: пропуск шага при переполнении градиентов не считается
+  отсутствием обучения. Тест проверяет конечность потерь, параметров
+  и последующее изменение весов.
 
 ## [0.1.22] - 2026-10-03
 
@@ -988,7 +1004,8 @@
 - Training metrics в JSONL и построение SVG-графиков через `plot-metrics`.
 - CLI help с описанием data/streaming contracts и команда `--version`.
 
-[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.22...HEAD
+[Не выпущено]: https://github.com/woodger/transformer/compare/0.1.23...HEAD
+[0.1.23]: https://github.com/woodger/transformer/compare/0.1.22...0.1.23
 [0.1.22]: https://github.com/woodger/transformer/compare/0.1.21...0.1.22
 [0.1.21]: https://github.com/woodger/transformer/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/woodger/transformer/compare/0.1.19...0.1.20
