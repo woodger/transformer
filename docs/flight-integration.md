@@ -1,58 +1,47 @@
-# Интеграция с Transformer Flight v24
+# Интеграция с Transformer
 
-> Тип: руководство. Практический порядок работы вызывающей системы с действующей
-> provider boundary. JSON Schema в `app/contracts/` имеет приоритет над этим
-> пояснением.
+> Тип: руководство. Создание задания, загрузка данных и получение результата через Flight.
+
+Клиент создаёт задание обучения или предсказания, передаёт данные через Arrow
+и ожидает завершения. Это руководство описывает порядок запросов. Точные
+форматы и условия совместимости определены в спецификациях `app/contracts/`.
 
 ## Предварительные условия
 
-Вызывающая система вызывает Transformer только со своей аутентифицированной
-bearer credential. Браузер никогда не вызывает Transformer или OpenSearch.
-Scope owner-а выводится из аутентифицированного subject; вызывающая система не
-передаёт owner, path checkpoint-а или identity storage provider-а.
-
-Перед интеграцией используйте точные актуальные packages:
-
-- [Семантическая модель v7](../app/contracts/semantic/v7/README.md)
-- [Flight v24](../app/contracts/flight/v24/README.md)
-- [Запрос каталога моделей v9](../app/contracts/model_catalog/v9/README.md)
-- [Запрос topology модели v5](../app/contracts/model_topology/v5/README.md)
-- [Запрос телеметрии обучения v4](../app/contracts/training_telemetry/v4/README.md)
-- [Диагностика выходных головок v5](../app/contracts/target_head_diagnostics/v5/README.md)
-
-Путь compatibility предыдущих Flight revisions отсутствует. Migration 0031
-удаляет existing generations предыдущей Semantic revision; после перехода
-их нельзя использовать для predict или warm start.
+Каждый RPC предъявляет Bearer-токен клиента. Владелец определяется по токену,
+поэтому клиент не передаёт его отдельно. Пути контрольных точек и идентификаторы
+внутреннего хранилища тоже остаются на стороне сервиса. Браузер работает через
+вызывающую систему и не обращается прямо к Transformer или OpenSearch.
 
 ## Fit
 
-1. Materialize self-contained Semantic v7 `ModelContract` из локальной
-   семантики target/catalog/profile. Не передавайте paths profile, keys lookup
-   target-ов или исполняемый loss code.
-2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, geometry
-   tensor-а и `inputLayout.featureBlocks`.
+1. Соберите полный `ModelContract` по описаниям целей, каталога и профиля
+   вашей системы. Сервису нужны сами определения, а не пути профилей, ключи
+   поиска целей или исполняемый код функции потерь.
+2. Постройте `dataBinding` из непрозрачного `dataContractSha256`, размеров
+   тензора и `inputLayout.featureBlocks`.
 3. Вызовите `transformer.v24.fit.create` с UUID `requestId`, стабильным
-   `idempotencyKey`, label, запрошенным устройством, model contract,
-   configuration training и diagnostics и запрошенной initialization.
-4. Сохраните возвращённые `jobId`, `mutationLease` и resolved definition.
-5. Загрузите упорядоченные compact Arrow payloads, используя возвращённый path
-   descriptor-а и публичную schema metadata DoPut.
-6. Вычислите digest manifest receipts, вызовите `job.input.close`, затем
-   опрашивайте `job.status` до terminal state.
+   `idempotencyKey`, меткой, устройством, описанием модели, параметрами
+   обучения и диагностики и способом инициализации.
+4. Сохраните возвращённые `jobId`, `mutationLease` и определение задания.
+5. Загрузите компактные пакеты Arrow в заданном порядке. Используйте путь
+   дескриптора из ответа и объявленные поля метаданных DoPut.
+6. Вычислите хеш манифеста подтверждений загрузки, вызовите `job.input.close`
+   и опрашивайте `job.status` до завершения задания.
 
-Server рассчитывает фактические physical receipts и totals. Не передавайте
-повторно IDs schema provider-а, digest data, identity client execution, values
-fencing или close totals в metadata upload. `expectedLogicalRows` необязателен
-и используется только для раннего обнаружения EOF.
+Сервис сам рассчитывает подтверждения сохранения пакетов и итоговые значения.
+Метаданные загрузки не должны повторять идентификаторы схем сервиса, хеш
+данных, идентификатор исполнения клиента, значения защиты от устаревших
+запросов или итоги закрытия входа. Необязательный `expectedLogicalRows` нужен
+только для раннего обнаружения конца входных данных.
 
-Fit может начаться после durable availability input-а согласно scheduling
-service; input close отмечает EOF и завершает input manifest. Вызывающая
-система всё равно должна дождаться terminal result job до признания модели
-published.
+Обучение может начаться, как только данные сохранены и планировщик готов
+запустить задание. Закрытие входа отмечает конец загрузки и фиксирует манифест.
+Модель считается опубликованной только после успешного завершения задания.
 
-## Confidence penalty в objective
+## Confidence penalty
 
-Для probability target-а можно явно добавить auxiliary component:
+Для вероятностной цели можно добавить вспомогательную компоненту:
 
 ```json
 {
@@ -63,22 +52,23 @@ published.
 }
 ```
 
-`Opaque.Probability` должен разрешаться в существующий target с public
-`Sigmoid`. Коэффициент в примере не является default или рекомендацией для
-profile. Operator добавляет negative entropy публичной вероятности; для
-weighted binary BCE учитывается class-weight correction. При direct weight
-`a` и auxiliary weight `b` получается `a * BCE - b * H(p)`.
+`Opaque.Probability` указывает на существующую цель с публичным `Sigmoid`.
+Коэффициент в примере не является значением по умолчанию или рекомендацией
+для профиля. Оператор добавляет отрицательную энтропию публичной вероятности;
+для взвешенной бинарной BCE учитывается поправка на вес класса. При весе
+прямой компоненты `a` и вспомогательной `b` получается `a * BCE - b * H(p)`.
 
-Без компонента penalty отсутствует. Вызывающая система проверяет Semantic v7
-и `auxiliaryOperators` в capabilities, разрешает declaration в своём profile
-и материализует тот же objective для всего job. Изменение coefficient меняет
-definition и несовместимо с recovery/warm start. Формулы target и features не
-меняются. Коэффициент следует проверять на held-out данных: entropy может
+Если компонента не объявлена, регуляризации нет. Клиент проверяет поддержку
+Semantic v7 и оператора в `auxiliaryOperators` ответа capabilities, разрешает
+его в своём профиле и использует одну функцию потерь для всего задания.
+Изменение коэффициента меняет определение модели и несовместимо с восстановлением
+или обучением от опубликованной модели. Формулы цели и признаков не меняются.
+Коэффициент следует проверять на отложенных данных: энтропия может
 завышать вероятность редкого события.
 
-## Entropy penalty в objective
+## Entropy penalty
 
-Для минимизации entropy объявите отдельный `BernoulliEntropyPenalty`:
+Для минимизации энтропии объявите `BernoulliEntropyPenalty`:
 
 ```json
 {
@@ -89,106 +79,124 @@ definition и несовместимо с recovery/warm start. Формулы ta
 }
 ```
 
-Роль связывает существующий target с public `Sigmoid`, включая corrected
-weighted binary probability. Собственные parameters не передаются. При direct
-weight `a > 0` и auxiliary weight `b > 0` получается `a * BCE + b * H(p)`.
+Роль указывает на существующую цель с публичным `Sigmoid`, включая вероятность
+с поправкой на вес класса. Собственных параметров у оператора нет. При весе
+прямой компоненты `a > 0` и вспомогательной `b > 0` получается `a * BCE + b * H(p)`.
 Это противоположный знак относительно `BernoulliConfidencePenalty`; смысл
-старого оператора сохраняется. Коэффициент в примере не является default.
+confidence penalty сохраняется. Коэффициент в примере не является значением
+по умолчанию.
 
-Проверьте Semantic v7 и advertised operator в capabilities. Declaration и
-weight передаются через Flight/Worker и сохраняются в checkpoint, catalog и
-topology. Изменение objective отклоняется при recovery/warm start. Auxiliary
-loss содержит positive unweighted entropy, selection остаётся direct-only.
-Большая уверенность может усилить ошибочные прогнозы; качество проверяется
-на held-out данных. Интеграция ML Profile вызывающей системы выполняется
-отдельно после публикации provider contract.
+Проверьте поддержку Semantic v7 и оператора в capabilities. Объявление и вес
+передаются через Flight и Worker и сохраняются в контрольной точке, каталоге
+и схеме модели. Изменение функции потерь несовместимо с восстановлением и
+обучением от опубликованной модели. Вспомогательные потери содержат
+положительную энтропию без веса; выбор эпохи учитывает только прямые компоненты.
+Большая уверенность может усилить ошибочные прогнозы. Качество проверяют на
+отложенных данных. Подключение оператора в ML-профиле клиента — отдельная
+работа после публикации спецификации сервиса.
 
 ## Predict
 
 Вызовите `transformer.v24.predict.create` с точным `modelRef`, запрошенным
-устройством и текущим `dataBinding`. Не передавайте повторно TargetContract,
-Objective или model tuning. Create result передаёт `predictionDefinition` до
-upload: `seqLen`, output width и упорядоченные непрозрачные targets с public
-prediction transformations. Используйте их для построения и decoding Arrow
-data plane.
+устройством и текущим `dataBinding`. Определение целей, функция потерь и
+параметры модели уже сохранены, поэтому повторно они не передаются. Ответ
+содержит `predictionDefinition` ещё до загрузки: `seqLen`, число выходных
+значений, цели в заданном порядке и их преобразования. Используйте это
+описание при подготовке данных и чтении результатов Arrow.
 
-Несовпадение data/model definition отклоняется до input upload. Coordinates
-prediction всегда следуют принадлежащему checkpoint-у порядку target-ов;
-неявное remapping не выполняется.
+Несовместимость определения данных и модели обнаруживается до загрузки.
+Порядок предсказаний всегда соответствует порядку целей в контрольной точке;
+сервис не переставляет значения автоматически.
 
 Predict остаётся в `WAITING_INPUT`, пока вызывающая система не загрузит все
-payloads и не зафиксирует manifest через `job.input.close`. В отличие от fit,
-Worker для predict не запускается для открытого input.
+пакеты и не зафиксирует манифест через `job.input.close`. Для предсказания
+Worker запускается только после закрытия входа.
 
-После `job.input.close` опрашивайте `job.status` до terminal state. Для
-`SUCCEEDED` получите predictions следующим образом:
+После `job.input.close` опрашивайте `job.status` до завершения задания. Для
+`SUCCEEDED` получите предсказания следующим образом:
 
 1. Вызовите `transformer.v24.job.outputs.list` с `jobId` и UUID `requestId`.
    Обойдите все страницы через `nextCursor`, пока `hasMore` не станет `false`.
-2. Для каждого output в порядке `ordinal` передайте возвращённый
-   `descriptorPath` как path descriptor в `GetFlightInfo`.
-3. Возьмите непрозрачный ticket из endpoint результата `GetFlightInfo` и
-   передайте его в `DoGet`. Каждый RPC предъявляет Bearer credential того же
-   owner-а.
-4. Прочитайте Arrow stream и декодируйте prediction coordinates согласно
+2. Для каждого результата в порядке `ordinal` передайте возвращённый
+   `descriptorPath` как дескриптор пути в `GetFlightInfo`.
+3. Возьмите непрозрачный ticket из endpoint ответа `GetFlightInfo` и
+   передайте его в `DoGet`. Каждый RPC предъявляет Bearer-токен того же
+   владельца.
+4. Прочитайте поток Arrow и декодируйте значения согласно
    сохранённой `predictionDefinition`.
 
-Tickets ограничены по сроку действия и привязаны к owner-у. Если ticket истёк,
-получите новый через `GetFlightInfo`, пока output ещё доступен по retention
-job. Для `FAILED` или `CANCELLED` получение output не выполняется.
+Tickets — разрешения на чтение данных. Они действуют ограниченное время
+и привязаны к владельцу. Если ticket истёк, получите новый через `GetFlightInfo`,
+пока срок хранения результата задания не закончился. Для `FAILED` или
+`CANCELLED` результаты не получают.
 
-## Mutation, status и errors
+## Изменение задания, статус и ошибки
 
-`job.acquire` заменяет устаревший непрозрачный mutation lease. `job.cancel` и
-`job.input.close` требуют текущего lease. `job.status` намеренно является
-mutable projection; вызывающая система хранит immutable create response вместо
-ожидания API job-detail provider-а.
+`job.acquire` заменяет устаревший непрозрачный `mutationLease`. Для `job.cancel`
+и `job.input.close` нужен текущий `mutationLease`. Статус задания меняется
+со временем; полное определение клиент сохраняет из ответа на создание. Отдельного
+API для повторного получения полного описания задания нет.
 
-Для ошибок с structured detail в `FlightError.extra_info` ветвитесь по
+Для ошибок со структурированными данными в `FlightError.extra_info` используйте
 `code` и `reason`; текст `message` служит только пояснением. Обычные ошибки
-jobs без detail передают стабильный application code в префиксе сообщения
-`CODE: ...`, без поля `reason`. Используйте этот code, а не поясняющий текст.
-Класс PyArrow exception и transport status не всегда совпадают с application
-code; ограничения описаны в
-[справочнике PyArrow Flight](./flight-dependency-note.md#отсутствующие-server-status-codes).
+заданий без структурированных данных передают стабильный код приложения
+в префиксе сообщения `CODE: ...`, без поля `reason`. Используйте этот код,
+а не поясняющий текст.
+Класс исключения PyArrow и транспортный статус не всегда совпадают с кодом
+приложения. Ограничения описаны в
+[справочнике PyArrow Flight](./flight-dependency-note.md#неподдерживаемые-статусы-ошибок).
 
-`MODEL_NOT_FOUND` security-equivalent для неизвестных, чужих и удалённых
-models. Stored corruption, несовместимые requests, unavailable dependencies и
-validation errors имеют разные structured outcomes.
+`MODEL_NOT_FOUND` одинаков для неизвестных, чужих и удалённых моделей.
+Повреждение сохранённых данных, несовместимый запрос, недоступная зависимость
+и ошибка проверки данных возвращают разные структурированные ошибки.
 
-## Model catalog, topology и telemetry
+## Каталог, схема модели и показатели обучения
 
-Используйте `transformer.model-catalog.v9.list` для owner-scoped discovery и
-`.detail` для точного выбранного `modelRef`. List — bounded high-water/keyset
-traversal; параллельное deletion может заставить detail вернуть
-`MODEL_NOT_FOUND`, тогда вызывающая система обновляет своё представление.
+Запрос `transformer.model-catalog.v9.list` возвращает модели владельца токена,
+а `.detail` — подробности выбранного `modelRef`. Список ограничен размером
+страницы и верхней границей каталога на момент начала просмотра; страницы
+продолжаются по ключу последней записи. Если модель параллельно удалили,
+`.detail` может вернуть `MODEL_NOT_FOUND`. В этом случае клиент обновляет список.
 
-Используйте `transformer.training-telemetry.v4.report` для observations
-завершённого training pass и запрашивайте gradient interactions только после
-раскрытия этой секции UI. Отсутствие telemetry не скрывает и не делает
-опубликованную model некорректной.
+Запрос `transformer.training-telemetry.v4.report` возвращает показатели
+завершённого обучающего прохода. Взаимодействия градиентов запрашивайте, когда
+пользователь открывает эту секцию интерфейса. Отсутствие метрик не скрывает
+опубликованную модель и не означает, что она некорректна.
 
 Используйте `transformer.model-topology.v5.detail` только для точного
-опубликованного `modelRef` и загружайте response лениво при открытии схемы
-модели. Topology уже привязана к `modelDefinitionSha256`; не выводите graph из
-model tuning или target names. Для объединения с telemetry сначала сравните
-точные `modelRef` и `modelDefinitionSha256`.
+опубликованного `modelRef` и загружайте ответ при открытии схемы модели.
+Схема привязана к `modelDefinitionSha256`. Получайте граф из этого запроса:
+настройки модели и имена целей не заменяют его описание. Перед объединением
+с метриками сравните точные `modelRef` и `modelDefinitionSha256`.
 
 Используйте `transformer.target-head-diagnostics.v5.report` только для модели,
-созданной с явной runtime-настройкой `diagnostics.targetHead`.
-Для learning observations encoder также задайте
+созданной с явной настройкой `diagnostics.targetHead`.
+Для наблюдений за обучением энкодера также задайте
 `diagnostics.encoderLayerDiagnostics: "directComponentPerBatch"`.
-Загружайте эту диагностику лениво: она описывает ход обучения выходных головок,
-а не качество модели на новых данных.
+Загружайте диагностику при открытии соответствующего раздела. Она описывает
+обучение выходных головок; качество модели на новых данных оценивают отдельно.
 
-В каждом observation `representationFlow` содержит
+В каждом наблюдении `representationFlow` содержит
 `encoderInput`, упорядоченный `encoderLayers` и `targetHeadInput`. Во всех
-трёх случаях `rowCenteredL2Mean` измерен тем же post-update проходом полного
-committed artifact; по последовательности значений UI показывает первую
-границу, на которой различие между строками сжалось. `encoderBlockFlow`
-уточняет это место named boundaries encoder в порядке, объявленном
+трёх случаях `rowCenteredL2Mean` измерен одним проходом по всем зафиксированным
+входным данным после обновления весов. Последовательность значений помогает
+интерфейсу показать первый этап, на котором различия между строками сжались.
+`encoderBlockFlow` уточняет это место по именованным этапам энкодера в порядке
 `normalizationOrder`, и `OutputHead.shared`.
 
-Все четыре query packages определяют собственные schemas и rules outcomes. Их
-availability объявляется capabilities Flight v24, но их семантика не встроена в
-generic job actions.
+Каждый из четырёх запросов имеет собственные схемы и правила ответов. Их
+доступность объявляется в capabilities; общие операции над заданиями этих
+правил не заменяют.
+
+## Спецификации и совместимость
+
+Текущий сервис использует Flight v24 и Semantic v7. Предыдущие версии Flight
+не поддерживаются. Миграция `0031` удаляет модели прежнего формата; после
+перехода их нельзя использовать для предсказания или начала нового обучения.
+
+- [Цели и функция потерь](../app/contracts/semantic/v7/README.md)
+- [Запросы Flight](../app/contracts/flight/v24/README.md)
+- [Каталог моделей](../app/contracts/model_catalog/v9/README.md)
+- [Схема модели](../app/contracts/model_topology/v5/README.md)
+- [Показатели обучения](../app/contracts/training_telemetry/v4/README.md)
+- [Диагностика выходных головок](../app/contracts/target_head_diagnostics/v5/README.md)

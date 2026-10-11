@@ -1,11 +1,11 @@
 # Архитектура Transformer
 
-> Тип: справочник. Текущие процессы, contracts и ownership данных.
+> Тип: справочник. Устройство сервиса и распределение ответственности.
 
-Transformer — training system на стороне provider-а. Inventory владеет
-предметной семантикой данных и поведением, ориентированным на браузер;
-Transformer владеет generic tensor execution, durable jobs, generations
-моделей, checkpoints, recovery и projection telemetry.
+Transformer принимает данные, обучает модели и выполняет предсказания.
+Inventory определяет смысл признаков и целей и отвечает за пользовательский
+интерфейс. Transformer отвечает за вычисления, сохранение заданий и моделей,
+контрольные точки, восстановление обучения и сбор метрик.
 
 ## Процессы
 
@@ -16,22 +16,10 @@ app/main.py
 └── app/admin/bootstrap         token, model, and migration commands
 ```
 
-Command dispatcher ленивый: admin command не инициализирует service, Worker,
-Torch, CUDA или runtime Flight. Локального пути исполнения fit/predict/stream
-нет.
-
-```text
-app/contracts/semantic/v7          semantic target/objective language
-app/contracts/flight/v24           public Flight workflow
-app/contracts/model_catalog/v9     owner-scoped model discovery/detail
-app/contracts/model_topology/v5    owner-scoped public model topology
-app/contracts/training_telemetry/v4 owner-scoped telemetry report
-app/contracts/target_head_diagnostics/v5 owner-scoped target head diagnostics
-app/contracts/worker/v22           internal service-to-worker protocol
-app/contracts/checkpoint/v14       internal checkpoint/recovery metadata
-app/contracts/metrics/v13          internal epoch metrics/OpenSearch points
-app/contracts/metrics/fit_run/v13  internal terminal run summary
-```
+Диспетчер загружает только компоненты выбранной команды. Административные
+команды не запускают сервис, Worker, Torch, CUDA или обработчики Flight.
+Обучение, предсказания и потоковая загрузка доступны через Flight, а не через
+локальные команды.
 
 ## Сервис Flight
 
@@ -48,62 +36,77 @@ service/bootstrap ── assembles adapters and resources
 service/adapters/outbound/{postgres,artifacts,worker,cuda,opensearch}
 ```
 
-Domain владеет состояниями job, errors и правилами lifecycle. Application
-владеет use cases и capability-oriented ports. Inbound Flight валидирует
-публичные wire documents и представляет results/errors. Outbound adapters
-владеют PostgreSQL, storage artifacts, supervision worker process, inventory
-CUDA и OpenSearch.
+Domain задаёт состояния заданий, ошибки и допустимые переходы. Application
+выполняет операции над заданиями через интерфейсы своих зависимостей.
+Входной адаптер Flight проверяет запросы и формирует ответы и ошибки. Выходные
+адаптеры работают с PostgreSQL, файлами, процессами Worker, CUDA и OpenSearch.
 
-Flight v24 принимает предоставленные вызывающей системой data binding, semantic
-model intent, training intent и запрошенную initialization. Он выпускает
-identity job и непрозрачный mutation lease. Разрешённые provider-ом values —
-реализация модели, operational fences, schema fingerprints, версии
-worker/checkpoint и детали artifacts — не пересекают публичную границу.
+Клиент передаёт описание данных и модели, параметры обучения и способ
+инициализации. Сервис возвращает идентификатор задания и непрозрачный
+`mutationLease` для его изменения. Детали реализации модели, внутренние
+ограничения исполнения, отпечатки схем, версии Worker и контрольных точек,
+а также расположение файлов остаются внутри Transformer.
 
-## Worker и tensor data plane
+## Worker и обработка данных
 
-Один process Worker исполняет один принадлежащий service attempt. Он получает
-immutable manifest Worker v22, записывает только artifacts workspace attempt и
-возвращает bounded events. Он не зависит от PostgreSQL, Flight или public
-identity.
+Каждый процесс Worker выполняет одну попытку обучения или предсказания.
+Сервис передаёт ему неизменяемое описание работы. Worker пишет файлы только
+в каталог этой попытки и отправляет события ограниченного размера. Он не
+обращается к PostgreSQL или Flight и не использует публичные идентификаторы.
 
-Input Flight использует компактный `indexedFeatureBlocks`. Вызывающая система
-передаёт упорядоченные dimensions blocks и local offsets. Worker выводит
-positions blocks, отображает native rows и восстанавливает логические tensors
-Float32 `[rows, seqLen, featureDim]` ограниченными slices до batching. Границы
-физических payload/chunk не меняют логический порядок, training rows или target
-coordinates.
+Клиент передаёт компактные данные `indexedFeatureBlocks`: размеры блоков
+в заданном порядке и локальные смещения. Worker вычисляет позиции блоков,
+сопоставляет физические строки и восстанавливает тензоры Float32
+`[rows, seqLen, featureDim]` порциями ограниченного размера. Затем он формирует
+батчи. Разбиение передачи на блоки и пакеты не меняет порядок строк, обучающие
+примеры или порядок целевых значений.
 
-Target identities Semantic v7 непрозрачны. Упорядоченные slots определяют
-ширину target и prediction. Transformer интерпретирует generic transformations,
-operators, typed roles и private resource classes, но никогда не имена target
-внешней предметной области, profiles, FIGIs или feature formulas.
+Имена целей для Transformer — непрозрачные идентификаторы. Их порядок задаёт
+число и порядок выходных значений. Сервис понимает объявленные преобразования,
+операторы потерь, роли и внутренние ресурсы модели. Смысл целей, профили,
+FIGI и формулы признаков определяет вызывающая система.
 
-## Хранение и lifecycle
+## Хранение данных
 
-PostgreSQL — source of truth control plane для jobs, idempotency, owners,
-attempts и metadata опубликованных моделей. Managed filesystem storage хранит
-inputs, attempt artifacts, recovery artifacts, checkpoints моделей и временные
-artifacts telemetry. OpenSearch — best-effort projection telemetry, а не source
-registry или состояния job.
+PostgreSQL хранит состояние заданий, владельцев, попыток исполнения,
+идемпотентных запросов и сведения об опубликованных моделях. Файловое хранилище
+содержит входные данные, результаты попыток, контрольные точки и временные
+файлы метрик. OpenSearch хранит копию метрик для отчётов; сведения о моделях и
+состоянии заданий сервис берёт из PostgreSQL.
 
-Model Catalog Query v9 читает owner-scoped state registry. Model Topology Query
-v5 строит browser-safe статическую projection из metadata generation. Training
-Telemetry Query v4 валидирует полную projection относительно принадлежащих
-checkpoint-у metadata модели до раскрытия. Target Head Diagnostics Query v5
-раскрывает opt-in наблюдения выходных головок и границы encoder, сохранённые
-Worker после эпох.
-Ни один query не позволяет вызывающей системе получить filesystem paths, bytes
-checkpoint-а или topology OpenSearch.
+Каталог возвращает модели владельца токена. Запрос схемы модели строит
+статическое описание для интерфейса из сохранённых метаданных. Запрос
+показателей обучения проверяет весь отчёт по метаданным контрольной точки.
+Диагностика выходных головок возвращает наблюдения, которые Worker сохранил
+после эпох, если диагностика была включена. Запросы не раскрывают клиенту
+пути файлов, содержимое контрольных точек или устройство индексов OpenSearch.
 
-Migration 0031 намеренно разрушительна: она отклоняет active jobs и удаляет
-предыдущее состояние public boundary. Startup reconciliation удаляет managed
-artifacts, оставшиеся без references после clean cut. Release procedure заменяет
-индексы OpenSearch metrics v12 на v13 до запуска Flight v24.
+При обновлении миграция `0031` удаляет данные предыдущего формата. Её нельзя
+применить, пока есть незавершённые задания. После миграции сервис при старте
+удаляет из своих каталогов файлы, на которые больше нет ссылок. До запуска
+новой версии индексы метрик OpenSearch заменяются с v12 на v13.
+Порядок описан в [руководстве по миграциям](./operations/database-migrations.md).
+
+## Спецификации и версии
+
+Точные форматы запросов и сохранённых данных определены в этих пакетах:
+
+| Назначение | Пакет |
+| --- | --- |
+| Цели и функция потерь | `app/contracts/semantic/v7` |
+| Запросы Flight | `app/contracts/flight/v24` |
+| Каталог моделей | `app/contracts/model_catalog/v9` |
+| Схема модели | `app/contracts/model_topology/v5` |
+| Показатели обучения | `app/contracts/training_telemetry/v4` |
+| Диагностика выходных головок | `app/contracts/target_head_diagnostics/v5` |
+| Обмен сервиса с Worker | `app/contracts/worker/v22` |
+| Контрольные точки и восстановление | `app/contracts/checkpoint/v14` |
+| Метрики эпох и документы OpenSearch | `app/contracts/metrics/v13` |
+| Итоговые показатели обучения | `app/contracts/metrics/fit_run/v13` |
 
 ## Правила зависимостей
 
 Подробные правила направлений и размещения находятся в
-[policy архитектуры](./policy/architecture.md). Историческое обоснование — в
-[ADR](./adr/index.md). Публичные schemas определяются только активными
-contract packages; этот документ не имеет над ними приоритета.
+[правилах архитектуры](./policy/architecture.md). Причины принятых решений
+сохранены в [ADR](./adr/index.md). При расхождении этого описания со
+спецификациями действуют спецификации.

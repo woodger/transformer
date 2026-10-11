@@ -59,10 +59,10 @@ IDs и logical reconstruction `indexedFeatureBlocks` сохраняются.
 
 ## Текущая документация
 
-- [Семантический контракт v5](../../app/contracts/semantic/v5/README.md)
-- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
-- [Процессный контракт Worker v20](../../app/contracts/worker/v20/README.md)
-- [Контракт checkpoint/recovery v12](../../app/contracts/checkpoint/v12/README.md)
-- [Запрос каталога моделей v7](../../app/contracts/model_catalog/v7/README.md)
-- [Запрос телеметрии обучения v4](../../app/contracts/training_telemetry/v4/README.md)
+- [Цели и функция потерь](../../app/contracts/semantic/v7/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
+- [Протокол Worker](../../app/contracts/worker/v22/README.md)
+- [Формат контрольных точек](../../app/contracts/checkpoint/v14/README.md)
+- [Каталог моделей](../../app/contracts/model_catalog/v9/README.md)
+- [Показатели обучения](../../app/contracts/training_telemetry/v4/README.md)
 - [Архитектура Transformer](../architecture.md)

@@ -55,8 +55,8 @@ v13. PostgreSQL schema, Worker/checkpoint formats и metrics v5 projection не
 
 ## Текущая документация
 
-- [Запрос телеметрии обучения v4](../../app/contracts/training_telemetry/v4/README.md)
-- [Контракт Arrow Flight v22](../../app/contracts/flight/v22/README.md)
+- [Показатели обучения](../../app/contracts/training_telemetry/v4/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
 - [Интеграция с Flight](../flight-integration.md)
 - [Архитектура Transformer](../architecture.md)
-- [Политика metrics и OpenSearch](../policy/metrics-policy.md)
+- [Правила метрик и OpenSearch](../policy/metrics-policy.md)

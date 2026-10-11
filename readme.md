@@ -1,31 +1,28 @@
-# Сервис Transformer Arrow Flight
+# Transformer
 
-Transformer — Python-сервис для надёжного обучения и предсказания с помощью
-PyTorch через аутентифицированные задания Apache Arrow Flight. Inventory —
-ориентированное на браузер приложение; Transformer владеет исполнением модели,
-хранением, checkpoint-ами, восстановлением и проекцией телеметрии.
+Transformer обучает модели PyTorch и выполняет предсказания на отдельном
+сервере. Клиент передаёт данные и параметры через Apache Arrow Flight, получает
+идентификатор задания и отслеживает его результат.
 
-## Актуальная граница
+Сервис сохраняет задания в PostgreSQL, хранит обученные модели и контрольные
+точки, управляет CPU и GPU и собирает показатели обучения. В связке с Inventory
+расчёт признаков и смысл целевых значений остаются в Inventory, а обучение и
+исполнение моделей — в Transformer.
 
-- Flight v24 — единственный публичный workflow заданий.
-- Semantic v7 содержит упорядоченные непрозрачные targets, явные bindings
-  objective и настройку модели без внешних предметных литералов
-  архитектуры. Для строго бинарной цели прямого компонента доступен отдельный
-  примитив `PositiveClassWeightedBinaryCrossEntropyWithLogits` с явным весом
-  положительного класса и автоматической проекцией вероятности исходного
-  распределения. Optional `BernoulliEntropyPenalty` минимизирует положительную
-  энтропию публичной вероятности; `BernoulliConfidencePenalty` сохраняет
-  отрицательную энтропию.
-- Model Catalog Query v9, Model Topology Query v5, Training Telemetry Query
-  v4 и Target Head Diagnostics Query v5 — owner-scoped поверхности только для
-  чтения, активируемые Flight v24.
-- Worker v22, checkpoint/recovery v14 и metrics v13 являются внутренними для
-  provider-а.
-- `indexedFeatureBlocks` остаётся компактным Arrow-представлением входных
-  данных; его семантика логического восстановления не изменилась.
+## Возможности
 
-Локальный CLI для fit/predict и compatibility reader для прежних ревизий
-Flight, semantic, model catalog или telemetry отсутствуют.
+- Обучение и предсказания на CPU или GPU. Вычисления идут в отдельном процессе
+  Worker, чтобы сбой модели не завершал сетевой сервис.
+- Настройка целей и функции потерь через `ModelContract`, включая взвешенную
+  бинарную классификацию и регуляризацию энтропией.
+- Компактная передача данных Arrow в формате `indexedFeatureBlocks` с
+  восстановлением исходного порядка строк и признаков.
+- Каталог обученных моделей, схема модели, показатели обучения и диагностика
+  выходных головок. Эти запросы доступны только для чтения и учитывают владельца.
+- Аутентификация по Bearer-токенам.
+
+Обучение и предсказания запускаются через Flight. Локальные команды служат для
+запуска сервиса и администрирования.
 
 ## Установка и проверка
 
@@ -49,23 +46,34 @@ models list|delete
 db migrations status|apply|rollback
 ```
 
-`flight serve` запускает удалённый сервис. Остальные команды — локальные
-операционные команды для access tokens в базе данных, опубликованных
-generations и состояния Alembic. Точные параметры показывает
+`flight serve` запускает сервис. Остальные команды управляют токенами доступа,
+обученными моделями и миграциями PostgreSQL. Точные параметры показывает
 `transformer <command> --help`.
 
 ## Документация
 
-- [Flight v24](./app/contracts/flight/v24/README.md)
-- [Семантическая модель v7](./app/contracts/semantic/v7/README.md)
-- [Запрос каталога моделей v9](./app/contracts/model_catalog/v9/README.md)
-- [Запрос topology модели v5](./app/contracts/model_topology/v5/README.md)
-- [Запрос телеметрии обучения v4](./app/contracts/training_telemetry/v4/README.md)
-- [Диагностика выходных головок v5](./app/contracts/target_head_diagnostics/v5/README.md)
-- [Worker v22](./app/contracts/worker/v22/README.md)
-- [Checkpoint/recovery v14](./app/contracts/checkpoint/v14/README.md)
-- [Архитектура](./docs/architecture.md)
+- [Начало работы](./docs/getting-started.md)
 - [Интеграция с Flight](./docs/flight-integration.md)
-- [Эксплуатация Flight](./docs/operations/flight-service.md)
-- [Развёртывание](./docs/deployment/systemd.md)
+- [Эксплуатация и администрирование](./docs/operations/index.md)
+- [Развёртывание через systemd](./docs/deployment/systemd.md)
+- [Функции потерь и регуляризация](./docs/losses.md)
+- [Обучение и восстановление](./docs/training-runtime.md)
+- [Аутентификация](./docs/authentication.md)
+- [Архитектура](./docs/architecture.md)
 - [Архитектурные решения](./docs/adr/index.md)
+
+## API и совместимость
+
+Сервис поддерживает протокол Flight v24. Предыдущие версии запросов,
+определений моделей, каталога и телеметрии не поддерживаются. Точные форматы
+документов и условия совместимости описаны в спецификациях:
+
+- [Запросы Flight](./app/contracts/flight/v24/README.md)
+- [Цели и функция потерь](./app/contracts/semantic/v7/README.md)
+- [Каталог моделей](./app/contracts/model_catalog/v9/README.md)
+- [Схема модели](./app/contracts/model_topology/v5/README.md)
+- [Показатели обучения](./app/contracts/training_telemetry/v4/README.md)
+- [Диагностика выходных головок](./app/contracts/target_head_diagnostics/v5/README.md)
+
+Версии внутреннего протокола Worker, контрольных точек и хранения метрик
+перечислены в [описании архитектуры](./docs/architecture.md).
