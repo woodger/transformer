@@ -1,0 +1,189 @@
+{
+  "index_patterns": [
+    "metrics-runs-v13"
+  ],
+  "priority": 500,
+  "template": {
+    "settings": {
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "schema": {
+          "type": "keyword"
+        },
+        "summaryId": {
+          "type": "keyword"
+        },
+        "deploymentId": {
+          "type": "keyword"
+        },
+        "runId": {
+          "type": "keyword"
+        },
+        "modelRef": {
+          "type": "keyword"
+        },
+        "recordedAt": {
+          "type": "date"
+        },
+        "jobConfigSha256": {
+          "type": "keyword"
+        },
+        "checkpointFormat": {
+          "type": "keyword"
+        },
+        "semanticDigests": {
+          "properties": {
+            "dataContractSha256": {
+              "type": "keyword"
+            },
+            "targetContractSha256": {
+              "type": "keyword"
+            },
+            "objectiveSha256": {
+              "type": "keyword"
+            },
+            "modelDefinitionSha256": {
+              "type": "keyword"
+            }
+          }
+        },
+        "targets": {
+          "type": "nested",
+          "properties": {
+            "index": {
+              "type": "integer"
+            },
+            "identity": {
+              "type": "keyword"
+            }
+          }
+        },
+        "initialization": {
+          "properties": {
+            "source": {
+              "type": "keyword"
+            },
+            "parentModelRef": {
+              "type": "keyword"
+            },
+            "parentCheckpointSha256": {
+              "type": "keyword"
+            },
+            "parentDataContractSha256": {
+              "type": "keyword"
+            },
+            "dataContractSha256": {
+              "type": "keyword"
+            },
+            "parentTargetContractSha256": {
+              "type": "keyword"
+            },
+            "targetContractSha256": {
+              "type": "keyword"
+            },
+            "parentObjectiveSha256": {
+              "type": "keyword"
+            },
+            "objectiveSha256": {
+              "type": "keyword"
+            },
+            "parentModelDefinitionSha256": {
+              "type": "keyword"
+            },
+            "modelDefinitionSha256": {
+              "type": "keyword"
+            }
+          }
+        },
+        "milestones": {
+          "properties": {
+            "createdAt": {
+              "type": "date"
+            },
+            "firstInputCommittedAt": {
+              "type": "date"
+            },
+            "inputClosedAt": {
+              "type": "date"
+            },
+            "workerCompletedAt": {
+              "type": "date"
+            },
+            "publishedAt": {
+              "type": "date"
+            }
+          }
+        },
+        "durations": {
+          "properties": {
+            "firstInputWaitMs": {
+              "type": "double"
+            },
+            "eofWaitMs": {
+              "type": "double"
+            },
+            "queueWaitMs": {
+              "type": "double"
+            },
+            "workerStartupMs": {
+              "type": "double"
+            },
+            "trainingMs": {
+              "type": "double"
+            },
+            "checkpointSerializationMs": {
+              "type": "double"
+            },
+            "checkpointPublicationMs": {
+              "type": "double"
+            },
+            "modelPublicationMs": {
+              "type": "double"
+            },
+            "remoteFitMs": {
+              "type": "double"
+            }
+          }
+        },
+        "counts": {
+          "properties": {
+            "attempts": {
+              "type": "integer"
+            },
+            "recoveries": {
+              "type": "integer"
+            },
+            "inputPayloads": {
+              "type": "integer"
+            },
+            "inputChunks": {
+              "type": "long"
+            },
+            "logicalRows": {
+              "type": "long"
+            },
+            "nativeRows": {
+              "type": "long"
+            },
+            "inputBytes": {
+              "type": "long"
+            }
+          }
+        },
+        "artifact": {
+          "properties": {
+            "byteCount": {
+              "type": "long"
+            },
+            "sha256": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  }
+}

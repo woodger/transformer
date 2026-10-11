@@ -71,8 +71,10 @@ def run_migrations_online() -> None:
     engine = create_engine(database_config.url, pool_pre_ping=True)
     try:
         with engine.connect() as connection:
-            connection.execute(CreateSchema(schema, if_not_exists=True))
-            connection.commit()
+            if schema != "public":
+                connection.execute(CreateSchema(schema, if_not_exists=True))
+                connection.commit()
+
             context.configure(
                 connection=connection,
                 target_metadata=target_metadata,

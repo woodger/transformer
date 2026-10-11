@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v24/cancel-result.schema.json",
+  "title": "transformer.v24.job.cancel result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "jobId",
+    "revision",
+    "input",
+    "execution"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "common.schema.json#/$defs/inputState"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "common.schema.json#/$defs/executionState"
+        }
+      }
+    }
+  }
+}

@@ -35,7 +35,7 @@ roots — в `app/service/bootstrap/`,
   тестом/запуском;
 - менять `app/main.py` ради unrelated refactoring;
 - объединять команды через shell или запускать subprocess с `shell=True`;
-- писать diagnostics в бинарный stdout `predict-stream`;
+- писать diagnostics в framed stdout Worker-а;
 - менять рабочую директорию или Python executable worker-а без проверки
   recovery и checkpoint paths;
 - автоматизировать ручной production deployment.

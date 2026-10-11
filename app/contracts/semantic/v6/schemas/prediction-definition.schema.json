@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/semantic/v6/prediction-definition.schema.json",
+  "title": "\u0420\u0430\u0437\u0440\u0435\u0448\u0451\u043d\u043d\u043e\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u043e\u0433\u043e \u043f\u0440\u0435\u0434\u0441\u043a\u0430\u0437\u0430\u043d\u0438\u044f",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seqLen",
+    "outputWidth",
+    "targets"
+  ],
+  "properties": {
+    "seqLen": {
+      "$ref": "common.schema.json#/$defs/positiveInteger"
+    },
+    "outputWidth": {
+      "$ref": "common.schema.json#/$defs/positiveInteger"
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/predictionTarget"
+      }
+    }
+  },
+  "$defs": {
+    "predictionTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "identity",
+            "publicPredictionTransformation"
+          ],
+          "properties": {
+            "identity": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "publicPredictionTransformation": {
+              "$ref": "common.schema.json#/$defs/transformation"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "identity",
+            "publicPredictionTransformation",
+            "positiveClassWeight"
+          ],
+          "properties": {
+            "identity": {
+              "$ref": "common.schema.json#/$defs/identity"
+            },
+            "publicPredictionTransformation": {
+              "const": "Sigmoid"
+            },
+            "positiveClassWeight": {
+              "$ref": "common.schema.json#/$defs/positiveNumber"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

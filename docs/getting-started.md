@@ -1,11 +1,10 @@
 # Начало работы
 
-> Тип: руководство. Подготовка working copy и запуск Transformer Arrow Flight
-> service.
+> Тип: руководство. Подготовка окружения и первый запуск сервиса.
 
-Transformer не предоставляет локальный CLI fit/predict. Обучение и prediction
-начинаются только через аутентифицированную границу вызывающей системы Flight
-v20.
+Для запуска нужны Python-окружение проекта и PostgreSQL. После запуска клиент
+сможет создавать задания обучения и предсказания через Flight. В этом
+руководстве подготовим окружение, базу данных и токен доступа.
 
 ## Подготовить окружение
 
@@ -16,50 +15,52 @@ v20.
 ./.venv/bin/python app/main.py --help
 ```
 
-Используйте только `.venv` проекта. Версию системного Python и системные
-зависимости выбирает владелец окружения; зависимости приложения не
-устанавливаются в системный Python или пользовательский site.
+Зависимости приложения устанавливаются в `.venv` проекта. Системный Python и
+системные пакеты подготавливает владелец окружения; системный Python и
+пользовательские пакеты эта установка не затрагивает.
 
-## Подготовить control plane
+## Подготовить базу данных и доступ
 
 Настройте PostgreSQL и окружение согласно
-[операционному руководству](./operations/flight-service.md), затем проверьте и
-примените migrations:
+[операционному руководству](./operations/flight-service.md#конфигурация-окружения).
+Если обновляете существующую установку, сначала прочитайте
+[порядок миграций](./operations/database-migrations.md): миграция `0031`
+удаляет данные, несовместимые с новым форматом моделей. Для этого обновления
+также требуется заменить индексы метрик v12 на v13 по
+[инструкции OpenSearch](./deployment/opensearch.md).
+
+Проверьте и примените миграции:
 
 ```bash
 ./.venv/bin/python app/main.py db migrations status
 ./.venv/bin/python app/main.py db migrations apply
 ```
 
-Выпустите bearer credential для вызывающей service identity:
+Выпустите Bearer-токен для клиента:
 
 ```bash
 ./.venv/bin/python app/main.py auth tokens issue
 ```
 
-Credential выводится один раз. Храните его в secret storage, не в repository,
-command history, или логах.
+Токен показывается один раз. Сохраните его в хранилище секретов клиента.
+Репозиторий, история команд и логи для этого не подходят.
 
-## Запустить service
+## Запустить сервис
 
 ```bash
 ./.venv/bin/python app/main.py flight serve --host=127.0.0.1 --port=8815
 ```
 
-Для production используйте процедуру systemd. Migration 0029 является
-destructive clean cut для перехода на Semantic v5. Перед запуском Flight v22
-выполните destructive replacement OpenSearch metrics v10 на v11 по
-`docs/deployment/opensearch.md`.
+Для постоянной работы настройте [запуск через systemd](./deployment/systemd.md).
 
-Вызывающая система материализует `ModelContract` Semantic v5, создаёт job fit
-или predict v22, загружает compact `indexedFeatureBlocks`, закрывает input и
-опрашивает выпущенное job. Форма contract описана в
-[Flight v22](../app/contracts/flight/v22/README.md); это руководство намеренно
-не дублирует wire examples.
+Для обучения клиент передаёт `ModelContract` в запросе `fit`, а для предсказания
+указывает обученную модель через `modelRef` в запросе `predict`. В обоих случаях
+он загружает данные `indexedFeatureBlocks`, завершает загрузку и ожидает результат.
+Порядок запросов описан в [руководстве по интеграции](./flight-integration.md),
+а их точные форматы — в [спецификации Flight](../app/contracts/flight/v24/README.md).
 
 ## Проверка изменений
 
-Точные команды validation находятся в
-[политике тестирования](./policy/testing-policy.md#запуск). GPU-specific
-verification выполняют на deployment host с GPU, когда задача затрагивает
-runtime CUDA.
+Команды проверки изменений находятся в
+[политике тестирования](./policy/testing-policy.md#запуск). Изменения работы
+CUDA также проверяют на сервере с GPU.

@@ -1,0 +1,38 @@
+{
+  "contract": "transformer-model-catalog-fixtures",
+  "revision": 8,
+  "files": [
+    {
+      "path": "detail.request.json",
+      "sha256": "6fc23d0fe2b22faa90baa3a743667f2a4fdadecb27b92576245674773eb98c28"
+    },
+    {
+      "path": "detail.result.confidence-penalty.json",
+      "sha256": "e7db2f68a61efdedbc2a4a963d0156f67e6462fa382b6c11be13b7dc665898e8"
+    },
+    {
+      "path": "detail.result.existing-not-configured.json",
+      "sha256": "aa17c3468c36844dc7d7dd458761fff43ca65a4b1f1c22adcf4ef31ee089ad97"
+    },
+    {
+      "path": "detail.result.pre-norm.json",
+      "sha256": "61f885f9de7fd5ce263dfbf558fb45788ce83a955bef218a4d0c46154364142b"
+    },
+    {
+      "path": "detail.result.random.json",
+      "sha256": "0ca63fd62675c650b06e4a3907abd3149c87e66647cb6b5fff500865f67a6c56"
+    },
+    {
+      "path": "list.request.initial.json",
+      "sha256": "2ed905267dfc1128550808949d69f275d8ac6b2ca3a6431742f0f44b034409d9"
+    },
+    {
+      "path": "list.result.empty.json",
+      "sha256": "60026f22a7fde86d576b5e955af69a2ff3152126874362dd9fe12ce82c4eca8a"
+    },
+    {
+      "path": "list.result.first.json",
+      "sha256": "255af209d1cdc392014b1cc51c5ae93a38a8498bde3692adc740c98d7b427d00"
+    }
+  ]
+}

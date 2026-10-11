@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import cast
 
@@ -7,16 +8,16 @@ import torch
 import torch.nn as nn
 from torch.utils.hooks import RemovableHandle
 
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.semantic.v5.constants import ENCODER_NORMALIZATION_ORDERS
-from app.contracts.worker.v20.config import DEFAULT_CONTEXT_MODE
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.semantic.v7.constants import ENCODER_NORMALIZATION_ORDERS
+from app.contracts.worker.v22.config import DEFAULT_CONTEXT_MODE
 from app.worker.model.context import (
     context_input_dim,
     prepare_context_input,
     validate_context_mode,
 )
 from app.worker.model.output_head import OutputHead
-from app.worker.model.positional_encoding import PositionalEncoding
+from app.worker.model.positional_encoding import DEFAULT_MAX_LEN, PositionalEncoding
 
 _ENCODER_BLOCK_BOUNDARIES = (
     "input",
@@ -80,7 +81,10 @@ class TransformerModel(nn.Module):
             context_input_dim(input_dim, self.context_mode),
             hidden_dim,
         )
-        self.pos = PositionalEncoding(hidden_dim)
+        self.pos = PositionalEncoding(
+            hidden_dim,
+            max_len=max(DEFAULT_MAX_LEN, seq_len),
+        )
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
@@ -435,8 +439,10 @@ def public_predictions(
             index
         )
         if positive_class_weight is not None:
+            if raw_value.dtype in (torch.float16, torch.bfloat16):
+                raw_value = raw_value.float()
             values.append(torch.sigmoid(
-                raw_value - torch.log(raw_value.new_tensor(positive_class_weight))
+                raw_value - math.log(positive_class_weight)
             ))
             continue
         values.append(apply_transformation(

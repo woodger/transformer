@@ -1,6 +1,7 @@
 import hashlib
 import json
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -17,10 +18,25 @@ from app.contracts.semantic.v5.schema import validate_schema
 from app.contracts.target_head_diagnostics.v5.codec import (
     validate_target_head_diagnostics_document,
 )
-from app.contracts.worker.v20.codec import validate_document
+from app.contracts.worker.v20.codec import WorkerContractError, validate_document
 from app.contracts.worker.v20.model_config import ModelConfig
 from app.contracts.worker.v20.model_definition import resolved_semantic_digests
 from app.project import PROJECT_ROOT
+from tests.support.internal_contract_documents import (
+    CHECKPOINT_SCHEMAS,
+    WORKER_SCHEMAS,
+    internal_contract_documents,
+)
+
+
+@pytest.fixture(scope="module")
+def internal_documents():
+    return internal_contract_documents(
+        checkpoint_version=12,
+        worker_version=20,
+        semantic_version=5,
+        target_head_version=5,
+    )
 
 
 def test_encoder_normalization_order_contract_fixtures_are_valid():
@@ -80,30 +96,49 @@ def test_model_definitions_bind_normalization_order():
     assert error.value.path == "/modelTuning"
 
 
-def test_internal_schemas_require_complete_model_configuration():
-    for schema_name in (
-        "checkpoint-artifact",
-        "checkpoint-metadata",
-        "recovery-metadata",
-        "resolved-initialization",
-    ):
-        with pytest.raises(ValueError):
-            validate_checkpoint_document({}, schema_name)
+@pytest.mark.parametrize("schema_name", CHECKPOINT_SCHEMAS)
+def test_checkpoint_v12_accepts_valid_contract_documents(internal_documents, schema_name):
+    document = internal_documents["checkpoint"][schema_name]
 
-    for schema_name in (
-        "arrow-manifest",
-        "capabilities",
-        "command-manifest",
-        "control-message",
-        "event",
-        "prediction-manifest",
-        "recovery-descriptor",
-        "result-manifest",
-        "target-head-diagnostics-artifact",
-        "training-metrics",
+    assert validate_checkpoint_document(document, schema_name) == document
+
+
+@pytest.mark.parametrize("schema_name", WORKER_SCHEMAS)
+def test_worker_v20_accepts_valid_contract_documents(internal_documents, schema_name):
+    document = internal_documents["worker"][schema_name]
+
+    assert validate_document(document, schema_name) == document
+
+
+def test_checkpoint_metadata_requires_encoder_normalization_order(internal_documents):
+    document = deepcopy(internal_documents["checkpoint"]["checkpoint-metadata"])
+    del document["modelConfig"]["encoderNormalizationOrder"]
+
+    with pytest.raises(
+        ValueError,
+        match=r"/modelConfig: 'encoderNormalizationOrder' is a required property",
     ):
-        with pytest.raises(ValueError):
-            validate_document({}, schema_name)
+        validate_checkpoint_document(document, "checkpoint-metadata")
+
+
+@pytest.mark.parametrize("schema_name", ("command-manifest", "result-manifest"))
+def test_worker_manifests_require_encoder_normalization_order(
+    internal_documents,
+    schema_name,
+):
+    document = deepcopy(internal_documents["worker"][schema_name])
+    model_config = (
+        document["modelConfig"]
+        if schema_name == "command-manifest"
+        else document["checkpointMetadata"]["modelConfig"]
+    )
+    del model_config["encoderNormalizationOrder"]
+
+    with pytest.raises(
+        WorkerContractError,
+        match=r"modelConfig: 'encoderNormalizationOrder' is a required property",
+    ):
+        validate_document(document, schema_name)
 
 
 def _validate_semantic_fixtures() -> None:

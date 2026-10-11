@@ -1,13 +1,13 @@
-# Ограничения зависимости PyArrow Flight 24
+# Ограничения PyArrow Flight
 
-> Тип: справочник. Подтверждённые ограничения текущего PyArrow Flight runtime.
+> Тип: справочник. Неподдерживаемые статусы ошибок и настройка размера сообщений.
 
-## Область действия
-
-Эта заметка фиксирует два подтверждённых ограничения `pyarrow==24.0.0`,
-влияющих на контракт Transformer Flight v22. Это ограничения Python binding
-сервера Flight, а не дефекты `arrow-flight-client@0.0.8` или вызывающей
-системы.
+PyArrow не позволяет серверу передать некоторые статусы ошибок и задать
+максимальный размер входящего сообщения. Здесь описано, как эти ограничения
+влияют на Transformer и что учитывать при подключении клиента. Поведение
+подтверждено для `pyarrow==24.0.0`. Ограничения относятся к Python-интерфейсу
+сервера Flight; исправления в `arrow-flight-client@0.0.8` или вызывающей
+системе для них не предлагаются.
 
 Окружение, в котором воспроизведено поведение:
 
@@ -17,13 +17,13 @@ Arrow C++ 24.0.0
 bundled gRPC C++ 1.71.0
 ```
 
-## Отсутствующие server status codes
+## Неподдерживаемые статусы ошибок
 
 ### Проявление
 
-Python binding может отправить следующие точные transport statuses:
+Сервер на Python может передать следующие статусы gRPC:
 
-| Python exception | gRPC status |
+| Исключение Python | Статус gRPC |
 | --- | --- |
 | `ValueError` / `pyarrow.ArrowInvalid` | `INVALID_ARGUMENT` |
 | `KeyError` / `pyarrow.ArrowKeyError` | `NOT_FOUND` |
@@ -35,11 +35,11 @@ Python binding может отправить следующие точные tra
 | `FlightInternalError` | `INTERNAL` |
 | `FlightUnavailableError` | `UNAVAILABLE` |
 
-Он не предоставляет server exception или status constructor для
+Но PyArrow не предоставляет серверные исключения или конструктор статуса для
 `ALREADY_EXISTS`, `FAILED_PRECONDITION` и `RESOURCE_EXHAUSTED`.
 `FileExistsError`, `ArrowCapacityError` и `ArrowMemoryError` передаются как
-общий `FlightServerError` (`UNKNOWN`). Mapping failed precondition или conflict
-в `ArrowInvalid` даёт `INVALID_ARGUMENT`, а не требуемый code.
+общий `FlightServerError` (`UNKNOWN`). Замена ошибки конфликта или невыполненного
+условия на `ArrowInvalid` даёт `INVALID_ARGUMENT`, а не требуемый статус.
 
 ### Минимальное воспроизведение
 
@@ -65,40 +65,39 @@ with Server(("127.0.0.1", 0)) as server:
                 print(name, type(error).__name__)
 ```
 
-Фактический output:
+Фактический вывод:
 
 ```text
 capacity FlightServerError
 exists FlightServerError
 ```
 
-В `pyarrow.flight` также отсутствуют `FlightAlreadyExistsError`, exception для
-failed precondition и exception для resource exhausted.
+В `pyarrow.flight` также отсутствуют `FlightAlreadyExistsError` и исключения
+для невыполненного условия или исчерпания ресурсов.
 
-### Ожидаемый результат и влияние на contract
+### Что это означает для клиента
 
-Flight v22 требует завершать ошибочный RPC неуспехом и сохраняет стабильный
-application code в message, а для semantic errors, независимых от предметной
-области, — также
-структурный detail в `FlightError.extra_info`. На чистом Python точные
-transport statuses `ALREADY_EXISTS`, `FAILED_PRECONDITION` и
-`RESOURCE_EXHAUSTED` всё равно недоступны; вызывающая система ветвится по
-стабильному application code и structured detail, а не выводит недоступный status из
-класса PyArrow exception.
+По спецификации Flight v24 ошибочный RPC завершается ошибкой. Сообщение
+содержит стабильный код приложения, а ошибки семантики запросов, независимые
+от предметной области, — также структурированное описание в
+`FlightError.extra_info`. Точные статусы gRPC `ALREADY_EXISTS`,
+`FAILED_PRECONDITION` и `RESOURCE_EXHAUSTED` на чистом Python недоступны.
+Клиент выбирает обработку по коду приложения и структурированному описанию,
+а не пытается определить недоступный статус по классу исключения PyArrow.
 
 ### Безопасное временное поведение
 
-- Завершать RPC ошибкой, не возвращая ошибку внутри успешного result.
-- Сохранять стабильный application code в безопасном сообщении exception.
-- Использовать ближайший неуспешный PyArrow exception и документировать
-  расхождение wire status.
-- Не использовать зарезервированные gRPC trailers, private Cython symbols или
-  второй in-process runtime `grpcio` для подделки status.
+- Завершать RPC ошибкой; не помещать её внутрь успешного результата.
+- Сохранять стабильный код приложения в сообщении исключения без секретов.
+- Использовать ближайшее подходящее исключение PyArrow и описывать расхождение
+  с требуемым статусом gRPC.
+- Не подделывать статус через зарезервированные служебные поля gRPC, приватные
+  символы Cython или параллельный запуск `grpcio` внутри процесса.
 
-### Предлагаемый upstream API
+### Какое изменение нужно в PyArrow
 
-PyArrow должен предоставить отдельные exceptions для всех стандартных Flight
-transport statuses либо публичный constructor, например:
+Нужны отдельные исключения для всех стандартных статусов Flight или публичный
+конструктор статуса. Например, такой API:
 
 ```python
 flight.FlightStatusError(
@@ -108,22 +107,23 @@ flight.FlightStatusError(
 )
 ```
 
-API должен покрывать как минимум `ALREADY_EXISTS`, `FAILED_PRECONDITION` и
-`RESOURCE_EXHAUSTED` и сохранять точный gRPC status для клиентов не на PyArrow.
+Он должен покрывать как минимум `ALREADY_EXISTS`, `FAILED_PRECONDITION` и
+`RESOURCE_EXHAUSTED` и сохранять точный статус gRPC для клиентов, которые
+не используют PyArrow.
 
-## Лимит принимаемого server message
+## Размер входящего сообщения
 
 ### Проявление
 
-Server gRPC из Arrow Flight 24 инициализирует transport так:
+Сервер gRPC в Arrow Flight 24 задаёт размер входящего сообщения так:
 
 ```cpp
 builder.SetMaxReceiveMessageSize(-1);
 ```
 
-В C++ `FlightServerOptions::builder_hook` позволяет настроить server builder,
+В C++ `FlightServerOptions::builder_hook` позволяет настроить сервер,
 но `pyarrow.flight.FlightServerBase` не предоставляет `builder_hook`,
-`generic_options`, `maxReceiveMessageLength` или эквивалентный option.
+`generic_options`, `maxReceiveMessageLength` или аналогичный параметр.
 
 Минимальное воспроизведение на Python:
 
@@ -142,31 +142,31 @@ flight.FlightServerBase(
 TypeError: __init__() got an unexpected keyword argument 'generic_options'
 ```
 
-### Ожидаемый результат и влияние на contract
+### Что это означает для защиты памяти
 
-Transformer должен иметь возможность применить и сообщить transport limit
-приёма 16 MiB, принимая клиентские RecordBatches примерно по 8 MiB. В PyArrow
-24 payload-ы больше исторического значения gRPC 4 MiB работают, поскольку
-receive size не ограничен, но application validation выполняется только после
-того, как gRPC уже выделил память под входящее сообщение. Поэтому квоты batch,
-physical payload, logical rows, job и queue на уровне приложения не дают такую
-же защиту до выделения памяти.
+Transformer должен иметь возможность ограничить приём сообщения размером
+16 MiB и сообщить этот предел клиенту, принимая его RecordBatches примерно
+по 8 MiB. В PyArrow 24 сообщения больше прежнего лимита gRPC 4 MiB проходят,
+поскольку размер приёма не ограничен. Проверки приложения выполняются уже
+после того, как gRPC выделил память под сообщение. Поэтому лимиты батча,
+переданного пакета данных, логических строк, задания и очереди не защищают
+от выделения этой памяти.
 
 ### Безопасное временное поведение
 
-- Вызывающая система настраивает `maxSendMessageLength` и
-  `maxReceiveMessageLength` и
+- Клиент настраивает `maxSendMessageLength` и `maxReceiveMessageLength` и
   формирует RecordBatches примерно по 8 MiB.
-- Transformer применяет лимиты batch, physical payload, total job и logical
-  rows при чтении каждого chunk.
-- Capabilities описывают 16 MiB как цель interoperability, а не как жёсткий
-  transport limit server-а PyArrow.
-- Доверенная граница TLS/network может добавить независимую policy размера
-  request, но её нельзя представлять как гарантию handler-а PyArrow.
+- Transformer проверяет размер батча, переданного пакета данных, всего задания
+  и число логических строк при чтении каждого чанка.
+- Capabilities описывают 16 MiB как размер для согласованной работы клиента
+  и сервиса. Это не жёсткое ограничение приёма на сервере PyArrow.
+- Доверенная сетевая инфраструктура или узел завершения TLS могут независимо
+  ограничивать размер запроса. Такая настройка не становится гарантией
+  обработчика PyArrow.
 
-### Предлагаемый upstream API
+### Какое изменение нужно в PyArrow
 
-Предоставить server options узкой области действия, например:
+Нужны параметры сервера для ограничения размера сообщений. Например:
 
 ```python
 flight.FlightServerBase(
@@ -176,15 +176,15 @@ flight.FlightServerBase(
 )
 ```
 
-Альтернативой является поддерживаемый binding `generic_options` или
-`builder_hook`. Выбранные значения должны быть наблюдаемыми, чтобы capabilities
-сообщали фактические, а не только настроенные limits.
+Другой вариант — поддержка `generic_options` или `builder_hook` в Python.
+Сервер должен позволять проверить применённые значения, чтобы capabilities
+сообщали фактические ограничения.
 
-## Влияние на compatibility и scope
+## Что потребуется для исправления
 
-Для закрытия любого из gaps требуется upstream change binding PyArrow,
-отдельно поддерживаемое native extension или будущее обновление dependency,
-поведение которого проверено с Node client. Private local patch или custom
-Cython shim существенно расширили бы scope Transformer и deployment matrix.
-Изменения вызывающих applications или `arrow-flight-client@0.0.8` не
-предлагаются.
+Каждое из этих ограничений требует изменения в PyArrow, отдельно
+поддерживаемого нативного расширения или будущего обновления зависимости,
+проверенного с клиентом на Node.js. Собственная заплатка PyArrow или обёртка
+на Cython добавили бы Transformer работу по сопровождению и проверке новых
+вариантов развёртывания. Изменения вызывающих приложений или
+`arrow-flight-client@0.0.8` здесь не предлагаются.

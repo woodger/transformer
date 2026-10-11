@@ -82,7 +82,7 @@ immutable Arrow receipt/checkpoint contract, повторно проверяют
 где это защищает самостоятельный reusable API.
 
 Для target и prediction нормативны текущие semantic names из
-[`Flight v22 contract`](../../app/contracts/flight/v22/README.md). Короткие `x`,
+[`Flight v24 contract`](../../app/contracts/flight/v24/README.md). Короткие `x`,
 `y` и `p` допустимы в локальной формуле; orchestration и boundary code
 использует `features`, `targets`, `predictions`, `padding_mask` и другие
 смысловые имена.
@@ -105,8 +105,8 @@ Ruff с набором правил `ANN` отдельно требует явн
 результатов: выведенного Pyright return type недостаточно. Из этой проверки
 исключены только tests. Явный `Any` в production signatures разрешён только в
 двух зафиксированных dynamic boundaries:
-forwarding аргументов `argparse` в `app/cli/options.py` и ленивый PyTorch runtime
-команды `gmark`, который сохраняет изоляцию control plane от Torch/CUDA.
+forwarding аргументов `argparse` в `app/cli/options.py` и
+forwarding options subparser-а в `app/cli/parsers/__init__.py`.
 
 Pyright дополняет pytest и не образует отдельный test profile. Штатные pytest
 команды задаёт [политика тестирования](./testing-policy.md#запуск).

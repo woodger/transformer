@@ -1,6 +1,7 @@
 import random
 
 import numpy as np
+import pytest
 import torch
 
 from app.worker.runtime.reproducibility import configure_reproducibility
@@ -26,11 +27,10 @@ def test_configure_reproducibility_repeats_random_sequences():
     assert torch.equal(first[2], second[2])
 
 
-def test_configure_reproducibility_sets_deterministic_mode(monkeypatch):
-    calls = []
-    monkeypatch.setattr(torch, "use_deterministic_algorithms", calls.append)
+@pytest.mark.parametrize("deterministic", [True, False])
+def test_configure_reproducibility_sets_deterministic_mode(deterministic):
+    torch.use_deterministic_algorithms(not deterministic)
 
-    configure_reproducibility(7, deterministic=True)
-    configure_reproducibility(7, deterministic=False)
+    configure_reproducibility(7, deterministic=deterministic)
 
-    assert calls == [True, False]
+    assert torch.are_deterministic_algorithms_enabled() is deterministic

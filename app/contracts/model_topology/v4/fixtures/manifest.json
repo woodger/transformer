@@ -1,0 +1,50 @@
+{
+  "contract": "transformer-model-topology",
+  "revision": 4,
+  "files": [
+    {
+      "path": "detail.request.json",
+      "sha256": "c2844c2afae83e8f0edc64d035fdef40916f8dd07570a6a4f46ff0133f31ecf8"
+    },
+    {
+      "path": "detail.result.confidence-penalty.json",
+      "sha256": "96face49576f9d9ea16090e197b01f5225b14bc585bc511d893b772cd1d4c3b9"
+    },
+    {
+      "path": "detail.result.pre-norm.json",
+      "sha256": "261e9c814f6cda710de98b6bee2478afe08e724347b028f92e3b047ae6171aa0"
+    },
+    {
+      "path": "detail.result.shared-resource.json",
+      "sha256": "e8fc266ed0038be55c62e070513bcfe1f5f8e996e02dbc7bf3bd95e967914890"
+    },
+    {
+      "path": "error.invalid-query.json",
+      "sha256": "58ca6bc839b0f95fe13e0168e5a6c7baba9733d24d9a4d7d89d4b90a81cb0e53"
+    },
+    {
+      "path": "error.model-not-found.json",
+      "sha256": "236b9ffdeab047447349cdd897835f7770b85cedcfff90d7c8b651c395167860"
+    },
+    {
+      "path": "error.query-unavailable.json",
+      "sha256": "ad4cd4cf22231511cee558149bb82cb8c56022213304f8d193c3eea60fe05432"
+    },
+    {
+      "path": "error.registry-unavailable.json",
+      "sha256": "3c7061ad2910e9257a3564002f3f3a7c566279d25aaafdc746d244c717967952"
+    },
+    {
+      "path": "error.response-budget-exceeded.json",
+      "sha256": "fb01bf911a6413272f8849a93a50261d59f9ee634708093fcea34d8dbc7d4209"
+    },
+    {
+      "path": "error.stored-metadata-invalid.json",
+      "sha256": "0f45d1a6cad268e1198f43eb129194b55e6c38e9e077ba0adc22ab46162bdf10"
+    },
+    {
+      "path": "error.topology-invalid.json",
+      "sha256": "e671141adff974421122908bb9caddc427e7a5f9b67e4ce752a8c2ad5eb08786"
+    }
+  ]
+}

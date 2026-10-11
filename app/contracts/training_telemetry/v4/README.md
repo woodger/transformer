@@ -1,7 +1,7 @@
 # Запрос телеметрии обучения в области владельца v4
 
 > ДОКУМЕНТ КОНТРАКТА. Этот пакет определяет telemetry только для чтения одной
-> опубликованной generation модели. Он активируется Flight v21.
+> опубликованной generation модели. Он активируется Flight v22.
 
 Telemetry описывает проход обучения, создавший epoch, а не повторную оценку
 весов финального checkpoint-а. Для каждого batch loss и ошибки target-ов
@@ -116,3 +116,9 @@ fits Worker v20 и принадлежащей provider-у projection metrics v11
 `fixtures/` содержит компактные примеры pending/available report и lazy
 gradient. Его manifest хеширует только bundle fixtures для офлайн-проверки; он
 не входит в identity совместимости telemetry, model или checkpoint.
+
+Flight v24 использует этот public query package без изменения wire semantics.
+Его provider-owned reader читает Metrics v13 и checkpoint/recovery v14
+для generations Semantic v7. Auxiliary layout и losses допускают
+`BernoulliEntropyPenalty` с positive entropy. Frozen schema references Semantic v4
+сохраняются; они не являются compatibility reader прежних generations.

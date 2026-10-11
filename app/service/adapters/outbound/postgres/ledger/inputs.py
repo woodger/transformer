@@ -197,11 +197,6 @@ class InputLedgerSlice:
         timestamp = timestamp_now(now)
         try:
             with self.database.transaction() as session:
-                upload = session.get(
-                    InputUpload,
-                    upload_token,
-                    with_for_update=True,
-                )
                 job = session.scalar(
                     select(Job)
                     .where(Job.job_id == job_id)
@@ -210,6 +205,12 @@ class InputLedgerSlice:
                 if job is None:
                     raise not_found(f"job not found: {job_id}")
                 _verify_fence(job, client_execution_id, fencing_token)
+
+                upload = session.get(
+                    InputUpload,
+                    upload_token,
+                    with_for_update=True,
+                )
                 if upload is None:
                     raise not_found("input upload reservation not found")
                 if (
@@ -318,7 +319,11 @@ class InputLedgerSlice:
                     _clear_input_wait(job)
 
                 queued = False
-                if job.execution_state == ExecutionState.WAITING_INPUT.value:
+                if (
+                    job.operation == "fit"
+                    and job.execution_state
+                    == ExecutionState.WAITING_INPUT.value
+                ):
                     contiguous_rows = int(session.scalar(
                         select(func.coalesce(func.sum(JobInput.rows), 0)).where(
                             JobInput.job_id == job_id,

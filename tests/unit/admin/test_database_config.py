@@ -40,6 +40,7 @@ def test_process_environment_overrides_env_file(tmp_path):
         database="transformer_test_environment",
         user="file-user",
         password="file-password",
+        schema="public",
     )
 
 

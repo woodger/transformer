@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 import app.service.adapters.outbound.artifacts.recovery_publication as publication_module
-from app.contracts.checkpoint.v12 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.model_config import ModelConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.checkpoint.v14 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.model_config import ModelConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.recovery_publication import (
     RecoveryCheckpointPublisher,

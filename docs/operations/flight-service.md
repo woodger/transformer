@@ -1,39 +1,71 @@
-# Эксплуатация сервиса Transformer Arrow Flight
+# Эксплуатация Transformer
 
-> Тип: операционное руководство. Запуск, shutdown, storage и recovery текущего
-> сервиса Flight v22.
+> Тип: операционное руководство. Запуск, остановка, хранение данных и диагностика сервиса.
 
-Wire semantics определены [Flight v22](../../app/contracts/flight/v22/README.md).
-Этот документ описывает эксплуатацию сервиса, а не JSON details вызывающей
-системы.
+Здесь описаны требования к серверу, его запуск и поведение после сбоя.
+Для подключения клиента используйте [руководство по интеграции](../flight-integration.md)
+и [спецификацию запросов Flight](../../app/contracts/flight/v24/README.md).
 
-## Требования runtime
+## Требования к серверу
 
-- `.venv` проекта и зафиксированные зависимости Python;
-- PostgreSQL, доступный с host-а service;
-- persistent настроенные directories runtime, models, recovery и telemetry;
-- окружение процесса Linux, способное завершать принадлежащие service groups
-  process Worker;
-- `nvidia-smi`, только когда требуется scheduling GPU;
-- OpenSearch, только когда Training Telemetry Query должна materialize reports.
+- `.venv` проекта с зафиксированными зависимостями Python;
+- PostgreSQL, доступный с сервера Transformer;
+- настроенные постоянные каталоги рабочих данных, моделей, восстановления и метрик;
+- Linux с возможностью завершать группы процессов Worker, принадлежащие сервису;
+- `nvidia-smi`, если используется GPU;
+- OpenSearch, если нужны отчёты о показателях обучения.
 
-Недоступность OpenSearch не блокирует fit, predict, публикацию model, Model
-Catalog, Model Topology или shutdown. Она делает telemetry query unavailable
-либо unavailable-after-terminal в соответствии с его query contract.
+Недоступность OpenSearch не блокирует обучение, предсказания, публикацию
+моделей, каталог, схему модели или остановку сервиса. Запрос показателей
+обучения в таком случае сообщает о недоступности согласно своей спецификации.
 
-## CPU budget CUDA Worker-а
+## Конфигурация окружения
 
-`app/config.py` фиксирует число PyTorch intra-op threads одного CUDA Worker-а
-равным восьми, inter-op threads — одному. После validation command manifest
-Worker применяет эти значения только при `device.backend = cuda`, до загрузки
-model и training runtime. CPU attempts сохраняют собственные PyTorch defaults.
-Thread budget является operational configuration и не входит во Flight, Worker,
-checkpoint или model compatibility contracts.
+Подготовьте `.env` в корне проекта по [образцу](../../.env.example).
+Подставьте настройки своей установки. Адаптеры PostgreSQL и OpenSearch читают
+этот файл, не изменяя `os.environ`. Одноимённые переменные окружения процесса
+имеют приоритет. Эти настройки PostgreSQL используют и сервис, и локальные
+команды `auth`, `models` и `db`.
+
+| Переменная | Назначение |
+| --- | --- |
+| `POSTGRES_HOST` | Обязательный адрес PostgreSQL |
+| `POSTGRES_DB` | Обязательное имя базы данных |
+| `POSTGRES_USER` | Обязательный пользователь базы данных |
+| `POSTGRES_PASSWORD` | Обязательный непустой пароль |
+| `POSTGRES_PORT` | Необязательный порт; значение по умолчанию задано в `app/config.py` |
+
+Таблицы, последовательности и история Alembic находятся в схеме PostgreSQL
+`public`. Это значение по умолчанию в `app/config.py`; отдельной переменной
+окружения для выбора схемы нет. Разбор и проверка подключения описаны в
+[`postgres/config.py`](../../app/service/adapters/outbound/postgres/config.py).
+Проверка и обновление базы описаны в [руководстве миграций](database-migrations.md).
+
+Настройки доставки метрик и запросов OpenSearch находятся в
+[руководстве OpenSearch](../deployment/opensearch.md#конфигурация-публикатора).
+Для работы без OpenSearch оставьте перечисленные там переменные незаданными
+и в `.env`, и в окружении процесса.
+
+Лимиты и таймауты `TRANSFORMER_*` читаются только из окружения процесса,
+а не из `.env`. Допустимые настройки определяет
+[`bootstrap/config.py`](../../app/service/bootstrap/config.py), значения по
+умолчанию — [`app/config.py`](../../app/config.py). Адрес, порт и TLS задаются
+параметрами `flight serve`. Для `runtime_dir`, `cpu_capacity` и
+`retention_seconds` используются значения по умолчанию; из `TRANSFORMER_*`
+они не читаются.
+
+## Потоки CPU при работе на CUDA
+
+Для Worker на CUDA `app/config.py` задаёт восемь потоков PyTorch внутри
+операции и один между операциями. После проверки манифеста Worker применяет
+эти значения до загрузки модели, только при `device.backend = cuda`.
+Для попыток на CPU остаются настройки PyTorch по умолчанию. Эти лимиты
+относятся к настройке исполнения и не меняют совместимость модели или форматы
+Flight, Worker и контрольных точек.
 
 ## Запуск и остановка
 
-Примените migrations до старта. В deployment используйте production unit
-systemd:
+Примените миграции до запуска. Для постоянной работы используйте unit systemd:
 
 ```bash
 sudo systemctl start transformer
@@ -42,61 +74,66 @@ journalctl -u transformer -f
 sudo systemctl stop transformer
 ```
 
-Process получает exclusive locks для настроенных directories runtime и recovery.
-Два instances service должны использовать разные managed storage roots; один
-instance никогда не должен очищать runtime artifacts другого.
+Процесс получает исключительные блокировки своих рабочих каталогов и каталогов
+восстановления. Два экземпляра сервиса должны использовать разные корневые
+каталоги хранилища. Каждый экземпляр очищает только собственные файлы.
 
-При старте service проверяет revision database, завершает только надёжно
-идентифицированные orphan process groups Worker и завершает все незавершённые
-jobs до запуска WorkerPool. `WAITING_INPUT`, `QUEUED`, `RUNNING` и `RETRYING`
-становятся `FAILED / EXECUTION_INTERRUPTED`; `CANCELLING` становится
-`CANCELLED`. Поэтому job не может автоматически продолжить выполнение после
-любого restart service. Затем service удаляет файлы без references только внутри
-собственных locked managed roots. Он не сканирует произвольные filesystem paths
-или OpenSearch как authority.
+При старте сервис проверяет версию базы, завершает оставшиеся процессы Worker,
+если надёжно установлено, что они принадлежат ему, и завершает незаконченные
+задания до запуска WorkerPool. `WAITING_INPUT`, `QUEUED`, `RUNNING` и `RETRYING`
+становятся `FAILED / EXECUTION_INTERRUPTED`; `CANCELLING` — `CANCELLED`.
+После перезапуска задания автоматически не продолжаются. Затем сервис удаляет
+из своих заблокированных каталогов файлы, на которые больше нет ссылок. Для
+поиска таких файлов он не сканирует произвольные пути или OpenSearch.
 
-## Владение storage
+## Хранение данных
 
-PostgreSQL авторитетен для lifecycle job, idempotency, owners, attempts,
-metadata published model, API tokens и state telemetry outbox. Managed
-filesystem storage содержит durable inputs, artifacts attempt/recovery,
-published checkpoints и временные files telemetry. OpenSearch — best-effort
-projection.
+PostgreSQL хранит состояние заданий, идемпотентных запросов, владельцев,
+попыток, сведения об опубликованных моделях, токены доступа и очередь доставки
+метрик. Файловое хранилище содержит входные данные, результаты попыток,
+контрольные точки и временные файлы метрик. OpenSearch содержит копию метрик
+для отчётов.
 
-Directories published model содержат только managed artifacts checkpoint
-provider-а. Catalog/detail разрешает их metadata из PostgreSQL; ни filesystem
-scan, ни telemetry не могут создать видимую generation модели.
+Перед фиксацией результатов предсказания и `SUCCEEDED` сервис выполняет `fsync`
+файлов и их родительских каталогов, включая каталоги, созданные Worker.
+Ошибка синхронизации не позволяет опубликовать частичный набор результатов.
 
-## Recovery и cleanup
+Каталоги опубликованных моделей содержат только файлы контрольных точек,
+которыми управляет сервис. Каталог моделей берёт сведения из PostgreSQL.
+Наличие файла или метрик само по себе не делает модель видимой клиенту.
 
-Recovery применяется только для retryable сбоя Worker внутри работающего
-service и только из зарегистрированного checkpoint-а, у которого точно
-совпадают configuration job, input manifest, semantic identities и fences
-progress. После restart service recovery не запускается: job уже terminal и
-для новой попытки вызывающая система создаёт новый job. Corrupt или incompatible
-artifact завершается ошибкой; он никогда не переназначается молча.
+## Восстановление и очистка
 
-Maintenance удаляет terminal artifacts job согласно настроенному retention и
-выполняет запрошенное удаление model. Startup reconciliation удаляет только
-artifacts без references в тех же service roots. Не удаляйте вручную rows
-PostgreSQL или managed directories model, чтобы принудить cleanup; используйте
-`models delete` либо документированную migration clean cut.
+Восстановление применяется только при допускающем повтор сбое Worker внутри
+работающего сервиса. Для него нужна зарегистрированная контрольная точка.
+Сервис проверяет точное совпадение настроек задания, манифеста входа,
+идентификаторов совместимости данных и модели и сохранённого прогресса.
+После перезапуска сервиса задание уже завершено; для новой попытки клиент
+создаёт новое задание. Повреждённая или несовместимая контрольная точка
+вызывает ошибку; её данные не подгоняются под новое задание.
 
-## Текущий runtime Semantic v5 / Flight v22
+Фоновое обслуживание удаляет файлы завершённых заданий по сроку хранения
+и выполняет запрошенное удаление моделей. При старте очищаются только файлы
+без ссылок в собственных заблокированных каталогах. Для удаления моделей
+используйте `models delete` или описанную миграцию; ручное удаление строк БД
+и каталогов нарушает этот порядок.
 
-Migration 0029 удаляет state предыдущей semantic boundary. Для перехода
-на Semantic v5 остановите все instances service, дождитесь terminal state jobs
-и примените её. Перед запуском Flight v22 замените индексы metrics OpenSearch
-v10 на v11 по documented procedure. Старые models, checkpoints, state recovery
-и telemetry до migration 0029 использовать нельзя.
+## Обновление существующей установки
 
-См. [управление migrations](database-migrations.md) и
-[deployment OpenSearch](../deployment/opensearch.md).
+Миграция `0031` удаляет данные предыдущего формата. Перед переходом остановите
+все экземпляры сервиса, дождитесь завершения заданий и примените миграцию.
+До запуска новой версии замените индексы метрик v12 на v13. После миграции
+прежние модели, контрольные точки, состояние восстановления и метрики в БД
+использовать нельзя.
 
-## Health и troubleshooting
+Порядок действий описан в [руководстве миграций](database-migrations.md)
+и [инструкции OpenSearch](../deployment/opensearch.md).
 
-Используйте `transformer.v22.health` для аутентифицированной surface health
-provider-а и `transformer.v22.capabilities` для текущей availability
-device/upload/query. Для операционной диагностики используйте logs service и
-state database. Никогда не помещайте bearer credentials, passwords database или
-raw paths checkpoint-а в общие logs или сообщения support.
+## Проверка состояния и диагностика
+
+Запрос `transformer.v24.health` проверяет работоспособность сервиса,
+PostgreSQL, GPU и хранилища. `transformer.v24.capabilities` сообщает о доступных
+устройствах, загрузке данных и запросах. Оба требуют аутентификации.
+Для диагностики также используйте логи сервиса и состояние базы. Пароли,
+Bearer-токены и пути контрольных точек не должны попадать в общие логи
+или сообщения поддержки.

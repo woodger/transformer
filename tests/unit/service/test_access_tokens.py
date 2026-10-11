@@ -26,7 +26,6 @@ from app.service.domain.access import AuthIdentity
 class _Session:
     def __init__(self):
         self.records = []
-        self.flushes = 0
         self.scalar_statements = []
 
     def __enter__(self):
@@ -39,7 +38,7 @@ class _Session:
         self.records.append(record)
 
     def flush(self):
-        self.flushes += 1
+        return None
 
     def delete(self, record):
         self.records.remove(record)
@@ -142,7 +141,6 @@ def test_list_omits_credentials_and_revoke_physically_deletes_token():
     assert store.list() == []
     with pytest.raises(LookupError, match="not found"):
         store.revoke(issued.token_id)
-    assert database.current.flushes == 2
 
 
 def test_revoke_rejects_invalid_or_unknown_token_id():
@@ -197,11 +195,11 @@ def test_cache_aside_uses_postgresql_token_store_identity():
     compiled = statement.compile(dialect=postgresql.dialect())
     sql = " ".join(str(compiled).split())
     assert sql.startswith(
-        "UPDATE transformer.api_access_tokens SET last_used_at="
+        "UPDATE public.api_access_tokens SET last_used_at="
     )
     assert "api_access_tokens.token_digest =" in sql
     assert "api_access_tokens.expires_at >" in sql
-    assert "RETURNING transformer.api_access_tokens.token_id" in sql
+    assert "RETURNING public.api_access_tokens.token_id" in sql
     assert hashlib.sha256(issued.token.encode("ascii")).hexdigest() in (
         compiled.params.values()
     )

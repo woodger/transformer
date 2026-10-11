@@ -51,7 +51,7 @@ parameters и покрывает его canonical digest. Transformer храни
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
 - [Интеграция с Flight](../flight-integration.md)
 - [Функция потерь](../losses.md)
-- [Политика metrics](../policy/metrics-policy.md)
+- [Правила метрик](../policy/metrics-policy.md)

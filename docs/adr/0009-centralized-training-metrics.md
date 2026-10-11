@@ -56,7 +56,7 @@ bounded retry lifecycle.
 
 ## Текущая документация
 
-- [Политика metrics и OpenSearch](../policy/metrics-policy.md)
-- [Runtime обучения](../training-runtime.md)
+- [Правила метрик и OpenSearch](../policy/metrics-policy.md)
+- [Обучение и восстановление](../training-runtime.md)
 - [Эксплуатация OpenSearch](../deployment/opensearch.md)
-- [Контракты metrics](../../app/contracts/metrics/)
+- [Форматы метрик](../../app/contracts/metrics/)

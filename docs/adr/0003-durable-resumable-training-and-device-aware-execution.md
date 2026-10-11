@@ -58,6 +58,6 @@ recovery error, а не скрытый restart с нуля.
 
 ## Текущая документация
 
-- [Runtime обучения и recovery](../training-runtime.md)
+- [Обучение и восстановление](../training-runtime.md)
 - [Операционное руководство Flight](../operations/flight-service.md)
 - [Архитектура Transformer](../architecture.md)

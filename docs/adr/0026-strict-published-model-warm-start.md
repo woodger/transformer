@@ -63,7 +63,7 @@ PostgreSQL revision `0021` сохраняются. Новая migration не т�
 
 ## Текущая документация
 
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
+- [Протокол Worker](../../app/contracts/worker/v22/README.md)
 - [Интеграция с Flight](../flight-integration.md)
-- [Runtime обучения](../training-runtime.md)
+- [Обучение и восстановление](../training-runtime.md)

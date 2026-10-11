@@ -1,0 +1,66 @@
+{
+  "contract": "transformer-semantic-fixtures",
+  "version": 6,
+  "files": [
+    {
+      "path": "bernoulli-confidence-penalty.json",
+      "sha256": "ac96bf86309ef26971f81655c647fc285f79ac1939a22227d6b143b47af159b0"
+    },
+    {
+      "path": "d1_sha256.mjs",
+      "sha256": "bdf09b3284303bed7ad7f253edd9b623c7e705ed77ac1bfdb454471c5a30c8fd"
+    },
+    {
+      "path": "jcs.mjs",
+      "sha256": "2207a454ceeeec9130e7aaf7dca17752da48897c3ee18f29e1037dbb0c1d6012"
+    },
+    {
+      "path": "language-capabilities.json",
+      "sha256": "c2faa1a2e6a71194d616f63382d91c58a0a6603f68ff27fed67a45ecf269b796"
+    },
+    {
+      "path": "multi-target-shared-resource.json",
+      "sha256": "7e686f83df1caf517283627008efa039d40c3699e56d9b71b01579d5cbbe3be5"
+    },
+    {
+      "path": "new-opaque-target.json",
+      "sha256": "a2af7be2cc306cbaed19c0cbfff377b4d861538df95bbda497e096d0808ba832"
+    },
+    {
+      "path": "positive-class-weighted-binary-w1.json",
+      "sha256": "288329c623d4590a8c52c5b5447bf33c9d5a0cb75413257f6923519c0add1210"
+    },
+    {
+      "path": "positive-class-weighted-binary-w28.json",
+      "sha256": "65249aee74c28745cccf92c688bd923cfdc546e2199957549a94d3602d9c711f"
+    },
+    {
+      "path": "single-positive-regression.json",
+      "sha256": "5c73c44644ba40b26008e20859f2b8154d9d04ad8d637845c6fc9b5d34afcfd6"
+    },
+    {
+      "path": "single-probability.json",
+      "sha256": "23c85a49df0c607a4d97b13d4ab95c755f3b4cf5cd6d80cb75c90c3a4c9a0c4c"
+    },
+    {
+      "path": "single-regression-pre-norm.json",
+      "sha256": "80522b72c9343f2a0a222cc06959ccb4dc49cd5b47a44097a7601ae32bf89267"
+    },
+    {
+      "path": "single-regression.json",
+      "sha256": "01d1958f7d159c672863e9a334994e7c8cb2ec814ddafec09650dad187672911"
+    },
+    {
+      "path": "target-reorder-a-b.json",
+      "sha256": "b28bd0f112556a057fbcce57f6dd6c58d079f144e22516c84a5e4e2374d8276a"
+    },
+    {
+      "path": "target-reorder-b-a.json",
+      "sha256": "b2d5f83ca5c7362ba4b43f506ff04a520a9dd37f1331bce8f1dd9812eea5de1f"
+    },
+    {
+      "path": "weighted-binary-confidence-penalty.json",
+      "sha256": "34ab0788ff7e82e409b5a868ef837f4d5a08738019c29c0ade304f3335874674"
+    }
+  ]
+}

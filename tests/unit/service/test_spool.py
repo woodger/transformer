@@ -1,5 +1,7 @@
 import os
+import stat
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -102,6 +104,30 @@ def test_file_fsync_failure_never_replaces_target(spool, monkeypatch):
             target.write(b"not durable")
 
     assert open(destination, "rb").read() == b"old"
+    assert not os.path.exists(temporary_path)
+
+
+def test_directory_fsync_failure_keeps_replaced_target_and_cleans_temporary(
+    spool,
+    monkeypatch,
+):
+    destination = spool.input_path(str(uuid.uuid4()), 0)
+    spool.atomic_write_bytes(destination, b"old")
+    real_fsync = os.fsync
+
+    def fail_directory_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("injected directory fsync failure")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(spool_module.os, "fsync", fail_directory_fsync)
+
+    with pytest.raises(OSError, match="injected directory fsync failure"):
+        with spool.staged_file(destination) as (target, temporary_path):
+            target.write(b"new payload")
+
+    assert target.closed
+    assert Path(destination).read_bytes() == b"new payload"
     assert not os.path.exists(temporary_path)
 
 

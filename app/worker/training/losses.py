@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast, overload
@@ -7,7 +8,7 @@ from typing import Literal, cast, overload
 import torch
 import torch.nn.functional as F
 
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v7 import ModelContract
 from app.worker.model.transformer import apply_transformation, public_predictions
 
 
@@ -251,6 +252,8 @@ def _direct_loss(
             reduction="none",
         )
     if operator == "PositiveClassWeightedBinaryCrossEntropyWithLogits":
+        if model_value.dtype in (torch.float16, torch.bfloat16):
+            model_value = model_value.float()
         positive_class_weight = model_value.new_tensor(
             _number(
                 specification["positiveClassWeight"],
@@ -282,6 +285,34 @@ def _auxiliary_loss(
     model_contract: ModelContract,
 ) -> torch.Tensor:
     roles = cast(Mapping[str, object], specification["roles"])
+    if operator in ("BernoulliConfidencePenalty", "BernoulliEntropyPenalty"):
+        index = _target_index(roles["probability"], target_indices)
+        logit = model_output[:, index]
+        # Для AMP повышаем точность коррекции logit и расчёта энтропии,
+        # особенно при вероятностях около границ [0, 1].
+        if logit.dtype in (torch.float16, torch.bfloat16):
+            logit = logit.float()
+        positive_class_weight = model_contract.positive_class_weight_for_target(
+            index,
+        )
+        # Энтропия относится к публичной p = sigmoid(z - ln(positiveClassWeight)).
+        # Без коррекции weighted BCE регуляризировал бы другую вероятность.
+        if positive_class_weight is not None:
+            logit = logit - math.log(positive_class_weight)
+
+        # logsigmoid(±logit) избегает log(0) при насыщении sigmoid.
+        negative_entropy = (
+            torch.sigmoid(logit) * F.logsigmoid(logit)
+            + torch.sigmoid(-logit) * F.logsigmoid(-logit)
+        )
+        # Положительные weights сохраняются: confidence повышает энтропию,
+        # entropy penalty снижает её. Знак принадлежит оператору, не настройке.
+        return (
+            negative_entropy
+            if operator == "BernoulliConfidencePenalty"
+            else -negative_entropy
+        )
+
     if operator == "GaussianNLL":
         index = _target_index(roles["locationEstimate"], target_indices)
         scale = model_output[

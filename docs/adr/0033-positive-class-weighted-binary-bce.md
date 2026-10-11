@@ -50,8 +50,8 @@
 
 ## Текущая документация
 
-- [Семантический контракт v4](../../app/contracts/semantic/v4/README.md)
-- [Контракт Arrow Flight v17](../../app/contracts/flight/v17/README.md)
-- [Контракт Model Catalog v4](../../app/contracts/model_catalog/v4/README.md)
-- [Контракт Model Topology v2](../../app/contracts/model_topology/v2/README.md)
-- [Справочник objective и loss](../losses.md)
+- [Цели и функция потерь](../../app/contracts/semantic/v7/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
+- [Каталог моделей](../../app/contracts/model_catalog/v9/README.md)
+- [Схема модели](../../app/contracts/model_topology/v5/README.md)
+- [Функции потерь и регуляризация](../losses.md)

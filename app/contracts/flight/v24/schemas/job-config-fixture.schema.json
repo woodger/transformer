@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/flight/v24/job-config-fixture.schema.json",
+  "title": "Transformer Flight v24 job configuration golden fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixtureId",
+    "jobConfig",
+    "expectedJobConfigSha256"
+  ],
+  "properties": {
+    "fixtureId": {
+      "$ref": "https://transformer.local/contracts/semantic/v7/common.schema.json#/$defs/identity"
+    },
+    "jobConfig": {
+      "$ref": "job-config.schema.json"
+    },
+    "expectedJobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    }
+  }
+}

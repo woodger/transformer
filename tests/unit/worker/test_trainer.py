@@ -10,14 +10,14 @@ import torch
 from torch import nn
 
 import app.worker.training.trainer as trainer_module
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.config import (
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import (
     CheckpointSelectionConfig,
     ModelConfig,
     TrainConfig,
 )
-from app.contracts.worker.v20.diagnostics import DiagnosticsConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.worker.v22.diagnostics import DiagnosticsConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.worker.data.tensors import TrainingBatch
 from app.worker.model.transformer import TransformerModel, public_predictions
 from app.worker.runtime.reproducibility import configure_reproducibility
@@ -77,13 +77,6 @@ AUXILIARY_COMPONENTS = tuple(
     (str(item["identity"]), str(item["operator"]))
     for item in DEFAULT_MODEL_CONTRACT.auxiliary_components
 )
-
-
-@pytest.fixture(autouse=True)
-def torch_rng():
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(1729)
-        yield
 
 
 def make_dummy_data(n=32, seq_len=5, feat_dim=4):

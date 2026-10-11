@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://transformer.local/contracts/checkpoint/v14/recovery-metadata.schema.json",
+  "title": "Transformer recovery v14 metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "jobId",
+    "generation",
+    "inputRevision",
+    "jobConfigSha256",
+    "semanticDigests",
+    "manifestSha256",
+    "checkpoint",
+    "progress"
+  ],
+  "properties": {
+    "format": {
+      "const": "transformer-recovery-v14"
+    },
+    "jobId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "inputRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "jobConfigSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "semanticDigests": {
+      "$ref": "https://transformer.local/contracts/semantic/v7/semantic-digests.schema.json"
+    },
+    "manifestSha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "checkpoint": {
+      "$ref": "common.schema.json#/$defs/artifact"
+    },
+    "progress": {
+      "$ref": "common.schema.json#/$defs/progress"
+    }
+  }
+}

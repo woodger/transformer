@@ -8,10 +8,10 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v12 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
+from app.contracts.checkpoint.v14 import CHECKPOINT_FORMAT, RECOVERY_FORMAT
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20 import (
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22 import (
     WorkerContractError,
     validate_training_metrics_for_model,
 )
@@ -89,7 +89,7 @@ class WorkerRecoveryError(AttemptExecutionError):
 
 
 class RecoveryCheckpointPublisher:
-    """Проверить и зарегистрировать v12 checkpoint активного fit-процесса."""
+    """Проверить и зарегистрировать v13 checkpoint активного fit-процесса."""
 
     def __init__(
         self,

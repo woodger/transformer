@@ -1,0 +1,7 @@
+{
+  "code": "RESOURCE_EXHAUSTED",
+  "reason": "MODEL_TOPOLOGY_RESPONSE_BUDGET_EXCEEDED",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "maxResponseBytes": 8388608,
+  "message": "model topology response exceeds the configured budget"
+}

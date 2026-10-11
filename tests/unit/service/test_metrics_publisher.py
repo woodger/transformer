@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from dataclasses import replace
 
-from app.contracts.metrics.fit_run.v11 import RUN_INDEX
-from app.contracts.metrics.v11 import POINT_INDEX
+from app.contracts.metrics.fit_run.v13 import RUN_INDEX
+from app.contracts.metrics.v13 import POINT_INDEX
 from app.service.adapters.observability import OperationalMetrics
 from app.service.adapters.outbound.artifacts.spool import Spool
 from app.service.adapters.outbound.artifacts.telemetry.projection import (
@@ -385,11 +385,12 @@ def test_shutdown_timeout_does_not_fail_the_service():
         logger=logger,
         metrics=OperationalMetrics(),
     ).start()
-    assert sink.entered.wait(2.0)
-
-    publisher.shutdown(0.0)
-    sink.release.set()
-    publisher.shutdown(2.0)
+    try:
+        assert sink.entered.wait(2.0)
+        publisher.shutdown(0.0)
+    finally:
+        sink.release.set()
+        publisher.shutdown(2.0)
 
     assert any(
         event == "metrics.publisher.drain_exceeded"
@@ -421,7 +422,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         entry,
         training_metrics=replace(
             entry.training_metrics,
-            format="transformer.training-metrics.v11",
+            format="transformer.training-metrics.v13",
             relative_path=artifact.relative_path,
             byte_count=artifact.byte_count,
             sha256=artifact.sha256,
@@ -430,7 +431,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
         ),
         run_summary=FitRunSummaryArtifactRecord(
             model_ref=entry.training_metrics.model_ref,
-            format="transformer.fit-run-summary.v11",
+            format="transformer.fit-run-summary.v13",
             media_type="application/json",
             relative_path=summary.relative_path,
             byte_count=summary.byte_count,
@@ -442,7 +443,7 @@ def test_current_projection_verifies_immutable_run_summary(tmp_path):
             git_commit="0" * 40,
             created_at=10.0,
         ),
-        projection_version="transformer.metrics.v11",
+        projection_version="transformer.metrics.v13",
     )
 
     projection = TrainingMetricsProjection(spool)

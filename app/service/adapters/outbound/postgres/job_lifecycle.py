@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.json_types import JsonObject, JsonValue
 from app.service.adapters.outbound.postgres.ledger import Ledger
+from app.service.adapters.outbound.postgres.ledger.support import advisory_lock
 from app.service.adapters.outbound.postgres.mapping import (
     row_integer,
     row_integer_tuple,
@@ -100,6 +101,7 @@ class PostgresJobLifecycle:
                     command.job_id,
                 )
 
+            advisory_lock(connection, "job-admission", command.owner_subject)
             active = self.ledger.active_job_count(
                 command.owner_subject,
                 connection=connection,

@@ -10,27 +10,27 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import BinaryIO, Protocol, cast
 
-from app.contracts.checkpoint.v12 import (
+from app.contracts.checkpoint.v14 import (
     CHECKPOINT_FORMAT,
     validate_checkpoint_document,
 )
-from app.contracts.flight.v22.arrow import validate_prediction_file
+from app.contracts.flight.v24.arrow import validate_prediction_file
 from app.contracts.json_types import JsonObject
-from app.contracts.semantic.v5 import ModelContract
+from app.contracts.semantic.v7 import ModelContract
 from app.contracts.target_head_diagnostics.v5.constants import (
     MAX_COMMITTED_ARTIFACT_ROWS,
 )
-from app.contracts.worker.v20 import (
+from app.contracts.worker.v22 import (
     PREDICTION_OUTPUT_SCHEMA_ID,
     validate_document,
 )
-from app.contracts.worker.v20.config import ModelConfig, TrainConfig
-from app.contracts.worker.v20.diagnostics import (
+from app.contracts.worker.v22.config import ModelConfig, TrainConfig
+from app.contracts.worker.v22.diagnostics import (
     ENCODER_LAYER_DIRECT_COMPONENT_PER_BATCH,
     TARGET_HEAD_FULL_COMMITTED_ARTIFACT,
     DiagnosticsConfig,
 )
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.service.application.ports.artifacts import PublishedModelArtifacts
 from app.service.application.ports.observability import (
     EventLogger,
@@ -97,6 +97,8 @@ class _PublicationSpool(Protocol):
     def attempt_checkpoint_path(self, job_id: str, attempt: int) -> str: ...
 
     def relative_path(self, absolute_path: str) -> str: ...
+
+    def sync_file(self, path: str) -> None: ...
 
     def model_directory(self, model_ref: str) -> str: ...
 
@@ -246,6 +248,8 @@ class WorkerArtifactPublisher:
                     ErrorCode.MALFORMED_OUTPUT,
                     "prediction worker output is not valid Arrow",
                 ) from exc
+
+            self.spool.sync_file(path)
             outputs.append(StagedPredictionOutput(
                 ordinal=item.ordinal,
                 rows=stats.rows,

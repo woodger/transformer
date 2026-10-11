@@ -77,11 +77,11 @@ recovery fencing, но не в target, objective или model identity. Пере
 
 ## Текущая документация
 
-- [Нормативный semantic contract v2](../../app/contracts/semantic/v2/README.md)
-- [Контракт Arrow Flight v14](../../app/contracts/flight/v14/README.md)
-- [Процессный контракт Worker v13](../../app/contracts/worker/v13/README.md)
-- [Контракт checkpoint/recovery v7](../../app/contracts/checkpoint/v7/README.md)
-- [Контракт метрик обучения v6](../../app/contracts/metrics/v6/README.md)
-- [Контракт terminal fit metrics v6](../../app/contracts/metrics/fit_run/v6/README.md)
+- [Цели и функция потерь](../../app/contracts/semantic/v7/README.md)
+- [Запросы Flight](../../app/contracts/flight/v24/README.md)
+- [Протокол Worker](../../app/contracts/worker/v22/README.md)
+- [Формат контрольных точек](../../app/contracts/checkpoint/v14/README.md)
+- [Формат метрик обучения](../../app/contracts/metrics/v13/README.md)
+- [Итоговые показатели обучения](../../app/contracts/metrics/fit_run/v13/README.md)
 - [Архитектура Transformer](../architecture.md)
 - [ADR 0027: компактный input indexed feature blocks](0027-compact-indexed-feature-block-input.md)

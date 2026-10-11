@@ -1,0 +1,6 @@
+{
+  "code": "INVALID_ARGUMENT",
+  "reason": "INVALID_MODEL_TOPOLOGY_QUERY",
+  "path": "/modelRef",
+  "message": "modelRef must identify one published model generation"
+}

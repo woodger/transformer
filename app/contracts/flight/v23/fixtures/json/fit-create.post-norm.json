@@ -1,0 +1,73 @@
+{
+  "requestId": "99999999-9999-4999-8999-999999999999",
+  "idempotencyKey": "fit-post-norm-v5",
+  "modelLabel": "normalization-order-probe",
+  "device": "cpu",
+  "dataBinding": {
+    "dataContractSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tensorGeometry": {
+      "seqLen": 10,
+      "featureDim": 64848
+    },
+    "inputLayout": {
+      "featureBlocks": [
+        {
+          "windowRows": 1,
+          "nativeRowWidth": 64848
+        }
+      ]
+    }
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "MeanReturn",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Tanh",
+          "publicPredictionTransformation": "Tanh"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.mean-return",
+          "operator": "SmoothL1",
+          "weight": 1,
+          "targetIdentity": "MeanReturn"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 256,
+      "encoderLayerCount": 5,
+      "dropoutProbability": 0.1,
+      "attentionHeadCount": 8,
+      "missingValuePolicy": "relaxed",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "trainingConfig": {
+    "learningRate": 0.0005,
+    "batchSize": 128,
+    "epochs": 200,
+    "mixedPrecision": false,
+    "weightDecay": 0,
+    "selection": null,
+    "seed": 42,
+    "deterministic": true
+  },
+  "diagnostics": {
+    "gradientInteractions": null,
+    "targetHead": "fullCommittedArtifact",
+    "encoderLayerDiagnostics": "directComponentPerBatch"
+  },
+  "initialization": {
+    "source": "random"
+  }
+}

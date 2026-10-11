@@ -1,0 +1,5 @@
+{
+  "code": "FAILED_PRECONDITION",
+  "reason": "MODEL_TOPOLOGY_QUERY_UNAVAILABLE",
+  "message": "model topology query is unavailable"
+}

@@ -1,0 +1,1267 @@
+{
+  "edges": [
+    {
+      "from": {
+        "nodeId": "features-input",
+        "portId": "values"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "feature",
+          "size": 12
+        }
+      ],
+      "to": {
+        "nodeId": "context-preparation",
+        "portId": "features"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "context-preparation",
+        "portId": "prepared"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "contextFeature",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "input-projection",
+        "portId": "features"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "input-projection",
+        "portId": "encoded"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "positional-encoding",
+        "portId": "encoded"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "positional-encoding",
+        "portId": "positioned"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "encoder-1",
+        "portId": "sequence"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "context-preparation",
+        "portId": "attention-mask"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        }
+      ],
+      "to": {
+        "nodeId": "encoder-1",
+        "portId": "attention-mask"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "encoder-1",
+        "portId": "sequence"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "encoder-2",
+        "portId": "sequence"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "context-preparation",
+        "portId": "attention-mask"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        }
+      ],
+      "to": {
+        "nodeId": "encoder-2",
+        "portId": "attention-mask"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "encoder-2",
+        "portId": "sequence"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "sequence",
+          "size": 3
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "last-valid-selection",
+        "portId": "sequence"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "last-valid-selection",
+        "portId": "state"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "target-0-raw",
+        "portId": "state"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-0-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-0-loss-input",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-0-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-0-prediction",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "last-valid-selection",
+        "portId": "state"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "target-1-raw",
+        "portId": "state"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-1-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-1-loss-input",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-1-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-1-prediction",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "last-valid-selection",
+        "portId": "state"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "target-2-raw",
+        "portId": "state"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-2-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-2-loss-input",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-2-raw",
+        "portId": "raw"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "target-2-prediction",
+        "portId": "raw"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "last-valid-selection",
+        "portId": "state"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        },
+        {
+          "axis": "hidden",
+          "size": 24
+        }
+      ],
+      "to": {
+        "nodeId": "resource-0",
+        "portId": "state"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-0-loss-input",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-0",
+        "portId": "estimate"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "observed-target-0",
+        "portId": "value"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-0",
+        "portId": "observed"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "direct-component-0",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-0"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-1-loss-input",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-1",
+        "portId": "estimate"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "observed-target-1",
+        "portId": "value"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-1",
+        "portId": "observed"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "direct-component-1",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-1"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-2-loss-input",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-2",
+        "portId": "estimate"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "observed-target-2",
+        "portId": "value"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "direct-component-2",
+        "portId": "observed"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "direct-component-2",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-2"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-1-prediction",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-0",
+        "portId": "positiveOutcomeProbability"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-2-prediction",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-0",
+        "portId": "negativeOutcomeProbability"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "auxiliary-component-0",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-3"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-0-loss-input",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-1",
+        "portId": "locationEstimate"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "observed-target-0",
+        "portId": "value"
+      },
+      "gradientFlow": "notApplicable",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-1",
+        "portId": "observedLocation"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "resource-0",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-1",
+        "portId": "scale"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "auxiliary-component-1",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-4"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-1-prediction",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-2",
+        "portId": "positiveOutcomeProbability"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "target-2-prediction",
+        "portId": "value"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-2",
+        "portId": "negativeOutcomeProbability"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "resource-0",
+        "portId": "value"
+      },
+      "gradientFlow": "stopped",
+      "logicalShape": [
+        {
+          "axis": "batch",
+          "size": null
+        }
+      ],
+      "to": {
+        "nodeId": "auxiliary-component-2",
+        "portId": "uncertaintyScale"
+      }
+    },
+    {
+      "from": {
+        "nodeId": "auxiliary-component-2",
+        "portId": "weighted"
+      },
+      "gradientFlow": "propagates",
+      "logicalShape": [],
+      "to": {
+        "nodeId": "total-loss",
+        "portId": "component-5"
+      }
+    }
+  ],
+  "modelDefinitionSha256": "ad480d2c01954d6654da936ea6a0e2ea7c6fd9f36fb22602a0da5763a61bdf68",
+  "modelRef": "mdl_11111111111111111111111111111111",
+  "nodes": [
+    {
+      "id": "features-input",
+      "inputPorts": [],
+      "label": "Feature sequence",
+      "outputPorts": [
+        {
+          "id": "values",
+          "label": "Features"
+        }
+      ]
+    },
+    {
+      "id": "context-preparation",
+      "inputPorts": [
+        {
+          "id": "features",
+          "label": "Features"
+        }
+      ],
+      "label": "Context preparation",
+      "outputPorts": [
+        {
+          "id": "prepared",
+          "label": "Prepared features"
+        },
+        {
+          "id": "attention-mask",
+          "label": "Attention mask"
+        }
+      ]
+    },
+    {
+      "id": "input-projection",
+      "inputPorts": [
+        {
+          "id": "features",
+          "label": "Prepared features"
+        }
+      ],
+      "label": "Input projection",
+      "outputPorts": [
+        {
+          "id": "encoded",
+          "label": "Encoded sequence"
+        }
+      ]
+    },
+    {
+      "id": "positional-encoding",
+      "inputPorts": [
+        {
+          "id": "encoded",
+          "label": "Encoded sequence"
+        }
+      ],
+      "label": "Positional encoding",
+      "outputPorts": [
+        {
+          "id": "positioned",
+          "label": "Positioned sequence"
+        }
+      ]
+    },
+    {
+      "attentionHeadCount": 4,
+      "encoderLayer": 1,
+      "id": "encoder-1",
+      "inputPorts": [
+        {
+          "id": "sequence",
+          "label": "Encoded sequence"
+        },
+        {
+          "id": "attention-mask",
+          "label": "Attention mask"
+        }
+      ],
+      "label": "Encoder layer 1",
+      "outputPorts": [
+        {
+          "id": "sequence",
+          "label": "Encoded sequence"
+        }
+      ],
+      "encoderNormalizationOrder": "preNorm"
+    },
+    {
+      "attentionHeadCount": 4,
+      "encoderLayer": 2,
+      "id": "encoder-2",
+      "inputPorts": [
+        {
+          "id": "sequence",
+          "label": "Encoded sequence"
+        },
+        {
+          "id": "attention-mask",
+          "label": "Attention mask"
+        }
+      ],
+      "label": "Encoder layer 2",
+      "outputPorts": [
+        {
+          "id": "sequence",
+          "label": "Encoded sequence"
+        }
+      ],
+      "encoderNormalizationOrder": "preNorm"
+    },
+    {
+      "id": "last-valid-selection",
+      "inputPorts": [
+        {
+          "id": "sequence",
+          "label": "Encoded sequence"
+        }
+      ],
+      "label": "Last valid state",
+      "outputPorts": [
+        {
+          "id": "state",
+          "label": "Selected state"
+        }
+      ]
+    },
+    {
+      "id": "observed-target-0",
+      "inputPorts": [],
+      "label": "Observed target 0",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Observed value"
+        }
+      ],
+      "targetIdentity": "Location",
+      "targetIndex": 0
+    },
+    {
+      "id": "target-0-raw",
+      "inputPorts": [
+        {
+          "id": "state",
+          "label": "Selected state"
+        }
+      ],
+      "label": "Target head 0",
+      "outputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "targetIdentity": "Location",
+      "targetIndex": 0
+    },
+    {
+      "id": "target-0-loss-input",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Loss input transformation 0",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Loss estimate"
+        }
+      ],
+      "targetIdentity": "Location",
+      "targetIndex": 0,
+      "transformation": "Identity"
+    },
+    {
+      "id": "target-0-prediction",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Public prediction transformation 0",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Public prediction"
+        }
+      ],
+      "targetIdentity": "Location",
+      "targetIndex": 0,
+      "transformation": "Identity"
+    },
+    {
+      "id": "observed-target-1",
+      "inputPorts": [],
+      "label": "Observed target 1",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Observed value"
+        }
+      ],
+      "targetIdentity": "PositiveOutcome",
+      "targetIndex": 1
+    },
+    {
+      "id": "target-1-raw",
+      "inputPorts": [
+        {
+          "id": "state",
+          "label": "Selected state"
+        }
+      ],
+      "label": "Target head 1",
+      "outputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "targetIdentity": "PositiveOutcome",
+      "targetIndex": 1
+    },
+    {
+      "id": "target-1-loss-input",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Loss input transformation 1",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Loss estimate"
+        }
+      ],
+      "targetIdentity": "PositiveOutcome",
+      "targetIndex": 1,
+      "transformation": "Identity"
+    },
+    {
+      "id": "target-1-prediction",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Public prediction transformation 1",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Public prediction"
+        }
+      ],
+      "targetIdentity": "PositiveOutcome",
+      "targetIndex": 1,
+      "transformation": "Sigmoid"
+    },
+    {
+      "id": "observed-target-2",
+      "inputPorts": [],
+      "label": "Observed target 2",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Observed value"
+        }
+      ],
+      "targetIdentity": "NegativeOutcome",
+      "targetIndex": 2
+    },
+    {
+      "id": "target-2-raw",
+      "inputPorts": [
+        {
+          "id": "state",
+          "label": "Selected state"
+        }
+      ],
+      "label": "Target head 2",
+      "outputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "targetIdentity": "NegativeOutcome",
+      "targetIndex": 2
+    },
+    {
+      "id": "target-2-loss-input",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Loss input transformation 2",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Loss estimate"
+        }
+      ],
+      "targetIdentity": "NegativeOutcome",
+      "targetIndex": 2,
+      "transformation": "Identity"
+    },
+    {
+      "id": "target-2-prediction",
+      "inputPorts": [
+        {
+          "id": "raw",
+          "label": "Raw coordinate"
+        }
+      ],
+      "label": "Public prediction transformation 2",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Public prediction"
+        }
+      ],
+      "targetIdentity": "NegativeOutcome",
+      "targetIndex": 2,
+      "transformation": "Sigmoid"
+    },
+    {
+      "id": "resource-0",
+      "inputPorts": [
+        {
+          "id": "state",
+          "label": "Selected state"
+        }
+      ],
+      "label": "Private resource 0",
+      "outputPorts": [
+        {
+          "id": "value",
+          "label": "Private value"
+        }
+      ],
+      "resourceClass": "PositiveScalarPerObservation",
+      "resourceIdentity": "sharedScale"
+    },
+    {
+      "componentIdentity": "direct.location",
+      "componentWeight": 1.0,
+      "id": "direct-component-0",
+      "inputPorts": [
+        {
+          "id": "estimate",
+          "label": "Loss estimate"
+        },
+        {
+          "id": "observed",
+          "label": "Observed value"
+        }
+      ],
+      "label": "Direct loss 0",
+      "operator": "SmoothL1",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean",
+      "targetIdentity": "Location",
+      "targetIndex": 0
+    },
+    {
+      "componentIdentity": "direct.positive",
+      "componentWeight": 1.0,
+      "id": "direct-component-1",
+      "inputPorts": [
+        {
+          "id": "estimate",
+          "label": "Loss estimate"
+        },
+        {
+          "id": "observed",
+          "label": "Observed value"
+        }
+      ],
+      "label": "Direct loss 1",
+      "operator": "BinaryCrossEntropyWithLogits",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean",
+      "targetIdentity": "PositiveOutcome",
+      "targetIndex": 1
+    },
+    {
+      "componentIdentity": "direct.negative",
+      "componentWeight": 1.0,
+      "id": "direct-component-2",
+      "inputPorts": [
+        {
+          "id": "estimate",
+          "label": "Loss estimate"
+        },
+        {
+          "id": "observed",
+          "label": "Observed value"
+        }
+      ],
+      "label": "Direct loss 2",
+      "operator": "BinaryCrossEntropyWithLogits",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean",
+      "targetIdentity": "NegativeOutcome",
+      "targetIndex": 2
+    },
+    {
+      "componentIdentity": "aux.expected-value",
+      "componentWeight": 0.5,
+      "id": "auxiliary-component-0",
+      "inputPorts": [
+        {
+          "id": "positiveOutcomeProbability",
+          "label": "Positive outcome probability"
+        },
+        {
+          "id": "negativeOutcomeProbability",
+          "label": "Negative outcome probability"
+        }
+      ],
+      "label": "Auxiliary loss 0",
+      "operator": "ExpectedValue",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean"
+    },
+    {
+      "componentIdentity": "aux.gaussian-nll",
+      "componentWeight": 1.0,
+      "id": "auxiliary-component-1",
+      "inputPorts": [
+        {
+          "id": "locationEstimate",
+          "label": "Location estimate"
+        },
+        {
+          "id": "observedLocation",
+          "label": "Observed location"
+        },
+        {
+          "id": "scale",
+          "label": "Scale"
+        }
+      ],
+      "label": "Auxiliary loss 1",
+      "operator": "GaussianNLL",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean"
+    },
+    {
+      "componentIdentity": "aux.risk-adjusted",
+      "componentWeight": 1.0,
+      "id": "auxiliary-component-2",
+      "inputPorts": [
+        {
+          "id": "positiveOutcomeProbability",
+          "label": "Positive outcome probability"
+        },
+        {
+          "id": "negativeOutcomeProbability",
+          "label": "Negative outcome probability"
+        },
+        {
+          "id": "uncertaintyScale",
+          "label": "Uncertainty scale"
+        }
+      ],
+      "label": "Auxiliary loss 2",
+      "operator": "RiskAdjustedExpectedValue",
+      "outputPorts": [
+        {
+          "id": "mean",
+          "label": "Unweighted mean"
+        },
+        {
+          "id": "weighted",
+          "label": "Weighted contribution"
+        }
+      ],
+      "reduction": "GlobalRowMean"
+    },
+    {
+      "aggregation": "WeightedSum",
+      "id": "total-loss",
+      "inputPorts": [
+        {
+          "id": "component-0",
+          "label": "Component 0"
+        },
+        {
+          "id": "component-1",
+          "label": "Component 1"
+        },
+        {
+          "id": "component-2",
+          "label": "Component 2"
+        },
+        {
+          "id": "component-3",
+          "label": "Component 3"
+        },
+        {
+          "id": "component-4",
+          "label": "Component 4"
+        },
+        {
+          "id": "component-5",
+          "label": "Component 5"
+        }
+      ],
+      "label": "Total loss",
+      "outputPorts": [
+        {
+          "id": "total",
+          "label": "Total loss"
+        }
+      ]
+    }
+  ],
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "topologyRevision": 4
+}

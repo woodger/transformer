@@ -1,0 +1,52 @@
+{
+  "fixtureId": "semantic.target-reorder-a-b.v7",
+  "tensorGeometry": {
+    "seqLen": 2,
+    "featureDim": 4
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "A",
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Identity"
+        },
+        {
+          "identity": "B",
+          "lossInputTransformation": "Identity",
+          "publicPredictionTransformation": "Identity"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.a",
+          "operator": "SmoothL1",
+          "weight": 1,
+          "targetIdentity": "A"
+        },
+        {
+          "identity": "direct.b",
+          "operator": "SmoothL1",
+          "weight": 1,
+          "targetIdentity": "B"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 8,
+      "encoderLayerCount": 1,
+      "dropoutProbability": 0,
+      "attentionHeadCount": 2,
+      "missingValuePolicy": "strict",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "8dda6636893dea46febc7d61454508ff2aaa9dac6b2ee90b38d4b3091f5682f9",
+    "objectiveSha256": "f848631a887dfe562702802987ae086bc11b4478043dd13bffbe3bf4665c927f"
+  }
+}

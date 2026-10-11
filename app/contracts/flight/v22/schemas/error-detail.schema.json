@@ -10,6 +10,9 @@
       "$ref": "https://transformer.local/contracts/model-catalog/v7/error-detail.schema.json"
     },
     {
+      "$ref": "https://transformer.local/contracts/model-topology/v3/error-detail.schema.json"
+    },
+    {
       "$ref": "https://transformer.local/contracts/training-telemetry/v4/error-detail.schema.json"
     },
     {

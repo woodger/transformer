@@ -1,0 +1,60 @@
+{
+  "fixtureId": "semantic.single-positive-regression.v6",
+  "tensorGeometry": {
+    "seqLen": 10,
+    "featureDim": 64848
+  },
+  "modelContract": {
+    "targetContract": {
+      "slots": [
+        {
+          "identity": "PositiveMagnitude",
+          "observedConstraint": {
+            "constraint": "ClosedInterval",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lossInputTransformation": "Sigmoid",
+          "publicPredictionTransformation": "Sigmoid"
+        }
+      ]
+    },
+    "objective": {
+      "directComponents": [
+        {
+          "identity": "direct.positive-magnitude",
+          "operator": "LogMSE",
+          "weight": 1,
+          "targetIdentity": "PositiveMagnitude"
+        }
+      ]
+    },
+    "modelTuning": {
+      "hiddenWidth": 256,
+      "encoderLayerCount": 5,
+      "dropoutProbability": 0.1,
+      "attentionHeadCount": 8,
+      "missingValuePolicy": "relaxed",
+      "encoderNormalizationOrder": "postNorm"
+    }
+  },
+  "numericalCases": [
+    {
+      "identity": "positive-log-mse",
+      "inputs": {
+        "rawCoordinate": 0,
+        "observed": 0.25
+      },
+      "outputs": {
+        "publicPrediction": 0.5,
+        "componentLoss": 0.4804502413417971
+      },
+      "absoluteTolerance": 1e-06
+    }
+  ],
+  "expected": {
+    "validation": "accepted",
+    "targetContractSha256": "b0afcf2db1d670a3817f9e908da511f0ede506cedcb52d8284dc4736e1c18bce",
+    "objectiveSha256": "d04d9559ece89a86d8e96893786959371bf7e0c2df5c0dc512a215fb2ecee777"
+  }
+}

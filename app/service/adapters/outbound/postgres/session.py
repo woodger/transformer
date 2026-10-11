@@ -26,9 +26,9 @@ class Database:
             pool_size=5,
             max_overflow=5,
         )
-        if config.schema != "transformer":
+        if config.schema != "public":
             self.engine = self.engine.execution_options(
-                schema_translate_map={"transformer": config.schema}
+                schema_translate_map={"public": config.schema}
             )
         self._sessions = sessionmaker(
             self.engine,

@@ -6,9 +6,9 @@ import pytest
 import torch
 from torch import nn
 
-from app.contracts.semantic.v5 import ModelContract
-from app.contracts.worker.v20.config import CheckpointSelectionConfig
-from app.contracts.worker.v20.model_definition import resolved_semantic_digests
+from app.contracts.semantic.v7 import ModelContract
+from app.contracts.worker.v22.config import CheckpointSelectionConfig
+from app.contracts.worker.v22.model_definition import resolved_semantic_digests
 from app.worker.application.artifacts import checkpoint_metadata
 from app.worker.application.errors import WorkerExecutionError
 from app.worker.application.fit import _restore_recovery
@@ -55,9 +55,9 @@ def _model_config() -> ModelConfig:
     )
 
 
-def _semantic_digests() -> dict:
+def _semantic_digests(contract: ModelContract = MODEL_CONTRACT) -> dict:
     return resolved_semantic_digests(
-        MODEL_CONTRACT,
+        contract,
         "d" * 64,
         _model_config(),
     )
@@ -81,9 +81,15 @@ def _model() -> nn.Module:
     return TargetAlignedLinear()
 
 
-def _trainer(initial_state: dict) -> Trainer:
+def _trainer(
+    initial_state: dict,
+    *,
+    device: str = "cpu",
+    contract: ModelContract = MODEL_CONTRACT,
+) -> Trainer:
     model = _model()
     model.load_state_dict(initial_state)
+    model.to(device)
     model_config = _model_config()
     train_config = TrainConfig(
         lr=0.001,
@@ -95,18 +101,18 @@ def _trainer(initial_state: dict) -> Trainer:
     )
     return Trainer(
         model=model,
-        device=torch.device("cpu"),
+        device=torch.device(device),
         train_config=train_config,
-        model_contract=MODEL_CONTRACT,
+        model_contract=contract,
         model_config=model_config,
-        model_definition_sha256=_semantic_digests()[
+        model_definition_sha256=_semantic_digests(contract)[
             "modelDefinitionSha256"
         ],
         initialization={"source": "random"},
     )
 
 
-def _manifest() -> dict:
+def _manifest(contract: ModelContract = MODEL_CONTRACT) -> dict:
     return {
         "jobId": "11111111-1111-4111-8111-111111111111",
         "dataContract": {
@@ -114,8 +120,8 @@ def _manifest() -> dict:
             "seqLen": 2,
             "featureDim": 2,
         },
-        "modelContract": MODEL_CONTRACT.to_document(),
-        "semanticDigests": _semantic_digests(),
+        "modelContract": contract.to_document(),
+        "semanticDigests": _semantic_digests(contract),
         "jobConfigSha256": CONFIG_HASH,
         "manifestSha256": MANIFEST_HASH,
     }
@@ -157,7 +163,7 @@ def _seed() -> None:
 
 def _assert_tree_equal(left, right) -> None:
     if isinstance(left, torch.Tensor):
-        assert torch.equal(left, right)
+        assert torch.equal(left.cpu(), right.cpu())
         return
     if isinstance(left, dict):
         assert set(left) == set(right)
@@ -173,7 +179,36 @@ def _assert_tree_equal(left, right) -> None:
     assert left == right
 
 
-def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
+@pytest.mark.parametrize("device", [
+    "cpu",
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available"),
+    ),
+])
+@pytest.mark.parametrize("penalty_operator", [
+    None, "BernoulliConfidencePenalty", "BernoulliEntropyPenalty",
+])
+def test_epoch_checkpoint_resume_matches_uninterrupted_training(
+    tmp_path,
+    device,
+    penalty_operator,
+):
+    document = MODEL_CONTRACT.to_document()
+    if penalty_operator is not None:
+        objective = document["objective"]
+        assert isinstance(objective, dict)
+        components = objective["auxiliaryComponents"]
+        assert isinstance(components, list)
+        components.append({
+            "identity": "auxiliary.bernoulli",
+            "operator": penalty_operator,
+            "weight": 0.1,
+            "roles": {"probability": MODEL_CONTRACT.target_identities[1]},
+        })
+        components.sort(key=lambda component: component["identity"])
+    contract = ModelContract.from_document(document)
+
     _seed()
     source = torch.randn(11, 2, 2)
     target = torch.rand(11, MODEL_CONTRACT.target_width)
@@ -181,17 +216,19 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     payloads = _payloads(source, target)
 
     _seed()
-    uninterrupted = _trainer(initial_state)
+    uninterrupted = _trainer(initial_state, device=device, contract=contract)
     uninterrupted.fit_payloads_resumable(payloads)
+    expected_cpu_random = torch.rand(5)
+    expected_device_random = torch.rand(5, device=device)
 
     checkpoint = tmp_path / "1.pth"
     _seed()
-    interrupted = _trainer(initial_state)
+    interrupted = _trainer(initial_state, device=device, contract=contract)
     saved_metadata = None
 
     def stop_after_first_epoch(*_args):
         nonlocal saved_metadata
-        saved_metadata = checkpoint_metadata(interrupted, _manifest())
+        saved_metadata = checkpoint_metadata(interrupted, _manifest(contract))
         event = save_training_recovery(
             str(checkpoint),
             interrupted,
@@ -209,10 +246,10 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
     assert saved_metadata is not None
     payload = load_training_recovery(
         str(checkpoint),
-        torch.device("cpu"),
+        torch.device(device),
         descriptor=_descriptor(saved_metadata),
     )
-    resumed = _trainer(initial_state)
+    resumed = _trainer(initial_state, device=device, contract=contract)
     resumed.load_recovery_state_dict(payload["trainer_state"])
     resumed.fit_payloads_resumable(payloads)
 
@@ -232,6 +269,8 @@ def test_epoch_checkpoint_resume_matches_uninterrupted_training(tmp_path):
         resumed.best_state_dict,
         uninterrupted.best_state_dict,
     )
+    assert torch.equal(torch.rand(5), expected_cpu_random)
+    assert torch.equal(torch.rand(5, device=device), expected_device_random)
 
 
 def test_recovery_checkpoint_rejects_a_different_closed_input_set(
@@ -282,6 +321,59 @@ def test_recovery_checkpoint_rejects_trainer_progress_that_differs_from_metadata
             torch.device("cpu"),
             descriptor=_descriptor(metadata),
         )
+
+
+@pytest.mark.parametrize("change", ["operator", "weight", "addition"])
+def test_recovery_checkpoint_rejects_a_changed_entropy_objective(tmp_path, change):
+    document = MODEL_CONTRACT.to_document()
+    component = {
+        "identity": "auxiliary.entropy",
+        "operator": "BernoulliEntropyPenalty",
+        "weight": 0.1,
+        "roles": {"probability": MODEL_CONTRACT.target_identities[1]},
+    }
+    if change != "addition":
+        document["objective"]["auxiliaryComponents"].append(copy.deepcopy(component))
+        document["objective"]["auxiliaryComponents"].sort(
+            key=lambda item: item["identity"]
+        )
+
+    contract = ModelContract.from_document(document)
+
+    with torch.random.fork_rng():
+        trainer = _trainer(copy.deepcopy(_model().state_dict()), contract=contract)
+        batch = TrainingBatch(
+            features=torch.zeros(3, 2, 2),
+            targets=torch.zeros(3, contract.target_width),
+        )
+        trainer.fit_epochs(batch)
+        metadata = checkpoint_metadata(trainer, _manifest(contract))
+        checkpoint = tmp_path / "recovery.pth"
+        save_training_recovery(str(checkpoint), trainer, metadata=metadata)
+
+    changed = contract.to_document()
+    if change == "addition":
+        changed["objective"]["auxiliaryComponents"].append(component)
+        changed["objective"]["auxiliaryComponents"].sort(
+            key=lambda item: item["identity"]
+        )
+    else:
+        penalty = next(
+            item for item in changed["objective"]["auxiliaryComponents"]
+            if item["identity"] == "auxiliary.entropy"
+        )
+        if change == "operator":
+            penalty["operator"] = "BernoulliConfidencePenalty"
+        else:
+            penalty["weight"] = 0.2
+
+    descriptor = _descriptor(metadata)
+    descriptor["semanticDigests"] = _semantic_digests(
+        ModelContract.from_document(changed)
+    )
+
+    with pytest.raises(ValueError, match="fence"):
+        load_training_recovery(str(checkpoint), torch.device("cpu"), descriptor=descriptor)
 
 
 def test_fit_rejects_recovery_descriptor_for_a_different_job_config():
